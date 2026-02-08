@@ -1,12 +1,12 @@
 # DW-DEVELOP: Complete DEVELOP Wave Orchestrator
 
-**Wave**: DEVELOP
-**Agent**: Main Instance (self — orchestrator)
+**Wave**: DEVELOP (wave 6 of 6)
+**Agent**: Main Instance (self -- orchestrator)
 **Command**: `/nw:develop "{feature-description}"`
 
 ## Overview
 
-Orchestrates the complete DEVELOP wave: from feature description to production-ready code with mandatory quality gates. You (the main Claude instance) coordinate by delegating to specialized agents via the Task tool.
+Orchestrates the complete DEVELOP wave: from feature description to production-ready code with mandatory quality gates. You (the main Claude instance) coordinate by delegating to specialized agents via the Task tool. Final wave in nWave (DISCOVER > DISCUSS > DESIGN > DELIVER > DISTILL > DEVELOP).
 
 Sub-agents cannot use the Skill tool or execute `/nw:*` commands. Read the relevant command file yourself, extract instructions, and embed them in the Task prompt.
 
@@ -28,25 +28,33 @@ INPUT: "{feature-description}"
      a. Extract steps from roadmap.yaml in dependency order
      b. For each step, check execution-log.yaml for prior completion (resume)
      c. @nw-software-crafter executes TDD cycle (read nWave/tasks/nw/execute.md)
+        IMPORTANT: Use the DES Prompt Template from execute.md. Include all 4 DES
+        markers (DES-VALIDATION, DES-PROJECT-ID, DES-STEP-ID) and all 8 mandatory
+        sections in the Task prompt. Without these, DES validation is bypassed.
      d. Verify COMMIT/PASS in execution-log.yaml after each step
      e. Stop on first failure
   |
-  4. Phase 2.25 — Architecture Refactoring + Mutation Testing (parallel)
-     a. [FG] @nw-software-crafter applies L4-L6 refactoring (read nWave/tasks/nw/refactor.md)
-     b. [BG] Mutation testing gate >= 80% kill rate (read nWave/tasks/nw/mutation-test.md)
-     c. Both must pass before proceeding
+  4. Phase 2.25 — Complete Refactoring (L1-L4, code + tests)
+     a. @nw-software-crafter performs full L1-L4 refactoring on production code AND tests
+        (read nWave/tasks/nw/refactor.md, specify --level=1-4 --scope=code+tests)
+     b. @nw-software-crafter-reviewer reviews the refactoring result
+     c. One revision pass on rejection, then proceed
   |
-  5. Phase 3 — Finalize + Cleanup
+  5. Phase 2.5 — Mutation Testing
+     a. Mutation testing gate >= 80% kill rate (read nWave/tasks/nw/mutation-test.md)
+     b. Must pass before proceeding
+  |
+  6. Phase 3 — Finalize + Cleanup
      a. @nw-devop archives to docs/evolution/ (read nWave/tasks/nw/finalize.md)
      b. Commit evolution document, push when ready
   |
-  6. Phase 3.5 — Retrospective (conditional)
+  7. Phase 3.5 — Retrospective (conditional)
      a. Skip if clean execution (no failures, no retries, no warnings)
      b. @nw-troubleshooter performs 5 Whys analysis on issues found
   |
-  7. Phase 4 — Report Completion
+  8. Phase 4 — Report Completion
      a. Display summary: phases, steps, reviews, artifacts
-     b. Next step: /nw:deliver "{project-id}"
+     b. Workflow complete. Return to DISCOVER for next feature iteration.
 ```
 
 ## Orchestrator Responsibilities
@@ -62,19 +70,63 @@ For each phase:
 
 ## Task Invocation Pattern
 
+All Task prompts for step execution MUST include DES markers for validation. Without these markers, the DES hooks cannot validate the task and it passes through unmonitored.
+
 ```python
 Task(
     subagent_type="{agent}",
     max_turns=35,
     prompt=f'''
+<!-- DES-VALIDATION : required -->
+<!-- DES-PROJECT-ID : {project_id} -->
+<!-- DES-STEP-ID : {step_id} -->
+
 TASK BOUNDARY: {task_description}
 Return control to orchestrator after completion.
 
+# DES_METADATA
+Step: {step_id}
+Project: {project_id}
+Command: /nw:execute
+
+# AGENT_IDENTITY
+Agent: {agent}
+
+# TASK_CONTEXT
 {instructions_extracted_from_command_file}
+
+# TDD_7_PHASES
+Execute these phases in order:
+0. PREPARE - Load context, verify prerequisites
+1. RED_ACCEPTANCE - Write failing acceptance test
+2. RED_UNIT - Write failing unit test
+3. GREEN - Minimal code to pass tests
+4. REVIEW - Verify quality gates
+5. REFACTOR_CONTINUOUS - Improve design, tests stay green
+6. COMMIT - Stage and commit with conventional message
+
+# QUALITY_GATES
+- All tests pass before COMMIT
+- No skipped phases without blocked_by reason
+- Coverage maintained or improved
+
+# OUTCOME_RECORDING
+After each phase, append to execution-log.yaml:
+  - "{step_id}|{{phase}}|{{status}}|{{data}}|{{timestamp}}"
+
+# BOUNDARY_RULES
+- Only modify files listed in step files_to_modify
+- Do not load roadmap.yaml
+- Do not modify execution-log.yaml structure (append only)
+
+# TIMEOUT_INSTRUCTION
+Target: 30 turns maximum. If approaching limit, COMMIT current progress.
 ''',
     description="{phase description}"
 )
 ```
+
+**Note:** The DES prompt template with all mandatory markers and sections is defined in `nWave/tasks/nw/execute.md`. The orchestrator MUST use that template when invoking step execution tasks.
 
 ## Roadmap Quality Gate (Automated, Zero Token Cost)
 
@@ -121,7 +173,7 @@ docs/evolution/
 
 - [ ] Roadmap created and approved
 - [ ] All steps executed with COMMIT/PASS
-- [ ] Architecture refactoring complete (or skipped if clean)
+- [ ] L1-L4 refactoring complete on code and tests, reviewer approved
 - [ ] Mutation testing gate passed (>= 80%)
 - [ ] Evolution document archived
 - [ ] Retrospective completed (or clean execution noted)
@@ -154,7 +206,6 @@ For manual granular control, use individual commands instead:
 /nw:finalize @nw-devop "project-id"
 ```
 
-## Next Wave
+## Completion
 
-**Handoff To**: DELIVER wave (`/nw:deliver "{project-id}"`)
-**Deliverables**: Production-ready code with evolution document
+DEVELOP is the final wave. After completion, return to DISCOVER for the next feature iteration or mark the project as complete.

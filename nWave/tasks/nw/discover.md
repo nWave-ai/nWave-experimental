@@ -5,7 +5,7 @@
 
 ## Overview
 
-Execute evidence-based product discovery through assumption testing and market validation. First wave in nWave (DISCOVER > DISCUSS > DESIGN > DISTILL > DEVELOP > DELIVER).
+Execute evidence-based product discovery through assumption testing and market validation. First wave in nWave (DISCOVER > DISCUSS > DESIGN > DELIVER > DISTILL > DEVELOP).
 
 Scout establishes product-market fit through rigorous customer development using Mom Test interviewing principles and continuous discovery practices.
 

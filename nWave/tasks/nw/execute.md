@@ -32,22 +32,55 @@ Dispatch a single roadmap step to an agent for execution. The orchestrator extra
 
 Pass extracted step context as a self-contained prompt. The agent receives everything needed to execute without loading the roadmap.
 
-**Prompt structure:**
+**DES markers are MANDATORY.** The orchestrator MUST include all 4 DES HTML markers, all 8 mandatory sections, and all 7 TDD phases in the Task prompt. Without these markers, the DES hooks cannot validate the task.
+
+**DES Prompt Template (MANDATORY):**
+
+The orchestrator MUST use this template when building the Task prompt. Fill in all `{placeholders}` with actual values extracted from the roadmap.
 
 ```
-PROJECT: {project-id}
-STEP: {step-id}
+<!-- DES-VALIDATION : required -->
+<!-- DES-PROJECT-ID : {project-id} -->
+<!-- DES-STEP-ID : {step-id} -->
 
-## Step Context (extracted from roadmap)
-[All fields from step 4 above]
+# DES_METADATA
+Step: {step-id}
+Project: {project-id}
+Command: /nw:execute
 
-## Execution Rules
-- Do not load roadmap.yaml (context provided above)
-- Append one event per phase to execution-log.yaml (never read it)
-- Event format: "{step-id}|{phase}|{status}|{data}|{timestamp}"
-- Phases: PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, REVIEW, REFACTOR_CONTINUOUS, COMMIT
-- After COMMIT, append FILES_MODIFIED events for each changed file
-- Target: 30 turns maximum
+# AGENT_IDENTITY
+Agent: {agent-name}
+
+# TASK_CONTEXT
+{step context extracted from roadmap - name, description, acceptance_criteria, test_file, scenario_line, acceptance_test_scenario, quality_gates, implementation_notes, dependencies, estimated_hours, deliverables}
+
+# TDD_7_PHASES
+Execute these phases in order:
+0. PREPARE - Load context, verify prerequisites
+1. RED_ACCEPTANCE - Write failing acceptance test
+2. RED_UNIT - Write failing unit test
+3. GREEN - Minimal code to pass tests
+4. REVIEW - Verify quality gates
+5. REFACTOR_CONTINUOUS - Improve design, tests stay green
+6. COMMIT - Stage and commit with conventional message
+
+# QUALITY_GATES
+- All tests pass before COMMIT
+- No skipped phases without blocked_by reason
+- Coverage maintained or improved
+
+# OUTCOME_RECORDING
+After each phase, append to execution-log.yaml:
+  - "{step-id}|{phase}|{status}|{data}|{timestamp}"
+Status: EXECUTED (data: PASS/FAIL) or SKIPPED (data: reason)
+
+# BOUNDARY_RULES
+- Only modify files listed in step's files_to_modify
+- Do not load roadmap.yaml
+- Do not modify execution-log.yaml structure (append only)
+
+# TIMEOUT_INSTRUCTION
+Target: 30 turns maximum. If approaching limit, COMMIT current progress.
 ```
 
 **Configuration:**

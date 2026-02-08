@@ -1,65 +1,157 @@
-# DW-DELIVER: Production Readiness Validation
+# DW-DELIVER: Platform Readiness and Infrastructure Design
 
-**Wave**: DELIVER
-**Agent**: Dakota (nw-devop)
+**Wave**: DELIVER (wave 4 of 6)
+**Agents**: Dakota (nw-devop), nw-platform-architect
+**Command**: `/nw:deliver`
 
 ## Overview
 
-Validate production readiness and demonstrate business value delivery. Final wave in nWave (DISCOVER > DISCUSS > DESIGN > DISTILL > DEVELOP > DELIVER).
+Execute DELIVER wave through platform readiness, CI/CD pipeline setup, observability design, and infrastructure preparation. Positioned between DESIGN and DISTILL (DISCOVER > DISCUSS > DESIGN > DELIVER > DISTILL > DEVELOP), this wave ensures infrastructure is ready before acceptance tests and code are written.
 
-Dakota validates actual business value delivery, not just technical completion: functional completeness, operational excellence, performance, security, disaster recovery.
+Dakota and nw-platform-architect collaborate to translate architecture decisions from DESIGN into operational infrastructure: CI/CD pipelines, logging, monitoring, alerting, and observability.
+
+## Interactive Decision Points
+
+Before proceeding, the orchestrator asks the user:
+
+### Decision 1: Deployment Target
+**Question**: What is the deployment target?
+**Options**:
+1. Cloud-native -- AWS, GCP, Azure managed services
+2. On-premise -- self-hosted infrastructure
+3. Hybrid -- mix of cloud and on-premise
+4. Edge -- distributed edge deployment
+5. Other -- user provides custom input
+
+### Decision 2: Container Orchestration
+**Question**: Container orchestration approach?
+**Options**:
+1. Kubernetes -- full orchestration
+2. Docker Compose -- lightweight container management
+3. Serverless -- function-as-a-service, no containers
+4. None -- bare metal or VM-based deployment
+
+### Decision 3: CI/CD Platform
+**Question**: CI/CD platform preference?
+**Options**:
+1. GitHub Actions
+2. GitLab CI
+3. Jenkins
+4. Azure DevOps
+5. Other -- user provides custom input
+
+### Decision 4: Existing Infrastructure
+**Question**: Is there existing infrastructure to integrate with?
+**Options**:
+1. Yes -- describe existing infrastructure (user provides details)
+2. No -- greenfield, design from scratch
+
+### Decision 5: Existing CI/CD
+**Question**: Is there existing CI/CD infrastructure?
+**Options**:
+1. Yes -- integration mode (extend existing pipelines)
+2. No -- greenfield setup (build from scratch)
+
+### Decision 6: Observability Stack
+**Question**: What observability stack to use?
+**Options**:
+1. Prometheus + Grafana
+2. Datadog
+3. New Relic
+4. ELK (Elasticsearch, Logstash, Kibana)
+5. OpenTelemetry (vendor-agnostic)
+6. Custom -- user provides details
+7. None -- defer observability setup
+
+### Decision 7: Logging Strategy
+**Question**: What logging strategy?
+**Options**:
+1. Structured JSON -- application-level structured logs
+2. ELK stack -- centralized log aggregation
+3. CloudWatch -- AWS-native logging
+4. Existing -- user describes current setup
+5. Other -- user provides custom input
+
+### Decision 8: Deployment Strategy
+**Question**: What deployment strategy?
+**Options**:
+1. Blue-green -- zero-downtime with environment swap
+2. Canary -- gradual traffic shifting
+3. Rolling -- incremental pod/instance replacement
+4. Recreate -- simple stop-and-replace
+
+### Decision 9: Continuous Learning (conditional)
+**Question**: Is there existing monitoring/alerting infrastructure in place?
+**Options**:
+1. Yes -- include continuous learning and experimentation capabilities
+2. No -- focus on foundational monitoring setup first
+
+If Yes to Decision 9:
+**Follow-up**: Which continuous learning capabilities to include?
+**Options**:
+1. A/B testing framework
+2. Feature flags (LaunchDarkly, Unleash, custom)
+3. Canary analysis (automated rollback on metrics)
+4. Progressive rollout (percentage-based deployment)
+5. All of the above
 
 ## Context Files Required
 
-- src/\* - Implementation (from DEVELOP)
-- tests/acceptance/\* - Acceptance tests (from DISTILL, validated in DEVELOP)
-- tests/unit/\* - Unit tests (from DEVELOP)
-- docs/feature/{feature-name}/design/architecture-design.md - Architecture (from DESIGN)
+- docs/feature/{feature-name}/design/architecture-design.md - From DESIGN wave
+- docs/feature/{feature-name}/design/technology-stack.md - From DESIGN wave
+- docs/feature/{feature-name}/design/component-boundaries.md - From DESIGN wave
 
 ## Previous Artifacts (Wave Handoff)
 
-- src/\* - Complete implementation (from DEVELOP)
-- tests/acceptance/\* - All passing (from DEVELOP)
-- tests/unit/\* - (from DEVELOP)
-- docs/implementation/implementation-status.md - (from DEVELOP)
+- docs/feature/{feature-name}/design/* - Complete architecture (from DESIGN)
 
 ## Agent Invocation
 
-@nw-devop
+@nw-devop + @nw-platform-architect
 
-Execute \*validate-production-readiness for {feature-name}.
+Execute platform readiness and infrastructure design for {feature-name}.
 
 **Context Files:**
 
-- src/\*
-- tests/acceptance/\*
-- tests/unit/\*
 - docs/feature/{feature-name}/design/architecture-design.md
-- docs/implementation/implementation-status.md
+- docs/feature/{feature-name}/design/technology-stack.md
+- docs/feature/{feature-name}/design/component-boundaries.md
 
 **Configuration:**
 
-- deployment_target: staging | production
-- environment: production-like
-- monitoring_enabled: true
-- stakeholder_demo: required
+- deployment_target: {from Decision 1}
+- container_orchestration: {from Decision 2}
+- cicd_platform: {from Decision 3}
+- existing_infrastructure: {from Decision 4}
+- existing_cicd: {from Decision 5}
+- observability_stack: {from Decision 6}
+- logging_strategy: {from Decision 7}
+- deployment_strategy: {from Decision 8}
+- continuous_learning: {from Decision 9}
 
 ## Success Criteria
 
-Refer to Dakota's quality gates in nWave/agents/nw-devop.md.
-
-- [ ] All acceptance tests passing in production-like environment
-- [ ] Production deployment completed successfully
-- [ ] Stakeholder demonstrations successful
-- [ ] Business outcome metrics collected
-- [ ] Operational knowledge transfer completed
+- [ ] CI/CD pipeline design finalized and documented
+- [ ] Logging infrastructure design complete (structured logging, aggregation)
+- [ ] Monitoring and alerting design complete (metrics, dashboards, SLOs/SLIs)
+- [ ] Observability design complete (distributed tracing, health checks)
+- [ ] Infrastructure integration assessed (if existing infra)
+- [ ] Continuous learning capabilities designed (if applicable)
+- [ ] Handoff accepted by acceptance-designer (DISTILL wave)
 
 ## Next Wave
 
-**Handoff To**: Next feature iteration (return to DISCOVER) or project completion
-**Deliverables**: See Dakota's handoff package specification in agent file
+**Handoff To**: nw-acceptance-designer (DISTILL wave)
+**Deliverables**: Infrastructure design documents informing test environment setup
 
-# Expected outputs:
-# - docs/feature/{feature-name}/deliver/production-deployment.md
-# - docs/feature/{feature-name}/deliver/stakeholder-feedback.md
-# - docs/feature/{feature-name}/deliver/business-impact-report.md
+## Expected Outputs
+
+```
+docs/feature/{feature-name}/deliver/
+  platform-architecture.md
+  ci-cd-pipeline.md
+  observability-design.md
+  monitoring-alerting.md
+  infrastructure-integration.md    (if existing infra)
+  continuous-learning.md           (if applicable)
+```

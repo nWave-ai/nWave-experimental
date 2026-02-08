@@ -145,6 +145,22 @@ def handle_pre_tool_use() -> int:
 
     except Exception as e:
         # Fail-closed: any error blocks execution
+        # Log error to audit trail so it is visible in compliance logs
+        try:
+            from des.ports.driven_ports.audit_log_writer import (
+                AuditEvent as PortAuditEvent,
+            )
+
+            audit_writer = JsonlAuditLogWriter()
+            audit_writer.log_event(
+                PortAuditEvent(
+                    event_type="HOOK_ERROR",
+                    timestamp=SystemTimeProvider().now_utc().isoformat(),
+                    data={"error": str(e), "handler": "pre_tool_use"},
+                )
+            )
+        except Exception:
+            pass  # Don't let audit logging failure mask the original error
         response = {"status": "error", "reason": f"Unexpected error: {e!s}"}
         print(json.dumps(response))
         return 1
@@ -369,6 +385,22 @@ def handle_subagent_stop() -> int:
 
     except Exception as e:
         # Fail-closed: any error blocks execution via stderr + exit 1
+        # Log error to audit trail so it is visible in compliance logs
+        try:
+            from des.ports.driven_ports.audit_log_writer import (
+                AuditEvent as PortAuditEvent,
+            )
+
+            audit_writer = JsonlAuditLogWriter()
+            audit_writer.log_event(
+                PortAuditEvent(
+                    event_type="HOOK_ERROR",
+                    timestamp=SystemTimeProvider().now_utc().isoformat(),
+                    data={"error": str(e), "handler": "subagent_stop"},
+                )
+            )
+        except Exception:
+            pass  # Don't let audit logging failure mask the original error
         print(f"SubagentStop hook error: {e!s}", file=sys.stderr)
         return 1
 
@@ -419,8 +451,24 @@ def handle_post_tool_use() -> int:
         print(json.dumps(response))
         return 0
 
-    except Exception:
+    except Exception as e:
         # PostToolUse should never block - fail open
+        # Log error to audit trail so it is visible in compliance logs
+        try:
+            from des.ports.driven_ports.audit_log_writer import (
+                AuditEvent as PortAuditEvent,
+            )
+
+            audit_writer = JsonlAuditLogWriter()
+            audit_writer.log_event(
+                PortAuditEvent(
+                    event_type="HOOK_ERROR",
+                    timestamp=SystemTimeProvider().now_utc().isoformat(),
+                    data={"error": str(e), "handler": "post_tool_use"},
+                )
+            )
+        except Exception:
+            pass  # Don't let audit logging failure mask the original error
         print(json.dumps({}))
         return 0
 

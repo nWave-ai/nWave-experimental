@@ -5,7 +5,7 @@
 
 ## Overview
 
-Initialize nWave methodology with project brief creation, stakeholder alignment, and workspace preparation. Establishes project foundation before entering DISCUSS wave.
+Initialize nWave methodology with project brief creation, stakeholder alignment, and workspace preparation. Establishes project foundation before entering the wave sequence: DISCOVER > DISCUSS > DESIGN > DELIVER > DISTILL > DEVELOP.
 
 ## Agent Invocation
 
@@ -25,11 +25,11 @@ Execute \*gather-requirements for project initialization.
 - [ ] Stakeholders identified and roles defined
 - [ ] Success criteria established
 - [ ] Workspace structure prepared
-- [ ] Ready to proceed to DISCUSS wave
+- [ ] Ready to proceed to DISCOVER wave
 
 ## Next Wave
 
-**Handoff To**: DISCUSS wave (formal requirements gathering)
+**Handoff To**: DISCOVER wave (evidence-based product discovery)
 **Deliverables**: Project brief and workspace foundation
 
 # Expected outputs:

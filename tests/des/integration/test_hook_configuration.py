@@ -137,9 +137,10 @@ class TestHookInstallerConfiguration:
         with open(plugin_path, encoding="utf-8") as f:
             plugin_code = f.read()
 
-        # Expected format: "python3 -m des.adapters.drivers.hooks.claude_code_hook_adapter"
-        assert "python3 -m" in plugin_code, (
-            "Hook command should use 'python3 -m' format (not direct .py path)"
+        # Expected format: "{python_path} -m des.adapters.drivers.hooks.claude_code_hook_adapter"
+        # The template uses {python_path} which is substituted with sys.executable at install time
+        assert "-m" in plugin_code and "python" in plugin_code, (
+            "Hook command should use 'python -m' format (not direct .py path)"
         )
         assert "des.adapters.drivers.hooks.claude_code_hook_adapter" in plugin_code, (
             "Hook command missing module path"

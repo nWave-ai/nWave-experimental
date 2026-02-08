@@ -18,14 +18,18 @@ class TestExecuteTemplateSync:
     def test_source_uses_template_variable(self):
         """
         GIVEN execute.md source file
-        WHEN we check the TDD_7_PHASES section
+        WHEN we check the build-system TDD_7_PHASES section (## heading)
         THEN it contains {{MANDATORY_PHASES}} template variable, not hardcoded phases
         """
         with open("nWave/tasks/nw/execute.md") as f:
             content = f.read()
 
-        tdd_section_start = content.find("# TDD_7_PHASES")
-        assert tdd_section_start != -1, "TDD_7_PHASES section not found in execute.md"
+        # Find the build-system section (## heading), not the DES prompt template
+        # (# heading inside a code block). The build-system section uses ## TDD_7_PHASES.
+        tdd_section_start = content.find("\n## TDD_7_PHASES")
+        assert tdd_section_start != -1, (
+            "## TDD_7_PHASES section not found in execute.md"
+        )
 
         section = content[tdd_section_start : tdd_section_start + 500]
 
@@ -36,14 +40,15 @@ class TestExecuteTemplateSync:
     def test_source_declares_schema_v3(self):
         """
         GIVEN execute.md source file
-        WHEN we check the TDD_7_PHASES section comment
+        WHEN we check the build-system TDD_7_PHASES section comment (## heading)
         THEN it declares Schema v3.0 and references TDDPhaseValidator
         """
         with open("nWave/tasks/nw/execute.md") as f:
             content = f.read()
 
-        tdd_section_start = content.find("# TDD_7_PHASES")
-        assert tdd_section_start != -1, "TDD_7_PHASES section not found"
+        # Find the build-system section (## heading), not the DES prompt template
+        tdd_section_start = content.find("\n## TDD_7_PHASES")
+        assert tdd_section_start != -1, "## TDD_7_PHASES section not found"
 
         section = content[tdd_section_start : tdd_section_start + 300]
 

@@ -172,7 +172,7 @@ class TestInstallDESHooks:
 
         inner = pre_hook["hooks"][0]
         assert inner["type"] == "command"
-        assert "python3 -m" in inner["command"]
+        assert "-m" in inner["command"]
         assert "claude_code_hook_adapter" in inner["command"]
         assert "pre-task" in inner["command"]
 
@@ -204,7 +204,7 @@ class TestInstallDESHooks:
 
         inner = stop_hook["hooks"][0]
         assert inner["type"] == "command"
-        assert "python3 -m" in inner["command"]
+        assert "-m" in inner["command"]
         assert "claude_code_hook_adapter" in inner["command"]
         assert "subagent-stop" in inner["command"]
 
@@ -238,7 +238,7 @@ class TestInstallDESHooks:
 
         inner = post_hook["hooks"][0]
         assert inner["type"] == "command"
-        assert "python3 -m" in inner["command"]
+        assert "-m" in inner["command"]
         assert "claude_code_hook_adapter" in inner["command"]
         assert "post-tool-use" in inner["command"]
 
