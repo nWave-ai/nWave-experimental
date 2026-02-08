@@ -39,6 +39,7 @@ from des.adapters.driven.hooks.yaml_execution_log_reader import (
 )
 from des.adapters.driven.logging.jsonl_audit_log_writer import JsonlAuditLogWriter
 from des.adapters.driven.time.system_time import SystemTimeProvider
+from des.adapters.driven.git.git_commit_verifier import GitCommitVerifier
 from des.adapters.driven.validation.git_scope_checker import GitScopeChecker
 from des.application.pre_tool_use_service import PreToolUseService
 from des.application.subagent_stop_service import SubagentStopService
@@ -85,6 +86,7 @@ def create_subagent_stop_service() -> SubagentStopService:
         scope_checker=GitScopeChecker(),
         audit_writer=audit_writer,
         time_provider=time_provider,
+        commit_verifier=GitCommitVerifier(),
     )
 
 
@@ -423,6 +425,10 @@ def handle_subagent_stop() -> int:
         from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
 
         stop_hook_active = bool(hook_input.get("stop_hook_active", False))
+        # Only pass cwd for commit verification when using direct DES protocol.
+        # Claude Code protocol uses cwd for path construction only (backward compat).
+        uses_direct_protocol = bool(hook_input.get("executionLogPath"))
+        cwd = hook_input.get("cwd", "") if uses_direct_protocol else ""
         service = create_subagent_stop_service()
         decision = service.validate(
             SubagentStopContext(
@@ -430,6 +436,7 @@ def handle_subagent_stop() -> int:
                 project_id=project_id,
                 step_id=step_id,
                 stop_hook_active=stop_hook_active,
+                cwd=cwd,
             )
         )
 

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
+from des.ports.driven_ports.commit_verifier import CommitVerificationResult
 from des.ports.driven_ports.execution_log_reader import (
     ExecutionLogReader,
     LogFileCorrupted,
@@ -27,6 +28,7 @@ from des.ports.driver_ports.subagent_stop_port import (
 
 if TYPE_CHECKING:
     from des.domain.step_completion_validator import StepCompletionValidator
+    from des.ports.driven_ports.commit_verifier import CommitVerifier
     from des.ports.driven_ports.scope_checker import ScopeChecker
     from des.ports.driven_ports.time_provider_port import TimeProvider
 
@@ -41,6 +43,9 @@ class SubagentStopService(SubagentStopPort):
       2. Read step events via ExecutionLogReader.read_step_events()
       3. Validate completion via StepCompletionValidator.validate()
          - If invalid: log HOOK_SUBAGENT_STOP_FAILED, return block
+      3.5. Verify git commit via CommitVerifier (if cwd provided)
+         - If no matching commit: return block (COMMIT_NOT_VERIFIED)
+         - Fail-closed: git errors also block
       4. Check scope via ScopeChecker.check_scope()
          - If violations: log SCOPE_VIOLATION (warning, does not block)
       5. Log HOOK_SUBAGENT_STOP_PASSED, return allow
@@ -53,12 +58,14 @@ class SubagentStopService(SubagentStopPort):
         scope_checker: ScopeChecker,
         audit_writer: AuditLogWriter,
         time_provider: TimeProvider,
+        commit_verifier: CommitVerifier | None = None,
     ) -> None:
         self._log_reader = log_reader
         self._completion_validator = completion_validator
         self._scope_checker = scope_checker
         self._audit_writer = audit_writer
         self._time_provider = time_provider
+        self._commit_verifier = commit_verifier
 
     def validate(self, context: SubagentStopContext) -> HookDecision:
         """Validate step completion for a subagent.
@@ -135,6 +142,23 @@ class SubagentStopService(SubagentStopPort):
                 recovery_suggestions=completion.recovery_suggestions,
             )
 
+        # Step 3.5: Verify git commit exists (only if phases passed and cwd provided)
+        if context.cwd and self._commit_verifier:
+            commit_result = self._commit_verifier.verify_commit(
+                context.step_id, context.cwd
+            )
+            if not commit_result.verified:
+                self._log_commit_not_verified(context, commit_result)
+                return HookDecision.block(
+                    reason=f"COMMIT_NOT_VERIFIED: {commit_result.error_reason}",
+                    recovery_suggestions=[
+                        f"Create a git commit with trailer 'Step-ID: {context.step_id}'",
+                        "Ensure the COMMIT phase actually runs git commit",
+                        "Check that git is available and you're in a git repository",
+                    ],
+                )
+            self._log_commit_verified(context, commit_result)
+
         # Step 4: Check scope (warning only, does not block)
         self._check_and_log_scope(context)
 
@@ -199,5 +223,43 @@ class SubagentStopService(SubagentStopPort):
                 feature_name=feature_name,
                 step_id=step_id,
                 data=data,
+            )
+        )
+
+    def _log_commit_verified(
+        self,
+        context: SubagentStopContext,
+        result: CommitVerificationResult,
+    ) -> None:
+        """Log successful commit verification to the audit trail."""
+        self._audit_writer.log_event(
+            AuditEvent(
+                event_type="COMMIT_VERIFIED",
+                timestamp=self._time_provider.now_utc().isoformat(),
+                feature_name=context.project_id,
+                step_id=context.step_id,
+                data={
+                    "commit_hash": result.commit_hash,
+                    "commit_date": result.commit_date,
+                    "commit_subject": result.commit_subject,
+                },
+            )
+        )
+
+    def _log_commit_not_verified(
+        self,
+        context: SubagentStopContext,
+        result: CommitVerificationResult,
+    ) -> None:
+        """Log failed commit verification to the audit trail."""
+        self._audit_writer.log_event(
+            AuditEvent(
+                event_type="COMMIT_NOT_VERIFIED",
+                timestamp=self._time_provider.now_utc().isoformat(),
+                feature_name=context.project_id,
+                step_id=context.step_id,
+                data={
+                    "error_reason": result.error_reason,
+                },
             )
         )

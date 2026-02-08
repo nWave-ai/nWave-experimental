@@ -56,6 +56,13 @@ Execute these phases in order:
 4. REVIEW - Verify quality gates
 5. REFACTOR_CONTINUOUS - Improve design, tests stay green
 6. COMMIT - Stage and commit with conventional message
+   Include git trailer: `Step-ID: {step-id}` (required for DES verification)
+   Example commit message:
+   ```
+   feat(project-id): implement feature X
+
+   Step-ID: 02-01
+   ```
 
 # QUALITY_GATES
 - All tests pass before COMMIT
