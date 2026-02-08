@@ -19,11 +19,11 @@ Create E2E acceptance tests from requirements, architecture, and infrastructure 
 Before proceeding, the orchestrator asks the user:
 
 ### Decision 1: Feature Scope
-**Question**: Is this a nWave core feature, a plugin feature, or bug testing?
+**Question**: What is the scope of this feature?
 **Options**:
-1. Core feature -- nWave framework functionality
-2. Plugin feature -- extension/plugin development
-3. Bug testing -- regression tests for a known defect
+1. Core feature -- primary application functionality
+2. Extension -- modular add-on or integration
+3. Bug fix -- regression tests for a known defect
 
 ### Decision 2: Test Framework
 **Question**: Which test framework to use?
@@ -72,7 +72,7 @@ Execute \*create-acceptance-tests for {feature-name}.
 
 **Configuration:**
 
-- test_type: {from Decision 1: core | plugin | bug}
+- test_type: {from Decision 1: core | extension | bugfix}
 - test_framework: {from Decision 2: specflow | cucumber | pytest-bdd}
 - integration_approach: {from Decision 3}
 - infrastructure_testing: {from Decision 4}
