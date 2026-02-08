@@ -47,6 +47,16 @@ Tag items requiring nWave framework changes as **meta-improvements**.
 **Handoff To**: {invoking-agent-returns-to-workflow}
 **Deliverables**: Root cause analysis report with solutions
 
-# Expected outputs:
+## Examples
 
-# - docs/analysis/root-cause-analysis-{problem}.md
+### Example 1: Investigate test flakiness
+```
+/nw:root-why "Integration tests fail intermittently on CI but pass locally"
+```
+Rex investigates 5 WHY levels with multi-causal branches, discovers race condition in database cleanup, proposes transaction-isolated test fixtures.
+
+## Expected Outputs
+
+```
+docs/analysis/root-cause-analysis-{problem}.md
+```

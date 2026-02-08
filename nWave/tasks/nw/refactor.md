@@ -43,8 +43,26 @@ Execute \*refactor for {target-class-or-module}.
 **Handoff To**: {invoking-agent-returns-to-workflow}
 **Deliverables**: Refactored codebase with quality improvements
 
-# Expected outputs:
-# - src/* (refactored production code)
-# - tests/* (refactored test code)
-# - docs/refactoring/refactoring-log.md
-# - docs/refactoring/quality-metrics.md
+## Examples
+
+### Example 1: Module-level readability refactor
+```
+/nw:refactor src/auth/token_manager.py --level=2 --scope=module
+```
+Crafty applies L1-L2 readability improvements: rename ambiguous variables, extract magic numbers, simplify conditionals.
+
+### Example 2: SOLID-level design refactor
+```
+/nw:refactor src/billing/ --level=6 --scope=module --mikado_planning=true
+```
+Crafty uses Mikado Method to plan a multi-class refactoring, applies dependency inversion and interface segregation across the billing module.
+
+## Expected Outputs
+
+```
+src/*                              (refactored production code)
+tests/*                            (refactored test code)
+docs/refactoring/
+  refactoring-log.md
+  quality-metrics.md
+```

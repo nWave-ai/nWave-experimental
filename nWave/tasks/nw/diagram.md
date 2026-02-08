@@ -45,7 +45,19 @@ Execute \*create-diagrams for {architecture-component}.
 **Handoff To**: {invoking-agent-returns-to-workflow}
 **Deliverables**: Architecture diagrams in configured format
 
-# Expected outputs:
-# - docs/architecture/diagrams/system-context.{ext}
-# - docs/architecture/diagrams/component-architecture.{ext}
-# - docs/architecture/diagrams/deployment-architecture.{ext}
+## Examples
+
+### Example 1: Generate C4 container diagram
+```
+/nw:diagram payment-service --diagram_type=component --format=mermaid --level=container
+```
+Morgan reads architecture docs and produces a Mermaid container diagram showing service boundaries, data stores, and external integrations.
+
+## Expected Outputs
+
+```
+docs/architecture/diagrams/
+  system-context.{ext}
+  component-architecture.{ext}
+  deployment-architecture.{ext}
+```

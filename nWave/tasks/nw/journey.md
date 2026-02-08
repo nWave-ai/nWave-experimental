@@ -38,6 +38,14 @@ Execute \*journey for {goal-name}.
 - [ ] Integration checkpoints validate cross-step consistency
 - [ ] Example data is realistic, not generic placeholders
 
+## Examples
+
+### Example 1: User onboarding journey
+```
+/nw:journey first-time-setup
+```
+Luna asks discovery questions about the user's mental model, designs an emotional arc from confusion to confidence, produces ASCII mockups and Gherkin scenarios as proof of understanding.
+
 ## Next Wave
 
 **Handoff To**: Riley (nw-product-owner) for story creation, or Quinn (nw-acceptance-designer) for E2E tests

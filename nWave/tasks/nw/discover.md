@@ -50,9 +50,21 @@ Refer to Scout's quality gates in nWave/agents/nw-product-discoverer.md.
 **Handoff To**: nw-product-owner (DISCUSS wave)
 **Deliverables**: See Scout's handoff package specification in agent file
 
-# Expected outputs:
-# - docs/discovery/problem-validation.md
-# - docs/discovery/opportunity-tree.md
-# - docs/discovery/solution-testing.md
-# - docs/discovery/lean-canvas.md
-# - docs/discovery/interview-log.md
+## Examples
+
+### Example 1: New SaaS product discovery
+```
+/nw:discover invoice-automation
+```
+Scout conducts customer development interviews, validates problem-solution fit through Mom Test questioning, and produces a lean canvas with evidence-backed assumptions.
+
+## Expected Outputs
+
+```
+docs/discovery/
+  problem-validation.md
+  opportunity-tree.md
+  solution-testing.md
+  lean-canvas.md
+  interview-log.md
+```

@@ -57,11 +57,7 @@ Before proceeding, the orchestrator asks the user:
 
 Execute UX journey design for {feature-name}.
 
-**Context Files:**
-
-- docs/project-brief.md
-- docs/discovery/problem-validation.md
-- docs/discovery/opportunity-tree.md
+Context files: see Context Files Required and Previous Artifacts above.
 
 **Configuration:**
 
@@ -75,13 +71,7 @@ Execute UX journey design for {feature-name}.
 
 Execute `/nw:discuss` for {feature-name}, informed by Luna's journey artifacts.
 
-**Context Files:**
-
-- docs/project-brief.md
-- docs/stakeholders.yaml
-- docs/architecture/constraints.md
-- docs/feature/{feature-name}/discuss/ux-journey.md (from Luna)
-- docs/feature/{feature-name}/discuss/experience-map.md (from Luna)
+Context files: see Context Files Required above, plus Luna's outputs from Phase 1.
 
 **Configuration:**
 

@@ -38,15 +38,9 @@ Finalize: {project-id}
 - Optionally invoke /nw:document for reference documentation (skip with --skip-docs)
 - Commit and push evolution document after approval
 
-## Phases (agent executes these)
+## Phases
 
-1. **Gather** - Read roadmap.yaml and execution-log.yaml
-2. **Analyze** - Calculate completion stats, decisions, deviations
-3. **Summarize** - Create evolution document (executive summary, phases, achievements, metrics, lessons)
-4. **Archive** - Save to docs/evolution/YYYY-MM-DD-{project-id}.md
-5. **Cleanup** - Remove workflow files after user approval
-6. **Document** - Update architecture docs, create reference docs
-7. **Commit** - Stage, commit, push evolution document
+Agent handles: gather project data, analyze completion stats, write evolution document, archive to docs/evolution/, clean up workflow files (after user approval), update architecture docs, and commit.
 
 ## Success Criteria
 
@@ -91,7 +85,10 @@ Pre-dispatch gate finds step 02-03 status IN_PROGRESS. Returns: "BLOCKED: 1 inco
 **Handoff To**: Feature complete - no next wave
 **Deliverables**: docs/evolution/YYYY-MM-DD-{project-id}.md, cleaned docs/feature/{project-id}/
 
-# Expected outputs:
-# - docs/evolution/YYYY-MM-DD-{project-id}.md
-# - Updated architecture docs (status -> IMPLEMENTED)
-# - Cleaned docs/feature/{project-id}/ directory
+## Expected Outputs
+
+```
+docs/evolution/YYYY-MM-DD-{project-id}.md
+Updated architecture docs (status -> IMPLEMENTED)
+Cleaned docs/feature/{project-id}/ directory
+```

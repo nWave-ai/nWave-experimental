@@ -42,7 +42,18 @@ Execute \*mikado for {refactoring-goal}.
 **Handoff To**: {invoking-agent-returns-to-workflow}
 **Deliverables**: Refactored codebase + Mikado graph documentation
 
-# Expected outputs:
-# - docs/mikado/{goal-name}.mikado.md
-# - src/* (refactored implementation)
-# - Discovery-tracking commits in git log
+## Examples
+
+### Example 1: Extract shared domain model
+```
+/nw:mikado "Extract shared domain model from monolithic service layer"
+```
+Crafty builds a Mikado dependency graph through iterative exploration, discovers 12 leaf nodes across 4 modules, executes bottom-up from leaves to goal with discovery commits at each step.
+
+## Expected Outputs
+
+```
+docs/mikado/{goal-name}.mikado.md
+src/*                                (refactored implementation)
+Discovery-tracking commits in git log
+```

@@ -59,12 +59,7 @@ Before proceeding, the orchestrator asks the user:
 
 Execute \*design-architecture for {feature-name}.
 
-**Context Files:**
-
-- docs/feature/{feature-name}/discuss/requirements.md
-- docs/feature/{feature-name}/discuss/user-stories.md
-- docs/feature/{feature-name}/discuss/domain-model.md
-- docs/feature/{feature-name}/design/constraints.md
+Context files: see Context Files Required above.
 
 **Configuration:**
 

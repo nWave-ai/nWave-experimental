@@ -32,8 +32,19 @@ Execute \*gather-requirements for project initialization.
 **Handoff To**: DISCOVER wave (evidence-based product discovery)
 **Deliverables**: Project brief and workspace foundation
 
-# Expected outputs:
+## Examples
 
-# - docs/project-brief.md
-# - docs/stakeholders.yaml
-# - docs/architecture/constraints.md
+### Example 1: Greenfield project initialization
+```
+/nw:start invoice-automation --template=greenfield --scope=medium
+```
+Riley creates project brief, identifies stakeholders, establishes success criteria, and prepares the workspace for DISCOVER wave.
+
+## Expected Outputs
+
+```
+docs/
+  project-brief.md
+  stakeholders.yaml
+  architecture/constraints.md
+```

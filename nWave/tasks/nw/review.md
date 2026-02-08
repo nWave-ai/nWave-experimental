@@ -90,5 +90,8 @@ Parses to: invoke `nw-devop-reviewer` with implementation review of step 01-01.
 **Handoff To**: Depends on review outcome (rework or proceed to next workflow step)
 **Deliverables**: Updated artifact file with embedded review metadata
 
-# Expected outputs:
-# - Updated artifact file (roadmap.yaml, execution-log.yaml, etc.) with reviews section
+## Expected Outputs
+
+```
+Updated artifact file (roadmap.yaml, execution-log.yaml, etc.) with reviews section
+```

@@ -56,6 +56,23 @@ Refer to Nova's quality gates in nWave/agents/nw-researcher.md.
 **Handoff To**: Invoking workflow
 **Deliverables**: Research document + optional embed file
 
-# Expected outputs:
-# - data/research/{category}/{topic}-comprehensive-research.md
-# - nWave/data/embed/{agent}/{topic}-methodology.md (if --embed-for)
+## Examples
+
+### Example 1: Standalone research
+```
+/nw:research "event sourcing patterns" --research_depth=detailed
+```
+Nova researches event sourcing from trusted sources, cross-references 3+ sources per claim, produces a comprehensive research document.
+
+### Example 2: Research with agent embed
+```
+/nw:research "mutation testing methodologies" --embed-for=software-crafter
+```
+Nova researches mutation testing, then distills findings into a practitioner-focused embed file at nWave/data/embed/software-crafter/.
+
+## Expected Outputs
+
+```
+data/research/{category}/{topic}-comprehensive-research.md
+nWave/data/embed/{agent}/{topic}-methodology.md    (if --embed-for)
+```

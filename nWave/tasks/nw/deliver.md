@@ -41,38 +41,25 @@ Before proceeding, the orchestrator asks the user:
 5. Other -- user provides custom input
 
 ### Decision 4: Existing Infrastructure
-**Question**: Is there existing infrastructure to integrate with?
+**Question**: Is there existing infrastructure or CI/CD to integrate with?
 **Options**:
-1. Yes -- describe existing infrastructure (user provides details)
-2. No -- greenfield, design from scratch
+1. Yes, both -- describe existing infrastructure and CI/CD (user provides details)
+2. Existing infra only -- infrastructure exists, CI/CD is greenfield
+3. Existing CI/CD only -- CI/CD exists, infrastructure is greenfield
+4. No -- greenfield, design everything from scratch
 
-### Decision 5: Existing CI/CD
-**Question**: Is there existing CI/CD infrastructure?
+### Decision 5: Observability and Logging
+**Question**: What observability and logging approach?
 **Options**:
-1. Yes -- integration mode (extend existing pipelines)
-2. No -- greenfield setup (build from scratch)
-
-### Decision 6: Observability Stack
-**Question**: What observability stack to use?
-**Options**:
-1. Prometheus + Grafana
-2. Datadog
-3. New Relic
-4. ELK (Elasticsearch, Logstash, Kibana)
-5. OpenTelemetry (vendor-agnostic)
+1. Prometheus + Grafana (metrics) with structured JSON logs
+2. Datadog (full-stack observability including logs)
+3. ELK stack (Elasticsearch, Logstash, Kibana for logs and metrics)
+4. OpenTelemetry (vendor-agnostic telemetry) with provider of choice
+5. CloudWatch (AWS-native metrics and logging)
 6. Custom -- user provides details
 7. None -- defer observability setup
 
-### Decision 7: Logging Strategy
-**Question**: What logging strategy?
-**Options**:
-1. Structured JSON -- application-level structured logs
-2. ELK stack -- centralized log aggregation
-3. CloudWatch -- AWS-native logging
-4. Existing -- user describes current setup
-5. Other -- user provides custom input
-
-### Decision 8: Deployment Strategy
+### Decision 6: Deployment Strategy
 **Question**: What deployment strategy?
 **Options**:
 1. Blue-green -- zero-downtime with environment swap
@@ -80,13 +67,13 @@ Before proceeding, the orchestrator asks the user:
 3. Rolling -- incremental pod/instance replacement
 4. Recreate -- simple stop-and-replace
 
-### Decision 9: Continuous Learning (conditional)
+### Decision 7: Continuous Learning (conditional)
 **Question**: Is there existing monitoring/alerting infrastructure in place?
 **Options**:
 1. Yes -- include continuous learning and experimentation capabilities
 2. No -- focus on foundational monitoring setup first
 
-If Yes to Decision 9:
+If Yes to Decision 7:
 **Follow-up**: Which continuous learning capabilities to include?
 **Options**:
 1. A/B testing framework
@@ -111,11 +98,7 @@ If Yes to Decision 9:
 
 Execute platform readiness and infrastructure design for {feature-name}.
 
-**Context Files:**
-
-- docs/feature/{feature-name}/design/architecture-design.md
-- docs/feature/{feature-name}/design/technology-stack.md
-- docs/feature/{feature-name}/design/component-boundaries.md
+Context files: see Context Files Required above.
 
 **Configuration:**
 
@@ -123,11 +106,9 @@ Execute platform readiness and infrastructure design for {feature-name}.
 - container_orchestration: {from Decision 2}
 - cicd_platform: {from Decision 3}
 - existing_infrastructure: {from Decision 4}
-- existing_cicd: {from Decision 5}
-- observability_stack: {from Decision 6}
-- logging_strategy: {from Decision 7}
-- deployment_strategy: {from Decision 8}
-- continuous_learning: {from Decision 9}
+- observability_and_logging: {from Decision 5}
+- deployment_strategy: {from Decision 6}
+- continuous_learning: {from Decision 7}
 
 ## Success Criteria
 
@@ -143,6 +124,20 @@ Execute platform readiness and infrastructure design for {feature-name}.
 
 **Handoff To**: nw-acceptance-designer (DISTILL wave)
 **Deliverables**: Infrastructure design documents informing test environment setup
+
+## Examples
+
+### Example 1: Cloud-native greenfield
+```
+/nw:deliver payment-gateway
+```
+User selects: cloud-native, Kubernetes, GitHub Actions, no existing infra, OpenTelemetry, blue-green. Dakota designs full infrastructure from scratch.
+
+### Example 2: Brownfield with existing CI/CD
+```
+/nw:deliver auth-upgrade
+```
+User selects: hybrid, Docker Compose, GitLab CI (existing), existing CI/CD only, Datadog, rolling. Dakota extends existing pipelines rather than replacing them.
 
 ## Expected Outputs
 

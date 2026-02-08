@@ -25,20 +25,4 @@ Version: {version from pyproject.toml}
 Build: {current UTC timestamp}
 Agents: {count of nWave/agents/nw-*.md}
 Commands: {count of nWave/tasks/nw/*.md}
-
-Key Features:
-- Task tool delegation for sub-commands
-- TDD cycle methodology (tracked in execution-log.yaml)
-- step_type support (atdd, research, infrastructure)
-- Skill-based v2 architecture
-
-Verification Markers:
-- execute.md: Contains DES Prompt Template (single source of truth)
-- develop.md: Contains "/nw:execute @nw-software-crafter" delegation pattern
 ```
-
-## Verification
-
-1. **TDD Cycle**: execute command references `execution-log.yaml` as phase tracking format
-2. **Task Delegation**: develop command uses `Task(subagent_type=..., prompt='/nw:...')` pattern
-3. **Counts**: Agent and command counts are derived dynamically from file system

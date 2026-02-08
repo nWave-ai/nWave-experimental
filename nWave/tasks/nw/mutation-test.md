@@ -42,14 +42,6 @@ Execute mutation testing for project {project-id}.
 - approach: feature-scoped (one config per component, scoped test commands)
 - config_generator: `scripts/mutation/generate_scoped_configs.py` (preferred over manual)
 
-**Task boundary constraints for agent prompt:**
-
-- Run mutation testing and produce report only
-- Do not modify production code
-- Do not proceed to finalize
-- Use file-list module-path, not directory-based
-- Return control to orchestrator after completion
-
 **Output file:** `docs/feature/{project-id}/mutation/mutation-report.md`
 
 ## Examples
@@ -88,25 +80,19 @@ Orchestrator detects `package.json`, selects Stryker, delegates with Stryker-spe
 
 ## Quality Gate
 
-| Score | Status | Action |
-|-------|--------|--------|
-| >= 80% | PASS | Proceed to finalize |
-| 70-80% | WARN | Review surviving mutants, may proceed with justification |
-| < 70% | FAIL | Add tests before proceeding |
+Kill rate thresholds: >= 80% PASS (proceed), 70-80% WARN (review surviving mutants), < 70% FAIL (add tests first).
 
-## Skip Conditions
-
-- Language has no mutation tool available
-- Project opts out via `.mutation-config.yaml` with documented justification
-- Test suite is empty or broken (fix first)
-
-Python projects require mutation testing; all skips need documented justification.
+Skip conditions: no mutation tool for the language, project opts out via `.mutation-config.yaml`, or test suite is broken. Python projects require mutation testing; all skips need documented justification.
 
 ## Next Wave
 
 **Handoff To**: Phase 8 - Finalize (orchestrator continues develop.md workflow)
 **Deliverables**: `docs/feature/{project-id}/mutation/mutation-report.md`
 
-# Expected outputs:
-# - docs/feature/{project-id}/mutation/mutation-report.md
-# - docs/feature/{project-id}/mutation/cosmic-ray-*.toml (ephemeral)
+## Expected Outputs
+
+```
+docs/feature/{project-id}/mutation/
+  mutation-report.md
+  cosmic-ray-*.toml                (ephemeral)
+```

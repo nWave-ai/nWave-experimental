@@ -5,7 +5,7 @@
 
 ## Overview
 
-Dispatch a single roadmap step to an agent for execution. The orchestrator extracts step context from the roadmap and passes it to the agent so the agent never loads the full roadmap (saves ~97k tokens per step).
+Dispatch a single roadmap step to an agent. The orchestrator extracts step context from the roadmap so the agent never loads the full roadmap.
 
 ## Syntax
 
@@ -21,22 +21,15 @@ Dispatch a single roadmap step to an agent for execution. The orchestrator extra
 ## Dispatcher Workflow
 
 1. Parse parameters: agent name, project ID, step ID
-2. Validate roadmap and execution-log exist for the project
-3. Grep roadmap for `step_id: "{step-id}"` with surrounding context (~50 lines)
-4. Extract: name, description, acceptance_criteria, test_file, scenario_line, acceptance_test_scenario, quality_gates, implementation_notes, dependencies, estimated_hours, deliverables
-5. Invoke Task tool with extracted context (see Agent Invocation below)
+2. Validate roadmap and execution-log exist
+3. Grep roadmap for `step_id: "{step-id}"` with ~50 lines context
+4. Extract step fields and invoke Task tool with the DES template below
 
 ## Agent Invocation
 
 @{agent}
 
-Pass extracted step context as a self-contained prompt. The agent receives everything needed to execute without loading the roadmap.
-
-**DES markers are MANDATORY.** The orchestrator MUST include all 4 DES HTML markers, all 8 mandatory sections, and all 7 TDD phases in the Task prompt. Without these markers, the DES hooks cannot validate the task.
-
-**DES Prompt Template (MANDATORY):**
-
-The orchestrator MUST use this template when building the Task prompt. Fill in all `{placeholders}` with actual values extracted from the roadmap.
+Use this DES template verbatim. Fill `{placeholders}` with values extracted from the roadmap. Without the DES markers, hooks cannot validate the task.
 
 ```
 <!-- DES-VALIDATION : required -->
@@ -87,22 +80,12 @@ Target: 30 turns maximum. If approaching limit, COMMIT current progress.
 - max_turns: 30
 - subagent_type: extracted agent name
 
-## Event Format
-
-Append after each phase using Bash:
-```bash
-timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-echo '  - "{step-id}|{phase}|{status}|{data}|'$timestamp'"' >> docs/feature/{project-id}/execution-log.yaml
-```
-
-Status is EXECUTED (data: PASS, FAIL, UNEXPECTED_GREEN) or SKIPPED (data: NOT_APPLICABLE/APPROVED_SKIP/BLOCKED_BY_DEPENDENCY + reason).
-
 ## Error Handling
 
-- Invalid agent: report available agents (nw-researcher, nw-software-crafter, nw-solution-architect, nw-product-owner, nw-acceptance-designer, nw-devop)
+- Invalid agent: report available agents
 - Missing roadmap/execution-log: report path not found
 - Step not in roadmap: report available step IDs
-- Agent reports dependency failure: explain blocking tasks to user
+- Dependency failure: explain blocking tasks to user
 
 ## Examples
 

@@ -34,7 +34,9 @@ Execute \*forge to create {agent-name} agent.
 **Handoff To**: Agent installation and deployment
 **Deliverables**: Agent specification file + Skill files (if any)
 
-# Expected outputs:
+## Expected Outputs
 
-# - nWave/agents/nw-{agent-name}.md
-# - nWave/skills/{agent-name}/*.md (if Skills needed)
+```
+nWave/agents/nw-{agent-name}.md
+nWave/skills/{agent-name}/*.md    (if Skills needed)
+```

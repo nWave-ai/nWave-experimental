@@ -61,14 +61,7 @@ Before proceeding, the orchestrator asks the user:
 
 Execute \*create-acceptance-tests for {feature-name}.
 
-**Context Files:**
-
-- docs/feature/{feature-name}/discuss/requirements.md
-- docs/feature/{feature-name}/discuss/user-stories.md
-- docs/feature/{feature-name}/design/architecture-design.md
-- docs/feature/{feature-name}/design/component-boundaries.md
-- docs/feature/{feature-name}/deliver/ci-cd-pipeline.md
-- docs/feature/{feature-name}/deliver/observability-design.md
+Context files: see Context Files Required above.
 
 **Configuration:**
 
@@ -89,11 +82,13 @@ Execute \*create-acceptance-tests for {feature-name}.
 - [ ] Infrastructure test scenarios included (if Decision 4 = Yes)
 - [ ] Handoff package ready for software-crafter (DEVELOP wave)
 
-## Testing Principles
+## Examples
 
-- **Mock at ports, not internals**: External dependencies are mocked at the port (interface) level only. Never mock internal classes or implementation details.
-- **Test through public interfaces**: All tests interact with the system through its public API or driving ports. No testing of private methods or internal state.
-- **Regression-first for bugs**: Bug fix workflow starts by writing a failing test that reproduces the defect, then fixing the code to make it pass.
+### Example 1: Core feature acceptance tests
+```
+/nw:distill payment-webhook --test-framework=pytest-bdd --integration=real-services
+```
+Quinn creates Given-When-Then acceptance tests from requirements and architecture, establishes walking skeleton first, then milestone features with @skip tags for one-at-a-time implementation.
 
 ## Next Wave
 

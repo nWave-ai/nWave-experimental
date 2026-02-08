@@ -31,6 +31,22 @@ Execute \*git-workflow with {operation}.
 **Handoff To**: {invoking-agent-returns-to-workflow}
 **Deliverables**: Git operation completed
 
-# Expected outputs:
+## Examples
 
-# - Git commits, branches, or merges as requested
+### Example 1: Auto-generated commit
+```
+/nw:git commit
+```
+Dakota analyzes staged changes, generates a conventional commit message (e.g., `feat(auth): add token refresh endpoint`), runs quality gates, and commits.
+
+### Example 2: Feature branch creation
+```
+/nw:git branch feature/payment-webhook
+```
+Dakota creates the branch from the current HEAD and switches to it.
+
+## Expected Outputs
+
+```
+Git commits, branches, or merges as requested
+```
