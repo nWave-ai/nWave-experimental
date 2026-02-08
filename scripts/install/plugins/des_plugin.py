@@ -31,10 +31,13 @@ class DESPlugin(InstallationPlugin):
         ".des-audit-README.md",
     ]
 
-    # Hook command template - {lib_path} is substituted at install time
-    # Uses PYTHONPATH to ensure des module is importable from installed location
+    # Hook command template - substituted at install time:
+    #   {lib_path}    → ~/.claude/lib/python (DES module location)
+    #   {python_path} → absolute path to venv Python interpreter
+    #   {action}      → hook action (pre-task, subagent-stop, post-tool-use)
+    # Uses venv Python to ensure dependencies are available on all platforms
     HOOK_COMMAND_TEMPLATE = (
-        "PYTHONPATH={lib_path} python3 -m "
+        "PYTHONPATH={lib_path} {python_path} -m "
         "des.adapters.drivers.hooks.claude_code_hook_adapter {action}"
     )
 
@@ -390,15 +393,23 @@ class DESPlugin(InstallationPlugin):
     def _generate_hook_command(self, context: InstallContext, action: str) -> str:
         """Generate hook command with correct installed path.
 
+        Uses sys.executable to capture the absolute path to the venv Python
+        interpreter at install time. This ensures hooks use the same Python
+        that has all dependencies installed, regardless of platform.
+
         Args:
             context: InstallContext with claude_dir
-            action: Hook action (pre-task or subagent-stop)
+            action: Hook action (pre-task, subagent-stop, post-tool-use)
 
         Returns:
-            Complete command string with PYTHONPATH set to installed location
+            Complete command string with absolute Python path and PYTHONPATH
         """
         lib_path = context.claude_dir / "lib" / "python"
-        return self.HOOK_COMMAND_TEMPLATE.format(lib_path=lib_path, action=action)
+        return self.HOOK_COMMAND_TEMPLATE.format(
+            lib_path=lib_path,
+            python_path=sys.executable,
+            action=action,
+        )
 
     def _install_des_hooks(self, context: InstallContext) -> PluginResult:
         """Install DES hooks into settings.json (global config).

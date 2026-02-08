@@ -23,7 +23,7 @@ class DESHookInstaller:
         "hooks": [
             {
                 "type": "command",
-                "command": "cd {project_root} && PYTHONPATH={project_root} python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter pre-task",
+                "command": "cd {project_root} && PYTHONPATH={project_root} {python_path} -m src.des.adapters.drivers.hooks.claude_code_hook_adapter pre-task",
             }
         ],
     }
@@ -32,7 +32,7 @@ class DESHookInstaller:
         "hooks": [
             {
                 "type": "command",
-                "command": "cd {project_root} && PYTHONPATH={project_root} python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter subagent-stop",
+                "command": "cd {project_root} && PYTHONPATH={project_root} {python_path} -m src.des.adapters.drivers.hooks.claude_code_hook_adapter subagent-stop",
             }
         ],
     }
@@ -42,7 +42,7 @@ class DESHookInstaller:
         "hooks": [
             {
                 "type": "command",
-                "command": "cd {project_root} && PYTHONPATH={project_root} python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter post-tool-use",
+                "command": "cd {project_root} && PYTHONPATH={project_root} {python_path} -m src.des.adapters.drivers.hooks.claude_code_hook_adapter post-tool-use",
             }
         ],
     }
@@ -255,26 +255,34 @@ class DESHookInstaller:
         # Get absolute path to project root (parent of scripts/install/)
         project_root = str(Path(__file__).resolve().parent.parent.parent)
 
-        # Create hook configs with project_root substituted
-        pre_hook = self._substitute_project_root(self.DES_PRETOOLUSE_HOOK, project_root)
-        stop_hook = self._substitute_project_root(
-            self.DES_SUBAGENT_STOP_HOOK, project_root
+        # Substitution map for all placeholders
+        substitutions = {
+            "{project_root}": project_root,
+            "{python_path}": sys.executable,
+        }
+
+        # Create hook configs with placeholders substituted
+        pre_hook = self._substitute_placeholders(
+            self.DES_PRETOOLUSE_HOOK, substitutions
         )
-        post_hook = self._substitute_project_root(
-            self.DES_POSTTOOLUSE_HOOK, project_root
+        stop_hook = self._substitute_placeholders(
+            self.DES_SUBAGENT_STOP_HOOK, substitutions
+        )
+        post_hook = self._substitute_placeholders(
+            self.DES_POSTTOOLUSE_HOOK, substitutions
         )
 
         config["hooks"]["PreToolUse"].append(pre_hook)
         config["hooks"]["SubagentStop"].append(stop_hook)
         config["hooks"]["PostToolUse"].append(post_hook)
 
-    def _substitute_project_root(self, hook_config: dict, project_root: str) -> dict:
+    def _substitute_placeholders(self, hook_config: dict, substitutions: dict) -> dict:
         """
-        Recursively substitute {project_root} placeholder in hook configuration.
+        Recursively substitute placeholders in hook configuration.
 
         Args:
             hook_config: Hook configuration dictionary
-            project_root: Absolute path to project root
+            substitutions: Map of placeholder → value (e.g. {"{project_root}": "/path"})
 
         Returns:
             dict: Hook configuration with placeholders substituted
@@ -286,7 +294,9 @@ class DESHookInstaller:
         def substitute_in_dict(d):
             for key, value in d.items():
                 if isinstance(value, str):
-                    d[key] = value.replace("{project_root}", project_root)
+                    for placeholder, replacement in substitutions.items():
+                        value = value.replace(placeholder, replacement)
+                    d[key] = value
                 elif isinstance(value, dict):
                     substitute_in_dict(value)
                 elif isinstance(value, list):
@@ -294,7 +304,9 @@ class DESHookInstaller:
                         if isinstance(item, dict):
                             substitute_in_dict(item)
                         elif isinstance(item, str):
-                            value[i] = item.replace("{project_root}", project_root)
+                            for placeholder, replacement in substitutions.items():
+                                item = item.replace(placeholder, replacement)
+                            value[i] = item
 
         substitute_in_dict(result)
         return result
