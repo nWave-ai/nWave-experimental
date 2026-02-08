@@ -32,7 +32,10 @@ INPUT: "{feature-description}"
         markers (DES-VALIDATION, DES-PROJECT-ID, DES-STEP-ID) and all 8 mandatory
         sections in the Task prompt. Without these, DES validation is bypassed.
      d. Verify COMMIT/PASS in execution-log.yaml after each step
-     e. Stop on first failure
+     e. If a phase is missing: RE-DISPATCH the agent to execute it.
+        NEVER write execution-log entries yourself — only the agent
+        that actually performed the work may write to the log.
+     f. Stop on first failure
   |
   4. Phase 2.25 — Complete Refactoring (L1-L4, code + tests)
      a. @nw-software-crafter performs full L1-L4 refactoring on production code AND tests

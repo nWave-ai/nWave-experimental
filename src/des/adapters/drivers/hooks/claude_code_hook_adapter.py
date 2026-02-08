@@ -349,7 +349,11 @@ Error: {reason}
 RECOVERY REQUIRED:
 {recovery_steps}
 
-The step validation failed. You MUST fix these issues before proceeding."""
+The step validation failed. You MUST fix these issues before proceeding.
+
+IMPORTANT: Only the executing agent may write to execution-log.yaml.
+The orchestrator must RE-DISPATCH the agent to execute missing phases.
+Never write log entries for phases that were not actually executed."""
 
     return {
         "decision": "block",

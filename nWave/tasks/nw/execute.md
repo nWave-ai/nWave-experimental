@@ -63,14 +63,18 @@ Execute these phases in order:
 - Coverage maintained or improved
 
 # OUTCOME_RECORDING
-After each phase, append to execution-log.yaml:
+After ACTUALLY EXECUTING each phase, append to execution-log.yaml:
   - "{step-id}|{phase}|{status}|{data}|{timestamp}"
 Status: EXECUTED (data: PASS/FAIL) or SKIPPED (data: reason)
+CRITICAL: Only the executing agent writes to execution-log.yaml.
+The orchestrator MUST NEVER write phase entries — only the agent that
+performed the work. A log entry without actual execution is fraud.
 
 # BOUNDARY_RULES
 - Only modify files listed in step's files_to_modify
 - Do not load roadmap.yaml
 - Do not modify execution-log.yaml structure (append only)
+- NEVER write execution-log entries for phases you did not execute
 
 # TIMEOUT_INSTRUCTION
 Target: 30 turns maximum. If approaching limit, COMMIT current progress.
