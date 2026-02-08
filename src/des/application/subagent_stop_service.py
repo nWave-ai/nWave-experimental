@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
-from des.ports.driven_ports.commit_verifier import CommitVerificationResult
 from des.ports.driven_ports.execution_log_reader import (
     ExecutionLogReader,
     LogFileCorrupted,
@@ -28,7 +27,10 @@ from des.ports.driver_ports.subagent_stop_port import (
 
 if TYPE_CHECKING:
     from des.domain.step_completion_validator import StepCompletionValidator
-    from des.ports.driven_ports.commit_verifier import CommitVerifier
+    from des.ports.driven_ports.commit_verifier import (
+        CommitVerificationResult,
+        CommitVerifier,
+    )
     from des.ports.driven_ports.scope_checker import ScopeChecker
     from des.ports.driven_ports.time_provider_port import TimeProvider
 

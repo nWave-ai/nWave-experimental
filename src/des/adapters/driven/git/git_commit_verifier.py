@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import subprocess
 
-from des.ports.driven_ports.commit_verifier import CommitVerifier, CommitVerificationResult
+from des.ports.driven_ports.commit_verifier import (
+    CommitVerificationResult,
+    CommitVerifier,
+)
 
 
 class GitCommitVerifier(CommitVerifier):
@@ -36,7 +39,8 @@ class GitCommitVerifier(CommitVerifier):
         try:
             result = subprocess.run(
                 [
-                    "git", "log",
+                    "git",
+                    "log",
                     "--format=%H|%ai|%s",
                     f"--grep=Step-ID: {step_id}",
                     "-1",

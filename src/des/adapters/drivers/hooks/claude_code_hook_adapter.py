@@ -34,12 +34,12 @@ if __name__ == "__main__":
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 
+from des.adapters.driven.git.git_commit_verifier import GitCommitVerifier
 from des.adapters.driven.hooks.yaml_execution_log_reader import (
     YamlExecutionLogReader,
 )
 from des.adapters.driven.logging.jsonl_audit_log_writer import JsonlAuditLogWriter
 from des.adapters.driven.time.system_time import SystemTimeProvider
-from des.adapters.driven.git.git_commit_verifier import GitCommitVerifier
 from des.adapters.driven.validation.git_scope_checker import GitScopeChecker
 from des.application.pre_tool_use_service import PreToolUseService
 from des.application.subagent_stop_service import SubagentStopService
@@ -141,10 +141,13 @@ def handle_pre_tool_use() -> int:
 
         # Diagnostic: confirm hook was invoked
         tool_input = hook_input.get("tool_input", {})
-        _log_hook_invoked("pre_tool_use", {
-            "subagent_type": tool_input.get("subagent_type"),
-            "has_max_turns": tool_input.get("max_turns") is not None,
-        })
+        _log_hook_invoked(
+            "pre_tool_use",
+            {
+                "subagent_type": tool_input.get("subagent_type"),
+                "has_max_turns": tool_input.get("max_turns") is not None,
+            },
+        )
 
         # Extract protocol fields
         # Claude Code sends: {"tool_name": "Task", "tool_input": {...}, ...}
@@ -250,22 +253,26 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
     except (OSError, PermissionError) as e:
         # Log transcript read failure for diagnostics
         try:
-            JsonlAuditLogWriter().log_event(AuditEvent(
-                event_type="HOOK_TRANSCRIPT_ERROR",
-                timestamp=SystemTimeProvider().now_utc().isoformat(),
-                data={"error": str(e), "transcript_path": transcript_path},
-            ))
+            JsonlAuditLogWriter().log_event(
+                AuditEvent(
+                    event_type="HOOK_TRANSCRIPT_ERROR",
+                    timestamp=SystemTimeProvider().now_utc().isoformat(),
+                    data={"error": str(e), "transcript_path": transcript_path},
+                )
+            )
         except Exception:
             pass
         return None
 
     # No DES markers found in any message
     try:
-        JsonlAuditLogWriter().log_event(AuditEvent(
-            event_type="HOOK_TRANSCRIPT_NO_MARKERS",
-            timestamp=SystemTimeProvider().now_utc().isoformat(),
-            data={"transcript_path": transcript_path},
-        ))
+        JsonlAuditLogWriter().log_event(
+            AuditEvent(
+                event_type="HOOK_TRANSCRIPT_NO_MARKERS",
+                timestamp=SystemTimeProvider().now_utc().isoformat(),
+                data={"transcript_path": transcript_path},
+            )
+        )
     except Exception:
         pass
     return None
@@ -398,25 +405,32 @@ def handle_subagent_stop() -> int:
             return 1
 
         # Diagnostic: confirm hook was invoked with agent details
-        _log_hook_invoked("subagent_stop", {
-            "agent_type": hook_input.get("agent_type"),
-            "agent_id": hook_input.get("agent_id"),
-            "has_transcript": hook_input.get("agent_transcript_path") is not None,
-        })
+        _log_hook_invoked(
+            "subagent_stop",
+            {
+                "agent_type": hook_input.get("agent_type"),
+                "agent_id": hook_input.get("agent_id"),
+                "has_transcript": hook_input.get("agent_transcript_path") is not None,
+            },
+        )
 
         # Resolve DES context from either protocol
         result = _resolve_des_context(hook_input)
         if result[0] is None:
             # Error or non-DES passthrough — log it for diagnostics
             _, response, exit_code = result
-            _log_hook_invoked("subagent_stop_passthrough", {
-                "reason": "non_des_or_error",
-                "agent_type": hook_input.get("agent_type"),
-                "agent_id": hook_input.get("agent_id"),
-                "has_transcript": hook_input.get("agent_transcript_path") is not None,
-                "transcript_path": hook_input.get("agent_transcript_path"),
-                "exit_code": exit_code,
-            })
+            _log_hook_invoked(
+                "subagent_stop_passthrough",
+                {
+                    "reason": "non_des_or_error",
+                    "agent_type": hook_input.get("agent_type"),
+                    "agent_id": hook_input.get("agent_id"),
+                    "has_transcript": hook_input.get("agent_transcript_path")
+                    is not None,
+                    "transcript_path": hook_input.get("agent_transcript_path"),
+                    "exit_code": exit_code,
+                },
+            )
             print(json.dumps(response))
             return exit_code
         execution_log_path, project_id, step_id = result
@@ -499,9 +513,12 @@ def handle_post_tool_use() -> int:
             return 0
 
         # Diagnostic: confirm hook was invoked
-        _log_hook_invoked("post_tool_use", {
-            "tool_name": hook_input.get("tool_name"),
-        })
+        _log_hook_invoked(
+            "post_tool_use",
+            {
+                "tool_name": hook_input.get("tool_name"),
+            },
+        )
 
         # Delegate to PostToolUseService
         from des.adapters.driven.logging.jsonl_audit_log_reader import (
