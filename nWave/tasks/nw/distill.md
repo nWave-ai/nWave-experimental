@@ -89,6 +89,12 @@ Execute \*create-acceptance-tests for {feature-name}.
 - [ ] Infrastructure test scenarios included (if Decision 4 = Yes)
 - [ ] Handoff package ready for software-crafter (DEVELOP wave)
 
+## Testing Principles
+
+- **Mock at ports, not internals**: External dependencies are mocked at the port (interface) level only. Never mock internal classes or implementation details.
+- **Test through public interfaces**: All tests interact with the system through its public API or driving ports. No testing of private methods or internal state.
+- **Regression-first for bugs**: Bug fix workflow starts by writing a failing test that reproduces the defect, then fixing the code to make it pass.
+
 ## Next Wave
 
 **Handoff To**: nw-software-crafter (DEVELOP wave)
@@ -109,4 +115,17 @@ docs/feature/{feature-name}/distill/
   test-scenarios.md
   walking-skeleton.md
   acceptance-review.md
+```
+
+Bug fix regression tests use a separate structure:
+
+```
+tests/regression/{component-or-module}/
+  bug-{ticket-or-description}.feature     (acceptance: reproduces the defect scenario)
+  steps/
+    conftest.py
+    {domain}_steps.py
+
+tests/unit/{component-or-module}/
+  test_{module}_bug_{ticket-or-description}.py  (unit: isolates the defect)
 ```
