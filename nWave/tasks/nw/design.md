@@ -1,4 +1,4 @@
-# DW-DESIGN: Architecture Design
+# NW-DESIGN: Architecture Design
 
 **Wave**: DESIGN (wave 3 of 6)
 **Agents**: Morgan (nw-solution-architect)
@@ -18,6 +18,41 @@ Morgan analyzes the existing codebase and evaluates open-source alternatives bef
 - docs/feature/{feature-name}/discuss/ux-journey.md - From DISCUSS wave
 - docs/feature/{feature-name}/design/constraints.md - Technical and business constraints
 
+## Interactive Decision Points
+
+Before proceeding, the orchestrator asks the user:
+
+### Decision 1: Architecture Style
+**Question**: What architecture style should Morgan use for micro-design?
+**Options**:
+1. Hexagonal (recommended) -- ports and adapters, strong domain isolation
+2. Layered -- traditional presentation/business/data layers
+3. Clean Architecture -- concentric dependency rings
+4. Ports-and-Adapters -- explicit primary/secondary ports
+
+### Decision 2: System Design
+**Question**: What system design approach?
+**Options**:
+1. Monolithic -- single deployable unit
+2. Microservices -- independently deployable services
+3. Modular Monolith -- logical modules within a single deployment
+4. Serverless -- function-as-a-service composition
+
+### Decision 3: Communication Pattern
+**Question**: How should components communicate?
+**Options**:
+1. Synchronous -- REST/gRPC direct calls
+2. Asynchronous -- message-driven/event-sourced
+3. Hybrid -- synchronous for queries, asynchronous for commands
+
+### Decision 4: Data Architecture
+**Question**: What data architecture approach?
+**Options**:
+1. Single Database -- shared database for all components
+2. Database-per-Service -- isolated data stores per bounded context
+3. Event Store -- append-only event log as source of truth
+4. CQRS -- separate read and write models
+
 ## Agent Invocation
 
 @nw-solution-architect
@@ -36,7 +71,10 @@ Execute \*design-architecture for {feature-name}.
 - interactive: moderate
 - output_format: markdown
 - diagram_format: c4
-- architecture: hexagonal
+- architecture_style: {from Decision 1, default: hexagonal}
+- system_design: {from Decision 2}
+- communication_pattern: {from Decision 3}
+- data_architecture: {from Decision 4}
 
 ## Success Criteria
 

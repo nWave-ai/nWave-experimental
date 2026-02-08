@@ -1,4 +1,4 @@
-# DW-DIAGRAM: Architecture Diagram Generation
+# NW-DIAGRAM: Architecture Diagram Generation
 
 **Wave**: CROSS_WAVE
 **Agent**: Morgan (nw-solution-architect)

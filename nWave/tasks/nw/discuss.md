@@ -1,4 +1,4 @@
-# DW-DISCUSS: Requirements Gathering and UX Journey Design
+# NW-DISCUSS: Requirements Gathering and UX Journey Design
 
 **Wave**: DISCUSS (wave 2 of 6)
 **Agents**: Luna (nw-leanux-designer), Riley (nw-product-owner)

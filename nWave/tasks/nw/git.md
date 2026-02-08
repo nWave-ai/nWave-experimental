@@ -1,4 +1,4 @@
-# DW-GIT: Git Workflow Operations
+# NW-GIT: Git Workflow Operations
 
 **Wave**: CROSS_WAVE
 **Agent**: Dakota (nw-devop)

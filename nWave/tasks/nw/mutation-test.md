@@ -1,4 +1,4 @@
-# DW-MUTATION-TEST: Feature-Scoped Mutation Testing
+# NW-MUTATION-TEST: Feature-Scoped Mutation Testing
 
 **Wave**: QUALITY_GATE
 **Agent**: Crafter (nw-software-crafter)

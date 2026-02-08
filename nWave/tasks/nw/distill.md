@@ -5,7 +5,7 @@ argument-hint: '[story-id] - Optional: --test-framework=[cucumber|specflow|pytes
   --integration=[real-services|mocks]'
 ---
 
-# DW-DISTILL: Acceptance Test Creation and Business Validation
+# NW-DISTILL: Acceptance Test Creation and Business Validation
 
 **Wave**: DISTILL (wave 5 of 6)
 **Agent**: Quinn (nw-acceptance-designer)

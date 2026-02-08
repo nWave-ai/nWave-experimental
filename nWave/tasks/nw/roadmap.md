@@ -1,4 +1,4 @@
-# DW-ROADMAP: Goal Planning
+# NW-ROADMAP: Goal Planning
 
 **Wave**: CROSS_WAVE
 **Agent**: Architect (nw-solution-architect) or domain-appropriate agent

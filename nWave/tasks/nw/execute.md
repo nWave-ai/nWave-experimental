@@ -1,4 +1,4 @@
-# DW-EXECUTE: Atomic Task Execution
+# NW-EXECUTE: Atomic Task Execution
 
 **Wave**: EXECUTION_WAVE
 **Agent**: Dispatched agent (specified by caller)

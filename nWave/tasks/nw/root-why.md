@@ -1,7 +1,7 @@
-# DW-ROOT-WHY: Toyota 5 Whys Root Cause Analysis
+# NW-ROOT-WHY: Toyota 5 Whys Root Cause Analysis
 
 **Wave**: CROSS_WAVE
-**Agent**: Sage (nw-troubleshooter)
+**Agent**: Rex (nw-troubleshooter)
 
 ## Overview
 

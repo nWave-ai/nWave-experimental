@@ -1,4 +1,4 @@
-# DW-REVIEW: Expert Critique and Quality Assurance
+# NW-REVIEW: Expert Critique and Quality Assurance
 
 **Wave**: CROSS_WAVE
 **Agent**: Dynamic (nw-*-reviewer)

@@ -1,4 +1,4 @@
-# DW-DELIVER: Platform Readiness and Infrastructure Design
+# NW-DELIVER: Platform Readiness and Infrastructure Design
 
 **Wave**: DELIVER (wave 4 of 6)
 **Agents**: Dakota (nw-devop), nw-platform-architect

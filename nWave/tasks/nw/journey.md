@@ -1,4 +1,4 @@
-# DW-JOURNEY: Design User Experience Journey
+# NW-JOURNEY: Design User Experience Journey
 
 **Wave**: DISCUSS
 **Agent**: Luna (nw-leanux-designer)
@@ -40,5 +40,5 @@ Execute \*journey for {goal-name}.
 
 ## Next Wave
 
-**Handoff To**: Riley (product-owner) for story creation, or Quinn (acceptance-designer) for E2E tests
+**Handoff To**: Riley (nw-product-owner) for story creation, or Quinn (nw-acceptance-designer) for E2E tests
 **Deliverables**: Visual journey + YAML schema + Gherkin scenarios + artifact registry

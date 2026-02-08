@@ -1,4 +1,4 @@
-# DW-DISCOVER: Evidence-Based Product Discovery
+# NW-DISCOVER: Evidence-Based Product Discovery
 
 **Wave**: DISCOVER
 **Agent**: Scout (nw-product-discoverer)

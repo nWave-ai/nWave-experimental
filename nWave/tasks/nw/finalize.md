@@ -1,4 +1,4 @@
-# DW-FINALIZE: Feature Completion and Archive
+# NW-FINALIZE: Feature Completion and Archive
 
 **Wave**: CROSS_WAVE
 **Agent**: @nw-devop (default) or specified agent

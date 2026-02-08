@@ -1,4 +1,4 @@
-# DW-FORGE: Create Agent (V2)
+# NW-FORGE: Create Agent (V2)
 
 **Wave**: CROSS_WAVE
 **Agent**: Sage (nw-agent-builder)

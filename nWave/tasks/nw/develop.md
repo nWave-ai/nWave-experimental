@@ -1,4 +1,4 @@
-# DW-DEVELOP: Complete DEVELOP Wave Orchestrator
+# NW-DEVELOP: Complete DEVELOP Wave Orchestrator
 
 **Wave**: DEVELOP (wave 6 of 6)
 **Agent**: Main Instance (self -- orchestrator)
@@ -70,7 +70,9 @@ For each phase:
 
 ## Task Invocation Pattern
 
-All Task prompts for step execution MUST include DES markers for validation. Without these markers, the DES hooks cannot validate the task and it passes through unmonitored.
+All Task prompts for step execution include DES markers for validation. Without these markers, the DES hooks cannot validate the task and it passes through unmonitored.
+
+The full DES Prompt Template (all 8 mandatory sections) is defined in `nWave/tasks/nw/execute.md`. Read that file and embed all 8 sections (DES_METADATA, AGENT_IDENTITY, TASK_CONTEXT, TDD_7_PHASES, QUALITY_GATES, OUTCOME_RECORDING, BOUNDARY_RULES, TIMEOUT_INSTRUCTION) in each Task prompt.
 
 ```python
 Task(
@@ -84,49 +86,13 @@ Task(
 TASK BOUNDARY: {task_description}
 Return control to orchestrator after completion.
 
-# DES_METADATA
-Step: {step_id}
-Project: {project_id}
-Command: /nw:execute
-
-# AGENT_IDENTITY
-Agent: {agent}
-
-# TASK_CONTEXT
-{instructions_extracted_from_command_file}
-
-# TDD_7_PHASES
-Execute these phases in order:
-0. PREPARE - Load context, verify prerequisites
-1. RED_ACCEPTANCE - Write failing acceptance test
-2. RED_UNIT - Write failing unit test
-3. GREEN - Minimal code to pass tests
-4. REVIEW - Verify quality gates
-5. REFACTOR_CONTINUOUS - Improve design, tests stay green
-6. COMMIT - Stage and commit with conventional message
-
-# QUALITY_GATES
-- All tests pass before COMMIT
-- No skipped phases without blocked_by reason
-- Coverage maintained or improved
-
-# OUTCOME_RECORDING
-After each phase, append to execution-log.yaml:
-  - "{step_id}|{{phase}}|{{status}}|{{data}}|{{timestamp}}"
-
-# BOUNDARY_RULES
-- Only modify files listed in step files_to_modify
-- Do not load roadmap.yaml
-- Do not modify execution-log.yaml structure (append only)
-
-# TIMEOUT_INSTRUCTION
-Target: 30 turns maximum. If approaching limit, COMMIT current progress.
+Read the full DES Prompt Template from nWave/tasks/nw/execute.md and embed all 8 mandatory sections below.
+Fill placeholders with: step_id={step_id}, project_id={project_id}, agent={agent},
+task_context={instructions_extracted_from_command_file}
 ''',
     description="{phase description}"
 )
 ```
-
-**Note:** The DES prompt template with all mandatory markers and sections is defined in `nWave/tasks/nw/execute.md`. The orchestrator MUST use that template when invoking step execution tasks.
 
 ## Roadmap Quality Gate (Automated, Zero Token Cost)
 

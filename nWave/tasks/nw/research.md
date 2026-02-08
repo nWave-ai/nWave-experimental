@@ -1,4 +1,4 @@
-# DW-RESEARCH: Evidence-Driven Knowledge Research
+# NW-RESEARCH: Evidence-Driven Knowledge Research
 
 **Wave**: CROSS_WAVE
 **Agent**: Nova (nw-researcher)

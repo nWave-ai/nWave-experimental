@@ -1,4 +1,4 @@
-# DW-REFACTOR: Systematic Code Refactoring
+# NW-REFACTOR: Systematic Code Refactoring
 
 **Wave**: CROSS_WAVE
 **Agent**: Crafty (nw-software-crafter)
