@@ -128,29 +128,7 @@ Safety: verify truly unused, check for dynamic references, remove, compile and t
 
 ---
 
-## Test Code Smells
-
-### L1 (Readability)
-- **Obscure Test**: Generic names like Test1(). Fix: rename to Given_When_Then format.
-- **Hard-Coded Test Data**: Magic numbers (1000, 0.15). Fix: extract to named constants revealing business meaning.
-- **Assertion Roulette**: Multiple assertions without messages. Fix: add descriptive messages.
-
-### L2 (Complexity)
-- **Eager Test**: Tests multiple unrelated behaviors. Fix: split into focused tests, one per scenario.
-- **Test Code Duplication**: Same setup in 3+ tests. Fix: extract helpers (createPremiumCustomer()).
-- **Conditional Test Logic**: if/switch in tests. Fix: parameterized tests.
-
-### L3 (Organization)
-- **Mystery Guest**: Test depends on external files. Fix: inline test data as constants.
-- **Test Class Bloat**: 15+ tests covering multiple features. Fix: split by feature.
-- **General Fixture**: Shared fixture creating objects not all tests need. Fix: per-test setup.
-
-### Test Refactoring Safety
-- Refactor ONE test at a time
-- Run ALL tests after each change
-- Revert if any fails
-- Never refactor tests and production code simultaneously
-- Test code = first-class code, same quality standards
+For test code smells (9 smells with detection patterns and before/after examples), load the test-refactoring-catalog skill.
 
 ---
 

@@ -10,6 +10,11 @@ skills:
   - review-dimensions
   - property-based-testing
   - mikado-method
+  - production-safety
+  - quality-framework
+  - hexagonal-testing
+  - test-refactoring-catalog
+  - collaboration-and-handoffs
 ---
 
 # nw-software-crafter
