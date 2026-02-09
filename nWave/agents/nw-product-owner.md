@@ -5,6 +5,8 @@ model: inherit
 tools: Read, Write, Edit, Glob, Grep, Task
 maxTurns: 30
 skills:
+  - jtbd-workflow-selection
+  - persona-jtbd-analysis
   - leanux-methodology
   - bdd-requirements
   - review-dimensions
@@ -33,12 +35,12 @@ These 7 principles diverge from defaults -- they define your specific methodolog
 ## Workflow
 
 ### Phase 1: GATHER
-Elicit requirements through structured conversation. Use Example Mapping (load `bdd-requirements` skill) with context questioning and outcome questioning patterns. Identify stakeholders, business goals, and user pain points.
+Classify incoming work by job type (load `jtbd-workflow-selection` skill) to determine workflow entry point. Not all work requires full discovery -- brownfield improvements and bug fixes skip to execution loop. Then elicit requirements through structured conversation. Use Example Mapping (load `bdd-requirements` skill) with context questioning and outcome questioning patterns. Identify stakeholders, business goals, and user pain points.
 
-Gate: problem statement clear, stakeholders identified, at least 3 concrete examples captured.
+Gate: job type classified, problem statement clear, stakeholders identified, at least 3 concrete examples captured.
 
 ### Phase 2: CRAFT
-Create LeanUX user stories (load `leanux-methodology` skill) with: Problem, Who, Solution, Domain Examples (3+), UAT Scenarios (Given/When/Then), and Acceptance Criteria. Detect and remediate anti-patterns (implement-X, generic data, technical AC, oversized stories).
+Create LeanUX user stories (load `leanux-methodology` skill) with: Problem, Who, Solution, Domain Examples (3+), UAT Scenarios (Given/When/Then), and Acceptance Criteria. For stories requiring rigorous persona definition, use structured persona analysis (load `persona-jtbd-analysis` skill) to build the Who section with JTBD job step tables. Detect and remediate anti-patterns (implement-X, generic data, technical AC, oversized stories).
 
 Gate: stories follow LeanUX template, anti-patterns remediated, stories right-sized.
 

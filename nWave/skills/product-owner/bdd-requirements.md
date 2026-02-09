@@ -253,3 +253,82 @@ Output: 2-3 stories mapped, 10-15 scenarios drafted, red cards assigned.
 2. **Too many rules (story too big)**: More than 5-6 blue cards means story needs splitting.
 3. **Implementation details in examples**: "POST to /api/users with JSON" instead of "I register with email." Describe user-observable behavior.
 4. **Ignoring red cards**: Proceeding to development with unresolved questions leads to rework.
+
+## User Story Mapping
+
+Use story mapping to decompose epics into stories by tracing the complete user workflow.
+
+### Process
+
+1. **Map the workflow end-to-end**: Walk through the user's complete journey from trigger to outcome. Each step becomes a column.
+2. **Identify touchpoints**: At each step, list system interactions, decisions, and information needs.
+3. **Break into stories**: Group touchpoints into coherent user stories. Each story delivers a demonstrable slice of the workflow.
+4. **Prioritize by value**: Arrange stories top-to-bottom within each column. Top row = minimum viable workflow (walking skeleton). Lower rows = enhancements.
+
+### Visual Layout
+
+```
+Workflow:  [Discover] --> [Evaluate] --> [Purchase] --> [Receive]
+             |              |              |              |
+Row 1:     Search by     View details   Add to cart    Track order
+           keyword        + price        + checkout     status
+             |              |              |              |
+Row 2:     Filter by     Compare        Apply          Delivery
+           category       products       coupon         notifications
+             |              |
+Row 3:     Save search   Read reviews
+```
+
+Row 1 = MVP release. Row 2 = second release. Row 3 = future.
+
+Story mapping complements Example Mapping: use story mapping first to identify WHICH stories to write, then Example Mapping to explore EACH story in depth.
+
+## Requirements Completeness Check
+
+During Phase 1 (GATHER), verify all three requirement types are captured. Stories that cover only functional requirements produce incomplete handoff packages.
+
+### Functional Requirements
+- Specific business capabilities and features
+- User interactions and system responses
+- Data processing and transformation rules
+- Integration and interface requirements
+- Validation: testable through acceptance tests, traceable to business objectives, complete and unambiguous
+
+### Non-Functional Requirements (NFRs)
+- Performance: response time, throughput, scalability
+- Security: authentication, authorization, data protection
+- Usability: user experience, accessibility
+- Reliability: availability, fault tolerance, recovery
+- Validation: quantifiable metrics and thresholds, testable through automated validation
+
+### Business Rules
+- Business policy enforcement requirements
+- Data validation and integrity rules
+- Workflow and process constraints
+- Compliance and regulatory requirements
+- Validation: clear rule specification with examples, exception handling defined, rule precedence documented
+
+For each story, ask: "Have we captured the functional behavior, the quality attributes (NFRs), and the business constraints?" Missing any category is a completeness gap flagged during review (see `review-dimensions` skill, Dimension 2).
+
+## Domain Language Discovery
+
+Formalize the ubiquitous language process. Domain language primacy (Core Principle 4) requires deliberate discovery, not just passive adoption.
+
+### Phase 1: Discovery
+- Identify domain-specific terminology through stakeholder conversations
+- Document existing business language and definitions
+- Capture synonyms and variations in usage
+- Flag ambiguous terms requiring clarification
+
+### Phase 2: Definition
+- Collaborate with domain experts to establish precise definitions
+- Resolve terminology conflicts and inconsistencies
+- Create a glossary with examples for each term
+- Validate definitions with all stakeholder groups
+
+### Phase 3: Adoption
+- Integrate ubiquitous language into all requirements artifacts
+- Use agreed terms consistently in user stories, acceptance criteria, and scenarios
+- Ensure handoff package includes the glossary for downstream waves (DESIGN, DISTILL)
+
+Terms discovered here feed directly into BDD scenarios -- Given/When/Then statements use the ubiquitous language, ensuring zero translation loss between business and technical perspectives.

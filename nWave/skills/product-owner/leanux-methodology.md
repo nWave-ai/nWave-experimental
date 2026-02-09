@@ -171,6 +171,42 @@ The flow from Ready story to Done story follows double-loop TDD:
 3. **Refactor**: All tests green, safe to refactor.
 4. **Next scenario**: Repeat for each UAT scenario. All scenarios green -> Story is DONE.
 
+## Story Prioritization
+
+Use these techniques to order stories in the backlog when multiple stories compete for attention.
+
+### MoSCoW Classification
+
+| Category | Meaning | Guideline |
+|----------|---------|-----------|
+| Must Have | Required for minimum viable product | Without this, the release has no value |
+| Should Have | Important for full product value | Significant value, but workaround exists |
+| Could Have | Nice-to-have for enhanced experience | Desirable if time/budget allows |
+| Won't Have | Deferred to future releases | Acknowledged, explicitly out of scope |
+
+Assign MoSCoW during Phase 2 (CRAFT) when multiple stories emerge from the same requirements conversation.
+
+### Value/Effort Matrix
+
+Plot stories on two axes to identify execution order:
+
+| | Low Effort | High Effort |
+|---|---|---|
+| **High Value** | Quick wins -- do first | Strategic investments -- plan carefully |
+| **Low Value** | Fill-ins -- do if time allows | Eliminate or defer |
+
+Quick wins build momentum and stakeholder confidence. Strategic investments need baseline measurement and roadmap planning (see `jtbd-workflow-selection` skill for workflow routing).
+
+## Risk Identification Checklist
+
+During Phase 4 (HANDOFF), include a brief risk assessment in the handoff package. Categorize identified risks:
+
+**Business Risks**: market changes, regulatory changes, stakeholder availability, budget/timeline constraints
+**Technical Risks**: integration complexity, technology uncertainty, data migration, performance/security unknowns
+**Project Risks**: resource availability, scope creep potential, communication challenges, testing coverage gaps
+
+For each identified risk, note: probability (low/medium/high), impact (low/medium/high), and mitigation approach (avoid, mitigate, transfer, or accept). Detailed risk management belongs to downstream waves -- the product-owner surfaces risks, does not manage them.
+
 ## Wave Handoff Package
 
 When handing off to DESIGN wave (solution-architect), include:
@@ -178,7 +214,7 @@ When handing off to DESIGN wave (solution-architect), include:
 - User stories with detailed acceptance criteria
 - Stakeholder analysis and engagement plan
 - Business rules and domain model
-- Risk assessment and mitigation strategies
+- Risk assessment with categorized risks (see checklist above)
 - Non-functional requirements and quality attributes
 - DoR validation results (all PASSED)
 - Peer review approval
