@@ -19,9 +19,9 @@ Execute \*investigate-root-cause for {problem-statement}.
 - multi_causal: true
 - evidence_required: true
 
-## Usage: DEVELOP Wave Retrospective (Phase 3.5)
+## Usage: DELIVER Wave Retrospective (Phase 3.5)
 
-When invoked as part of `/nw:develop` Phase 3.5, analyze across 4 categories:
+When invoked as part of `/nw:deliver` Phase 3.5, analyze across 4 categories:
 
 1. **What worked well** (and why -- preserve these practices)
 2. **What worked better than before** (and why -- reinforce improvements)

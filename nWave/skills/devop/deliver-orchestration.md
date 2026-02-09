@@ -1,17 +1,17 @@
 ---
-name: develop-orchestration
-description: DEVELOP wave orchestration workflow -- 9 phases from baseline to finalization. Load when user invokes *develop command. Covers state tracking, smart skip logic, retry, resume, and quality gate enforcement.
+name: deliver-orchestration
+description: DELIVER wave orchestration workflow -- 9 phases from baseline to finalization. Load when user invokes *deliver command. Covers state tracking, smart skip logic, retry, resume, and quality gate enforcement.
 ---
 
-# DEVELOP Wave Orchestration
+# DELIVER Wave Orchestration
 
-When invoked via `*develop "{feature-description}"`, Dakota orchestrates the complete DEVELOP wave lifecycle.
+When invoked via `*deliver "{feature-description}"`, Apex orchestrates the complete DELIVER wave lifecycle.
 
 ## Orchestration Role
 
 Parse feature description, derive project ID, and execute 9 phases in order. Track state for resume capability.
 
-**Invocation**: `*develop "Implement user authentication with JWT tokens"`
+**Invocation**: `*deliver "Implement user authentication with JWT tokens"`
 
 ## 9 Phases
 
@@ -46,7 +46,7 @@ Parse feature description, derive project ID, and execute 9 phases in order. Tra
 ### Phase 9: Report Completion
 - Display comprehensive statistics
 - List all quality gates passed
-- Show next steps (review evolution doc, push commits, proceed to DELIVER wave)
+- Show next steps (review evolution doc, push commits, proceed to DEVOP wave validation)
 
 ## Smart Skip Logic
 
@@ -75,11 +75,11 @@ Parse feature description, derive project ID, and execute 9 phases in order. Tra
 
 - Any review fails after 2 attempts --> stop entire workflow
 - Any step execution fails --> stop entire workflow
-- User fixes issue manually, re-runs `*develop` (resumes from failure point)
+- User fixes issue manually, re-runs `*deliver` (resumes from failure point)
 
 ## State Tracking
 
-Progress tracked in `docs/feature/{project-id}/.develop-progress.json`:
+Progress tracked in `docs/feature/{project-id}/.deliver-progress.json`:
 
 ```json
 {
@@ -104,15 +104,15 @@ Progress tracked in `docs/feature/{project-id}/.develop-progress.json`:
 ## Resume Capability
 
 On re-invocation:
-1. Load `.develop-progress.json`
+1. Load `.deliver-progress.json`
 2. Skip completed phases
 3. Resume from failure point or current phase
 
-## Integration with DELIVER Wave
+## Post-Completion
 
-After DEVELOP wave completes:
+After DELIVER wave completes:
 1. All code committed locally (one commit per step)
 2. Evolution document created in `docs/evolution/`
 3. User reviews commits and evolution document
 4. User pushes commits: `git push`
-5. Proceed to DELIVER wave: `*validate-completion`
+5. Validate production readiness: `*validate-completion`

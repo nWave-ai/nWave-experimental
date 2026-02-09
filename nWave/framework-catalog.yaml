@@ -19,7 +19,7 @@
 
 name: "nWave"
 version: "2.5.0"
-description: "Comprehensive DISCOVER→DISCUSS→DESIGN→DISTILL→DEVELOP→DELIVER methodology with visual architecture lifecycle management"
+description: "Comprehensive DISCOVER→DISCUSS→DESIGN→DEVOP→DISTILL→DELIVER methodology with visual architecture lifecycle management"
 author: "nWave Team"
 license: "MIT"
 documentation_url: "https://github.com/your-org/nwave/nWave"
@@ -30,8 +30,8 @@ wave_phases:
   - "DISCOVER"
   - "DISCUSS"
   - "DESIGN"
+  - "DEVOP"
   - "DISTILL"
-  - "DEVELOP"
   - "DELIVER"
 
 # Agent registry with wave assignments
@@ -69,17 +69,17 @@ agents:
     description: "BDD scenarios and acceptance criteria"
 
   software-crafter:
-    wave: "DEVELOP"
+    wave: "DELIVER"
     priority: 1
     role: "outside_in_tdd"
     knowledge_preservation: "COMPLETE"
     description: "Outside-in TDD implementation and refactoring"
 
-  devop:
-    wave: "DELIVER"
+  platform-architect:
+    wave: "DEVOP"
     priority: 1
-    role: "production_readiness"
-    description: "Production readiness and deployment orchestration"
+    role: "platform_and_delivery"
+    description: "Platform infrastructure design, CI/CD, deployment, and production readiness"
 
   # Cross-Wave Specialist Agents
   researcher:
@@ -181,18 +181,18 @@ commands:
     wave: "DISTILL"
     outputs: ["acceptance_tests", "test_scenarios"]
 
-  develop:
-    description: "Execute complete DEVELOP wave: baseline → roadmap → split → execute-all → finalize"
+  deliver:
+    description: "Execute complete DELIVER wave: baseline → roadmap → split → execute-all → finalize"
     argument_hint: "[feature-description] - Example: \"Implement user authentication with JWT\""
-    agents: ["devop"]
-    wave: "DEVELOP"
+    agents: ["platform-architect"]
+    wave: "DELIVER"
     outputs: ["complete_feature", "quality_gates_passed", "evolution_document"]
 
   baseline:
     description: "Establish measurement baseline before roadmap creation"
     argument_hint: "[goal-description] - Example: \"optimize test execution time\""
     agents: ["researcher"]
-    wave: "DEVELOP"
+    wave: "DELIVER"
     outputs: ["baseline_yaml"]
 
   document:
@@ -206,15 +206,15 @@ commands:
     description: "Mutation testing quality gate for test suite validation"
     argument_hint: "[project-id] - Optional: --threshold=[75|80|85] --language=[auto|python|java|javascript]"
     agents: ["software_crafter"]
-    wave: "DEVELOP"
+    wave: "DELIVER"
     outputs: ["mutation_report"]
 
-  deliver:
-    description: "Production readiness validation and deployment"
+  devop:
+    description: "Platform readiness, CI/CD, infrastructure, and deployment design"
     argument_hint: "[deployment-target] - Optional: --environment=[staging|production] --validation=[full|smoke]"
-    agents: ["devop"]
-    wave: "DELIVER"
-    outputs: ["production_deployment", "stakeholder_demo"]
+    agents: ["platform-architect"]
+    wave: "DEVOP"
+    outputs: ["infrastructure_design", "ci_cd_pipeline", "deployment_strategy"]
 
   # Specialist Commands
   mikado:
@@ -273,7 +273,7 @@ commands:
 
   finalize:
     description: "Summarize achievements, archive to docs/evolution, clean up feature files"
-    argument_hint: "[agent] [project-id] - Example: @devop \"auth-upgrade\""
+    argument_hint: "[agent] [project-id] - Example: @platform-architect \"auth-upgrade\""
     outputs: ["evolution_document"]
 
 # ============================================================================
@@ -288,19 +288,19 @@ commands:
 #   greenfield:
 #     name: "nWave-greenfield"
 #     description: "Complete greenfield development with visual architecture"
-#     phases: ["DISCUSS", "DESIGN", "DISTILL", "DEVELOP", "DELIVER"]
+#     phases: ["DISCUSS", "DESIGN", "DEVOP", "DISTILL", "DELIVER"]
 #
 #   brownfield:
 #     name: "nWave-brownfield"
 #     description: "Legacy system enhancement with visual refactoring"
-#     phases: ["DISCUSS", "DESIGN", "DISTILL", "DEVELOP", "DELIVER"]
+#     phases: ["DISCUSS", "DESIGN", "DEVOP", "DISTILL", "DELIVER"]
 #     special_agents:
 #       ["mikado_refactoring_specialist_enhanced", "walking_skeleton_helper"]
 #
 #   rapid_prototype:
 #     name: "5d-rapid-prototype"
 #     description: "Streamlined validation with essential visual architecture"
-#     phases: ["DISCUSS", "DESIGN", "DEVELOP", "DELIVER"]
+#     phases: ["DISCUSS", "DESIGN", "DEVOP", "DELIVER"]
 
 # Quality gates and validation
 quality_gates:
@@ -365,17 +365,17 @@ templates:
       interactivity: "moderate"
       patterns: "production_service_integration_given_when_then"
 
-    develop_simple:
-      file: "templates/develop-outside-in-tdd.yaml"
-      description: "Simple implementation-focused template for DEVELOP wave"
+    devop_moderate:
+      file: "templates/devop-production-readiness.yaml"
+      description: "Moderately interactive platform readiness for DEVOP wave"
+      interactivity: "moderate"
+      validation: "deployment_infrastructure_design"
+
+    deliver_simple:
+      file: "templates/deliver-outside-in-tdd.yaml"
+      description: "Simple implementation-focused template for DELIVER wave"
       interactivity: "simple"
       methodology: "outside_in_tdd_systematic_refactoring"
-
-    deliver_moderate:
-      file: "templates/deliver-production-readiness.yaml"
-      description: "Moderately interactive production readiness for DELIVER wave"
-      interactivity: "moderate"
-      validation: "deployment_business_value_measurement"
 
   comprehensive_template:
     complete_methodology:

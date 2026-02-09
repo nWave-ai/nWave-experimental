@@ -1,7 +1,7 @@
 # NW-GIT: Git Workflow Operations
 
 **Wave**: CROSS_WAVE
-**Agent**: Dakota (nw-devop)
+**Agent**: Apex (nw-platform-architect)
 
 ## Overview
 
@@ -9,7 +9,7 @@ Git workflow assistant with automated commit message generation, branch manageme
 
 ## Agent Invocation
 
-@nw-devop
+@nw-platform-architect
 
 Execute \*git-workflow with {operation}.
 
@@ -37,13 +37,13 @@ Execute \*git-workflow with {operation}.
 ```
 /nw:git commit
 ```
-Dakota analyzes staged changes, generates a conventional commit message (e.g., `feat(auth): add token refresh endpoint`), runs quality gates, and commits.
+Apex analyzes staged changes, generates a conventional commit message (e.g., `feat(auth): add token refresh endpoint`), runs quality gates, and commits.
 
 ### Example 2: Feature branch creation
 ```
 /nw:git branch feature/payment-webhook
 ```
-Dakota creates the branch from the current HEAD and switches to it.
+Apex creates the branch from the current HEAD and switches to it.
 
 ## Expected Outputs
 

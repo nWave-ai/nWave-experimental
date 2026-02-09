@@ -1,7 +1,7 @@
 # NW-FINALIZE: Feature Completion and Archive
 
 **Wave**: CROSS_WAVE
-**Agent**: @nw-devop (default) or specified agent
+**Agent**: @nw-platform-architect (default) or specified agent
 
 ## Overview
 
@@ -55,7 +55,7 @@ Agent handles: gather project data, analyze completion stats, write evolution do
 
 | Error | Response |
 |-------|----------|
-| Invalid agent name | "Invalid agent. Available: nw-researcher, nw-software-crafter, nw-solution-architect, nw-product-owner, nw-acceptance-designer, nw-devop" |
+| Invalid agent name | "Invalid agent. Available: nw-researcher, nw-software-crafter, nw-solution-architect, nw-product-owner, nw-acceptance-designer, nw-platform-architect" |
 | Missing project ID | "Usage: /nw:finalize @agent 'project-id'" |
 | Project directory not found | "Project not found: docs/feature/{project-id}/" |
 | Incomplete steps | Block finalization, list incomplete steps |
@@ -64,9 +64,9 @@ Agent handles: gather project data, analyze completion stats, write evolution do
 
 ### Example 1: Standard finalization
 ```
-/nw:finalize @nw-devop "auth-upgrade"
+/nw:finalize @nw-platform-architect "auth-upgrade"
 ```
-Dispatcher verifies all steps done, invokes nw-devop with "Finalize: auth-upgrade". Agent reads project files, creates docs/evolution/2026-02-08-auth-upgrade.md, requests cleanup approval, commits.
+Dispatcher verifies all steps done, invokes nw-platform-architect with "Finalize: auth-upgrade". Agent reads project files, creates docs/evolution/2026-02-08-auth-upgrade.md, requests cleanup approval, commits.
 
 ### Example 2: Architect summary
 ```
@@ -76,7 +76,7 @@ Same flow but nw-solution-architect provides architecture-focused evolution summ
 
 ### Example 3: Blocked by incomplete steps
 ```
-/nw:finalize @nw-devop "data-pipeline"
+/nw:finalize @nw-platform-architect "data-pipeline"
 ```
 Pre-dispatch gate finds step 02-03 status IN_PROGRESS. Returns: "BLOCKED: 1 incomplete step - 02-03: IN_PROGRESS. Complete all steps before finalizing."
 

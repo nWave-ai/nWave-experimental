@@ -86,7 +86,7 @@ Good: validation is part of the preceding step's REVIEW phase
 
 ## Step-to-Scenario Mapping
 
-For roadmaps feeding into implementation (DEVELOP wave):
+For roadmaps feeding into implementation (DELIVER wave):
 1. Read acceptance tests (tests/acceptance/test_*.py) before creating roadmap
 2. Count acceptance test scenarios (def test_*)
 3. Create approximately 1 step per scenario (flexibility for infrastructure steps)

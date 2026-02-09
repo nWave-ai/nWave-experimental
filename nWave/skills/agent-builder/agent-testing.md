@@ -29,7 +29,7 @@ Validate that the agent correctly receives inputs from and passes outputs to oth
 - Error signals propagate correctly through the chain
 - Subagent mode activation works (skip greet, execute autonomously)
 
-**How to test**: End-to-end workflow execution through the full agent chain (e.g., DISCUSS -> DESIGN -> DEVELOP).
+**How to test**: End-to-end workflow execution through the full agent chain (e.g., DISCUSS -> DESIGN -> DELIVER).
 
 ### Layer 3: Adversarial Output Validation
 

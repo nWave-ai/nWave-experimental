@@ -141,7 +141,7 @@ CRITICAL: This orchestrator coordinates multi-phase workflows. Follow the phase 
 ## Orchestrator Identity
 **Workflow**: 5D Wave Complete
 **Description**: nWave-complete.yaml workflow orchestration
-**Methodology**: nWave (DISCUSS → DESIGN → DISTILL → DEVELOP → DEMO)
+**Methodology**: nWave (DISCUSS → DESIGN → DEVOP → DISTILL → DELIVER)
 
 ## Phase Guidance
 
@@ -313,7 +313,7 @@ commands:
   - exit: Exit acceptance test design mode
 ```
 
-#### DEVELOP Wave (Software Crafter)
+#### DELIVER Wave (Software Crafter)
 
 ```yaml
 commands:
@@ -446,7 +446,7 @@ quality_gates:
     - Complete test suite structure created
     - Framework configured and validated
     - Production service patterns documented
-    - Handoff package prepared for DEVELOP wave
+    - Handoff package prepared for DELIVER wave
 ```
 
 ### Visual Design Quality Gates (Visual Designer)
@@ -526,8 +526,8 @@ dependencies:
 | solution-architect             | Jordan       | Software Architect & Technical Designer               | 🏗️   | DESIGN     |
 | architecture-diagram-manager   | Dax          | Architecture Visualization Specialist                 | 📊   | DESIGN     |
 | acceptance-designer            | Quinn        | Acceptance Test Designer & Business Validation Expert | ✅   | DISTILL    |
-| software-crafter               | Crafty       | Elite Software Craftsperson & Refactoring Specialist  | 🔨   | DEVELOP    |
-| feature-completion-coordinator | Dakota       | Production Readiness Coordinator                      | 🚀   | DEMO       |
+| software-crafter               | Crafty       | Elite Software Craftsperson & Refactoring Specialist  | 🔨   | DELIVER    |
+| feature-completion-coordinator | Apex       | Production Readiness Coordinator                      | 🚀   | DEMO       |
 | root-cause-analyzer            | Sherlock     | Root Cause Analysis Specialist                        | 🔍   | CROSS-WAVE |
 | walking-skeleton-helper        | Slim         | Walking Skeleton Implementation Guide                 | 🦴   | CROSS-WAVE |
 | visual-2d-designer             | Luma         | 2D Animation Designer & Motion Director               | 🎞️   | TOOL       |

@@ -5,7 +5,7 @@ files are present after the build process completes. It validates:
 - Agent file counts in ~/.claude/agents/
 - Command file counts in ~/.claude/commands/
 - Manifest existence at ~/.claude/nwave-manifest.txt
-- Essential command files (review.md, develop.md, etc.)
+- Essential command files (review.md, devop.md, etc.)
   Note: Git operations handled by git.md command
 
 Returns VERIFY_FAILED error code when verification fails.
@@ -71,7 +71,7 @@ class InstallationVerifier:
     # Essential command files that must exist for a valid installation
     ESSENTIAL_COMMANDS: list[str] = [
         "review.md",
-        "develop.md",
+        "devop.md",
         "discuss.md",
         "design.md",
         "distill.md",

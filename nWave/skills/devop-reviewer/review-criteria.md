@@ -13,7 +13,7 @@ description: Quality dimensions and review checklist for devop reviews
 - DISCUSS: Requirements document + peer review approval
 - DESIGN: Architecture document + ADRs + peer review approval
 - DISTILL: Acceptance tests + peer review approval
-- DEVELOP: Production code + tests (100% passing) + peer review approval
+- DELIVER: Production code + tests (100% passing) + peer review approval
 
 **Severity**: critical
 

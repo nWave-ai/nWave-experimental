@@ -792,4 +792,4 @@ usage_documentation: |
 
   ## Next Wave Preparation
 
-  Use the acceptance tests and production service integration framework from this template as the driving force for Outside-In TDD implementation in the DEVELOP wave, ensuring test-driven development with real business validation.
+  Use the acceptance tests and production service integration framework from this template as the driving force for Outside-In TDD implementation in the DELIVER wave, ensuring test-driven development with real business validation.

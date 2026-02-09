@@ -44,16 +44,16 @@ All DW commands are now configured to automatically trigger specialized agent te
 - **`/nw:distill`** → `acceptance-designer`, `software-crafter` (Crafty)
 - **Note**: Walking Skeleton functionality integrated into `/nw:discuss` (automatic detection and suggestion)
 
-### DEVELOP Wave Commands
+### DEVOP Wave Commands
 
-- **`/nw:develop`** → `software-crafter` (Crafty)
-- **`/nw:refactor`** → `software-crafter` (Crafty), `architecture-diagram-manager`
-- **`/nw:mikado`** → `software-crafter` (Crafty), `architecture-diagram-manager` (Archer)
-- **`/nw:mutation-test`** → `software-crafter` (Crafty) - Mutation testing quality gate
+- **`/nw:devop`** → `platform-architect` (Apex)
 
 ### DELIVER Wave Commands
 
-- **`/nw:deliver`** → `feature-completion-coordinator`, `devop`, `product-owner` (Riley)
+- **`/nw:deliver`** → `platform-architect` (Apex), `software-crafter` (Crafty)
+- **`/nw:refactor`** → `software-crafter` (Crafty), `architecture-diagram-manager`
+- **`/nw:mikado`** → `software-crafter` (Crafty), `architecture-diagram-manager` (Archer)
+- **`/nw:mutation-test`** → `software-crafter` (Crafty) - Mutation testing quality gate
 
 ### Workflow Commands
 

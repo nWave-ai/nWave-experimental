@@ -1,152 +1,180 @@
-# NW-DELIVER: Platform Readiness and Infrastructure Design
+# NW-DELIVER: Complete DELIVER Wave Orchestrator
 
-**Wave**: DELIVER (wave 4 of 6)
-**Agents**: Dakota (nw-devop), nw-platform-architect
-**Command**: `/nw:deliver`
+**Wave**: DELIVER (wave 6 of 6)
+**Agent**: Main Instance (self -- orchestrator)
+**Command**: `/nw:deliver "{feature-description}"`
 
 ## Overview
 
-Execute DELIVER wave through platform readiness, CI/CD pipeline setup, observability design, and infrastructure preparation. Positioned between DESIGN and DISTILL (DISCOVER > DISCUSS > DESIGN > DELIVER > DISTILL > DEVELOP), this wave ensures infrastructure is ready before acceptance tests and code are written.
+Orchestrates the complete DELIVER wave: from feature description to production-ready code with mandatory quality gates. You (the main Claude instance) coordinate by delegating to specialized agents via the Task tool. Final wave in nWave (DISCOVER > DISCUSS > DESIGN > DEVOP > DISTILL > DELIVER).
 
-Dakota and nw-platform-architect collaborate to translate architecture decisions from DESIGN into operational infrastructure: CI/CD pipelines, logging, monitoring, alerting, and observability.
+Sub-agents cannot use the Skill tool or execute `/nw:*` commands. Read the relevant command file yourself, extract instructions, and embed them in the Task prompt.
 
-## Interactive Decision Points
+## Orchestration Flow
 
-Before proceeding, the orchestrator asks the user:
+```
+INPUT: "{feature-description}"
+  |
+  1. Parse input, derive project-id (kebab-case), create docs/feature/{project-id}/
+  |
+  2. Phase 1 — Roadmap Creation + Review
+     a. Skip if roadmap.yaml exists with validation.status == "approved"
+     b. @nw-solution-architect creates roadmap.yaml (read nWave/tasks/nw/roadmap.md)
+     c. Automated quality gate (see below)
+     d. @nw-software-crafter-reviewer reviews roadmap (read nWave/tasks/nw/review.md)
+     e. Retry once on rejection, then stop for manual intervention
+  |
+  3. Phase 2 — Execute All Steps
+     a. Extract steps from roadmap.yaml in dependency order
+     b. For each step, check execution-log.yaml for prior completion (resume)
+     c. @nw-software-crafter executes TDD cycle (read nWave/tasks/nw/execute.md)
+        IMPORTANT: Use the DES Prompt Template from execute.md. Include all 4 DES
+        markers (DES-VALIDATION, DES-PROJECT-ID, DES-STEP-ID) and all 8 mandatory
+        sections in the Task prompt. Without these, DES validation is bypassed.
+     d. Verify COMMIT/PASS in execution-log.yaml after each step
+     e. If a phase is missing: RE-DISPATCH the agent to execute it.
+        NEVER write execution-log entries yourself — only the agent
+        that actually performed the work may write to the log.
+     f. Stop on first failure
+  |
+  4. Phase 2.25 — Complete Refactoring (L1-L4, code + tests)
+     a. @nw-software-crafter performs full L1-L4 refactoring on production code AND tests
+        (read nWave/tasks/nw/refactor.md, specify --level=1-4 --scope=code+tests)
+     b. @nw-software-crafter-reviewer reviews the refactoring result
+     c. One revision pass on rejection, then proceed
+  |
+  5. Phase 2.5 — Mutation Testing
+     a. Mutation testing gate >= 80% kill rate (read nWave/tasks/nw/mutation-test.md)
+     b. Must pass before proceeding
+  |
+  6. Phase 3 — Finalize + Cleanup
+     a. @nw-platform-architect archives to docs/evolution/ (read nWave/tasks/nw/finalize.md)
+     b. Commit evolution document, push when ready
+  |
+  7. Phase 3.5 — Retrospective (conditional)
+     a. Skip if clean execution (no failures, no retries, no warnings)
+     b. @nw-troubleshooter performs 5 Whys analysis on issues found
+  |
+  8. Phase 4 — Report Completion
+     a. Display summary: phases, steps, reviews, artifacts
+     b. Workflow complete. Return to DISCOVER for next feature iteration.
+```
 
-### Decision 1: Deployment Target
-**Question**: What is the deployment target?
-**Options**:
-1. Cloud-native -- AWS, GCP, Azure managed services
-2. On-premise -- self-hosted infrastructure
-3. Hybrid -- mix of cloud and on-premise
-4. Edge -- distributed edge deployment
-5. Other -- user provides custom input
+## Orchestrator Responsibilities
 
-### Decision 2: Container Orchestration
-**Question**: Container orchestration approach?
-**Options**:
-1. Kubernetes -- full orchestration
-2. Docker Compose -- lightweight container management
-3. Serverless -- function-as-a-service, no containers
-4. None -- bare metal or VM-based deployment
+You follow this flow directly. Do not delegate orchestration to another agent.
 
-### Decision 3: CI/CD Platform
-**Question**: CI/CD platform preference?
-**Options**:
-1. GitHub Actions
-2. GitLab CI
-3. Jenkins
-4. Azure DevOps
-5. Other -- user provides custom input
+For each phase:
+1. Read the relevant command file (paths listed above)
+2. Extract instructions and embed them in the Task prompt
+3. Include task boundary instructions to prevent workflow continuation
+4. Verify output artifacts exist after each Task completes
+5. Update .develop-progress.json for resume capability
 
-### Decision 4: Existing Infrastructure
-**Question**: Is there existing infrastructure or CI/CD to integrate with?
-**Options**:
-1. Yes, both -- describe existing infrastructure and CI/CD (user provides details)
-2. Existing infra only -- infrastructure exists, CI/CD is greenfield
-3. Existing CI/CD only -- CI/CD exists, infrastructure is greenfield
-4. No -- greenfield, design everything from scratch
+## Task Invocation Pattern
 
-### Decision 5: Observability and Logging
-**Question**: What observability and logging approach?
-**Options**:
-1. Prometheus + Grafana (metrics) with structured JSON logs
-2. Datadog (full-stack observability including logs)
-3. ELK stack (Elasticsearch, Logstash, Kibana for logs and metrics)
-4. OpenTelemetry (vendor-agnostic telemetry) with provider of choice
-5. CloudWatch (AWS-native metrics and logging)
-6. Custom -- user provides details
-7. None -- defer observability setup
+All Task prompts for step execution include DES markers for validation. Without these markers, the DES hooks cannot validate the task and it passes through unmonitored.
 
-### Decision 6: Deployment Strategy
-**Question**: What deployment strategy?
-**Options**:
-1. Blue-green -- zero-downtime with environment swap
-2. Canary -- gradual traffic shifting
-3. Rolling -- incremental pod/instance replacement
-4. Recreate -- simple stop-and-replace
+The full DES Prompt Template (all 8 mandatory sections) is defined in `nWave/tasks/nw/execute.md`. Read that file and embed all 8 sections (DES_METADATA, AGENT_IDENTITY, TASK_CONTEXT, TDD_7_PHASES, QUALITY_GATES, OUTCOME_RECORDING, BOUNDARY_RULES, TIMEOUT_INSTRUCTION) in each Task prompt.
 
-### Decision 7: Continuous Learning (conditional)
-**Question**: Is there existing monitoring/alerting infrastructure in place?
-**Options**:
-1. Yes -- include continuous learning and experimentation capabilities
-2. No -- focus on foundational monitoring setup first
+```python
+Task(
+    subagent_type="{agent}",
+    max_turns=35,
+    prompt=f'''
+<!-- DES-VALIDATION : required -->
+<!-- DES-PROJECT-ID : {project_id} -->
+<!-- DES-STEP-ID : {step_id} -->
 
-If Yes to Decision 7:
-**Follow-up**: Which continuous learning capabilities to include?
-**Options**:
-1. A/B testing framework
-2. Feature flags (LaunchDarkly, Unleash, custom)
-3. Canary analysis (automated rollback on metrics)
-4. Progressive rollout (percentage-based deployment)
-5. All of the above
+TASK BOUNDARY: {task_description}
+Return control to orchestrator after completion.
 
-## Context Files Required
+Read the full DES Prompt Template from nWave/tasks/nw/execute.md and embed all 8 mandatory sections below.
+Fill placeholders with: step_id={step_id}, project_id={project_id}, agent={agent},
+task_context={instructions_extracted_from_command_file}
+''',
+    description="{phase description}"
+)
+```
 
-- docs/feature/{feature-name}/design/architecture-design.md - From DESIGN wave
-- docs/feature/{feature-name}/design/technology-stack.md - From DESIGN wave
-- docs/feature/{feature-name}/design/component-boundaries.md - From DESIGN wave
+## Roadmap Quality Gate (Automated, Zero Token Cost)
 
-## Previous Artifacts (Wave Handoff)
+After roadmap creation, before reviewer, run these checks in your own context:
+1. AC implementation coupling: flag acceptance criteria referencing private methods (`_method()`)
+2. Step decomposition ratio: flag if steps/files ratio exceeds 2.5
+3. Identical pattern detection: flag 3+ steps with identical AC structure (should be batched)
+4. Validation-only steps: flag steps with no files_to_modify
 
-- docs/feature/{feature-name}/design/* - Complete architecture (from DESIGN)
+If HIGH findings exist, return roadmap to architect for one revision pass.
 
-## Agent Invocation
+## Skip and Resume Logic
 
-@nw-devop + @nw-platform-architect
+- Check `.develop-progress.json` on start to resume from last failure
+- Skip artifact creation if file exists with `validation.status == "approved"`
+- Skip completed steps by checking execution-log.yaml for COMMIT/PASS
+- Max 2 retry attempts per review rejection, then stop for manual intervention
 
-Execute platform readiness and infrastructure design for {feature-name}.
+## Input
 
-Context files: see Context Files Required above.
+- `feature-description` (string, required): natural language, minimum 10 characters
+- Derive project-id: strip common prefixes (implement, add, create), remove stop words, kebab-case, max 5 words
 
-**Configuration:**
+## Output Artifacts
 
-- deployment_target: {from Decision 1}
-- container_orchestration: {from Decision 2}
-- cicd_platform: {from Decision 3}
-- existing_infrastructure: {from Decision 4}
-- observability_and_logging: {from Decision 5}
-- deployment_strategy: {from Decision 6}
-- continuous_learning: {from Decision 7}
+```
+docs/feature/{project-id}/
+  roadmap.yaml              # Phase 1
+  execution-log.yaml        # Phase 2 (append-only state)
+  .develop-progress.json    # Resume tracking
+docs/evolution/
+  {project-id}-evolution.md # Phase 3
+```
+
+## Quality Gates
+
+- Roadmap review (1 review, max 2 attempts)
+- Per-step TDD cycle with REVIEW + REFACTOR phases (2N reviews)
+- Mutation testing >= 80% kill rate
+- All tests passing after each phase
+- Total: 1 + 2N mandatory reviews
 
 ## Success Criteria
 
-- [ ] CI/CD pipeline design finalized and documented
-- [ ] Logging infrastructure design complete (structured logging, aggregation)
-- [ ] Monitoring and alerting design complete (metrics, dashboards, SLOs/SLIs)
-- [ ] Observability design complete (distributed tracing, health checks)
-- [ ] Infrastructure integration assessed (if existing infra)
-- [ ] Continuous learning capabilities designed (if applicable)
-- [ ] Handoff accepted by acceptance-designer (DISTILL wave)
-
-## Next Wave
-
-**Handoff To**: nw-acceptance-designer (DISTILL wave)
-**Deliverables**: Infrastructure design documents informing test environment setup
+- [ ] Roadmap created and approved
+- [ ] All steps executed with COMMIT/PASS
+- [ ] L1-L4 refactoring complete on code and tests, reviewer approved
+- [ ] Mutation testing gate passed (>= 80%)
+- [ ] Evolution document archived
+- [ ] Retrospective completed (or clean execution noted)
+- [ ] Completion report displayed
 
 ## Examples
 
-### Example 1: Cloud-native greenfield
-```
-/nw:deliver payment-gateway
-```
-User selects: cloud-native, Kubernetes, GitHub Actions, no existing infra, OpenTelemetry, blue-green. Dakota designs full infrastructure from scratch.
+### Example 1: Fresh Feature
 
-### Example 2: Brownfield with existing CI/CD
+```bash
+/nw:deliver "Implement user authentication with JWT tokens"
 ```
-/nw:deliver auth-upgrade
-```
-User selects: hybrid, Docker Compose, GitLab CI (existing), existing CI/CD only, Datadog, rolling. Dakota extends existing pipelines rather than replacing them.
 
-## Expected Outputs
+Creates roadmap, reviews it, executes all steps with TDD, runs mutation testing, finalizes to docs/evolution/, reports completion.
 
+### Example 2: Resume After Failure
+
+```bash
+/nw:deliver "Implement user authentication with JWT tokens"
 ```
-docs/feature/{feature-name}/deliver/
-  platform-architecture.md
-  ci-cd-pipeline.md
-  observability-design.md
-  monitoring-alerting.md
-  infrastructure-integration.md    (if existing infra)
-  continuous-learning.md           (if applicable)
+
+Same command. Loads .develop-progress.json, skips completed phases, resumes from failure point.
+
+### Example 3: Single Step Alternative
+
+For manual granular control, use individual commands instead:
+```bash
+/nw:roadmap @nw-solution-architect "goal description"
+/nw:execute @nw-software-crafter "project-id" "01-01"
+/nw:finalize @nw-platform-architect "project-id"
 ```
+
+## Completion
+
+DELIVER is the final wave. After completion, return to DISCOVER for the next feature iteration or mark the project as complete.

@@ -39,7 +39,7 @@ agent-activation:
 #
 # # DW-{WAVE}: {Task Title}
 #
-# **Wave**: {DISCUSS|DESIGN|DISTILL|DEVELOP|DEMO|CROSS_WAVE}
+# **Wave**: {DISCUSS|DESIGN|DEVOP|DISTILL|DELIVER|CROSS_WAVE}
 # **Agent**: {PersonaName} ({agent-id})
 # **Command**: `*{command-name}`
 #

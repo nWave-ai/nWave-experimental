@@ -2,163 +2,166 @@
 
 ## Overview
 
-Validation checklist for DELIVER wave completion focusing on production readiness validation, stakeholder demonstration coordination, and business value measurement with progressive complexity levels.
+Validation checklist for DELIVER wave completion focusing on Outside-In TDD with double-loop architecture, systematic refactoring, and production service integration with progressive complexity levels.
 
 ---
 
 ## 🟢 **BASIC Level - Essential DELIVER Wave Requirements**
 
-### Production Deployment Foundation
+### Outside-In TDD Foundation
 
-- [ ] **Production environment operational**
-  - Production deployment environment configured and accessible
-  - Application successfully deployed to production environment
-  - Basic monitoring and health checks operational
+- [ ] **Double-loop TDD architecture implemented**
+  - Outer loop (E2E/Acceptance tests) driving development
+  - Inner loop (Unit tests) implementing business logic
+  - Clear progression from failing acceptance test to passing implementation
 
-- [ ] **Core functionality validated**
-  - All enabled acceptance tests passing in production environment
-  - Key user workflows functional and accessible
-  - Critical business operations working as expected
+- [ ] **One E2E test at a time strategy followed**
+  - Single E2E test enabled during development cycle
+  - Other E2E tests marked with [Ignore] attribute
+  - Complete implementation before enabling next E2E test
 
-### Stakeholder Demonstration
+### Production Service Integration
 
-- [ ] **Stakeholder demonstration sessions conducted**
-  - Demo sessions scheduled and executed with key stakeholders
-  - Working software demonstrated to customer representatives
-  - Business value and feature completion showcased
+- [ ] **Step methods call production services**
+  - All step methods use \_serviceProvider.GetRequiredService<T>() pattern
+  - No business logic in step methods - delegation to production services only
+  - Real system integration throughout acceptance test execution
 
-- [ ] **Customer feedback collection**
-  - Feedback collection mechanism operational
-  - Customer input documented and categorized
-  - Initial stakeholder satisfaction assessment completed
+- [ ] **NotImplementedException scaffolding applied**
+  - Unimplemented collaborators throw NotImplementedException with clear descriptions
+  - Scaffolding maintains proper implementation pressure
+  - "Write the Code You Wish You Had" pattern applied
 
-### Basic Business Value Validation
+### Test-Driven Implementation
 
-- [ ] **Feature completion validation**
-  - Delivered features match stakeholder expectations
-  - Business requirements satisfied by working implementation
-  - User acceptance criteria met and validated
+- [ ] **Red-Green-Refactor cycles followed**
+  - Failing tests written before implementation
+  - Minimal implementation to make tests pass
+  - Continuous refactoring in green state
 
-- [ ] **Operational knowledge transfer initiated**
-  - Basic operational procedures documented
-  - Support team briefed on new system capabilities
-  - Essential troubleshooting information provided
+- [ ] **Business-focused naming throughout**
+  - Test names reveal business intent, not implementation details
+  - Production code uses ubiquitous domain language
+  - Method and class names express business concepts
 
 ---
 
 ## 🟡 **INTERMEDIATE Level - Enhanced DELIVER Wave Quality**
 
-### Advanced Production Readiness
+### Advanced Outside-In TDD
 
-- [ ] **Comprehensive monitoring and alerting**
-  - Application performance monitoring operational
-  - Business metric tracking and alerting configured
-  - Error tracking and notification systems active
+- [ ] **Natural test progression achieved**
+  - Acceptance tests pass automatically as implementation completes
+  - No modification of acceptance tests to make them pass
+  - Test scenarios drive complete feature implementation
 
-- [ ] **Production data management**
-  - Data backup and recovery procedures operational
-  - Data migration (if applicable) completed successfully
-  - Data integrity validation completed
+- [ ] **Production service architecture implemented**
+  - Hexagonal architecture with clear ports and adapters
+  - Business logic separated from infrastructure concerns
+  - Dependency injection properly configured for production services
 
-### Sophisticated Stakeholder Engagement
+### Systematic Refactoring Integration
 
-- [ ] **Multi-audience demonstration strategy**
-  - Executive-level business value demonstrations
-  - Technical stakeholder architecture and implementation showcases
-  - End-user workflow and usability demonstrations
+- [ ] **Level 1-2 refactoring applied continuously**
+  - Comments cleaned up - only why/what, no how comments
+  - Dead code removed and magic strings/numbers extracted
+  - Long methods extracted with business-meaningful names
+  - Code duplication eliminated through abstraction
 
-- [ ] **Feedback integration process**
-  - Systematic feedback collection and analysis
-  - Prioritization process for feedback integration
-  - Next iteration planning based on stakeholder input
+- [ ] **Code smell detection and resolution**
+  - Systematic identification of code smells
+  - Appropriate refactoring techniques applied
+  - Progressive improvement through refactoring hierarchy
 
-### Business Value Measurement
+### Quality Validation
 
-- [ ] **KPI and metrics validation**
-  - Business success metrics defined and operational
-  - Performance against success criteria measured
-  - ROI calculation and business impact assessment
+- [ ] **Comprehensive test coverage**
+  - Unit tests for all business logic with ≥80% coverage
+  - Integration tests for service interactions
+  - Acceptance tests for complete user workflows
 
-- [ ] **User adoption tracking**
-  - User engagement and adoption metrics collected
-  - Training and onboarding effectiveness measured
-  - User satisfaction surveys conducted and analyzed
+- [ ] **Production service integration validated**
+  - Step methods successfully invoke production services
+  - Real database operations function correctly
+  - External service integration patterns operational
 
-### Operational Excellence
+### Business Language Preservation
 
-- [ ] **Comprehensive documentation**
-  - Operational runbooks and procedures complete
-  - Architecture documentation current and accurate
-  - User guides and training materials available
+- [ ] **Domain-driven naming applied**
+  - Classes, methods, and variables use business terminology
+  - Technical implementation details not exposed in business layer names
+  - Ubiquitous language consistently applied throughout codebase
 
-- [ ] **Support and maintenance planning**
-  - Support procedures and escalation paths defined
-  - Maintenance schedules and procedures established
-  - Knowledge transfer to operations team completed
+- [ ] **Compose Method pattern applied**
+  - Methods structured using intention-revealing names
+  - Single level of abstraction per method
+  - Implementation details hidden through method extraction
 
 ---
 
 ## 🔴 **ADVANCED Level - Comprehensive DELIVER Wave Excellence**
 
-### Enterprise Production Standards
+### Advanced TDD Patterns
 
-- [ ] **Comprehensive observability**
-  - Distributed tracing for complex workflows operational
-  - Advanced analytics and business intelligence integration
-  - Predictive monitoring and capacity planning active
+- [ ] **Mutation testing validation**
+  - Mutation testing achieving ≥75-80% kill rate
+  - Test effectiveness validated through mutation analysis
+  - Property-based tests added for edge cases discovered
 
-- [ ] **Advanced security validation**
-  - Security penetration testing completed
-  - Compliance audits passed (SOX, GDPR, HIPAA as applicable)
-  - Security incident response procedures tested and operational
+- [ ] **Black box testing approach**
+  - Tests focus on behavior, not implementation structure
+  - Internal application layers treated as black boxes
+  - Refactoring possible without breaking tests
 
-### Strategic Stakeholder Alignment
+### Sophisticated Refactoring
 
-- [ ] **Business strategy validation**
-  - Strategic business objectives achievement validated
-  - Market impact and competitive advantage demonstrated
-  - Long-term business value projection and planning
+- [ ] **Level 3-4 refactoring applied at boundaries**
+  - Class responsibilities reorganized (Single Responsibility Principle)
+  - Feature envy and inappropriate intimacy resolved
+  - Parameter objects and value objects introduced
+  - Data clumps eliminated through abstraction
 
-- [ ] **Executive engagement and commitment**
-  - Executive stakeholder satisfaction and commitment secured
-  - Resource allocation for ongoing development confirmed
-  - Strategic roadmap alignment and planning completed
+- [ ] **Level 5-6 refactoring for patterns and SOLID**
+  - Strategy patterns replacing switch statements
+  - State patterns for complex state-dependent behavior
+  - SOLID principles violations resolved
+  - Advanced architectural patterns applied appropriately
 
-### Advanced Business Intelligence
+### Advanced Production Integration
 
-- [ ] **Predictive analytics integration**
-  - Business intelligence and analytics platforms integrated
-  - Predictive modeling for business outcomes operational
-  - Data-driven decision making capabilities demonstrated
+- [ ] **Complex production service orchestration**
+  - Multi-service transactions properly handled
+  - Error handling and compensation patterns implemented
+  - Service reliability patterns (circuit breaker, retry) integrated
 
-- [ ] **Customer success measurement**
-  - Customer lifetime value impact measured
-  - Customer retention and satisfaction improvement validated
-  - Net Promoter Score (NPS) and customer feedback analysis
+- [ ] **Performance optimization with measurement**
+  - Performance bottlenecks identified through measurement
+  - Optimization applied with before/after metrics
+  - Performance regression prevention through monitoring
 
-### Enterprise Integration
+### Enterprise Quality Standards
 
-- [ ] **Enterprise architecture compliance**
-  - Enterprise standards and governance compliance validated
-  - Integration with enterprise systems operational
-  - Enterprise security and compliance requirements met
+- [ ] **Security implementation validation**
+  - Authentication and authorization properly implemented
+  - Data protection and privacy measures operational
+  - Security vulnerabilities addressed through implementation
 
-- [ ] **Scalability and performance validation**
-  - Load testing and performance validation under production conditions
-  - Scalability testing and capacity planning completed
-  - Performance optimization and monitoring operational
+- [ ] **Observability and monitoring integration**
+  - Logging, metrics, and tracing properly implemented
+  - Production monitoring and alerting operational
+  - Debugging and troubleshooting capabilities integrated
 
-### Advanced Operational Excellence
+### Advanced Architecture Implementation
 
-- [ ] **Chaos engineering and resilience testing**
-  - System resilience testing and failure mode analysis
-  - Disaster recovery testing and business continuity validation
-  - Chaos engineering practices integrated for ongoing resilience
+- [ ] **Hexagonal architecture compliance**
+  - Clear separation between business logic and infrastructure
+  - Ports and adapters properly implemented
+  - Business logic completely isolated from external concerns
 
-- [ ] **Advanced automation and DevOps**
-  - CI/CD pipeline optimization and automation enhancement
-  - Infrastructure as code and automated provisioning
-  - Advanced deployment strategies (blue-green, canary) operational
+- [ ] **Domain-driven design implementation**
+  - Bounded contexts properly implemented
+  - Domain models rich with business behavior
+  - Application services coordinating domain operations
 
 ---
 
@@ -167,33 +170,33 @@ Validation checklist for DELIVER wave completion focusing on production readines
 ### Mandatory Completion Requirements
 
 - [ ] **All BASIC level requirements completed**
-- [ ] **At least 80% of INTERMEDIATE level requirements completed**
-- [ ] **Stakeholder sign-off on production system**
-- [ ] **Business value delivery validated and documented**
+- [ ] **At least 85% of INTERMEDIATE level requirements completed**
+- [ ] **All enabled acceptance tests passing**
+- [ ] **All unit and integration tests passing**
 
-### Production System Validation
+### Production Service Integration Validation
 
-- [ ] **Production environment fully operational**
-  - All system components deployed and functional
-  - Monitoring, alerting, and observability operational
-  - Security and compliance requirements met
+- [ ] **Step method production service compliance**
+  - 100% of step methods call production services via dependency injection
+  - No business logic in test infrastructure
+  - Real system integration operational and validated
 
-- [ ] **User acceptance and adoption**
-  - Stakeholder acceptance of delivered system
-  - User training and onboarding completed
-  - User adoption metrics showing positive engagement
+- [ ] **Service architecture implementation complete**
+  - Production services properly implemented and registered
+  - Hexagonal architecture boundaries maintained
+  - Service interfaces support both production and test usage
 
-### nWave Methodology Completion
+### Quality Gates Validation
 
-- [ ] **Complete methodology cycle validated**
-  - DISCUSS → DESIGN → DISTILL → DEVELOP → DEMO cycle completed
-  - ATDD methodology successfully applied throughout
-  - Visual architecture lifecycle maintained and current
+- [ ] **Test effectiveness validated**
+  - Mutation testing targets achieved (≥75% kill rate)
+  - Comprehensive test coverage (≥80% unit, ≥70% integration)
+  - Business scenarios fully covered by acceptance tests
 
-- [ ] **Lessons learned and continuous improvement**
-  - Retrospective analysis of methodology application
-  - Lessons learned documented for future projects
-  - Process improvements identified and planned
+- [ ] **Code quality standards met**
+  - Systematic refactoring applied through appropriate levels
+  - Business naming consistently applied throughout
+  - Code smells resolved and technical debt minimized
 
 ---
 
@@ -201,141 +204,128 @@ Validation checklist for DELIVER wave completion focusing on production readines
 
 ### Quantitative Measures
 
-- **Production Uptime**: ≥99.9% system availability
-- **Stakeholder Satisfaction**: ≥90% satisfaction score from key stakeholders
-- **User Adoption**: ≥80% of target users actively using system
-- **Business Value**: Measurable achievement of defined business success criteria
+- **Test Coverage**: ≥80% unit test coverage, ≥70% integration test coverage
+- **Acceptance Test Success**: 100% enabled acceptance tests passing
+- **Production Service Integration**: 100% step methods call production services
+- **Mutation Testing**: ≥75% mutation kill rate achieved
 
 ### Qualitative Measures
 
-- **Stakeholder Confidence**: High confidence in system value and ongoing success
-- **Operational Readiness**: Operations team confident in system support capabilities
-- **Business Impact**: Clear evidence of positive business impact and value delivery
-- **Methodology Success**: Team and stakeholders positive about nWave methodology
+- **Business Language Preservation**: Consistent use of domain terminology
+- **Code Quality**: Clean, maintainable code following SOLID principles
+- **Architecture Compliance**: Hexagonal architecture properly implemented
+- **Production Readiness**: System ready for production deployment
 
 ---
 
 ## 🚨 **Red Flags - Immediate Attention Required**
 
-- **Production Instability**: System reliability or performance issues in production
-- **Stakeholder Dissatisfaction**: Key stakeholders unsatisfied with delivered system
-- **User Adoption Issues**: Low user engagement or adoption rates
-- **Business Value Gaps**: Failure to achieve defined business success criteria
-- **Operational Gaps**: Operations team unable to support system effectively
-- **Security Concerns**: Security vulnerabilities or compliance failures
-- **Integration Problems**: Issues with enterprise system integration
-- **Performance Degradation**: System performance below acceptable standards
+- **Test Infrastructure Business Logic**: Business logic in step methods or test infrastructure
+- **Failing Acceptance Tests**: Enabled acceptance tests not passing
+- **Production Service Bypass**: Step methods not calling real production services
+- **Technical Naming**: Business logic using technical rather than domain names
+- **Test Modification Anti-Pattern**: Modifying acceptance tests to make them pass
+- **Multiple Failing E2E Tests**: More than one E2E test failing simultaneously
+- **Excessive Mocking**: Over-reliance on mocks in acceptance test step methods
+- **Refactoring Avoidance**: Code quality degrading due to lack of refactoring
 
 ---
 
-## 🎭 **Stakeholder Demonstration Quality Gates**
+## 🧪 **Outside-In TDD Quality Gates**
 
-### Demonstration Planning and Execution
+### Double-Loop Architecture Validation
 
-- [ ] **Audience-specific demonstration strategy**
-  - Executive demonstrations focus on business value and strategic impact
-  - Technical demonstrations showcase architecture and implementation quality
-  - End-user demonstrations emphasize usability and workflow efficiency
+- [ ] **Outer loop (ATDD) compliance**
+  - Acceptance tests drive feature implementation
+  - Tests written from customer perspective using business language
+  - E2E tests validate complete user workflows
 
-- [ ] **Demonstration content and structure**
-  - Clear narrative connecting business requirements to delivered solution
-  - Live system demonstration with real data and workflows
-  - Q&A session addressing stakeholder questions and concerns
+- [ ] **Inner loop (UTDD) compliance**
+  - Unit tests drive technical implementation
+  - Red-Green-Refactor cycles consistently followed
+  - Business naming preserved in technical implementation
 
-### Stakeholder Engagement and Feedback
+### Production Service Integration Compliance
 
-- [ ] **Active stakeholder participation**
-  - Key stakeholders present and engaged during demonstrations
-  - Customer representatives validating business value delivery
-  - Technical stakeholders confirming implementation quality
+- [ ] **Step method pattern validation**
+  - Step methods contain \_serviceProvider.GetRequiredService<T>() calls
+  - Step methods delegate all business operations to production services
+  - No business logic in test infrastructure classes
 
-- [ ] **Feedback collection and integration**
-  - Systematic feedback collection during and after demonstrations
-  - Feedback categorization and prioritization for future iterations
-  - Stakeholder sign-off on demonstration outcomes
+- [ ] **Real system integration validation**
+  - Acceptance tests exercise actual production code paths
+  - Database operations use real database interactions
+  - Service integration tested with actual implementations
 
-### Business Value Communication
+### Natural Test Progression Validation
 
-- [ ] **Clear business value articulation**
-  - Delivered features directly tied to business objectives
-  - ROI and business impact clearly communicated and validated
-  - Success stories and positive outcomes highlighted
+- [ ] **Test modification prevention**
+  - Acceptance tests never modified to make them pass
+  - Tests pass naturally as implementation becomes complete
+  - Test scenarios accurately represent customer requirements
 
-- [ ] **Future planning and roadmap alignment**
-  - Next iteration planning based on stakeholder feedback
-  - Roadmap alignment with ongoing business needs
-  - Resource allocation and commitment for continued development
+- [ ] **One-E2E-at-a-time compliance**
+  - Only one E2E test active during development
+  - Complete implementation before enabling next test
+  - Clean commit history with working implementations
 
 ---
 
-## 🏭 **Production Readiness Quality Gates**
+## 🔄 **Systematic Refactoring Quality Gates**
 
-### Deployment and Operations
+### Progressive Level Application
 
-- [ ] **Production deployment success**
-  - Successful deployment to production environment
-  - Zero-downtime deployment process validated
-  - Rollback procedures tested and operational
+- [ ] **Level 1-2 (Foundation) - Applied Continuously**
+  - Dead code removal and comment cleanup
+  - Magic string/number extraction and scope optimization
+  - Method extraction and duplication elimination
 
-- [ ] **Monitoring and observability**
-  - Comprehensive application and infrastructure monitoring
-  - Business metric tracking and alerting
-  - Log aggregation and analysis capabilities
+- [ ] **Level 3-4 (Organization) - Applied at Sprint Boundaries**
+  - Class responsibility organization and coupling reduction
+  - Parameter objects and value objects introduction
+  - Abstraction improvements and middle man removal
 
-### Performance and Scalability
+- [ ] **Level 5-6 (Advanced) - Applied at Release Preparation**
+  - Design pattern application (Strategy, State, Command)
+  - SOLID principle compliance and architectural improvements
+  - Advanced refactoring for maintainability and extensibility
 
-- [ ] **Production performance validation**
-  - Performance testing in production environment
-  - Capacity planning and scalability assessment
-  - Performance optimization and monitoring
+### Code Quality Validation
 
-- [ ] **Reliability and resilience**
-  - System resilience testing and validation
-  - Disaster recovery procedures tested
-  - Business continuity planning operational
+- [ ] **Code smell resolution**
+  - Systematic detection and resolution of all 22 code smell types
+  - Appropriate refactoring techniques applied
+  - Quality metrics showing measurable improvement
 
-### Security and Compliance
-
-- [ ] **Security validation**
-  - Security testing and vulnerability assessment
-  - Compliance requirements validation
-  - Security incident response procedures operational
-
-- [ ] **Data protection and privacy**
-  - Data backup and recovery procedures operational
-  - Data privacy and protection measures implemented
-  - Compliance with data protection regulations
+- [ ] **Test-driven refactoring safety**
+  - All refactoring performed with green tests
+  - Test suite provides safety net for refactoring
+  - Refactoring improves code without breaking functionality
 
 ---
 
 ## 📋 **Checklist Usage Guidelines**
 
-### For Feature Completion Coordinators (Dakota)
+### For Test-First Developers (Devon)
 
-- Use this checklist to ensure comprehensive production readiness
-- Coordinate stakeholder demonstrations and feedback collection
-- Validate business value delivery and measure success metrics
+- Use this checklist to ensure comprehensive Outside-In TDD implementation
+- Focus on production service integration and business naming throughout
+- Apply systematic refactoring continuously during development
 
-### For Solution Architects (Morgan)
+### For Systematic Refactorers (Raphael)
 
-- Support production readiness validation from architecture perspective
-- Ensure enterprise integration and compliance requirements are met
-- Validate system performance and scalability in production environment
+- Collaborate with test-first developer on progressive refactoring
+- Apply appropriate refactoring levels based on development phase
+- Ensure code quality improvement through systematic approach
 
-### For Operations Teams
+### For Teams
 
-- Use checklist to validate operational readiness and support capabilities
-- Ensure monitoring, alerting, and troubleshooting procedures are operational
-- Validate knowledge transfer and documentation completeness
+- Review checklist during DELIVER wave execution and retrospectives
+- Use as quality gate for DELIVER wave transition
+- Adapt ADVANCED level items based on system complexity and requirements
 
-### For Business Stakeholders
+### For Quality Assurance
 
-- Use BASIC level items to understand expected demonstration outcomes
-- Participate actively in demonstration sessions and feedback collection
-- Validate business value delivery and confirm satisfaction with results
-
-### For Project Teams
-
-- Review checklist during DELIVER wave execution and final retrospectives
-- Use as validation for nWave methodology completion
-- Document lessons learned and process improvements for future projects
+- Validate Outside-In TDD methodology compliance
+- Ensure production service integration prevents test infrastructure deception
+- Verify systematic refactoring application and code quality improvement

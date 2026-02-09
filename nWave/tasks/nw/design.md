@@ -80,11 +80,11 @@ Context files: see Context Files Required above.
 - [ ] Technology stack selected with clear rationale
 - [ ] Component boundaries defined (hexagonal architecture)
 - [ ] C4 diagrams complete and accessible
-- [ ] Handoff accepted by nw-devop (DELIVER wave)
+- [ ] Handoff accepted by nw-platform-architect (DEVOP wave)
 
 ## Next Wave
 
-**Handoff To**: nw-devop + nw-platform-architect (DELIVER wave)
+**Handoff To**: nw-platform-architect (DEVOP wave)
 **Deliverables**: See Morgan's handoff package specification in agent file
 
 ## Expected Outputs

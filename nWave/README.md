@@ -4,7 +4,7 @@
 
 ## Overview
 
-The nWave framework implements the comprehensive DISCOVER→DISCUSS→DESIGN→DISTILL→DEVELOP→DELIVER methodology. This framework provides a streamlined, integrated workflow with complete knowledge preservation for critical technical execution agents and comprehensive 5-layer testing framework.
+The nWave framework implements the comprehensive DISCOVER→DISCUSS→DESIGN→DEVOP→DISTILL→DELIVER methodology. This framework provides a streamlined, integrated workflow with complete knowledge preservation for critical technical execution agents and comprehensive 5-layer testing framework.
 
 ## nWave Methodology
 
@@ -13,9 +13,9 @@ The nWave methodology implements a systematic approach to software development t
 1. **DISCOVER**: Evidence-based product discovery and market validation
 2. **DISCUSS**: Requirements gathering and business analysis
 3. **DESIGN**: Architecture design with visual representation
-4. **DISTILL**: Acceptance test creation and business validation scenarios
-5. **DEVELOP**: Outside-In TDD with mandatory 11-phase discipline (PREPARE→RED→GREEN→REVIEW→REFACTOR→VALIDATE→COMMIT)
-6. **DELIVER**: Production readiness validation and stakeholder demonstration
+4. **DEVOP**: Platform readiness, CI/CD, infrastructure, and deployment design
+5. **DISTILL**: Acceptance test creation and business validation scenarios
+6. **DELIVER**: Outside-In TDD implementation with production readiness validation
 
 ## Core and Specialist Agents (10 Total)
 
@@ -25,7 +25,7 @@ The nWave methodology implements a systematic approach to software development t
 2. **business-analyst** → DISCUSS wave (requirements gathering)
 3. **solution-architect** → DESIGN wave (architecture & technology)
 4. **acceptance-designer** → DISTILL wave (test scenarios)
-5. **test-first-developer** → DEVELOP wave (outside-in TDD)
+5. **test-first-developer** → DELIVER wave (outside-in TDD)
 6. **feature-completion-coordinator** → DELIVER wave (production readiness)
 
 ### 🔧 Specialist Agents (Standalone & Collaborative)
@@ -43,9 +43,9 @@ The nWave methodology implements a systematic approach to software development t
 - `/nw:discover [product-concept]` - Wave 1: Evidence-based product discovery
 - `/nw:discuss [requirements]` - Wave 2: Business analysis
 - `/nw:design [system-context]` - Wave 3: Architecture design
-- `/nw:distill [acceptance-criteria]` - Wave 4: Test scenarios
-- `/nw:develop [story-id]` - Wave 5: Outside-In TDD
-- `/nw:deliver [feature-name]` - Wave 6: Production readiness
+- `/nw:devop [deployment-target]` - Wave 4: Platform readiness and infrastructure
+- `/nw:distill [acceptance-criteria]` - Wave 5: Test scenarios
+- `/nw:deliver [feature-description]` - Wave 6: Outside-In TDD implementation
 
 ### Specialist Commands
 
@@ -106,16 +106,17 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 
 ### Execute Full nWave Cycle
 
-**Option 1: Automated DEVELOP Wave (Recommended)**
+**Option 1: Automated DELIVER Wave (Recommended)**
 ```bash
 /nw:discover "User authentication market research"
 /nw:discuss "User registration and login requirements"
 /nw:design "Microservices with JWT authentication"
 /nw:distill "User can register and login securely"
-/nw:develop "Implement user authentication with JWT"
+/nw:devop "user-authentication"
+/nw:distill "User can register and login securely"
+/nw:deliver "Implement user authentication with JWT"
   # Automatically: baseline → roadmap → split → execute all steps → finalize
   # Quality gates: 3 + 3N reviews (e.g., 10 steps = 33 reviews)
-/nw:deliver "user-authentication"
 ```
 
 **Option 2: Manual Granular Control (Advanced)**
@@ -125,17 +126,17 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 /nw:discuss "User registration requirements"
 /nw:design "JWT authentication architecture"
 
-# DEVELOP wave - manual orchestration
+# DELIVER wave - manual orchestration
 /nw:baseline "Implement user authentication"
 /nw:roadmap @solution-architect "Implement user authentication"
-/nw:split @devop "user-authentication"
+/nw:split @platform-architect "user-authentication"
 
 # Execute individual steps with 11-phase TDD
 /nw:execute @software-crafter "docs/feature/user-authentication/steps/01-01.json"
 /nw:execute @software-crafter "docs/feature/user-authentication/steps/01-02.json"
 # ... (repeat for all steps)
 
-/nw:finalize @devop "user-authentication"
+/nw:finalize @platform-architect "user-authentication"
 
 # DELIVER wave
 /nw:deliver "user-authentication"

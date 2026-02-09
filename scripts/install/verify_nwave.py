@@ -6,7 +6,7 @@ without running the full installer. It checks:
 - Agent file counts in ~/.claude/agents/nw/
 - Command file counts in ~/.claude/commands/nw/
 - Manifest existence at ~/.claude/nwave-manifest.txt
-- Essential command files (review.md, develop.md, etc.)
+- Essential command files (review.md, devop.md, etc.)
   Note: Git operations handled by git.md command
 
 The script supports multiple output modes:

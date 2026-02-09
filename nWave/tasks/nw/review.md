@@ -27,7 +27,7 @@ The reviewer agent name is derived by appending `-reviewer` to the base agent:
 |---|---|
 | `@nw-software-crafter` | `nw-software-crafter-reviewer` |
 | `@nw-solution-architect` | `nw-solution-architect-reviewer` |
-| `@nw-devop` | `nw-devop-reviewer` |
+| `@nw-platform-architect` | `nw-platform-architect-reviewer` |
 
 All `-reviewer` agents use Haiku model for cost efficiency.
 
@@ -74,9 +74,9 @@ Parses to: invoke `nw-solution-architect-reviewer` with roadmap review.
 
 ### Example 3: Implementation review
 ```
-/nw:review @nw-devop implementation "docs/feature/auth-upgrade/execution-log.yaml" step_id=01-01
+/nw:review @nw-platform-architect implementation "docs/feature/auth-upgrade/execution-log.yaml" step_id=01-01
 ```
-Parses to: invoke `nw-devop-reviewer` with implementation review of step 01-01.
+Parses to: invoke `nw-platform-architect-reviewer` with implementation review of step 01-01.
 
 ## Error Messages
 

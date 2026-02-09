@@ -12,7 +12,7 @@ argument-hint: '[story-id] - Optional: --test-framework=[cucumber|specflow|pytes
 
 ## Overview
 
-Create E2E acceptance tests from requirements, architecture, and infrastructure design using Given-When-Then format. Produces executable specifications that bridge business requirements and technical implementation. Infrastructure design from DELIVER informs test environment setup.
+Create E2E acceptance tests from requirements, architecture, and infrastructure design using Given-When-Then format. Produces executable specifications that bridge business requirements and technical implementation. Infrastructure design from DEVOP informs test environment setup.
 
 ## Interactive Decision Points
 
@@ -53,7 +53,7 @@ Before proceeding, the orchestrator asks the user:
 - docs/feature/{feature-name}/design/architecture-design.md
 - docs/feature/{feature-name}/design/component-boundaries.md
 - docs/feature/{feature-name}/design/technology-stack.md
-- docs/feature/{feature-name}/deliver/* (infrastructure design from DELIVER wave)
+- docs/feature/{feature-name}/deliver/* (infrastructure design from DEVOP wave)
 
 ## Agent Invocation
 
@@ -80,7 +80,7 @@ Context files: see Context Files Required above.
 - [ ] Tests exercise driving ports, not internal components (hexagonal boundary)
 - [ ] Walking skeleton created first (features only; optional for bugs)
 - [ ] Infrastructure test scenarios included (if Decision 4 = Yes)
-- [ ] Handoff package ready for software-crafter (DEVELOP wave)
+- [ ] Handoff package ready for software-crafter (DELIVER wave)
 
 ## Examples
 
@@ -92,7 +92,7 @@ Quinn creates Given-When-Then acceptance tests from requirements and architectur
 
 ## Next Wave
 
-**Handoff To**: nw-software-crafter (DEVELOP wave)
+**Handoff To**: nw-software-crafter (DELIVER wave)
 **Deliverables**: Feature files, step definitions, test-scenarios.md, walking-skeleton.md
 
 ## Expected Outputs

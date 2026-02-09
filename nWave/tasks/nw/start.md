@@ -5,7 +5,7 @@
 
 ## Overview
 
-Initialize nWave methodology with project brief creation, stakeholder alignment, and workspace preparation. Establishes project foundation before entering the wave sequence: DISCOVER > DISCUSS > DESIGN > DELIVER > DISTILL > DEVELOP.
+Initialize nWave methodology with project brief creation, stakeholder alignment, and workspace preparation. Establishes project foundation before entering the wave sequence: DISCOVER > DISCUSS > DESIGN > DEVOP > DISTILL > DELIVER.
 
 ## Agent Invocation
 

@@ -40,14 +40,14 @@ methodology_overview:
       duration: "15% of total timeline"
       focus: "Acceptance test creation with production service patterns"
       deliverable: "Executable acceptance tests with real system integration"
-    - phase: "DEVELOP"
+    - phase: "DEVOP"
+      duration: "5% of total timeline"
+      focus: "Platform readiness, CI/CD, infrastructure, and deployment design"
+      deliverable: "Infrastructure design and deployment strategy"
+    - phase: "DELIVER"
       duration: "30% of total timeline"
       focus: "Outside-In TDD implementation with systematic refactoring"
       deliverable: "Production-ready implementation with quality validation"
-    - phase: "DELIVER"
-      duration: "5% of total timeline"
-      focus: "Stakeholder validation and production readiness"
-      deliverable: "Deployed feature with business value measurement"
 
 team_composition:
   core_team:
@@ -56,10 +56,10 @@ team_composition:
       engagement: "All phases"
     - role: "Solution Architect"
       responsibility: "Architecture design and technical guidance"
-      engagement: "DESIGN, DEVELOP phases"
+      engagement: "DESIGN, DELIVER phases"
     - role: "Test-First Developer"
       responsibility: "Outside-In TDD implementation"
-      engagement: "DISTILL, DEVELOP phases"
+      engagement: "DISTILL, DELIVER phases"
     - role: "Quality Advocate"
       responsibility: "Quality gates and validation"
       engagement: "All phases"
@@ -72,10 +72,10 @@ team_composition:
       activation: "DESIGN phase for stakeholder communication"
       purpose: "Maintain architecture-implementation synchronization"
     - specialist: "Production Service Integrator"
-      activation: "DISTILL, DEVELOP phases"
+      activation: "DISTILL, DELIVER phases"
       purpose: "Ensure step methods call production services"
     - specialist: "Systematic Refactorer"
-      activation: "DEVELOP phase for code quality"
+      activation: "DELIVER phase for code quality"
       purpose: "Progressive six-level refactoring implementation"
 
 interactive_sections:
@@ -389,7 +389,7 @@ success_patterns:
 
     - pattern: "Systematic refactoring integration"
       benefit: "Continuous code quality improvement"
-      implementation: "Six-level refactoring during DEVELOP wave"
+      implementation: "Six-level refactoring during DELIVER wave"
 
 risk_mitigation:
   common_risks:

@@ -1,17 +1,17 @@
 ---
 template_type: "simple-develop-outside-in-tdd"
 methodology: "nWave ATDD"
-wave: "DEVELOP"
+wave: "DELIVER"
 interactivity_level: "simple"
-description: "Simple implementation-focused template for DEVELOP wave with Outside-In TDD and systematic refactoring patterns"
+description: "Simple implementation-focused template for DELIVER wave with Outside-In TDD and systematic refactoring patterns"
 version: "1.0.0"
 
 # ==================================================================================
-# DEVELOP WAVE: Outside-In TDD Implementation with Systematic Refactoring
+# DELIVER WAVE: Outside-In TDD Implementation with Systematic Refactoring
 # ==================================================================================
 
 metadata:
-  template_name: "DEVELOP Wave Outside-In TDD Template"
+  template_name: "DELIVER Wave Outside-In TDD Template"
   methodology_focus: "Double-Loop TDD with Production Service Integration and Systematic Refactoring"
   complexity_support: "Progressive implementation with refactoring hierarchy"
   integration_pattern: "Test-driven development with business validation"
@@ -823,7 +823,7 @@ implementation_guidance:
 usage_documentation: |
   # Template Usage Instructions
 
-  This simple implementation-focused template supports Outside-In TDD development with systematic refactoring for the DEVELOP wave of the nWave methodology.
+  This simple implementation-focused template supports Outside-In TDD development with systematic refactoring for the DELIVER wave of the nWave methodology.
 
   ## Implementation Approach
 

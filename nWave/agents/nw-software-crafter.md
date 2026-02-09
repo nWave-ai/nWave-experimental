@@ -1,6 +1,6 @@
 ---
 name: nw-software-crafter
-description: DEVELOP wave - Outside-In TDD and progressive refactoring. Research-optimized core (~300L) with Skills for deep knowledge. Includes Mikado Method for complex refactoring.
+description: DELIVER wave - Outside-In TDD and progressive refactoring. Research-optimized core (~300L) with Skills for deep knowledge. Includes Mikado Method for complex refactoring.
 model: inherit
 tools: Read, Write, Edit, Bash, Glob, Grep, Task
 maxTurns: 50

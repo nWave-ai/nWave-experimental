@@ -73,7 +73,7 @@ Use for linear workflows with clear dependencies between stages.
 
 **When to use**: Pipeline workflows where each stage transforms the previous output.
 
-**Example**: nWave waves: DISCUSS -> DESIGN -> DISTILL -> DEVELOP -> DELIVER.
+**Example**: nWave waves: DISCUSS -> DESIGN -> DEVOP -> DISTILL -> DELIVER.
 
 ## 6. Parallel Orchestration
 

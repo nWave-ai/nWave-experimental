@@ -50,7 +50,7 @@ What are you building?
 ````markdown
 ---
 name: my-new-agent
-description: Use for DEVELOP wave - handles specific development task with focus on quality
+description: Use for DELIVER wave - handles specific development task with focus on quality
 model: inherit
 ---
 
@@ -119,7 +119,7 @@ ACTIVATION-NOTICE: This is a workflow orchestrator agent.
 ## Orchestrator Identity
 **Workflow**: My Custom Workflow
 **Description**: custom-workflow.yaml orchestration
-**Methodology**: nWave (DISCOVER → DISCUSS → DESIGN → DISTILL → DEVELOP → DELIVER)
+**Methodology**: nWave (DISCOVER → DISCUSS → DESIGN → DEVOP → DISTILL → DELIVER)
 
 ## Phase Guidance
 
@@ -167,7 +167,7 @@ model: inherit
 ---
 name: software-crafter
 description:
-  Use for complete DEVELOP wave execution - implementing features through
+  Use for complete DELIVER wave execution - implementing features through
   Outside-In TDD, managing complex refactoring roadmaps with Mikado Method, and systematic
   code quality improvement through progressive refactoring
 model: inherit
@@ -537,12 +537,12 @@ handoff:
 - **Focus**: Acceptance tests, Given-When-Then, test scenarios
 - **Key Commands**: create-acceptance-tests, validate-scenarios, handoff-develop
 
-### DEVELOP Wave Agent
+### DELIVER Wave Agent
 
 - **Type**: Specialist
 - **Example**: software-crafter
 - **Focus**: Outside-In TDD, refactoring, code quality
-- **Key Commands**: develop, refactor, validate-tests, handoff-deliver
+- **Key Commands**: deliver, refactor, validate-tests
 
 ### DELIVER Wave Agent
 
@@ -564,7 +564,7 @@ handoff:
 ### Persona Names
 
 - Format: Single friendly name
-- Examples: Riley, Quinn, Crafty, Dakota, Luma, Taylor
+- Examples: Riley, Quinn, Crafty, Apex, Luma, Taylor
 - Should be memorable and distinctive
 
 ### Agent IDs

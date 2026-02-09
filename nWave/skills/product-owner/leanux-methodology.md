@@ -109,7 +109,7 @@ When DoR fails:
 
 ## Definition of Done (DoD) - Completion Criteria
 
-DoD validation is owned by acceptance-designer during DISTILL->DEVELOP transition. Product-owner defines the checklist, acceptance-designer enforces it.
+DoD validation is owned by acceptance-designer during DISTILL->DELIVER transition. Product-owner defines the checklist, acceptance-designer enforces it.
 
 Checklist:
 - All UAT scenarios pass (green)
@@ -160,7 +160,7 @@ Checklist:
 ### Tests After Code
 - Signal: Tests written after implementation
 - Problem: Technical debt, test coverage gaps
-- Fix: UAT scenarios defined in DISCUSS wave, tests written RED first in DEVELOP wave
+- Fix: UAT scenarios defined in DISCUSS wave, tests written RED first in DELIVER wave
 
 ## UAT-First Development Flow
 
