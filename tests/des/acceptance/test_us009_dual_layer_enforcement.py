@@ -437,6 +437,177 @@ class TestDualLayerEnforcement:
         assert response.get("additionalContext") is None
 
     # =========================================================================
+    # AC-009.8: PostToolUse injects continuation context for DES task PASSED
+    # Scenario 008
+    # =========================================================================
+
+    def test_post_tool_use_injects_continuation_on_des_passed(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        GIVEN the audit log contains HOOK_SUBAGENT_STOP_PASSED
+        AND the just-completed Task prompt contains DES markers
+        WHEN PostToolUse hook fires
+        THEN additionalContext includes continuation instructions with DES markers
+
+        Business Value: Orchestrator is always reminded to continue the develop
+                       workflow and include DES markers in the next dispatch,
+                       ensuring every step is validated until feature completion.
+        """
+        # Arrange: Pre-seed audit log with PASSED entry
+        audit_dir = tmp_path / "audit"
+        monkeypatch.setenv("DES_AUDIT_LOG_DIR", str(audit_dir))
+
+        _seed_audit_log_entry(
+            audit_dir,
+            {
+                "event": "HOOK_SUBAGENT_STOP_PASSED",
+                "timestamp": "2026-02-09T10:00:00+00:00",
+                "feature_name": "auth-upgrade",
+                "step_id": "01-01",
+            },
+        )
+
+        # Act: Invoke PostToolUse with a DES prompt (contains DES-VALIDATION marker)
+        exit_code, response = invoke_hook(
+            "post-tool-use",
+            {
+                "tool_name": "Task",
+                "tool_input": {
+                    "prompt": "<!-- DES-VALIDATION : required -->\n"
+                    "<!-- DES-PROJECT-ID : auth-upgrade -->\n"
+                    "<!-- DES-STEP-ID : 01-01 -->\n"
+                    "Execute step 01-01",
+                    "subagent_type": "nw-software-crafter",
+                    "max_turns": 30,
+                },
+            },
+        )
+
+        # Assert: Continuation context injected with DES markers
+        assert exit_code == 0
+        ctx = response.get("additionalContext")
+        assert ctx is not None, f"Expected continuation context, got: {response}"
+        assert "COMPLETED" in ctx, f"Should indicate step completed, got: {ctx}"
+        assert "auth-upgrade" in ctx, f"Should include project_id, got: {ctx}"
+        assert "01-01" in ctx, f"Should include step_id, got: {ctx}"
+        assert "DES-VALIDATION" in ctx, (
+            f"Should include DES marker template, got: {ctx}"
+        )
+        assert "DES-PROJECT-ID" in ctx, (
+            f"Should include DES-PROJECT-ID marker, got: {ctx}"
+        )
+        assert "DES-STEP-ID" in ctx, f"Should include DES-STEP-ID marker, got: {ctx}"
+        assert "execute.md" in ctx, f"Should reference execute.md template, got: {ctx}"
+
+    # =========================================================================
+    # AC-009.9: PostToolUse failure includes DES reminder for DES tasks
+    # Scenario 009
+    # =========================================================================
+
+    def test_post_tool_use_failure_includes_des_reminder_for_des_task(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        GIVEN the audit log contains HOOK_SUBAGENT_STOP_FAILED
+        AND the just-completed Task prompt contains DES markers
+        WHEN PostToolUse hook fires
+        THEN additionalContext includes failure details AND DES marker reminder
+
+        Business Value: On failure, orchestrator gets both the error details
+                       and a reminder to include DES markers when re-dispatching.
+        """
+        # Arrange
+        audit_dir = tmp_path / "audit"
+        monkeypatch.setenv("DES_AUDIT_LOG_DIR", str(audit_dir))
+
+        _seed_audit_log_entry(
+            audit_dir,
+            {
+                "event": "HOOK_SUBAGENT_STOP_FAILED",
+                "timestamp": "2026-02-09T10:00:00+00:00",
+                "feature_name": "auth-upgrade",
+                "step_id": "02-01",
+                "validation_errors": ["Missing phases: GREEN, COMMIT"],
+                "allowed_despite_failure": True,
+            },
+        )
+
+        # Act: PostToolUse with DES prompt
+        _exit_code, response = invoke_hook(
+            "post-tool-use",
+            {
+                "tool_name": "Task",
+                "tool_input": {
+                    "prompt": "<!-- DES-VALIDATION : required -->\n"
+                    "<!-- DES-PROJECT-ID : auth-upgrade -->\n"
+                    "<!-- DES-STEP-ID : 02-01 -->\n"
+                    "Execute step 02-01",
+                    "subagent_type": "nw-software-crafter",
+                    "max_turns": 30,
+                },
+            },
+        )
+
+        # Assert: Failure context with DES marker reminder
+        ctx = response.get("additionalContext", "")
+        assert "FAILED" in ctx, f"Should indicate failure, got: {ctx}"
+        assert "auth-upgrade" in ctx, f"Should include project_id, got: {ctx}"
+        assert "02-01" in ctx, f"Should include step_id, got: {ctx}"
+        assert "DES-VALIDATION" in ctx, (
+            f"Should include DES marker reminder, got: {ctx}"
+        )
+        assert "execute.md" in ctx, f"Should reference execute.md, got: {ctx}"
+
+    # =========================================================================
+    # AC-009.10: Non-DES task still passes through even with PASSED audit
+    # Scenario 010
+    # =========================================================================
+
+    def test_post_tool_use_non_des_task_no_continuation_despite_passed_audit(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        GIVEN the audit log contains HOOK_SUBAGENT_STOP_PASSED from an earlier DES task
+        AND the just-completed Task prompt does NOT contain DES markers
+        WHEN PostToolUse hook fires
+        THEN no additionalContext is injected (non-DES tasks unaffected)
+
+        Business Value: Non-DES tasks are never polluted with DES continuation
+                       context, even when DES events exist in the audit log.
+        """
+        # Arrange: PASSED entry exists from earlier DES task
+        audit_dir = tmp_path / "audit"
+        monkeypatch.setenv("DES_AUDIT_LOG_DIR", str(audit_dir))
+
+        _seed_audit_log_entry(
+            audit_dir,
+            {
+                "event": "HOOK_SUBAGENT_STOP_PASSED",
+                "timestamp": "2026-02-09T10:00:00+00:00",
+                "feature_name": "auth-upgrade",
+                "step_id": "01-01",
+            },
+        )
+
+        # Act: Non-DES task (no DES markers in prompt)
+        exit_code, response = invoke_hook(
+            "post-tool-use",
+            {
+                "tool_name": "Task",
+                "tool_input": {
+                    "prompt": "Research best practices for authentication",
+                    "subagent_type": "nw-researcher",
+                    "max_turns": 25,
+                },
+            },
+        )
+
+        # Assert: No continuation context for non-DES tasks
+        assert exit_code == 0
+        assert response.get("additionalContext") is None
+
+    # =========================================================================
     # AC-009.7: SubagentStop empty stdin = fail-closed
     # Scenario 007b
     # =========================================================================

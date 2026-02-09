@@ -1,4 +1,4 @@
-"""PostToolUseService - checks audit log for sub-agent failures.
+"""PostToolUseService - checks audit log and injects DES continuation context.
 
 Concrete service (no abstract port) per ADR-2: only one consumer,
 only one implementation. Extracting an interface is trivial if needed later.
@@ -14,62 +14,92 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from des.ports.driven_ports.audit_log_reader import AuditLogReader
 
+DES_MARKER_REMINDER = """
+MANDATORY: Include these DES markers in the Task prompt:
+<!-- DES-VALIDATION : required -->
+<!-- DES-PROJECT-ID : {project-id} -->
+<!-- DES-STEP-ID : {step-id} -->
+
+Without these markers, DES validation is bypassed and the step won't be verified.
+Read nWave/tasks/nw/execute.md for the full DES Prompt Template with all 8 mandatory sections."""
+
 
 class PostToolUseService:
-    """Checks if the last sub-agent run failed DES validation.
+    """Checks DES completion status and injects orchestrator continuation context.
 
-    Reads the most recent HOOK_SUBAGENT_STOP_FAILED entry from the audit log.
-    If found (with allowed_despite_failure=True), builds an additionalContext
-    string for the parent orchestrator.
+    For DES tasks:
+    - On PASSED: injects continuation context reminding orchestrator to dispatch
+      the next step with DES markers.
+    - On FAILED (allowed_despite_failure): injects failure notification with
+      DES marker reminder for re-dispatch.
 
-    If the last entry is HOOK_SUBAGENT_STOP_PASSED or no entry exists,
-    returns None (clean passthrough).
+    For non-DES tasks: returns None (clean passthrough).
     """
 
     def __init__(self, audit_reader: AuditLogReader) -> None:
         self._audit_reader = audit_reader
 
-    def check_completion_status(self) -> str | None:
-        """Check if the last sub-agent run had a DES failure.
+    def check_completion_status(self, *, is_des_task: bool = False) -> str | None:
+        """Check the last sub-agent's DES completion status.
+
+        Args:
+            is_des_task: True if the just-completed Task had DES markers in its prompt.
 
         Returns:
-            additionalContext string if failure detected, None otherwise.
+            additionalContext string for the orchestrator, or None for passthrough.
         """
-        # Look for the most recent FAILED entry
+        passed_entry = self._audit_reader.read_last_entry(
+            event_type="HOOK_SUBAGENT_STOP_PASSED",
+        )
         failed_entry = self._audit_reader.read_last_entry(
             event_type="HOOK_SUBAGENT_STOP_FAILED",
         )
 
-        if failed_entry is None:
+        passed_ts = (passed_entry or {}).get("timestamp", "")
+        failed_ts = (failed_entry or {}).get("timestamp", "")
+
+        # Most recent event is PASSED
+        if passed_entry and passed_ts >= failed_ts:
+            if is_des_task:
+                return self._build_continuation_context(passed_entry)
             return None
 
-        # Only report if this was an allowed-despite-failure (Layer 1 gave up)
-        if not failed_entry.get("allowed_despite_failure"):
-            return None
+        # Most recent event is FAILED
+        if failed_entry and failed_entry.get("allowed_despite_failure"):
+            return self._build_failure_context(failed_entry, is_des_task=is_des_task)
 
-        # Check if a PASSED entry came after this FAILED entry
-        # (meaning the sub-agent was retried and succeeded)
-        passed_entry = self._audit_reader.read_last_entry(
-            event_type="HOOK_SUBAGENT_STOP_PASSED",
+        return None
+
+    def _build_continuation_context(self, passed_entry: dict) -> str:
+        """Build success continuation context for the orchestrator."""
+        feature_name = passed_entry.get("feature_name", "unknown")
+        step_id = passed_entry.get("step_id", "unknown")
+
+        return (
+            f"DES STEP COMPLETED [{feature_name}/{step_id}]\n"
+            f"Status: PASSED\n"
+            f"\n"
+            f"Continue the DEVELOP workflow. Dispatch the next step.\n"
+            + DES_MARKER_REMINDER
         )
-        if passed_entry is not None:
-            # A passed entry exists - compare timestamps to see if it's more recent
-            passed_ts = passed_entry.get("timestamp", "")
-            failed_ts = failed_entry.get("timestamp", "")
-            if passed_ts >= failed_ts:
-                return None
 
-        # Build notification for parent
+    def _build_failure_context(self, failed_entry: dict, *, is_des_task: bool) -> str:
+        """Build failure notification context for the orchestrator."""
         feature_name = failed_entry.get("feature_name", "unknown")
         step_id = failed_entry.get("step_id", "unknown")
         errors = failed_entry.get("validation_errors", [])
         error_text = "; ".join(errors) if errors else "Unknown validation failure"
 
-        return (
+        base = (
             f"DES STEP INCOMPLETE [{feature_name}/{step_id}]\n"
             f"Status: FAILED\n"
             f"Errors: {error_text}\n"
             f"\n"
             f"The sub-agent failed to complete all required TDD phases.\n"
-            f"You should resume or retry the step to complete the missing work."
+            f"You MUST RE-DISPATCH the agent to fix the missing work."
         )
+
+        if is_des_task:
+            return base + "\n" + DES_MARKER_REMINDER
+
+        return base

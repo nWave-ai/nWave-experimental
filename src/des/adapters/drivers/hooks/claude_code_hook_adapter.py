@@ -520,6 +520,11 @@ def handle_post_tool_use() -> int:
             },
         )
 
+        # Check if the just-completed Task was a DES task (had DES markers)
+        tool_input = hook_input.get("tool_input", {})
+        prompt = tool_input.get("prompt", "")
+        is_des_task = "DES-VALIDATION" in prompt
+
         # Delegate to PostToolUseService
         from des.adapters.driven.logging.jsonl_audit_log_reader import (
             JsonlAuditLogReader,
@@ -528,7 +533,9 @@ def handle_post_tool_use() -> int:
 
         reader = JsonlAuditLogReader()
         service = PostToolUseService(audit_reader=reader)
-        additional_context = service.check_completion_status()
+        additional_context = service.check_completion_status(
+            is_des_task=is_des_task,
+        )
 
         if additional_context:
             response = {"additionalContext": additional_context}
