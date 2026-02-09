@@ -170,6 +170,8 @@ class TestSubagentStopWithClaudeCodeProtocol:
 
     def test_des_subagent_with_valid_execution_log(self, tmp_path, monkeypatch):
         """DES agent with complete execution log should be allowed."""
+        import subprocess as sp
+
         prompt = (
             "<!-- DES-VALIDATION: required -->\n"
             "<!-- DES-PROJECT-ID: test-project -->\n"
@@ -192,6 +194,18 @@ class TestSubagentStopWithClaudeCodeProtocol:
             '  - "01-01|REVIEW|EXECUTED|PASS|2026-02-06T10:30:00Z"\n'
             '  - "01-01|REFACTOR_CONTINUOUS|SKIPPED|CHECKPOINT_PENDING: Minimal|2026-02-06T10:35:00Z"\n'
             '  - "01-01|COMMIT|EXECUTED|PASS|2026-02-06T11:00:00Z"\n'
+        )
+
+        # Initialize git repo and create a commit with Step-ID trailer
+        # (required because cwd is now passed for commit verification)
+        sp.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
+        sp.run(["git", "config", "user.email", "test@test.com"], cwd=str(tmp_path), capture_output=True)
+        sp.run(["git", "config", "user.name", "Test"], cwd=str(tmp_path), capture_output=True)
+        sp.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        sp.run(
+            ["git", "commit", "-m", "feat: implement step\n\nStep-ID: 01-01"],
+            cwd=str(tmp_path),
+            capture_output=True,
         )
 
         hook_input = self._make_hook_input(transcript, str(tmp_path))

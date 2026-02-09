@@ -10,12 +10,33 @@ Orchestrates the complete DELIVER wave: from feature description to production-r
 
 Sub-agents cannot use the Skill tool or execute `/nw:*` commands. Read the relevant command file yourself, extract instructions, and embed them in the Task prompt.
 
+## CRITICAL BOUNDARY RULES
+
+1. **NEVER implement roadmap steps directly.** ALL step implementation MUST be delegated to @nw-software-crafter via the Task tool with DES markers. You are the ORCHESTRATOR — you coordinate, you do not implement.
+
+2. **NEVER write phase entries to execution-log.yaml.** Only the software-crafter subagent that performed the TDD work may append phase entries. If you write entries yourself, finalize will detect the violation and block.
+
+3. **Extract step context from roadmap.yaml ONLY for the Task prompt.** Grep the roadmap for the step_id with ~50 lines context, extract fields (description, acceptance_criteria, files_to_modify), and pass them in the DES template. The crafter receives the full step context through the prompt.
+
+Consequence: The finalize verification gate checks that every completed step has valid DES-format execution-log entries (7 TDD phases with timestamps). Steps implemented without DES monitoring will be flagged, and finalize will block until they are re-executed properly via Task.
+
 ## Orchestration Flow
 
 ```
 INPUT: "{feature-description}"
   |
   1. Parse input, derive project-id (kebab-case), create docs/feature/{project-id}/
+     a. Create execution-log.yaml if it doesn't exist:
+        ```yaml
+        schema_version: "2.0"
+        project_id: "{project-id}"
+        events: []
+        ```
+     b. This ensures the execute command can append from step 1
+     c. Create deliver session marker for Write/Edit guard:
+        ```bash
+        mkdir -p .nwave/des && echo '{"project_id":"{project-id}","started_at":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > .nwave/des/deliver-session.json
+        ```
   |
   2. Phase 1 — Roadmap Creation + Review
      a. Skip if roadmap.yaml exists with validation.status == "approved"
@@ -37,6 +58,16 @@ INPUT: "{feature-description}"
         that actually performed the work may write to the log.
      f. Stop on first failure
   |
+  3.5. Phase 2.9 — Deliver Integrity Verification
+     a. Run via Bash tool:
+        python -m des.cli.verify_deliver_integrity docs/feature/{project-id}/
+     b. Exit 0 = all steps verified, proceed to refactoring
+     c. Exit 1 = violations found, STOP. Read output for details.
+     d. Steps with NO entries were NOT executed through DES
+     e. Steps with partial entries have incomplete TDD cycles
+     f. If violations exist, re-execute affected steps via Task with DES markers
+     g. Only proceed after verification passes
+  |
   4. Phase 2.25 — Complete Refactoring (L1-L4, code + tests)
      a. @nw-software-crafter performs full L1-L4 refactoring on production code AND tests
         (read ~/.claude/commands/nw/refactor.md, specify --level=1-4 --scope=code+tests)
@@ -50,6 +81,7 @@ INPUT: "{feature-description}"
   6. Phase 3 — Finalize + Cleanup
      a. @nw-platform-architect archives to docs/evolution/ (read ~/.claude/commands/nw/finalize.md)
      b. Commit evolution document, push when ready
+     c. Remove deliver session marker: `rm -f .nwave/des/deliver-session.json .nwave/des/des-task-active`
   |
   7. Phase 3.5 — Retrospective (conditional)
      a. Skip if clean execution (no failures, no retries, no warnings)

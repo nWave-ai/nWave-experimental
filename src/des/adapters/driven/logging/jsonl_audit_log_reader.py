@@ -7,11 +7,11 @@ Uses the same log directory resolution as JsonlAuditLogWriter.
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from des.domain.audit_log_path_resolver import AuditLogPathResolver
 from des.ports.driven_ports.audit_log_reader import AuditLogReader
 
 
@@ -19,13 +19,12 @@ class JsonlAuditLogReader(AuditLogReader):
     """Reads audit events from JSONL files.
 
     Scans today's log file backward to find the most recent matching entry.
-    Uses same directory resolution as JsonlAuditLogWriter.
+    Uses shared AuditLogPathResolver for consistent path resolution with writer.
     """
 
-    def __init__(self, log_dir: str | Path | None = None) -> None:
-        if log_dir is None:
-            log_dir = self._resolve_log_directory()
-        self._log_dir = Path(log_dir)
+    def __init__(self, log_dir: str | Path | None = None, cwd: str | Path | None = None) -> None:
+        resolved = AuditLogPathResolver(log_dir=log_dir, cwd=cwd).resolve()
+        self._log_dir = resolved
 
     def read_last_entry(
         self,
@@ -85,22 +84,3 @@ class JsonlAuditLogReader(AuditLogReader):
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         return self._log_dir / f"audit-{today}.log"
 
-    def _resolve_log_directory(self) -> Path:
-        """Resolve audit log directory using same hierarchy as writer."""
-        env_dir = os.environ.get("DES_AUDIT_LOG_DIR")
-        if env_dir:
-            return Path(env_dir)
-
-        cwd = Path.cwd()
-        home = Path.home()
-        if cwd != home and str(cwd) not in (
-            "/",
-            "/usr",
-            "/bin",
-            "/etc",
-            "/var",
-            "/tmp",
-        ):
-            return cwd / ".nwave" / "logs" / "des"
-
-        return home / ".claude" / "des" / "logs"

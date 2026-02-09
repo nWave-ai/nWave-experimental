@@ -47,7 +47,7 @@ class UtilitiesPlugin(InstallationPlugin):
             utility_scripts = ["install_nwave_target_hooks.py", "validate_step_file.py"]
 
             installed_files = []
-            installed_count = -1
+            installed_count = 0
 
             for script_name in utility_scripts:
                 source_script = scripts_source / script_name

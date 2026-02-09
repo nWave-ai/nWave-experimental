@@ -32,10 +32,11 @@ class DESPlugin(InstallationPlugin):
     ]
 
     # Hook command template - substituted at install time:
-    #   {lib_path}    → ~/.claude/lib/python (DES module location)
-    #   {python_path} → absolute path to venv Python interpreter
+    #   {lib_path}    → $HOME/.claude/lib/python (shell-expanded per machine)
+    #   {python_path} → python3 (system PATH) for portability across machines
     #   {action}      → hook action (pre-task, subagent-stop, post-tool-use)
-    # Uses venv Python to ensure dependencies are available on all platforms
+    # Uses $HOME for portability: settings.json is shared across machines
+    # via ~/.claude synced directory, so paths must resolve per-machine.
     HOOK_COMMAND_TEMPLATE = (
         "PYTHONPATH={lib_path} {python_path} -m "
         "des.adapters.drivers.hooks.claude_code_hook_adapter {action}"
@@ -391,23 +392,24 @@ class DESPlugin(InstallationPlugin):
             )
 
     def _generate_hook_command(self, context: InstallContext, action: str) -> str:
-        """Generate hook command with correct installed path.
+        """Generate hook command with portable paths for cross-machine use.
 
-        Uses sys.executable to capture the absolute path to the venv Python
-        interpreter at install time. This ensures hooks use the same Python
-        that has all dependencies installed, regardless of platform.
+        Uses $HOME shell variable instead of absolute paths so that
+        settings.json works when synced across machines (via ~/.claude).
+        Uses python3 from PATH to avoid hardcoding a project-specific venv.
 
         Args:
             context: InstallContext with claude_dir
             action: Hook action (pre-task, subagent-stop, post-tool-use)
 
         Returns:
-            Complete command string with absolute Python path and PYTHONPATH
+            Complete command string with $HOME-based paths
         """
-        lib_path = context.claude_dir / "lib" / "python"
+        lib_path = "$HOME/.claude/lib/python"
+        python_path = "python3"
         return self.HOOK_COMMAND_TEMPLATE.format(
             lib_path=lib_path,
-            python_path=sys.executable,
+            python_path=python_path,
             action=action,
         )
 
@@ -450,6 +452,9 @@ class DESPlugin(InstallationPlugin):
                     for h in hooks_list
                 )
 
+            def _has_matcher(hooks_list, matcher):
+                return any(h.get("matcher") == matcher for h in hooks_list)
+
             has_correct_pretask = _has_command(
                 config["hooks"]["PreToolUse"], new_pretask_command
             )
@@ -459,8 +464,16 @@ class DESPlugin(InstallationPlugin):
             has_correct_post = _has_command(
                 config["hooks"]["PostToolUse"], new_post_command
             )
+            has_write_guard = _has_matcher(config["hooks"]["PreToolUse"], "Write")
+            has_edit_guard = _has_matcher(config["hooks"]["PreToolUse"], "Edit")
 
-            if has_correct_pretask and has_correct_stop and has_correct_post:
+            if (
+                has_correct_pretask
+                and has_correct_stop
+                and has_correct_post
+                and has_write_guard
+                and has_edit_guard
+            ):
                 context.logger.info("  ✅ DES hooks up-to-date")
                 return PluginResult(
                     success=True,
@@ -491,8 +504,34 @@ class DESPlugin(InstallationPlugin):
                 "hooks": [{"type": "command", "command": new_post_command}],
             }
 
+            # Generate Write/Edit guard hooks with shell fast-path
+            # test -f exits in ~1ms when no deliver session exists
+            # Uses $HOME for portability across machines
+            lib_path = "$HOME/.claude/lib/python"
+            python_path = "python3"
+            write_guard_command = (
+                f"test -f .nwave/des/deliver-session.json || exit 0; "
+                f"PYTHONPATH={lib_path} {python_path} -m "
+                f"des.adapters.drivers.hooks.claude_code_hook_adapter pre-write"
+            )
+            edit_guard_command = (
+                f"test -f .nwave/des/deliver-session.json || exit 0; "
+                f"PYTHONPATH={lib_path} {python_path} -m "
+                f"des.adapters.drivers.hooks.claude_code_hook_adapter pre-edit"
+            )
+            write_hook = {
+                "matcher": "Write",
+                "hooks": [{"type": "command", "command": write_guard_command}],
+            }
+            edit_hook = {
+                "matcher": "Edit",
+                "hooks": [{"type": "command", "command": edit_guard_command}],
+            }
+
             # Add DES hooks
             config["hooks"]["PreToolUse"].append(pretooluse_hook)
+            config["hooks"]["PreToolUse"].append(write_hook)
+            config["hooks"]["PreToolUse"].append(edit_hook)
             config["hooks"]["SubagentStop"].append(subagent_stop_hook)
             config["hooks"]["PostToolUse"].append(posttooluse_hook)
 

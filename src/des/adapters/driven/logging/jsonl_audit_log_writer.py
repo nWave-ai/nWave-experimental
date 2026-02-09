@@ -18,10 +18,10 @@ Features removed (no longer needed):
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from des.domain.audit_log_path_resolver import AuditLogPathResolver
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 
 
@@ -32,7 +32,7 @@ class JsonlAuditLogWriter(AuditLogWriter):
     File format: audit-YYYY-MM-DD.log in the configured log directory.
     """
 
-    def __init__(self, log_dir: str | Path | None = None) -> None:
+    def __init__(self, log_dir: str | Path | None = None, cwd: str | Path | None = None) -> None:
         """Initialize with a log directory.
 
         Log directory priority (highest to lowest):
@@ -43,11 +43,11 @@ class JsonlAuditLogWriter(AuditLogWriter):
 
         Args:
             log_dir: Directory for audit log files (default: follows priority above)
+            cwd: Working directory override for deterministic resolution
         """
-        if log_dir is None:
-            log_dir = self._resolve_log_directory()
+        resolved = AuditLogPathResolver(log_dir=log_dir, cwd=cwd).resolve()
 
-        self._log_dir = Path(log_dir)
+        self._log_dir = resolved
         self._log_dir.mkdir(parents=True, exist_ok=True)
 
     def log_event(self, event: AuditEvent) -> None:
@@ -93,66 +93,3 @@ class JsonlAuditLogWriter(AuditLogWriter):
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         return self._log_dir / f"audit-{today}.log"
 
-    def _resolve_log_directory(self) -> Path:
-        """Resolve audit log directory using configuration hierarchy.
-
-        Priority:
-        1. DES_AUDIT_LOG_DIR environment variable
-        2. .nwave/des-config.json audit_log_dir field
-        3. Project-local .nwave/logs/des/
-        4. Global ~/.claude/des/logs/ (fallback)
-
-        Returns:
-            Path to audit log directory
-        """
-        # Priority 1: Environment variable
-        env_dir = os.environ.get("DES_AUDIT_LOG_DIR")
-        if env_dir:
-            log_path = Path(env_dir)
-            try:
-                log_path.mkdir(parents=True, exist_ok=True)
-                return log_path
-            except (OSError, PermissionError):
-                pass  # Fall through to next priority
-
-        # Priority 2: Config file
-        config_dir = self._resolve_config_dir()
-        if config_dir:
-            log_path = config_dir
-            try:
-                log_path.mkdir(parents=True, exist_ok=True)
-                return log_path
-            except (OSError, PermissionError):
-                pass  # Fall through to next priority
-
-        # Priority 3: Project-local
-        cwd = Path.cwd()
-        home = Path.home()
-        if cwd != home and str(cwd) not in (
-            "/",
-            "/usr",
-            "/bin",
-            "/etc",
-            "/var",
-            "/tmp",
-        ):
-            return cwd / ".nwave" / "logs" / "des"
-
-        # Priority 4: Global fallback
-        return home / ".claude" / "des" / "logs"
-
-    @staticmethod
-    def _resolve_config_dir() -> Path | None:
-        """Read audit_log_dir from .nwave/des-config.json if it exists."""
-        config_file = Path.cwd() / ".nwave" / "des-config.json"
-        if config_file.exists():
-            try:
-                import json
-
-                config = json.loads(config_file.read_text(encoding="utf-8"))
-                audit_dir = config.get("audit_log_dir")
-                if audit_dir:
-                    return Path(audit_dir)
-            except (json.JSONDecodeError, OSError):
-                pass
-        return None

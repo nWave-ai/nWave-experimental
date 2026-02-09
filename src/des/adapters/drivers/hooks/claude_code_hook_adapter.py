@@ -43,6 +43,9 @@ from des.adapters.driven.time.system_time import SystemTimeProvider
 from des.adapters.driven.validation.git_scope_checker import GitScopeChecker
 from des.application.pre_tool_use_service import PreToolUseService
 from des.application.subagent_stop_service import SubagentStopService
+from des.domain.des_enforcement_policy import DesEnforcementPolicy
+from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
+from des.domain.session_guard_policy import SessionGuardPolicy
 from des.application.validator import TemplateValidator
 from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.max_turns_policy import MaxTurnsPolicy
@@ -67,6 +70,8 @@ def create_pre_tool_use_service() -> PreToolUseService:
         prompt_validator=TemplateValidator(),
         audit_writer=audit_writer,
         time_provider=time_provider,
+        enforcement_policy=DesEnforcementPolicy(),
+        completeness_policy=MarkerCompletenessPolicy(),
     )
 
 
@@ -110,6 +115,44 @@ def _log_hook_invoked(handler: str, summary: dict | None = None) -> None:
         )
     except Exception:
         pass  # Diagnostic logging must never break the hook
+
+
+DES_SESSION_DIR = Path(".nwave") / "des"
+DES_DELIVER_SESSION_FILE = DES_SESSION_DIR / "deliver-session.json"
+DES_TASK_ACTIVE_FILE = DES_SESSION_DIR / "des-task-active"
+
+
+def _create_des_task_signal(step_id: str = "") -> None:
+    """Create DES task active signal file.
+
+    Called when PreToolUse allows a DES-validated Task.
+    Indicates a DES subagent is currently running.
+    """
+    try:
+        DES_SESSION_DIR.mkdir(parents=True, exist_ok=True)
+        from datetime import datetime, timezone
+
+        signal = json.dumps(
+            {
+                "step_id": step_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        DES_TASK_ACTIVE_FILE.write_text(signal)
+    except Exception:
+        pass  # Signal creation must never break the hook
+
+
+def _remove_des_task_signal() -> None:
+    """Remove DES task active signal file.
+
+    Called when SubagentStop fires (DES task completed).
+    """
+    try:
+        if DES_TASK_ACTIVE_FILE.exists():
+            DES_TASK_ACTIVE_FILE.unlink()
+    except Exception:
+        pass  # Signal cleanup must never break the hook
 
 
 def handle_pre_tool_use() -> int:
@@ -166,6 +209,15 @@ def handle_pre_tool_use() -> int:
 
         # Translate HookDecision to protocol response
         if decision.action == "allow":
+            # Create DES task signal if this is a DES-validated task
+            if "DES-VALIDATION" in prompt:
+                # Extract step-id from DES markers for signal context
+                step_id_marker = ""
+                parser = DesMarkerParser()
+                markers = parser.parse(prompt)
+                if markers.step_id:
+                    step_id_marker = markers.step_id
+                _create_des_task_signal(step_id=step_id_marker)
             response = {"decision": "allow"}
             print(json.dumps(response))
             return 0
@@ -435,14 +487,16 @@ def handle_subagent_stop() -> int:
             return exit_code
         execution_log_path, project_id, step_id = result
 
+        # Clean up DES task signal (subagent finished)
+        _remove_des_task_signal()
+
         # Delegate to application service
         from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
 
         stop_hook_active = bool(hook_input.get("stop_hook_active", False))
-        # Only pass cwd for commit verification when using direct DES protocol.
-        # Claude Code protocol uses cwd for path construction only (backward compat).
-        uses_direct_protocol = bool(hook_input.get("executionLogPath"))
-        cwd = hook_input.get("cwd", "") if uses_direct_protocol else ""
+        # Pass cwd for commit verification from both protocols.
+        # Claude Code sends cwd in hook input JSON.
+        cwd = hook_input.get("cwd", "")
         service = create_subagent_stop_service()
         decision = service.validate(
             SubagentStopContext(
@@ -563,6 +617,62 @@ def handle_post_tool_use() -> int:
         return 0
 
 
+def handle_pre_write() -> int:
+    """Handle PreToolUse for Write/Edit: guard source writes during deliver.
+
+    Shell fast-path: the hook command tests for deliver-session.json BEFORE
+    invoking Python. This handler only runs during active deliver sessions.
+
+    Returns:
+        0 if write is allowed
+        2 if write is blocked (source file during deliver without DES task)
+    """
+    try:
+        input_data = sys.stdin.read()
+
+        if not input_data or not input_data.strip():
+            # No input = allow (fail-open for Write/Edit)
+            print(json.dumps({"decision": "allow"}))
+            return 0
+
+        try:
+            hook_input = json.loads(input_data)
+        except json.JSONDecodeError:
+            print(json.dumps({"decision": "allow"}))
+            return 0
+
+        # Extract file path from tool_input
+        tool_input = hook_input.get("tool_input", {})
+        file_path = tool_input.get("file_path", "")
+
+        # Check session and signal state
+        session_active = DES_DELIVER_SESSION_FILE.exists()
+        des_task_active = DES_TASK_ACTIVE_FILE.exists()
+
+        policy = SessionGuardPolicy()
+        result = policy.check(
+            file_path=file_path,
+            session_active=session_active,
+            des_task_active=des_task_active,
+        )
+
+        if result.blocked:
+            response = {
+                "decision": "block",
+                "reason": result.reason or "Source write blocked during deliver",
+            }
+            print(json.dumps(response))
+            return 2
+        else:
+            print(json.dumps({"decision": "allow"}))
+            return 0
+
+    except Exception:
+        # Fail-open for Write/Edit (unlike Task which is fail-closed)
+        print(json.dumps({"decision": "allow"}))
+        return 0
+
+
 def main() -> None:
     """Hook adapter entry point - routes command to appropriate handler."""
     if len(sys.argv) < 2:
@@ -585,6 +695,8 @@ def main() -> None:
         exit_code = handle_subagent_stop()
     elif command == "post-tool-use":
         exit_code = handle_post_tool_use()
+    elif command in ("pre-write", "pre-edit"):
+        exit_code = handle_pre_write()
     else:
         print(json.dumps({"status": "error", "reason": f"Unknown command: {command}"}))
         exit_code = 1

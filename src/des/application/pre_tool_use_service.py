@@ -19,7 +19,9 @@ from des.ports.driver_ports.pre_tool_use_port import (
 
 
 if TYPE_CHECKING:
+    from des.domain.des_enforcement_policy import DesEnforcementPolicy
     from des.domain.des_marker_parser import DesMarkerParser
+    from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
     from des.domain.max_turns_policy import MaxTurnsPolicy
     from des.ports.driven_ports.time_provider_port import TimeProvider
     from des.ports.driver_ports.validator_port import ValidatorPort
@@ -31,8 +33,12 @@ class PreToolUseService(PreToolUsePort):
     Flow:
       1. Validate max_turns via MaxTurnsPolicy
          - If invalid: log HOOK_PRE_TOOL_USE_BLOCKED, return block
+      1.5. Block step-id tasks without DES markers via DesEnforcementPolicy
+         - If enforced: log HOOK_PRE_TOOL_USE_BLOCKED, return block
       2. Parse DES markers via DesMarkerParser
          - If not DES task: log HOOK_PRE_TOOL_USE_ALLOWED, return allow
+      2.5. Validate marker completeness via MarkerCompletenessPolicy
+         - If invalid: log HOOK_PRE_TOOL_USE_BLOCKED, return block
          - If orchestrator mode: log HOOK_PRE_TOOL_USE_ALLOWED, return allow
       3. Validate prompt structure via ValidatorPort
          - If invalid: log HOOK_PRE_TOOL_USE_BLOCKED, return block
@@ -46,12 +52,16 @@ class PreToolUseService(PreToolUsePort):
         prompt_validator: ValidatorPort,
         audit_writer: AuditLogWriter,
         time_provider: TimeProvider,
+        enforcement_policy: DesEnforcementPolicy | None = None,
+        completeness_policy: MarkerCompletenessPolicy | None = None,
     ) -> None:
         self._max_turns_policy = max_turns_policy
         self._marker_parser = marker_parser
         self._prompt_validator = prompt_validator
         self._audit_writer = audit_writer
         self._time_provider = time_provider
+        self._enforcement_policy = enforcement_policy
+        self._completeness_policy = completeness_policy
 
     def validate(self, input_data: PreToolUseInput) -> HookDecision:
         """Validate a Task tool invocation.
@@ -70,6 +80,16 @@ class PreToolUseService(PreToolUsePort):
                 reason=policy_result.reason or "MISSING_MAX_TURNS"
             )
 
+        # Step 1.5: Block step-id tasks without DES markers
+        if self._enforcement_policy:
+            enforcement = self._enforcement_policy.check(input_data.prompt)
+            if enforcement.is_enforced:
+                self._log_blocked(enforcement.reason or "DES_MARKERS_MISSING")
+                return HookDecision.block(
+                    reason=enforcement.reason or "DES_MARKERS_MISSING",
+                    recovery_suggestions=enforcement.recovery_suggestions,
+                )
+
         # Step 2: Parse DES markers
         markers = self._marker_parser.parse(input_data.prompt)
 
@@ -77,6 +97,16 @@ class PreToolUseService(PreToolUsePort):
             # Ad-hoc task: max_turns validated, no prompt validation needed
             self._log_allowed(context="non_des_task")
             return HookDecision.allow()
+
+        # Step 2.5: Validate marker completeness
+        if self._completeness_policy:
+            completeness = self._completeness_policy.validate(markers)
+            if not completeness.is_valid:
+                self._log_blocked(completeness.reason or "DES_MARKERS_INCOMPLETE")
+                return HookDecision.block(
+                    reason=completeness.reason or "DES_MARKERS_INCOMPLETE",
+                    recovery_suggestions=completeness.recovery_suggestions,
+                )
 
         if markers.is_orchestrator_mode:
             # Orchestrator mode: relaxed validation
