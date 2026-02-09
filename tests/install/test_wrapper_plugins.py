@@ -125,7 +125,7 @@ class TestCommandsPlugin:
         # Set up source directory with command files
         source_commands = tmp_path / "framework_source" / "commands" / "nw"
         source_commands.mkdir(parents=True)
-        (source_commands / "develop.md").write_text("# Develop Command")
+        (source_commands / "devop.md").write_text("# Devop Command")
         (source_commands / "design.md").write_text("# Design Command")
 
         # Set up target directory
@@ -149,8 +149,8 @@ class TestCommandsPlugin:
         # Verify files were actually copied to target
         target_commands_dir = claude_dir / "commands" / "nw"
         assert target_commands_dir.exists(), "Target commands/nw directory should exist"
-        assert (target_commands_dir / "develop.md").exists(), (
-            "develop.md should be copied"
+        assert (target_commands_dir / "devop.md").exists(), (
+            "devop.md should be copied"
         )
         assert (target_commands_dir / "design.md").exists(), (
             "design.md should be copied"
@@ -178,7 +178,7 @@ class TestCommandsPlugin:
         # Set up target directory with command files
         target_commands = tmp_path / "commands" / "nw"
         target_commands.mkdir(parents=True)
-        (target_commands / "develop.md").write_text("# Develop Command")
+        (target_commands / "devop.md").write_text("# Devop Command")
         (target_commands / "design.md").write_text("# Design Command")
 
         context = Mock(spec=InstallContext)

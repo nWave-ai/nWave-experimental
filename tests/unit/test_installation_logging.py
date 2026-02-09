@@ -450,7 +450,7 @@ class TestVerifyNwaveLogging:
         essential_files = [
             "commit.md",
             "review.md",
-            "develop.md",
+            "devop.md",
             "discuss.md",
             "design.md",
             "distill.md",

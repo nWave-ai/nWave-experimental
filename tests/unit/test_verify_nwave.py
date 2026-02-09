@@ -150,7 +150,7 @@ class TestVerifyNwaveFullInstallation:
         # Create all essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "develop.md",
+            "devop.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -192,7 +192,7 @@ class TestVerifyNwaveFullInstallation:
         # Create all essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "develop.md",
+            "devop.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -230,7 +230,7 @@ class TestVerifyNwaveMissingFiles:
         commands_dir.mkdir(parents=True)
 
         # Only create some files (missing design.md, review.md)
-        (commands_dir / "develop.md").write_text("# Develop command")
+        (commands_dir / "devop.md").write_text("# Devop command")
         (commands_dir / "discuss.md").write_text("# Discuss command")
 
         # ACT
@@ -278,7 +278,7 @@ class TestVerifyNwaveMissingFiles:
         # Create all essential command files but no manifest
         essential_files = [
             "review.md",
-            "develop.md",
+            "devop.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -300,9 +300,9 @@ class TestVerifyNwaveEssentialCommands:
 
     def test_verify_nwave_checks_develop_command(self, tmp_path):
         """
-        GIVEN: Installation without develop.md
+        GIVEN: Installation without devop.md
         WHEN: run_verification() is called
-        THEN: develop.md is reported as missing
+        THEN: devop.md is reported as missing
         """
         from scripts.install.verify_nwave import run_verification
 
@@ -311,7 +311,7 @@ class TestVerifyNwaveEssentialCommands:
         commands_dir = config_dir / "commands" / "nw"
         commands_dir.mkdir(parents=True)
 
-        # Create all except develop.md (using ESSENTIAL_COMMANDS list)
+        # Create all except devop.md (using ESSENTIAL_COMMANDS list)
         for filename in [
             "review.md",
             "discuss.md",
@@ -325,7 +325,7 @@ class TestVerifyNwaveEssentialCommands:
         result = run_verification(claude_config_dir=config_dir)
 
         # ASSERT
-        assert "develop.md" in result.missing_essential_files
+        assert "devop.md" in result.missing_essential_files
 
     def test_verify_nwave_checks_distill_command(self, tmp_path):
         """
@@ -342,7 +342,7 @@ class TestVerifyNwaveEssentialCommands:
 
         # Create all except distill.md
         for filename in [
-            "develop.md",
+            "devop.md",
             "review.md",
             "discuss.md",
             "design.md",
@@ -371,7 +371,7 @@ class TestVerifyNwaveEssentialCommands:
 
         # Create all except review.md (using ESSENTIAL_COMMANDS list)
         for filename in [
-            "develop.md",
+            "devop.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -407,7 +407,7 @@ class TestVerifyNwaveSchemaTemplate:
         # Create essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "develop.md",
+            "devop.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -447,7 +447,7 @@ class TestVerifyNwaveOutputModes:
         # Create essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "develop.md",
+            "devop.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -488,7 +488,7 @@ class TestVerifyNwaveOutputModes:
         # Create essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "develop.md",
+            "devop.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -533,7 +533,7 @@ class TestVerifyNwaveOutputModes:
         # Create essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "develop.md",
+            "devop.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -575,7 +575,7 @@ class TestVerifyNwaveRemediationOutput:
         commands_dir.mkdir(parents=True)
 
         # Only create some files
-        (commands_dir / "develop.md").write_text("# Develop command")
+        (commands_dir / "devop.md").write_text("# Devop command")
 
         # ACT
         main(args=[], claude_config_dir=config_dir)
@@ -599,7 +599,7 @@ class TestVerifyNwaveRemediationOutput:
         commands_dir.mkdir(parents=True)
 
         # Only create some files
-        (commands_dir / "develop.md").write_text("# Develop command")
+        (commands_dir / "devop.md").write_text("# Devop command")
 
         # ACT
         main(args=["--json"], claude_config_dir=config_dir)

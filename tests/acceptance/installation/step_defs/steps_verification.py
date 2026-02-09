@@ -58,7 +58,7 @@ def nwave_fully_installed(isolated_claude_home, partial_installation_builder):
         "discuss.md",
         "design.md",
         "distill.md",
-        "develop.md",
+        "devop.md",
         "deliver.md",
     ]
     for cmd in essential_commands:
