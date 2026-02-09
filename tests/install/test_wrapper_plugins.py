@@ -149,9 +149,7 @@ class TestCommandsPlugin:
         # Verify files were actually copied to target
         target_commands_dir = claude_dir / "commands" / "nw"
         assert target_commands_dir.exists(), "Target commands/nw directory should exist"
-        assert (target_commands_dir / "devop.md").exists(), (
-            "devop.md should be copied"
-        )
+        assert (target_commands_dir / "devop.md").exists(), "devop.md should be copied"
         assert (target_commands_dir / "design.md").exists(), (
             "design.md should be copied"
         )
