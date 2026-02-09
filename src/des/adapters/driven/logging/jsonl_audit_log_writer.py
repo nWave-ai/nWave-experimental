@@ -92,4 +92,3 @@ class JsonlAuditLogWriter(AuditLogWriter):
         """
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         return self._log_dir / f"audit-{today}.log"
-
