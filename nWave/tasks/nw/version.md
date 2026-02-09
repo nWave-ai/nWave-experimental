@@ -11,8 +11,8 @@ Display the current nWave framework version and build information by reading fro
 
 1. **Version**: Read from `pyproject.toml` field `version`
 2. **Build date**: Use current UTC timestamp (`date -u +"%Y-%m-%dT%H:%M:%SZ"`)
-3. **Agent count**: Count files matching `nWave/agents/nw-*.md`
-4. **Command count**: Count files matching `nWave/tasks/nw/*.md`
+3. **Agent count**: Count files matching `~/.claude/agents/nw/nw-*.md`
+4. **Command count**: Count files matching `~/.claude/commands/nw/*.md`
 
 ## Output
 
@@ -23,6 +23,6 @@ nWave Framework
 ===============
 Version: {version from pyproject.toml}
 Build: {current UTC timestamp}
-Agents: {count of nWave/agents/nw-*.md}
-Commands: {count of nWave/tasks/nw/*.md}
+Agents: {count of ~/.claude/agents/nw/nw-*.md}
+Commands: {count of ~/.claude/commands/nw/*.md}
 ```

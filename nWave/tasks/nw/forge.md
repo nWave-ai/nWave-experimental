@@ -37,6 +37,6 @@ Execute \*forge to create {agent-name} agent.
 ## Expected Outputs
 
 ```
-nWave/agents/nw-{agent-name}.md
-nWave/skills/{agent-name}/*.md    (if Skills needed)
+~/.claude/agents/nw/nw-{agent-name}.md
+~/.claude/skills/nw/{agent-name}/*.md    (if Skills needed)
 ```

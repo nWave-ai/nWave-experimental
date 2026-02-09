@@ -19,15 +19,15 @@ INPUT: "{feature-description}"
   |
   2. Phase 1 — Roadmap Creation + Review
      a. Skip if roadmap.yaml exists with validation.status == "approved"
-     b. @nw-solution-architect creates roadmap.yaml (read nWave/tasks/nw/roadmap.md)
+     b. @nw-solution-architect creates roadmap.yaml (read ~/.claude/commands/nw/roadmap.md)
      c. Automated quality gate (see below)
-     d. @nw-software-crafter-reviewer reviews roadmap (read nWave/tasks/nw/review.md)
+     d. @nw-software-crafter-reviewer reviews roadmap (read ~/.claude/commands/nw/review.md)
      e. Retry once on rejection, then stop for manual intervention
   |
   3. Phase 2 — Execute All Steps
      a. Extract steps from roadmap.yaml in dependency order
      b. For each step, check execution-log.yaml for prior completion (resume)
-     c. @nw-software-crafter executes TDD cycle (read nWave/tasks/nw/execute.md)
+     c. @nw-software-crafter executes TDD cycle (read ~/.claude/commands/nw/execute.md)
         IMPORTANT: Use the DES Prompt Template from execute.md. Include all 4 DES
         markers (DES-VALIDATION, DES-PROJECT-ID, DES-STEP-ID) and all 8 mandatory
         sections in the Task prompt. Without these, DES validation is bypassed.
@@ -39,16 +39,16 @@ INPUT: "{feature-description}"
   |
   4. Phase 2.25 — Complete Refactoring (L1-L4, code + tests)
      a. @nw-software-crafter performs full L1-L4 refactoring on production code AND tests
-        (read nWave/tasks/nw/refactor.md, specify --level=1-4 --scope=code+tests)
+        (read ~/.claude/commands/nw/refactor.md, specify --level=1-4 --scope=code+tests)
      b. @nw-software-crafter-reviewer reviews the refactoring result
      c. One revision pass on rejection, then proceed
   |
   5. Phase 2.5 — Mutation Testing
-     a. Mutation testing gate >= 80% kill rate (read nWave/tasks/nw/mutation-test.md)
+     a. Mutation testing gate >= 80% kill rate (read ~/.claude/commands/nw/mutation-test.md)
      b. Must pass before proceeding
   |
   6. Phase 3 — Finalize + Cleanup
-     a. @nw-platform-architect archives to docs/evolution/ (read nWave/tasks/nw/finalize.md)
+     a. @nw-platform-architect archives to docs/evolution/ (read ~/.claude/commands/nw/finalize.md)
      b. Commit evolution document, push when ready
   |
   7. Phase 3.5 — Retrospective (conditional)
@@ -75,7 +75,7 @@ For each phase:
 
 All Task prompts for step execution include DES markers for validation. Without these markers, the DES hooks cannot validate the task and it passes through unmonitored.
 
-The full DES Prompt Template (all 8 mandatory sections) is defined in `nWave/tasks/nw/execute.md`. Read that file and embed all 8 sections (DES_METADATA, AGENT_IDENTITY, TASK_CONTEXT, TDD_7_PHASES, QUALITY_GATES, OUTCOME_RECORDING, BOUNDARY_RULES, TIMEOUT_INSTRUCTION) in each Task prompt.
+The full DES Prompt Template (all 8 mandatory sections) is defined in `~/.claude/commands/nw/execute.md`. Read that file and embed all 8 sections (DES_METADATA, AGENT_IDENTITY, TASK_CONTEXT, TDD_7_PHASES, QUALITY_GATES, OUTCOME_RECORDING, BOUNDARY_RULES, TIMEOUT_INSTRUCTION) in each Task prompt.
 
 ```python
 Task(
@@ -89,7 +89,7 @@ Task(
 TASK BOUNDARY: {task_description}
 Return control to orchestrator after completion.
 
-Read the full DES Prompt Template from nWave/tasks/nw/execute.md and embed all 8 mandatory sections below.
+Read the full DES Prompt Template from ~/.claude/commands/nw/execute.md and embed all 8 mandatory sections below.
 Fill placeholders with: step_id={step_id}, project_id={project_id}, agent={agent},
 task_context={instructions_extracted_from_command_file}
 ''',

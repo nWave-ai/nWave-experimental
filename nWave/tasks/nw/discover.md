@@ -38,7 +38,7 @@ Execute \*discover for {product-concept-name}.
 
 ## Success Criteria
 
-Refer to Scout's quality gates in nWave/agents/nw-product-discoverer.md.
+Refer to Scout's quality gates in ~/.claude/agents/nw/nw-product-discoverer.md.
 
 - [ ] All 4 decision gates passed (G1-G4)
 - [ ] Minimum interview thresholds met per phase

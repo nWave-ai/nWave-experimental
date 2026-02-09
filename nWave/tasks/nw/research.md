@@ -12,7 +12,7 @@ Optional `--embed-for={agent-name}` flag distills research into a practitioner-f
 
 ## Context Files Required
 
-- nWave/data/trusted-source-domains.yaml - Source reputation validation
+- ~/.claude/nWave/data/config/trusted-source-domains.yaml - Source reputation validation
 
 ## Agent Invocation
 
@@ -22,7 +22,7 @@ Execute \*research on {topic} [--embed-for={agent-name}].
 
 **Context Files:**
 
-- nWave/data/trusted-source-domains.yaml
+- ~/.claude/nWave/data/config/trusted-source-domains.yaml
 
 **Configuration:**
 
@@ -30,11 +30,11 @@ Execute \*research on {topic} [--embed-for={agent-name}].
 - source_preferences: ["academic", "official", "technical_docs"]
 - output_directory: docs/research/
 - embed_for: {agent-name} # Optional: distilled embed for specified agent
-- embed_output_directory: nWave/data/embed/{agent-name}/
+- embed_output_directory: ~/.claude/nWave/data/embed/{agent-name}/
 
 ## Success Criteria
 
-Refer to Nova's quality gates in nWave/agents/nw-researcher.md.
+Refer to Nova's quality gates in ~/.claude/agents/nw/nw-researcher.md.
 
 **Research:**
 
@@ -46,7 +46,7 @@ Refer to Nova's quality gates in nWave/agents/nw-researcher.md.
 
 **Distillation (if --embed-for specified):**
 
-- [ ] Embed file created in nWave/data/embed/{agent-name}/
+- [ ] Embed file created in ~/.claude/nWave/data/embed/{agent-name}/
 - [ ] 100% essential concepts preserved
 - [ ] Self-contained with no external references
 - [ ] Token budget respected (<5000 tokens per embed)
@@ -68,11 +68,11 @@ Nova researches event sourcing from trusted sources, cross-references 3+ sources
 ```
 /nw:research "mutation testing methodologies" --embed-for=software-crafter
 ```
-Nova researches mutation testing, then distills findings into a practitioner-focused embed file at nWave/data/embed/software-crafter/.
+Nova researches mutation testing, then distills findings into a practitioner-focused embed file at ~/.claude/nWave/data/embed/software-crafter/.
 
 ## Expected Outputs
 
 ```
 data/research/{category}/{topic}-comprehensive-research.md
-nWave/data/embed/{agent}/{topic}-methodology.md    (if --embed-for)
+~/.claude/nWave/data/embed/{agent}/{topic}-methodology.md    (if --embed-for)
 ```

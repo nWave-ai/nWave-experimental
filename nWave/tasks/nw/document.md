@@ -10,9 +10,9 @@ Create evidence-based, DIVIO-compliant documentation by orchestrating research a
 
 ## Context Files Required
 
-- nWave/data/config/trusted-source-domains.yaml - Embed inline in researcher prompt
-- nWave/agents/nw-researcher.md - Extract research methodology for prompt
-- nWave/agents/nw-documentarist.md - Extract DIVIO framework and templates for prompt
+- ~/.claude/nWave/data/config/trusted-source-domains.yaml - Embed inline in researcher prompt
+- ~/.claude/agents/nw/nw-researcher.md - Extract research methodology for prompt
+- ~/.claude/agents/nw/nw-documentarist.md - Extract DIVIO framework and templates for prompt
 
 ## Command Syntax
 
