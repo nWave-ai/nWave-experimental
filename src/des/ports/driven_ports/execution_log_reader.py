@@ -66,3 +66,19 @@ class ExecutionLogReader(ABC):
             LogFileCorrupted: If the log file cannot be parsed
         """
         ...
+
+    @abstractmethod
+    def read_all_events(self, log_path: str) -> list[PhaseEvent]:
+        """Read and parse all phase events without step_id filtering.
+
+        Args:
+            log_path: Absolute path to the execution log file
+
+        Returns:
+            List of all PhaseEvent objects in the log
+
+        Raises:
+            LogFileNotFound: If the log file does not exist
+            LogFileCorrupted: If the log file cannot be parsed
+        """
+        ...

@@ -81,6 +81,8 @@ def create_subagent_stop_service() -> SubagentStopService:
     Returns:
         SubagentStopService configured for production use
     """
+    from des.domain.log_integrity_validator import LogIntegrityValidator
+
     time_provider = SystemTimeProvider()
     audit_writer = JsonlAuditLogWriter()
     schema = get_tdd_schema()
@@ -92,6 +94,9 @@ def create_subagent_stop_service() -> SubagentStopService:
         audit_writer=audit_writer,
         time_provider=time_provider,
         commit_verifier=GitCommitVerifier(),
+        integrity_validator=LogIntegrityValidator(
+            schema=schema, time_provider=time_provider
+        ),
     )
 
 
@@ -143,6 +148,20 @@ def _create_des_task_signal(step_id: str = "") -> None:
         pass  # Signal creation must never break the hook
 
 
+def _read_des_task_signal() -> dict | None:
+    """Read DES task active signal file before removal.
+
+    Returns:
+        Signal data dict with step_id and created_at, or None if not readable.
+    """
+    try:
+        if DES_TASK_ACTIVE_FILE.exists():
+            return json.loads(DES_TASK_ACTIVE_FILE.read_text())
+    except Exception:
+        pass
+    return None
+
+
 def _remove_des_task_signal() -> None:
     """Remove DES task active signal file.
 
@@ -169,10 +188,10 @@ def handle_pre_tool_use() -> int:
         # Read JSON from stdin
         input_data = sys.stdin.read()
 
+        # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
         if not input_data or not input_data.strip():
-            response = {"status": "error", "reason": "Missing stdin input"}
-            print(json.dumps(response))
-            return 1
+            print(json.dumps({"decision": "allow"}))
+            return 0
 
         # Parse JSON
         try:
@@ -260,6 +279,10 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
     Returns:
         dict with "project_id" and "step_id" if DES markers found, None otherwise
     """
+    # Resilience 9c: missing transcript file → return None silently
+    if not Path(transcript_path).exists():
+        return None
+
     try:
         with open(transcript_path) as f:
             for line in f:
@@ -444,10 +467,10 @@ def handle_subagent_stop() -> int:
     try:
         input_data = sys.stdin.read()
 
+        # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
         if not input_data or not input_data.strip():
-            response = {"status": "error", "reason": "Missing stdin input"}
-            print(json.dumps(response))
-            return 1
+            print(json.dumps({"decision": "allow"}))
+            return 0
 
         try:
             hook_input = json.loads(input_data)
@@ -487,6 +510,12 @@ def handle_subagent_stop() -> int:
             return exit_code
         execution_log_path, project_id, step_id = result
 
+        # Read task_start_time from signal BEFORE removing it
+        task_start_time = ""
+        signal_data = _read_des_task_signal()
+        if signal_data:
+            task_start_time = signal_data.get("created_at", "")
+
         # Clean up DES task signal (subagent finished)
         _remove_des_task_signal()
 
@@ -505,6 +534,7 @@ def handle_subagent_stop() -> int:
                 step_id=step_id,
                 stop_hook_active=stop_hook_active,
                 cwd=cwd,
+                task_start_time=task_start_time,
             )
         )
 

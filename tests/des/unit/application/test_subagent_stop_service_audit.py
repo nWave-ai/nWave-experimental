@@ -63,6 +63,9 @@ class StubExecutionLogReader(ExecutionLogReader):
     def read_step_events(self, log_path: str, step_id: str) -> list[PhaseEvent]:
         return self._events
 
+    def read_all_events(self, log_path: str) -> list[PhaseEvent]:
+        return self._events
+
 
 class StubScopeChecker(ScopeChecker):
     """Stub returning pre-configured scope check results."""
@@ -479,3 +482,99 @@ class TestAuditLoggingConditionsPreserved:
             e for e in audit_spy.events if e.event_type == "SCOPE_VIOLATION"
         ]
         assert len(scope_events) == 2
+
+
+# --- UT-18/UT-19: Integrity validation integration ---
+
+
+class TestIntegrityValidationIntegration:
+    """UT-18/UT-19: LogIntegrityValidator integration in SubagentStopService."""
+
+    def test_integrity_warnings_logged_as_log_integrity_warning(self) -> None:
+        """UT-18: Integrity warnings produce LOG_INTEGRITY_WARNING audit events."""
+        from des.domain.log_integrity_validator import LogIntegrityValidator
+
+        # Include an event with wrong phase name to trigger integrity warning
+        events = _make_complete_phase_events("02-01")
+        events.append(
+            PhaseEvent(
+                step_id="02-01",
+                phase_name="REFACTOR",
+                status="EXECUTED",
+                outcome="PASS",
+                timestamp="2026-02-06T21:07:00Z",
+            )
+        )
+
+        audit_spy = SpyAuditWriter()
+        schema = get_tdd_schema()
+        service = SubagentStopService(
+            log_reader=StubExecutionLogReader(project_id="my-feature", events=events),
+            completion_validator=StepCompletionValidator(schema=schema),
+            scope_checker=StubScopeChecker(),
+            audit_writer=audit_spy,
+            time_provider=StubTimeProvider(),
+            integrity_validator=LogIntegrityValidator(schema=schema),
+        )
+        context = SubagentStopContext(
+            execution_log_path="/fake/execution-log.yaml",
+            project_id="my-feature",
+            step_id="02-01",
+        )
+
+        decision = service.validate(context)
+
+        assert decision.action == "allow"
+        integrity_events = [
+            e for e in audit_spy.events if e.event_type == "LOG_INTEGRITY_WARNING"
+        ]
+        assert len(integrity_events) >= 1
+        assert "REFACTOR" in integrity_events[0].data["warning"]
+
+    def test_integrity_check_does_not_block_on_warnings(self) -> None:
+        """UT-19: Integrity warnings are warn-only, step still passes."""
+        from des.domain.log_integrity_validator import LogIntegrityValidator
+
+        events = _make_complete_phase_events("02-01")
+        # Add a fabricated future-timestamp event
+        events.append(
+            PhaseEvent(
+                step_id="02-01",
+                phase_name="PREPARE",
+                status="EXECUTED",
+                outcome="PASS",
+                timestamp="2099-01-01T00:00:00Z",
+            )
+        )
+
+        audit_spy = SpyAuditWriter()
+        schema = get_tdd_schema()
+        service = SubagentStopService(
+            log_reader=StubExecutionLogReader(project_id="my-feature", events=events),
+            completion_validator=StepCompletionValidator(schema=schema),
+            scope_checker=StubScopeChecker(),
+            audit_writer=audit_spy,
+            time_provider=StubTimeProvider(),
+            integrity_validator=LogIntegrityValidator(schema=schema),
+        )
+        context = SubagentStopContext(
+            execution_log_path="/fake/execution-log.yaml",
+            project_id="my-feature",
+            step_id="02-01",
+            task_start_time="2026-02-06T21:00:00Z",
+        )
+
+        decision = service.validate(context)
+
+        # Step STILL passes despite integrity warnings
+        assert decision.action == "allow"
+        # Verify warnings were logged
+        integrity_events = [
+            e for e in audit_spy.events if e.event_type == "LOG_INTEGRITY_WARNING"
+        ]
+        assert len(integrity_events) >= 1
+        # Verify PASSED event also logged
+        passed = [
+            e for e in audit_spy.events if e.event_type == "HOOK_SUBAGENT_STOP_PASSED"
+        ]
+        assert len(passed) == 1

@@ -48,6 +48,9 @@ class MockExecutionLogReader(ExecutionLogReader):
     def read_step_events(self, log_path: str, step_id: str) -> list[str]:
         return self._events
 
+    def read_all_events(self, log_path: str) -> list[str]:
+        return self._events
+
 
 class MockScopeChecker(ScopeChecker):
     """Mock scope checker."""

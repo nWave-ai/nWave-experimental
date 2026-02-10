@@ -51,6 +51,11 @@ class MockExecutionLogReader(ExecutionLogReader):
             e for e in (self._parser.parse(s) for s in self._events) if e is not None
         ]
 
+    def read_all_events(self, log_path: str):
+        return [
+            e for e in (self._parser.parse(s) for s in self._events) if e is not None
+        ]
+
 
 class MockScopeChecker(ScopeChecker):
     """Mock scope checker."""

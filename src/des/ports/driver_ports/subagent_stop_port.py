@@ -37,6 +37,7 @@ class SubagentStopContext:
     step_id: str
     stop_hook_active: bool = False
     cwd: str = ""
+    task_start_time: str = ""
 
 
 class SubagentStopPort(ABC):

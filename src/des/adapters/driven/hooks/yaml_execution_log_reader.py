@@ -70,6 +70,23 @@ class YamlExecutionLogReader(ExecutionLogReader):
         raw_events = data.get("events", [])
         return self._parser.parse_many(raw_events, step_id)
 
+    def read_all_events(self, log_path: str) -> list[PhaseEvent]:
+        """Read and parse all phase events without step_id filtering.
+
+        Args:
+            log_path: Absolute path to the execution log file
+
+        Returns:
+            List of all PhaseEvent objects in the log
+
+        Raises:
+            LogFileNotFound: If the log file does not exist
+            LogFileCorrupted: If the log file cannot be parsed
+        """
+        data = self._load_yaml(log_path)
+        raw_events = data.get("events", [])
+        return self._parser.parse_all(raw_events)
+
     def _load_yaml(self, log_path: str) -> dict:
         """Load and parse a YAML file.
 

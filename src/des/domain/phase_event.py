@@ -82,3 +82,19 @@ class PhaseEventParser:
             if event is not None and event.step_id == step_id:
                 events.append(event)
         return events
+
+    def parse_all(self, event_strings: list[str]) -> list[PhaseEvent]:
+        """Parse all event strings without filtering by step_id.
+
+        Args:
+            event_strings: List of raw pipe-delimited event strings
+
+        Returns:
+            List of all successfully parsed PhaseEvent objects
+        """
+        events = []
+        for event_str in event_strings:
+            event = self.parse(event_str)
+            if event is not None:
+                events.append(event)
+        return events

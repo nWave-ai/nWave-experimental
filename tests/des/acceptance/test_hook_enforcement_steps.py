@@ -70,6 +70,9 @@ class StubExecutionLogReader(ExecutionLogReader):
     def read_step_events(self, log_path: str, step_id: str) -> list[PhaseEvent]:
         return self._events
 
+    def read_all_events(self, log_path: str) -> list[PhaseEvent]:
+        return self._events
+
 
 class StubScopeChecker(ScopeChecker):
     """Stub returning pre-configured scope check results."""

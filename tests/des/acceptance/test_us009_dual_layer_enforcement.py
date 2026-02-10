@@ -608,17 +608,19 @@ class TestDualLayerEnforcement:
         assert response.get("additionalContext") is None
 
     # =========================================================================
-    # AC-009.7: SubagentStop empty stdin = fail-closed
+    # AC-009.7: SubagentStop empty stdin = allow passthrough (resilience 9a)
     # Scenario 007b
     # =========================================================================
 
-    def test_subagent_stop_empty_stdin_fail_closed(self):
+    def test_subagent_stop_empty_stdin_allows_passthrough(self):
         """
-        GIVEN empty stdin (protocol error)
+        GIVEN empty stdin (protocol error or non-DES agent)
         WHEN SubagentStop hook fires
-        THEN exit code 1 (fail-closed)
+        THEN exit code 0 with allow decision (resilience fix 9a)
 
-        Business Value: Protocol errors are fail-closed for safety.
+        Business Value: Empty stdin on SubagentStop should not block a
+        completed subagent. The subagent already finished; blocking serves
+        no purpose when context is missing.
         """
         # Act: Invoke with empty stdin
         env = os.environ.copy()
@@ -639,8 +641,10 @@ class TestDualLayerEnforcement:
             env=env,
         )
 
-        # Assert: Fail-closed
-        assert proc.returncode == 1
+        # Assert: Allow passthrough (resilience 9a)
+        assert proc.returncode == 0
+        response = json.loads(proc.stdout)
+        assert response["decision"] == "allow"
 
 
 # =============================================================================

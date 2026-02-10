@@ -26,6 +26,7 @@ from des.ports.driver_ports.subagent_stop_port import (
 
 
 if TYPE_CHECKING:
+    from des.domain.log_integrity_validator import LogIntegrityValidator
     from des.domain.step_completion_validator import StepCompletionValidator
     from des.ports.driven_ports.commit_verifier import (
         CommitVerificationResult,
@@ -61,6 +62,7 @@ class SubagentStopService(SubagentStopPort):
         audit_writer: AuditLogWriter,
         time_provider: TimeProvider,
         commit_verifier: CommitVerifier | None = None,
+        integrity_validator: LogIntegrityValidator | None = None,
     ) -> None:
         self._log_reader = log_reader
         self._completion_validator = completion_validator
@@ -68,6 +70,7 @@ class SubagentStopService(SubagentStopPort):
         self._audit_writer = audit_writer
         self._time_provider = time_provider
         self._commit_verifier = commit_verifier
+        self._integrity_validator = integrity_validator
 
     def validate(self, context: SubagentStopContext) -> HookDecision:
         """Validate step completion for a subagent.
@@ -161,12 +164,44 @@ class SubagentStopService(SubagentStopPort):
                 )
             self._log_commit_verified(context, commit_result)
 
+        # Step 3.7: Check log integrity (warning only, does not block)
+        self._check_and_log_integrity(context)
+
         # Step 4: Check scope (warning only, does not block)
         self._check_and_log_scope(context)
 
         # Step 5: All valid
         self._log_passed(context.project_id, context.step_id)
         return HookDecision.allow()
+
+    def _check_and_log_integrity(self, context: SubagentStopContext) -> None:
+        """Check log integrity and log warnings (does not block)."""
+        if not self._integrity_validator:
+            return
+
+        try:
+            all_events = self._log_reader.read_all_events(
+                context.execution_log_path,
+            )
+        except (LogFileNotFound, LogFileCorrupted):
+            return  # Already handled in step 1/2
+
+        result = self._integrity_validator.validate(
+            step_id=context.step_id,
+            all_events=all_events,
+            task_start_time=context.task_start_time or None,
+        )
+
+        for warning in result.warnings:
+            self._audit_writer.log_event(
+                AuditEvent(
+                    event_type="LOG_INTEGRITY_WARNING",
+                    timestamp=self._time_provider.now_utc().isoformat(),
+                    feature_name=context.project_id,
+                    step_id=context.step_id,
+                    data={"warning": warning},
+                )
+            )
 
     def _check_and_log_scope(self, context: SubagentStopContext) -> None:
         """Check scope violations and log warnings."""
