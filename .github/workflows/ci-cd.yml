@@ -415,7 +415,9 @@ jobs:
             --cov \
             --cov-report=term-missing \
             --cov-report=xml \
-            --cov-report=html \
+            --cov-report=html:reports/htmlcov \
+            --html=reports/test-report.html --self-contained-html \
+            --alluredir=reports/allure-results \
             --junitxml=test-results-${{ matrix.os }}-py${{ matrix.python-version }}.xml
         shell: bash
 
@@ -434,7 +436,23 @@ jobs:
           name: coverage-${{ matrix.os }}-py${{ matrix.python-version }}
           path: |
             coverage.xml
-            htmlcov/
+            reports/htmlcov/
+          retention-days: 14
+
+      - name: 📤 Upload HTML test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: reports/test-report.html
+          retention-days: 14
+
+      - name: 📤 Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: reports/allure-results/
           retention-days: 14
 
       - name: 📊 Test Summary

@@ -44,6 +44,9 @@ pytest.log
 # Node modules
 node_modules/
 
+# Report artifacts
+reports/
+
 # Build artifacts
 dist/
 build/

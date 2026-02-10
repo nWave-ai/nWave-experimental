@@ -26,6 +26,7 @@ pytest-pspec = "*"
 pytest-mock = "*"
 pytest-describe = "*"
 pytest-watch = "*"
+allure-pytest = "*"
 ruff = ">=0.3.0"
 mypy = ">=0.991"
 bandit = {extras = ["toml"], version = "*"}
@@ -43,10 +44,16 @@ tqdm = ">=4.64.0"
 # Core CI/CD commands
 # Minimal test output: progress indicators only (dots/checks), errors with short tracebacks
 test = "python -m pytest tests/ --pspec --tb=short --color=yes"
+# HTML report: branded test report with domain legend
+test-html = "python -m pytest tests/ --pspec --tb=short --html=reports/test-report.html --self-contained-html --color=yes"
+# Allure report: epic/feature/story labels for living documentation
+test-allure = "python -m pytest tests/ --pspec --tb=short --alluredir=reports/allure-results --color=yes"
 # Coverage testing: minimal console output, detailed coverage report at end
-test-coverage = "python -m pytest tests/ -q --cov=src --cov=scripts --cov-report=term-missing --cov-report=html"
+test-coverage = "python -m pytest tests/ -q --cov=src --cov=scripts --cov-report=term-missing --cov-report=html:reports/htmlcov"
+# Full report: all reports in one run
+test-full = "python -m pytest tests/ --pspec --tb=short --cov=src --cov=scripts --cov-report=term-missing --cov-report=html:reports/htmlcov --html=reports/test-report.html --self-contained-html --alluredir=reports/allure-results --color=yes"
 # Mutation testing: uses mutmut for comprehensive mutation analysis
-mutation-test = "mutmut run"
+mutation-test = "mutmut run --paths-to-mutate=src/des,scripts/install"
 build = "python tools/build.py"
 # Linting and formatting
 lint = "ruff check src/ scripts/ tools/ tests/"
