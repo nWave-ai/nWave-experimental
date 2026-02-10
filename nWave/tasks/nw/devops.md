@@ -82,6 +82,17 @@ If Yes to Decision 7:
 4. Progressive rollout (percentage-based deployment)
 5. All of the above
 
+### Decision 8: Git Branching Strategy
+**Question**: What Git branching strategy should the project follow?
+**Options**:
+1. Trunk-Based Development -- single main branch, short-lived feature branches (<1 day), continuous integration. Requires robust CI gates on every commit.
+2. GitHub Flow -- feature branches from main, pull requests, merge to main after review. Balanced CI with PR-triggered pipelines.
+3. GitFlow -- develop/main branches, feature/release/hotfix branches, formal release process. Requires branch-specific pipelines (develop CI, release candidate, hotfix fast-track).
+4. Release Branching -- long-lived release branches, cherry-pick fixes between branches. Requires per-branch pipelines and cross-branch validation.
+5. Other -- user provides custom strategy
+
+This decision directly influences CI/CD pipeline design: trigger rules, branch protection, environment promotion, and release automation.
+
 ## Context Files Required
 
 - docs/feature/{feature-name}/design/architecture-design.md - From DESIGN wave
@@ -109,6 +120,7 @@ Context files: see Context Files Required above.
 - observability_and_logging: {from Decision 5}
 - deployment_strategy: {from Decision 6}
 - continuous_learning: {from Decision 7}
+- git_branching_strategy: {from Decision 8}
 
 ## Success Criteria
 
@@ -118,6 +130,7 @@ Context files: see Context Files Required above.
 - [ ] Observability design complete (distributed tracing, health checks)
 - [ ] Infrastructure integration assessed (if existing infra)
 - [ ] Continuous learning capabilities designed (if applicable)
+- [ ] Git branching strategy selected and CI/CD pipeline triggers aligned to it
 - [ ] Handoff accepted by acceptance-designer (DISTILL wave)
 
 ## Next Wave
@@ -131,13 +144,13 @@ Context files: see Context Files Required above.
 ```
 /nw:devops payment-gateway
 ```
-User selects: cloud-native, Kubernetes, GitHub Actions, no existing infra, OpenTelemetry, blue-green. Apex designs full infrastructure from scratch.
+User selects: cloud-native, Kubernetes, GitHub Actions, no existing infra, OpenTelemetry, blue-green, trunk-based development. Apex designs full infrastructure from scratch with robust CI gates on every commit to main.
 
 ### Example 2: Brownfield with existing CI/CD
 ```
 /nw:devops auth-upgrade
 ```
-User selects: hybrid, Docker Compose, GitLab CI (existing), existing CI/CD only, Datadog, rolling. Apex extends existing pipelines rather than replacing them.
+User selects: hybrid, Docker Compose, GitLab CI (existing), existing CI/CD only, Datadog, rolling, GitFlow. Apex extends existing pipelines with branch-specific stages for develop, release, and hotfix branches.
 
 ## Expected Outputs
 
@@ -148,5 +161,6 @@ docs/feature/{feature-name}/deliver/
   observability-design.md
   monitoring-alerting.md
   infrastructure-integration.md    (if existing infra)
+  branching-strategy.md
   continuous-learning.md           (if applicable)
 ```

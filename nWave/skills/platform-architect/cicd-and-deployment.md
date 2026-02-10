@@ -120,13 +120,31 @@ Tools: Argo Rollouts, Flagger, LaunchDarkly/Flagsmith.
 
 ## Branch and Release Strategies
 
+Select the branching strategy that matches team maturity, release cadence, and risk profile. The chosen strategy shapes pipeline triggers, environment promotion, and release automation.
+
 ### Trunk-Based Development
-Single main branch, short-lived feature branches (< 1 day). Direct commits to main allowed with protection. Releases from main.
-Use when: high-performing teams, continuous deployment.
+Single main branch, short-lived feature branches (< 1 day). Direct commits to main allowed with protection. Releases from main via tags.
+- **CI/CD implications**: Every commit to main triggers the full pipeline (commit + acceptance + capacity). Requires robust automated gates since main is always releasable. Feature flags manage incomplete work. No branch-specific pipelines needed.
+- **Pipeline triggers**: `push: [main]`, `tags: ['v*']`
+- Use when: high-performing teams, continuous deployment, mature test suites.
+
+### GitHub Flow
+Feature branches from main, pull requests with review, merge to main after approval. Releases from main.
+- **CI/CD implications**: PR-triggered pipelines run commit + acceptance stages. Merge to main triggers deployment pipeline. Simpler than GitFlow but requires PR quality gates.
+- **Pipeline triggers**: `pull_request: [main]`, `push: [main]`
+- Use when: teams practicing continuous delivery with code review culture.
 
 ### GitFlow
-Structured branches: main (production), develop (integration), feature (new development), release (preparation), hotfix (production fixes).
-Use when: scheduled releases, multiple versions in production.
+Structured branches: main (production), develop (integration), feature/* (new development), release/* (preparation), hotfix/* (production fixes).
+- **CI/CD implications**: Branch-specific pipelines required. Feature branches run commit stage only. Develop branch runs commit + acceptance. Release branches run full pipeline including capacity. Hotfix branches run commit + acceptance with fast-track to production. More pipeline configuration, more environment management.
+- **Pipeline triggers**: `push: [main, develop, 'release/**', 'hotfix/**']`, `pull_request: [develop]`
+- Use when: scheduled releases, multiple versions in production, regulated environments.
+
+### Release Branching
+Long-lived release branches (e.g., `release/1.x`, `release/2.x`), cherry-pick fixes between branches. Main tracks latest development.
+- **CI/CD implications**: Per-branch pipelines with independent deployment targets. Cross-branch validation needed when cherry-picking. Each release branch has its own environment and deployment schedule.
+- **Pipeline triggers**: `push: [main, 'release/**']`
+- Use when: supporting multiple product versions simultaneously, enterprise software with customer-specific releases.
 
 ### Branch Protection Rules (main)
 - Require pull request reviews (2+ approvers)

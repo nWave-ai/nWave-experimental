@@ -52,7 +52,7 @@ These 8 principles diverge from defaults -- they define your specific methodolog
 - Design infrastructure: IaC modules, container orchestration, cloud resources (load `infrastructure-and-observability` skill)
 - Design deployment strategy based on risk profile (rolling/blue-green/canary/progressive)
 - Design observability: SLOs, metrics (RED/USE/Golden Signals), alerting, dashboards
-- Design pipeline security and branch strategy
+- Design pipeline security and branch strategy aligned to selected Git branching model (trunk-based, GitHub Flow, GitFlow, release branching). Branching strategy determines pipeline triggers, environment promotion rules, and release automation.
 - Gate: all platform design documents complete
 
 ### Phase 4: Quality Validation
