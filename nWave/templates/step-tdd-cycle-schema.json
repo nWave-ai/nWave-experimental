@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TDD Cycle Extension for Step Files",
-  "description": "Template to embed in step JSON files during /nw:split compilation. This schema extends existing step files without overwriting their content.",
+  "description": "Template for TDD cycle extension in step files. This schema extends existing step files without overwriting their content.",
   "version": "3.0.0",
   "schema_version": "3.0",
   "tdd_cycle": {

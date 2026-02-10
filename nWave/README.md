@@ -115,7 +115,7 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 /nw:devops "user-authentication"
 /nw:distill "User can register and login securely"
 /nw:deliver "Implement user authentication with JWT"
-  # Automatically: baseline → roadmap → split → execute all steps → finalize
+  # Automatically: roadmap → execute all steps → finalize
   # Quality gates: 3 + 3N reviews (e.g., 10 steps = 33 reviews)
 ```
 
@@ -127,9 +127,7 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 /nw:design "JWT authentication architecture"
 
 # DELIVER wave - manual orchestration
-/nw:baseline "Implement user authentication"
 /nw:roadmap @solution-architect "Implement user authentication"
-/nw:split @platform-architect "user-authentication"
 
 # Execute individual steps with 11-phase TDD
 /nw:execute @software-crafter "docs/feature/user-authentication/steps/01-01.json"

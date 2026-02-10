@@ -169,18 +169,11 @@ commands:
     outputs: ["acceptance_tests", "test_scenarios"]
 
   deliver:
-    description: "Execute complete DELIVER wave: baseline → roadmap → split → execute-all → finalize"
+    description: "Execute complete DELIVER wave: roadmap → execute-all → finalize"
     argument_hint: "[feature-description] - Example: \"Implement user authentication with JWT\""
     agents: ["platform-architect"]
     wave: "DELIVER"
     outputs: ["complete_feature", "quality_gates_passed", "evolution_document"]
-
-  baseline:
-    description: "Establish measurement baseline before roadmap creation"
-    argument_hint: "[goal-description] - Example: \"optimize test execution time\""
-    agents: ["researcher"]
-    wave: "DELIVER"
-    outputs: ["baseline_yaml"]
 
   document:
     description: "Create evidence-based DIVIO-compliant documentation"
@@ -242,14 +235,8 @@ commands:
     argument_hint: "[agent] [goal-description] - Example: @solution-architect \"Migrate to microservices\""
     outputs: ["roadmap_yaml"]
 
-  split:
-    description: "Generate atomic task files from roadmap"
-    argument_hint: "[agent] [project-id] - Example: @software-crafter \"auth-upgrade\""
-    agents: ["software_crafter"]
-    outputs: ["task_files"]
-
   review:
-    description: "Expert critique and quality review - Types: baseline, roadmap, step, task, implementation"
+    description: "Expert critique and quality review - Types: roadmap, step, task, implementation"
     argument_hint: "[agent] [artifact-type] [artifact-path] - Example: @software-crafter task \"roadmap.yaml\""
     outputs: ["review_report"]
 
