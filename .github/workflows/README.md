@@ -52,6 +52,7 @@ flowchart TD
         BD["build"]
         GR["github-release"]
         PN["publish-to-nwave<br/>sync to nwave-ai/nwave"]
+        PP["publish-to-pypi<br/>TestPyPI upload"]
         REL_NS["notify-slack<br/>success/failure"]
     end
 
@@ -66,7 +67,8 @@ flowchart TD
     VB -->|"tag created"| BD
     BD --> GR
     GR --> PN
-    PN -.-> REL_NS
+    PN --> PP
+    PP -.-> REL_NS
 ```
 
 ## Workflow Files
@@ -74,7 +76,7 @@ flowchart TD
 | File | Trigger | Purpose | Permissions |
 |------|---------|---------|-------------|
 | `ci.yml` | push/PR on master, develop | Quality gates + tests | `contents: read` |
-| `release.yml` | `workflow_dispatch` or tag push | Version bump, build, release, cross-repo publish | `contents: write` |
+| `release.yml` | `workflow_dispatch` or tag push | Version bump, build, release, cross-repo publish, PyPI upload | `contents: write` |
 
 The `tags-ignore: ['v*']` on CI prevents duplicate runs when the release workflow pushes a version tag.
 
@@ -171,7 +173,7 @@ Manual workflow. Triggered from the Actions UI or by pushing a `v*` tag.
 Uses [python-semantic-release](https://python-semantic-release.readthedocs.io/) to calculate the next version from conventional commits, update `pyproject.toml` + `framework-catalog.yaml`, commit, tag, and push.
 
 - If `version_override` is set: forces that specific version
-- If `dry_run` is true: runs with `--noop`, no changes pushed
+- If `dry_run` is true: runs with `--print` to show what would happen, no changes pushed
 
 **build** (after version-bump or on tag push)
 
@@ -199,13 +201,23 @@ Changelog sections (included when commits of that type exist):
 
 **publish-to-nwave** (after github-release)
 
-Syncs the repository to `nwave-ai/nwave` using rsync with an exclude list for local/dev artifacts. Commits as "nWave Release Train". Skipped on dry runs.
+Syncs the repository to `nwave-ai/nwave` using rsync with an exclude list for local/dev artifacts (`pyproject.toml`, `setup.py`, `Pipfile*`, etc. are excluded; nwave-ai maintains its own). Updates nwave-ai's version from `[tool.nwave] public_version` in crafter-ai's `pyproject.toml`. Commits as "nWave Release Train". Skipped on dry runs.
+
+**publish-to-pypi** (after publish-to-nwave)
+
+Checks out `nwave-ai/nwave` (which now has the synced content), builds a wheel + sdist using hatchling, and uploads to TestPyPI via twine. Skipped on dry runs.
+
+Once validated on TestPyPI, this will switch to production PyPI. The package is published as `nwave-ai`:
+
+```
+pipx install nwave-ai && nwave-ai install
+```
 
 **notify-slack** (always, needs all above)
 
 Simple success/failure notification. No state machine needed since releases are manual and infrequent.
 
-- Success: "Released vX.Y.Z" with link to release and run
+- Success: "Released vX.Y.Z" with links to release, run, and PyPI
 - Failure: "Release Pipeline Failed" with failed jobs list
 
 ## Release Process
@@ -217,8 +229,9 @@ Releases are now **manual**, triggered from the GitHub Actions UI.
 2. version-bump: PSR analyzes conventional commits, bumps version, creates tag
 3. build: Creates release packages, validates version consistency
 4. github-release: Publishes GitHub Release with changelog and artifacts
-5. publish-to-nwave: Syncs files to nwave-ai/nwave public repo
-6. notify-slack: Sends release notification to Slack
+5. publish-to-nwave: Syncs files to nwave-ai/nwave, updates nwave-ai version
+6. publish-to-pypi: Builds wheel from nwave-ai/nwave, uploads to TestPyPI
+7. notify-slack: Sends release notification to Slack
 ```
 
 Version bump rules (from conventional commits):
@@ -292,6 +305,7 @@ Bump `CACHE_VERSION` (currently `v3`) to force a full cache invalidation across 
 | `GH_TOKEN` | No | Yes | Push version tag (PAT with `contents: write`, needed because default `GITHUB_TOKEN` cannot trigger subsequent workflow runs) |
 | `GITHUB_TOKEN` | Auto | Auto | GitHub Release creation |
 | `RELEASETRAIN` | No | Yes | PAT with push access to `nwave-ai/nwave` |
+| `TEST_PYPI_API_TOKEN` | No | Yes | Upload `nwave-ai` wheel to TestPyPI (will switch to `PYPI_TOKEN` for production) |
 
 ## Permissions
 
