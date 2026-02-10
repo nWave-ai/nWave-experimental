@@ -1,6 +1,6 @@
 ---
 name: critique-dimensions
-description: Review dimensions for acceptance test quality - happy path bias, GWT compliance, business language purity, coverage completeness, and priority validation
+description: Review dimensions for acceptance test quality - happy path bias, GWT compliance, business language purity, coverage completeness, walking skeleton user-centricity, and priority validation
 ---
 
 # Acceptance Test Critique Dimensions
@@ -57,7 +57,23 @@ Validation:
 
 Severity: blocker (unverified requirements).
 
-## Dimension 5: Priority Validation
+## Dimension 5: Walking Skeleton User-Centricity
+
+**Pattern**: Walking skeletons describe technical layer connectivity instead of user value delivery.
+
+Detection: Read each `@walking_skeleton` scenario and apply the litmus test:
+- Does the title describe a user goal or a technical flow?
+- Do the Then steps describe what the user observes or internal system side effects?
+- Could a non-technical stakeholder read it and confirm "yes, that is what users need"?
+
+Examples of violations:
+- "End-to-end order flow through all layers" (technical framing)
+- Then steps like "order row inserted in database" or "message published to queue" (internal side effects)
+- Given steps that set up technical state ("Given database contains user record") instead of user context ("Given customer has an account")
+
+Severity: high (skeletons that only prove wiring miss the point -- the first passing skeleton should be demo-able to a stakeholder).
+
+## Dimension 6: Priority Validation
 
 **Pattern**: Tests address secondary concerns while larger gaps exist.
 
@@ -98,6 +114,11 @@ issues_identified:
     - issue: "User story {US-ID} has no acceptance tests"
       severity: "blocker"
       recommendation: "Create scenarios for all AC of {US-ID}"
+
+  walking_skeleton_centricity:
+    - issue: "Walking skeleton '{name}' describes technical flow, not user goal"
+      severity: "high"
+      recommendation: "Reframe: title as user goal, Then steps as observable user outcomes"
 
 approval_status: "approved|rejected_pending_revisions|conditionally_approved"
 ```

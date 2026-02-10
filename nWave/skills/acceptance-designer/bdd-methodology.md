@@ -9,18 +9,27 @@ description: BDD patterns for acceptance test design - Given-When-Then structure
 
 Test units of behavior, not units of code. Acceptance tests validate business outcomes through public interfaces, decoupled from implementation details.
 
-## Double-Loop TDD
+## Outside-In Double-Loop TDD
 
-Outer loop (acceptance/BDD): hours to days, user perspective, business language, defines "done."
-Inner loop (unit/TDD): minutes, developer perspective, technical terms, implements components.
+The acceptance-designer creates the outer loop -- the "outside" of Outside-In TDD. Development starts from the user's perspective and drives inward toward implementation.
+
+**Outer loop (acceptance/BDD)**: hours to days, user perspective, business language, defines "done."
+- Written from outside: what does the user want? What do they observe?
+- Scenarios describe user goals and observable outcomes, not system internals
+- A failing outer-loop test is the starting signal for implementation
+
+**Inner loop (unit/TDD)**: minutes, developer perspective, technical terms, implements components.
+- Driven from inside: how does the system fulfill the user's goal?
+- The software-crafter owns this loop
 
 Workflow:
-1. Write failing acceptance test (outer loop)
-2. Drop to inner loop: unit tests to implement components
+1. Write failing acceptance test from user's perspective (outer loop -- outside)
+2. Software-crafter drops to inner loop: unit tests to implement components (inside)
 3. Iterate inner loop until acceptance test passes
-4. Repeat for next behavior
+4. The passing acceptance test proves user value is delivered
+5. Repeat for next behavior
 
-Outer loop guides WHAT to build. Inner loop drives HOW.
+Outer loop defines WHAT users need (outside). Inner loop drives HOW to build it (inside). The acceptance-designer owns the outside; the software-crafter owns the inside.
 
 ## Given-When-Then Structure
 

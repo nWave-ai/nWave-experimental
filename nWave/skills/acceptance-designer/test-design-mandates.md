@@ -133,13 +133,22 @@ Does the scenario name express user value or a technical operation? "Customer co
 
 ## Walking Skeleton Strategy
 
-Balance E2E integration tests with focused boundary tests.
+Balance user-centric E2E integration tests with focused boundary tests.
 
 ### Walking Skeletons (2-5 per feature)
-- Complete E2E integration touching all system layers
-- Validate critical happy paths
-- Prove system wiring works
-- Characteristics: UI > Services > DB > Email (full stack)
+- Trace a thin vertical slice that delivers observable user value end-to-end
+- Each skeleton answers: "Can a user accomplish this goal and see the result?"
+- Express the simplest complete user journey, not layer-by-layer connectivity
+- Validate that the system delivers value a stakeholder could demo
+- Touch all layers as a consequence of the user journey, not as a design goal
+
+### Walking Skeleton Litmus Test
+
+A walking skeleton is user-centric if:
+1. The scenario title describes a user goal ("Customer purchases a product") not a technical flow ("Order passes through all layers")
+2. The Given/When steps describe user actions and context, not system state setup
+3. The Then steps describe what the user observes (confirmation, email, receipt), not internal side effects (database row inserted, message queued)
+4. A non-technical stakeholder can read it and confirm "yes, that is what users need"
 
 ### Focused Scenarios (15-20 per feature, majority of suite)
 - Test specific business rules at driving port boundary
@@ -150,10 +159,10 @@ Balance E2E integration tests with focused boundary tests.
 ### Recommended Ratio
 
 For a typical feature with 20 acceptance scenarios:
-- 2-3 walking skeletons (E2E integration)
+- 2-3 walking skeletons (user value E2E)
 - 17-18 focused scenarios (boundary tests with test doubles)
 
-Walking skeletons prove integration works. Focused scenarios run fast and cover breadth. Both use business language and invoke through entry points.
+Walking skeletons prove users can achieve their goals through the system. Focused scenarios run fast and cover breadth. Both use business language and invoke through entry points.
 
 ## Mandate Compliance Verification
 

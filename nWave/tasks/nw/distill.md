@@ -78,7 +78,7 @@ Context files: see Context Files Required above.
 - [ ] Step methods call real production services (no mocks at acceptance level)
 - [ ] One-at-a-time implementation strategy established (@skip/@pending tags)
 - [ ] Tests exercise driving ports, not internal components (hexagonal boundary)
-- [ ] Walking skeleton created first (features only; optional for bugs)
+- [ ] Walking skeleton created first with user-centric scenarios that deliver observable user value (features only; optional for bugs)
 - [ ] Infrastructure test scenarios included (if Decision 4 = Yes)
 - [ ] Handoff package ready for software-crafter (DELIVER wave)
 
