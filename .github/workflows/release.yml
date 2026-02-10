@@ -411,6 +411,9 @@ jobs:
 
       - name: Sync files to nwave-ai/nwave
         run: |
+          # Remove dangling symlinks before rsync (e.g. nWave/tasks/dw -> nw)
+          find . -maxdepth 5 -type l ! -exec test -e {} \; -delete 2>/dev/null || true
+
           rsync -avL --delete \
             --exclude '.git' \
             --exclude '.git*' \
