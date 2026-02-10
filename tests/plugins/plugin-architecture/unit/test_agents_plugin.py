@@ -4,6 +4,9 @@ Unit tests for AgentsPlugin.
 Tests the AgentsPlugin install() and verify() methods through the
 InstallationPlugin interface (driving port).
 
+Source: nWave/agents/ (no dist/ide fallback)
+Excludes: legacy/ directory, README.md
+
 Domain: Plugin Infrastructure - Agent Installation
 """
 
@@ -38,18 +41,7 @@ def project_root() -> Path:
 
 @pytest.fixture
 def agent_source_dir(project_root: Path) -> Path:
-    """Return the agent source directory."""
-    # Try dist/ide/agents/nw first (built distribution)
-    dist_path = project_root / "dist" / "ide" / "agents" / "nw"
-    if dist_path.exists():
-        return dist_path
-
-    # Fallback to nWave/agents/nw (source)
-    source_path = project_root / "nWave" / "agents" / "nw"
-    if source_path.exists():
-        return source_path
-
-    # Final fallback to nWave/agents
+    """Return the canonical agent source directory: nWave/agents/."""
     return project_root / "nWave" / "agents"
 
 
@@ -71,177 +63,164 @@ def install_context(tmp_path: Path, project_root: Path, test_logger: logging.Log
 
 
 # -----------------------------------------------------------------------------
-# Test Class: AgentsPluginShould
+# Acceptance Test: Single source, no dist/ide, excludes legacy/
 # -----------------------------------------------------------------------------
 
 
-class AgentsPluginShould:
-    """Unit tests for AgentsPlugin following naming convention."""
-
-    def test_copy_agent_files_to_target_directory_when_install_called(
-        self, install_context: InstallContext, agent_source_dir: Path
-    ):
-        """
-        AgentsPlugin.install() should copy agent .md files to the target directory.
-
-        Given: A valid InstallContext with project root containing agent source files
-        When: install() is called
-        Then: Agent files are copied to {claude_dir}/agents/nw/
-        """
-        # Arrange
-        plugin = AgentsPlugin()
-        target_agents_dir = install_context.claude_dir / "agents" / "nw"
-
-        # Verify source files exist
-        assert agent_source_dir.exists(), f"Agent source not found: {agent_source_dir}"
-        source_files = list(agent_source_dir.glob("*.md"))
-        assert len(source_files) >= 1, "No agent .md files in source directory"
-
-        # Act
-        result = plugin.install(install_context)
-
-        # Assert
-        assert result.success, f"Installation failed: {result.message}"
-        assert target_agents_dir.exists(), (
-            f"Target directory not created: {target_agents_dir}"
-        )
-
-        target_files = list(target_agents_dir.glob("*.md"))
-        assert len(target_files) >= 1, (
-            f"Expected at least 1 agent file in target, found {len(target_files)}"
-        )
-
-    def test_return_success_result_with_installed_files_list_when_install_succeeds(
-        self, install_context: InstallContext
-    ):
-        """
-        AgentsPlugin.install() should return PluginResult with installed_files populated.
-
-        Given: A valid InstallContext
-        When: install() is called successfully
-        Then: PluginResult.success is True and installed_files contains file paths
-        """
-        # Arrange
-        plugin = AgentsPlugin()
-
-        # Act
-        result = plugin.install(install_context)
-
-        # Assert
-        assert isinstance(result, PluginResult)
-        assert result.success is True
-        assert result.plugin_name == "agents"
-        assert (
-            "Agents installed" in result.message or "success" in result.message.lower()
-        )
-        # installed_files should contain the copied files
-        assert result.installed_files is not None
-
-    def test_return_success_with_verification_message_when_verify_called_after_install(
-        self, install_context: InstallContext
-    ):
-        """
-        AgentsPlugin.verify() should confirm installation was successful.
-
-        Given: AgentsPlugin.install() was called successfully
-        When: verify() is called
-        Then: PluginResult.success is True and message contains 'Agents verification passed'
-        """
-        # Arrange
-        plugin = AgentsPlugin()
-
-        # First install
-        install_result = plugin.install(install_context)
-        assert install_result.success, f"Install failed: {install_result.message}"
-
-        # Act
-        verify_result = plugin.verify(install_context)
-
-        # Assert
-        assert verify_result.success is True
-        assert "Agents verification passed" in verify_result.message
-
-    def test_verify_checks_target_directory_contains_agent_files(
-        self, install_context: InstallContext
-    ):
-        """
-        AgentsPlugin.verify() should check that agent files exist in target directory.
-
-        Given: Installation completed
-        When: verify() is called
-        Then: Verification checks for presence of agent files
-        """
-        # Arrange
-        plugin = AgentsPlugin()
-
-        # Install first
-        plugin.install(install_context)
-
-        # Act
-        verify_result = plugin.verify(install_context)
-
-        # Assert
-        assert verify_result.success is True
-        # The verification should have actually checked for files
-        target_dir = install_context.claude_dir / "agents" / "nw"
-        if target_dir.exists():
-            agent_files = list(target_dir.glob("*.md"))
-            # If files exist, verification should pass
-            # If files don't exist, this test reveals the stub doesn't really verify
-            assert len(agent_files) >= 1 or not verify_result.success
-
-
-# -----------------------------------------------------------------------------
-# Standalone Test Functions (for pytest discovery)
-# -----------------------------------------------------------------------------
-
-
-def test_agents_plugin_copies_files_to_target(
-    install_context: InstallContext, agent_source_dir: Path
+def test_agents_plugin_installs_only_from_nwave_agents_excluding_legacy(
+    install_context: InstallContext,
 ):
-    """AgentsPlugin.install() should copy agent files to target directory."""
+    """AgentsPlugin.install() should read only from nWave/agents/, excluding legacy/ content.
+
+    Acceptance test: After install, the target directory must contain only
+    nw-*.md files from nWave/agents/ root. No legacy/ subdirectory content,
+    no config.json (dist/ide artifact), and no README.md should be present.
+    """
+    # Arrange
     plugin = AgentsPlugin()
     target_agents_dir = install_context.claude_dir / "agents" / "nw"
+    source_agents_dir = install_context.project_root / "nWave" / "agents"
 
-    # Verify source exists
-    assert agent_source_dir.exists(), f"Agent source not found: {agent_source_dir}"
+    # Count expected: nw-*.md files in nWave/agents/ root only (not legacy/)
+    expected_agent_files = list(source_agents_dir.glob("nw-*.md"))
+    assert len(expected_agent_files) >= 20, (
+        f"Expected at least 20 nw-*.md agent files in source, found {len(expected_agent_files)}"
+    )
 
     # Act
     result = plugin.install(install_context)
 
-    # Assert - this should fail with current stub implementation
+    # Assert - installation succeeded
     assert result.success, f"Installation failed: {result.message}"
-    assert target_agents_dir.exists(), (
-        f"Target directory not created: {target_agents_dir}"
+
+    # Assert - no legacy/ directory content was copied
+    legacy_target = target_agents_dir / "legacy"
+    assert not legacy_target.exists(), (
+        f"legacy/ directory should not be copied to target, but found: {legacy_target}"
     )
 
-    target_files = list(target_agents_dir.glob("*.md"))
-    assert len(target_files) >= 1, (
-        f"Expected at least 1 agent file in target, found {len(target_files)}"
+    # Assert - no config.json (dist/ide artifact) was copied
+    config_json = target_agents_dir / "config.json"
+    assert not config_json.exists(), (
+        "config.json (dist/ide artifact) should not be present in target"
+    )
+
+    # Assert - target contains only nw-*.md files (matching source count)
+    target_files = list(target_agents_dir.glob("nw-*.md"))
+    assert len(target_files) == len(expected_agent_files), (
+        f"Expected {len(expected_agent_files)} nw-*.md files in target, "
+        f"found {len(target_files)}"
     )
 
 
-def test_agents_plugin_verify_confirms_files_exist(install_context: InstallContext):
-    """AgentsPlugin.verify() should confirm agent files were installed."""
-    plugin = AgentsPlugin()
+# -----------------------------------------------------------------------------
+# Unit Tests: AgentsPluginShould
+# -----------------------------------------------------------------------------
 
-    # Install first
-    install_result = plugin.install(install_context)
-    assert install_result.success
 
-    # Verify
-    verify_result = plugin.verify(install_context)
+class TestAgentsPluginShould:
+    """Unit tests for AgentsPlugin through the InstallationPlugin interface."""
 
-    # Check verification result
-    assert verify_result.success is True
-    assert "Agents verification passed" in verify_result.message
+    def test_copy_nw_agent_files_from_nwave_agents_to_target(
+        self, install_context: InstallContext, agent_source_dir: Path
+    ):
+        """
+        Given: nWave/agents/ contains nw-*.md agent files
+        When: install() is called
+        Then: All nw-*.md files are copied to {claude_dir}/agents/nw/
+        """
+        plugin = AgentsPlugin()
+        target_agents_dir = install_context.claude_dir / "agents" / "nw"
+
+        assert agent_source_dir.exists(), f"Agent source not found: {agent_source_dir}"
+        source_nw_files = list(agent_source_dir.glob("nw-*.md"))
+        assert len(source_nw_files) >= 1, "No nw-*.md agent files in source"
+
+        result = plugin.install(install_context)
+
+        assert result.success, f"Installation failed: {result.message}"
+        assert target_agents_dir.exists()
+
+        target_files = list(target_agents_dir.glob("nw-*.md"))
+        assert len(target_files) == len(source_nw_files), (
+            f"Expected {len(source_nw_files)} nw-*.md files, found {len(target_files)}"
+        )
+
+    def test_exclude_legacy_directory_content_from_installation(
+        self, install_context: InstallContext
+    ):
+        """
+        Given: nWave/agents/ has a legacy/ subdirectory with old agent files
+        When: install() is called
+        Then: No legacy/ content appears in the target directory
+        """
+        plugin = AgentsPlugin()
+        target_agents_dir = install_context.claude_dir / "agents" / "nw"
+
+        # Verify legacy exists in source to make this test meaningful
+        source_legacy = install_context.project_root / "nWave" / "agents" / "legacy"
+        assert source_legacy.exists(), (
+            "Test requires legacy/ directory in nWave/agents/"
+        )
+
+        result = plugin.install(install_context)
+
+        assert result.success, f"Installation failed: {result.message}"
+
+        # No legacy directory or files in target
+        legacy_target = target_agents_dir / "legacy"
+        assert not legacy_target.exists(), (
+            "legacy/ directory content should be excluded from installation"
+        )
+
+    def test_return_plugin_result_with_correct_file_count(
+        self, install_context: InstallContext
+    ):
+        """
+        Given: nWave/agents/ contains agent files
+        When: install() is called
+        Then: PluginResult reports correct count and installed_files list
+        """
+        plugin = AgentsPlugin()
+        source_dir = install_context.project_root / "nWave" / "agents"
+        expected_count = len(list(source_dir.glob("nw-*.md")))
+
+        result = plugin.install(install_context)
+
+        assert isinstance(result, PluginResult)
+        assert result.success is True
+        assert result.plugin_name == "agents"
+        assert f"{expected_count} files" in result.message
+        assert result.installed_files is not None
+        assert len(result.installed_files) == expected_count
+
+    def test_verify_confirms_agent_files_present_after_install(
+        self, install_context: InstallContext
+    ):
+        """
+        Given: install() completed successfully
+        When: verify() is called
+        Then: PluginResult.success is True with verification count
+        """
+        plugin = AgentsPlugin()
+        install_result = plugin.install(install_context)
+        assert install_result.success, f"Install failed: {install_result.message}"
+
+        verify_result = plugin.verify(install_context)
+
+        assert verify_result.success is True
+        assert "Agents verification passed" in verify_result.message
+
+
+# -----------------------------------------------------------------------------
+# Verify Error Cases
+# -----------------------------------------------------------------------------
 
 
 def test_agents_plugin_verify_fails_when_target_directory_missing(
     tmp_path: Path, project_root: Path, test_logger: logging.Logger
 ):
     """AgentsPlugin.verify() should fail when target directory does not exist."""
-    # Arrange - create context with empty claude_dir (no install)
     empty_claude_dir = tmp_path / ".claude-empty"
     empty_claude_dir.mkdir(parents=True, exist_ok=True)
 
@@ -256,11 +235,8 @@ def test_agents_plugin_verify_fails_when_target_directory_missing(
     )
 
     plugin = AgentsPlugin()
-
-    # Act - verify without install
     verify_result = plugin.verify(context)
 
-    # Assert - should fail because no installation occurred
     assert verify_result.success is False
     assert "target directory does not exist" in verify_result.message
 
@@ -269,7 +245,6 @@ def test_agents_plugin_verify_fails_when_no_agent_files(
     tmp_path: Path, project_root: Path, test_logger: logging.Logger
 ):
     """AgentsPlugin.verify() should fail when directory exists but has no .md files."""
-    # Arrange - create context with agents/nw directory but no files
     claude_dir = tmp_path / ".claude-nofiles"
     agents_dir = claude_dir / "agents" / "nw"
     agents_dir.mkdir(parents=True, exist_ok=True)
@@ -285,10 +260,7 @@ def test_agents_plugin_verify_fails_when_no_agent_files(
     )
 
     plugin = AgentsPlugin()
-
-    # Act - verify with empty directory
     verify_result = plugin.verify(context)
 
-    # Assert - should fail because no agent files
     assert verify_result.success is False
     assert "no agent files found" in verify_result.message

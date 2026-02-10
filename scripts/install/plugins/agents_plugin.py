@@ -1,11 +1,12 @@
 """
-Wrapper plugin for agents installation.
+Plugin for installing agents from nWave/agents/ into ~/.claude/agents/nw/.
 
-Encapsulates the _install_agents() method from NWaveInstaller,
-maintaining backward compatibility while enabling plugin-based orchestration.
+Reads agent files directly from the project source (nWave/agents/),
+excluding legacy/ directory content and README.md.
 """
 
-from scripts.install.install_utils import PathUtils
+import shutil
+
 from scripts.install.plugins.base import (
     InstallationPlugin,
     InstallContext,
@@ -21,7 +22,10 @@ class AgentsPlugin(InstallationPlugin):
         super().__init__(name="agents", priority=10)
 
     def install(self, context: InstallContext) -> PluginResult:
-        """Install agents into the framework.
+        """Install agents from nWave/agents/ to ~/.claude/agents/nw/.
+
+        Copies nw-*.md agent files from the project source directory,
+        excluding legacy/ directory content and README.md.
 
         Args:
             context: InstallContext with shared installation utilities
@@ -32,49 +36,35 @@ class AgentsPlugin(InstallationPlugin):
         try:
             context.logger.info("  📦 Installing agents...")
 
-            # Determine source and target directories
+            # Source: nWave/agents/ in project root
             source_agent_dir = context.project_root / "nWave" / "agents"
-            dist_agent_dir = context.framework_source / "agents" / "nw"
             target_agent_dir = context.claude_dir / "agents" / "nw"
+
+            if not source_agent_dir.exists():
+                context.logger.info("  ⏭️ No agents directory found, skipping")
+                return PluginResult(
+                    success=True,
+                    plugin_name=self.name,
+                    message="No agents to install (source directory not found)",
+                )
 
             # Clean and recreate target directory to remove stale files
             if target_agent_dir.exists():
-                import shutil
-
                 shutil.rmtree(target_agent_dir)
             target_agent_dir.mkdir(parents=True, exist_ok=True)
 
-            # Count agents in each source location
-            dist_agent_count = (
-                PathUtils.count_files(dist_agent_dir, "*.md")
-                if dist_agent_dir.exists()
-                else 0
-            )
-            source_agent_count = (
-                PathUtils.count_files(source_agent_dir, "*.md")
-                if source_agent_dir.exists()
-                else 0
+            source_agent_count = len(list(source_agent_dir.glob("nw-*.md")))
+            context.logger.info(
+                f"  ⏳ From source ({source_agent_count} agents)..."
             )
 
-            # Select source: prefer dist if it has sufficient agents
-            if dist_agent_count >= (source_agent_count % 2) and dist_agent_count > 5:
-                context.logger.info(
-                    f"  ⏳ From distribution ({dist_agent_count} agents)..."
-                )
-                selected_source = dist_agent_dir
-            else:
-                context.logger.info(
-                    f"  ⏳ From source ({source_agent_count} agents)..."
-                )
-                selected_source = source_agent_dir
-
-            # Copy agent files
-            copied_count = PathUtils.copy_tree_with_filter(
-                selected_source, target_agent_dir, exclude_patterns=["README.md"]
-            )
-
-            # Collect installed file paths
-            installed_files = [str(f) for f in target_agent_dir.glob("*.md")]
+            # Copy only nw-*.md files from source root (excludes legacy/ and README.md)
+            copied_count = 0
+            installed_files = []
+            for source_file in sorted(source_agent_dir.glob("nw-*.md")):
+                shutil.copy2(source_file, target_agent_dir / source_file.name)
+                installed_files.append(str(target_agent_dir / source_file.name))
+                copied_count += 1
 
             context.logger.info(f"  ✅ Agents installed ({copied_count} files)")
 
