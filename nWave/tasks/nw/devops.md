@@ -1,3 +1,8 @@
+---
+description: "Platform readiness, CI/CD, infrastructure, and deployment design"
+argument-hint: "[deployment-target] - Optional: --environment=[staging|production] --validation=[full|smoke]"
+---
+
 # NW-DEVOPS: Platform Readiness and Infrastructure Design
 
 **Wave**: DEVOP (wave 4 of 6)

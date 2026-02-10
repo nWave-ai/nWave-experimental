@@ -1,3 +1,8 @@
+---
+description: "Create evidence-based DIVIO-compliant documentation"
+argument-hint: "[topic/component] - Optional: --type=[tutorial|howto|reference|explanation] --research-depth=[overview|detailed|comprehensive|deep-dive]"
+---
+
 # NW-DOCUMENT: DIVIO Documentation Creation
 
 **Wave**: CROSS_WAVE

@@ -1,3 +1,8 @@
+---
+description: "Root cause analysis and debugging"
+argument-hint: "[problem-description] - Optional: --depth=[3|5|7-whys] --output=[text|diagram|report]"
+---
+
 # NW-ROOT-WHY: Toyota 5 Whys Root Cause Analysis
 
 **Wave**: CROSS_WAVE

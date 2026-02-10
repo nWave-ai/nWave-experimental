@@ -1,3 +1,8 @@
+---
+description: "UX journey design, requirements gathering, and business analysis"
+argument-hint: "[feature-name] - Optional: --phase=[journey|requirements] --interactive=[high|moderate] --output-format=[md|yaml]"
+---
+
 # NW-DISCUSS: Requirements Gathering and UX Journey Design
 
 **Wave**: DISCUSS (wave 2 of 6)

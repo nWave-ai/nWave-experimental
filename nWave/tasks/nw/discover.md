@@ -1,3 +1,8 @@
+---
+description: "Evidence-based product discovery and market validation"
+argument-hint: "[product-concept] - Optional: --interview-depth=[overview|comprehensive] --output-format=[md|yaml]"
+---
+
 # NW-DISCOVER: Evidence-Based Product Discovery
 
 **Wave**: DISCOVER

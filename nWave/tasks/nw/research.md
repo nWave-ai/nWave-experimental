@@ -1,3 +1,7 @@
+---
+description: "Evidence-driven knowledge research with source verification"
+---
+
 # NW-RESEARCH: Evidence-Driven Knowledge Research
 
 **Wave**: CROSS_WAVE

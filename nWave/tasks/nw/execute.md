@@ -1,3 +1,8 @@
+---
+description: "Execute atomic task with state tracking"
+argument-hint: '[agent] [step-id] - Example: @software-crafter "01-01"'
+---
+
 # NW-EXECUTE: Atomic Task Execution
 
 **Wave**: EXECUTION_WAVE

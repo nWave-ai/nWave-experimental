@@ -1,3 +1,8 @@
+---
+description: "Systematic refactoring with Mikado Method"
+argument-hint: "[target-class-or-module] - Optional: --level=[1-6] --method=[extract|inline|rename|move] --scope=[method|class|module]"
+---
+
 # NW-REFACTOR: Systematic Code Refactoring
 
 **Wave**: CROSS_WAVE

@@ -1,8 +1,6 @@
 ---
-description: 'Acceptance test creation and business validation [story-id] - Optional:
-  --test-framework=[cucumber|specflow|pytest-bdd] --integration=[real-services|mocks]'
-argument-hint: '[story-id] - Optional: --test-framework=[cucumber|specflow|pytest-bdd]
-  --integration=[real-services|mocks]'
+description: "Acceptance test creation and business validation"
+argument-hint: "[story-id] - Optional: --test-framework=[cucumber|specflow|pytest-bdd] --integration=[real-services|mocks]"
 ---
 
 # NW-DISTILL: Acceptance Test Creation and Business Validation

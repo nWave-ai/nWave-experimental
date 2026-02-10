@@ -1,3 +1,8 @@
+---
+description: "Expert critique and quality review - Types: roadmap, step, task, implementation"
+argument-hint: '[agent] [artifact-type] [artifact-path] - Example: @software-crafter task "roadmap.yaml"'
+---
+
 # NW-REVIEW: Expert Critique and Quality Assurance
 
 **Wave**: CROSS_WAVE

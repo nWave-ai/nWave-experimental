@@ -1,3 +1,7 @@
+---
+description: "Create and validate new specialized agents"
+---
+
 # NW-FORGE: Create Agent (V2)
 
 **Wave**: CROSS_WAVE

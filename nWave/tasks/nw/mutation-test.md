@@ -1,3 +1,8 @@
+---
+description: "Mutation testing quality gate for test suite validation"
+argument-hint: "[project-id] - Optional: --threshold=[75|80|85] --language=[auto|python|java|javascript]"
+---
+
 # NW-MUTATION-TEST: Feature-Scoped Mutation Testing
 
 **Wave**: QUALITY_GATE

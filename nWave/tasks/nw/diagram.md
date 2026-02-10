@@ -1,3 +1,8 @@
+---
+description: "Architecture diagram management"
+argument-hint: "[diagram-type] - Optional: --format=[mermaid|plantuml|c4] --level=[context|container|component]"
+---
+
 # NW-DIAGRAM: Architecture Diagram Generation
 
 **Wave**: CROSS_WAVE

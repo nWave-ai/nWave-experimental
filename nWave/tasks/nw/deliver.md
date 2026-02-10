@@ -1,3 +1,8 @@
+---
+description: "Execute complete DELIVER wave: roadmap \u2192 execute-all \u2192 finalize"
+argument-hint: '[feature-description] - Example: "Implement user authentication with JWT"'
+---
+
 # NW-DELIVER: Complete DELIVER Wave Orchestrator
 
 **Wave**: DELIVER (wave 6 of 6)

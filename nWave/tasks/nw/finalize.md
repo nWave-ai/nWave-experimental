@@ -1,3 +1,8 @@
+---
+description: "Summarize achievements, archive to docs/evolution, clean up feature files"
+argument-hint: '[agent] [project-id] - Example: @platform-architect "auth-upgrade"'
+---
+
 # NW-FINALIZE: Feature Completion and Archive
 
 **Wave**: CROSS_WAVE

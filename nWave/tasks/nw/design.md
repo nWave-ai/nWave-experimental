@@ -1,3 +1,8 @@
+---
+description: "Architecture design with visual representation"
+argument-hint: "[component-name] - Optional: --architecture=[hexagonal|layered|microservices] --diagram-format=[mermaid|plantuml]"
+---
+
 # NW-DESIGN: Architecture Design
 
 **Wave**: DESIGN (wave 3 of 6)

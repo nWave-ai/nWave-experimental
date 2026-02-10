@@ -1,3 +1,8 @@
+---
+description: "Create comprehensive planning document"
+argument-hint: '[agent] [goal-description] - Example: @solution-architect "Migrate to microservices"'
+---
+
 # NW-ROADMAP: Goal Planning
 
 **Wave**: CROSS_WAVE
