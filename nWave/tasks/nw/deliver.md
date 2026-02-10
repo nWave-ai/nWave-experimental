@@ -57,6 +57,10 @@ INPUT: "{feature-description}"
         IMPORTANT: Use the DES Prompt Template from execute.md. Include all 4 DES
         markers (DES-VALIDATION, DES-PROJECT-ID, DES-STEP-ID) and all 9 mandatory
         sections in the Task prompt. Without these, DES validation is bypassed.
+        NOTE: The OUTCOME_RECORDING section instructs agents to use the DES CLI
+        (`python -m des.cli.log_phase`) for recording phases with real timestamps.
+        If an agent bypasses the CLI and edits execution-log.yaml directly,
+        the SubagentStop hook corrects fabricated timestamps automatically.
      d. Verify COMMIT/PASS in execution-log.yaml after each step
      e. If a phase is missing: RE-DISPATCH the agent to execute it.
         NEVER write execution-log entries yourself — only the agent

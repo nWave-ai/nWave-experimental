@@ -75,10 +75,28 @@ Execute these phases in order:
 - Coverage maintained or improved
 
 # OUTCOME_RECORDING
-After ACTUALLY EXECUTING each phase, append to execution-log.yaml:
-  - "{step-id}|{phase}|{status}|{data}|{timestamp}"
-Status: EXECUTED (data: PASS/FAIL) or SKIPPED (data: reason)
-CRITICAL: Only the executing agent writes to execution-log.yaml.
+After ACTUALLY EXECUTING each phase, record it using the DES CLI:
+
+    PYTHONPATH=src python -m des.cli.log_phase \
+      --project-dir docs/feature/{project-id} \
+      --step-id {step-id} \
+      --phase {PHASE_NAME} \
+      --status EXECUTED \
+      --data PASS
+
+For SKIPPED phases (genuinely not applicable):
+
+    PYTHONPATH=src python -m des.cli.log_phase \
+      --project-dir docs/feature/{project-id} \
+      --step-id {step-id} \
+      --phase {PHASE_NAME} \
+      --status SKIPPED \
+      --data "NOT_APPLICABLE: reason"
+
+The CLI enforces real UTC timestamps and validates phase names.
+Do NOT manually edit execution-log.yaml.
+
+CRITICAL: Only the executing agent calls the CLI.
 The orchestrator MUST NEVER write phase entries — only the agent that
 performed the work. A log entry without actual execution is fraud.
 

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from des.domain.log_integrity_validator import CorrectableEntry, LogIntegrityValidator
+from des.domain.log_integrity_validator import LogIntegrityValidator
 from des.domain.phase_event import PhaseEvent
 from des.domain.tdd_schema import TDDSchema
 from des.ports.driven_ports.time_provider_port import TimeProvider
@@ -250,7 +250,9 @@ class TestCorrectableEntries:
         self, validator: LogIntegrityValidator
     ) -> None:
         """Timestamps >60s before task start are correctable."""
-        events = [_make_event(phase_name="PREPARE", timestamp="2026-02-10T10:00:00+00:00")]
+        events = [
+            _make_event(phase_name="PREPARE", timestamp="2026-02-10T10:00:00+00:00")
+        ]
         result = validator.validate(
             step_id="01-01",
             all_events=events,
@@ -264,7 +266,9 @@ class TestCorrectableEntries:
         self, validator: LogIntegrityValidator
     ) -> None:
         """Future timestamps are correctable."""
-        events = [_make_event(phase_name="GREEN", timestamp="2099-01-01T00:00:00+00:00")]
+        events = [
+            _make_event(phase_name="GREEN", timestamp="2099-01-01T00:00:00+00:00")
+        ]
         result = validator.validate(
             step_id="01-01",
             all_events=events,
