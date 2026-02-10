@@ -411,7 +411,7 @@ jobs:
 
       - name: Sync files to nwave-ai/nwave
         run: |
-          rsync -av --delete \
+          rsync -avL --delete \
             --exclude '.git' \
             --exclude '.git*' \
             --exclude '.github/' \
