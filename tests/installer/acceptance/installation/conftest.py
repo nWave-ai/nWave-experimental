@@ -27,7 +27,7 @@ EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 
 # Project paths
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 INSTALLER_SCRIPT = PROJECT_ROOT / "scripts" / "install" / "install_nwave.py"
 VERIFY_SCRIPT = PROJECT_ROOT / "scripts" / "install" / "verify_nwave.py"
 

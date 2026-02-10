@@ -17,7 +17,7 @@ class TestSchemaTurnCountField:
     def schema_file_path(self):
         """Return path to schema file."""
         schema_path = (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "nWave"
             / "templates"
             / "step-tdd-cycle-schema.json"

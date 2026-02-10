@@ -30,7 +30,7 @@ class TestCommitMsgHook:
     def project_root(self):
         """Get project root directory."""
         current_file = Path(__file__)
-        return current_file.parent.parent.parent.parent
+        return current_file.parent.parent.parent.parent.parent
 
     @pytest.fixture
     def git_hooks_dir(self, project_root):

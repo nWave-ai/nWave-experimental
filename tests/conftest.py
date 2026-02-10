@@ -68,20 +68,28 @@ def pytest_html_results_summary(prefix, summary, postfix):
 # ---------------------------------------------------------------------------
 
 DOMAIN_MAP = {
-    "tests/unit/des/": ("DES", "Unit Tests"),
+    "tests/des/unit/": ("DES", "Unit Tests"),
+    "tests/des/acceptance/": ("DES", "Acceptance Tests"),
+    "tests/des/integration/": ("DES", "Integration Tests"),
+    "tests/des/e2e/": ("DES", "E2E Tests"),
     "tests/des/": ("DES", "DES Tests"),
-    "tests/unit/git_workflow/": ("Installer", "Git Workflow"),
-    "tests/unit/": ("Installer", "Unit Tests"),
-    "tests/acceptance/installation/": ("Installer", "Installation Acceptance"),
-    "tests/acceptance/installer/": ("Installer", "Installer Acceptance"),
-    "tests/acceptance/uninstaller/": ("Installer", "Uninstaller Acceptance"),
-    "tests/acceptance/": ("Acceptance", "Acceptance Tests"),
-    "tests/nwave/": ("Plugins", "nWave Plugins"),
-    "tests/install/": ("Plugins", "Install Scripts"),
+    "tests/installer/unit/git_workflow/": ("Installer", "Git Workflow"),
+    "tests/installer/unit/": ("Installer", "Unit Tests"),
+    "tests/installer/acceptance/installation/": (
+        "Installer",
+        "Installation Acceptance",
+    ),
+    "tests/installer/acceptance/installer/": ("Installer", "Installer Acceptance"),
+    "tests/installer/acceptance/uninstaller/": ("Installer", "Uninstaller Acceptance"),
+    "tests/installer/acceptance/": ("Installer", "Acceptance Tests"),
+    "tests/installer/e2e/": ("Installer", "E2E Tests"),
+    "tests/plugins/plugin-architecture/unit/": ("Plugins", "Unit Tests"),
+    "tests/plugins/plugin-architecture/integration/": ("Plugins", "Integration Tests"),
+    "tests/plugins/plugin-architecture/acceptance/": ("Plugins", "Acceptance Tests"),
+    "tests/plugins/plugin-architecture/e2e/": ("Plugins", "E2E Tests"),
+    "tests/plugins/install/": ("Plugins", "Install Scripts"),
+    "tests/plugins/": ("Plugins", "nWave Plugins"),
     "tests/bugs/": ("Bugs", "Regression"),
-    "tests/e2e/": ("E2E", "End-to-End"),
-    "tests/integration/": ("Integration", "Integration Tests"),
-    "tests/validation/": ("Validation", "Validation Tests"),
 }
 
 
@@ -129,20 +137,25 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         return
 
     domain_labels = {
-        "tests/unit/des/": "DES (unit)",
+        "tests/des/unit/": "DES (unit)",
+        "tests/des/acceptance/": "DES (acceptance)",
+        "tests/des/integration/": "DES (integration)",
+        "tests/des/e2e/": "DES (e2e)",
         "tests/des/": "DES",
-        "tests/unit/git_workflow/": "Git Workflow",
-        "tests/unit/": "Installer (unit)",
-        "tests/acceptance/installation/": "Installation",
-        "tests/acceptance/installer/": "Installer",
-        "tests/acceptance/uninstaller/": "Uninstaller",
-        "tests/acceptance/": "Acceptance",
-        "tests/nwave/": "Plugins (nWave)",
-        "tests/install/": "Plugins (install)",
+        "tests/installer/unit/git_workflow/": "Installer (git)",
+        "tests/installer/unit/": "Installer (unit)",
+        "tests/installer/acceptance/installation/": "Installer (installation)",
+        "tests/installer/acceptance/installer/": "Installer (walking skeleton)",
+        "tests/installer/acceptance/uninstaller/": "Installer (uninstaller)",
+        "tests/installer/acceptance/": "Installer (acceptance)",
+        "tests/installer/e2e/": "Installer (e2e)",
+        "tests/plugins/plugin-architecture/unit/": "Plugins (unit)",
+        "tests/plugins/plugin-architecture/integration/": "Plugins (integration)",
+        "tests/plugins/plugin-architecture/acceptance/": "Plugins (acceptance)",
+        "tests/plugins/plugin-architecture/e2e/": "Plugins (e2e)",
+        "tests/plugins/install/": "Plugins (install)",
+        "tests/plugins/": "Plugins",
         "tests/bugs/": "Bugs",
-        "tests/e2e/": "E2E",
-        "tests/integration/": "Integration",
-        "tests/validation/": "Validation",
     }
 
     # Sorted by specificity (longest prefix first)

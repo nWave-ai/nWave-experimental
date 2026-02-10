@@ -19,8 +19,8 @@ from scripts.install.preflight_checker import CheckResult, PreflightChecker
 
 @pytest.fixture(scope="session")
 def project_root() -> Path:
-    """Real project root (3 levels up from this file)."""
-    return Path(__file__).resolve().parents[3]
+    """Real project root (4 levels up from this file)."""
+    return Path(__file__).resolve().parents[4]
 
 
 @pytest.fixture(scope="session")

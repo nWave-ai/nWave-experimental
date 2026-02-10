@@ -17,7 +17,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 scenarios("../features/06_documentation.feature")
 
 # Project paths
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent
 INSTALLATION_GUIDE = PROJECT_ROOT / "docs" / "installation" / "installation-guide.md"
 
 

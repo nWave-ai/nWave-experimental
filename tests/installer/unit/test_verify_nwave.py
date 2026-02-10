@@ -29,7 +29,7 @@ class TestVerifyNwaveScriptExists:
         """
         # ARRANGE
         script_path = (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "scripts"
             / "install"
             / "verify_nwave.py"

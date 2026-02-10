@@ -25,7 +25,7 @@ def test_repo():
         subprocess.run(["git", "init"], cwd=repo_root, capture_output=True, check=True)
 
         # Get hook script path relative to project root
-        project_root = Path(__file__).parent.parent.parent.parent
+        project_root = Path(__file__).parent.parent.parent.parent.parent
         hook_script = project_root / "scripts" / "hooks" / "pre-push"
 
         yield {

@@ -21,7 +21,7 @@ class TestCommitlintConfiguration:
         """Get project root directory."""
         # Navigate from tests/unit/git_workflow to project root
         current_file = Path(__file__)
-        return current_file.parent.parent.parent.parent
+        return current_file.parent.parent.parent.parent.parent
 
     def test_commitlint_config_exists(self, project_root):
         """Verify commitlint configuration file exists."""

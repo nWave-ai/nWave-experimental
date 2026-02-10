@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 # Add scripts validators to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from scripts.validation.validate_commands import (
     CommandTemplateValidator,

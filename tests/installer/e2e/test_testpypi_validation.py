@@ -15,7 +15,9 @@ import pytest
 
 
 # Path to the validation script
-SCRIPT_PATH = Path(__file__).parent.parent.parent / "scripts" / "testpypi_validation.py"
+SCRIPT_PATH = (
+    Path(__file__).parent.parent.parent.parent / "scripts" / "testpypi_validation.py"
+)
 
 
 class TestTestPyPIValidationScript:

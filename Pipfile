@@ -54,6 +54,16 @@ test-coverage = "python -m pytest tests/ -q --cov=src --cov=scripts --cov-report
 test-full = "python -m pytest tests/ --pspec --tb=short --cov=src --cov=scripts --cov-report=term-missing --cov-report=html:reports/htmlcov --html=reports/test-report.html --self-contained-html --alluredir=reports/allure-results --color=yes"
 # Mutation testing: uses mutmut for comprehensive mutation analysis
 mutation-test = "mutmut run --paths-to-mutate=src/des,scripts/install"
+# Domain slices: run one domain only
+test-des = "python -m pytest tests/des/ --pspec --tb=short --color=yes"
+test-installer = "python -m pytest tests/installer/ --pspec --tb=short --color=yes"
+test-plugins = "python -m pytest tests/plugins/ --pspec --tb=short --color=yes"
+test-bugs = "python -m pytest tests/bugs/ --pspec --tb=short --color=yes"
+# Layer slices: run one layer across all domains
+test-unit = "python -m pytest tests/des/unit/ tests/installer/unit/ tests/plugins/plugin-architecture/unit/ tests/plugins/install/ --pspec --tb=short --color=yes"
+test-integration = "python -m pytest tests/des/integration/ tests/plugins/plugin-architecture/integration/ --pspec --tb=short --color=yes"
+test-acceptance = "python -m pytest tests/des/acceptance/ tests/installer/acceptance/ tests/plugins/plugin-architecture/acceptance/ tests/bugs/ --pspec --tb=short --color=yes"
+test-e2e = "python -m pytest tests/des/e2e/ tests/installer/e2e/ tests/plugins/plugin-architecture/e2e/ --pspec --tb=short --color=yes"
 build = "python tools/build.py"
 # Linting and formatting
 lint = "ruff check src/ scripts/ tools/ tests/"
