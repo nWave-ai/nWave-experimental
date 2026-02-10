@@ -1,5 +1,7 @@
 # NW-MIKADO: Complex Refactoring with Mikado Method
 
+> **EXPERIMENTAL**: This command is still under active development. Behavior and output format may change between versions.
+
 **Wave**: CROSS_WAVE
 **Agent**: Crafty (nw-software-crafter)
 **Command**: `*mikado`

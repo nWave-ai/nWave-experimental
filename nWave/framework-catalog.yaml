@@ -198,7 +198,7 @@ commands:
 
   # Specialist Commands
   mikado:
-    description: "Complex refactoring roadmaps with visual tracking"
+    description: "[EXPERIMENTAL] Complex refactoring roadmaps with visual tracking"
     argument_hint: "[refactoring-goal] - Optional: --complexity=[simple|moderate|complex] --visualization=[tree|graph]"
     agents:
       ["software-crafter", "visual-architect"]
