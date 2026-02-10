@@ -25,6 +25,7 @@ Protocol:
 import json
 import os
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -148,6 +149,57 @@ def _log_hook_invoked(
         pass  # Diagnostic logging must never break the hook
 
 
+# Threshold in milliseconds above which a hook is considered slow
+_SLOW_HOOK_THRESHOLD_MS = 5000.0
+
+_EXIT_CODE_TO_DECISION = {
+    0: "allow",
+    1: "error",
+    2: "block",
+}
+
+
+def _log_hook_completed(
+    hook_id: str,
+    handler: str,
+    exit_code: int,
+    decision: str,
+    duration_ms: float,
+) -> None:
+    """Log a HOOK_COMPLETED diagnostic event at handler exit.
+
+    Emitted in a finally block so it fires on allow, block, AND error paths.
+    Wrapped in try/except so logging never breaks the hook.
+
+    Args:
+        hook_id: UUID4 correlation ID matching the HOOK_INVOKED event.
+        handler: Name of the handler that completed.
+        exit_code: Process exit code (0=allow, 1=error, 2=block).
+        decision: Human-readable decision string.
+        duration_ms: Wall-clock duration of the handler in milliseconds.
+    """
+    try:
+        audit_writer = _create_audit_writer()
+        data: dict = {
+            "hook_id": hook_id,
+            "handler": handler,
+            "exit_code": exit_code,
+            "decision": decision,
+            "duration_ms": duration_ms,
+        }
+        if duration_ms > _SLOW_HOOK_THRESHOLD_MS:
+            data["slow_hook"] = True
+        audit_writer.log_event(
+            AuditEvent(
+                event_type="HOOK_COMPLETED",
+                timestamp=SystemTimeProvider().now_utc().isoformat(),
+                data=data,
+            )
+        )
+    except Exception:
+        pass  # Diagnostic logging must never break the hook
+
+
 DES_SESSION_DIR = Path(".nwave") / "des"
 DES_DELIVER_SESSION_FILE = DES_SESSION_DIR / "deliver-session.json"
 DES_TASK_ACTIVE_FILE = DES_SESSION_DIR / "des-task-active"
@@ -233,9 +285,10 @@ def handle_pre_tool_use() -> int:
         1 if error occurs (fail-closed)
         2 if validation fails (block)
     """
+    hook_id = str(uuid.uuid4())
+    start_ns = time.perf_counter_ns()
+    exit_code = 0
     try:
-        hook_id = str(uuid.uuid4())
-
         # Read JSON from stdin
         input_data = sys.stdin.read()
 
@@ -250,7 +303,8 @@ def handle_pre_tool_use() -> int:
         except json.JSONDecodeError as e:
             response = {"status": "error", "reason": f"Invalid JSON: {e!s}"}
             print(json.dumps(response))
-            return 1
+            exit_code = 1
+            return exit_code
 
         # Diagnostic: confirm hook was invoked
         tool_input = hook_input.get("tool_input", {})
@@ -296,14 +350,16 @@ def handle_pre_tool_use() -> int:
                 )
             response = {"decision": "allow"}
             print(json.dumps(response))
-            return 0
+            exit_code = 0
+            return exit_code
         else:
             response = {
                 "decision": "block",
                 "reason": decision.reason or "Validation failed",
             }
             print(json.dumps(response))
-            return decision.exit_code
+            exit_code = decision.exit_code
+            return exit_code
 
     except Exception as e:
         # Fail-closed: any error blocks execution
@@ -321,7 +377,18 @@ def handle_pre_tool_use() -> int:
             pass  # Don't let audit logging failure mask the original error
         response = {"status": "error", "reason": f"Unexpected error: {e!s}"}
         print(json.dumps(response))
-        return 1
+        exit_code = 1
+        return exit_code
+    finally:
+        duration_ms = (time.perf_counter_ns() - start_ns) / 1_000_000
+        decision_str = _EXIT_CODE_TO_DECISION.get(exit_code, "error")
+        _log_hook_completed(
+            hook_id=hook_id,
+            handler="pre_tool_use",
+            exit_code=exit_code,
+            decision=decision_str,
+            duration_ms=duration_ms,
+        )
 
 
 def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
@@ -521,9 +588,10 @@ def handle_subagent_stop() -> int:
         1 if error occurs (fail-closed)
         2 if gate fails (BLOCKS orchestrator)
     """
+    hook_id = str(uuid.uuid4())
+    start_ns = time.perf_counter_ns()
+    exit_code = 0
     try:
-        hook_id = str(uuid.uuid4())
-
         input_data = sys.stdin.read()
 
         # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
@@ -536,7 +604,8 @@ def handle_subagent_stop() -> int:
         except json.JSONDecodeError as e:
             response = {"status": "error", "reason": f"Invalid JSON: {e!s}"}
             print(json.dumps(response))
-            return 1
+            exit_code = 1
+            return exit_code
 
         # Diagnostic: confirm hook was invoked with agent details
         _log_hook_invoked(
@@ -602,14 +671,16 @@ def handle_subagent_stop() -> int:
         # Translate HookDecision to protocol response
         if decision.action == "allow":
             print(json.dumps({"decision": "allow"}))
-            return 0
+            exit_code = 0
+            return exit_code
 
         response = _build_block_notification(
             project_id, step_id, execution_log_path, decision
         )
         print(json.dumps(response))
         # Exit 0 so Claude Code processes the JSON (exit 2 ignores stdout)
-        return 0
+        exit_code = 0
+        return exit_code
 
     except Exception as e:
         # Fail-closed: any error blocks execution via stderr + exit 1
@@ -626,7 +697,18 @@ def handle_subagent_stop() -> int:
         except Exception:
             pass  # Don't let audit logging failure mask the original error
         print(f"SubagentStop hook error: {e!s}", file=sys.stderr)
-        return 1
+        exit_code = 1
+        return exit_code
+    finally:
+        duration_ms = (time.perf_counter_ns() - start_ns) / 1_000_000
+        decision_str = _EXIT_CODE_TO_DECISION.get(exit_code, "error")
+        _log_hook_completed(
+            hook_id=hook_id,
+            handler="subagent_stop",
+            exit_code=exit_code,
+            decision=decision_str,
+            duration_ms=duration_ms,
+        )
 
 
 def handle_post_tool_use() -> int:
@@ -641,9 +723,10 @@ def handle_post_tool_use() -> int:
     Returns:
         0 always (PostToolUse should never block)
     """
+    hook_id = str(uuid.uuid4())
+    start_ns = time.perf_counter_ns()
+    exit_code = 0
     try:
-        hook_id = str(uuid.uuid4())
-
         # Read JSON from stdin
         input_data = sys.stdin.read()
 
@@ -709,6 +792,16 @@ def handle_post_tool_use() -> int:
             pass  # Don't let audit logging failure mask the original error
         print(json.dumps({}))
         return 0
+    finally:
+        duration_ms = (time.perf_counter_ns() - start_ns) / 1_000_000
+        decision_str = _EXIT_CODE_TO_DECISION.get(exit_code, "error")
+        _log_hook_completed(
+            hook_id=hook_id,
+            handler="post_tool_use",
+            exit_code=exit_code,
+            decision=decision_str,
+            duration_ms=duration_ms,
+        )
 
 
 def handle_pre_write() -> int:
@@ -721,9 +814,10 @@ def handle_pre_write() -> int:
         0 if write is allowed
         2 if write is blocked (source file during deliver without DES task)
     """
+    hook_id = str(uuid.uuid4())
+    start_ns = time.perf_counter_ns()
+    exit_code = 0
     try:
-        hook_id = str(uuid.uuid4())
-
         input_data = sys.stdin.read()
 
         if not input_data or not input_data.strip():
@@ -767,15 +861,28 @@ def handle_pre_write() -> int:
                 "reason": result.reason or "Source write blocked during deliver",
             }
             print(json.dumps(response))
-            return 2
+            exit_code = 2
+            return exit_code
         else:
             print(json.dumps({"decision": "allow"}))
-            return 0
+            exit_code = 0
+            return exit_code
 
     except Exception:
         # Fail-open for Write/Edit (unlike Task which is fail-closed)
         print(json.dumps({"decision": "allow"}))
-        return 0
+        exit_code = 0
+        return exit_code
+    finally:
+        duration_ms = (time.perf_counter_ns() - start_ns) / 1_000_000
+        decision_str = _EXIT_CODE_TO_DECISION.get(exit_code, "error")
+        _log_hook_completed(
+            hook_id=hook_id,
+            handler="pre_write",
+            exit_code=exit_code,
+            decision=decision_str,
+            duration_ms=duration_ms,
+        )
 
 
 def main() -> None:
