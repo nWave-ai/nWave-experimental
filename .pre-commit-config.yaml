@@ -105,11 +105,11 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
-        files: ^(scripts/|tools/|tests/).*\.py$
+        files: ^(src/|scripts/|tools/|tests/).*\.py$
         exclude: \.json$
         stages: [pre-commit]
       - id: ruff-format
-        files: ^(scripts/|tools/|tests/).*\.py$
+        files: ^(src/|scripts/|tools/|tests/).*\.py$
         exclude: \.json$
         stages: [pre-commit]
 

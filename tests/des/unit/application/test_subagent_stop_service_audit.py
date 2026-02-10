@@ -543,25 +543,28 @@ class TestIntegrityValidationIntegration:
                 phase_name="PREPARE",
                 status="EXECUTED",
                 outcome="PASS",
-                timestamp="2099-01-01T00:00:00Z",
+                timestamp="2099-01-01T00:00:00+00:00",
             )
         )
 
         audit_spy = SpyAuditWriter()
         schema = get_tdd_schema()
+        time_provider = StubTimeProvider()
         service = SubagentStopService(
             log_reader=StubExecutionLogReader(project_id="my-feature", events=events),
             completion_validator=StepCompletionValidator(schema=schema),
             scope_checker=StubScopeChecker(),
             audit_writer=audit_spy,
-            time_provider=StubTimeProvider(),
-            integrity_validator=LogIntegrityValidator(schema=schema),
+            time_provider=time_provider,
+            integrity_validator=LogIntegrityValidator(
+                schema=schema, time_provider=time_provider
+            ),
         )
         context = SubagentStopContext(
             execution_log_path="/fake/execution-log.yaml",
             project_id="my-feature",
             step_id="02-01",
-            task_start_time="2026-02-06T21:00:00Z",
+            task_start_time="2026-02-06T21:00:00+00:00",
         )
 
         decision = service.validate(context)

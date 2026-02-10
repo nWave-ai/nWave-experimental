@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from difflib import get_close_matches
 from typing import TYPE_CHECKING
 
+
 if TYPE_CHECKING:
     from des.domain.phase_event import PhaseEvent
     from des.domain.tdd_schema import TDDSchema

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import yaml
 
+
 AGENT_REQUIRED_FIELDS = ["name", "description", "model"]
 COMMAND_REQUIRED_FIELDS = ["description"]
 
@@ -104,7 +105,7 @@ def main() -> int:
     parser.add_argument(
         "--project-root",
         type=Path,
-        default=Path("."),
+        default=Path(),
         help="Project root directory (default: current directory)",
     )
     args = parser.parse_args()
@@ -117,7 +118,9 @@ def main() -> int:
     agent_count = len(list(agents_dir.glob("nw-*.md"))) if agents_dir.is_dir() else 0
     command_count = len(list(commands_dir.glob("*.md"))) if commands_dir.is_dir() else 0
 
-    print(f"Validating frontmatter: {agent_count} agent files, {command_count} command files")
+    print(
+        f"Validating frontmatter: {agent_count} agent files, {command_count} command files"
+    )
 
     errors = validate_project(project_root)
 
@@ -127,7 +130,9 @@ def main() -> int:
             print(f"  - {error}")
         return 1
 
-    print(f"PASSED: All {agent_count} agents and {command_count} commands have valid frontmatter")
+    print(
+        f"PASSED: All {agent_count} agents and {command_count} commands have valid frontmatter"
+    )
     return 0
 
 

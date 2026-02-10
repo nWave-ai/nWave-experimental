@@ -12,24 +12,17 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-import pytest
-import yaml
 
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.log_integrity_validator import LogIntegrityValidator
 from des.domain.phase_event import PhaseEvent
 from des.domain.step_completion_validator import StepCompletionValidator
-from des.domain.tdd_schema import TDDSchema, get_tdd_schema
+from des.domain.tdd_schema import get_tdd_schema
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driven_ports.execution_log_reader import ExecutionLogReader
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
 from des.ports.driven_ports.time_provider_port import TimeProvider
 from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
-
-if TYPE_CHECKING:
-    pass
 
 
 # --- Test doubles ---
@@ -64,7 +57,9 @@ class StubLogReader(ExecutionLogReader):
 
 
 class StubScopeChecker(ScopeChecker):
-    def check_scope(self, project_root: Path, allowed_patterns: list[str]) -> ScopeCheckResult:
+    def check_scope(
+        self, project_root: Path, allowed_patterns: list[str]
+    ) -> ScopeCheckResult:
         return ScopeCheckResult(has_violations=False, out_of_scope_files=[])
 
 
@@ -78,15 +73,25 @@ def _make_complete_events(step_id: str) -> list[PhaseEvent]:
     for phase in phases:
         outcome = "FAIL" if phase in ("RED_ACCEPTANCE", "RED_UNIT") else "PASS"
         if phase == "REFACTOR_CONTINUOUS":
-            events.append(PhaseEvent(
-                step_id=step_id, phase_name=phase, status="SKIPPED",
-                outcome="APPROVED_SKIP:Clean", timestamp="2026-02-08T14:05:00+00:00",
-            ))
+            events.append(
+                PhaseEvent(
+                    step_id=step_id,
+                    phase_name=phase,
+                    status="SKIPPED",
+                    outcome="APPROVED_SKIP:Clean",
+                    timestamp="2026-02-08T14:05:00+00:00",
+                )
+            )
         else:
-            events.append(PhaseEvent(
-                step_id=step_id, phase_name=phase, status="EXECUTED",
-                outcome=outcome, timestamp="2026-02-08T14:05:00+00:00",
-            ))
+            events.append(
+                PhaseEvent(
+                    step_id=step_id,
+                    phase_name=phase,
+                    status="EXECUTED",
+                    outcome=outcome,
+                    timestamp="2026-02-08T14:05:00+00:00",
+                )
+            )
     return events
 
 
@@ -139,10 +144,15 @@ class TestAT1PhaseNameValidation:
     def test_unrecognized_phase_name_warning(self) -> None:
         events = _make_complete_events("01-01")
         # Add an event with wrong phase name
-        events.append(PhaseEvent(
-            step_id="01-01", phase_name="REFACTOR", status="EXECUTED",
-            outcome="PASS", timestamp="2026-02-08T14:06:00+00:00",
-        ))
+        events.append(
+            PhaseEvent(
+                step_id="01-01",
+                phase_name="REFACTOR",
+                status="EXECUTED",
+                outcome="PASS",
+                timestamp="2026-02-08T14:06:00+00:00",
+            )
+        )
         service, audit_spy = _build_service(events)
         context = SubagentStopContext(
             execution_log_path="/fake/execution-log.yaml",
@@ -167,10 +177,15 @@ class TestAT2CrossStepContamination:
     def test_foreign_step_id_detected(self) -> None:
         events = _make_complete_events("01-03")
         # Add contamination: events for 01-04 in the task window
-        events.append(PhaseEvent(
-            step_id="01-04", phase_name="PREPARE", status="EXECUTED",
-            outcome="PASS", timestamp="2026-02-08T14:05:00+00:00",
-        ))
+        events.append(
+            PhaseEvent(
+                step_id="01-04",
+                phase_name="PREPARE",
+                status="EXECUTED",
+                outcome="PASS",
+                timestamp="2026-02-08T14:05:00+00:00",
+            )
+        )
         service, audit_spy = _build_service(events)
         context = SubagentStopContext(
             execution_log_path="/fake/execution-log.yaml",
@@ -196,10 +211,15 @@ class TestAT3FutureTimestamp:
 
     def test_future_timestamp_warning(self) -> None:
         events = _make_complete_events("01-01")
-        events.append(PhaseEvent(
-            step_id="01-01", phase_name="PREPARE", status="EXECUTED",
-            outcome="PASS", timestamp="2099-01-01T00:00:00+00:00",
-        ))
+        events.append(
+            PhaseEvent(
+                step_id="01-01",
+                phase_name="PREPARE",
+                status="EXECUTED",
+                outcome="PASS",
+                timestamp="2099-01-01T00:00:00+00:00",
+            )
+        )
         service, audit_spy = _build_service(events)
         context = SubagentStopContext(
             execution_log_path="/fake/execution-log.yaml",
@@ -224,10 +244,15 @@ class TestAT4PreTaskTimestamp:
 
     def test_pre_task_timestamp_warning(self) -> None:
         events = _make_complete_events("01-01")
-        events.append(PhaseEvent(
-            step_id="01-01", phase_name="PREPARE", status="EXECUTED",
-            outcome="PASS", timestamp="2026-02-08T13:00:00+00:00",
-        ))
+        events.append(
+            PhaseEvent(
+                step_id="01-01",
+                phase_name="PREPARE",
+                status="EXECUTED",
+                outcome="PASS",
+                timestamp="2026-02-08T13:00:00+00:00",
+            )
+        )
         service, audit_spy = _build_service(events)
         context = SubagentStopContext(
             execution_log_path="/fake/execution-log.yaml",
