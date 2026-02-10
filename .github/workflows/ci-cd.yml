@@ -402,11 +402,9 @@ jobs:
           EOF
         shell: bash
 
-      - name: 🔨 Build IDE bundle for integration tests
+      - name: 🔍 Validate source frontmatter
         run: |
-          PYTHONPATH=tools pipenv run python3 tools/core/build_ide_bundle.py \
-            --source-dir nWave \
-            --output-dir dist/ide
+          pipenv run python3 scripts/validation/validate_source_frontmatter.py
         shell: bash
 
       - name: 🧪 Run pytest test suite
