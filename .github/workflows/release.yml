@@ -413,7 +413,8 @@ jobs:
         run: |
           rsync -av --delete \
             --exclude '.git' \
-            --exclude '.gitignore' \
+            --exclude '.git*' \
+            --exclude '.github/' \
             --exclude 'CLAUDE.local.md' \
             --exclude 'SESSION_STATE*' \
             --exclude 'build.log' \
