@@ -1,0 +1,615 @@
+# =============================================================================
+# nWave Framework Release Pipeline
+# =============================================================================
+#
+# Manual release workflow. Triggered by:
+#   1. workflow_dispatch (Actions UI) - bumps version, builds, releases, publishes
+#   2. Tag push (v*) - builds, releases, publishes (skip version bump)
+#
+# Jobs:
+#   - version-bump: Calculate next semver, update files, create tag, push
+#   - build: Extract version, validate, build IDE bundle, create packages
+#   - github-release: Create GitHub Release with changelog and assets
+#   - publish-to-nwave: Sync to nwave-ai/nwave public repo
+#   - notify-slack: Release success/failure notification
+#
+# =============================================================================
+
+name: Release Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: 'Force specific version (leave empty for auto-bump)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run (no push, no publish)'
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_DEFAULT: '3.12'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ===========================================================================
+  # VERSION BUMP - Only on workflow_dispatch
+  # ===========================================================================
+
+  version-bump:
+    name: "Version Bump"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'workflow_dispatch'
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      tag_created: ${{ steps.version.outputs.tag_created }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install python-semantic-release
+        run: pip install python-semantic-release
+
+      - name: Calculate version and create tag
+        id: version
+        run: |
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            echo "Dry run mode - no changes will be pushed"
+            semantic-release version --noop 2>&1 | tee /tmp/sr-output.txt || true
+            echo "tag_created=false" >> $GITHUB_OUTPUT
+            # Extract version from noop output
+            VERSION=$(grep -oP 'next version: \K[\d.]+' /tmp/sr-output.txt || echo "none")
+            echo "new_version=$VERSION" >> $GITHUB_OUTPUT
+          elif [[ -n "${{ inputs.version_override }}" ]]; then
+            echo "Forcing version: ${{ inputs.version_override }}"
+            semantic-release version --force "${{ inputs.version_override }}"
+            echo "new_version=${{ inputs.version_override }}" >> $GITHUB_OUTPUT
+            echo "tag_created=true" >> $GITHUB_OUTPUT
+          else
+            semantic-release version
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+            VERSION=${LATEST_TAG#v}
+            echo "new_version=$VERSION" >> $GITHUB_OUTPUT
+            if [[ "$LATEST_TAG" != "none" ]]; then
+              echo "tag_created=true" >> $GITHUB_OUTPUT
+            else
+              echo "tag_created=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Version Summary
+        if: success()
+        run: |
+          echo "## Version Bump" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**New version**: \`${{ steps.version.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag created**: \`${{ steps.version.outputs.tag_created }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Dry run**: \`${{ inputs.dry_run }}\`" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # BUILD - On dispatch (after version-bump) or tag push
+  # ===========================================================================
+
+  build:
+    name: "Build Distribution"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [version-bump]
+    if: |
+      always() &&
+      (needs.version-bump.outputs.tag_created == 'true' || startsWith(github.ref, 'refs/tags/v'))
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref || '' }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install build dependencies
+        run: |
+          python3 -m pip install --upgrade pip setuptools wheel pipenv
+          pipenv install --dev
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ needs.version-bump.outputs.new_version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Verify version consistency
+        run: |
+          TAG_VERSION="${{ steps.get_version.outputs.VERSION }}"
+          CATALOG_VERSION=$(pipenv run python3 -c "import yaml; print(yaml.safe_load(open('nWave/framework-catalog.yaml'))['version'])")
+
+          if [ "$TAG_VERSION" != "$CATALOG_VERSION" ]; then
+            echo "::error::Version mismatch - tag: ${TAG_VERSION}, catalog: ${CATALOG_VERSION}"
+            exit 1
+          fi
+
+      - name: Build IDE bundle
+        run: |
+          PYTHONPATH=tools pipenv run python3 tools/core/build_ide_bundle.py \
+            --source-dir nWave \
+            --output-dir dist/ide \
+            --verbose
+
+      - name: Create release packages
+        run: |
+          pipenv run python3 tools/create_release_packages.py \
+            --version ${{ steps.get_version.outputs.VERSION }} \
+            --output-dir dist/releases
+
+      - name: Generate checksums
+        run: |
+          cd dist/releases
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-packages
+          path: dist/releases/*
+          retention-days: 90
+
+  # ===========================================================================
+  # GITHUB RELEASE - Create release with changelog
+  # ===========================================================================
+
+  github-release:
+    name: "GitHub Release"
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-packages
+          path: dist/releases
+
+      - name: Extract version
+        id: get_version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ needs.build.result == 'success' && needs.version-bump.outputs.new_version || '' }}"
+            # Fallback: read from pyproject.toml
+            if [[ -z "$VERSION" ]]; then
+              VERSION=$(python3 -c "
+          import re
+          with open('pyproject.toml') as f:
+              for line in f:
+                  m = re.match(r'version = \"(.+)\"', line)
+                  if m:
+                      print(m.group(1))
+                      break
+          ")
+            fi
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog from conventional commits
+        run: |
+          python3 << 'PYEOF'
+          import subprocess
+          import re
+          import os
+          from datetime import datetime, timezone
+
+          version = os.environ.get("VERSION", "0.0.0")
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          release_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+          # Find previous tag
+          try:
+              prev_tag = subprocess.check_output(
+                  ["git", "describe", "--tags", "--abbrev=0", "HEAD^"],
+                  text=True, stderr=subprocess.DEVNULL
+              ).strip()
+          except subprocess.CalledProcessError:
+              prev_tag = ""
+
+          # Build git log command with record separator
+          record_end = "<<--EOR-->>"
+          fmt = f"%s%x00%b%x00%h{record_end}"
+          cmd = ["git", "log", "--no-merges", f"--pretty=format:{fmt}"]
+          if prev_tag:
+              cmd.insert(2, f"{prev_tag}..HEAD")
+
+          try:
+              raw = subprocess.check_output(cmd, text=True)
+          except subprocess.CalledProcessError:
+              raw = ""
+
+          # Parse commits into categories
+          breaking = []
+          features = []
+          fixes = []
+          other = []
+
+          conventional_re = re.compile(
+              r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s*(?P<desc>.+)$"
+          )
+
+          for record in raw.split(record_end):
+              record = record.strip()
+              if not record:
+                  continue
+
+              parts = record.split("\x00")
+              if len(parts) < 3:
+                  continue
+
+              subject = parts[0].strip()
+              body = parts[1].strip()
+              commit_hash = parts[2].strip()
+
+              if not subject or not commit_hash:
+                  continue
+
+              m = conventional_re.match(subject)
+              is_breaking = False
+
+              if m and m.group("bang"):
+                  is_breaking = True
+              if "BREAKING CHANGE:" in body or "BREAKING-CHANGE:" in body:
+                  is_breaking = True
+
+              line = f"- {subject} (`{commit_hash}`)"
+
+              if is_breaking:
+                  breaking.append(line)
+              elif m:
+                  ctype = m.group("type")
+                  if ctype == "feat":
+                      features.append(line)
+                  elif ctype == "fix":
+                      fixes.append(line)
+                  else:
+                      other.append(line)
+              else:
+                  other.append(line)
+
+          # Build changelog markdown
+          sections = []
+          sections.append(f"# nWave Framework v{version}\n")
+          sections.append(f"**Release Date**: {release_date}\n")
+
+          if prev_tag:
+              compare_url = f"https://github.com/{repo}/compare/{prev_tag}...v{version}"
+              sections.append(f"**Full Changelog**: [{prev_tag}...v{version}]({compare_url})\n")
+
+          if breaking:
+              sections.append("## Breaking Changes\n")
+              sections.append("\n".join(breaking) + "\n")
+
+          if features:
+              sections.append("## Features\n")
+              sections.append("\n".join(features) + "\n")
+
+          if fixes:
+              sections.append("## Bug Fixes\n")
+              sections.append("\n".join(fixes) + "\n")
+
+          if other:
+              sections.append("## Other Changes\n")
+              sections.append("\n".join(other) + "\n")
+
+          if not (breaking or features or fixes or other):
+              sections.append("No conventional commits found in this release.\n")
+
+          sections.append("## Installation\n")
+          sections.append(
+              f"```bash\n"
+              f"curl -O https://github.com/{repo}/releases/download/"
+              f"v{version}/install-nwave-claude-code.py\n"
+              f"python install-nwave-claude-code.py\n"
+              f"```\n"
+          )
+
+          changelog = "\n".join(sections)
+
+          os.makedirs("dist/releases", exist_ok=True)
+          with open("dist/releases/RELEASE_NOTES.md", "w") as f:
+              f.write(changelog)
+
+          print(changelog)
+          PYEOF
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get_version.outputs.VERSION }}
+          name: nWave Framework v${{ steps.get_version.outputs.VERSION }}
+          body_path: dist/releases/RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+          files: |
+            dist/releases/*.tar.gz
+            dist/releases/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ===========================================================================
+  # PUBLISH TO NWAVE - Sync to public repo
+  # ===========================================================================
+
+  publish-to-nwave:
+    name: "Publish to nwave-ai/nwave"
+    needs: [version-bump, github-release]
+    if: |
+      always() &&
+      needs.github-release.result == 'success' &&
+      (github.event_name != 'workflow_dispatch' || inputs.dry_run != true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout crafter-ai (source)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: get_version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ needs.version-bump.outputs.new_version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Checkout nwave-ai/nwave (target)
+        uses: actions/checkout@v4
+        with:
+          repository: nwave-ai/nwave
+          token: ${{ secrets.RELEASETRAIN }}
+          path: nwave-target
+
+      - name: Sync files to nwave-ai/nwave
+        run: |
+          rsync -av --delete \
+            --exclude '.git' \
+            --exclude '.gitignore' \
+            --exclude 'CLAUDE.local.md' \
+            --exclude 'SESSION_STATE*' \
+            --exclude 'build.log' \
+            --exclude '_tmp/' \
+            --exclude 'htmlcov/' \
+            --exclude 'reports/' \
+            --exclude 'mutants/' \
+            --exclude 'nwave.egg-info/' \
+            --exclude 'test_import_debug.py' \
+            --exclude 'test_token_minimal_architecture.py' \
+            --exclude 'update_*.py' \
+            --exclude '__pycache__/' \
+            --exclude '.pytest_cache/' \
+            --exclude '.mypy_cache/' \
+            --exclude '.ruff_cache/' \
+            --exclude '.coverage' \
+            --exclude '.DS_Store' \
+            --exclude '.venv/' \
+            --exclude '.des/' \
+            --exclude '.nwave/' \
+            --exclude '.nwave-audit.log' \
+            --exclude '.mutmut-cache' \
+            --exclude '*.sqlite' \
+            --exclude 'DOCUMENTATION_UPDATES_SUMMARY.md' \
+            --exclude 'test-des-hooks/' \
+            --exclude 'test-des-manual/' \
+            ./ nwave-target/
+
+      - name: Commit and push to nwave-ai/nwave
+        working-directory: nwave-target
+        run: |
+          git config user.name "nWave Release Train"
+          git config user.email "noreply@nwave.ai"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish"
+          else
+            git commit -m "chore(release): sync v${{ steps.get_version.outputs.VERSION }} from crafter-ai"
+            git push
+          fi
+
+  # ===========================================================================
+  # NOTIFICATION: SLACK ALERT
+  # ===========================================================================
+
+  notify-slack:
+    name: "Slack Notification"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: |
+      always() &&
+      !cancelled()
+    needs: [version-bump, build, github-release, publish-to-nwave]
+
+    steps:
+      - name: Determine release status
+        id: status
+        run: |
+          NEEDS_CONTEXT='${{ toJson(needs) }}'
+
+          if echo "$NEEDS_CONTEXT" | jq -e '.[] | select(.result == "failure")' > /dev/null; then
+            echo "result=failure" >> $GITHUB_OUTPUT
+
+            FAILED_JOBS=$(echo "$NEEDS_CONTEXT" | jq -r '
+              to_entries
+              | map(select(.value.result == "failure"))
+              | map("• " + .key)
+              | join("\n")
+            ')
+            echo "failed_jobs<<EOF" >> $GITHUB_OUTPUT
+            echo "$FAILED_JOBS" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "result=success" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Extract version
+        id: get_version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ needs.version-bump.outputs.new_version }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get current timestamp
+        id: timestamp
+        run: |
+          echo "unix=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: Send release success notification
+        if: steps.status.outputs.result == 'success'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook-type: incoming-webhook
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Released v${{ steps.get_version.outputs.version }}",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Published to GitHub Releases and synced to *nwave-ai/nwave*"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Release"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.get_version.outputs.version }}",
+                      "style": "primary"
+                    },
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Run"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "Released at: <!date^${{ steps.timestamp.outputs.unix }}^{date_short_pretty} at {time}|timestamp>"
+                    }
+                  ]
+                }
+              ]
+            }
+
+      - name: Send release failure notification
+        if: steps.status.outputs.result == 'failure'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook-type: incoming-webhook
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Release Pipeline Failed",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Version:* ${{ steps.get_version.outputs.version }}\n*Failed Jobs:*\n${{ steps.status.outputs.failed_jobs }}"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Run"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                      "style": "danger"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "Failed at: <!date^${{ steps.timestamp.outputs.unix }}^{date_short_pretty} at {time}|timestamp>"
+                    }
+                  ]
+                }
+              ]
+            }
