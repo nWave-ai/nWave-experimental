@@ -196,7 +196,7 @@ commands:
     wave: "DELIVER"
     outputs: ["mutation_report"]
 
-  devop:
+  devops:
     description: "Platform readiness, CI/CD, infrastructure, and deployment design"
     argument_hint: "[deployment-target] - Optional: --environment=[staging|production] --validation=[full|smoke]"
     agents: ["platform-architect"]
@@ -352,8 +352,8 @@ templates:
       interactivity: "moderate"
       patterns: "production_service_integration_given_when_then"
 
-    devop_moderate:
-      file: "templates/devop-production-readiness.yaml"
+    devops_moderate:
+      file: "templates/devops-production-readiness.yaml"
       description: "Moderately interactive platform readiness for DEVOP wave"
       interactivity: "moderate"
       validation: "deployment_infrastructure_design"

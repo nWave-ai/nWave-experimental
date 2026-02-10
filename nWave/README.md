@@ -43,7 +43,7 @@ The nWave methodology implements a systematic approach to software development t
 - `/nw:discover [product-concept]` - Wave 1: Evidence-based product discovery
 - `/nw:discuss [requirements]` - Wave 2: Business analysis
 - `/nw:design [system-context]` - Wave 3: Architecture design
-- `/nw:devop [deployment-target]` - Wave 4: Platform readiness and infrastructure
+- `/nw:devops [deployment-target]` - Wave 4: Platform readiness and infrastructure
 - `/nw:distill [acceptance-criteria]` - Wave 5: Test scenarios
 - `/nw:deliver [feature-description]` - Wave 6: Outside-In TDD implementation
 
@@ -112,7 +112,7 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 /nw:discuss "User registration and login requirements"
 /nw:design "Microservices with JWT authentication"
 /nw:distill "User can register and login securely"
-/nw:devop "user-authentication"
+/nw:devops "user-authentication"
 /nw:distill "User can register and login securely"
 /nw:deliver "Implement user authentication with JWT"
   # Automatically: baseline → roadmap → split → execute all steps → finalize

@@ -45,7 +45,7 @@ All DW commands are now configured to automatically trigger specialized agent te
 
 ### DEVOP Wave Commands
 
-- **`/nw:devop`** → `platform-architect` (Apex)
+- **`/nw:devops`** → `platform-architect` (Apex)
 
 ### DELIVER Wave Commands
 
