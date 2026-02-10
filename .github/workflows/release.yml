@@ -75,11 +75,11 @@ jobs:
         run: |
           if [[ "${{ inputs.dry_run }}" == "true" ]]; then
             echo "Dry run mode - no changes will be pushed"
-            semantic-release version --noop 2>&1 | tee /tmp/sr-output.txt || true
+            # PSR 10.x: --print outputs the next version without modifying anything
+            VERSION=$(semantic-release version --print 2>/dev/null || echo "none")
             echo "tag_created=false" >> $GITHUB_OUTPUT
-            # Extract version from noop output
-            VERSION=$(grep -oP 'next version: \K[\d.]+' /tmp/sr-output.txt || echo "none")
             echo "new_version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Would bump to: $VERSION"
           elif [[ -n "${{ inputs.version_override }}" ]]; then
             echo "Forcing version: ${{ inputs.version_override }}"
             semantic-release version --force "${{ inputs.version_override }}"
