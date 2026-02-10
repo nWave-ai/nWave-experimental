@@ -3,7 +3,7 @@ Unit tests for install_nwave.py preflight integration.
 
 CRITICAL: Tests follow hexagonal architecture - port boundaries only for mocks.
 These tests validate that install_nwave.py properly integrates preflight_checker,
-output_formatter, and context_detector BEFORE any build actions.
+output_formatter, and context_detector BEFORE any installation actions.
 
 Step 05-01: Installer Pre-flight Integration
 """
@@ -18,14 +18,14 @@ from scripts.install.preflight_checker import CheckResult
 class TestInstallNwavePreflightIntegration:
     """Tests for install_nwave.py preflight integration."""
 
-    def test_install_nwave_calls_preflight_before_build(self):
+    def test_install_nwave_calls_preflight_before_install(self):
         """
         GIVEN: The installer is executed
         WHEN: main() is called
-        THEN: Preflight checks are executed BEFORE check_source() (build action)
+        THEN: Preflight checks are executed BEFORE install_framework()
 
         This test verifies the critical requirement that preflight validation
-        happens before any build or file system operations.
+        happens before any installation or file system operations.
         """
         # ARRANGE
         call_order = []
@@ -34,8 +34,8 @@ class TestInstallNwavePreflightIntegration:
             call_order.append("preflight")
             return []  # Empty results means all checks passed
 
-        def track_check_source(*args, **kwargs):
-            call_order.append("check_source")
+        def track_install_framework(*args, **kwargs):
+            call_order.append("install_framework")
             return True
 
         with patch(
@@ -47,52 +47,48 @@ class TestInstallNwavePreflightIntegration:
             mock_preflight_class.return_value = mock_checker
 
             with patch(
-                "scripts.install.install_nwave.NWaveInstaller.check_source",
-                side_effect=track_check_source,
+                "scripts.install.install_nwave.NWaveInstaller.create_backup"
             ):
                 with patch(
-                    "scripts.install.install_nwave.NWaveInstaller.create_backup"
+                    "scripts.install.install_nwave.NWaveInstaller.install_framework",
+                    side_effect=track_install_framework,
                 ):
                     with patch(
-                        "scripts.install.install_nwave.NWaveInstaller.install_framework",
+                        "scripts.install.install_nwave.NWaveInstaller.validate_installation",
                         return_value=True,
                     ):
                         with patch(
-                            "scripts.install.install_nwave.NWaveInstaller.validate_installation",
-                            return_value=True,
+                            "scripts.install.install_nwave.NWaveInstaller.create_manifest"
                         ):
-                            with patch(
-                                "scripts.install.install_nwave.NWaveInstaller.create_manifest"
-                            ):
-                                # ACT
-                                from scripts.install.install_nwave import main
+                            # ACT
+                            from scripts.install.install_nwave import main
 
-                                with patch.object(sys, "argv", ["install_nwave.py"]):
-                                    main()
+                            with patch.object(sys, "argv", ["install_nwave.py"]):
+                                main()
 
         # ASSERT
         assert "preflight" in call_order, "Preflight checks were not called"
-        assert "check_source" in call_order, "check_source was not called"
+        assert "install_framework" in call_order, "install_framework was not called"
         preflight_index = call_order.index("preflight")
-        check_source_index = call_order.index("check_source")
-        assert preflight_index < check_source_index, (
-            f"Preflight checks must run BEFORE check_source. Order was: {call_order}"
+        install_index = call_order.index("install_framework")
+        assert preflight_index < install_index, (
+            f"Preflight checks must run BEFORE install_framework. Order was: {call_order}"
         )
 
     def test_install_nwave_exits_early_on_preflight_failure(self):
         """
         GIVEN: Preflight checks fail (e.g., no virtual environment)
         WHEN: main() is called
-        THEN: Returns non-zero exit code and does NOT call check_source
+        THEN: Returns non-zero exit code and does NOT call install_framework
 
         This ensures the installer fails fast when environment is invalid.
         """
         # ARRANGE
-        check_source_called = False
+        install_called = False
 
-        def track_check_source(*args, **kwargs):
-            nonlocal check_source_called
-            check_source_called = True
+        def track_install(*args, **kwargs):
+            nonlocal install_called
+            install_called = True
             return True
 
         failed_result = CheckResult(
@@ -113,8 +109,8 @@ class TestInstallNwavePreflightIntegration:
 
             with (
                 patch(
-                    "scripts.install.install_nwave.NWaveInstaller.check_source",
-                    side_effect=track_check_source,
+                    "scripts.install.install_nwave.NWaveInstaller.install_framework",
+                    side_effect=track_install,
                 ),
                 patch("scripts.install.install_nwave.format_error") as mock_format,
             ):
@@ -128,8 +124,8 @@ class TestInstallNwavePreflightIntegration:
 
         # ASSERT
         assert exit_code != 0, "Should return non-zero exit code on preflight failure"
-        assert not check_source_called, (
-            "check_source should NOT be called when preflight fails"
+        assert not install_called, (
+            "install_framework should NOT be called when preflight fails"
         )
 
     def test_install_nwave_uses_format_error_for_failures(self):
@@ -225,16 +221,12 @@ class TestInstallNwavePreflightSuccess:
         """
         GIVEN: All preflight checks pass
         WHEN: main() is called
-        THEN: Installation continues with check_source and install_framework
+        THEN: Installation continues with install_framework
 
         This confirms the happy path where preflight passes.
         """
         # ARRANGE
         steps_executed = []
-
-        def track_check_source(*args, **kwargs):
-            steps_executed.append("check_source")
-            return True
 
         def track_install(*args, **kwargs):
             steps_executed.append("install_framework")
@@ -256,30 +248,25 @@ class TestInstallNwavePreflightSuccess:
             mock_preflight_class.return_value = mock_checker
 
             with patch(
-                "scripts.install.install_nwave.NWaveInstaller.check_source",
-                side_effect=track_check_source,
+                "scripts.install.install_nwave.NWaveInstaller.create_backup"
             ):
                 with patch(
-                    "scripts.install.install_nwave.NWaveInstaller.create_backup"
+                    "scripts.install.install_nwave.NWaveInstaller.install_framework",
+                    side_effect=track_install,
                 ):
                     with patch(
-                        "scripts.install.install_nwave.NWaveInstaller.install_framework",
-                        side_effect=track_install,
+                        "scripts.install.install_nwave.NWaveInstaller.validate_installation",
+                        return_value=True,
                     ):
                         with patch(
-                            "scripts.install.install_nwave.NWaveInstaller.validate_installation",
-                            return_value=True,
+                            "scripts.install.install_nwave.NWaveInstaller.create_manifest"
                         ):
-                            with patch(
-                                "scripts.install.install_nwave.NWaveInstaller.create_manifest"
-                            ):
-                                # ACT
-                                from scripts.install.install_nwave import main
+                            # ACT
+                            from scripts.install.install_nwave import main
 
-                                with patch.object(sys, "argv", ["install_nwave.py"]):
-                                    exit_code = main()
+                            with patch.object(sys, "argv", ["install_nwave.py"]):
+                                exit_code = main()
 
         # ASSERT
         assert exit_code == 0, "Should return 0 on successful installation"
-        assert "check_source" in steps_executed
         assert "install_framework" in steps_executed

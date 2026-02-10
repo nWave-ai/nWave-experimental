@@ -9,7 +9,6 @@ Usage: python install_nwave.py [--backup-only] [--restore] [--dry-run] [--help]
 """
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 
@@ -61,10 +60,6 @@ except ImportError:
     from plugins.utilities_plugin import UtilitiesPlugin
     from preflight_checker import PreflightChecker
 
-# Expected file counts from the build (under integration test)
-EXPECTED_AGENT_COUNT = 43
-EXPECTED_COMMAND_COUNT = 23
-
 # ANSI color codes for --help output (only consumer)
 _ANSI_BLUE = "\033[0;34m"
 _ANSI_NC = "\033[0m"  # No Color
@@ -111,128 +106,19 @@ _TAGLINES = [
 class NWaveInstaller:
     """nWave framework installer."""
 
-    def __init__(self, dry_run: bool = False, force_rebuild: bool = False):
+    def __init__(self, dry_run: bool = False):
         """Initialize installer."""
         self.dry_run = dry_run
-        self.force_rebuild = force_rebuild
         self.script_dir = Path(__file__).parent
         self.project_root = PathUtils.get_project_root(self.script_dir)
         self.claude_config_dir = PathUtils.get_claude_config_dir()
-        self.framework_source = self.project_root / "dist" / "ide"
+        # Plugins read directly from nWave/ source; pass as framework_source
+        # for InstallContext contract (step 02-04 will clean up base.py)
+        self.framework_source = self.project_root / "nWave"
 
         log_file = self.claude_config_dir / "nwave-install.log"
         self.logger = Logger(log_file if not dry_run else None)
         self.backup_manager = BackupManager(self.logger, "install")
-
-    def run_embedding(self) -> bool:
-        """Run source embedding to update embedded content."""
-        embed_script = self.project_root / "tools" / "embed_sources.py"
-
-        if not embed_script.exists():
-            return True  # Not critical
-
-        with self.logger.progress_spinner("  🚧 Source Embedding..."):
-            try:
-                result = subprocess.run(
-                    [sys.executable, str(embed_script)],
-                    cwd=self.project_root,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-
-                if result.returncode == 0:
-                    self.logger.info("  ✅ Source embedding completed")
-                    return True
-                else:
-                    self.logger.warn("  ⚠️ Source embedding issues, continuing...")
-                    return True
-            except Exception as e:
-                self.logger.warn(f"  ⚠️ Source embedding failed: {e}, continuing...")
-                return True
-
-    def build_framework(self) -> bool:
-        """Build the IDE bundle."""
-        build_script = self.project_root / "tools" / "build.py"
-        if not build_script.exists():
-            self.logger.error(f"  ❌ Build script not found: {build_script}")
-            return False
-
-        with self.logger.progress_spinner("  🚧 Work in progress..."):
-            try:
-                result = subprocess.run(
-                    [sys.executable, str(build_script)],
-                    cwd=self.project_root,
-                    capture_output=True,
-                    text=True,
-                )
-                self.logger.info("")
-                if result.returncode == 0:
-                    self.logger.info("  ✅ Build completed")
-                    return True
-                else:
-                    self.logger.error("  ❌ Build failed")
-                    self.logger.error(f"     {result.stderr}")
-                    return False
-            except Exception as e:
-                self.logger.error(f"   ❌ Build failed: {e}")
-                return False
-
-    def check_source(self) -> bool:
-        """Check if source framework exists, build if necessary."""
-        self.logger.info("  🔍 Source framework")
-
-        # Run embedding first
-        self.run_embedding()
-
-        # Force rebuild if requested
-        if self.force_rebuild:
-            self.logger.info("  ⏳ Force rebuild requested...")
-            return self.build_framework()
-
-        # Check if dist/ide exists
-        if not self.framework_source.exists():
-            self.logger.info("  ⏳ Distribution not found, building...")
-            if not self.build_framework():
-                return False
-
-        # Check for built IDE distribution structure
-        agents_dir = self.framework_source / "agents" / "nw"
-        commands_dir = self.framework_source / "commands" / "nw"
-
-        if not agents_dir.exists() or not commands_dir.exists():
-            self.logger.info("  ⏳ Distribution incomplete, rebuilding...")
-            if not self.build_framework():
-                return False
-
-        # Check if source files are newer than distribution
-        source_dir = self.project_root / "nWave"
-        newest_source = PathUtils.find_newest_file(source_dir)
-        newest_dist = PathUtils.find_newest_file(self.framework_source)
-
-        if newest_source and newest_dist:
-            if newest_source.stat().st_mtime > newest_dist.stat().st_mtime:
-                self.logger.info("  ⏳ Source files changed, rebuilding...")
-                if not self.build_framework():
-                    return False
-
-        agent_count = PathUtils.count_files(agents_dir, "*.md")
-        command_count = PathUtils.count_files(commands_dir, "*.md")
-
-        self.logger.info(
-            f"  ✅ Found {agent_count} agents and {command_count} commands"
-        )
-
-        if agent_count != EXPECTED_AGENT_COUNT:
-            self.logger.warn(
-                f"  ⚠️ Expected {EXPECTED_AGENT_COUNT} agents, found {agent_count}"
-            )
-        if command_count != EXPECTED_COMMAND_COUNT:
-            self.logger.warn(
-                f"  ⚠️ Expected {EXPECTED_COMMAND_COUNT} commands, found {command_count}"
-            )
-
-        return True
 
     def create_backup(self) -> None:
         """Create backup of existing installation."""
@@ -324,12 +210,12 @@ class NWaveInstaller:
                 f"  🚨 [DRY RUN] Would create target directory: {self.claude_config_dir}"
             )
 
-            # Show what would be installed
-            agents_dir = self.framework_source / "agents" / "nw"
-            commands_dir = self.framework_source / "commands" / "nw"
+            # Show what would be installed from nWave/ source
+            agents_dir = self.project_root / "nWave" / "agents"
+            commands_dir = self.project_root / "nWave" / "tasks" / "nw"
 
             if agents_dir.exists():
-                agent_count = PathUtils.count_files(agents_dir, "*.md")
+                agent_count = PathUtils.count_files(agents_dir, "nw-*.md")
                 self.logger.info(
                     f"  🚨 [DRY RUN] Would install {agent_count} agent files"
                 )
@@ -454,32 +340,39 @@ class NWaveInstaller:
             # Validate schema template (additional check specific to installer)
             schema_valid = self._validate_schema_template()
 
-        # Verify components: compare source files vs installed target
+        # Verify components: compare nWave/ source files vs installed target
         all_synced = True
 
-        # Agents & Commands from dist/ide/
-        for label, rel_path, pattern in [
-            ("Agents", "agents/nw", "*.md"),
-            ("Commands", "commands/nw", "*.md"),
-        ]:
-            source_dir = self.framework_source / rel_path
-            target_dir = self.claude_config_dir / rel_path
-            source_files = (
-                sorted(
-                    f.relative_to(source_dir)
-                    for f in source_dir.rglob(pattern)
-                    if f.is_file()
-                )
-                if source_dir.exists()
-                else []
+        # Agents from nWave/agents/ (nw-*.md pattern, excludes legacy/)
+        agents_source = self.project_root / "nWave" / "agents"
+        agents_target = self.claude_config_dir / "agents" / "nw"
+        if agents_source.exists():
+            agent_source_files = sorted(agents_source.glob("nw-*.md"))
+            agent_matched = sum(
+                1 for f in agent_source_files if (agents_target / f.name).exists()
             )
-            matched = sum(1 for f in source_files if (target_dir / f).exists())
-            expected = len(source_files)
-            ok = matched == expected and expected > 0
-            if not ok:
+            agent_expected = len(agent_source_files)
+            agent_ok = agent_matched == agent_expected and agent_expected > 0
+            if not agent_ok:
                 all_synced = False
             self.logger.info(
-                f"    {'✅' if ok else '❌'} {label} verified ({matched}/{expected})"
+                f"    {'✅' if agent_ok else '❌'} Agents verified ({agent_matched}/{agent_expected})"
+            )
+
+        # Commands from nWave/tasks/nw/ (*.md pattern)
+        commands_source = self.project_root / "nWave" / "tasks" / "nw"
+        commands_target = self.claude_config_dir / "commands" / "nw"
+        if commands_source.exists():
+            cmd_source_files = sorted(commands_source.glob("*.md"))
+            cmd_matched = sum(
+                1 for f in cmd_source_files if (commands_target / f.name).exists()
+            )
+            cmd_expected = len(cmd_source_files)
+            cmd_ok = cmd_matched == cmd_expected and cmd_expected > 0
+            if not cmd_ok:
+                all_synced = False
+            self.logger.info(
+                f"    {'✅' if cmd_ok else '❌'} Commands verified ({cmd_matched}/{cmd_expected})"
             )
 
         # Templates from nWave/templates/
@@ -629,20 +522,14 @@ def show_help():
 {B}OPTIONS:{N}
     --backup-only     Create backup of existing nWave installation without installing
     --restore         Restore from the most recent backup
-    --force-rebuild   Force rebuild of distribution before installation (ensures fresh source)
     --dry-run         Show what would be installed without making any changes
     --help            Show this help message
 
 {B}EXAMPLES:{N}
     python install_nwave.py                    # Install nWave framework
-    python install_nwave.py --force-rebuild    # Rebuild and install with latest sources
     python install_nwave.py --dry-run          # Show what would be installed
     python install_nwave.py --backup-only      # Create backup only
     python install_nwave.py --restore          # Restore from latest backup
-
-{B}TROUBLESHOOTING:{N}
-    If installation doesn't pick up recent changes, use --force-rebuild:
-    python install_nwave.py --force-rebuild
 
 {B}WHAT GETS INSTALLED:{N}
     - nWave specialized agents (DISCOVER\u2192DISCUSS\u2192DESIGN\u2192DISTILL\u2192DEVELOP\u2192DELIVER methodology)
@@ -670,9 +557,6 @@ def main():
     parser.add_argument("--backup-only", action="store_true", help="Create backup only")
     parser.add_argument("--restore", action="store_true", help="Restore from backup")
     parser.add_argument(
-        "--force-rebuild", action="store_true", help="Force rebuild of distribution"
-    )
-    parser.add_argument(
         "--dry-run", action="store_true", help="Show what would be done"
     )
     parser.add_argument("--help", "-h", action="store_true", help="Show help")
@@ -683,7 +567,7 @@ def main():
         show_help()
         return 0
 
-    installer = NWaveInstaller(dry_run=args.dry_run, force_rebuild=args.force_rebuild)
+    installer = NWaveInstaller(dry_run=args.dry_run)
 
     # Show title panel at startup
     show_title_panel(installer.logger, dry_run=args.dry_run)
@@ -719,8 +603,6 @@ def main():
 
     # Handle backup-only mode
     if args.backup_only:
-        if not installer.check_source():
-            return 1
         installer.create_backup()
         installer.logger.info("  🍾 Backup completed successfully")
         return 0
@@ -734,9 +616,6 @@ def main():
             return 1
 
     # Normal installation
-    if not installer.check_source():
-        return 1
-
     installer.create_backup()
 
     if not installer.install_framework():
