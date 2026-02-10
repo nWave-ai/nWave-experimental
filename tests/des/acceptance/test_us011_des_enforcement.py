@@ -254,6 +254,7 @@ class TestStepIdEnforcement:
         """
         audit_dir = tmp_path / "audit"
         monkeypatch.setenv("DES_AUDIT_LOG_DIR", str(audit_dir))
+        monkeypatch.setenv("DES_AUDIT_LOGGING_ENABLED", "true")
 
         invoke_hook(
             "pre-tool-use",

@@ -40,6 +40,7 @@ from des.adapters.driven.hooks.yaml_execution_log_reader import (
 )
 from des.adapters.driven.logging.jsonl_audit_log_writer import JsonlAuditLogWriter
 from des.adapters.driven.time.system_time import SystemTimeProvider
+from des.ports.driven_ports.audit_log_writer import AuditLogWriter
 from des.adapters.driven.validation.git_scope_checker import GitScopeChecker
 from des.application.pre_tool_use_service import PreToolUseService
 from des.application.subagent_stop_service import SubagentStopService
@@ -55,6 +56,21 @@ from des.ports.driven_ports.audit_log_writer import AuditEvent
 from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
 
 
+def _create_audit_writer() -> AuditLogWriter:
+    """Create appropriate AuditLogWriter based on DES configuration.
+
+    Returns NullAuditLogWriter when audit logging is disabled (default),
+    JsonlAuditLogWriter when explicitly enabled in .nwave/des-config.json.
+    """
+    from des.adapters.driven.config.des_config import DESConfig
+    from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
+
+    config = DESConfig()
+    if not config.audit_logging_enabled:
+        return NullAuditLogWriter()
+    return JsonlAuditLogWriter()
+
+
 def create_pre_tool_use_service() -> PreToolUseService:
     """Create PreToolUseService with production dependencies.
 
@@ -62,7 +78,7 @@ def create_pre_tool_use_service() -> PreToolUseService:
         PreToolUseService configured for production use
     """
     time_provider = SystemTimeProvider()
-    audit_writer = JsonlAuditLogWriter()
+    audit_writer = _create_audit_writer()
 
     return PreToolUseService(
         max_turns_policy=MaxTurnsPolicy(),
@@ -84,7 +100,7 @@ def create_subagent_stop_service() -> SubagentStopService:
     from des.domain.log_integrity_validator import LogIntegrityValidator
 
     time_provider = SystemTimeProvider()
-    audit_writer = JsonlAuditLogWriter()
+    audit_writer = _create_audit_writer()
     schema = get_tdd_schema()
 
     return SubagentStopService(
@@ -107,7 +123,7 @@ def _log_hook_invoked(handler: str, summary: dict | None = None) -> None:
     Without this, silent passthrough is indistinguishable from hook-not-firing.
     """
     try:
-        audit_writer = JsonlAuditLogWriter()
+        audit_writer = _create_audit_writer()
         data: dict = {"handler": handler}
         if summary:
             data["input_summary"] = summary
@@ -280,7 +296,7 @@ def handle_pre_tool_use() -> int:
         # Fail-closed: any error blocks execution
         # Log error to audit trail so it is visible in compliance logs
         try:
-            audit_writer = JsonlAuditLogWriter()
+            audit_writer = _create_audit_writer()
             audit_writer.log_event(
                 AuditEvent(
                     event_type="HOOK_ERROR",
@@ -356,7 +372,7 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
     except (OSError, PermissionError) as e:
         # Log transcript read failure for diagnostics
         try:
-            JsonlAuditLogWriter().log_event(
+            _create_audit_writer().log_event(
                 AuditEvent(
                     event_type="HOOK_TRANSCRIPT_ERROR",
                     timestamp=SystemTimeProvider().now_utc().isoformat(),
@@ -369,7 +385,7 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
 
     # No DES markers found in any message
     try:
-        JsonlAuditLogWriter().log_event(
+        _create_audit_writer().log_event(
             AuditEvent(
                 event_type="HOOK_TRANSCRIPT_NO_MARKERS",
                 timestamp=SystemTimeProvider().now_utc().isoformat(),
@@ -582,7 +598,7 @@ def handle_subagent_stop() -> int:
         # Fail-closed: any error blocks execution via stderr + exit 1
         # Log error to audit trail so it is visible in compliance logs
         try:
-            audit_writer = JsonlAuditLogWriter()
+            audit_writer = _create_audit_writer()
             audit_writer.log_event(
                 AuditEvent(
                     event_type="HOOK_ERROR",
@@ -661,7 +677,7 @@ def handle_post_tool_use() -> int:
         # PostToolUse should never block - fail open
         # Log error to audit trail so it is visible in compliance logs
         try:
-            audit_writer = JsonlAuditLogWriter()
+            audit_writer = _create_audit_writer()
             audit_writer.log_event(
                 AuditEvent(
                     event_type="HOOK_ERROR",

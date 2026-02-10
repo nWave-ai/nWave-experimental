@@ -159,10 +159,11 @@ class TestDualLayerEnforcement:
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
 
-        # Direct audit log to temp dir for verification
+        # Direct audit log to temp dir for verification and enable audit logging
         audit_dir = tmp_path / "audit"
         audit_dir.mkdir()
         monkeypatch.setenv("DES_AUDIT_LOG_DIR", str(audit_dir))
+        monkeypatch.setenv("DES_AUDIT_LOGGING_ENABLED", "true")
 
         # Act: Invoke SubagentStop with stop_hook_active=true (second attempt)
         exit_code, response = invoke_hook(
