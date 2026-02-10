@@ -21,7 +21,7 @@ import pytest
 def _invoke_hook(hook_type: str, stdin_data: str) -> tuple[int, dict]:
     """Invoke hook adapter as subprocess, matching Claude Code protocol."""
     env = os.environ.copy()
-    project_root = str(Path(__file__).parent.parent.parent.parent)
+    project_root = str(Path(__file__).parent.parent.parent.parent.parent)
     src_path = str(Path(project_root) / "src")
     env["PYTHONPATH"] = src_path + os.pathsep + env.get("PYTHONPATH", "")
 
