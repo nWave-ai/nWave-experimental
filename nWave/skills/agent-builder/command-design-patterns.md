@@ -128,7 +128,7 @@ Rule of thumb: if the content describes HOW the agent should do its work, it bel
 # DW-FORGE: Create Agent (V2)
 
 **Wave**: CROSS_WAVE
-**Agent**: Sage (nw-agent-builder)
+**Agent**: Zeus (nw-agent-builder)
 
 ## Overview
 
