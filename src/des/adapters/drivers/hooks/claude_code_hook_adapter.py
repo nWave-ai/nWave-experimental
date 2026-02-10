@@ -200,6 +200,42 @@ def _log_hook_completed(
         pass  # Diagnostic logging must never break the hook
 
 
+def _log_protocol_anomaly(
+    handler: str,
+    anomaly_type: str,
+    detail: str,
+    fallback_action: str,
+) -> None:
+    """Log a HOOK_PROTOCOL_ANOMALY diagnostic event for early-return paths.
+
+    Emitted when a handler receives empty stdin or malformed JSON, which are
+    protocol-level anomalies that bypass normal business logic processing.
+    Wrapped in try/except so anomaly logging never breaks the handler.
+
+    Args:
+        handler: Name of the handler (e.g., 'pre_tool_use', 'subagent_stop').
+        anomaly_type: Classification of the anomaly ('empty_stdin' or 'json_parse_error').
+        detail: Human-readable description of what happened.
+        fallback_action: What the handler did ('allow' or 'error').
+    """
+    try:
+        audit_writer = _create_audit_writer()
+        audit_writer.log_event(
+            AuditEvent(
+                event_type="HOOK_PROTOCOL_ANOMALY",
+                timestamp=SystemTimeProvider().now_utc().isoformat(),
+                data={
+                    "handler": handler,
+                    "anomaly_type": anomaly_type,
+                    "detail": detail,
+                    "fallback_action": fallback_action,
+                },
+            )
+        )
+    except Exception:
+        pass  # Anomaly logging must never break the handler
+
+
 DES_SESSION_DIR = Path(".nwave") / "des"
 DES_DELIVER_SESSION_FILE = DES_SESSION_DIR / "deliver-session.json"
 DES_TASK_ACTIVE_FILE = DES_SESSION_DIR / "des-task-active"
@@ -294,6 +330,12 @@ def handle_pre_tool_use() -> int:
 
         # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
         if not input_data or not input_data.strip():
+            _log_protocol_anomaly(
+                handler="pre_tool_use",
+                anomaly_type="empty_stdin",
+                detail="No input data received on stdin",
+                fallback_action="allow",
+            )
             print(json.dumps({"decision": "allow"}))
             return 0
 
@@ -301,6 +343,12 @@ def handle_pre_tool_use() -> int:
         try:
             hook_input = json.loads(input_data)
         except json.JSONDecodeError as e:
+            _log_protocol_anomaly(
+                handler="pre_tool_use",
+                anomaly_type="json_parse_error",
+                detail=f"Invalid JSON: {e!s}",
+                fallback_action="error",
+            )
             response = {"status": "error", "reason": f"Invalid JSON: {e!s}"}
             print(json.dumps(response))
             exit_code = 1
@@ -596,12 +644,24 @@ def handle_subagent_stop() -> int:
 
         # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
         if not input_data or not input_data.strip():
+            _log_protocol_anomaly(
+                handler="subagent_stop",
+                anomaly_type="empty_stdin",
+                detail="No input data received on stdin",
+                fallback_action="allow",
+            )
             print(json.dumps({"decision": "allow"}))
             return 0
 
         try:
             hook_input = json.loads(input_data)
         except json.JSONDecodeError as e:
+            _log_protocol_anomaly(
+                handler="subagent_stop",
+                anomaly_type="json_parse_error",
+                detail=f"Invalid JSON: {e!s}",
+                fallback_action="error",
+            )
             response = {"status": "error", "reason": f"Invalid JSON: {e!s}"}
             print(json.dumps(response))
             exit_code = 1
@@ -732,13 +792,25 @@ def handle_post_tool_use() -> int:
 
         if not input_data or not input_data.strip():
             # Non-DES or missing input: passthrough
+            _log_protocol_anomaly(
+                handler="post_tool_use",
+                anomaly_type="empty_stdin",
+                detail="No input data received on stdin",
+                fallback_action="allow",
+            )
             print(json.dumps({}))
             return 0
 
         # Parse JSON (ignore parse errors gracefully)
         try:
             hook_input = json.loads(input_data)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            _log_protocol_anomaly(
+                handler="post_tool_use",
+                anomaly_type="json_parse_error",
+                detail=f"Invalid JSON: {e!s}",
+                fallback_action="allow",
+            )
             print(json.dumps({}))
             return 0
 
@@ -856,12 +928,24 @@ def handle_pre_write() -> int:
 
         if not input_data or not input_data.strip():
             # No input = allow (fail-open for Write/Edit)
+            _log_protocol_anomaly(
+                handler="pre_write",
+                anomaly_type="empty_stdin",
+                detail="No input data received on stdin",
+                fallback_action="allow",
+            )
             print(json.dumps({"decision": "allow"}))
             return 0
 
         try:
             hook_input = json.loads(input_data)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            _log_protocol_anomaly(
+                handler="pre_write",
+                anomaly_type="json_parse_error",
+                detail=f"Invalid JSON: {e!s}",
+                fallback_action="allow",
+            )
             print(json.dumps({"decision": "allow"}))
             return 0
 
