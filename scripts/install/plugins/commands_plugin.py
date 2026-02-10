@@ -1,13 +1,12 @@
 """
-Wrapper plugin for commands installation.
+Plugin for installing commands from nWave/tasks/nw/ into ~/.claude/commands/nw/.
 
-Encapsulates the _install_commands() method from NWaveInstaller,
-maintaining backward compatibility while enabling plugin-based orchestration.
+Reads command files directly from the project source (nWave/tasks/nw/),
+excluding legacy/ directory content.
 """
 
 import shutil
 
-from scripts.install.install_utils import PathUtils
 from scripts.install.plugins.base import (
     InstallationPlugin,
     InstallContext,
@@ -23,7 +22,10 @@ class CommandsPlugin(InstallationPlugin):
         super().__init__(name="commands", priority=20)
 
     def install(self, context: InstallContext) -> PluginResult:
-        """Install commands into the framework.
+        """Install commands from nWave/tasks/nw/ to ~/.claude/commands/nw/.
+
+        Copies *.md command files from the project source directory,
+        excluding legacy/ directory content.
 
         Args:
             context: InstallContext with shared installation utilities
@@ -34,35 +36,36 @@ class CommandsPlugin(InstallationPlugin):
         try:
             context.logger.info("  📦 Installing commands...")
 
-            # Determine source and target directories
-            commands_source = context.framework_source / "commands"
-            commands_target = context.claude_dir / "commands"
+            # Source: nWave/tasks/nw/ in project root
+            source_commands_dir = context.project_root / "nWave" / "tasks" / "nw"
+            target_commands_dir = context.claude_dir / "commands" / "nw"
 
-            if not commands_source.exists():
+            if not source_commands_dir.exists():
+                context.logger.info("  ⏭️ No commands directory found, skipping")
                 return PluginResult(
-                    success=False,
+                    success=True,
                     plugin_name=self.name,
-                    message="Commands source directory does not exist",
-                    errors=[f"Source not found: {commands_source}"],
+                    message="No commands to install (source directory not found)",
                 )
 
-            # Copy command files (preserving directory structure)
-            installed_files = []
-            for item in commands_source.iterdir():
-                target = commands_target / item.name
-                if item.is_dir():
-                    if target.exists():
-                        shutil.rmtree(target)
-                    shutil.copytree(item, target)
-                    # Collect installed file paths
-                    for file in target.rglob("*.md"):
-                        installed_files.append(str(file))
-                else:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(item, target)
-                    installed_files.append(str(target))
+            # Clean and recreate target directory to remove stale files
+            if target_commands_dir.exists():
+                shutil.rmtree(target_commands_dir)
+            target_commands_dir.mkdir(parents=True, exist_ok=True)
 
-            copied_count = PathUtils.count_files(commands_target, "*.md")
+            source_command_count = len(list(source_commands_dir.glob("*.md")))
+            context.logger.info(
+                f"  ⏳ From source ({source_command_count} commands)..."
+            )
+
+            # Copy only *.md files from source root (excludes legacy/ and subdirectories)
+            copied_count = 0
+            installed_files = []
+            for source_file in sorted(source_commands_dir.glob("*.md")):
+                shutil.copy2(source_file, target_commands_dir / source_file.name)
+                installed_files.append(str(target_commands_dir / source_file.name))
+                copied_count += 1
+
             context.logger.info(f"  ✅ Commands installed ({copied_count} files)")
 
             return PluginResult(

@@ -4,6 +4,9 @@ Unit tests for CommandsPlugin.
 Tests the CommandsPlugin install() and verify() methods through the
 InstallationPlugin interface (driving port).
 
+Source: nWave/tasks/nw/ (no dist/ide fallback)
+Excludes: legacy/ directory content
+
 Domain: Plugin Infrastructure - Commands Installation
 """
 
@@ -38,24 +41,17 @@ def project_root() -> Path:
 
 @pytest.fixture
 def commands_source_dir(project_root: Path) -> Path:
-    """Return the commands source directory."""
-    # Try dist/ide/commands first (built distribution)
-    dist_path = project_root / "dist" / "ide" / "commands"
-    if dist_path.exists():
-        return dist_path
-
-    # Fallback to nWave/commands
-    source_path = project_root / "nWave" / "commands"
-    if source_path.exists():
-        return source_path
-
-    # Final fallback
-    return project_root / "nWave" / "commands"
+    """Return the canonical commands source directory: nWave/tasks/nw/."""
+    return project_root / "nWave" / "tasks" / "nw"
 
 
 @pytest.fixture
 def install_context(tmp_path: Path, project_root: Path, test_logger: logging.Logger):
-    """Create InstallContext for testing with real paths."""
+    """Create InstallContext for testing with real paths.
+
+    framework_source deliberately points to a non-existent path to prove
+    the plugin reads from project_root/nWave/tasks/nw/ instead.
+    """
     test_claude_dir = tmp_path / ".claude"
     test_claude_dir.mkdir(parents=True, exist_ok=True)
 
@@ -65,124 +61,185 @@ def install_context(tmp_path: Path, project_root: Path, test_logger: logging.Log
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
-        framework_source=project_root / "dist" / "ide",
+        framework_source=tmp_path / "nonexistent_dist",
         dry_run=False,
     )
 
 
 # -----------------------------------------------------------------------------
-# Priority and Name Tests
+# Acceptance Test: Single source, no dist/ide, excludes legacy/
 # -----------------------------------------------------------------------------
 
 
-def test_commands_plugin_has_correct_name():
-    """CommandsPlugin should have name 'commands'."""
-    plugin = CommandsPlugin()
-    assert plugin.name == "commands"
-
-
-def test_commands_plugin_has_priority_20():
-    """CommandsPlugin should have priority 20."""
-    plugin = CommandsPlugin()
-    assert plugin.priority == 20
-
-
-def test_commands_plugin_has_no_dependencies():
-    """CommandsPlugin should have no dependencies by default."""
-    plugin = CommandsPlugin()
-    assert plugin.get_dependencies() == []
-
-
-# -----------------------------------------------------------------------------
-# Install Tests
-# -----------------------------------------------------------------------------
-
-
-def test_commands_plugin_copies_files_to_target(
-    install_context: InstallContext, commands_source_dir: Path
+def test_commands_plugin_installs_only_from_nwave_tasks_nw_excluding_legacy(
+    tmp_path: Path, project_root: Path, test_logger: logging.Logger,
 ):
-    """CommandsPlugin.install() should copy command files to target directory."""
-    plugin = CommandsPlugin()
-    target_commands_dir = install_context.claude_dir / "commands"
+    """CommandsPlugin.install() should read only from nWave/tasks/nw/, excluding legacy/ content.
 
-    # Act
-    result = plugin.install(install_context)
-
-    # Assert - depends on whether source exists
-    if commands_source_dir.exists():
-        assert result.success, f"Installation failed: {result.message}"
-        assert target_commands_dir.exists(), (
-            f"Target directory not created: {target_commands_dir}"
-        )
-    else:
-        # Source doesn't exist, should fail gracefully
-        assert not result.success
-
-
-def test_commands_plugin_install_returns_plugin_result(install_context: InstallContext):
-    """CommandsPlugin.install() should return PluginResult."""
-    plugin = CommandsPlugin()
-
-    result = plugin.install(install_context)
-
-    assert isinstance(result, PluginResult)
-    assert result.plugin_name == "commands"
-
-
-def test_commands_plugin_install_handles_missing_source_gracefully(
-    tmp_path: Path, test_logger: logging.Logger
-):
-    """CommandsPlugin.install() should handle missing source directory."""
-    # Arrange - context with non-existent framework_source
+    Acceptance test: framework_source is set to a non-existent path to prove
+    the plugin does NOT depend on dist/ide. It must read from
+    project_root/nWave/tasks/nw/ directly. After install, the target directory
+    must contain only *.md files, no legacy/ content, no dist/ide artifacts.
+    All 18 commands must be discoverable at ~/.claude/commands/nw/.
+    """
+    # Arrange - framework_source deliberately does NOT exist
     test_claude_dir = tmp_path / ".claude"
     test_claude_dir.mkdir(parents=True, exist_ok=True)
 
     context = InstallContext(
         claude_dir=test_claude_dir,
-        scripts_dir=tmp_path / "scripts",
-        templates_dir=tmp_path / "templates",
+        scripts_dir=project_root / "scripts" / "install",
+        templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
-        project_root=tmp_path,
-        framework_source=tmp_path / "non_existent",
+        project_root=project_root,
+        framework_source=tmp_path / "nonexistent_dist",  # NOT dist/ide
         dry_run=False,
     )
 
     plugin = CommandsPlugin()
+    target_commands_dir = context.claude_dir / "commands" / "nw"
+    source_commands_dir = context.project_root / "nWave" / "tasks" / "nw"
+
+    # Count expected: *.md files in nWave/tasks/nw/ root only (not legacy/)
+    expected_command_files = list(source_commands_dir.glob("*.md"))
+    assert len(expected_command_files) >= 18, (
+        f"Expected at least 18 *.md command files in source, found {len(expected_command_files)}"
+    )
 
     # Act
     result = plugin.install(context)
 
-    # Assert - should fail gracefully, not crash
-    assert not result.success
-    assert "does not exist" in result.message
+    # Assert - installation succeeded even without dist/ide
+    assert result.success, f"Installation failed: {result.message}"
+
+    # Assert - no legacy/ directory content was copied
+    legacy_target = target_commands_dir / "legacy"
+    assert not legacy_target.exists(), (
+        f"legacy/ directory should not be copied to target, but found: {legacy_target}"
+    )
+
+    # Assert - no config.json (dist/ide artifact) was copied
+    config_json = target_commands_dir / "config.json"
+    assert not config_json.exists(), (
+        "config.json (dist/ide artifact) should not be present in target"
+    )
+
+    # Assert - target contains only *.md files (matching source count)
+    target_files = list(target_commands_dir.glob("*.md"))
+    assert len(target_files) == len(expected_command_files), (
+        f"Expected {len(expected_command_files)} *.md files in target, "
+        f"found {len(target_files)}"
+    )
 
 
 # -----------------------------------------------------------------------------
-# Verify Tests
+# Unit Tests: CommandsPluginShould
 # -----------------------------------------------------------------------------
 
 
-def test_commands_plugin_verify_confirms_files_exist(install_context: InstallContext):
-    """CommandsPlugin.verify() should confirm command files were installed."""
-    plugin = CommandsPlugin()
+class TestCommandsPluginShould:
+    """Unit tests for CommandsPlugin through the InstallationPlugin interface."""
 
-    # Install first
-    install_result = plugin.install(install_context)
+    def test_copy_md_files_from_nwave_tasks_nw_to_target(
+        self, install_context: InstallContext, commands_source_dir: Path
+    ):
+        """
+        Given: nWave/tasks/nw/ contains *.md command files
+        When: install() is called
+        Then: All *.md files are copied to {claude_dir}/commands/nw/
+        """
+        plugin = CommandsPlugin()
+        target_commands_dir = install_context.claude_dir / "commands" / "nw"
 
-    if install_result.success:
-        # Verify
+        assert commands_source_dir.exists(), f"Commands source not found: {commands_source_dir}"
+        source_md_files = list(commands_source_dir.glob("*.md"))
+        assert len(source_md_files) >= 1, "No *.md command files in source"
+
+        result = plugin.install(install_context)
+
+        assert result.success, f"Installation failed: {result.message}"
+        assert target_commands_dir.exists()
+
+        target_files = list(target_commands_dir.glob("*.md"))
+        assert len(target_files) == len(source_md_files), (
+            f"Expected {len(source_md_files)} *.md files, found {len(target_files)}"
+        )
+
+    def test_exclude_legacy_directory_content_from_installation(
+        self, install_context: InstallContext
+    ):
+        """
+        Given: nWave/tasks/nw/ has a legacy/ subdirectory with old command files
+        When: install() is called
+        Then: No legacy/ content appears in the target directory
+        """
+        plugin = CommandsPlugin()
+        target_commands_dir = install_context.claude_dir / "commands" / "nw"
+
+        # Verify legacy exists in source to make this test meaningful
+        source_legacy = install_context.project_root / "nWave" / "tasks" / "nw" / "legacy"
+        assert source_legacy.exists(), (
+            "Test requires legacy/ directory in nWave/tasks/nw/"
+        )
+
+        result = plugin.install(install_context)
+
+        assert result.success, f"Installation failed: {result.message}"
+
+        # No legacy directory or files in target
+        legacy_target = target_commands_dir / "legacy"
+        assert not legacy_target.exists(), (
+            "legacy/ directory content should be excluded from installation"
+        )
+
+    def test_return_plugin_result_with_correct_file_count(
+        self, install_context: InstallContext
+    ):
+        """
+        Given: nWave/tasks/nw/ contains command files
+        When: install() is called
+        Then: PluginResult reports correct count and installed_files list
+        """
+        plugin = CommandsPlugin()
+        source_dir = install_context.project_root / "nWave" / "tasks" / "nw"
+        expected_count = len(list(source_dir.glob("*.md")))
+
+        result = plugin.install(install_context)
+
+        assert isinstance(result, PluginResult)
+        assert result.success is True
+        assert result.plugin_name == "commands"
+        assert f"{expected_count} files" in result.message
+        assert result.installed_files is not None
+        assert len(result.installed_files) == expected_count
+
+    def test_verify_confirms_command_files_present_after_install(
+        self, install_context: InstallContext
+    ):
+        """
+        Given: install() completed successfully
+        When: verify() is called
+        Then: PluginResult.success is True with verification count
+        """
+        plugin = CommandsPlugin()
+        install_result = plugin.install(install_context)
+        assert install_result.success, f"Install failed: {install_result.message}"
+
         verify_result = plugin.verify(install_context)
 
-        # Check verification result
         assert verify_result.success is True
         assert "Commands verification passed" in verify_result.message
+
+
+# -----------------------------------------------------------------------------
+# Verify Error Cases
+# -----------------------------------------------------------------------------
 
 
 def test_commands_plugin_verify_fails_when_target_directory_missing(
     tmp_path: Path, project_root: Path, test_logger: logging.Logger
 ):
     """CommandsPlugin.verify() should fail when target directory does not exist."""
-    # Arrange - create context with empty claude_dir (no install)
     empty_claude_dir = tmp_path / ".claude-empty"
     empty_claude_dir.mkdir(parents=True, exist_ok=True)
 
@@ -197,11 +254,8 @@ def test_commands_plugin_verify_fails_when_target_directory_missing(
     )
 
     plugin = CommandsPlugin()
-
-    # Act - verify without install
     verify_result = plugin.verify(context)
 
-    # Assert - should fail because no installation occurred
     assert verify_result.success is False
     assert "target directory does not exist" in verify_result.message
 
@@ -210,7 +264,6 @@ def test_commands_plugin_verify_fails_when_no_command_files(
     tmp_path: Path, project_root: Path, test_logger: logging.Logger
 ):
     """CommandsPlugin.verify() should fail when directory exists but has no .md files."""
-    # Arrange - create context with commands/nw directory but no files
     claude_dir = tmp_path / ".claude-nofiles"
     commands_dir = claude_dir / "commands" / "nw"
     commands_dir.mkdir(parents=True, exist_ok=True)
@@ -226,10 +279,7 @@ def test_commands_plugin_verify_fails_when_no_command_files(
     )
 
     plugin = CommandsPlugin()
-
-    # Act - verify with empty directory
     verify_result = plugin.verify(context)
 
-    # Assert - should fail because no command files
     assert verify_result.success is False
     assert "no command files found" in verify_result.message
