@@ -18,7 +18,7 @@
 # ============================================================================
 
 name: "nWave"
-version: "2.7.0"
+version: "2.8.0"
 description: "Comprehensive DISCOVER→DISCUSS→DESIGN→DEVOP→DISTILL→DELIVER methodology with visual architecture lifecycle management"
 author: "nWave Team"
 license: "MIT"
