@@ -142,6 +142,10 @@ class TestVerifyNwaveFullInstallation:
         commands_dir = config_dir / "commands" / "nw"
         agents_dir.mkdir(parents=True)
         commands_dir.mkdir(parents=True)
+        skills_dir = config_dir / "skills" / "nw" / "crafter"
+        des_dir = config_dir / "lib" / "python" / "des"
+        skills_dir.mkdir(parents=True)
+        des_dir.mkdir(parents=True)
 
         # Create agent files
         for i in range(5):
@@ -150,7 +154,7 @@ class TestVerifyNwaveFullInstallation:
         # Create all essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -158,6 +162,9 @@ class TestVerifyNwaveFullInstallation:
         ]
         for filename in essential_files:
             (commands_dir / filename).write_text(f"# {filename}")
+
+        (skills_dir / "skill.md").write_text("# Skill")
+        (des_dir / "__init__.py").write_text("")
 
         # Create manifest
         (config_dir / "nwave-manifest.txt").write_text(
@@ -188,11 +195,15 @@ class TestVerifyNwaveFullInstallation:
         commands_dir = config_dir / "commands" / "nw"
         agents_dir.mkdir(parents=True)
         commands_dir.mkdir(parents=True)
+        skills_dir = config_dir / "skills" / "nw" / "crafter"
+        des_dir = config_dir / "lib" / "python" / "des"
+        skills_dir.mkdir(parents=True)
+        des_dir.mkdir(parents=True)
 
         # Create all essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -200,6 +211,9 @@ class TestVerifyNwaveFullInstallation:
         ]
         for filename in essential_files:
             (commands_dir / filename).write_text(f"# {filename}")
+
+        (skills_dir / "skill.md").write_text("# Skill")
+        (des_dir / "__init__.py").write_text("")
 
         # Create manifest
         (config_dir / "nwave-manifest.txt").write_text(
@@ -230,7 +244,7 @@ class TestVerifyNwaveMissingFiles:
         commands_dir.mkdir(parents=True)
 
         # Only create some files (missing design.md, review.md)
-        (commands_dir / "devop.md").write_text("# Devop command")
+        (commands_dir / "devops.md").write_text("# Devop command")
         (commands_dir / "discuss.md").write_text("# Discuss command")
 
         # ACT
@@ -278,7 +292,7 @@ class TestVerifyNwaveMissingFiles:
         # Create all essential command files but no manifest
         essential_files = [
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -325,7 +339,7 @@ class TestVerifyNwaveEssentialCommands:
         result = run_verification(claude_config_dir=config_dir)
 
         # ASSERT
-        assert "devop.md" in result.missing_essential_files
+        assert "devops.md" in result.missing_essential_files
 
     def test_verify_nwave_checks_distill_command(self, tmp_path):
         """
@@ -342,7 +356,7 @@ class TestVerifyNwaveEssentialCommands:
 
         # Create all except distill.md
         for filename in [
-            "devop.md",
+            "devops.md",
             "review.md",
             "discuss.md",
             "design.md",
@@ -371,7 +385,7 @@ class TestVerifyNwaveEssentialCommands:
 
         # Create all except review.md (using ESSENTIAL_COMMANDS list)
         for filename in [
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -403,11 +417,15 @@ class TestVerifyNwaveSchemaTemplate:
         commands_dir = config_dir / "commands" / "nw"
         agents_dir.mkdir(parents=True)
         commands_dir.mkdir(parents=True)
+        skills_dir = config_dir / "skills" / "nw" / "crafter"
+        des_dir = config_dir / "lib" / "python" / "des"
+        skills_dir.mkdir(parents=True)
+        des_dir.mkdir(parents=True)
 
         # Create essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -415,6 +433,9 @@ class TestVerifyNwaveSchemaTemplate:
         ]
         for filename in essential_files:
             (commands_dir / filename).write_text(f"# {filename}")
+
+        (skills_dir / "skill.md").write_text("# Skill")
+        (des_dir / "__init__.py").write_text("")
 
         # Create manifest
         (config_dir / "nwave-manifest.txt").write_text(
@@ -444,10 +465,15 @@ class TestVerifyNwaveOutputModes:
         commands_dir = config_dir / "commands" / "nw"
         commands_dir.mkdir(parents=True)
 
+        skills_dir = config_dir / "skills" / "nw" / "crafter"
+        des_dir = config_dir / "lib" / "python" / "des"
+        skills_dir.mkdir(parents=True)
+        des_dir.mkdir(parents=True)
+
         # Create essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -455,6 +481,9 @@ class TestVerifyNwaveOutputModes:
         ]
         for filename in essential_files:
             (commands_dir / filename).write_text(f"# {filename}")
+
+        (skills_dir / "skill.md").write_text("# Skill")
+        (des_dir / "__init__.py").write_text("")
 
         # Create manifest
         (config_dir / "nwave-manifest.txt").write_text(
@@ -484,11 +513,15 @@ class TestVerifyNwaveOutputModes:
         config_dir = tmp_path / ".claude"
         commands_dir = config_dir / "commands" / "nw"
         commands_dir.mkdir(parents=True)
+        skills_dir = config_dir / "skills" / "nw" / "crafter"
+        des_dir = config_dir / "lib" / "python" / "des"
+        skills_dir.mkdir(parents=True)
+        des_dir.mkdir(parents=True)
 
         # Create essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -496,6 +529,9 @@ class TestVerifyNwaveOutputModes:
         ]
         for filename in essential_files:
             (commands_dir / filename).write_text(f"# {filename}")
+
+        (skills_dir / "skill.md").write_text("# Skill")
+        (des_dir / "__init__.py").write_text("")
 
         # Create manifest
         (config_dir / "nwave-manifest.txt").write_text(
@@ -525,6 +561,10 @@ class TestVerifyNwaveOutputModes:
         commands_dir = config_dir / "commands" / "nw"
         agents_dir.mkdir(parents=True)
         commands_dir.mkdir(parents=True)
+        skills_dir = config_dir / "skills" / "nw" / "crafter"
+        des_dir = config_dir / "lib" / "python" / "des"
+        skills_dir.mkdir(parents=True)
+        des_dir.mkdir(parents=True)
 
         # Create agent files
         for i in range(3):
@@ -533,7 +573,7 @@ class TestVerifyNwaveOutputModes:
         # Create essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -541,6 +581,9 @@ class TestVerifyNwaveOutputModes:
         ]
         for filename in essential_files:
             (commands_dir / filename).write_text(f"# {filename}")
+
+        (skills_dir / "skill.md").write_text("# Skill")
+        (des_dir / "__init__.py").write_text("")
 
         # Create manifest
         (config_dir / "nwave-manifest.txt").write_text(
@@ -575,7 +618,7 @@ class TestVerifyNwaveRemediationOutput:
         commands_dir.mkdir(parents=True)
 
         # Only create some files
-        (commands_dir / "devop.md").write_text("# Devop command")
+        (commands_dir / "devops.md").write_text("# Devop command")
 
         # ACT
         main(args=[], claude_config_dir=config_dir)
@@ -599,7 +642,7 @@ class TestVerifyNwaveRemediationOutput:
         commands_dir.mkdir(parents=True)
 
         # Only create some files
-        (commands_dir / "devop.md").write_text("# Devop command")
+        (commands_dir / "devops.md").write_text("# Devop command")
 
         # ACT
         main(args=["--json"], claude_config_dir=config_dir)

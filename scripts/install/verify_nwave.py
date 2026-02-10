@@ -6,8 +6,9 @@ without running the full installer. It checks:
 - Agent file counts in ~/.claude/agents/nw/
 - Command file counts in ~/.claude/commands/nw/
 - Manifest existence at ~/.claude/nwave-manifest.txt
-- Essential command files (review.md, devop.md, etc.)
-  Note: Git operations handled by git.md command
+- Essential command files (review.md, devops.md, etc.)
+- Skills file counts in ~/.claude/skills/nw/
+- DES module presence in ~/.claude/lib/python/des/
 
 The script supports multiple output modes:
 - Terminal: Human-readable colored output (default)
@@ -123,6 +124,9 @@ def format_terminal_output(
         lines.append("")
         lines.append(f"    📦 Agent files: {result.agent_file_count}")
         lines.append(f"    📦 Command files: {result.command_file_count}")
+        lines.append(f"    📦 Skill files: {result.skill_file_count} in {result.skill_group_count} groups")
+        des_icon = "✅" if result.des_installed else "❌"
+        lines.append(f"    🔒 DES module: {des_icon}")
         manifest_icon = "✅" if result.manifest_exists else "❌"
         lines.append(f"    📄 Manifest: {manifest_icon}")
 
@@ -155,6 +159,9 @@ def format_json_output(result: VerificationResult, verbose: bool = False) -> str
         "success": result.success,
         "agent_file_count": result.agent_file_count,
         "command_file_count": result.command_file_count,
+        "skill_file_count": result.skill_file_count,
+        "skill_group_count": result.skill_group_count,
+        "des_installed": result.des_installed,
         "manifest_exists": result.manifest_exists,
         "missing_essential_files": result.missing_essential_files,
     }
@@ -210,7 +217,8 @@ def main(
     if result.success:
         logger.info(
             f"  ✅ Verification passed: {result.agent_file_count} agents, "
-            f"{result.command_file_count} commands"
+            f"{result.command_file_count} commands, "
+            f"{result.skill_file_count} skills, DES installed"
         )
     else:
         logger.error(f"  ❌ Verification failed: {result.message}")

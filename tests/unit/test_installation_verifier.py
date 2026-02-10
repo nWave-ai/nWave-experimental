@@ -158,7 +158,7 @@ class TestInstallationVerifierCommandFiles:
 
         # Create sample command files
         (commands_dir / "review.md").write_text("# Review command")
-        (commands_dir / "devop.md").write_text("# Devop command")
+        (commands_dir / "devops.md").write_text("# Devop command")
         (commands_dir / "discuss.md").write_text("# Discuss command")
         (commands_dir / "design.md").write_text("# Design command")
         (commands_dir / "distill.md").write_text("# Distill command")
@@ -258,7 +258,7 @@ class TestInstallationVerifierEssentialCommands:
         # Create essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -288,7 +288,7 @@ class TestInstallationVerifierEssentialCommands:
         commands_dir.mkdir(parents=True)
 
         # Create only some essential files (missing design.md, review.md)
-        (commands_dir / "devop.md").write_text("# Devop command")
+        (commands_dir / "devops.md").write_text("# Devop command")
         (commands_dir / "discuss.md").write_text("# Discuss command")
 
         verifier = InstallationVerifier(claude_config_dir=tmp_path / ".claude")
@@ -299,7 +299,7 @@ class TestInstallationVerifierEssentialCommands:
         # ASSERT
         assert "design.md" in missing
         assert "review.md" in missing
-        assert "devop.md" not in missing
+        assert "devops.md" not in missing
 
     def test_verify_essential_commands_all_missing(self, tmp_path):
         """
@@ -323,7 +323,7 @@ class TestInstallationVerifierEssentialCommands:
         # Should contain all 6 essential files (review, develop, discuss, design, distill, deliver)
         assert len(missing) == 6
         assert "review.md" in missing
-        assert "devop.md" in missing
+        assert "devops.md" in missing
 
 
 class TestInstallationVerifierFullVerification:
@@ -341,8 +341,12 @@ class TestInstallationVerifierFullVerification:
         config_dir = tmp_path / ".claude"
         agents_dir = config_dir / "agents" / "nw"
         commands_dir = config_dir / "commands" / "nw"
+        skills_dir = config_dir / "skills" / "nw" / "software-crafter"
+        des_dir = config_dir / "lib" / "python" / "des"
         agents_dir.mkdir(parents=True)
         commands_dir.mkdir(parents=True)
+        skills_dir.mkdir(parents=True)
+        des_dir.mkdir(parents=True)
 
         # Create agent files
         for i in range(5):
@@ -351,7 +355,7 @@ class TestInstallationVerifierFullVerification:
         # Create all essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
         essential_files = [
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -359,6 +363,12 @@ class TestInstallationVerifierFullVerification:
         ]
         for filename in essential_files:
             (commands_dir / filename).write_text(f"# {filename}")
+
+        # Create skills
+        (skills_dir / "tdd-methodology.md").write_text("# TDD")
+
+        # Create DES module
+        (des_dir / "__init__.py").write_text("")
 
         # Create manifest
         (config_dir / "nwave-manifest.txt").write_text(
@@ -374,6 +384,9 @@ class TestInstallationVerifierFullVerification:
         assert result.success is True
         assert result.agent_file_count == 5
         assert result.command_file_count == 6
+        assert result.skill_file_count == 1
+        assert result.skill_group_count == 1
+        assert result.des_installed is True
         assert result.manifest_exists is True
         assert result.missing_essential_files == []
         assert result.error_code is None
@@ -416,12 +429,16 @@ class TestInstallationVerifierFullVerification:
         # ARRANGE - Create installation without manifest
         config_dir = tmp_path / ".claude"
         commands_dir = config_dir / "commands" / "nw"
+        skills_dir = config_dir / "skills" / "nw" / "crafter"
+        des_dir = config_dir / "lib" / "python" / "des"
         commands_dir.mkdir(parents=True)
+        skills_dir.mkdir(parents=True)
+        des_dir.mkdir(parents=True)
 
         # Create all essential command files but no manifest
         essential_files = [
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -429,6 +446,9 @@ class TestInstallationVerifierFullVerification:
         ]
         for filename in essential_files:
             (commands_dir / filename).write_text(f"# {filename}")
+
+        (skills_dir / "skill.md").write_text("# Skill")
+        (des_dir / "__init__.py").write_text("")
 
         verifier = InstallationVerifier(claude_config_dir=config_dir)
 
