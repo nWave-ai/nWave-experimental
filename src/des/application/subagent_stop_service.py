@@ -26,7 +26,10 @@ from des.ports.driver_ports.subagent_stop_port import (
 
 
 if TYPE_CHECKING:
-    from des.domain.log_integrity_validator import LogIntegrityValidator
+    from des.domain.log_integrity_validator import (
+        CorrectableEntry,
+        LogIntegrityValidator,
+    )
     from des.domain.step_completion_validator import StepCompletionValidator
     from des.ports.driven_ports.commit_verifier import (
         CommitVerificationResult,
@@ -121,6 +124,20 @@ class SubagentStopService(SubagentStopPort):
                 recovery_suggestions=["Check execution-log.yaml file integrity"],
             )
 
+        # Step 2.5: Check and correct log integrity (BEFORE completion check)
+        # Runs always, even on retry -- correction is better than blocking
+        self._check_and_correct_integrity(context)
+
+        # Re-read events after potential correction so completion validates
+        # against corrected timestamps
+        try:
+            events = self._log_reader.read_step_events(
+                context.execution_log_path,
+                context.step_id,
+            )
+        except (LogFileNotFound, LogFileCorrupted):
+            pass  # Use original events if re-read fails
+
         # Step 3: Validate completion
         completion = self._completion_validator.validate(events)
 
@@ -164,9 +181,6 @@ class SubagentStopService(SubagentStopPort):
                 )
             self._log_commit_verified(context, commit_result)
 
-        # Step 3.7: Check log integrity (warning only, does not block)
-        self._check_and_log_integrity(context)
-
         # Step 4: Check scope (warning only, does not block)
         self._check_and_log_scope(context)
 
@@ -174,8 +188,12 @@ class SubagentStopService(SubagentStopPort):
         self._log_passed(context.project_id, context.step_id)
         return HookDecision.allow()
 
-    def _check_and_log_integrity(self, context: SubagentStopContext) -> None:
-        """Check log integrity and log warnings (does not block)."""
+    def _check_and_correct_integrity(self, context: SubagentStopContext) -> None:
+        """Check log integrity and correct fabricated timestamps (zero trust).
+
+        Runs BEFORE stop_hook_active check -- correction always happens.
+        Only corrects events for context.step_id written during task window.
+        """
         if not self._integrity_validator:
             return
 
@@ -184,7 +202,7 @@ class SubagentStopService(SubagentStopPort):
                 context.execution_log_path,
             )
         except (LogFileNotFound, LogFileCorrupted):
-            return  # Already handled in step 1/2
+            return
 
         result = self._integrity_validator.validate(
             step_id=context.step_id,
@@ -192,16 +210,127 @@ class SubagentStopService(SubagentStopPort):
             task_start_time=context.task_start_time or None,
         )
 
-        for warning in result.warnings:
-            self._audit_writer.log_event(
-                AuditEvent(
-                    event_type="LOG_INTEGRITY_WARNING",
-                    timestamp=self._time_provider.now_utc().isoformat(),
-                    feature_name=context.project_id,
-                    step_id=context.step_id,
-                    data={"warning": warning},
-                )
+        # Correct fabricated timestamps; track which were actually corrected
+        corrected_entries: set[int] = set()
+        if result.correctable_entries:
+            corrected_entries = self._correct_timestamps(
+                context, result.correctable_entries
             )
+
+        # Log remaining warnings (non-correctable issues like phase name typos)
+        for warning in result.warnings:
+            # Skip warnings that correspond to actually corrected entries
+            is_corrected = any(
+                entry.index in corrected_entries
+                and entry.phase_name in warning
+                and entry.original_timestamp in warning
+                for entry in result.correctable_entries
+            )
+            if not is_corrected:
+                self._audit_writer.log_event(
+                    AuditEvent(
+                        event_type="LOG_INTEGRITY_WARNING",
+                        timestamp=self._time_provider.now_utc().isoformat(),
+                        feature_name=context.project_id,
+                        step_id=context.step_id,
+                        data={"warning": warning},
+                    )
+                )
+
+    def _correct_timestamps(
+        self,
+        context: SubagentStopContext,
+        correctable: list[CorrectableEntry],
+    ) -> set[int]:
+        """Rewrite fabricated timestamps with interpolated real ones.
+
+        Interpolation: distributes N timestamps evenly between task_start
+        and now(), preserving phase ordering.
+
+        Returns:
+            Set of entry indices that were actually corrected.
+        """
+        import yaml
+        from datetime import datetime, timezone
+
+        corrected_indices: set[int] = set()
+
+        # Determine time window
+        now = self._time_provider.now_utc()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+
+        if context.task_start_time:
+            try:
+                start = datetime.fromisoformat(context.task_start_time)
+            except (ValueError, TypeError):
+                start = now
+        else:
+            start = now
+
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+
+        # Calculate interpolated timestamps
+        n = len(correctable)
+        if n == 1:
+            # Single entry: place at midpoint
+            delta = (now - start) / 2
+            interpolated = [start + delta]
+        else:
+            # Multiple entries: distribute evenly
+            step = (now - start) / (n + 1)
+            interpolated = [start + step * (i + 1) for i in range(n)]
+
+        # Read raw YAML
+        try:
+            log_path = Path(context.execution_log_path)
+            raw_yaml = yaml.safe_load(log_path.read_text())
+        except Exception:
+            return corrected_indices
+
+        raw_events = raw_yaml.get("events", [])
+
+        # Replace timestamps in raw event strings
+        for entry, new_ts in zip(correctable, interpolated):
+            if entry.index < len(raw_events):
+                old_event_str = raw_events[entry.index]
+                if (
+                    isinstance(old_event_str, str)
+                    and entry.original_timestamp in old_event_str
+                ):
+                    new_ts_str = new_ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    raw_events[entry.index] = old_event_str.replace(
+                        entry.original_timestamp, new_ts_str
+                    )
+                    corrected_indices.add(entry.index)
+
+                    # Log correction audit event
+                    self._audit_writer.log_event(
+                        AuditEvent(
+                            event_type="LOG_INTEGRITY_CORRECTED",
+                            timestamp=self._time_provider.now_utc().isoformat(),
+                            feature_name=context.project_id,
+                            step_id=context.step_id,
+                            data={
+                                "phase": entry.phase_name,
+                                "original_timestamp": entry.original_timestamp,
+                                "corrected_timestamp": new_ts_str,
+                                "reason": entry.reason,
+                            },
+                        )
+                    )
+
+        # Write corrected YAML back
+        try:
+            raw_yaml["events"] = raw_events
+            log_path.write_text(
+                yaml.dump(raw_yaml, default_flow_style=False, sort_keys=False)
+            )
+        except Exception:
+            pass  # Correction is best-effort
+
+        return corrected_indices
 
     def _check_and_log_scope(self, context: SubagentStopContext) -> None:
         """Check scope violations and log warnings."""

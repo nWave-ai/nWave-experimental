@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from des.domain.log_integrity_validator import LogIntegrityValidator
+from des.domain.log_integrity_validator import CorrectableEntry, LogIntegrityValidator
 from des.domain.phase_event import PhaseEvent
 from des.domain.tdd_schema import TDDSchema
 from des.ports.driven_ports.time_provider_port import TimeProvider
@@ -241,3 +241,66 @@ class TestEmptyEvents:
             task_start_time=TASK_START,
         )
         assert result.warnings == []
+
+
+class TestCorrectableEntries:
+    """Correction detection tests for timestamp enforcement."""
+
+    def test_pre_task_timestamps_produce_correctable_entries(
+        self, validator: LogIntegrityValidator
+    ) -> None:
+        """Timestamps >60s before task start are correctable."""
+        events = [_make_event(phase_name="PREPARE", timestamp="2026-02-10T10:00:00+00:00")]
+        result = validator.validate(
+            step_id="01-01",
+            all_events=events,
+            task_start_time=TASK_START,
+        )
+        assert len(result.correctable_entries) == 1
+        assert result.correctable_entries[0].reason == "pre_task"
+        assert result.correctable_entries[0].phase_name == "PREPARE"
+
+    def test_future_timestamps_produce_correctable_entries(
+        self, validator: LogIntegrityValidator
+    ) -> None:
+        """Future timestamps are correctable."""
+        events = [_make_event(phase_name="GREEN", timestamp="2099-01-01T00:00:00+00:00")]
+        result = validator.validate(
+            step_id="01-01",
+            all_events=events,
+            task_start_time=TASK_START,
+        )
+        assert len(result.correctable_entries) == 1
+        assert result.correctable_entries[0].reason == "future"
+        assert result.correctable_entries[0].phase_name == "GREEN"
+
+    def test_within_tolerance_not_correctable(
+        self, validator: LogIntegrityValidator
+    ) -> None:
+        """Timestamps within 60s before task start are warned but NOT correctable."""
+        # TASK_START is 12:00:00, so 11:59:30 is within 60s tolerance
+        events = [_make_event(timestamp="2026-02-10T11:59:30+00:00")]
+        result = validator.validate(
+            step_id="01-01",
+            all_events=events,
+            task_start_time=TASK_START,
+        )
+        # Still produces a warning
+        assert len(result.warnings) >= 1
+        assert any("Pre-task" in w for w in result.warnings)
+        # But NOT correctable
+        assert len(result.correctable_entries) == 0
+
+    def test_phase_name_typo_stays_warning_only(
+        self, validator: LogIntegrityValidator
+    ) -> None:
+        """Phase name errors are warnings, never correctable entries."""
+        events = [_make_event(phase_name="REFACTOR", timestamp=TS_01)]
+        result = validator.validate(
+            step_id="01-01",
+            all_events=events,
+            task_start_time=TASK_START,
+        )
+        assert len(result.warnings) == 1
+        assert "Unrecognized" in result.warnings[0]
+        assert len(result.correctable_entries) == 0

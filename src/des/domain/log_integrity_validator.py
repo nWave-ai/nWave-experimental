@@ -13,7 +13,7 @@ Three checks:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from difflib import get_close_matches
 from typing import TYPE_CHECKING
 
@@ -24,11 +24,26 @@ if TYPE_CHECKING:
     from des.ports.driven_ports.time_provider_port import TimeProvider
 
 
+_TOLERANCE = timedelta(seconds=60)
+
+
+@dataclass(frozen=True)
+class CorrectableEntry:
+    """An entry with a fabricated timestamp that can be corrected."""
+
+    index: int  # Position in the all_events list
+    step_id: str
+    phase_name: str
+    original_timestamp: str
+    reason: str  # "pre_task" or "future"
+
+
 @dataclass(frozen=True)
 class IntegrityResult:
     """Result of log integrity validation. Warnings only, never blocks."""
 
     warnings: list[str] = field(default_factory=list)
+    correctable_entries: list[CorrectableEntry] = field(default_factory=list)
 
 
 class LogIntegrityValidator:
@@ -65,8 +80,11 @@ class LogIntegrityValidator:
         warnings.extend(
             self._check_foreign_step_ids(step_id, all_events, task_start_time)
         )
-        warnings.extend(self._check_timestamps(step_id, all_events, task_start_time))
-        return IntegrityResult(warnings=warnings)
+        ts_warnings, correctable = self._check_timestamps(
+            step_id, all_events, task_start_time
+        )
+        warnings.extend(ts_warnings)
+        return IntegrityResult(warnings=warnings, correctable_entries=correctable)
 
     def _check_phase_names(
         self, step_id: str, all_events: list[PhaseEvent]
@@ -126,11 +144,13 @@ class LogIntegrityValidator:
         step_id: str,
         all_events: list[PhaseEvent],
         task_start_time: str | None,
-    ) -> list[str]:
+    ) -> tuple[list[str], list[CorrectableEntry]]:
         """Check for implausible timestamps in events for this step.
 
         Future-timestamp detection always runs (needs only now()).
         Pre-task detection runs only when task_start_time is available.
+        Timestamps within 60s before task_start_time are warned but not
+        considered correctable (clock-skew tolerance).
         """
         if self._time_provider:
             now = self._time_provider.now_utc()
@@ -147,7 +167,8 @@ class LogIntegrityValidator:
                 pass
 
         warnings: list[str] = []
-        for event in all_events:
+        correctable: list[CorrectableEntry] = []
+        for idx, event in enumerate(all_events):
             if event.step_id != step_id:
                 continue
             try:
@@ -158,8 +179,31 @@ class LogIntegrityValidator:
                 warnings.append(
                     f"Future timestamp on {event.phase_name}: {event.timestamp}"
                 )
-            elif start_dt and event_dt < start_dt:
+                correctable.append(
+                    CorrectableEntry(
+                        index=idx,
+                        step_id=event.step_id,
+                        phase_name=event.phase_name,
+                        original_timestamp=event.timestamp,
+                        reason="future",
+                    )
+                )
+            elif start_dt and event_dt < (start_dt - _TOLERANCE):
                 warnings.append(
                     f"Pre-task timestamp on {event.phase_name}: {event.timestamp}"
                 )
-        return warnings
+                correctable.append(
+                    CorrectableEntry(
+                        index=idx,
+                        step_id=event.step_id,
+                        phase_name=event.phase_name,
+                        original_timestamp=event.timestamp,
+                        reason="pre_task",
+                    )
+                )
+            elif start_dt and event_dt < start_dt:
+                # Within tolerance - warn but not correctable
+                warnings.append(
+                    f"Pre-task timestamp on {event.phase_name}: {event.timestamp}"
+                )
+        return warnings, correctable
