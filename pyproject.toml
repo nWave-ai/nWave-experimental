@@ -241,6 +241,11 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
+[tool.nwave]
+# Public version for nwave-ai PyPI package (independent from crafter-ai version)
+# This is the version that gets published as 'nwave-ai' on PyPI
+public_version = "1.0.0"
+
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = [

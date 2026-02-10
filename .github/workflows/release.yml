@@ -341,9 +341,8 @@ jobs:
           sections.append("## Installation\n")
           sections.append(
               f"```bash\n"
-              f"curl -O https://github.com/{repo}/releases/download/"
-              f"v{version}/install-nwave-claude-code.py\n"
-              f"python install-nwave-claude-code.py\n"
+              f"pipx install nwave-ai\n"
+              f"nwave-ai install\n"
               f"```\n"
           )
 
@@ -418,11 +417,17 @@ jobs:
             --exclude 'CLAUDE.local.md' \
             --exclude 'SESSION_STATE*' \
             --exclude 'build.log' \
+            --exclude 'pyproject.toml' \
+            --exclude 'setup.py' \
+            --exclude 'setup.cfg' \
+            --exclude 'Pipfile' \
+            --exclude 'Pipfile.lock' \
             --exclude '_tmp/' \
             --exclude 'htmlcov/' \
             --exclude 'reports/' \
             --exclude 'mutants/' \
             --exclude 'nwave.egg-info/' \
+            --exclude 'nwave-ai.egg-info/' \
             --exclude 'test_import_debug.py' \
             --exclude 'test_token_minimal_architecture.py' \
             --exclude 'update_*.py' \
@@ -443,6 +448,37 @@ jobs:
             --exclude 'test-des-manual/' \
             ./ nwave-target/
 
+      - name: Read nwave public version from crafter-ai
+        id: nwave_version
+        run: |
+          NWAVE_VERSION=$(python3 -c "
+          with open('pyproject.toml') as f:
+              for line in f:
+                  if line.strip().startswith('public_version'):
+                      print(line.split('\"')[1])
+                      break
+          ")
+          echo "version=$NWAVE_VERSION" >> $GITHUB_OUTPUT
+          echo "nwave-ai public version: $NWAVE_VERSION"
+
+      - name: Update nwave-ai version in pyproject.toml
+        working-directory: nwave-target
+        run: |
+          NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
+          if [ -f pyproject.toml ]; then
+            python3 -c "
+          import re
+          with open('pyproject.toml', 'r') as f:
+              content = f.read()
+          content = re.sub(r'version = \"[^\"]+\"', 'version = \"${NWAVE_VERSION}\"', content, count=1)
+          with open('pyproject.toml', 'w') as f:
+              f.write(content)
+          "
+            echo "Updated nwave-ai pyproject.toml to version $NWAVE_VERSION"
+          else
+            echo "::warning::No pyproject.toml found in nwave-ai/nwave - will need manual setup"
+          fi
+
       - name: Commit and push to nwave-ai/nwave
         working-directory: nwave-target
         run: |
@@ -452,9 +488,46 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to publish"
           else
-            git commit -m "chore(release): sync v${{ steps.get_version.outputs.VERSION }} from crafter-ai"
+            git commit -m "chore(release): sync v${{ steps.get_version.outputs.VERSION }} (nwave-ai v${{ steps.nwave_version.outputs.version }})"
             git push
           fi
+
+  # ===========================================================================
+  # PUBLISH TO PYPI - Build and upload nwave-ai wheel
+  # ===========================================================================
+
+  publish-to-pypi:
+    name: "Publish to PyPI"
+    needs: [publish-to-nwave]
+    if: |
+      always() &&
+      needs.publish-to-nwave.result == 'success' &&
+      (github.event_name != 'workflow_dispatch' || inputs.dry_run != true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout nwave-ai/nwave
+        uses: actions/checkout@v4
+        with:
+          repository: nwave-ai/nwave
+          token: ${{ secrets.RELEASETRAIN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Publish to TestPyPI
+        run: twine upload --repository testpypi dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
 
   # ===========================================================================
   # NOTIFICATION: SLACK ALERT
@@ -467,7 +540,7 @@ jobs:
     if: |
       always() &&
       !cancelled()
-    needs: [version-bump, build, github-release, publish-to-nwave]
+    needs: [version-bump, build, github-release, publish-to-nwave, publish-to-pypi]
 
     steps:
       - name: Determine release status
@@ -527,7 +600,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "Published to GitHub Releases and synced to *nwave-ai/nwave*"
+                    "text": "Published to GitHub Releases, synced to *nwave-ai/nwave*, and uploaded to *PyPI* (`pipx install nwave-ai`)"
                   }
                 },
                 {
