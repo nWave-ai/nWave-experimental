@@ -804,6 +804,40 @@ def handle_post_tool_use() -> int:
         )
 
 
+def _log_pre_write_decision(
+    hook_id: str,
+    event_type: str,
+    file_path: str,
+    reason: str,
+) -> None:
+    """Log a HOOK_PRE_WRITE_ALLOWED or HOOK_PRE_WRITE_BLOCKED diagnostic event.
+
+    Emitted after SessionGuardPolicy check to record the decision with context.
+    Wrapped in try/except so logging never breaks the hook.
+
+    Args:
+        hook_id: UUID4 correlation ID matching the HOOK_INVOKED event.
+        event_type: Either HOOK_PRE_WRITE_ALLOWED or HOOK_PRE_WRITE_BLOCKED.
+        file_path: Path of the file being written.
+        reason: Why the write was allowed or blocked.
+    """
+    try:
+        audit_writer = _create_audit_writer()
+        audit_writer.log_event(
+            AuditEvent(
+                event_type=event_type,
+                timestamp=SystemTimeProvider().now_utc().isoformat(),
+                data={
+                    "hook_id": hook_id,
+                    "file_path": file_path,
+                    "reason": reason,
+                },
+            )
+        )
+    except Exception:
+        pass  # Diagnostic logging must never break the hook
+
+
 def handle_pre_write() -> int:
     """Handle PreToolUse for Write/Edit: guard source writes during deliver.
 
@@ -833,20 +867,22 @@ def handle_pre_write() -> int:
 
         # Extract file path from tool_input
         tool_input = hook_input.get("tool_input", {})
-
-        # Diagnostic: confirm hook was invoked
-        _log_hook_invoked(
-            "pre_write",
-            {
-                "file_path": tool_input.get("file_path"),
-            },
-            hook_id=hook_id,
-        )
         file_path = tool_input.get("file_path", "")
 
         # Check session and signal state
         session_active = DES_DELIVER_SESSION_FILE.exists()
         des_task_active = DES_TASK_ACTIVE_FILE.exists()
+
+        # Diagnostic: confirm hook was invoked with full context
+        _log_hook_invoked(
+            "pre_write",
+            {
+                "file_path": file_path,
+                "session_active": session_active,
+                "des_task_active": des_task_active,
+            },
+            hook_id=hook_id,
+        )
 
         policy = SessionGuardPolicy()
         result = policy.check(
@@ -856,6 +892,12 @@ def handle_pre_write() -> int:
         )
 
         if result.blocked:
+            _log_pre_write_decision(
+                hook_id=hook_id,
+                event_type="HOOK_PRE_WRITE_BLOCKED",
+                file_path=file_path,
+                reason=result.reason or "Source write blocked during deliver",
+            )
             response = {
                 "decision": "block",
                 "reason": result.reason or "Source write blocked during deliver",
@@ -864,12 +906,35 @@ def handle_pre_write() -> int:
             exit_code = 2
             return exit_code
         else:
+            # Determine allow reason for diagnostics
+            if not session_active:
+                allow_reason = "no_session"
+            else:
+                allow_reason = "policy_allowed"
+            _log_pre_write_decision(
+                hook_id=hook_id,
+                event_type="HOOK_PRE_WRITE_ALLOWED",
+                file_path=file_path,
+                reason=allow_reason,
+            )
             print(json.dumps({"decision": "allow"}))
             exit_code = 0
             return exit_code
 
-    except Exception:
+    except Exception as e:
         # Fail-open for Write/Edit (unlike Task which is fail-closed)
+        # Log error to audit trail for diagnostics
+        try:
+            audit_writer = _create_audit_writer()
+            audit_writer.log_event(
+                AuditEvent(
+                    event_type="HOOK_ERROR",
+                    timestamp=SystemTimeProvider().now_utc().isoformat(),
+                    data={"error": str(e), "handler": "pre_write"},
+                )
+            )
+        except Exception:
+            pass  # Don't let audit logging failure mask the original error
         print(json.dumps({"decision": "allow"}))
         exit_code = 0
         return exit_code
