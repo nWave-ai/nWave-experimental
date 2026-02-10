@@ -348,7 +348,7 @@ Validation checklist for DISTILL wave completion focusing on acceptance test cre
 - Focus on business language preservation and customer collaboration
 - Validate production service integration patterns throughout test design
 
-### For Business Analysts (Riley)
+### For Luna (nw-product-owner)
 
 - Support acceptance test validation from business perspective
 - Ensure customer collaboration and stakeholder engagement

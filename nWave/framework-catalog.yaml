@@ -47,14 +47,8 @@ agents:
   product-owner:
     wave: "DISCUSS"
     priority: 1
-    role: "requirements_gathering"
-    description: "Business requirements and product definition"
-
-  leanux-designer:
-    wave: "DISCUSS"
-    priority: 2
-    role: "user_experience_design"
-    description: "LeanUX journey design and emotional arc mapping (Luna)"
+    role: "requirements_and_ux_design"
+    description: "UX journey design, emotional arcs, requirements gathering, BDD acceptance criteria (Luna)"
 
   solution-architect:
     wave: "DESIGN"
@@ -130,11 +124,11 @@ agents:
     role: "visual_design"
     description: "Create 2D diagrams and visual artifacts"
 
-  leanux-designer-reviewer:
+  product-owner-reviewer:
     wave: "CROSS_WAVE"
     priority: 2
-    role: "ux_design_review"
-    description: "LeanUX journey quality review specialist (Eclipse)"
+    role: "requirements_and_ux_review"
+    description: "Journey coherence, DoR validation, requirements quality review (Eclipse)"
 
 
 # Command mappings
@@ -154,18 +148,11 @@ commands:
     outputs: ["problem_validation", "opportunity_tree", "lean_canvas"]
 
   discuss:
-    description: "Requirements gathering and business analysis"
-    argument_hint: "[feature-name] - Optional: --interactive=[high|moderate] --output-format=[md|yaml]"
+    description: "UX journey design, requirements gathering, and business analysis"
+    argument_hint: "[feature-name] - Optional: --phase=[journey|requirements] --interactive=[high|moderate] --output-format=[md|yaml]"
     agents: ["product-owner"]
     wave: "DISCUSS"
-    outputs: ["requirements_document", "user_stories"]
-
-  journey:
-    description: "LeanUX journey design and emotional arc mapping"
-    argument_hint: "[goal] - Example: \"Complete checkout process\""
-    agents: ["leanux-designer"]
-    wave: "DISCUSS"
-    outputs: ["journey_sketch", "emotional_arc", "shared_artifacts"]
+    outputs: ["journey_sketch", "emotional_arc", "shared_artifacts", "requirements_document", "user_stories"]
 
   design:
     description: "Architecture design with visual representation"

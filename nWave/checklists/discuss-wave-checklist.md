@@ -220,7 +220,7 @@ Validation checklist for DISCUSS wave completion focusing on ATDD foundation est
 
 ## 📋 **Checklist Usage Guidelines**
 
-### For Business Analysts (Riley)
+### For Luna (nw-product-owner)
 
 - Use this checklist to ensure comprehensive stakeholder engagement
 - Focus on BASIC level completion before moving to INTERMEDIATE

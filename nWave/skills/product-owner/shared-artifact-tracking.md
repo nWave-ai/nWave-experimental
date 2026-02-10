@@ -92,8 +92,8 @@ CLI UX compliance:
 
 ## Handoff Specifications
 
-### To Product Owner (Riley)
-Deliverables:
+### To Requirements Crafting (internal handoff within Luna)
+Luna uses these journey artifacts as input to Phase 4 (Requirements Crafting):
 - `docs/ux/{epic}/journey-{name}.yaml` -- Complete journey with emotional arc
 - `docs/ux/{epic}/shared-artifacts-registry.md` -- Tracked artifacts with sources
 

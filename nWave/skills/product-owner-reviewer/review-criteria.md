@@ -1,11 +1,11 @@
 ---
 name: review-criteria
-description: Review dimensions and bug patterns for leanux designer journey reviews
+description: Review dimensions and bug patterns for journey artifact reviews
 ---
 
 # Review Criteria Skill
 
-Domain knowledge for leanux-designer-reviewer (Eclipse).
+Domain knowledge for product-owner-reviewer (Eclipse). Covers journey coherence, emotional arcs, shared artifacts, example data quality, and CLI UX pattern validation.
 
 ## Review Dimensions
 
@@ -109,7 +109,7 @@ Claude Code: /nw:update  <-- EXISTS?
 
 ```yaml
 review_id: "{timestamp}"
-reviewer: "nw-leanux-designer-reviewer (Eclipse)"
+reviewer: "nw-product-owner-reviewer (Eclipse)"
 artifact_reviewed: "{file path}"
 
 strengths:

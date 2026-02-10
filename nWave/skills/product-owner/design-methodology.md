@@ -144,7 +144,7 @@ integration_validation:
 
 ## Output Formats
 
-Luna produces three artifact types:
+Three artifact types are produced:
 
 1. **Visual Journey** (`journey-{name}-visual.md`): ASCII flow diagram showing the complete journey with emotional annotations and TUI mockups per step
 2. **Structured Schema** (`journey-{name}.yaml`): Machine-readable journey definition following the schema above

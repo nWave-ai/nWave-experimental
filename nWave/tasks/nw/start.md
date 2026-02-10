@@ -1,7 +1,7 @@
 # NW-START: Initialize nWave Workflow
 
 **Wave**: CROSS_WAVE (project initialization)
-**Agent**: Riley (nw-product-owner)
+**Agent**: Luna (nw-product-owner)
 
 ## Overview
 
@@ -38,7 +38,7 @@ Execute \*gather-requirements for project initialization.
 ```
 /nw:start invoice-automation --template=greenfield --scope=medium
 ```
-Riley creates project brief, identifies stakeholders, establishes success criteria, and prepares the workspace for DISCOVER wave.
+Luna creates project brief, identifies stakeholders, establishes success criteria, and prepares the workspace for DISCOVER wave.
 
 ## Expected Outputs
 

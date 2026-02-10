@@ -26,13 +26,12 @@ All DW commands are now configured to automatically trigger specialized agent te
 
 ### DISCOVER Wave Commands
 
-- **`/nw:discover`** → `product-discoverer` (Scout), `researcher`, `product-owner` (Riley)
+- **`/nw:discover`** → `product-discoverer` (Scout), `researcher`, `product-owner` (Luna)
 
 ### DISCUSS Wave Commands
 
-- **`/nw:discuss`** → `product-owner` (Riley), `acceptance-designer`, `root-cause-analyzer`
-- **`/nw:journey`** → `leanux-designer` (Luna), `leanux-designer-reviewer` (Eclipse)
-- **`/nw:root-why`** → `root-cause-analyzer`, `product-owner` (Riley), `solution-architect` (Morgan)
+- **`/nw:discuss`** → `product-owner` (Luna), `product-owner-reviewer` (Eclipse)
+- **`/nw:root-why`** → `root-cause-analyzer`, `product-owner` (Luna), `solution-architect` (Morgan)
 
 ### DESIGN Wave Commands
 
@@ -57,12 +56,12 @@ All DW commands are now configured to automatically trigger specialized agent te
 
 ### Workflow Commands
 
-- **`/nw:start`** → `nWave-core-team-team`, `product-owner` (Riley)
+- **`/nw:start`** → `nWave-core-team-team`, `product-owner` (Luna)
 - **`/nw:roadmap`** → Specified agent (via @agent parameter)
 - **`/nw:execute`** → Specified agent (via @agent parameter)
 - **`/nw:review`** → Specified reviewer agent (via @agent parameter)
 - **`/nw:finalize`** → `devop`, `feature-completion-coordinator`
-- **`/nw:git`** → `feature-completion-coordinator`, `systematic-refactorer`, `product-owner` (Riley)
+- **`/nw:git`** → `feature-completion-coordinator`, `systematic-refactorer`, `product-owner` (Luna)
 
 ## Context Isolation Guarantees
 
@@ -102,9 +101,9 @@ All DW commands are now configured to automatically trigger specialized agent te
 
 ## Validation Status
 
-- ✅ **18/18** commands configured for auto-agent activation
-- ✅ **3/18** commands have explicit context-free implementation patterns
-- ✅ **18 specialized agents** available for domain-specific work (including Luna & Eclipse)
+- ✅ **17/17** commands configured for auto-agent activation
+- ✅ **3/17** commands have explicit context-free implementation patterns
+- ✅ **16 specialized agents** available for domain-specific work (including Luna & Eclipse)
 - ✅ **Main instance isolation** preserved across all command flows
 - ✅ **Agent coordination** through shared documentation artifacts
 

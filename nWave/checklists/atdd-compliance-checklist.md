@@ -286,7 +286,7 @@ Comprehensive validation checklist for Acceptance Test Driven Development (ATDD)
 
 ## 📋 **Checklist Usage Guidelines**
 
-### For Business Analysts (Riley)
+### For Luna (nw-product-owner)
 
 - Use this checklist to ensure comprehensive customer collaboration
 - Focus on business language preservation and domain understanding

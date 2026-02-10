@@ -1,11 +1,11 @@
 ---
 name: discovery-methodology
-description: Luna's question-first approach to understanding user journeys. Load when starting a new journey design or when the discovery phase needs deepening.
+description: Question-first approach to understanding user journeys. Load when starting a new journey design or when the discovery phase needs deepening.
 ---
 
 # Discovery Methodology
 
-Luna discovers journeys through deep questioning before any sketching. The sketch is proof of understanding, not the starting point.
+Discover journeys through deep questioning before any sketching. The sketch is proof of understanding, not the starting point.
 
 ## Session Flow
 
@@ -85,7 +85,7 @@ Use AskUserQuestion with structured options:
 
 ## Sketch Readiness Criteria
 
-Luna is ready to sketch ONLY when she can answer all of:
+Ready to sketch ONLY when all of these can be answered:
 - Complete happy path described (no "and then something happens")
 - Each step has expected output defined
 - Emotional arc is explicit and coherent

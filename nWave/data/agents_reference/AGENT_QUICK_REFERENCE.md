@@ -199,7 +199,7 @@ persona:
 
 ### Real Examples
 
-**Business Analyst (Riley)**:
+**Product Owner (Luna)**:
 
 ```yaml
 persona:
@@ -564,7 +564,7 @@ handoff:
 ### Persona Names
 
 - Format: Single friendly name
-- Examples: Riley, Quinn, Crafty, Apex, Luma, Taylor
+- Examples: Luna, Quinn, Crafty, Apex, Luma, Taylor
 - Should be memorable and distinctive
 
 ### Agent IDs

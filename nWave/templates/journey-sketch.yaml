@@ -1,10 +1,10 @@
 # Journey Sketch Schema Template
-# Used by Luna (leanux-designer) to create journey artifacts
+# Used by Luna (nw-product-owner) to create journey artifacts
 # Version: 1.0
 
 schema_version: "1.0"
 template_type: "journey-sketch"
-owner: "leanux-designer"
+owner: "nw-product-owner"
 
 # =============================================================================
 # JOURNEY SCHEMA
