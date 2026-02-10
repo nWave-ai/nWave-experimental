@@ -7,15 +7,16 @@ before Task invocation, preventing incomplete instructions from reaching sub-age
 Uses canonical 7-phase TDD cycle from step-tdd-cycle-schema.json v3.0 (single source of truth).
 All phase names, skip prefixes, and validation rules loaded from schema.
 
-MANDATORY SECTIONS (8):
+MANDATORY SECTIONS (9):
 1. DES_METADATA
 2. AGENT_IDENTITY
 3. TASK_CONTEXT
 4. TDD_7_PHASES (from schema)
 5. QUALITY_GATES
 6. OUTCOME_RECORDING
-7. BOUNDARY_RULES
-8. TIMEOUT_INSTRUCTION
+7. RECORDING_INTEGRITY
+8. BOUNDARY_RULES
+9. TIMEOUT_INSTRUCTION
 
 MANDATORY TDD PHASES (7 from schema):
 1. PREPARE, 2. RED_ACCEPTANCE, 3. RED_UNIT, 4. GREEN (merged GREEN_UNIT + GREEN_ACCEPTANCE)
@@ -44,7 +45,7 @@ class ValidationResult:
 
 class MandatorySectionChecker:
     """
-    Validates that all 8 mandatory sections are present in prompt.
+    Validates that all 9 mandatory sections are present in prompt.
 
     Mandatory sections ensure prompts contain complete instructions for sub-agents,
     preventing "I didn't know about X" excuses during execution.
@@ -57,6 +58,7 @@ class MandatorySectionChecker:
         "TDD_7_PHASES",  # All 7 TDD phases to execute (schema v3.0 canonical)
         "QUALITY_GATES",  # Quality validation criteria
         "OUTCOME_RECORDING",  # How to track progress
+        "RECORDING_INTEGRITY",  # Skip prefixes + anti-fraud rules
         "BOUNDARY_RULES",  # Scope and file modifications allowed
         "TIMEOUT_INSTRUCTION",  # Turn budget and exit conditions
     ]
@@ -69,6 +71,11 @@ class MandatorySectionChecker:
         "TDD_7_PHASES": "Add TDD_7_PHASES section listing all 7 phases: PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, REVIEW, REFACTOR_CONTINUOUS, COMMIT",
         "QUALITY_GATES": "Add QUALITY_GATES section defining validation criteria (G1-G6)",
         "OUTCOME_RECORDING": "Add OUTCOME_RECORDING section describing how to track phase completion",
+        "RECORDING_INTEGRITY": (
+            "Add RECORDING_INTEGRITY section with valid skip prefixes "
+            "(NOT_APPLICABLE, BLOCKED_BY_DEPENDENCY, APPROVED_SKIP, CHECKPOINT_PENDING) "
+            "and anti-fraud rules. See ~/.claude/commands/nw/execute.md"
+        ),
         "BOUNDARY_RULES": "Add BOUNDARY_RULES section specifying which files can be modified",
         "TIMEOUT_INSTRUCTION": "Add TIMEOUT_INSTRUCTION section with turn budget guidance",
     }

@@ -21,7 +21,7 @@ MANDATORY: Include these DES markers in the Task prompt:
 <!-- DES-STEP-ID : {step-id} -->
 
 Without these markers, DES validation is bypassed and the step won't be verified.
-Read nWave/tasks/nw/execute.md for the full DES Prompt Template with all 8 mandatory sections."""
+Read nWave/tasks/nw/execute.md for the full DES Prompt Template with all 9 mandatory sections."""
 
 
 class PostToolUseService:

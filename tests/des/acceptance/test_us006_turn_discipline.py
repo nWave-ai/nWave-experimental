@@ -359,7 +359,7 @@ class TestTurnDisciplineValidation:
     """
     Tests for TIMEOUT_INSTRUCTION validation during pre-invocation checks.
 
-    Per US-002, TIMEOUT_INSTRUCTION is one of 8 mandatory sections.
+    Per US-002, TIMEOUT_INSTRUCTION is one of 9 mandatory sections.
     These tests verify validation correctly handles its presence/absence.
     """
 

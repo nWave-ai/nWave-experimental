@@ -23,7 +23,7 @@ class TestBoundaryRulesTemplateRendering:
         THEN result includes '## BOUNDARY_RULES' section header
 
         Business Context:
-        The BOUNDARY_RULES section is one of 8 mandatory DES sections.
+        The BOUNDARY_RULES section is one of 9 mandatory DES sections.
         Without the proper header, validation will fail and block Task invocation.
         """
         template = BoundaryRulesTemplate()

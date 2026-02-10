@@ -28,7 +28,7 @@ class TestPreInvocationTemplateValidation:
 
     def test_complete_prompt_passes_all_validation_checks(self, valid_prompt_v3):
         """
-        GIVEN orchestrator generates prompt for step with all 8 mandatory sections
+        GIVEN orchestrator generates prompt for step with all 9 mandatory sections
         WHEN pre-invocation validation runs
         THEN validation status is PASSED and Task invocation proceeds
 
@@ -42,14 +42,15 @@ class TestPreInvocationTemplateValidation:
         4. TDD_7_PHASES (7 phases from schema v3.0)
         5. QUALITY_GATES
         6. OUTCOME_RECORDING
-        7. BOUNDARY_RULES
-        8. TIMEOUT_INSTRUCTION
+        7. RECORDING_INTEGRITY
+        8. BOUNDARY_RULES
+        9. TIMEOUT_INSTRUCTION
         """
         import time
 
         from des.application.validator import TemplateValidator
 
-        # Arrange: Create prompt with all 8 mandatory sections from template
+        # Arrange: Create prompt with all 9 mandatory sections from template
         prompt_with_all_sections = valid_prompt_v3()
 
         # Act: Run pre-invocation validation
@@ -114,7 +115,7 @@ class TestPreInvocationTemplateValidation:
         Business Value: Priya receives specific, actionable errors that enable
                        quick template fixes without guesswork.
 
-        Missing Section: TIMEOUT_INSTRUCTION (1 of 8 mandatory)
+        Missing Section: TIMEOUT_INSTRUCTION (1 of 9 mandatory)
         Expected Error: "MISSING: Mandatory section 'TIMEOUT_INSTRUCTION' not found"
         Expected Guidance: "Add TIMEOUT_INSTRUCTION section with turn budget guidance"
         """
@@ -139,6 +140,9 @@ class TestPreInvocationTemplateValidation:
 
         # OUTCOME_RECORDING
         Update step file
+
+        # RECORDING_INTEGRITY
+        Valid skip prefixes and anti-fraud rules defined
 
         # BOUNDARY_RULES
         Scope defined
@@ -214,6 +218,9 @@ G3: Coverage >= 80%
 ## OUTCOME_RECORDING
 Record phase outcomes in step file
 
+## RECORDING_INTEGRITY
+Valid skip prefixes and anti-fraud rules defined
+
 ## TIMEOUT_INSTRUCTION
 Turn budget: approximately 50 turns"""
 
@@ -243,7 +250,7 @@ Turn budget: approximately 50 turns"""
 
     def test_validation_completes_within_performance_budget(self, valid_prompt_v3):
         """
-        GIVEN complete prompt with all 8 sections and 7 phases (v3.0)
+        GIVEN complete prompt with all 9 sections and 7 phases (v3.0)
         WHEN pre-invocation validation runs
         THEN validation completes in less than 500 milliseconds
 
@@ -312,6 +319,9 @@ Turn budget: approximately 50 turns"""
 
         # OUTCOME_RECORDING
         Update step file
+
+        # RECORDING_INTEGRITY
+        Valid skip prefixes and anti-fraud rules
 
         # BOUNDARY_RULES
         Minimal scope

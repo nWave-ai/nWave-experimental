@@ -3,7 +3,7 @@ Unit Tests: TemplateValidator Components
 
 Tests for des.validator module:
 - TemplateValidator: Main entry point for validation
-- MandatorySectionChecker: Validates 8 mandatory sections
+- MandatorySectionChecker: Validates 9 mandatory sections
 - TDDPhaseValidator: Validates 7 TDD phases
 - ValidationResult: Data class for validation results
 """
@@ -46,10 +46,10 @@ class TestValidationResultDataclass:
 
 
 class TestMandatorySectionChecker:
-    """MandatorySectionChecker validates 8 mandatory sections."""
+    """MandatorySectionChecker validates 9 mandatory sections."""
 
     def test_complete_prompt_validates_all_sections(self):
-        """Prompt with all 8 sections passes validation."""
+        """Prompt with all 9 sections passes validation."""
         from des.application.validator import MandatorySectionChecker
 
         prompt = """
@@ -70,6 +70,9 @@ class TestMandatorySectionChecker:
 
         # OUTCOME_RECORDING
         Update step file
+
+        # RECORDING_INTEGRITY
+        Valid skip prefixes and anti-fraud rules
 
         # BOUNDARY_RULES
         Scope defined
@@ -105,6 +108,9 @@ class TestMandatorySectionChecker:
 
         # OUTCOME_RECORDING
         Update step file
+
+        # RECORDING_INTEGRITY
+        Valid skip prefixes and anti-fraud rules
 
         # BOUNDARY_RULES
         Scope defined
@@ -231,6 +237,9 @@ class TestTemplateValidator:
         # OUTCOME_RECORDING
         Update step file
 
+        # RECORDING_INTEGRITY
+        Valid skip prefixes and anti-fraud rules
+
         # BOUNDARY_RULES
         Scope defined
 
@@ -292,6 +301,9 @@ class TestTemplateValidator:
 
         # OUTCOME_RECORDING
         Update step file
+
+        # RECORDING_INTEGRITY
+        Valid skip prefixes and anti-fraud rules
 
         # BOUNDARY_RULES
         Scope defined

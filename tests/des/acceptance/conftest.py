@@ -364,6 +364,13 @@ Acceptance Criteria:
 Update execution-log.yaml after each phase.
 Track phase completion in step file.
 
+# RECORDING_INTEGRITY
+## Valid Skip Prefixes
+NOT_APPLICABLE, BLOCKED_BY_DEPENDENCY, APPROVED_SKIP, CHECKPOINT_PENDING
+## Anti-Fraud Rules
+NEVER write EXECUTED for phases not actually performed.
+NEVER invent timestamps. DES audits all entries.
+
 # BOUNDARY_RULES
 - Follow hexagonal architecture
 - Use production service integration

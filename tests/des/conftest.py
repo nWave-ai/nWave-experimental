@@ -140,6 +140,10 @@ Record phase outcomes in step file:
 - EXECUTED phases: record outcome (PASS/FAIL)
 - SKIPPED phases: record reason with valid prefix
 - Update phase_execution_log after each phase""",
+            "RECORDING_INTEGRITY": """## RECORDING_INTEGRITY
+Valid Skip Prefixes: NOT_APPLICABLE, BLOCKED_BY_DEPENDENCY, APPROVED_SKIP, CHECKPOINT_PENDING
+Anti-Fraud Rules: NEVER write EXECUTED for phases not actually performed.
+NEVER invent timestamps. DES audits all entries.""",
             "BOUNDARY_RULES": """## BOUNDARY_RULES
 ALLOWED:
 - Modify implementation files in scope
@@ -221,6 +225,11 @@ Record phase outcomes in step file:
 - EXECUTED phases: record outcome (PASS/FAIL)
 - SKIPPED phases: record reason with valid prefix
 - Update phase_execution_log after each phase
+
+## RECORDING_INTEGRITY
+Valid Skip Prefixes: NOT_APPLICABLE, BLOCKED_BY_DEPENDENCY, APPROVED_SKIP, CHECKPOINT_PENDING
+Anti-Fraud Rules: NEVER write EXECUTED for phases not actually performed.
+NEVER invent timestamps. DES audits all entries.
 
 ## BOUNDARY_RULES
 ALLOWED:

@@ -229,8 +229,8 @@ class TestExecutionLogValidator:
 class TestMandatorySectionChecker:
     """MandatorySectionChecker unit tests."""
 
-    def test_pass_when_all_8_sections_present(self):
-        """Checker validates all 8 mandatory sections are present."""
+    def test_pass_when_all_9_sections_present(self):
+        """Checker validates all 9 mandatory sections are present."""
         checker = MandatorySectionChecker()
 
         prompt = """
@@ -240,6 +240,7 @@ class TestMandatorySectionChecker:
         # TDD_7_PHASES
         # QUALITY_GATES
         # OUTCOME_RECORDING
+        # RECORDING_INTEGRITY
         # BOUNDARY_RULES
         # TIMEOUT_INSTRUCTION
         """
@@ -259,6 +260,7 @@ class TestMandatorySectionChecker:
         # TDD_7_PHASES
         # QUALITY_GATES
         # OUTCOME_RECORDING
+        # RECORDING_INTEGRITY
         # BOUNDARY_RULES
         # (missing TIMEOUT_INSTRUCTION)
         """
@@ -408,6 +410,7 @@ class TestTemplateValidator:
         Execute all {phase_count} phases (schema v3.0):
         # QUALITY_GATES
         # OUTCOME_RECORDING
+        # RECORDING_INTEGRITY
         # BOUNDARY_RULES
         # TIMEOUT_INSTRUCTION
 
@@ -467,6 +470,7 @@ class TestTemplateValidator:
         Execute all {phase_count} phases (schema v3.0):
         # QUALITY_GATES
         # OUTCOME_RECORDING
+        # RECORDING_INTEGRITY
         # BOUNDARY_RULES
         # TIMEOUT_INSTRUCTION
 

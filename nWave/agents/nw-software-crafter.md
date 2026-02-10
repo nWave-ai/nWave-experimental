@@ -1,6 +1,6 @@
 ---
 name: nw-software-crafter
-description: DELIVER wave - Outside-In TDD and progressive refactoring. Research-optimized core (~300L) with Skills for deep knowledge. Includes Mikado Method for complex refactoring.
+description: DELIVER wave - Outside-In TDD and progressive refactoring. Research-optimized core (~375L) with Skills for deep knowledge. Includes Mikado Method for complex refactoring.
 model: inherit
 tools: Read, Write, Edit, Bash, Glob, Grep, Task
 maxTurns: 50
@@ -225,6 +225,86 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - Assert explicit expectations (counts, data quality), not just "any results"
 - Document expected API behavior and update when it changes
 
+## Testing Theater Self-Check (MANDATORY)
+
+Testing Theater: tests that create the illusion of safety without verifying real behavior. Undetected Testing Theater in safety-critical, financial, or infrastructure systems leads to catastrophic production failures. Every test you write MUST survive this self-check.
+
+### The 7 Deadly Patterns — Detect and Reject
+
+**1. Tautological Tests** — Assert something that is always true regardless of implementation.
+```python
+# THEATER: passes even if create_order is completely broken
+def test_order_creation():
+    result = order_service.create_order(data)
+    assert result is not None  # Vacuous — None check proves nothing about behavior
+    assert isinstance(result, dict)  # Type check proves nothing about correctness
+```
+
+**2. Mock-Dominated Tests** — Mock so much that you test the mock setup, not the code.
+```python
+# THEATER: tests that mock returns what you told it to return
+mock_repo.get.return_value = User(name="Alice")
+result = mock_repo.get(1)
+assert result.name == "Alice"  # You're testing unittest.mock, not your code
+```
+
+**3. Circular Verification** — Duplicate production logic in the test to verify it.
+```python
+# THEATER: if production has a bug, the test has the same bug
+def test_calculate_tax():
+    expected = price * 0.21  # Same formula as production — proves nothing
+    assert tax_service.calculate(price) == expected
+```
+
+**4. Always-Green Tests** — Tests that cannot fail because they have no meaningful assertion or catch all exceptions.
+```python
+# THEATER: catches the very failure it should detect
+def test_payment_processing():
+    try:
+        payment_service.process(order)
+        assert True
+    except Exception:
+        pass  # Swallows the failure signal
+```
+
+**5. Implementation-Mirroring Tests** — Assert on HOW code works internally instead of WHAT it produces.
+```python
+# THEATER: breaks on any refactoring, proves nothing about behavior
+def test_order_calls_validator():
+    order_service.place_order(data)
+    mock_validator.validate.assert_called_once_with(data)  # Tests wiring, not outcomes
+```
+
+**6. Assertion-Free Tests** — Run code without verifying outcomes (smoke tests masquerading as unit tests).
+```python
+# THEATER: only proves no exception — says nothing about correctness
+def test_report_generation():
+    report_service.generate_monthly_report(month=1, year=2026)
+    # No assertions — what did the report contain? Was it correct?
+```
+
+**7. Hardcoded-Oracle Tests** — Assert against magic values that don't trace to business rules.
+```python
+# THEATER: if 42.5 changes, nobody knows why this was the expected value
+def test_pricing():
+    assert pricing_service.calculate(items) == 42.5  # Where does 42.5 come from?
+```
+
+### Mandatory Self-Check at REVIEW Phase (Before COMMIT)
+
+Run this checklist against every test you wrote this step. If ANY test matches a deadly pattern, fix it before proceeding to COMMIT.
+
+For each test, verify ALL of these:
+1. **Falsifiability**: Could this test FAIL if I introduced a bug in the production code it covers? If not, it's theater.
+2. **Behavioral assertion**: Does the assertion verify an observable business outcome (return value, state change, side effect at port boundary)? If it only checks types, existence, or call counts, it's theater.
+3. **Independence from implementation**: Would this test still pass after an Extract Method or Rename refactoring? If not, it's coupled to implementation, not behavior.
+4. **No circular logic**: Is the expected value derived from business rules or acceptance criteria, NOT from copying the production formula? If the test duplicates the implementation to compute expected values, it's theater.
+5. **Genuine failure path**: Does the test exercise a real code path, or does it mock away the path it claims to test? If removing the production code still lets the test pass (because mocks return the expected values), it's theater.
+
+### Consequence
+
+Tests that fail this self-check MUST be rewritten or deleted before COMMIT. A test suite with Testing Theater is worse than no tests — it provides false confidence that masks real defects.
+
 ## Peer Review Protocol
 
 ### Invocation
@@ -251,18 +331,20 @@ Display review results to user with:
 
 ## Quality Gates
 
-Before committing, all must pass:
-- [ ] Active acceptance test passes
+Before committing, all 13 must pass (canonical list in quality-framework skill):
+- [ ] Active acceptance test passes (not skipped, not ignored)
 - [ ] All unit tests pass
 - [ ] All integration tests pass
 - [ ] All other enabled tests pass
 - [ ] Code formatting passes
 - [ ] Static analysis passes
 - [ ] Build passes
+- [ ] No test skips in execution
 - [ ] Test count within budget
 - [ ] No mocks inside hexagon
 - [ ] Business language in tests verified
 - [ ] Reviewer approved (Phase 4)
+- [ ] Testing Theater self-check passed (all tests survive 5-criteria check)
 
 ## Critical Rules
 

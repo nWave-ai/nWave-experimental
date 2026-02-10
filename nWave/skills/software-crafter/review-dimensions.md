@@ -107,6 +107,30 @@ Test doubles policy follows the port-boundary rules defined in the tdd-methodolo
 
 Severity: HIGH to CRITICAL.
 
+### Testing Theater Detection
+
+Pattern: tests that create the illusion of safety without verifying real behavior. This is the single most dangerous test quality issue — undetected Testing Theater causes catastrophic production failures because the team believes the code is tested when it is not.
+
+**Concrete patterns to detect:**
+
+| Pattern | Detection | Severity |
+|---------|-----------|----------|
+| Tautological assertion | `assert result is not None`, `assert isinstance(...)`, `assert True` as primary assertion | CRITICAL |
+| Mock-dominated test | Test mocks the SUT or mocks return the expected value directly — removing production code still passes | CRITICAL |
+| Circular verification | Test recomputes expected value using same formula as production code | CRITICAL |
+| Always-green test | `try/except` wrapping assertions, empty except blocks, no assertion at all | CRITICAL |
+| Implementation-mirroring | Assertions only on `assert_called_once_with` / call counts without behavioral outcome check | HIGH |
+| Assertion-free smoke test | Code executes but no assert statement validates outcomes | CRITICAL |
+| Hardcoded magic oracle | Expected values are unexplained magic numbers not traceable to business rules or AC | HIGH |
+
+**Review checklist (apply to every new/modified test):**
+1. Delete the production code this test covers — does the test fail? If not: THEATER.
+2. Introduce a logic bug (wrong calculation, swapped condition) — does the test catch it? If not: THEATER.
+3. Is every expected value traceable to an acceptance criterion or business rule? If not: SUSPICIOUS.
+4. Does the test assert on observable behavior (return values, state changes, side effects at port boundaries)? If it only asserts on types, existence, or internal calls: THEATER.
+
+Severity: CRITICAL (blocks approval — a test suite with Theater is worse than no tests).
+
 ---
 
 ## Dimension 3: Completeness Validation
@@ -204,6 +228,13 @@ issues_identified:
       location: "{test_file:line}"
       recommendation: "{Fix description}"
 
+  testing_theater:
+    - issue: "{Specific theater pattern: tautological|mock-dominated|circular|always-green|implementation-mirroring|assertion-free|hardcoded-oracle}"
+      severity: "critical"
+      location: "{test_file:line}"
+      evidence: "{Why this test would still pass if production code were deleted or broken}"
+      recommendation: "{Rewrite with behavioral assertion or delete}"
+
   completeness:
     - issue: "{Missing coverage}"
       severity: "critical"
@@ -228,6 +259,7 @@ low_issues_count: {number}
 ## Severity Classification
 
 **Critical** (must resolve before handoff):
+- Testing Theater patterns (false safety — blocks approval unconditionally)
 - Test coupling to implementation (prevents refactoring)
 - Missing acceptance criteria test coverage
 - Port-boundary violations in critical paths

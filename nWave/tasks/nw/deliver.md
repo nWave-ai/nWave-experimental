@@ -55,7 +55,7 @@ INPUT: "{feature-description}"
      b. For each step, check execution-log.yaml for prior completion (resume)
      c. @nw-software-crafter executes TDD cycle (read ~/.claude/commands/nw/execute.md)
         IMPORTANT: Use the DES Prompt Template from execute.md. Include all 4 DES
-        markers (DES-VALIDATION, DES-PROJECT-ID, DES-STEP-ID) and all 8 mandatory
+        markers (DES-VALIDATION, DES-PROJECT-ID, DES-STEP-ID) and all 9 mandatory
         sections in the Task prompt. Without these, DES validation is bypassed.
      d. Verify COMMIT/PASS in execution-log.yaml after each step
      e. If a phase is missing: RE-DISPATCH the agent to execute it.
@@ -112,7 +112,7 @@ For each phase:
 
 All Task prompts for step execution include DES markers for validation. Without these markers, the DES hooks cannot validate the task and it passes through unmonitored.
 
-The full DES Prompt Template (all 8 mandatory sections) is defined in `~/.claude/commands/nw/execute.md`. Read that file and embed all 8 sections (DES_METADATA, AGENT_IDENTITY, TASK_CONTEXT, TDD_7_PHASES, QUALITY_GATES, OUTCOME_RECORDING, BOUNDARY_RULES, TIMEOUT_INSTRUCTION) in each Task prompt.
+The full DES Prompt Template (all 9 mandatory sections) is defined in `~/.claude/commands/nw/execute.md`. Read that file and embed all 9 sections (DES_METADATA, AGENT_IDENTITY, TASK_CONTEXT, TDD_7_PHASES, QUALITY_GATES, OUTCOME_RECORDING, RECORDING_INTEGRITY, BOUNDARY_RULES, TIMEOUT_INSTRUCTION) in each Task prompt.
 
 ```python
 Task(
@@ -126,7 +126,7 @@ Task(
 TASK BOUNDARY: {task_description}
 Return control to orchestrator after completion.
 
-Read the full DES Prompt Template from ~/.claude/commands/nw/execute.md and embed all 8 mandatory sections below.
+Read the full DES Prompt Template from ~/.claude/commands/nw/execute.md and embed all 9 mandatory sections below.
 Fill placeholders with: step_id={step_id}, project_id={project_id}, agent={agent},
 task_context={instructions_extracted_from_command_file}
 ''',

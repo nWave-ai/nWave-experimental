@@ -891,7 +891,7 @@ class TestBoundaryRulesValidation:
     """
     Tests for BOUNDARY_RULES validation during pre-invocation checks.
 
-    Per US-002, BOUNDARY_RULES is one of 8 mandatory sections.
+    Per US-002, BOUNDARY_RULES is one of 9 mandatory sections.
     These tests verify validation correctly handles its presence/absence.
     """
 

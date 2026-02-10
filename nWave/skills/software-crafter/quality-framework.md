@@ -1,11 +1,11 @@
 ---
 name: quality-framework
-description: Quality gates - 12 commit readiness gates, build/test protocol, validation checkpoints, and quality metrics
+description: Quality gates - 13 commit readiness gates, build/test protocol, validation checkpoints, and quality metrics
 ---
 
 # Quality Framework
 
-## Commit Readiness Gates (12)
+## Commit Readiness Gates (13)
 
 All pass before committing:
 
@@ -21,6 +21,7 @@ All pass before committing:
 10. No mocks inside hexagon
 11. Business language in tests verified
 12. Reviewer approved (Phase 4)
+13. Testing Theater self-check passed (all 5 criteria verified per test)
 
 ## Quality Gates by Category
 
@@ -28,6 +29,7 @@ All pass before committing:
 - **Implementation**: real functionality (not placeholders), automated pipeline, happy path coverage, production patterns
 - **Business Value**: meaningful user value, testable AC, measurable success metrics
 - **Real Data**: golden masters present, edge cases tested, no silent errors, API assumptions documented
+- **Test Integrity**: every test falsifiable, behavioral assertions only, no circular verification, no mock-dominated tests, no assertion-free tests (see Testing Theater Self-Check in agent core)
 
 ## Build and Test Protocol
 
@@ -59,7 +61,7 @@ For commit message formats, load the collaboration-and-handoffs skill.
 
 - **Pre-work**: all tests passing, code smell detection complete, execution plan created
 - **During work**: atomic transformation safety, 100% test pass rate, commit after each step, level sequence adherence
-- **Post-work**: quality metrics quantified, architectural compliance validated, test suite integrity maintained
+- **Post-work**: quality metrics quantified, architectural compliance validated, test suite integrity maintained, Testing Theater self-check passed on all new/modified tests
 
 ## Quality Metrics
 

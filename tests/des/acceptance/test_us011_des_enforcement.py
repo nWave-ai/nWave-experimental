@@ -108,6 +108,10 @@ Execute all 7 phases:
 # OUTCOME_RECORDING
 Update execution-log.yaml after each phase.
 
+# RECORDING_INTEGRITY
+Valid Skip Prefixes: NOT_APPLICABLE, BLOCKED_BY_DEPENDENCY, APPROVED_SKIP, CHECKPOINT_PENDING
+Anti-Fraud Rules: NEVER write EXECUTED for phases not performed. DES audits all entries.
+
 # BOUNDARY_RULES
 - Follow hexagonal architecture
 

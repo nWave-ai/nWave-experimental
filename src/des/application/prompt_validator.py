@@ -37,11 +37,12 @@ class PromptValidator:
     1. DES_METADATA
     2. AGENT_IDENTITY
     3. TASK_CONTEXT
-    4. TDD_PHASES (14 or 8 depending on schema version)
+    4. TDD_7_PHASES
     5. QUALITY_GATES
     6. OUTCOME_RECORDING
-    7. BOUNDARY_RULES
-    8. TIMEOUT_INSTRUCTION
+    7. RECORDING_INTEGRITY
+    8. BOUNDARY_RULES
+    9. TIMEOUT_INSTRUCTION
     """
 
     def __init__(self):
