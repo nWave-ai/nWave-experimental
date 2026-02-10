@@ -133,9 +133,7 @@ def _signal_file_for(project_id: str, step_id: str) -> Path:
     return DES_SESSION_DIR / f"des-task-active-{safe_name}"
 
 
-def _create_des_task_signal(
-    step_id: str = "", project_id: str = ""
-) -> None:
+def _create_des_task_signal(step_id: str = "", project_id: str = "") -> None:
     """Create DES task active signal file, namespaced by project/step.
 
     Called when PreToolUse allows a DES-validated Task.
@@ -160,9 +158,7 @@ def _create_des_task_signal(
         pass  # Signal creation must never break the hook
 
 
-def _read_des_task_signal(
-    project_id: str = "", step_id: str = ""
-) -> dict | None:
+def _read_des_task_signal(project_id: str = "", step_id: str = "") -> dict | None:
     """Read DES task active signal file before removal.
 
     Tries namespaced file first, falls back to legacy singleton.
@@ -184,9 +180,7 @@ def _read_des_task_signal(
     return None
 
 
-def _remove_des_task_signal(
-    project_id: str = "", step_id: str = ""
-) -> None:
+def _remove_des_task_signal(project_id: str = "", step_id: str = "") -> None:
     """Remove DES task active signal file(s).
 
     Called when SubagentStop fires (DES task completed).
@@ -546,16 +540,12 @@ def handle_subagent_stop() -> int:
 
         # Read task_start_time from signal BEFORE removing it
         task_start_time = ""
-        signal_data = _read_des_task_signal(
-            project_id=project_id, step_id=step_id
-        )
+        signal_data = _read_des_task_signal(project_id=project_id, step_id=step_id)
         if signal_data:
             task_start_time = signal_data.get("created_at", "")
 
         # Clean up DES task signal (subagent finished)
-        _remove_des_task_signal(
-            project_id=project_id, step_id=step_id
-        )
+        _remove_des_task_signal(project_id=project_id, step_id=step_id)
 
         # Delegate to application service
         from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
