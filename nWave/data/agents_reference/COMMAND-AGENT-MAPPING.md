@@ -56,12 +56,10 @@ All DW commands are now configured to automatically trigger specialized agent te
 
 ### Workflow Commands
 
-- **`/nw:start`** → `nWave-core-team-team`, `product-owner` (Luna)
 - **`/nw:roadmap`** → Specified agent (via @agent parameter)
 - **`/nw:execute`** → Specified agent (via @agent parameter)
 - **`/nw:review`** → Specified reviewer agent (via @agent parameter)
-- **`/nw:finalize`** → `devop`, `feature-completion-coordinator`
-- **`/nw:git`** → `feature-completion-coordinator`, `systematic-refactorer`, `product-owner` (Luna)
+- **`/nw:finalize`** → `platform-architect`, `feature-completion-coordinator`
 
 ## Context Isolation Guarantees
 
@@ -101,8 +99,8 @@ All DW commands are now configured to automatically trigger specialized agent te
 
 ## Validation Status
 
-- ✅ **17/17** commands configured for auto-agent activation
-- ✅ **3/17** commands have explicit context-free implementation patterns
+- ✅ **13/13** commands configured for auto-agent activation
+- ✅ **3/13** commands have explicit context-free implementation patterns
 - ✅ **16 specialized agents** available for domain-specific work (including Luna & Eclipse)
 - ✅ **Main instance isolation** preserved across all command flows
 - ✅ **Agent coordination** through shared documentation artifacts

@@ -101,8 +101,8 @@ Uninstall from: ~/.claude/agents/nw/  <-- HARDCODED
 ### Pattern 4: Missing Commands
 CLI commands without slash command equivalents. For each action, check both contexts exist.
 ```
-Terminal: crafter update
-Claude Code: /nw:update  <-- EXISTS?
+Terminal: crafter run
+Claude Code: /nw:execute  <-- EXISTS?
 ```
 
 ## Review Output Schema

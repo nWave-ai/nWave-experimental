@@ -39,7 +39,6 @@ The nWave methodology implements a systematic approach to software development t
 
 ### nWave Core Commands (DW Prefix)
 
-- `/nw:start [project-description]` - Initialize nWave workflow
 - `/nw:discover [product-concept]` - Wave 1: Evidence-based product discovery
 - `/nw:discuss [requirements]` - Wave 2: Business analysis
 - `/nw:design [system-context]` - Wave 3: Architecture design
@@ -97,12 +96,6 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 3. Agents will be available via the standard agent syntax.
 
 ## Usage Examples
-
-### Start a New Greenfield Project
-
-```
-/nw:start "User authentication system with microservices architecture"
-```
 
 ### Execute Full nWave Cycle
 

@@ -134,12 +134,6 @@ agents:
 # Command mappings
 commands:
   # nWave Core Commands
-  start:
-    description: "Initialize nWave workflow"
-    argument_hint: "[project-name] - Optional: --template=[greenfield|brownfield] --scope=[small|medium|large]"
-    agents: ["product-owner"]
-    outputs: ["project_brief", "requirements_outline"]
-
   discover:
     description: "Evidence-based product discovery and market validation"
     argument_hint: "[product-concept] - Optional: --interview-depth=[overview|comprehensive] --output-format=[md|yaml]"
@@ -218,11 +212,6 @@ commands:
     argument_hint: "[diagram-type] - Optional: --format=[mermaid|plantuml|c4] --level=[context|container|component]"
     agents: ["visual-architect"]
     outputs: ["updated_diagrams", "visual_architecture"]
-
-  git:
-    description: "Git workflow operations"
-    argument_hint: "[operation] - Options: commit, push, status, branch, merge - Optional: --message='commit msg'"
-    outputs: ["git_status", "commit_history"]
 
   refactor:
     description: "Systematic refactoring with Mikado Method"
