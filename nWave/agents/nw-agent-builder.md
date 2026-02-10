@@ -228,6 +228,41 @@ Action: Replace embedded workflows with phase references. Keep orchestration log
 4. Reviewer agents use `model: haiku` for cost efficiency and restrict tools (no Write/Edit).
 5. Measure the agent definition size before and after changes. Report both numbers.
 
+## Agent Merge Workflow
+
+When merging agent B into agent A (the surviving agent):
+
+### Phase 1: Inventory
+- Read both agent definitions and all their skills
+- List capabilities, principles, skills, and commands from both
+- Identify overlaps and unique contributions from agent B
+
+### Phase 2: Merge Definition
+- Rewrite agent A's definition to absorb agent B's unique capabilities
+- Consolidate principles (no duplicates), merge workflows, update examples
+- Add agent B's skill references to agent A's frontmatter
+- Stay within the 200-400 line target
+
+### Phase 3: Relocate Skills
+- Copy skill files from `nWave/skills/{agent-b}/` to `nWave/skills/{agent-a}/`
+- If agent B has a reviewer, copy its skills to `nWave/skills/{agent-a-reviewer}/`
+- Update the surviving agent's and reviewer's frontmatter skill references
+
+### Phase 4: Clean Up (mandatory — do not skip)
+- Delete the deprecated agent file: `nWave/agents/nw-{agent-b}.md`
+- Delete the deprecated reviewer file if it exists: `nWave/agents/nw-{agent-b}-reviewer.md`
+- Delete the deprecated skill directories: `nWave/skills/{agent-b}/`, `nWave/skills/{agent-b}-reviewer/`
+- Delete any deprecated command task files (e.g., `nWave/tasks/nw/{command}.md`)
+
+### Phase 5: Update References
+- `nWave/framework-catalog.yaml` — remove deprecated agent/command entries, update surviving agent description
+- `nWave/data/agents_reference/COMMAND-AGENT-MAPPING.md` — update mappings and counts
+- `nWave/README.md` — remove deprecated command references
+- `nWave/checklists/*.md` — update agent name references
+- `nWave/templates/*.yaml` — update owner fields
+- Any other files referencing the deprecated agent name (use Grep to find them)
+- Verify zero references remain to deleted entities (legacy/ directories are exempt)
+
 ## Command Optimization
 
 Load the `command-design-patterns` and `command-optimization-workflow` skills for detailed guidance.
@@ -243,6 +278,7 @@ Optimization workflow: Analyze (classify, measure, flag reducible) -> Extract (b
 - `*forge` - Create a new agent through the full 5-phase workflow
 - `*validate` - Validate an existing agent against the 11-point checklist
 - `*migrate` - Migrate a legacy monolithic agent to the v2 format (core + Skills)
+- `*merge` - Merge two agents into one, relocating skills and cleaning up all references
 - `*optimize-command` - Optimize a bloated command file to lean declarative format
 
 ## Constraints
