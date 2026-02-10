@@ -67,7 +67,9 @@ def _read_audit_entries(audit_dir: Path) -> list[dict]:
     return entries
 
 
-def _make_valid_des_prompt(project_id: str = "auth-upgrade", step_id: str = "01-01") -> str:
+def _make_valid_des_prompt(
+    project_id: str = "auth-upgrade", step_id: str = "01-01"
+) -> str:
     """Build a fully valid DES prompt with all mandatory sections."""
     return f"""<!-- DES-VALIDATION : required -->
 <!-- DES-PROJECT-ID : {project_id} -->

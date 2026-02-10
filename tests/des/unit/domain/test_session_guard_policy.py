@@ -6,7 +6,7 @@ unless a DES-monitored subagent is currently running.
 
 import pytest
 
-from des.domain.session_guard_policy import GuardResult, SessionGuardPolicy
+from des.domain.session_guard_policy import SessionGuardPolicy
 
 
 class TestSessionGuardPolicy:

@@ -4,10 +4,6 @@ Tests that the shared path resolver produces deterministic, consistent paths
 for both writer and reader.
 """
 
-from pathlib import Path
-
-import pytest
-
 from des.domain.audit_log_path_resolver import AuditLogPathResolver
 
 

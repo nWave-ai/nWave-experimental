@@ -13,7 +13,6 @@ import pytest
 
 from des.domain.des_marker_parser import DesMarkers
 from des.domain.marker_completeness_policy import (
-    CompletenessResult,
     MarkerCompletenessPolicy,
 )
 

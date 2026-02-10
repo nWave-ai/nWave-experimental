@@ -124,7 +124,9 @@ def format_terminal_output(
         lines.append("")
         lines.append(f"    📦 Agent files: {result.agent_file_count}")
         lines.append(f"    📦 Command files: {result.command_file_count}")
-        lines.append(f"    📦 Skill files: {result.skill_file_count} in {result.skill_group_count} groups")
+        lines.append(
+            f"    📦 Skill files: {result.skill_file_count} in {result.skill_group_count} groups"
+        )
         des_icon = "✅" if result.des_installed else "❌"
         lines.append(f"    🔒 DES module: {des_icon}")
         manifest_icon = "✅" if result.manifest_exists else "❌"

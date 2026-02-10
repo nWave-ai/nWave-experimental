@@ -43,12 +43,12 @@ from des.adapters.driven.time.system_time import SystemTimeProvider
 from des.adapters.driven.validation.git_scope_checker import GitScopeChecker
 from des.application.pre_tool_use_service import PreToolUseService
 from des.application.subagent_stop_service import SubagentStopService
-from des.domain.des_enforcement_policy import DesEnforcementPolicy
-from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
-from des.domain.session_guard_policy import SessionGuardPolicy
 from des.application.validator import TemplateValidator
+from des.domain.des_enforcement_policy import DesEnforcementPolicy
 from des.domain.des_marker_parser import DesMarkerParser
+from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
 from des.domain.max_turns_policy import MaxTurnsPolicy
+from des.domain.session_guard_policy import SessionGuardPolicy
 from des.domain.step_completion_validator import StepCompletionValidator
 from des.domain.tdd_schema import get_tdd_schema
 from des.ports.driven_ports.audit_log_writer import AuditEvent

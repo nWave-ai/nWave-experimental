@@ -443,14 +443,18 @@ class TestVerifyNwaveLogging:
         config_dir = tmp_path / ".claude"
         commands_dir = config_dir / "commands" / "nw"
         agents_dir = config_dir / "agents" / "nw"
+        skills_dir = config_dir / "skills" / "nw" / "researcher"
+        des_dir = config_dir / "lib" / "python" / "des"
         commands_dir.mkdir(parents=True)
         agents_dir.mkdir(parents=True)
+        skills_dir.mkdir(parents=True)
+        des_dir.mkdir(parents=True)
 
         # Create essential files
         essential_files = [
             "commit.md",
             "review.md",
-            "devop.md",
+            "devops.md",
             "discuss.md",
             "design.md",
             "distill.md",
@@ -458,6 +462,10 @@ class TestVerifyNwaveLogging:
         ]
         for f in essential_files:
             (commands_dir / f).write_text(f"# {f}")
+
+        # Create skills and DES files for verification
+        (skills_dir / "research-methodology.md").write_text("# skill")
+        (des_dir / "__init__.py").write_text("")
 
         # Create manifest
         (config_dir / "nwave-manifest.txt").write_text("Manifest")

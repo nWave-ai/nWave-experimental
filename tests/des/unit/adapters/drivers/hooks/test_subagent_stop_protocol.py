@@ -199,8 +199,16 @@ class TestSubagentStopWithClaudeCodeProtocol:
         # Initialize git repo and create a commit with Step-ID trailer
         # (required because cwd is now passed for commit verification)
         sp.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
-        sp.run(["git", "config", "user.email", "test@test.com"], cwd=str(tmp_path), capture_output=True)
-        sp.run(["git", "config", "user.name", "Test"], cwd=str(tmp_path), capture_output=True)
+        sp.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        sp.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
         sp.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         sp.run(
             ["git", "commit", "-m", "feat: implement step\n\nStep-ID: 01-01"],

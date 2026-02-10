@@ -7,9 +7,7 @@ to detect steps implemented without DES monitoring.
 import pytest
 
 from des.domain.deliver_integrity_verifier import (
-    DeliverIntegrityResult,
     DeliverIntegrityVerifier,
-    StepIntegrity,
 )
 
 

@@ -9,7 +9,7 @@ Tests the step-id based enforcement rule:
 
 import pytest
 
-from des.domain.des_enforcement_policy import DesEnforcementPolicy, EnforcementResult
+from des.domain.des_enforcement_policy import DesEnforcementPolicy
 
 
 class TestDesEnforcementPolicy:

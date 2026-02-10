@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from des.domain.audit_log_path_resolver import AuditLogPathResolver
 from des.ports.driven_ports.audit_log_reader import AuditLogReader
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class JsonlAuditLogReader(AuditLogReader):
@@ -22,7 +25,9 @@ class JsonlAuditLogReader(AuditLogReader):
     Uses shared AuditLogPathResolver for consistent path resolution with writer.
     """
 
-    def __init__(self, log_dir: str | Path | None = None, cwd: str | Path | None = None) -> None:
+    def __init__(
+        self, log_dir: str | Path | None = None, cwd: str | Path | None = None
+    ) -> None:
         resolved = AuditLogPathResolver(log_dir=log_dir, cwd=cwd).resolve()
         self._log_dir = resolved
 

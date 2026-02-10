@@ -203,12 +203,8 @@ class TestWriteEditGuardsInstalled:
         THEN a Write matcher hook exists
         """
         config = _install_hooks(install_context)
-        matchers = [
-            h.get("matcher") for h in config["hooks"]["PreToolUse"]
-        ]
-        assert "Write" in matchers, (
-            f"Write guard hook not found. Matchers: {matchers}"
-        )
+        matchers = [h.get("matcher") for h in config["hooks"]["PreToolUse"]]
+        assert "Write" in matchers, f"Write guard hook not found. Matchers: {matchers}"
 
     def test_edit_hook_installed(self, install_context):
         """
@@ -217,12 +213,8 @@ class TestWriteEditGuardsInstalled:
         THEN an Edit matcher hook exists
         """
         config = _install_hooks(install_context)
-        matchers = [
-            h.get("matcher") for h in config["hooks"]["PreToolUse"]
-        ]
-        assert "Edit" in matchers, (
-            f"Edit guard hook not found. Matchers: {matchers}"
-        )
+        matchers = [h.get("matcher") for h in config["hooks"]["PreToolUse"]]
+        assert "Edit" in matchers, f"Edit guard hook not found. Matchers: {matchers}"
 
     def test_write_hook_has_fast_path(self, install_context):
         """
@@ -232,8 +224,7 @@ class TestWriteEditGuardsInstalled:
         """
         config = _install_hooks(install_context)
         write_hook = next(
-            h for h in config["hooks"]["PreToolUse"]
-            if h.get("matcher") == "Write"
+            h for h in config["hooks"]["PreToolUse"] if h.get("matcher") == "Write"
         )
         cmd = write_hook["hooks"][0]["command"]
         assert "test -f" in cmd, f"Write hook missing fast-path: {cmd}"
@@ -247,8 +238,7 @@ class TestWriteEditGuardsInstalled:
         """
         config = _install_hooks(install_context)
         edit_hook = next(
-            h for h in config["hooks"]["PreToolUse"]
-            if h.get("matcher") == "Edit"
+            h for h in config["hooks"]["PreToolUse"] if h.get("matcher") == "Edit"
         )
         cmd = edit_hook["hooks"][0]["command"]
         assert "test -f" in cmd, f"Edit hook missing fast-path: {cmd}"

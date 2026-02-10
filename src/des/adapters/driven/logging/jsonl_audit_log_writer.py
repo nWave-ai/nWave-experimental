@@ -19,10 +19,14 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from des.domain.audit_log_path_resolver import AuditLogPathResolver
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class JsonlAuditLogWriter(AuditLogWriter):
@@ -32,7 +36,9 @@ class JsonlAuditLogWriter(AuditLogWriter):
     File format: audit-YYYY-MM-DD.log in the configured log directory.
     """
 
-    def __init__(self, log_dir: str | Path | None = None, cwd: str | Path | None = None) -> None:
+    def __init__(
+        self, log_dir: str | Path | None = None, cwd: str | Path | None = None
+    ) -> None:
         """Initialize with a log directory.
 
         Log directory priority (highest to lowest):
