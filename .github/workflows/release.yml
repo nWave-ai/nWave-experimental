@@ -452,6 +452,18 @@ jobs:
             --exclude 'test-des-manual/' \
             ./ nwave-target/
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Build IDE bundle into nwave-target
+        run: |
+          pip install pyyaml
+          PYTHONPATH=tools python3 tools/core/build_ide_bundle.py \
+            --source-dir nWave \
+            --output-dir nwave-target/dist/ide \
+            --verbose
+
       - name: Read nwave public version from crafter-ai
         id: nwave_version
         run: |
@@ -522,14 +534,7 @@ jobs:
           python-version: ${{ env.PYTHON_DEFAULT }}
 
       - name: Install build tools
-        run: pip install build twine pyyaml
-
-      - name: Build IDE bundle
-        run: |
-          PYTHONPATH=tools python3 tools/core/build_ide_bundle.py \
-            --source-dir nWave \
-            --output-dir dist/ide \
-            --verbose
+        run: pip install build twine
 
       - name: Build wheel and sdist
         run: python -m build
