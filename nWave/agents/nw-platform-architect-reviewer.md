@@ -7,7 +7,7 @@ maxTurns: 30
 skills:
   - platform-architect-reviewer/critique-dimensions
   - platform-architect-reviewer/review-output-format
-  - devop-reviewer/review-criteria
+  - platform-architect-reviewer/review-criteria
 ---
 
 # nw-platform-architect-reviewer
