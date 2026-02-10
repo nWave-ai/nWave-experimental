@@ -15,8 +15,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 
 def _invoke_hook(hook_type: str, stdin_data: str) -> tuple[int, dict]:
     """Invoke hook adapter as subprocess, matching Claude Code protocol."""
@@ -108,9 +106,7 @@ class TestTaskStartTimeFromSignal:
             "des.adapters.drivers.hooks.claude_code_hook_adapter.DES_SESSION_DIR",
             signal_dir,
         ):
-            result = _read_des_task_signal(
-                project_id="my-project", step_id="01-03"
-            )
+            result = _read_des_task_signal(project_id="my-project", step_id="01-03")
 
         assert result is not None
         assert result["created_at"] == "2026-02-10T14:30:00+00:00"
@@ -133,16 +129,17 @@ class TestTaskStartTimeFromSignal:
         }
         legacy_file.write_text(json.dumps(legacy_data))
 
-        with patch(
-            "des.adapters.drivers.hooks.claude_code_hook_adapter.DES_SESSION_DIR",
-            signal_dir,
-        ), patch(
-            "des.adapters.drivers.hooks.claude_code_hook_adapter.DES_TASK_ACTIVE_FILE",
-            legacy_file,
+        with (
+            patch(
+                "des.adapters.drivers.hooks.claude_code_hook_adapter.DES_SESSION_DIR",
+                signal_dir,
+            ),
+            patch(
+                "des.adapters.drivers.hooks.claude_code_hook_adapter.DES_TASK_ACTIVE_FILE",
+                legacy_file,
+            ),
         ):
-            result = _read_des_task_signal(
-                project_id="my-project", step_id="01-03"
-            )
+            result = _read_des_task_signal(project_id="my-project", step_id="01-03")
 
         assert result is not None
         assert result["created_at"] == "2026-02-10T14:30:00+00:00"
@@ -155,15 +152,16 @@ class TestTaskStartTimeFromSignal:
 
         nonexistent_dir = Path("/tmp/nonexistent-des-dir-test")
         nonexistent = Path("/tmp/nonexistent-des-task-active-test")
-        with patch(
-            "des.adapters.drivers.hooks.claude_code_hook_adapter.DES_SESSION_DIR",
-            nonexistent_dir,
-        ), patch(
-            "des.adapters.drivers.hooks.claude_code_hook_adapter.DES_TASK_ACTIVE_FILE",
-            nonexistent,
+        with (
+            patch(
+                "des.adapters.drivers.hooks.claude_code_hook_adapter.DES_SESSION_DIR",
+                nonexistent_dir,
+            ),
+            patch(
+                "des.adapters.drivers.hooks.claude_code_hook_adapter.DES_TASK_ACTIVE_FILE",
+                nonexistent,
+            ),
         ):
-            result = _read_des_task_signal(
-                project_id="my-project", step_id="01-03"
-            )
+            result = _read_des_task_signal(project_id="my-project", step_id="01-03")
 
         assert result is None

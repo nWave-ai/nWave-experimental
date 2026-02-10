@@ -12,10 +12,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from des.domain.log_integrity_validator import IntegrityResult, LogIntegrityValidator
+from des.domain.log_integrity_validator import LogIntegrityValidator
 from des.domain.phase_event import PhaseEvent
 from des.domain.tdd_schema import TDDSchema
 from des.ports.driven_ports.time_provider_port import TimeProvider
+
 
 # Fixed "now" for deterministic timestamp checks
 FIXED_NOW = "2026-02-10T15:00:00+00:00"
@@ -227,9 +228,7 @@ class TestAccumulation:
 class TestEmptyEvents:
     """UT-10: Empty events list produces no warnings."""
 
-    def test_empty_events_no_warnings(
-        self, validator: LogIntegrityValidator
-    ) -> None:
+    def test_empty_events_no_warnings(self, validator: LogIntegrityValidator) -> None:
         result = validator.validate(step_id="01-01", all_events=[])
         assert result.warnings == []
 

@@ -7,12 +7,10 @@ reporting errors and returning appropriate exit codes.
 
 import subprocess
 import sys
-import textwrap
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 import yaml
+
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "validation" / "validate_source_frontmatter.py"
@@ -98,11 +96,15 @@ class TestValidateFrontmatterLogic:
         """Agent with name, description, model passes validation."""
         from scripts.validation.validate_source_frontmatter import validate_project
 
-        self._make_agent_file(tmp_path, "nw-test-agent", {
-            "name": "nw-test-agent",
-            "description": "A test agent",
-            "model": "inherit",
-        })
+        self._make_agent_file(
+            tmp_path,
+            "nw-test-agent",
+            {
+                "name": "nw-test-agent",
+                "description": "A test agent",
+                "model": "inherit",
+            },
+        )
         # Ensure commands dir exists (empty is fine)
         (tmp_path / "nWave" / "tasks" / "nw").mkdir(parents=True, exist_ok=True)
 
@@ -113,10 +115,14 @@ class TestValidateFrontmatterLogic:
         """Agent without description field must produce an error."""
         from scripts.validation.validate_source_frontmatter import validate_project
 
-        self._make_agent_file(tmp_path, "nw-bad", {
-            "name": "nw-bad",
-            "model": "inherit",
-        })
+        self._make_agent_file(
+            tmp_path,
+            "nw-bad",
+            {
+                "name": "nw-bad",
+                "model": "inherit",
+            },
+        )
         (tmp_path / "nWave" / "tasks" / "nw").mkdir(parents=True, exist_ok=True)
 
         errors = validate_project(tmp_path)
@@ -127,10 +133,14 @@ class TestValidateFrontmatterLogic:
         """Agent without model field must produce an error."""
         from scripts.validation.validate_source_frontmatter import validate_project
 
-        self._make_agent_file(tmp_path, "nw-nomodel", {
-            "name": "nw-nomodel",
-            "description": "Has desc",
-        })
+        self._make_agent_file(
+            tmp_path,
+            "nw-nomodel",
+            {
+                "name": "nw-nomodel",
+                "description": "Has desc",
+            },
+        )
         (tmp_path / "nWave" / "tasks" / "nw").mkdir(parents=True, exist_ok=True)
 
         errors = validate_project(tmp_path)
@@ -154,9 +164,13 @@ class TestValidateFrontmatterLogic:
         """Command with description field passes validation."""
         from scripts.validation.validate_source_frontmatter import validate_project
 
-        self._make_command_file(tmp_path, "test-cmd", {
-            "description": "A test command",
-        })
+        self._make_command_file(
+            tmp_path,
+            "test-cmd",
+            {
+                "description": "A test command",
+            },
+        )
         # Ensure agents dir exists (empty is fine)
         (tmp_path / "nWave" / "agents").mkdir(parents=True, exist_ok=True)
 
@@ -167,9 +181,13 @@ class TestValidateFrontmatterLogic:
         """Command without description field must produce an error."""
         from scripts.validation.validate_source_frontmatter import validate_project
 
-        self._make_command_file(tmp_path, "bad-cmd", {
-            "title": "not description",
-        })
+        self._make_command_file(
+            tmp_path,
+            "bad-cmd",
+            {
+                "title": "not description",
+            },
+        )
         (tmp_path / "nWave" / "agents").mkdir(parents=True, exist_ok=True)
 
         errors = validate_project(tmp_path)

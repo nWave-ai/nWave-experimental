@@ -10,15 +10,33 @@ from pathlib import Path
 import pytest
 import yaml
 
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 COMMANDS_DIR = PROJECT_ROOT / "nWave" / "tasks" / "nw"
 CATALOG_PATH = PROJECT_ROOT / "nWave" / "framework-catalog.yaml"
 
-EXPECTED_COMMANDS = sorted([
-    "deliver", "design", "devops", "diagram", "discover", "discuss",
-    "distill", "document", "execute", "finalize", "forge", "mikado",
-    "mutation-test", "refactor", "research", "review", "roadmap", "root-why",
-])
+EXPECTED_COMMANDS = sorted(
+    [
+        "deliver",
+        "design",
+        "devops",
+        "diagram",
+        "discover",
+        "discuss",
+        "distill",
+        "document",
+        "execute",
+        "finalize",
+        "forge",
+        "mikado",
+        "mutation-test",
+        "refactor",
+        "research",
+        "review",
+        "roadmap",
+        "root-why",
+    ]
+)
 
 
 def _parse_frontmatter(filepath: Path) -> dict | None:
@@ -97,7 +115,7 @@ class TestCommandFrontmatterAcceptance:
                     f"{file_name}: expected '{expected_desc}', got '{actual_desc}'"
                 )
 
-        assert not mismatches, f"Description mismatches:\n" + "\n".join(mismatches)
+        assert not mismatches, "Description mismatches:\n" + "\n".join(mismatches)
 
     def test_catalog_commands_with_argument_hint_have_it_in_frontmatter(self):
         """Commands with argument_hint in catalog must have argument-hint in frontmatter."""
@@ -126,8 +144,8 @@ class TestCommandFrontmatterAcceptance:
                     f"{file_name}: expected '{expected_hint}', got '{actual_hint}'"
                 )
 
-        assert not missing_hints, (
-            f"argument-hint mismatches:\n" + "\n".join(missing_hints)
+        assert not missing_hints, "argument-hint mismatches:\n" + "\n".join(
+            missing_hints
         )
 
 
@@ -166,9 +184,7 @@ class TestFrontmatterStructure:
         assert isinstance(fm["description"], str), (
             f"{cmd_name}.md description is not a string"
         )
-        assert len(fm["description"]) > 0, (
-            f"{cmd_name}.md description is empty"
-        )
+        assert len(fm["description"]) > 0, f"{cmd_name}.md description is empty"
 
     @pytest.mark.parametrize("cmd_name", EXPECTED_COMMANDS)
     def test_frontmatter_preserved_original_content(self, cmd_name):
