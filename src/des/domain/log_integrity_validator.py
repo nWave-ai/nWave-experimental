@@ -126,22 +126,25 @@ class LogIntegrityValidator:
         all_events: list[PhaseEvent],
         task_start_time: str | None,
     ) -> list[str]:
-        """Check for implausible timestamps in events for this step."""
-        if not task_start_time:
-            return []
+        """Check for implausible timestamps in events for this step.
 
-        try:
-            start_dt = datetime.fromisoformat(task_start_time)
-        except (ValueError, TypeError):
-            return []
-
+        Future-timestamp detection always runs (needs only now()).
+        Pre-task detection runs only when task_start_time is available.
+        """
         if self._time_provider:
             now = self._time_provider.now_utc()
         else:
             now = datetime.now(timezone.utc)
-        # Ensure timezone-aware for comparison
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
+
+        start_dt = None
+        if task_start_time:
+            try:
+                start_dt = datetime.fromisoformat(task_start_time)
+            except (ValueError, TypeError):
+                pass
+
         warnings: list[str] = []
         for event in all_events:
             if event.step_id != step_id:
@@ -154,7 +157,7 @@ class LogIntegrityValidator:
                 warnings.append(
                     f"Future timestamp on {event.phase_name}: {event.timestamp}"
                 )
-            elif event_dt < start_dt:
+            elif start_dt and event_dt < start_dt:
                 warnings.append(
                     f"Pre-task timestamp on {event.phase_name}: {event.timestamp}"
                 )

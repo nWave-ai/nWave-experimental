@@ -127,8 +127,16 @@ DES_DELIVER_SESSION_FILE = DES_SESSION_DIR / "deliver-session.json"
 DES_TASK_ACTIVE_FILE = DES_SESSION_DIR / "des-task-active"
 
 
-def _create_des_task_signal(step_id: str = "") -> None:
-    """Create DES task active signal file.
+def _signal_file_for(project_id: str, step_id: str) -> Path:
+    """Return the namespaced signal file path for a project/step pair."""
+    safe_name = f"{project_id}--{step_id}".replace("/", "_")
+    return DES_SESSION_DIR / f"des-task-active-{safe_name}"
+
+
+def _create_des_task_signal(
+    step_id: str = "", project_id: str = ""
+) -> None:
+    """Create DES task active signal file, namespaced by project/step.
 
     Called when PreToolUse allows a DES-validated Task.
     Indicates a DES subagent is currently running.
@@ -140,21 +148,35 @@ def _create_des_task_signal(step_id: str = "") -> None:
         signal = json.dumps(
             {
                 "step_id": step_id,
+                "project_id": project_id,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
+        signal_file = _signal_file_for(project_id, step_id)
+        signal_file.write_text(signal)
+        # Also write legacy singleton for backward compatibility
         DES_TASK_ACTIVE_FILE.write_text(signal)
     except Exception:
         pass  # Signal creation must never break the hook
 
 
-def _read_des_task_signal() -> dict | None:
+def _read_des_task_signal(
+    project_id: str = "", step_id: str = ""
+) -> dict | None:
     """Read DES task active signal file before removal.
 
+    Tries namespaced file first, falls back to legacy singleton.
+
     Returns:
-        Signal data dict with step_id and created_at, or None if not readable.
+        Signal data dict with step_id, project_id, and created_at, or None.
     """
     try:
+        # Try namespaced signal first (race-condition resistant)
+        if project_id and step_id:
+            namespaced = _signal_file_for(project_id, step_id)
+            if namespaced.exists():
+                return json.loads(namespaced.read_text())
+        # Fallback to legacy singleton
         if DES_TASK_ACTIVE_FILE.exists():
             return json.loads(DES_TASK_ACTIVE_FILE.read_text())
     except Exception:
@@ -162,12 +184,19 @@ def _read_des_task_signal() -> dict | None:
     return None
 
 
-def _remove_des_task_signal() -> None:
-    """Remove DES task active signal file.
+def _remove_des_task_signal(
+    project_id: str = "", step_id: str = ""
+) -> None:
+    """Remove DES task active signal file(s).
 
     Called when SubagentStop fires (DES task completed).
+    Removes both namespaced and legacy singleton files.
     """
     try:
+        if project_id and step_id:
+            namespaced = _signal_file_for(project_id, step_id)
+            if namespaced.exists():
+                namespaced.unlink()
         if DES_TASK_ACTIVE_FILE.exists():
             DES_TASK_ACTIVE_FILE.unlink()
     except Exception:
@@ -230,13 +259,18 @@ def handle_pre_tool_use() -> int:
         if decision.action == "allow":
             # Create DES task signal if this is a DES-validated task
             if "DES-VALIDATION" in prompt:
-                # Extract step-id from DES markers for signal context
+                # Extract step-id and project-id from DES markers
                 step_id_marker = ""
+                project_id_marker = ""
                 parser = DesMarkerParser()
                 markers = parser.parse(prompt)
                 if markers.step_id:
                     step_id_marker = markers.step_id
-                _create_des_task_signal(step_id=step_id_marker)
+                if markers.project_id:
+                    project_id_marker = markers.project_id
+                _create_des_task_signal(
+                    step_id=step_id_marker, project_id=project_id_marker
+                )
             response = {"decision": "allow"}
             print(json.dumps(response))
             return 0
@@ -512,12 +546,16 @@ def handle_subagent_stop() -> int:
 
         # Read task_start_time from signal BEFORE removing it
         task_start_time = ""
-        signal_data = _read_des_task_signal()
+        signal_data = _read_des_task_signal(
+            project_id=project_id, step_id=step_id
+        )
         if signal_data:
             task_start_time = signal_data.get("created_at", "")
 
         # Clean up DES task signal (subagent finished)
-        _remove_des_task_signal()
+        _remove_des_task_signal(
+            project_id=project_id, step_id=step_id
+        )
 
         # Delegate to application service
         from des.ports.driver_ports.subagent_stop_port import SubagentStopContext

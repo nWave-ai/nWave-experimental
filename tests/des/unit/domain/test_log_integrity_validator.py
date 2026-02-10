@@ -167,16 +167,27 @@ class TestTimestampCheck:
         assert len(result.warnings) == 1
         assert "Pre-task timestamp" in result.warnings[0]
 
-    def test_no_task_start_time_skips_time_checks(
+    def test_no_task_start_time_still_detects_future_timestamps(
         self, validator: LogIntegrityValidator
     ) -> None:
+        """Future check runs without task_start_time (Causa B fix)."""
         events = [
             _make_event(timestamp="2099-01-01T00:00:00+00:00"),
-            _make_event(step_id="01-04", timestamp=TS_01),
         ]
         result = validator.validate(step_id="01-01", all_events=events)
-        # Only phase name check runs; time checks skipped
-        assert all("timestamp" not in w.lower() for w in result.warnings)
+        assert len(result.warnings) == 1
+        assert "Future timestamp" in result.warnings[0]
+
+    def test_no_task_start_time_skips_pre_task_and_foreign_checks(
+        self, validator: LogIntegrityValidator
+    ) -> None:
+        """Pre-task and foreign checks still require task_start_time."""
+        events = [
+            _make_event(timestamp=TS_BEFORE),  # would be pre-task if start known
+            _make_event(step_id="01-04", timestamp=TS_01),  # foreign
+        ]
+        result = validator.validate(step_id="01-01", all_events=events)
+        assert all("Pre-task" not in w for w in result.warnings)
         assert all("Foreign" not in w for w in result.warnings)
 
 
