@@ -25,6 +25,7 @@ Protocol:
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -115,15 +116,25 @@ def create_subagent_stop_service() -> SubagentStopService:
     )
 
 
-def _log_hook_invoked(handler: str, summary: dict | None = None) -> None:
+def _log_hook_invoked(
+    handler: str, summary: dict | None = None, hook_id: str | None = None
+) -> None:
     """Log a HOOK_INVOKED diagnostic event at handler entry.
 
     This confirms the hook was actually called by Claude Code.
     Without this, silent passthrough is indistinguishable from hook-not-firing.
+
+    Args:
+        handler: Name of the handler being invoked.
+        summary: Optional dict of input summary fields.
+        hook_id: Optional UUID4 correlation ID. When provided, included in event data.
+            When None, the field is omitted (backward compatible).
     """
     try:
         audit_writer = _create_audit_writer()
         data: dict = {"handler": handler}
+        if hook_id is not None:
+            data["hook_id"] = hook_id
         if summary:
             data["input_summary"] = summary
         audit_writer.log_event(
@@ -223,6 +234,8 @@ def handle_pre_tool_use() -> int:
         2 if validation fails (block)
     """
     try:
+        hook_id = str(uuid.uuid4())
+
         # Read JSON from stdin
         input_data = sys.stdin.read()
 
@@ -247,6 +260,7 @@ def handle_pre_tool_use() -> int:
                 "subagent_type": tool_input.get("subagent_type"),
                 "has_max_turns": tool_input.get("max_turns") is not None,
             },
+            hook_id=hook_id,
         )
 
         # Extract protocol fields
@@ -508,6 +522,8 @@ def handle_subagent_stop() -> int:
         2 if gate fails (BLOCKS orchestrator)
     """
     try:
+        hook_id = str(uuid.uuid4())
+
         input_data = sys.stdin.read()
 
         # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
@@ -530,6 +546,7 @@ def handle_subagent_stop() -> int:
                 "agent_id": hook_input.get("agent_id"),
                 "has_transcript": hook_input.get("agent_transcript_path") is not None,
             },
+            hook_id=hook_id,
         )
 
         # Resolve DES context from either protocol
@@ -548,6 +565,7 @@ def handle_subagent_stop() -> int:
                     "transcript_path": hook_input.get("agent_transcript_path"),
                     "exit_code": exit_code,
                 },
+                hook_id=hook_id,
             )
             print(json.dumps(response))
             return exit_code
@@ -624,6 +642,8 @@ def handle_post_tool_use() -> int:
         0 always (PostToolUse should never block)
     """
     try:
+        hook_id = str(uuid.uuid4())
+
         # Read JSON from stdin
         input_data = sys.stdin.read()
 
@@ -645,6 +665,7 @@ def handle_post_tool_use() -> int:
             {
                 "tool_name": hook_input.get("tool_name"),
             },
+            hook_id=hook_id,
         )
 
         # Check if the just-completed Task was a DES task (had DES markers)
@@ -701,6 +722,8 @@ def handle_pre_write() -> int:
         2 if write is blocked (source file during deliver without DES task)
     """
     try:
+        hook_id = str(uuid.uuid4())
+
         input_data = sys.stdin.read()
 
         if not input_data or not input_data.strip():
@@ -716,6 +739,15 @@ def handle_pre_write() -> int:
 
         # Extract file path from tool_input
         tool_input = hook_input.get("tool_input", {})
+
+        # Diagnostic: confirm hook was invoked
+        _log_hook_invoked(
+            "pre_write",
+            {
+                "file_path": tool_input.get("file_path"),
+            },
+            hook_id=hook_id,
+        )
         file_path = tool_input.get("file_path", "")
 
         # Check session and signal state
