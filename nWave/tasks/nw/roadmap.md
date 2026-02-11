@@ -22,71 +22,53 @@ Output: `docs/feature/{project-id}/roadmap.yaml`
 /nw:roadmap @nw-product-owner "Implement multi-tenant support"
 ```
 
-## Workflow: 3-Step Pipeline
+## Execution Steps
 
-### Step 1: Parse and Scaffold
+You MUST execute these 3 steps in order. Do NOT skip any step.
 
-Parse parameters:
+**Step 1 — Parse parameters:**
 1. Agent name (after @, validated against agent registry)
 2. Goal description (quoted string)
-3. Derive project-id from goal (kebab-case, e.g., "Migrate to OAuth2" -> "migrate-to-oauth2")
+3. Derive project-id from goal (kebab-case, e.g., "Migrate to OAuth2" → "migrate-to-oauth2")
 
-Run the CLI to create a skeleton with TODO placeholders:
+**Step 2 — Scaffold skeleton via CLI (mandatory, do this BEFORE invoking the agent):**
 
+Run this Bash command now:
 ```bash
-python -m des.cli.roadmap init \
+PYTHONPATH=~/.claude/lib/python python3 -m des.cli.roadmap init \
   --project-id {project-id} \
   --goal "{goal-description}" \
   --output docs/feature/{project-id}/roadmap.yaml
 ```
+For complex projects add: `--phases 3 --steps "01:3,02:2,03:1"`
 
-If the init command exits non-zero, report the error and stop.
+If exit code is non-zero, stop and report the error. Do NOT write the file manually.
 
-For complex projects, estimate phase/step counts and pass them:
+**Step 3 — Invoke agent to fill the skeleton:**
 
-```bash
-python -m des.cli.roadmap init \
-  --project-id {project-id} \
-  --goal "{goal-description}" \
-  --phases 3 --steps "01:3,02:2,03:1" \
-  --output docs/feature/{project-id}/roadmap.yaml
-```
-
-### Step 2: Agent Fills Content
-
-Invoke the agent via Task tool with:
-
+The skeleton file now exists with TODO placeholders. Invoke the agent via Task tool:
 ```
 @{agent-name}
 
 Fill in the roadmap skeleton at docs/feature/{project-id}/roadmap.yaml.
+Replace every TODO with real content. Do NOT change the YAML structure
+(phases, steps, keys). Fill in: names, descriptions, acceptance criteria,
+time estimates, dependencies, and implementation_scope paths.
 
-The file has TODO placeholders — replace every TODO with real content.
 Goal: {goal-description}
-
-Do not change the YAML structure. Fill in: descriptions, acceptance criteria,
-time estimates, dependencies, and step details.
 ```
 
-**Context files to pass** (if available):
-- Measurement baseline (inline from orchestrator)
-- docs/refactoring/mikado-graph.md (if Mikado methodology)
-- Relevant existing documentation
+Context to pass (if available): measurement baseline, mikado-graph.md, existing docs.
 
-### Step 3: Validate (Hard Gate)
+**Step 4 — Validate via CLI (hard gate, mandatory):**
 
-After the agent completes, run validation:
-
+Run this Bash command now:
 ```bash
-python -m des.cli.roadmap validate docs/feature/{project-id}/roadmap.yaml
+PYTHONPATH=~/.claude/lib/python python3 -m des.cli.roadmap validate docs/feature/{project-id}/roadmap.yaml
 ```
-
-Exit code handling:
-- **0**: Validation passed. Report success.
-- **1**: Validation errors found. Print the error output and stop. Do not proceed.
-- **2**: Usage error. Report and stop.
-
-This is a hard gate. If validation fails, the roadmap is not ready for execution.
+- Exit 0 → report success, roadmap is ready
+- Exit 1 → print errors, STOP, do NOT proceed to execution
+- Exit 2 → usage error, STOP
 
 ## Invocation Principles
 
@@ -99,11 +81,11 @@ For performance roadmaps, include measurement context inline so the agent can va
 
 ## Success Criteria
 
-### Dispatcher (you)
+### Dispatcher (you) — all 4 must be checked
 - [ ] Parameters parsed (agent name, goal, project-id)
-- [ ] Skeleton scaffolded via `des.cli.roadmap init`
-- [ ] Agent invoked to fill TODO placeholders
-- [ ] Validation passed via `des.cli.roadmap validate`
+- [ ] `des.cli.roadmap init` executed via Bash (exit 0)
+- [ ] Agent invoked via Task tool to fill TODO placeholders
+- [ ] `des.cli.roadmap validate` executed via Bash (exit 0)
 
 ### Agent output (reference)
 - [ ] All TODO placeholders replaced with real content
@@ -142,7 +124,7 @@ Agent fills skeleton with methodology: mikado, references mikado-graph.md, maps 
 ## Workflow Context
 
 ```bash
-/nw:roadmap @agent "goal"           # 1. Plan (scaffold + fill + validate)
+/nw:roadmap @agent "goal"           # 1. Plan (init → agent fills → validate)
 /nw:execute @agent "project" "01-01" # 2. Execute steps
 /nw:finalize @agent "project"        # 3. Finalize
 ```
