@@ -118,7 +118,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Package | Version |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|---------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **crafter-ai** | \`${{ steps.version.outputs.new_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **nwave-dev** | \`${{ steps.version.outputs.new_version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **nwave-ai** | \`${{ steps.nwave_public.outputs.version }}\` (auto-bumps patch) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Tag created**: \`${{ steps.version.outputs.tag_created }}\`" >> $GITHUB_STEP_SUMMARY
@@ -403,7 +403,7 @@ jobs:
       nwave_version: ${{ steps.nwave_version.outputs.version }}
 
     steps:
-      - name: Checkout crafter-ai (source)
+      - name: Checkout nwave-dev (source)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -480,7 +480,7 @@ jobs:
                       break
           ")
 
-          # Read public_version floor from crafter-ai
+          # Read public_version floor from nwave-dev
           FLOOR=$(python3 -c "
           with open('pyproject.toml') as f:
               for line in f:
@@ -490,7 +490,7 @@ jobs:
           ")
 
           # Determine new version:
-          # - If floor > current: use floor (manual override from crafter-ai)
+          # - If floor > current: use floor (manual override from nwave-dev)
           # - Otherwise: bump patch from current
           NEW_VERSION=$(python3 -c "
           def ver(v): return tuple(int(x) for x in v.split('.'))
@@ -591,11 +591,11 @@ jobs:
             echo "Created GitHub Release $TAG"
           fi
 
-      - name: Sync public_version back to crafter-ai
+      - name: Sync public_version back to nwave-dev
         run: |
           NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
 
-          # Update public_version in crafter-ai pyproject.toml
+          # Update public_version in nwave-dev pyproject.toml
           python3 -c "
           import re
           with open('pyproject.toml', 'r') as f:
@@ -609,7 +609,7 @@ jobs:
               f.write(content)
           "
 
-          # Commit and push to crafter-ai (use GH_TOKEN for branch protection)
+          # Commit and push to nwave-dev (use GH_TOKEN for branch protection)
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           git config user.name "nWave Release Train"
           git config user.email "noreply@nwave.ai"
@@ -635,7 +635,7 @@ jobs:
           echo "**nwave-ai version**: \`${NWAVE_VERSION}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Tag**: \`v${NWAVE_VERSION}\`" >> $GITHUB_STEP_SUMMARY
           echo "**GitHub Release**: created on nwave-ai/nwave" >> $GITHUB_STEP_SUMMARY
-          echo "**crafter-ai public_version**: synced to \`${NWAVE_VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**nwave-dev public_version**: synced to \`${NWAVE_VERSION}\`" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
   # PUBLISH TO PYPI - Build and upload nwave-ai wheel

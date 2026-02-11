@@ -200,7 +200,7 @@ Changelog sections (included when commits of that type exist):
 
 **publish-to-nwave** (after github-release)
 
-Syncs the repository to `nwave-ai/nwave` using rsync with an exclude list for local/dev artifacts (`pyproject.toml`, `setup.py`, `Pipfile*`, etc. are excluded; nwave-ai maintains its own). Updates nwave-ai's version from `[tool.nwave] public_version` in crafter-ai's `pyproject.toml`. Commits as "nWave Release Train". Skipped on dry runs.
+Syncs the repository to `nwave-ai/nwave` using rsync with an exclude list for local/dev artifacts (`pyproject.toml`, `setup.py`, `Pipfile*`, etc. are excluded; nwave-ai maintains its own). Updates nwave-ai's version from `[tool.nwave] public_version` in nwave-dev's `pyproject.toml`. Commits as "nWave Release Train". Skipped on dry runs.
 
 **publish-to-pypi** (after publish-to-nwave)
 

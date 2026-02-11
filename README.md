@@ -1,6 +1,6 @@
 # nWave: Intelligent ATDD Pipeline with Specialized Agent Network
 
-<!-- version: 1.7.0 -->
+<!-- version: 1.7.1 -->
 
 A systematic approach to software development using ATDD (Acceptance Test Driven Development) with intelligent AI agent orchestration. The framework automates the 6-wave workflow through 26 specialized agents (13 primary + 13 reviewers), each following the Single Responsibility Principle.
 
@@ -23,11 +23,11 @@ Each phase involves specialized AI agents that understand domain-specific best p
 
 ```bash
 # macOS/Linux
-curl -O https://github.com/11PJ11/crafter-ai/releases/latest/download/install-nwave-claude-code.py
+curl -O https://github.com/nWave-ai/nwave-dev/releases/latest/download/install-nwave-claude-code.py
 python3 install-nwave-claude-code.py
 
 # Or from repository
-git clone https://github.com/11PJ11/crafter-ai.git nwave
+git clone https://github.com/nWave-ai/nwave-dev.git nwave
 cd nwave
 python3 scripts/install/install_nwave.py
 ```
@@ -338,7 +338,7 @@ See individual agent documentation in `nWave/agents/` for implementation details
 
 ## Version
 
-- Current Version: 1.7.0
+- Current Version: 1.7.1
 - Last Updated: 2026-01-25
 - Status: Production Ready
 
