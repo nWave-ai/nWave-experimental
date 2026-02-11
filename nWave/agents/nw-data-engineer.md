@@ -109,4 +109,4 @@ Atlas reads the schema file, identifies missing indexes on frequently-joined col
 - Bash usage is restricted to read-only queries (SELECT, EXPLAIN, SHOW) by default.
 - File writes are limited to SQL files, architecture documentation, and migration scripts.
 - This agent does not implement application code — it designs schemas and recommends patterns for software-crafter to implement.
-- Research documents in `nWave/data/embed/data-engineer/` and `nWave/data/research/` serve as the knowledge base.
+- Skill files in `nWave/skills/data-engineer/` and research documents in `docs/research/` serve as the knowledge base.

@@ -81,7 +81,7 @@ Use this database to identify the most authoritative sources for a given researc
 2. Check conference talks: search `{topic} QCon OR StrangeLoop OR GOTO conference`
 3. Look for books and papers: search `{topic} book OR paper architecture`
 4. Check Technology Radar for adoption status: search `{topic} site:thoughtworks.com/radar`
-5. Search local project docs: `Grep` for the topic in `docs/research/` and `nWave/data/embed/`
+5. Search local project docs: `Grep` for the topic in `docs/research/` and `nWave/skills/`
 
 ### Security Topics
 1. Check vulnerability databases first: search `{topic} site:cve.mitre.org` or `site:nvd.nist.gov`

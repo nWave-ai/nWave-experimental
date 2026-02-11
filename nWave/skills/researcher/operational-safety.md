@@ -14,7 +14,7 @@ description: Tool safety protocols, adversarial output validation, error recover
 - Safety: these tools are read-only and low-risk. Primary concern is wasted tokens from overly broad searches.
 
 ### Write and Edit Tools
-- **Write**: Use only for creating research outputs in allowed directories (`docs/research/`, `nWave/data/embed/{agent}/`). Always confirm the target path before writing.
+- **Write**: Use only for creating research outputs in allowed directories (`docs/research/`, `nWave/skills/{agent}/`). Always confirm the target path before writing.
 - **Edit**: Use only for updating existing research documents. Read the file first. Verify the edit target is unique to avoid unintended replacements.
 - Safety: confirm output path is in an allowed directory before every write operation.
 
@@ -85,7 +85,7 @@ optional:
   depth: enum            # "overview" | "detailed" | "comprehensive" (default: "detailed")
   source_preferences: list  # Preferred source types or domains
   output_path: string    # Override default output location
-  embed_for: string      # Agent name to create a distilled embed for
+  skill_for: string      # Agent name to create a distilled skill for
 ```
 
 When `topic` is missing or ambiguous, return clarification request (do not begin research).
@@ -98,8 +98,8 @@ Every completed research task produces:
 primary_output:
   path: string           # Absolute path to the research document
   format: markdown       # Always markdown using the research-methodology template
-secondary_output:        # Only when embed_for is specified
-  path: string           # Absolute path to the embed file
+secondary_output:        # Only when skill_for is specified
+  path: string           # Absolute path to the skill file
   format: markdown
 metadata:
   confidence: enum       # "High" | "Medium" | "Low"

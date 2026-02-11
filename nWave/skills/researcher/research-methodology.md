@@ -126,9 +126,9 @@ Use this template for all research documents written to `docs/research/`.
 - **Output File**: docs/research/{filename}
 ```
 
-## Embed Distillation Workflow
+## Skill Distillation Workflow
 
-When creating an embed for a specific agent (via `*create-embed` or when `embed_for` is specified):
+When creating a skill for a specific agent (via `*create-skill` or when `skill_for` is specified):
 
 ### Phase 1: Research
 1. Execute comprehensive research as normal
@@ -142,11 +142,11 @@ When creating an embed for a specific agent (via `*create-embed` or when `embed_
 4. Remove: verbose explanations, extensive examples, redundant cross-references
 5. Keep: core concepts, practical tools, methodologies, decision heuristics
 6. Make self-contained (no external file references)
-7. Target under 5000 tokens per embed file
-8. Write to `nWave/data/embed/{agent-name}/{topic}-methodology.md`
+7. Target under 1000 tokens per skill file
+8. Write to `nWave/skills/{agent-name}/{topic}-methodology.md`
 
 ### Phase 3: Validation
-1. Verify all essential concepts from research appear in embed
+1. Verify all essential concepts from research appear in skill
 2. Confirm practitioner focus (actionable, not academic)
 3. Check self-containment (no dangling references)
 

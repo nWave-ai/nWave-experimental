@@ -12,7 +12,7 @@ description: "Evidence-driven knowledge research with source verification"
 
 Execute systematic evidence-based research with source verification. Cross-wave support providing research-backed insights for any nWave phase using trusted academic, official, and industry sources.
 
-Optional `--embed-for={agent-name}` flag distills research into a practitioner-focused embed file for a specific agent.
+Optional `--skill-for={agent-name}` flag distills research into a practitioner-focused skill file for a specific agent.
 
 ## Context Files Required
 
@@ -22,7 +22,7 @@ Optional `--embed-for={agent-name}` flag distills research into a practitioner-f
 
 @nw-researcher
 
-Execute \*research on {topic} [--embed-for={agent-name}].
+Execute \*research on {topic} [--skill-for={agent-name}].
 
 **Context Files:**
 
@@ -33,8 +33,8 @@ Execute \*research on {topic} [--embed-for={agent-name}].
 - research_depth: detailed # overview/detailed/comprehensive/deep-dive
 - source_preferences: ["academic", "official", "technical_docs"]
 - output_directory: docs/research/
-- embed_for: {agent-name} # Optional: distilled embed for specified agent
-- embed_output_directory: ~/.claude/nWave/data/embed/{agent-name}/
+- skill_for: {agent-name} # Optional: distilled skill for specified agent
+- skill_output_directory: ~/.claude/nWave/skills/{agent-name}/
 
 ## Success Criteria
 
@@ -48,17 +48,17 @@ Refer to Nova's quality gates in ~/.claude/agents/nw/nw-researcher.md.
 - [ ] Citation coverage > 95%
 - [ ] Average source reputation >= 0.80
 
-**Distillation (if --embed-for specified):**
+**Distillation (if --skill-for specified):**
 
-- [ ] Embed file created in ~/.claude/nWave/data/embed/{agent-name}/
+- [ ] Skill file created in ~/.claude/nWave/skills/{agent-name}/
 - [ ] 100% essential concepts preserved
 - [ ] Self-contained with no external references
-- [ ] Token budget respected (<5000 tokens per embed)
+- [ ] Token budget respected (<5000 tokens per skill)
 
 ## Next Wave
 
 **Handoff To**: Invoking workflow
-**Deliverables**: Research document + optional embed file
+**Deliverables**: Research document + optional skill file
 
 ## Examples
 
@@ -68,15 +68,15 @@ Refer to Nova's quality gates in ~/.claude/agents/nw/nw-researcher.md.
 ```
 Nova researches event sourcing from trusted sources, cross-references 3+ sources per claim, produces a comprehensive research document.
 
-### Example 2: Research with agent embed
+### Example 2: Research with agent skill
 ```
-/nw:research "mutation testing methodologies" --embed-for=software-crafter
+/nw:research "mutation testing methodologies" --skill-for=software-crafter
 ```
-Nova researches mutation testing, then distills findings into a practitioner-focused embed file at ~/.claude/nWave/data/embed/software-crafter/.
+Nova researches mutation testing, then distills findings into a practitioner-focused skill file at ~/.claude/nWave/skills/software-crafter/.
 
 ## Expected Outputs
 
 ```
 data/research/{category}/{topic}-comprehensive-research.md
-~/.claude/nWave/data/embed/{agent}/{topic}-methodology.md    (if --embed-for)
+~/.claude/nWave/skills/{agent}/{topic}-methodology.md    (if --skill-for)
 ```

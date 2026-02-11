@@ -118,7 +118,7 @@ Every agent has a corresponding `*-reviewer` variant using the Haiku model:
 | Artifact | Location |
 |----------|----------|
 | Research | `docs/research/{category}/{topic}.md` |
-| Embedded Knowledge | `nWave/data/embed/{agent}/{topic}.md` |
+| Skills | `nWave/skills/{agent}/{topic}.md` |
 | Baseline | `docs/workflow/{project-id}/baseline.yaml` |
 | Roadmap | `docs/workflow/{project-id}/roadmap.yaml` |
 | Tasks | `docs/workflow/{project-id}/steps/*.json` |

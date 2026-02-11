@@ -178,5 +178,30 @@ events:
   s: EXECUTED
   sid: 04-01
   t: '2026-02-11T12:07:23Z'
+- d: PASS
+  p: COMMIT
+  s: EXECUTED
+  sid: 04-01
+  t: '2026-02-11T12:08:36Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 04-04
+  t: '2026-02-11T12:10:44Z'
+- d: PASS
+  p: RED_ACCEPTANCE
+  s: EXECUTED
+  sid: 04-04
+  t: '2026-02-11T12:10:54Z'
+- d: 'NOT_APPLICABLE: migration and path update step with no new logic to unit test'
+  p: RED_UNIT
+  s: SKIPPED
+  sid: 04-04
+  t: '2026-02-11T12:11:01Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 04-04
+  t: '2026-02-11T12:18:42Z'
 project_id: build-pipeline-elimination
 schema_version: '3.0'
