@@ -75,11 +75,17 @@ class SubagentStopService(SubagentStopPort):
         self._commit_verifier = commit_verifier
         self._integrity_validator = integrity_validator
 
-    def validate(self, context: SubagentStopContext) -> HookDecision:
+    def validate(
+        self,
+        context: SubagentStopContext,
+        hook_id: str | None = None,
+    ) -> HookDecision:
         """Validate step completion for a subagent.
 
         Args:
             context: Parsed context from the hook protocol
+            hook_id: Optional correlation ID from the adapter hook invocation.
+                When provided, included in all emitted audit events for correlation.
 
         Returns:
             HookDecision indicating allow or block
@@ -154,11 +160,14 @@ class SubagentStopService(SubagentStopPort):
                     context.step_id,
                     error_parts,
                     allowed_despite_failure=True,
+                    hook_id=hook_id,
                 )
                 return HookDecision.allow()
 
             # First attempt: block so sub-agent can try to fix
-            self._log_failed(context.project_id, context.step_id, error_parts)
+            self._log_failed(
+                context.project_id, context.step_id, error_parts, hook_id=hook_id
+            )
             return HookDecision.block(
                 reason=error_message,
                 recovery_suggestions=completion.recovery_suggestions,
@@ -170,7 +179,7 @@ class SubagentStopService(SubagentStopPort):
                 context.step_id, context.cwd
             )
             if not commit_result.verified:
-                self._log_commit_not_verified(context, commit_result)
+                self._log_commit_not_verified(context, commit_result, hook_id=hook_id)
                 return HookDecision.block(
                     reason=f"COMMIT_NOT_VERIFIED: {commit_result.error_reason}",
                     recovery_suggestions=[
@@ -179,13 +188,13 @@ class SubagentStopService(SubagentStopPort):
                         "Check that git is available and you're in a git repository",
                     ],
                 )
-            self._log_commit_verified(context, commit_result)
+            self._log_commit_verified(context, commit_result, hook_id=hook_id)
 
         # Step 4: Check scope (warning only, does not block)
         self._check_and_log_scope(context)
 
         # Step 5: All valid
-        self._log_passed(context.project_id, context.step_id)
+        self._log_passed(context.project_id, context.step_id, hook_id=hook_id)
         return HookDecision.allow()
 
     def _check_and_correct_integrity(self, context: SubagentStopContext) -> None:
@@ -359,7 +368,12 @@ class SubagentStopService(SubagentStopPort):
                     )
                 )
 
-    def _log_passed(self, feature_name: str, step_id: str) -> None:
+    def _log_passed(
+        self,
+        feature_name: str,
+        step_id: str,
+        hook_id: str | None = None,
+    ) -> None:
         """Log successful validation to the audit trail."""
         self._audit_writer.log_event(
             AuditEvent(
@@ -367,6 +381,7 @@ class SubagentStopService(SubagentStopPort):
                 timestamp=self._time_provider.now_utc().isoformat(),
                 feature_name=feature_name,
                 step_id=step_id,
+                hook_id=hook_id,
             )
         )
 
@@ -376,6 +391,7 @@ class SubagentStopService(SubagentStopPort):
         step_id: str,
         error_messages: list[str],
         allowed_despite_failure: bool = False,
+        hook_id: str | None = None,
     ) -> None:
         """Log failed validation to the audit trail."""
         data: dict = {
@@ -389,6 +405,7 @@ class SubagentStopService(SubagentStopPort):
                 timestamp=self._time_provider.now_utc().isoformat(),
                 feature_name=feature_name,
                 step_id=step_id,
+                hook_id=hook_id,
                 data=data,
             )
         )
@@ -397,6 +414,7 @@ class SubagentStopService(SubagentStopPort):
         self,
         context: SubagentStopContext,
         result: CommitVerificationResult,
+        hook_id: str | None = None,
     ) -> None:
         """Log successful commit verification to the audit trail."""
         self._audit_writer.log_event(
@@ -405,6 +423,7 @@ class SubagentStopService(SubagentStopPort):
                 timestamp=self._time_provider.now_utc().isoformat(),
                 feature_name=context.project_id,
                 step_id=context.step_id,
+                hook_id=hook_id,
                 data={
                     "commit_hash": result.commit_hash,
                     "commit_date": result.commit_date,
@@ -417,6 +436,7 @@ class SubagentStopService(SubagentStopPort):
         self,
         context: SubagentStopContext,
         result: CommitVerificationResult,
+        hook_id: str | None = None,
     ) -> None:
         """Log failed commit verification to the audit trail."""
         self._audit_writer.log_event(
@@ -425,6 +445,7 @@ class SubagentStopService(SubagentStopPort):
                 timestamp=self._time_provider.now_utc().isoformat(),
                 feature_name=context.project_id,
                 step_id=context.step_id,
+                hook_id=hook_id,
                 data={
                     "error_reason": result.error_reason,
                 },

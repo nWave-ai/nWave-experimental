@@ -23,6 +23,8 @@ class AuditEvent:
         timestamp: ISO 8601 timestamp string
         feature_name: Feature identifier for traceability (optional)
         step_id: Step identifier for traceability (optional)
+        hook_id: Correlation ID linking this event to its hook invocation (optional).
+            When None, the field is omitted from serialized output (backward compatible).
         data: Additional event-specific data
     """
 
@@ -30,6 +32,7 @@ class AuditEvent:
     timestamp: str
     feature_name: str | None = None
     step_id: str | None = None
+    hook_id: str | None = None
     data: dict[str, Any] = field(default_factory=dict)
 
 

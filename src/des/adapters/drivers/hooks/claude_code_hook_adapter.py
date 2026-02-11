@@ -390,7 +390,8 @@ def handle_pre_tool_use() -> int:
                 prompt=prompt,
                 max_turns=max_turns,
                 subagent_type=tool_input.get("subagent_type"),
-            )
+            ),
+            hook_id=hook_id,
         )
 
         # Translate HookDecision to protocol response
@@ -741,7 +742,8 @@ def handle_subagent_stop() -> int:
                 stop_hook_active=stop_hook_active,
                 cwd=cwd,
                 task_start_time=task_start_time,
-            )
+            ),
+            hook_id=hook_id,
         )
 
         # Translate HookDecision to protocol response

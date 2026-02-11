@@ -63,11 +63,17 @@ class PreToolUseService(PreToolUsePort):
         self._enforcement_policy = enforcement_policy
         self._completeness_policy = completeness_policy
 
-    def validate(self, input_data: PreToolUseInput) -> HookDecision:
+    def validate(
+        self,
+        input_data: PreToolUseInput,
+        hook_id: str | None = None,
+    ) -> HookDecision:
         """Validate a Task tool invocation.
 
         Args:
             input_data: Parsed input from the hook protocol
+            hook_id: Optional correlation ID from the adapter hook invocation.
+                When provided, included in all emitted audit events for correlation.
 
         Returns:
             HookDecision indicating allow or block
@@ -75,7 +81,9 @@ class PreToolUseService(PreToolUsePort):
         # Step 1: Validate max_turns
         policy_result = self._max_turns_policy.validate(input_data.max_turns)
         if not policy_result.is_valid:
-            self._log_blocked(policy_result.reason or "MISSING_MAX_TURNS")
+            self._log_blocked(
+                policy_result.reason or "MISSING_MAX_TURNS", hook_id=hook_id
+            )
             return HookDecision.block(
                 reason=policy_result.reason or "MISSING_MAX_TURNS"
             )
@@ -84,7 +92,9 @@ class PreToolUseService(PreToolUsePort):
         if self._enforcement_policy:
             enforcement = self._enforcement_policy.check(input_data.prompt)
             if enforcement.is_enforced:
-                self._log_blocked(enforcement.reason or "DES_MARKERS_MISSING")
+                self._log_blocked(
+                    enforcement.reason or "DES_MARKERS_MISSING", hook_id=hook_id
+                )
                 return HookDecision.block(
                     reason=enforcement.reason or "DES_MARKERS_MISSING",
                     recovery_suggestions=enforcement.recovery_suggestions,
@@ -95,14 +105,16 @@ class PreToolUseService(PreToolUsePort):
 
         if not markers.is_des_task:
             # Ad-hoc task: max_turns validated, no prompt validation needed
-            self._log_allowed(context="non_des_task")
+            self._log_allowed(context="non_des_task", hook_id=hook_id)
             return HookDecision.allow()
 
         # Step 2.5: Validate marker completeness
         if self._completeness_policy:
             completeness = self._completeness_policy.validate(markers)
             if not completeness.is_valid:
-                self._log_blocked(completeness.reason or "DES_MARKERS_INCOMPLETE")
+                self._log_blocked(
+                    completeness.reason or "DES_MARKERS_INCOMPLETE", hook_id=hook_id
+                )
                 return HookDecision.block(
                     reason=completeness.reason or "DES_MARKERS_INCOMPLETE",
                     recovery_suggestions=completeness.recovery_suggestions,
@@ -110,36 +122,42 @@ class PreToolUseService(PreToolUsePort):
 
         if markers.is_orchestrator_mode:
             # Orchestrator mode: relaxed validation
-            self._log_allowed(context="orchestrator_mode")
+            self._log_allowed(context="orchestrator_mode", hook_id=hook_id)
             return HookDecision.allow()
 
         # Step 3: Validate DES prompt structure
         validation_result = self._prompt_validator.validate_prompt(input_data.prompt)
 
         if validation_result.task_invocation_allowed:
-            self._log_allowed(context="des_validated")
+            self._log_allowed(context="des_validated", hook_id=hook_id)
             return HookDecision.allow()
         else:
             reason = "; ".join(validation_result.errors)
-            self._log_blocked(reason)
+            self._log_blocked(reason, hook_id=hook_id)
             return HookDecision.block(reason=reason)
 
-    def _log_allowed(self, context: str) -> None:
+    def _log_allowed(
+        self, context: str, hook_id: str | None = None
+    ) -> None:
         """Log an allowed invocation to the audit trail."""
         self._audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_PRE_TOOL_USE_ALLOWED",
                 timestamp=self._time_provider.now_utc().isoformat(),
+                hook_id=hook_id,
                 data={"context": context},
             )
         )
 
-    def _log_blocked(self, reason: str) -> None:
+    def _log_blocked(
+        self, reason: str, hook_id: str | None = None
+    ) -> None:
         """Log a blocked invocation to the audit trail."""
         self._audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_PRE_TOOL_USE_BLOCKED",
                 timestamp=self._time_provider.now_utc().isoformat(),
+                hook_id=hook_id,
                 data={"reason": reason},
             )
         )

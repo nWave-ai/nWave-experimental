@@ -79,6 +79,8 @@ class JsonlAuditLogWriter(AuditLogWriter):
             entry["feature_name"] = event.feature_name
         if event.step_id is not None:
             entry["step_id"] = event.step_id
+        if event.hook_id is not None:
+            entry["hook_id"] = event.hook_id
 
         # Merge additional event-specific data
         entry.update(event.data)
