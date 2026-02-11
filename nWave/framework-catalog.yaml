@@ -1,20 +1,16 @@
 # ============================================================================
-# nWave Framework Catalog
+# nWave Framework Catalog — Metadata Reference
 # ============================================================================
 #
-# IMPORTANT: This file is the **SOURCE OF TRUTH** for command metadata.
-#
-# The build system (tools/build_ide_bundle.py) uses this file to generate
-# command YAML frontmatter and IDE configuration. YAML frontmatter in
-# task files (nWave/tasks/nw/*.md) is IGNORED by the build system.
+# This file is the central metadata reference for the nWave framework.
+# Command frontmatter (description, argument_hint) lives in source task
+# files (nWave/tasks/nw/*.md) as YAML frontmatter blocks.
 #
 # What this file contains:
-# - Command descriptions and argument hints (used in slash command UI)
 # - Agent→Wave assignments (which agents belong to which methodology phase)
+# - Command-to-agent mappings and output declarations
 # - Quality gates and validation rules
-# - Knowledge base references and templates
-#
-# DO NOT add YAML frontmatter to task files - configure commands here instead.
+# - Reference materials and template registry
 # ============================================================================
 
 name: "nWave"
@@ -240,9 +236,8 @@ commands:
     outputs: ["evolution_document"]
 
 # ============================================================================
-# Workflow Configurations (DEPRECATED - Not Currently Processed)
+# Workflow Configurations (DEPRECATED - Historical Reference Only)
 # ============================================================================
-# NOTE: WorkflowProcessor was removed from the build system (commit 5171f66).
 # Workflow orchestrators are no longer generated from these YAML definitions.
 # This section is preserved for historical reference but is not actively used.
 # ============================================================================
