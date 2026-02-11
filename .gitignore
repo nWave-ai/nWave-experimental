@@ -1,16 +1,21 @@
 # Local Claude settings
 .claude/settings.local.json
+CLAUDE.local.md
 
 # Test and development state files
 state/
 test-results/
 .nwave/
+.des/
 
-# Temporary files and directory
+# Temporary files
 *.tmp
 *.temp
 *.bak
 _tmp/
+.execute-command-updated
+.dependency-map.yaml
+SESSION_STATE*.md
 
 # IDE files
 .vscode/
@@ -34,12 +39,14 @@ __pycache__/
 
 # Python virtual environments
 .venv/
+.venv-mutation/
 venv/
 env/
 ENV/
 
-# Python test logs
+# Python logs
 pytest.log
+**/pytest.log
 
 # Node modules
 node_modules/
@@ -51,44 +58,21 @@ reports/
 dist/
 build/
 target/
-
-# Build logs
-build.log
-build-test.log
-tools/build.log
 **/build.log
-
-# Test logs
-**/pytest.log
+build-test.log
 
 # TOON format agents (separate branch)
 /agents/
 output/
 
-# Python virtual environment
-.venv/
-venv/
-env/
-.mutmut-cache
-
-# DES audit logs (local only)
-.des/
-/mutants/
-
-# nWave audit logs (local only)
-.nwave-audit.log
-
-# Mutation testing artifacts
+# Mutation testing
 .mutmut-cache
 *.sqlite
 cosmic-ray.toml
+cosmic-ray-exec.log
 mutation-run.log
 mutation-test.log
-cosmic-ray-exec.log
-CLAUDE.local.md
+/mutants/
 
-# Mutation testing virtual environment
-.venv-mutation/
-
-# Legacy nWave audit log (consolidated into DES audit system)
+# nWave audit logs (local only)
 .nwave-audit.log
