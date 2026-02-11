@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crafter-ai"
-version = "2.13.0"
+version = "2.13.1"
 description = "Modern CLI installer for crafter-ai with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
