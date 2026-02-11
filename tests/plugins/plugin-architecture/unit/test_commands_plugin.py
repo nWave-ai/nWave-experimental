@@ -5,7 +5,7 @@ Tests the CommandsPlugin install() and verify() methods through the
 InstallationPlugin interface (driving port).
 
 Source: nWave/tasks/nw/ (no dist/ide fallback)
-Excludes: legacy/ directory content
+Excludes: README.md
 
 Domain: Plugin Infrastructure - Commands Installation
 """
@@ -67,21 +67,21 @@ def install_context(tmp_path: Path, project_root: Path, test_logger: logging.Log
 
 
 # -----------------------------------------------------------------------------
-# Acceptance Test: Single source, no dist/ide, excludes legacy/
+# Acceptance Test: Single source, no dist/ide, installs only *.md commands
 # -----------------------------------------------------------------------------
 
 
-def test_commands_plugin_installs_only_from_nwave_tasks_nw_excluding_legacy(
+def test_commands_plugin_installs_only_nw_commands(
     tmp_path: Path,
     project_root: Path,
     test_logger: logging.Logger,
 ):
-    """CommandsPlugin.install() should read only from nWave/tasks/nw/, excluding legacy/ content.
+    """CommandsPlugin.install() should read only *.md files from nWave/tasks/nw/.
 
     Acceptance test: framework_source is set to a non-existent path to prove
     the plugin does NOT depend on dist/ide. It must read from
     project_root/nWave/tasks/nw/ directly. After install, the target directory
-    must contain only *.md files, no legacy/ content, no dist/ide artifacts.
+    must contain only *.md files, no dist/ide artifacts.
     All 18 commands must be discoverable at ~/.claude/commands/nw/.
     """
     # Arrange - framework_source deliberately does NOT exist
@@ -102,7 +102,7 @@ def test_commands_plugin_installs_only_from_nwave_tasks_nw_excluding_legacy(
     target_commands_dir = context.claude_dir / "commands" / "nw"
     source_commands_dir = context.project_root / "nWave" / "tasks" / "nw"
 
-    # Count expected: *.md files in nWave/tasks/nw/ root only (not legacy/)
+    # Count expected: *.md files in nWave/tasks/nw/ root
     expected_command_files = list(source_commands_dir.glob("*.md"))
     assert len(expected_command_files) >= 18, (
         f"Expected at least 18 *.md command files in source, found {len(expected_command_files)}"
@@ -113,12 +113,6 @@ def test_commands_plugin_installs_only_from_nwave_tasks_nw_excluding_legacy(
 
     # Assert - installation succeeded even without dist/ide
     assert result.success, f"Installation failed: {result.message}"
-
-    # Assert - no legacy/ directory content was copied
-    legacy_target = target_commands_dir / "legacy"
-    assert not legacy_target.exists(), (
-        f"legacy/ directory should not be copied to target, but found: {legacy_target}"
-    )
 
     # Assert - no config.json (dist/ide artifact) was copied
     config_json = target_commands_dir / "config.json"
@@ -167,35 +161,6 @@ class TestCommandsPluginShould:
         target_files = list(target_commands_dir.glob("*.md"))
         assert len(target_files) == len(source_md_files), (
             f"Expected {len(source_md_files)} *.md files, found {len(target_files)}"
-        )
-
-    def test_exclude_legacy_directory_content_from_installation(
-        self, install_context: InstallContext
-    ):
-        """
-        Given: nWave/tasks/nw/ has a legacy/ subdirectory with old command files
-        When: install() is called
-        Then: No legacy/ content appears in the target directory
-        """
-        plugin = CommandsPlugin()
-        target_commands_dir = install_context.claude_dir / "commands" / "nw"
-
-        # Verify legacy exists in source to make this test meaningful
-        source_legacy = (
-            install_context.project_root / "nWave" / "tasks" / "nw" / "legacy"
-        )
-        assert source_legacy.exists(), (
-            "Test requires legacy/ directory in nWave/tasks/nw/"
-        )
-
-        result = plugin.install(install_context)
-
-        assert result.success, f"Installation failed: {result.message}"
-
-        # No legacy directory or files in target
-        legacy_target = target_commands_dir / "legacy"
-        assert not legacy_target.exists(), (
-            "legacy/ directory content should be excluded from installation"
         )
 
     def test_return_plugin_result_with_correct_file_count(

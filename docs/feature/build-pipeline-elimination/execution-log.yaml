@@ -122,5 +122,61 @@ events:
   s: EXECUTED
   sid: 03-02
   t: '2026-02-11T11:47:49Z'
+- d: PASS
+  p: COMMIT
+  s: EXECUTED
+  sid: 03-02
+  t: '2026-02-11T11:51:04Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 03-04
+  t: '2026-02-11T11:52:05Z'
+- d: PASS
+  p: RED_ACCEPTANCE
+  s: EXECUTED
+  sid: 03-04
+  t: '2026-02-11T11:52:13Z'
+- d: 'NOT_APPLICABLE: file deletion step with no files to delete'
+  p: RED_UNIT
+  s: SKIPPED
+  sid: 03-04
+  t: '2026-02-11T11:52:23Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 03-04
+  t: '2026-02-11T11:56:23Z'
+- d: 'PASS: no files to delete - build test files already removed in prior steps'
+  p: COMMIT
+  s: EXECUTED
+  sid: 03-04
+  t: '2026-02-11T11:56:36Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 04-01
+  t: '2026-02-11T11:57:31Z'
+- d: 'NOT_APPLICABLE: deletion step with no new logic, acceptance verified by directory
+    absence post-delete'
+  p: RED_ACCEPTANCE
+  s: SKIPPED
+  sid: 04-01
+  t: '2026-02-11T11:57:45Z'
+- d: 'NOT_APPLICABLE: directory deletion, no new logic to unit test'
+  p: RED_UNIT
+  s: SKIPPED
+  sid: 04-01
+  t: '2026-02-11T11:57:53Z'
+- d: 'PARTIAL: directories deleted, test fix needed for test_exclude_legacy_directory_content_from_installation'
+  p: GREEN
+  s: EXECUTED
+  sid: 04-01
+  t: '2026-02-11T12:04:23Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 04-01
+  t: '2026-02-11T12:07:23Z'
 project_id: build-pipeline-elimination
 schema_version: '3.0'

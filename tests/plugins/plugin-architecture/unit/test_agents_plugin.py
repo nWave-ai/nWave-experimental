@@ -5,7 +5,7 @@ Tests the AgentsPlugin install() and verify() methods through the
 InstallationPlugin interface (driving port).
 
 Source: nWave/agents/ (no dist/ide fallback)
-Excludes: legacy/ directory, README.md
+Excludes: README.md
 
 Domain: Plugin Infrastructure - Agent Installation
 """
@@ -63,25 +63,25 @@ def install_context(tmp_path: Path, project_root: Path, test_logger: logging.Log
 
 
 # -----------------------------------------------------------------------------
-# Acceptance Test: Single source, no dist/ide, excludes legacy/
+# Acceptance Test: Single source, no dist/ide, installs only nw-*.md agents
 # -----------------------------------------------------------------------------
 
 
-def test_agents_plugin_installs_only_from_nwave_agents_excluding_legacy(
+def test_agents_plugin_installs_only_nw_agents(
     install_context: InstallContext,
 ):
-    """AgentsPlugin.install() should read only from nWave/agents/, excluding legacy/ content.
+    """AgentsPlugin.install() should read only nw-*.md files from nWave/agents/.
 
     Acceptance test: After install, the target directory must contain only
-    nw-*.md files from nWave/agents/ root. No legacy/ subdirectory content,
-    no config.json (dist/ide artifact), and no README.md should be present.
+    nw-*.md files from nWave/agents/ root. No config.json (dist/ide artifact)
+    and no README.md should be present.
     """
     # Arrange
     plugin = AgentsPlugin()
     target_agents_dir = install_context.claude_dir / "agents" / "nw"
     source_agents_dir = install_context.project_root / "nWave" / "agents"
 
-    # Count expected: nw-*.md files in nWave/agents/ root only (not legacy/)
+    # Count expected: nw-*.md files in nWave/agents/ root
     expected_agent_files = list(source_agents_dir.glob("nw-*.md"))
     assert len(expected_agent_files) >= 20, (
         f"Expected at least 20 nw-*.md agent files in source, found {len(expected_agent_files)}"
@@ -92,12 +92,6 @@ def test_agents_plugin_installs_only_from_nwave_agents_excluding_legacy(
 
     # Assert - installation succeeded
     assert result.success, f"Installation failed: {result.message}"
-
-    # Assert - no legacy/ directory content was copied
-    legacy_target = target_agents_dir / "legacy"
-    assert not legacy_target.exists(), (
-        f"legacy/ directory should not be copied to target, but found: {legacy_target}"
-    )
 
     # Assert - no config.json (dist/ide artifact) was copied
     config_json = target_agents_dir / "config.json"
@@ -144,33 +138,6 @@ class TestAgentsPluginShould:
         target_files = list(target_agents_dir.glob("nw-*.md"))
         assert len(target_files) == len(source_nw_files), (
             f"Expected {len(source_nw_files)} nw-*.md files, found {len(target_files)}"
-        )
-
-    def test_exclude_legacy_directory_content_from_installation(
-        self, install_context: InstallContext
-    ):
-        """
-        Given: nWave/agents/ has a legacy/ subdirectory with old agent files
-        When: install() is called
-        Then: No legacy/ content appears in the target directory
-        """
-        plugin = AgentsPlugin()
-        target_agents_dir = install_context.claude_dir / "agents" / "nw"
-
-        # Verify legacy exists in source to make this test meaningful
-        source_legacy = install_context.project_root / "nWave" / "agents" / "legacy"
-        assert source_legacy.exists(), (
-            "Test requires legacy/ directory in nWave/agents/"
-        )
-
-        result = plugin.install(install_context)
-
-        assert result.success, f"Installation failed: {result.message}"
-
-        # No legacy directory or files in target
-        legacy_target = target_agents_dir / "legacy"
-        assert not legacy_target.exists(), (
-            "legacy/ directory content should be excluded from installation"
         )
 
     def test_return_plugin_result_with_correct_file_count(
