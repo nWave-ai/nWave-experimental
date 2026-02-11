@@ -244,7 +244,7 @@ line-ending = "auto"
 [tool.nwave]
 # Public version for nwave-ai PyPI package (independent from crafter-ai version)
 # This is the version that gets published as 'nwave-ai' on PyPI
-public_version = "1.0.3"
+public_version = "1.0.4"
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
