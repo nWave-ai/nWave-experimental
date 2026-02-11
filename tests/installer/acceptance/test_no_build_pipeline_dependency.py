@@ -1,10 +1,10 @@
 """
 Acceptance test: install_nwave.py build pipeline constraints.
 
-Step 02-03: Verify installer uses build→dist→install flow correctly.
+Step 02-03: Verify installer uses build->dist->install flow correctly.
 
 Verifies that the installer:
-- Uses dist/ as framework source (build→dist→install flow)
+- Uses dist/ as framework source (build->dist->install flow)
 - Has no dist/ide references (legacy IDE embedding removed)
 - Has no build_framework, run_embedding, check_source methods
 - Has no --force-rebuild CLI flag
@@ -15,11 +15,11 @@ import inspect
 
 
 class TestNoBuildPipelineDependency:
-    """Acceptance: install_nwave.py follows build→dist→install flow."""
+    """Acceptance: install_nwave.py follows build->dist->install flow."""
 
     def test_installer_has_no_dist_ide_references(self):
         """
-        GIVEN: install_nwave.py with build→dist→install flow
+        GIVEN: install_nwave.py with build->dist->install flow
         WHEN: the source code is inspected
         THEN: no references to 'dist/ide' exist (legacy IDE embedding removed)
         """
@@ -28,6 +28,10 @@ class TestNoBuildPipelineDependency:
         source = inspect.getsource(install_nwave)
 
         assert "dist/ide" not in source, "install_nwave.py still references dist/ide"
+        # 'ide' as a path component must not appear
+        assert '/"ide"' not in source, (
+            "install_nwave.py still references 'ide' path component"
+        )
 
     def test_installer_has_no_build_methods(self):
         """
@@ -77,7 +81,7 @@ class TestNoBuildPipelineDependency:
 
     def test_installer_validates_against_dist_source(self):
         """
-        GIVEN: install_nwave.py with build→dist→install flow
+        GIVEN: install_nwave.py with build->dist->install flow
         WHEN: the installer source is inspected
         THEN: it uses dist/ as framework source for installation
         """
@@ -87,7 +91,7 @@ class TestNoBuildPipelineDependency:
 
         # Should reference dist as the framework source
         assert "dist" in source, (
-            "install_nwave.py should reference dist directory for build→dist→install flow"
+            "install_nwave.py should reference dist directory for build->dist->install flow"
         )
 
     def test_installation_succeeds_without_dist_ide(self, tmp_path):

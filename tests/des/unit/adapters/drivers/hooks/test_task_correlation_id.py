@@ -123,10 +123,9 @@ def test_signal_file_contains_valid_uuid4_task_correlation_id(monkeypatch, tmp_p
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: tmp_path
-        / ".nwave"
-        / "des"
-        / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: (
+            tmp_path / ".nwave" / "des" / f"des-task-active-{project_id}--{step_id}"
+        ),
     )
 
     events: list[AuditEvent] = []
@@ -162,10 +161,9 @@ def test_hook_completed_pre_tool_use_includes_task_correlation_id(
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: tmp_path
-        / ".nwave"
-        / "des"
-        / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: (
+            tmp_path / ".nwave" / "des" / f"des-task-active-{project_id}--{step_id}"
+        ),
     )
 
     events: list[AuditEvent] = []
@@ -219,8 +217,9 @@ def test_hook_completed_subagent_stop_includes_task_correlation_id_from_signal(
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: des_dir
-        / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: (
+            des_dir / f"des-task-active-{project_id}--{step_id}"
+        ),
     )
 
     events: list[AuditEvent] = []
@@ -289,8 +288,9 @@ def test_hook_completed_subagent_stop_graceful_when_signal_missing(
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: des_dir
-        / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: (
+            des_dir / f"des-task-active-{project_id}--{step_id}"
+        ),
     )
 
     events: list[AuditEvent] = []
@@ -331,10 +331,9 @@ def test_hook_invoked_includes_task_correlation_id_for_des_tasks(monkeypatch, tm
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: tmp_path
-        / ".nwave"
-        / "des"
-        / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: (
+            tmp_path / ".nwave" / "des" / f"des-task-active-{project_id}--{step_id}"
+        ),
     )
 
     events: list[AuditEvent] = []

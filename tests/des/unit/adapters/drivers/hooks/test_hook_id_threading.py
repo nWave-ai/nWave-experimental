@@ -118,10 +118,9 @@ def test_pre_tool_use_allowed_event_carries_hook_id(monkeypatch, tmp_path):
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: tmp_path
-        / ".nwave"
-        / "des"
-        / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: (
+            tmp_path / ".nwave" / "des" / f"des-task-active-{project_id}--{step_id}"
+        ),
     )
 
     events: list[AuditEvent] = []
@@ -218,8 +217,9 @@ def test_subagent_stop_passed_event_carries_hook_id(monkeypatch, tmp_path):
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: des_dir
-        / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: (
+            des_dir / f"des-task-active-{project_id}--{step_id}"
+        ),
     )
 
     # Write complete execution log
@@ -270,8 +270,9 @@ def test_subagent_stop_failed_event_carries_hook_id(monkeypatch, tmp_path):
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: des_dir
-        / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: (
+            des_dir / f"des-task-active-{project_id}--{step_id}"
+        ),
     )
 
     # Write incomplete execution log (only 2 of 7 phases)

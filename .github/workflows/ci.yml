@@ -69,7 +69,7 @@ jobs:
           python-version: ${{ env.PYTHON_DEFAULT }}
 
       - name: Install gitlint
-        run: pip install gitlint
+        run: pip install gitlint==0.19.1
 
       - name: Validate commit messages
         run: |
@@ -119,7 +119,7 @@ jobs:
           python-version: ${{ env.PYTHON_DEFAULT }}
 
       - name: Install PyYAML
-        run: pip install pyyaml
+        run: pip install pyyaml==6.0.3
 
       - name: Check trailing whitespace
         run: |
@@ -204,20 +204,10 @@ jobs:
           python-version: ${{ env.PYTHON_DEFAULT }}
 
       - name: Check for merge conflict markers
-        run: |
-          if git ls-files | xargs grep -l -E '^(<<<<<<<|=======|>>>>>>>)' 2>/dev/null; then
-            echo "::error::Merge conflict markers found in repository"
-            exit 1
-          fi
-          echo "::notice::No merge conflict markers found"
+        run: python3 scripts/hooks/check_merge_conflicts.py
 
       - name: Detect private keys
-        run: |
-          if git ls-files | xargs grep -l -E '-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----' 2>/dev/null; then
-            echo "::error::Private key detected in repository"
-            exit 1
-          fi
-          echo "::notice::No private keys detected"
+        run: python3 scripts/hooks/detect_private_keys.py
 
       - name: Prevent shell scripts
         run: python3 scripts/hooks/prevent_shell_scripts.py
@@ -239,7 +229,7 @@ jobs:
           python-version: ${{ env.PYTHON_DEFAULT }}
 
       - name: Install dependencies
-        run: pip install pyyaml packaging
+        run: pip install pyyaml==6.0.3 packaging
 
       - name: Validate framework-catalog.yaml
         run: |

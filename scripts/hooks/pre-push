@@ -1,0 +1,43 @@
+"""Pre-push validation hook.
+
+Validates that required release files exist before pushing:
+- nWave/VERSION file
+- Semantic-release configuration (.releaserc or release.config.js)
+"""
+
+import sys
+from pathlib import Path
+
+
+def main() -> int:
+    """Run pre-push validations."""
+    repo_root = Path.cwd()
+    errors = []
+
+    # Check VERSION file
+    version_file = repo_root / "nWave" / "VERSION"
+    if not version_file.exists():
+        errors.append(
+            "VERSION file missing in nWave/.\n"
+            "  Create nWave/VERSION with current version (e.g., '1.5.7')"
+        )
+
+    # Check semantic-release config
+    releaserc = repo_root / ".releaserc"
+    release_config_js = repo_root / "release.config.js"
+    if not releaserc.exists() and not release_config_js.exists():
+        errors.append(
+            "semantic-release not configured.\n"
+            "  Run 'npx semantic-release-cli setup'"
+        )
+
+    if errors:
+        for error in errors:
+            print(error, file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

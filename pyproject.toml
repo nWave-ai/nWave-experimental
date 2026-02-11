@@ -52,7 +52,7 @@ dev = [
     "pytest-xdist>=3.5.0",
     "pytest-bdd>=7.0.0",
     "mypy>=1.8.0",
-    "ruff>=0.3.0",
+    "ruff==0.15.0",
     "pre-commit>=3.6.0",
     "python-semantic-release>=9.0.0"
 ]
@@ -66,10 +66,10 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Undeadgrishnackh/crafter-ai"
-Documentation = "https://github.com/Undeadgrishnackh/crafter-ai#readme"
-Repository = "https://github.com/Undeadgrishnackh/crafter-ai"
-Issues = "https://github.com/Undeadgrishnackh/crafter-ai/issues"
+Homepage = "https://github.com/nwave-ai/nwave"
+Documentation = "https://github.com/nwave-ai/nwave#readme"
+Repository = "https://github.com/nwave-ai/nwave"
+Issues = "https://github.com/nwave-ai/nwave/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -207,6 +207,7 @@ ignore = [
 "tests/des/unit/adapters/drivers/hooks/test_scope_validation_integration.py" = ["F821"]
 "tests/des/unit/application/test_orchestrator_recovery_integration.py" = ["F821"]
 "tests/des/acceptance/test_us003_post_execution_validation.py" = ["F821"]
+"tests/des/acceptance/test_post_execution_validation.py" = ["F821"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["crafter_ai", "des", "scripts"]

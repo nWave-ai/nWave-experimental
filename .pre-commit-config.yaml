@@ -24,8 +24,8 @@ repos:
         entry: python3 scripts/hooks/validate_tests.py
         language: system
         pass_filenames: false
+        always_run: true
         stages: [pre-commit]
-        files: ^(tests/|src/des/).*\.py$
 
       # Phase 2: Documentation version validation
       - id: docs-version-validation
@@ -50,8 +50,8 @@ repos:
         name: Conflict Detection - Related Files
         entry: python3 scripts/hooks/detect_conflicts.py
         language: system
-        files: ^(nWave/|scripts/|tools/)
         pass_filenames: false
+        always_run: true
         stages: [pre-commit]
 
       # Phase 4: Code formatter availability check
@@ -69,37 +69,69 @@ repos:
         name: YAML File Validation
         entry: python3 scripts/validation/validate_yaml_files.py
         language: system
-        files: \.(yaml|yml)$
         pass_filenames: false
+        always_run: true
         stages: [pre-commit]
 
-  # Standard hooks from pre-commit repository
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+  # File quality hooks - scan ALL tracked files (matches CI file-quality job)
+  - repo: local
     hooks:
       - id: trailing-whitespace
-        exclude: ^(dist/|\.git/)
+        name: Check trailing whitespace (all files)
+        entry: python3 scripts/hooks/check_trailing_whitespace.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
       - id: end-of-file-fixer
-        exclude: ^(dist/|\.git/)
-      - id: check-yaml
-        exclude: ^(dist/|\.git/)
+        name: Check end-of-file newlines (all files)
+        entry: python3 scripts/hooks/check_end_of_file.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
       - id: check-json
-        exclude: ^(dist/|\.git/)
+        name: Check JSON syntax (all files)
+        entry: python3 scripts/hooks/check_json_syntax.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+  # Security hooks - scan ALL tracked files (matches CI security-checks job)
+  - repo: local
+    hooks:
       - id: check-merge-conflict
+        name: Check merge conflict markers (all files)
+        entry: python3 scripts/hooks/check_merge_conflicts.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
       - id: detect-private-key
+        name: Detect private keys (all files)
+        entry: python3 scripts/hooks/detect_private_keys.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
 
   # Python linting and formatting with Ruff (replaces black, flake8, isort)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.14
+    rev: v0.15.0
     hooks:
       - id: ruff
-        args: [--fix]
-        files: ^(src/|scripts/|tools/|tests/).*\.py$
-        exclude: \.json$
+        args: [--fix, "src/", "scripts/", "tools/", "tests/"]
+        pass_filenames: false
+        always_run: true
         stages: [pre-commit]
       - id: ruff-format
-        files: ^(src/|scripts/|tools/|tests/).*\.py$
-        exclude: \.json$
+        args: ["src/", "scripts/", "tools/", "tests/"]
+        pass_filenames: false
+        always_run: true
         stages: [pre-commit]
 
 # ═══════════════════════════════════════════════════════════════════════════

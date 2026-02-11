@@ -103,10 +103,9 @@ def test_task_correlation_id_flows_from_signal_to_hook_completed(monkeypatch, tm
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: tmp_path
-        / ".nwave"
-        / "des"
-        / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: (
+            tmp_path / ".nwave" / "des" / f"des-task-active-{project_id}--{step_id}"
+        ),
     )
 
     # --- Step 1: PreToolUse allows a DES task and creates signal with correlation ID ---

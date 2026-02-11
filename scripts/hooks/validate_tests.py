@@ -51,16 +51,27 @@ def main():
         print(f"{YELLOW}Warning: python3 not available, skipping tests{NC}")
         return 0
 
+    # Determine pytest command: prefer pipenv run (matches CI) over bare python3
+    use_pipenv = False
     try:
         subprocess.run(
-            ["python3", "-m", "pytest", "--version"],
+            ["pipenv", "run", "python3", "-m", "pytest", "--version"],
             check=True,
             capture_output=True,
             text=True,
         )
+        use_pipenv = True
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print(f"{YELLOW}Warning: pytest not available, skipping tests{NC}")
-        return 0
+        try:
+            subprocess.run(
+                ["python3", "-m", "pytest", "--version"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print(f"{YELLOW}Warning: pytest not available, skipping tests{NC}")
+            return 0
 
     # Check if tests directory exists
     if not Path("tests").is_dir():
@@ -73,8 +84,13 @@ def main():
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd() + ":" + env.get("PYTHONPATH", "")
 
+        cmd = (
+            ["pipenv", "run", "python3", "-m", "pytest", "tests/", "-v", "--tb=short"]
+            if use_pipenv
+            else ["python3", "-m", "pytest", "tests/", "-v", "--tb=short"]
+        )
         result = subprocess.run(
-            ["python3", "-m", "pytest", "tests/", "-v", "--tb=short"],
+            cmd,
             check=False,
             capture_output=True,
             text=True,

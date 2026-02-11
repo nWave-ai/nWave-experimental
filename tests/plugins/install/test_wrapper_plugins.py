@@ -423,9 +423,7 @@ class TestUtilitiesPlugin:
         context.dry_run = False
         context.project_root = tmp_path
         context.claude_dir = claude_dir
-        context.framework_source = (
-            tmp_path  # dist layout: scripts/ under framework_source
-        )
+        context.framework_source = tmp_path  # dist layout: scripts/ under framework_source
         context.logger = Mock()
 
         result = plugin.install(context)
