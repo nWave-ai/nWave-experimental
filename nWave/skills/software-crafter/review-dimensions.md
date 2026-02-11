@@ -162,21 +162,59 @@ Severity: HIGH.
 
 ---
 
-## Code Readability Issues
+## Dimension 4: RPP Code Smell Detection
 
-### Compose Method Violations
+Refactoring Priority Premise — cascading 6-level review. Apply RPP cascade rule:
+scan and report lower levels first. Do not report L3+ issues until L1-L2 are clean.
 
-Detection:
-- Methods longer than 10 lines
-- Multiple levels of indentation
-- Comments explaining "what" instead of "why"
-- Method name doesn't reveal full intent
+### RPP Cascade Rule
+1. Scan L1 first. If L1 smells found → report only L1, stop.
+2. If L1 clean → scan L2. If L2 smells found → report L1 clean + L2 findings, stop.
+3. Continue ascending only when lower levels are verified clean.
+4. Exception: if `--from` and `--to` parameters specified, scan only that range.
 
-Severity: LOW to MEDIUM.
+### L1: Readability (Severity: LOW)
+| Smell | Detection Pattern |
+|-------|-------------------|
+| Dead Code | Unused imports, unreachable branches, commented-out code |
+| How-Comments | Comments explaining what code does (not why) |
+| Magic Strings/Numbers | Literal values without named constants |
+| Variable/Method Scope | Variables declared far from use, overly broad scope |
+| Lazy Class | Classes with < 3 methods or single delegation |
+| Speculative Generality | Abstractions without 3+ concrete uses |
+
+### L2: Complexity (Severity: MEDIUM)
+| Smell | Detection Pattern |
+|-------|-------------------|
+| Long Method | > 20 lines or multiple responsibilities |
+| Duplicated Code | Same structure in 2+ places (≥ 3 lines) |
+| Complex Conditionals | Nested if/else > 2 levels, boolean expressions with 3+ terms |
+
+### L3: Responsibilities (Severity: HIGH)
+| Smell | Detection Pattern |
+|-------|-------------------|
+| Large Class | > 300 lines or > 10 methods |
+| Feature Envy | Method uses another object's data more than its own |
+| Inappropriate Intimacy | Classes accessing each other's internals |
+| Data Class | Only fields + getters/setters, no behavior |
+| Message Chain | a.b().c().d() chains > 2 levels |
+| Divergent Change | One class modified for unrelated reasons |
+| Shotgun Surgery | One change requires edits in 5+ files |
+
+### L4: Abstractions (Severity: HIGH)
+| Smell | Detection Pattern |
+|-------|-------------------|
+| Long Parameter List | ≥ 4 parameters |
+| Data Clumps | Same parameter group in 3+ method signatures |
+| Primitive Obsession | Raw strings/ints for domain concepts |
+| Middle Man | Class only delegates, no own logic |
+
+### L5-L6: Advanced (report only when L1-L4 clean)
+L5: Switch statements → polymorphism. L6: SOLID violations (Refused Bequest, Parallel Inheritance).
 
 ---
 
-## Dimension: Priority Validation
+## Dimension 5: Priority Validation
 
 Validate that the roadmap addresses the LARGEST bottleneck first.
 
@@ -247,6 +285,16 @@ issues_identified:
       location: "{file:line}"
       recommendation: "{Extract methods: {names}}"
 
+  rpp_smells:
+    levels_scanned: "L1-L3"
+    cascade_stopped_at: "L2"  # null if all clean
+    findings:
+      - level: "L2"
+        smell: "Long Method"
+        location: "{file:line}"
+        evidence: "42 lines, 3 responsibilities"
+        recommendation: "Extract Method: {names}"
+
 approval_status: "approved|rejected_pending_revisions|conditionally_approved"
 critical_issues_count: {number}
 high_issues_count: {number}
@@ -275,8 +323,14 @@ low_issues_count: {number}
 
 **Low** (enhancement suggestions):
 - Code readability improvements
-- Minor compose method violations
+- RPP L1 smells (readability)
 - Naming improvements
+
+**RPP Level → Severity Mapping:**
+- Low: L1 smells (readability — dead code, how-comments, magic values, scope, lazy class, speculative generality)
+- Medium: L2 smells (complexity — long method, duplicated code, complex conditionals)
+- High: L3-L4 smells (responsibilities, abstractions)
+- Critical: unchanged (Testing Theater, port violations, missing AC coverage)
 
 ---
 

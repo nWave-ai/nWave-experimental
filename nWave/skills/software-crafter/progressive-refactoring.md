@@ -3,9 +3,11 @@ name: progressive-refactoring
 description: Progressive L1-L6 refactoring hierarchy, 22 code smell taxonomy, atomic transformations, test code smells, and Fowler refactoring catalog
 ---
 
-# Progressive Refactoring
+# Progressive Refactoring (Refactoring Priority Premise)
 
-## L1-L6 Refactoring Hierarchy
+Based on the Refactoring Priority Premise (RPP) from the Alcor Academy curriculum.
+
+## RPP Levels (L1-L6)
 
 Execute levels in mandatory sequence. Lower levels before higher.
 
@@ -44,7 +46,8 @@ Focus: SOLID principles, architectural patterns.
 Smells addressed: Refused Bequest, Parallel Inheritance Hierarchies.
 Transformations: Extract (interfaces), Move (responsibilities), Safe Delete (violations).
 
-### Priority Premise (80/20)
+### RPP Cascade Rule
+MANDATORY: complete each level fully before moving to the next. Do not skip levels.
 80% of refactoring value comes from readability improvements (L1-L2).
 Focus effort on L1-L2 for maximum impact. Move to higher levels only when needed.
 

@@ -56,6 +56,7 @@ Load `review-dimensions` skill. Apply critique dimensions:
 - Business language in tests and production code
 - Acceptance criteria coverage completeness
 - External validity (wiring to entry points)
+- RPP code smell detection (L1→L6 cascade, per review-dimensions Dimension 4)
 
 Gate: all dimensions evaluated.
 
@@ -93,6 +94,10 @@ review:
     G6_all_green: PASS | FAIL
     G7_100_percent: PASS | FAIL
     G8_test_budget: PASS | FAIL
+  rpp_smells:
+    levels_scanned: "L1-L3"
+    cascade_stopped_at: null
+    findings: []
   summary: <one paragraph overall assessment>
 ```
 

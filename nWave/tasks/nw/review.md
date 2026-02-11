@@ -15,7 +15,7 @@ Dispatches an expert reviewer agent to critique workflow artifacts. Takes a base
 ## Syntax
 
 ```
-/nw:review @{agent-name} {artifact-type} "{artifact-path}" [step_id={id}]
+/nw:review @{agent-name} {artifact-type} "{artifact-path}" [step_id={id}] [--dimensions=rpp] [--from=1] [--to=3]
 ```
 
 **Parameters:**
@@ -23,6 +23,9 @@ Dispatches an expert reviewer agent to critique workflow artifacts. Takes a base
 - `{artifact-type}` - One of: `baseline`, `roadmap`, `step`, `task`, `implementation`
 - `{artifact-path}` - Path to the artifact file (resolved to absolute)
 - `step_id={id}` - Required for step and implementation reviews
+- `--dimensions=rpp` - Triggers RPP code smell scan alongside standard review (Dimension 4)
+- `--from=N` - Start RPP level (default: 1). Requires `--dimensions=rpp`
+- `--to=N` - End RPP level (default: 6). Requires `--dimensions=rpp`
 
 ## Agent Derivation
 
@@ -82,6 +85,12 @@ Parses to: invoke `nw-solution-architect-reviewer` with roadmap review.
 /nw:review @nw-platform-architect implementation "docs/feature/auth-upgrade/execution-log.yaml" step_id=01-01
 ```
 Parses to: invoke `nw-platform-architect-reviewer` with implementation review of step 01-01.
+
+### Example 4: RPP code quality review
+```
+/nw:review @nw-software-crafter implementation "src/des/" --dimensions=rpp --from=1 --to=3
+```
+Parses to: invoke `nw-software-crafter-reviewer` with implementation review + RPP L1-L3 code smell detection using cascade rule.
 
 ## Error Messages
 
