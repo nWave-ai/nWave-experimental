@@ -254,6 +254,110 @@ def _log_protocol_anomaly(
         pass  # Anomaly logging must never break the handler
 
 
+# ---------------------------------------------------------------------------
+# L2 Extract: shared stdin parsing and error logging across all 4 handlers
+# ---------------------------------------------------------------------------
+
+class _StdinParseResult:
+    """Result of reading and parsing JSON from stdin.
+
+    Encapsulates three outcomes: empty stdin, JSON parse error, or success.
+    """
+
+    __slots__ = ("hook_input", "is_empty", "parse_error")
+
+    def __init__(
+        self,
+        hook_input: dict | None = None,
+        is_empty: bool = False,
+        parse_error: str | None = None,
+    ) -> None:
+        self.hook_input = hook_input
+        self.is_empty = is_empty
+        self.parse_error = parse_error
+
+    @property
+    def ok(self) -> bool:
+        """True when stdin was parsed successfully into a dict."""
+        return self.hook_input is not None
+
+
+def _read_and_parse_stdin(
+    handler: str,
+    json_error_fallback: str = "error",
+) -> _StdinParseResult:
+    """Read JSON from stdin with protocol anomaly logging.
+
+    Handles the two protocol-level anomalies (empty stdin, malformed JSON)
+    that every hook handler must deal with identically.
+
+    Args:
+        handler: Name of the calling handler for anomaly log context.
+        json_error_fallback: Fallback action to log for JSON parse errors.
+            Fail-closed handlers pass "error", fail-open handlers pass "allow".
+
+    Returns:
+        _StdinParseResult with either parsed hook_input, is_empty flag,
+        or parse_error string.
+    """
+    input_data = sys.stdin.read()
+
+    if not input_data or not input_data.strip():
+        _log_protocol_anomaly(
+            handler=handler,
+            anomaly_type="empty_stdin",
+            detail="No input data received on stdin",
+            fallback_action="allow",
+        )
+        return _StdinParseResult(is_empty=True)
+
+    try:
+        hook_input = json.loads(input_data)
+    except json.JSONDecodeError as e:
+        _log_protocol_anomaly(
+            handler=handler,
+            anomaly_type="json_parse_error",
+            detail=f"Invalid JSON: {e!s}",
+            fallback_action=json_error_fallback,
+        )
+        return _StdinParseResult(parse_error=f"Invalid JSON: {e!s}")
+
+    return _StdinParseResult(hook_input=hook_input)
+
+
+def _log_hook_error(handler: str, error: Exception, stderr_capture: str) -> None:
+    """Log a HOOK_ERROR audit event for unhandled exceptions in handlers.
+
+    Extracted from the identical try/except blocks in all 4 handler exception paths.
+    Wrapped in try/except so audit logging failure never masks the original error.
+
+    Args:
+        handler: Name of the handler that raised the exception.
+        error: The unhandled exception.
+        stderr_capture: Captured stderr content (already truncated by caller).
+    """
+    try:
+        audit_writer = _create_audit_writer()
+        audit_writer.log_event(
+            AuditEvent(
+                event_type="HOOK_ERROR",
+                timestamp=SystemTimeProvider().now_utc().isoformat(),
+                data={
+                    "error": str(error),
+                    "handler": handler,
+                    "error_type": type(error).__name__,
+                    "stderr_capture": stderr_capture,
+                },
+            )
+        )
+    except Exception:
+        pass  # Don't let audit logging failure mask the original error
+
+
+# ---------------------------------------------------------------------------
+# DES task signal file management
+# ---------------------------------------------------------------------------
+
 DES_SESSION_DIR = Path(".nwave") / "des"
 DES_DELIVER_SESSION_FILE = DES_SESSION_DIR / "deliver-session.json"
 DES_TASK_ACTIVE_FILE = DES_SESSION_DIR / "des-task-active"
@@ -336,6 +440,10 @@ def _remove_des_task_signal(project_id: str = "", step_id: str = "") -> None:
         pass  # Signal cleanup must never break the hook
 
 
+# ---------------------------------------------------------------------------
+# Handler: PreToolUse (Task validation)
+# ---------------------------------------------------------------------------
+
 def handle_pre_tool_use() -> int:
     """Handle PreToolUse command: validate Task tool invocation.
 
@@ -353,34 +461,19 @@ def handle_pre_tool_use() -> int:
     stderr_buffer = io.StringIO()
     try:
         with contextlib.redirect_stderr(stderr_buffer):
-            # Read JSON from stdin
-            input_data = sys.stdin.read()
+            stdin_result = _read_and_parse_stdin("pre_tool_use")
 
-            # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
-            if not input_data or not input_data.strip():
-                _log_protocol_anomaly(
-                    handler="pre_tool_use",
-                    anomaly_type="empty_stdin",
-                    detail="No input data received on stdin",
-                    fallback_action="allow",
-                )
+            if stdin_result.is_empty:
                 print(json.dumps({"decision": "allow"}))
                 return 0
 
-            # Parse JSON
-            try:
-                hook_input = json.loads(input_data)
-            except json.JSONDecodeError as e:
-                _log_protocol_anomaly(
-                    handler="pre_tool_use",
-                    anomaly_type="json_parse_error",
-                    detail=f"Invalid JSON: {e!s}",
-                    fallback_action="error",
-                )
-                response = {"status": "error", "reason": f"Invalid JSON: {e!s}"}
+            if stdin_result.parse_error:
+                response = {"status": "error", "reason": stdin_result.parse_error}
                 print(json.dumps(response))
                 exit_code = 1
                 return exit_code
+
+            hook_input = stdin_result.hook_input
 
             # Diagnostic: confirm hook was invoked
             tool_input = hook_input.get("tool_input", {})
@@ -440,24 +533,8 @@ def handle_pre_tool_use() -> int:
 
     except Exception as e:
         # Fail-closed: any error blocks execution
-        # Log error to audit trail so it is visible in compliance logs
         stderr_capture = stderr_buffer.getvalue()[:_STDERR_CAPTURE_MAX_CHARS]
-        try:
-            audit_writer = _create_audit_writer()
-            audit_writer.log_event(
-                AuditEvent(
-                    event_type="HOOK_ERROR",
-                    timestamp=SystemTimeProvider().now_utc().isoformat(),
-                    data={
-                        "error": str(e),
-                        "handler": "pre_tool_use",
-                        "error_type": type(e).__name__,
-                        "stderr_capture": stderr_capture,
-                    },
-                )
-            )
-        except Exception:
-            pass  # Don't let audit logging failure mask the original error
+        _log_hook_error("pre_tool_use", e, stderr_capture)
         response = {"status": "error", "reason": f"Unexpected error: {e!s}"}
         print(json.dumps(response))
         exit_code = 1
@@ -475,6 +552,10 @@ def handle_pre_tool_use() -> int:
         )
 
 
+# ---------------------------------------------------------------------------
+# Transcript DES context extraction
+# ---------------------------------------------------------------------------
+
 def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
     """Extract DES markers from an agent's transcript file.
 
@@ -487,7 +568,7 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
     Returns:
         dict with "project_id" and "step_id" if DES markers found, None otherwise
     """
-    # Resilience 9c: missing transcript file → return None silently
+    # Resilience 9c: missing transcript file -> return None silently
     if not Path(transcript_path).exists():
         return None
 
@@ -560,6 +641,10 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
         pass
     return None
 
+
+# ---------------------------------------------------------------------------
+# DES context resolution (direct protocol vs transcript-based)
+# ---------------------------------------------------------------------------
 
 def _resolve_des_context(
     hook_input: dict,
@@ -658,6 +743,32 @@ Never write log entries for phases that were not actually executed."""
     }
 
 
+# ---------------------------------------------------------------------------
+# Handler: SubagentStop (step completion validation)
+# ---------------------------------------------------------------------------
+
+def _extract_execution_stats(hook_input: dict) -> tuple[int | None, int | None]:
+    """Extract turns_used and tokens_used from hook input.
+
+    Claude Code may include num_turns and total_tokens in SubagentStop hook_input.
+
+    Args:
+        hook_input: Parsed JSON from stdin.
+
+    Returns:
+        Tuple of (turns_used, tokens_used), each None if not present.
+    """
+    turns_used: int | None = None
+    tokens_used: int | None = None
+    raw_turns = hook_input.get("num_turns")
+    raw_tokens = hook_input.get("total_tokens")
+    if raw_turns is not None:
+        turns_used = int(raw_turns)
+    if raw_tokens is not None:
+        tokens_used = int(raw_tokens)
+    return turns_used, tokens_used
+
+
 def handle_subagent_stop() -> int:
     """Handle subagent-stop command: validate step completion.
 
@@ -681,41 +792,22 @@ def handle_subagent_stop() -> int:
     stderr_buffer = io.StringIO()
     try:
         with contextlib.redirect_stderr(stderr_buffer):
-            input_data = sys.stdin.read()
+            stdin_result = _read_and_parse_stdin("subagent_stop")
 
-            # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
-            if not input_data or not input_data.strip():
-                _log_protocol_anomaly(
-                    handler="subagent_stop",
-                    anomaly_type="empty_stdin",
-                    detail="No input data received on stdin",
-                    fallback_action="allow",
-                )
+            if stdin_result.is_empty:
                 print(json.dumps({"decision": "allow"}))
                 return 0
 
-            try:
-                hook_input = json.loads(input_data)
-            except json.JSONDecodeError as e:
-                _log_protocol_anomaly(
-                    handler="subagent_stop",
-                    anomaly_type="json_parse_error",
-                    detail=f"Invalid JSON: {e!s}",
-                    fallback_action="error",
-                )
-                response = {"status": "error", "reason": f"Invalid JSON: {e!s}"}
+            if stdin_result.parse_error:
+                response = {"status": "error", "reason": stdin_result.parse_error}
                 print(json.dumps(response))
                 exit_code = 1
                 return exit_code
 
-            # Extract execution stats from hook_input (future-proofing:
-            # Claude Code may add these fields to SubagentStop hook_input)
-            raw_turns = hook_input.get("num_turns")
-            raw_tokens = hook_input.get("total_tokens")
-            if raw_turns is not None:
-                turns_used = int(raw_turns)
-            if raw_tokens is not None:
-                tokens_used = int(raw_tokens)
+            hook_input = stdin_result.hook_input
+
+            # Extract execution stats from hook_input
+            turns_used, tokens_used = _extract_execution_stats(hook_input)
 
             # Diagnostic: confirm hook was invoked with agent details
             _log_hook_invoked(
@@ -730,10 +822,10 @@ def handle_subagent_stop() -> int:
             )
 
             # Resolve DES context from either protocol
-            result = _resolve_des_context(hook_input)
-            if result[0] is None:
-                # Error or non-DES passthrough — log it for diagnostics
-                _, response, exit_code = result
+            des_context_result = _resolve_des_context(hook_input)
+            if des_context_result[0] is None:
+                # Error or non-DES passthrough -- log it for diagnostics
+                _, response, exit_code = des_context_result
                 _log_hook_invoked(
                     "subagent_stop_passthrough",
                     {
@@ -749,7 +841,7 @@ def handle_subagent_stop() -> int:
                 )
                 print(json.dumps(response))
                 return exit_code
-            execution_log_path, project_id, step_id = result
+            execution_log_path, project_id, step_id = des_context_result
 
             # Read task_start_time and task_correlation_id from signal BEFORE removing it
             task_start_time = ""
@@ -801,24 +893,8 @@ def handle_subagent_stop() -> int:
 
     except Exception as e:
         # Fail-closed: any error blocks execution via stderr + exit 1
-        # Log error to audit trail so it is visible in compliance logs
         stderr_capture = stderr_buffer.getvalue()[:_STDERR_CAPTURE_MAX_CHARS]
-        try:
-            audit_writer = _create_audit_writer()
-            audit_writer.log_event(
-                AuditEvent(
-                    event_type="HOOK_ERROR",
-                    timestamp=SystemTimeProvider().now_utc().isoformat(),
-                    data={
-                        "error": str(e),
-                        "handler": "subagent_stop",
-                        "error_type": type(e).__name__,
-                        "stderr_capture": stderr_capture,
-                    },
-                )
-            )
-        except Exception:
-            pass  # Don't let audit logging failure mask the original error
+        _log_hook_error("subagent_stop", e, stderr_capture)
         print(f"SubagentStop hook error: {e!s}", file=sys.stderr)
         exit_code = 1
         return exit_code
@@ -836,6 +912,10 @@ def handle_subagent_stop() -> int:
             tokens_used=tokens_used,
         )
 
+
+# ---------------------------------------------------------------------------
+# Handler: PostToolUse (failure notification injection)
+# ---------------------------------------------------------------------------
 
 def handle_post_tool_use() -> int:
     """Handle post-tool-use command: notify parent of sub-agent failures.
@@ -855,32 +935,20 @@ def handle_post_tool_use() -> int:
     stderr_buffer = io.StringIO()
     try:
         with contextlib.redirect_stderr(stderr_buffer):
-            # Read JSON from stdin
-            input_data = sys.stdin.read()
+            stdin_result = _read_and_parse_stdin(
+                "post_tool_use", json_error_fallback="allow"
+            )
 
-            if not input_data or not input_data.strip():
-                # Non-DES or missing input: passthrough
-                _log_protocol_anomaly(
-                    handler="post_tool_use",
-                    anomaly_type="empty_stdin",
-                    detail="No input data received on stdin",
-                    fallback_action="allow",
-                )
+            if stdin_result.is_empty:
                 print(json.dumps({}))
                 return 0
 
-            # Parse JSON (ignore parse errors gracefully)
-            try:
-                hook_input = json.loads(input_data)
-            except json.JSONDecodeError as e:
-                _log_protocol_anomaly(
-                    handler="post_tool_use",
-                    anomaly_type="json_parse_error",
-                    detail=f"Invalid JSON: {e!s}",
-                    fallback_action="allow",
-                )
+            if stdin_result.parse_error:
+                # PostToolUse fails open on parse errors
                 print(json.dumps({}))
                 return 0
+
+            hook_input = stdin_result.hook_input
 
             # Diagnostic: confirm hook was invoked
             _log_hook_invoked(
@@ -942,24 +1010,8 @@ def handle_post_tool_use() -> int:
 
     except Exception as e:
         # PostToolUse should never block - fail open
-        # Log error to audit trail so it is visible in compliance logs
         stderr_capture = stderr_buffer.getvalue()[:_STDERR_CAPTURE_MAX_CHARS]
-        try:
-            audit_writer = _create_audit_writer()
-            audit_writer.log_event(
-                AuditEvent(
-                    event_type="HOOK_ERROR",
-                    timestamp=SystemTimeProvider().now_utc().isoformat(),
-                    data={
-                        "error": str(e),
-                        "handler": "post_tool_use",
-                        "error_type": type(e).__name__,
-                        "stderr_capture": stderr_capture,
-                    },
-                )
-            )
-        except Exception:
-            pass  # Don't let audit logging failure mask the original error
+        _log_hook_error("post_tool_use", e, stderr_capture)
         print(json.dumps({}))
         return 0
     finally:
@@ -973,6 +1025,10 @@ def handle_post_tool_use() -> int:
             duration_ms=duration_ms,
         )
 
+
+# ---------------------------------------------------------------------------
+# Handler-specific diagnostic loggers
+# ---------------------------------------------------------------------------
 
 def _log_pre_write_decision(
     hook_id: str,
@@ -1044,6 +1100,10 @@ def _log_post_tool_use_decision(
         pass  # Decision logging must never break the hook
 
 
+# ---------------------------------------------------------------------------
+# Handler: PreWrite/PreEdit (session guard)
+# ---------------------------------------------------------------------------
+
 def handle_pre_write() -> int:
     """Handle PreToolUse for Write/Edit: guard source writes during deliver.
 
@@ -1060,30 +1120,20 @@ def handle_pre_write() -> int:
     stderr_buffer = io.StringIO()
     try:
         with contextlib.redirect_stderr(stderr_buffer):
-            input_data = sys.stdin.read()
+            stdin_result = _read_and_parse_stdin(
+                "pre_write", json_error_fallback="allow"
+            )
 
-            if not input_data or not input_data.strip():
-                # No input = allow (fail-open for Write/Edit)
-                _log_protocol_anomaly(
-                    handler="pre_write",
-                    anomaly_type="empty_stdin",
-                    detail="No input data received on stdin",
-                    fallback_action="allow",
-                )
+            if stdin_result.is_empty:
                 print(json.dumps({"decision": "allow"}))
                 return 0
 
-            try:
-                hook_input = json.loads(input_data)
-            except json.JSONDecodeError as e:
-                _log_protocol_anomaly(
-                    handler="pre_write",
-                    anomaly_type="json_parse_error",
-                    detail=f"Invalid JSON: {e!s}",
-                    fallback_action="allow",
-                )
+            if stdin_result.parse_error:
+                # Write/Edit fails open on parse errors
                 print(json.dumps({"decision": "allow"}))
                 return 0
+
+            hook_input = stdin_result.hook_input
 
             # Extract file path from tool_input
             tool_input = hook_input.get("tool_input", {})
@@ -1105,22 +1155,22 @@ def handle_pre_write() -> int:
             )
 
             policy = SessionGuardPolicy()
-            result = policy.check(
+            guard_result = policy.check(
                 file_path=file_path,
                 session_active=session_active,
                 des_task_active=des_task_active,
             )
 
-            if result.blocked:
+            if guard_result.blocked:
                 _log_pre_write_decision(
                     hook_id=hook_id,
                     event_type="HOOK_PRE_WRITE_BLOCKED",
                     file_path=file_path,
-                    reason=result.reason or "Source write blocked during deliver",
+                    reason=guard_result.reason or "Source write blocked during deliver",
                 )
                 response = {
                     "decision": "block",
-                    "reason": result.reason
+                    "reason": guard_result.reason
                     or "Source write blocked during deliver",
                 }
                 print(json.dumps(response))
@@ -1144,24 +1194,8 @@ def handle_pre_write() -> int:
 
     except Exception as e:
         # Fail-open for Write/Edit (unlike Task which is fail-closed)
-        # Log error to audit trail for diagnostics
         stderr_capture = stderr_buffer.getvalue()[:_STDERR_CAPTURE_MAX_CHARS]
-        try:
-            audit_writer = _create_audit_writer()
-            audit_writer.log_event(
-                AuditEvent(
-                    event_type="HOOK_ERROR",
-                    timestamp=SystemTimeProvider().now_utc().isoformat(),
-                    data={
-                        "error": str(e),
-                        "handler": "pre_write",
-                        "error_type": type(e).__name__,
-                        "stderr_capture": stderr_capture,
-                    },
-                )
-            )
-        except Exception:
-            pass  # Don't let audit logging failure mask the original error
+        _log_hook_error("pre_write", e, stderr_capture)
         print(json.dumps({"decision": "allow"}))
         exit_code = 0
         return exit_code
@@ -1176,6 +1210,10 @@ def handle_pre_write() -> int:
             duration_ms=duration_ms,
         )
 
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
 
 def main() -> None:
     """Hook adapter entry point - routes command to appropriate handler."""

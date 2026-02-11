@@ -381,6 +381,28 @@ class SubagentStopService(SubagentStopPort):
                     )
                 )
 
+    @staticmethod
+    def _add_execution_stats(
+        data: dict,
+        turns_used: int | None,
+        tokens_used: int | None,
+    ) -> None:
+        """Add turns_used and tokens_used to event data dict when present.
+
+        Centralizes the repeated conditional insertion of execution statistics
+        into audit event data across _log_passed, _log_failed, and
+        _log_commit_verified.
+
+        Args:
+            data: Mutable event data dict to enrich in place.
+            turns_used: Number of turns used by the subagent, or None.
+            tokens_used: Number of tokens used by the subagent, or None.
+        """
+        if turns_used is not None:
+            data["turns_used"] = turns_used
+        if tokens_used is not None:
+            data["tokens_used"] = tokens_used
+
     def _log_passed(
         self,
         feature_name: str,
@@ -391,10 +413,7 @@ class SubagentStopService(SubagentStopPort):
     ) -> None:
         """Log successful validation to the audit trail."""
         data: dict = {}
-        if turns_used is not None:
-            data["turns_used"] = turns_used
-        if tokens_used is not None:
-            data["tokens_used"] = tokens_used
+        self._add_execution_stats(data, turns_used, tokens_used)
         self._audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_SUBAGENT_STOP_PASSED",
@@ -422,10 +441,7 @@ class SubagentStopService(SubagentStopPort):
         }
         if allowed_despite_failure:
             data["allowed_despite_failure"] = True
-        if turns_used is not None:
-            data["turns_used"] = turns_used
-        if tokens_used is not None:
-            data["tokens_used"] = tokens_used
+        self._add_execution_stats(data, turns_used, tokens_used)
         self._audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_SUBAGENT_STOP_FAILED",
@@ -449,10 +465,7 @@ class SubagentStopService(SubagentStopPort):
             "commit_date": result.commit_date,
             "commit_subject": result.commit_subject,
         }
-        if context.turns_used is not None:
-            data["turns_used"] = context.turns_used
-        if context.tokens_used is not None:
-            data["tokens_used"] = context.tokens_used
+        self._add_execution_stats(data, context.turns_used, context.tokens_used)
         self._audit_writer.log_event(
             AuditEvent(
                 event_type="COMMIT_VERIFIED",
