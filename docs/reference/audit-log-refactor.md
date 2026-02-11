@@ -88,7 +88,7 @@ def __init__(self, log_dir: str | Path | None = None) -> None:
 1. Explicit `log_dir` parameter (highest priority)
 2. `DES_AUDIT_LOG_DIR` environment variable
 3. `.nwave/des-config.json` `audit_log_dir` field (from config)
-4. `.nwave/logs/des/` (project-local default)
+4. `.nwave/des/logs/` (project-local default)
 5. `~/.claude/des/logs/` (global fallback)
 
 ### Method: log_event()
@@ -445,7 +445,7 @@ export DES_AUDIT_LOG_DIR="/custom/audit/path"
 
 1. `DES_AUDIT_LOG_DIR` environment variable (if set and writable)
 2. `audit_log_dir` from `.nwave/des-config.json` (if file exists and valid)
-3. `.nwave/logs/des/` (project-local default)
+3. `.nwave/des/logs/` (project-local default)
 4. `~/.claude/des/logs/` (global fallback, always writable)
 
 ---

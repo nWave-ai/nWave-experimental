@@ -8,7 +8,7 @@ This module contains step definitions for testing:
 - Project isolation of audit trails
 
 Domain: Audit Logging
-Bug: Audit logs go to global ~/.claude/des/logs/ instead of project-local .nwave/logs/des/
+Bug: Audit logs go to global ~/.claude/des/logs/ instead of project-local .nwave/des/logs/
 """
 
 import json
@@ -265,7 +265,7 @@ def verify_audit_log_location(expected_path: str, test_context: dict):
     """
     Verify audit logs are written to the expected location.
 
-    BUG DETECTION: If expected_path is ".nwave/logs/des/" but logs go to
+    BUG DETECTION: If expected_path is ".nwave/des/logs/" but logs go to
     "~/.claude/des/logs/", this test will fail, detecting the bug.
     """
     logger = test_context.get("audit_logger")

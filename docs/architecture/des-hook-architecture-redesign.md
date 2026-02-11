@@ -202,7 +202,7 @@ Both methods instantiate `get_audit_logger()` and `SystemTimeProvider()` interna
                                     v
 +========================================================================+
 |                        EXTERNAL SYSTEMS                                |
-|   execution-log.yaml    .nwave/logs/des/audit-*.log    git repository  |
+|   execution-log.yaml    .nwave/des/logs/audit-*.log    git repository  |
 +========================================================================+
 ```
 

@@ -7,7 +7,7 @@ Priority (highest to lowest):
 1. Explicit log_dir parameter
 2. DES_AUDIT_LOG_DIR environment variable
 3. .nwave/des-config.json audit_log_dir field
-4. Project-local .nwave/logs/des/ (using cwd or Path.cwd())
+4. Project-local .nwave/des/logs/ (using cwd or Path.cwd())
 5. Global ~/.claude/des/logs/ (fallback)
 """
 
@@ -67,7 +67,7 @@ class AuditLogPathResolver:
             "/var",
             "/tmp",
         ):
-            return effective_cwd / ".nwave" / "logs" / "des"
+            return effective_cwd / ".nwave" / "des" / "logs"
 
         # Priority 5: Global fallback
         return home / ".claude" / "des" / "logs"

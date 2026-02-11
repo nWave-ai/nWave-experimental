@@ -2,7 +2,7 @@
 Bug 2: Audit Logs Location - Acceptance Tests.
 
 Tests that verify:
-- Default location is project-local .nwave/logs/des/
+- Default location is project-local .nwave/des/logs/
 - Logs do NOT go to global ~/.claude/des/logs/
 - Location is configurable via DES_AUDIT_LOG_DIR environment variable
 - Location is configurable via config file

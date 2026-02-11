@@ -486,7 +486,7 @@ echo "Exit code: $?"
 
 **Passi:**
 1. Eseguire una sequenza di test (TC-003, TC-006)
-2. Cercare file audit: `ls ~/.claude/des/logs/audit-*.log` o `.nwave/logs/des/audit-*.log`
+2. Cercare file audit: `ls ~/.claude/des/logs/audit-*.log` o `.nwave/des/logs/audit-*.log`
 3. Verificare formato JSONL
 
 **Formato atteso (ogni riga):**
@@ -575,13 +575,13 @@ git log --oneline -1
 **Comando di verifica:**
 ```bash
 # Prima del test: contare eventi
-wc -l .nwave/logs/des/audit-$(date +%Y-%m-%d).log
+wc -l .nwave/des/logs/audit-$(date +%Y-%m-%d).log
 
 # Eseguire un Task in Claude Code (ad-hoc, senza marker DES)
 # ... Task(subagent_type="Explore", prompt="list files", max_turns=10)
 
 # Dopo il test: verificare nuovo evento
-tail -5 .nwave/logs/des/audit-$(date +%Y-%m-%d).log
+tail -5 .nwave/des/logs/audit-$(date +%Y-%m-%d).log
 ```
 
 **Criteri di successo:**
@@ -716,9 +716,9 @@ Questo e' un "reminder silenzioso": guardando l'audit trail si vedra' che il tas
 **Verifica audit trail:**
 ```bash
 # Contare task non-DES vs DES
-grep -c "non_des_task" .nwave/logs/des/audit-$(date +%Y-%m-%d).log
-grep -c "orchestrator_mode" .nwave/logs/des/audit-$(date +%Y-%m-%d).log
-grep -c "des_validated" .nwave/logs/des/audit-$(date +%Y-%m-%d).log
+grep -c "non_des_task" .nwave/des/logs/audit-$(date +%Y-%m-%d).log
+grep -c "orchestrator_mode" .nwave/des/logs/audit-$(date +%Y-%m-%d).log
+grep -c "des_validated" .nwave/des/logs/audit-$(date +%Y-%m-%d).log
 ```
 
 **Criteri di successo:**
@@ -824,7 +824,7 @@ rm -rf "$(dirname $TMP_LOG)"
 **Verifica indiretta:**
 ```bash
 # Dopo un tentativo fallito, controllare audit log
-grep "HOOK_SUBAGENT_STOP_FAILED" .nwave/logs/des/audit-$(date +%Y-%m-%d).log | tail -1
+grep "HOOK_SUBAGENT_STOP_FAILED" .nwave/des/logs/audit-$(date +%Y-%m-%d).log | tail -1
 
 # Verificare che il recovery context sia stato generato
 # (il context appare nel response JSON del hook, non nell'audit log)

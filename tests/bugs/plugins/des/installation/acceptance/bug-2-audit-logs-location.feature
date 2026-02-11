@@ -1,7 +1,7 @@
 # Feature: Project-Local Audit Logs Bug Detection
 # Bug: Audit logs go to global location ~/.claude/des/logs/ instead of project-local
 # Evidence: AuditLogger.__init__() hardcodes log_dir = home_dir / ".claude" / "des" / "logs"
-# Expected: Default should be .nwave/logs/des/ with configuration override capability
+# Expected: Default should be .nwave/des/logs/ with configuration override capability
 # Date: 2026-02-04
 
 Feature: Project-Local Audit Logs
@@ -22,12 +22,12 @@ Feature: Project-Local Audit Logs
   Scenario: Audit logs should default to project-local directory
     # Current Behavior (BUG): Logs go to ~/.claude/des/logs/audit-YYYY-MM-DD.log
     # All projects share the same audit log, causing cross-contamination
-    # Expected Behavior: Logs go to .nwave/logs/des/audit-YYYY-MM-DD.log
+    # Expected Behavior: Logs go to .nwave/des/logs/audit-YYYY-MM-DD.log
 
     Given I am in project directory "/tmp/test-project"
     And no audit log configuration is set
     When the DES audit logger initializes
-    Then audit logs should be written to ".nwave/logs/des/"
+    Then audit logs should be written to ".nwave/des/logs/"
     And audit logs should NOT be written to "~/.claude/des/logs/"
 
   @bug-2 @failing @priority-critical
@@ -52,7 +52,7 @@ Feature: Project-Local Audit Logs
     When the DES audit logger initializes
     Then audit logs should be written to "/custom/logs/"
     And audit logs should NOT be written to "~/.claude/des/logs/"
-    And audit logs should NOT be written to ".nwave/logs/des/"
+    And audit logs should NOT be written to ".nwave/des/logs/"
 
   @bug-2 @failing @priority-high
   Scenario: Audit log location should be configurable via config file
@@ -74,14 +74,14 @@ Feature: Project-Local Audit Logs
 
   @bug-2 @failing @priority-medium
   Scenario: Project-local log directory should be created automatically
-    # Expected behavior: If .nwave/logs/des/ doesn't exist, create it
+    # Expected behavior: If .nwave/des/logs/ doesn't exist, create it
 
     Given I am in project directory "/tmp/new-project"
-    And the directory ".nwave/logs/des/" does not exist
+    And the directory ".nwave/des/logs/" does not exist
     When the DES audit logger initializes
     And the DES audit logger writes an event
-    Then the directory ".nwave/logs/des/" should be created
-    And the audit log file should exist in ".nwave/logs/des/"
+    Then the directory ".nwave/des/logs/" should be created
+    And the audit log file should exist in ".nwave/des/logs/"
 
   @bug-2 @priority-medium
   Scenario: Audit log rotation should work in project-local directory
@@ -91,7 +91,7 @@ Feature: Project-Local Audit Logs
     And today is "2026-02-04"
     When the DES audit logger writes an event
     Then the audit log file should be named "audit-2026-02-04.log"
-    And the file should be in ".nwave/logs/des/"
+    And the file should be in ".nwave/des/logs/"
 
   @bug-2 @priority-low
   Scenario: Backward compatibility with existing global logs

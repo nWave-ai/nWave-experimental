@@ -160,10 +160,15 @@ class DESPlugin(InstallationPlugin):
             if not hooks_result.success:
                 return hooks_result
 
+            # Bootstrap project-level DES config
+            config_result = self._bootstrap_des_config(context)
+            if not config_result.success:
+                return config_result
+
             return PluginResult(
                 success=True,
                 plugin_name="des",
-                message="DES installed successfully (module, scripts, templates, hooks)",
+                message="DES installed successfully (module, scripts, templates, hooks, config)",
             )
 
         except Exception as e:
@@ -549,6 +554,57 @@ class DESPlugin(InstallationPlugin):
                 success=False,
                 plugin_name="des",
                 message=f"DES hooks install failed: {e}",
+            )
+
+    def _bootstrap_des_config(self, context: InstallContext) -> PluginResult:
+        """Bootstrap .nwave/des-config.json with default settings.
+
+        Creates the config file if it doesn't exist. If it already exists,
+        leaves it untouched to preserve user customizations.
+
+        The config lives in the project directory (.nwave/), not ~/.claude,
+        because audit log paths are project-relative.
+        """
+        try:
+            project_root = context.project_root or Path.cwd()
+            nwave_dir = project_root / ".nwave"
+            config_file = nwave_dir / "des-config.json"
+
+            if config_file.exists():
+                context.logger.info("  ✅ DES config already exists")
+                return PluginResult(
+                    success=True,
+                    plugin_name="des",
+                    message="DES config already exists",
+                )
+
+            default_config = {
+                "audit_logging_enabled": False,
+                "audit_log_dir": ".nwave/des/logs",
+            }
+
+            if context.dry_run:
+                context.logger.info(
+                    f"  🚨 [DRY RUN] Would create {config_file}"
+                )
+            else:
+                nwave_dir.mkdir(parents=True, exist_ok=True)
+                with open(config_file, "w", encoding="utf-8") as f:
+                    json.dump(default_config, f, indent=2)
+                    f.write("\n")
+                context.logger.info(f"  ✅ DES config created: {config_file}")
+
+            return PluginResult(
+                success=True,
+                plugin_name="des",
+                message=f"DES config bootstrapped at {config_file}",
+            )
+
+        except Exception as e:
+            return PluginResult(
+                success=False,
+                plugin_name="des",
+                message=f"DES config bootstrap failed: {e}",
             )
 
     def _load_settings(self, settings_file: Path) -> dict:

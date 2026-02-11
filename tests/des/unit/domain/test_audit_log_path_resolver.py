@@ -24,11 +24,11 @@ class TestAuditLogPathResolver:
         assert resolver.resolve() == env_dir
 
     def test_project_local_default(self, tmp_path, monkeypatch):
-        """Without env var, should use project-local .nwave/logs/des/."""
+        """Without env var, should use project-local .nwave/des/logs/."""
         monkeypatch.delenv("DES_AUDIT_LOG_DIR", raising=False)
         monkeypatch.chdir(tmp_path)
         resolver = AuditLogPathResolver()
-        assert resolver.resolve() == tmp_path / ".nwave" / "logs" / "des"
+        assert resolver.resolve() == tmp_path / ".nwave" / "des" / "logs"
 
     def test_cwd_override(self, tmp_path, monkeypatch):
         """Explicit cwd parameter should override Path.cwd()."""
@@ -36,4 +36,4 @@ class TestAuditLogPathResolver:
         cwd_dir = tmp_path / "my-project"
         cwd_dir.mkdir()
         resolver = AuditLogPathResolver(cwd=cwd_dir)
-        assert resolver.resolve() == cwd_dir / ".nwave" / "logs" / "des"
+        assert resolver.resolve() == cwd_dir / ".nwave" / "des" / "logs"

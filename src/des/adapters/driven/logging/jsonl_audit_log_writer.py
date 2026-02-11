@@ -44,7 +44,7 @@ class JsonlAuditLogWriter(AuditLogWriter):
         Log directory priority (highest to lowest):
         1. Explicit log_dir parameter
         2. DES_AUDIT_LOG_DIR environment variable
-        3. Project-local .nwave/logs/des/ (default)
+        3. Project-local .nwave/des/logs/ (default)
         4. Global ~/.claude/des/logs/ (fallback)
 
         Args:

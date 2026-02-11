@@ -109,17 +109,17 @@ def des_config_path(claude_config_dir):
 def audit_log_path(temp_home, tmp_path, monkeypatch):
     """Return path to audit log file.
 
-    Uses project-local .nwave/logs/des/ path to match production behavior
+    Uses project-local .nwave/des/logs/ path to match production behavior
     where audit logger now defaults to project-local directory.
 
     We set the working directory to tmp_path so the audit logger will
-    use tmp_path/.nwave/logs/des/ for audit logs.
+    use tmp_path/.nwave/des/logs/ for audit logs.
     """
     # Change to tmp_path as the current working directory for this test
     monkeypatch.chdir(tmp_path)
 
     # Project-local audit log directory (new default behavior)
-    logs_dir = tmp_path / ".nwave" / "logs" / "des"
+    logs_dir = tmp_path / ".nwave" / "des" / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     return logs_dir / "audit.log"
 
