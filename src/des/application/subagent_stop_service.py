@@ -250,8 +250,9 @@ class SubagentStopService(SubagentStopPort):
         Returns:
             Set of entry indices that were actually corrected.
         """
-        import yaml
         from datetime import datetime, timezone
+
+        import yaml
 
         corrected_indices: set[int] = set()
 
@@ -292,7 +293,7 @@ class SubagentStopService(SubagentStopPort):
         raw_events = raw_yaml.get("events", [])
 
         # Replace timestamps in raw event strings
-        for entry, new_ts in zip(correctable, interpolated):
+        for entry, new_ts in zip(correctable, interpolated, strict=False):
             if entry.index < len(raw_events):
                 old_event_str = raw_events[entry.index]
                 if (

@@ -40,7 +40,6 @@ from des.adapters.driven.hooks.yaml_execution_log_reader import (
 )
 from des.adapters.driven.logging.jsonl_audit_log_writer import JsonlAuditLogWriter
 from des.adapters.driven.time.system_time import SystemTimeProvider
-from des.ports.driven_ports.audit_log_writer import AuditLogWriter
 from des.adapters.driven.validation.git_scope_checker import GitScopeChecker
 from des.application.pre_tool_use_service import PreToolUseService
 from des.application.subagent_stop_service import SubagentStopService
@@ -52,7 +51,7 @@ from des.domain.max_turns_policy import MaxTurnsPolicy
 from des.domain.session_guard_policy import SessionGuardPolicy
 from des.domain.step_completion_validator import StepCompletionValidator
 from des.domain.tdd_schema import get_tdd_schema
-from des.ports.driven_ports.audit_log_writer import AuditEvent
+from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
 
 

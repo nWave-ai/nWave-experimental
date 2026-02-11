@@ -11,10 +11,7 @@ Verifies that the installer:
 - Validates installation against nWave/ source (not dist/ide)
 """
 
-import ast
 import inspect
-
-import pytest
 
 
 class TestNoBuildPipelineDependency:
@@ -36,9 +33,7 @@ class TestNoBuildPipelineDependency:
         assert "'dist'" not in source, (
             "install_nwave.py still references 'dist' path component"
         )
-        assert "dist/ide" not in source, (
-            "install_nwave.py still references dist/ide"
-        )
+        assert "dist/ide" not in source, "install_nwave.py still references dist/ide"
 
     def test_installer_has_no_build_methods(self):
         """

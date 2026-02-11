@@ -122,8 +122,8 @@ class TestCommandsPlugin:
 
         plugin = CommandsPlugin()
 
-        # Set up source directory with command files
-        source_commands = tmp_path / "framework_source" / "commands" / "nw"
+        # Set up source directory with command files (matches plugin path)
+        source_commands = tmp_path / "nWave" / "tasks" / "nw"
         source_commands.mkdir(parents=True)
         (source_commands / "devop.md").write_text("# Devop Command")
         (source_commands / "design.md").write_text("# Design Command")

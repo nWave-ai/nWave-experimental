@@ -99,7 +99,7 @@ jobs:
           python-version: ${{ env.PYTHON_DEFAULT }}
 
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.15.0
 
       - name: Ruff lint
         run: ruff check src/ scripts/ tools/ tests/ --exit-non-zero-on-fix

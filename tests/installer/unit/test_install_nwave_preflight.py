@@ -46,9 +46,7 @@ class TestInstallNwavePreflightIntegration:
             mock_checker.has_blocking_failures.return_value = False
             mock_preflight_class.return_value = mock_checker
 
-            with patch(
-                "scripts.install.install_nwave.NWaveInstaller.create_backup"
-            ):
+            with patch("scripts.install.install_nwave.NWaveInstaller.create_backup"):
                 with patch(
                     "scripts.install.install_nwave.NWaveInstaller.install_framework",
                     side_effect=track_install_framework,
@@ -247,9 +245,7 @@ class TestInstallNwavePreflightSuccess:
             mock_checker.has_blocking_failures.return_value = False
             mock_preflight_class.return_value = mock_checker
 
-            with patch(
-                "scripts.install.install_nwave.NWaveInstaller.create_backup"
-            ):
+            with patch("scripts.install.install_nwave.NWaveInstaller.create_backup"):
                 with patch(
                     "scripts.install.install_nwave.NWaveInstaller.install_framework",
                     side_effect=track_install,

@@ -55,12 +55,10 @@ class TestWalkingSkeleton:
         assert "Pipenv is available" in output
         assert "All required dependencies are available" in output
 
-    # Step 3: Source framework check
-    def test_step_03_source_framework_check(self, output: str):
-        """Source framework section reports agent and command counts."""
-        assert "Source framework" in output
-        assert "agents and" in output
-        assert "commands" in output
+    # Step 3: Source framework (removed - install now goes directly to plugins)
+    def test_step_03_install_proceeds_after_preflight(self, output: str):
+        """After preflight passes, installation proceeds to backup/install."""
+        assert "Pre-flight passed" in output
 
     # Step 4: Backup
     def test_step_04_backup_section(self, output: str):
@@ -144,7 +142,6 @@ class TestOutputOrdering:
         ordered_markers = [
             "Pre-flight checks",
             "Pre-flight passed",
-            "Source framework",
             "Installing nWave",
             "Installing Context",
             "manifest created",

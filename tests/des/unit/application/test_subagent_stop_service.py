@@ -13,26 +13,23 @@ TimeProvider).
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
 import yaml
 
 from des.adapters.driven.hooks.yaml_execution_log_reader import YamlExecutionLogReader
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.log_integrity_validator import LogIntegrityValidator
-from des.domain.phase_event import PhaseEvent
 from des.domain.step_completion_validator import StepCompletionValidator
 from des.domain.tdd_schema import get_tdd_schema
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
 from des.ports.driven_ports.time_provider_port import TimeProvider
 from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
-
-
-if TYPE_CHECKING:
-    pass
 
 
 # --- Test doubles (driven port implementations) ---
@@ -69,6 +66,11 @@ class StubScopeChecker(ScopeChecker):
         return ScopeCheckResult(has_violations=False, out_of_scope_files=[])
 
 
+def _parse_iso(s: str) -> datetime:
+    """Parse ISO 8601 timestamp, handling 'Z' suffix for Python 3.10 compat."""
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
 # --- Helpers ---
 
 
@@ -90,7 +92,7 @@ def _make_complete_events_strings(step_id: str, timestamps: list[str]) -> list[s
     ]
     return [
         f"{step_id}|{name}|{status}|{outcome}|{ts}"
-        for (name, status, outcome), ts in zip(phases, timestamps)
+        for (name, status, outcome), ts in zip(phases, timestamps, strict=False)
     ]
 
 
@@ -105,9 +107,7 @@ def _write_execution_log(
         "project_id": project_id,
         "events": event_strings,
     }
-    log_path.write_text(
-        yaml.dump(log_data, default_flow_style=False, sort_keys=False)
-    )
+    log_path.write_text(yaml.dump(log_data, default_flow_style=False, sort_keys=False))
 
 
 def _read_execution_log_events(log_path: Path) -> list[str]:
@@ -153,13 +153,13 @@ class TestTimestampCorrection:
         # Fabricated timestamps: all set to BEFORE task_start (pre-task)
         # Must be more than 60s before task_start to be correctable
         fabricated_ts = [
-            "2026-02-10T19:00:00Z",  # PREPARE - 2h before task start
-            "2026-02-10T19:01:00Z",  # RED_ACCEPTANCE
-            "2026-02-10T19:02:00Z",  # RED_UNIT
-            "2026-02-10T19:03:00Z",  # GREEN
-            "2026-02-10T19:04:00Z",  # REVIEW
-            "2026-02-10T19:05:00Z",  # REFACTOR_CONTINUOUS
-            "2026-02-10T19:06:00Z",  # COMMIT
+            "2026-02-10T19:00:00+00:00",  # PREPARE - 2h before task start
+            "2026-02-10T19:01:00+00:00",  # RED_ACCEPTANCE
+            "2026-02-10T19:02:00+00:00",  # RED_UNIT
+            "2026-02-10T19:03:00+00:00",  # GREEN
+            "2026-02-10T19:04:00+00:00",  # REVIEW
+            "2026-02-10T19:05:00+00:00",  # REFACTOR_CONTINUOUS
+            "2026-02-10T19:06:00+00:00",  # COMMIT
         ]
 
         event_strings = _make_complete_events_strings(step_id, fabricated_ts)
@@ -186,7 +186,7 @@ class TestTimestampCorrection:
         for event_str in corrected_events:
             parts = event_str.split("|")
             ts_str = parts[4]
-            ts_dt = datetime.fromisoformat(ts_str)
+            ts_dt = _parse_iso(ts_str)
             # Each corrected timestamp must be between task_start and now
             assert ts_dt >= task_start_dt, (
                 f"Corrected timestamp {ts_str} is before task_start {task_start}"
@@ -213,13 +213,13 @@ class TestTimestampCorrection:
 
         # Single fabricated pre-task timestamp
         timestamps = [
-            "2026-02-10T19:00:00Z",  # PREPARE - fabricated (2h before)
-            "2026-02-10T21:01:00Z",  # RED_ACCEPTANCE - valid
-            "2026-02-10T21:02:00Z",  # RED_UNIT - valid
-            "2026-02-10T21:03:00Z",  # GREEN - valid
-            "2026-02-10T21:04:00Z",  # REVIEW - valid
-            "2026-02-10T21:05:00Z",  # REFACTOR_CONTINUOUS - valid
-            "2026-02-10T21:06:00Z",  # COMMIT - valid
+            "2026-02-10T19:00:00+00:00",  # PREPARE - fabricated (2h before)
+            "2026-02-10T21:01:00+00:00",  # RED_ACCEPTANCE - valid
+            "2026-02-10T21:02:00+00:00",  # RED_UNIT - valid
+            "2026-02-10T21:03:00+00:00",  # GREEN - valid
+            "2026-02-10T21:04:00+00:00",  # REVIEW - valid
+            "2026-02-10T21:05:00+00:00",  # REFACTOR_CONTINUOUS - valid
+            "2026-02-10T21:06:00+00:00",  # COMMIT - valid
         ]
 
         event_strings = _make_complete_events_strings(step_id, timestamps)
@@ -244,7 +244,10 @@ class TestTimestampCorrection:
         ]
         assert len(corrected_events) >= 1
         assert corrected_events[0].data["phase"] == "PREPARE"
-        assert corrected_events[0].data["original_timestamp"] == "2026-02-10T19:00:00Z"
+        assert (
+            corrected_events[0].data["original_timestamp"]
+            == "2026-02-10T19:00:00+00:00"
+        )
         assert "corrected_timestamp" in corrected_events[0].data
 
         # Should NOT have LOG_INTEGRITY_WARNING for the corrected entry
@@ -252,7 +255,7 @@ class TestTimestampCorrection:
             e for e in audit_spy.events if e.event_type == "LOG_INTEGRITY_WARNING"
         ]
         for w in warning_events:
-            assert "2026-02-10T19:00:00Z" not in w.data.get("warning", ""), (
+            assert "2026-02-10T19:00:00+00:00" not in w.data.get("warning", ""), (
                 "Corrected entry should not also appear as LOG_INTEGRITY_WARNING"
             )
 
@@ -319,7 +322,7 @@ class TestTimestampCorrection:
         time_provider = StubTimeProvider(fixed_time=now_time)
 
         # Incomplete events (only 2 phases) with fabricated timestamps
-        fabricated_ts = "2026-02-10T19:00:00Z"  # 2h before task start
+        fabricated_ts = "2026-02-10T19:00:00+00:00"  # 2h before task start
         event_strings = [
             f"{step_id}|PREPARE|EXECUTED|PASS|{fabricated_ts}",
             f"{step_id}|RED_ACCEPTANCE|EXECUTED|FAIL|{fabricated_ts}",

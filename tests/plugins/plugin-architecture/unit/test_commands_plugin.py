@@ -72,7 +72,9 @@ def install_context(tmp_path: Path, project_root: Path, test_logger: logging.Log
 
 
 def test_commands_plugin_installs_only_from_nwave_tasks_nw_excluding_legacy(
-    tmp_path: Path, project_root: Path, test_logger: logging.Logger,
+    tmp_path: Path,
+    project_root: Path,
+    test_logger: logging.Logger,
 ):
     """CommandsPlugin.install() should read only from nWave/tasks/nw/, excluding legacy/ content.
 
@@ -151,7 +153,9 @@ class TestCommandsPluginShould:
         plugin = CommandsPlugin()
         target_commands_dir = install_context.claude_dir / "commands" / "nw"
 
-        assert commands_source_dir.exists(), f"Commands source not found: {commands_source_dir}"
+        assert commands_source_dir.exists(), (
+            f"Commands source not found: {commands_source_dir}"
+        )
         source_md_files = list(commands_source_dir.glob("*.md"))
         assert len(source_md_files) >= 1, "No *.md command files in source"
 
@@ -177,7 +181,9 @@ class TestCommandsPluginShould:
         target_commands_dir = install_context.claude_dir / "commands" / "nw"
 
         # Verify legacy exists in source to make this test meaningful
-        source_legacy = install_context.project_root / "nWave" / "tasks" / "nw" / "legacy"
+        source_legacy = (
+            install_context.project_root / "nWave" / "tasks" / "nw" / "legacy"
+        )
         assert source_legacy.exists(), (
             "Test requires legacy/ directory in nWave/tasks/nw/"
         )

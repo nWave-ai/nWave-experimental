@@ -546,24 +546,20 @@ class TestInstallNwaveCallsVerifier:
                 mock_preflight_class.return_value = mock_checker
 
                 with patch(
-                    "scripts.install.install_nwave.NWaveInstaller.check_source",
-                    return_value=True,
+                    "scripts.install.install_nwave.NWaveInstaller.create_backup"
                 ):
                     with patch(
-                        "scripts.install.install_nwave.NWaveInstaller.create_backup"
+                        "scripts.install.install_nwave.NWaveInstaller.install_framework",
+                        return_value=True,
                     ):
                         with patch(
-                            "scripts.install.install_nwave.NWaveInstaller.install_framework",
-                            return_value=True,
+                            "scripts.install.install_nwave.NWaveInstaller.create_manifest"
                         ):
-                            with patch(
-                                "scripts.install.install_nwave.NWaveInstaller.create_manifest"
-                            ):
-                                # ACT
-                                from scripts.install.install_nwave import main
+                            # ACT
+                            from scripts.install.install_nwave import main
 
-                                with patch.object(sys, "argv", ["install_nwave.py"]):
-                                    main()
+                            with patch.object(sys, "argv", ["install_nwave.py"]):
+                                main()
 
         # ASSERT
         assert verifier_called, (
@@ -616,30 +612,24 @@ class TestInstallNwaveCallsVerifier:
                 mock_preflight_class.return_value = mock_checker
 
                 with patch(
-                    "scripts.install.install_nwave.NWaveInstaller.check_source",
-                    return_value=True,
+                    "scripts.install.install_nwave.NWaveInstaller.create_backup"
                 ):
                     with patch(
-                        "scripts.install.install_nwave.NWaveInstaller.create_backup"
+                        "scripts.install.install_nwave.NWaveInstaller.install_framework",
+                        return_value=True,
                     ):
                         with patch(
-                            "scripts.install.install_nwave.NWaveInstaller.install_framework",
-                            return_value=True,
+                            "scripts.install.install_nwave.NWaveInstaller.create_manifest"
                         ):
                             with patch(
-                                "scripts.install.install_nwave.NWaveInstaller.create_manifest"
+                                "scripts.install.install_nwave.Logger.info",
+                                side_effect=capture_log,
                             ):
-                                with patch(
-                                    "scripts.install.install_nwave.Logger.info",
-                                    side_effect=capture_log,
-                                ):
-                                    # ACT
-                                    from scripts.install.install_nwave import main
+                                # ACT
+                                from scripts.install.install_nwave import main
 
-                                    with patch.object(
-                                        sys, "argv", ["install_nwave.py"]
-                                    ):
-                                        main()
+                                with patch.object(sys, "argv", ["install_nwave.py"]):
+                                    main()
 
         # ASSERT - Check that verification counts are displayed
         all_logs = " ".join(logged_messages)
@@ -667,29 +657,23 @@ class TestInstallNwaveCallsVerifier:
             mock_checker.has_blocking_failures.return_value = False
             mock_preflight_class.return_value = mock_checker
 
-            with patch(
-                "scripts.install.install_nwave.NWaveInstaller.check_source",
-                return_value=True,
-            ):
+            with patch("scripts.install.install_nwave.NWaveInstaller.create_backup"):
                 with patch(
-                    "scripts.install.install_nwave.NWaveInstaller.create_backup"
+                    "scripts.install.install_nwave.NWaveInstaller.install_framework",
+                    return_value=True,
                 ):
                     with patch(
-                        "scripts.install.install_nwave.NWaveInstaller.install_framework",
-                        return_value=True,
+                        "scripts.install.install_nwave.NWaveInstaller.create_manifest"
                     ):
                         with patch(
-                            "scripts.install.install_nwave.NWaveInstaller.create_manifest"
+                            "scripts.install.install_nwave.NWaveInstaller.validate_installation",
+                            return_value=True,
                         ):
-                            with patch(
-                                "scripts.install.install_nwave.NWaveInstaller.validate_installation",
-                                return_value=True,
-                            ):
-                                # ACT
-                                from scripts.install.install_nwave import main
+                            # ACT
+                            from scripts.install.install_nwave import main
 
-                                with patch.object(sys, "argv", ["install_nwave.py"]):
-                                    exit_code = main()
+                            with patch.object(sys, "argv", ["install_nwave.py"]):
+                                exit_code = main()
 
         # ASSERT
         assert exit_code == 0, "Successful verification should result in exit code 0"
@@ -735,21 +719,17 @@ class TestInstallNwaveCallsVerifier:
                 mock_preflight_class.return_value = mock_checker
 
                 with patch(
-                    "scripts.install.install_nwave.NWaveInstaller.check_source",
-                    return_value=True,
+                    "scripts.install.install_nwave.NWaveInstaller.create_backup"
                 ):
                     with patch(
-                        "scripts.install.install_nwave.NWaveInstaller.create_backup"
+                        "scripts.install.install_nwave.NWaveInstaller.install_framework",
+                        return_value=True,
                     ):
-                        with patch(
-                            "scripts.install.install_nwave.NWaveInstaller.install_framework",
-                            return_value=True,
-                        ):
-                            # ACT
-                            from scripts.install.install_nwave import main
+                        # ACT
+                        from scripts.install.install_nwave import main
 
-                            with patch.object(sys, "argv", ["install_nwave.py"]):
-                                exit_code = main()
+                        with patch.object(sys, "argv", ["install_nwave.py"]):
+                            exit_code = main()
 
         # ASSERT
         assert exit_code != 0, (

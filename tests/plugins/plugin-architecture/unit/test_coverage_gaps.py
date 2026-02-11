@@ -593,6 +593,11 @@ class TestAgentsPluginExceptionHandling:
         self, tmp_path: Path, test_logger: logging.Logger
     ):
         """install should return failure result when exception occurs."""
+        # Create source dir so plugin proceeds past exists check
+        source_agents = tmp_path / "nWave" / "agents"
+        source_agents.mkdir(parents=True)
+        (source_agents / "nw-test.md").write_text("# Test Agent")
+
         context = InstallContext(
             claude_dir=tmp_path / ".claude",
             scripts_dir=tmp_path / "scripts",
@@ -604,8 +609,15 @@ class TestAgentsPluginExceptionHandling:
 
         plugin = AgentsPlugin()
 
-        # Mock mkdir to raise exception
-        with patch.object(Path, "mkdir", side_effect=PermissionError("No access")):
+        # Mock glob to raise exception after source directory exists check
+        original_glob = Path.glob
+
+        def mock_glob(self, pattern):
+            if "agents" in str(self) and pattern == "nw-*.md":
+                raise PermissionError("No access")
+            return original_glob(self, pattern)
+
+        with patch.object(Path, "glob", mock_glob):
             result = plugin.install(context)
 
         assert not result.success
@@ -770,8 +782,8 @@ class TestCommandsPluginFileCopy:
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create source with individual file (not in subdirectory)
-        commands_source = tmp_path / "framework" / "commands"
+        # Create source at the path the plugin actually reads
+        commands_source = tmp_path / "nWave" / "tasks" / "nw"
         commands_source.mkdir(parents=True)
         (commands_source / "standalone.md").write_text("# Standalone Command")
 
@@ -788,7 +800,7 @@ class TestCommandsPluginFileCopy:
         result = plugin.install(context)
 
         assert result.success
-        target = claude_dir / "commands" / "standalone.md"
+        target = claude_dir / "commands" / "nw" / "standalone.md"
         assert target.exists()
 
 
@@ -799,8 +811,8 @@ class TestCommandsPluginExceptionHandling:
         self, tmp_path: Path, test_logger: logging.Logger
     ):
         """install should return failure result when exception occurs."""
-        # Create valid source directory
-        commands_source = tmp_path / "framework" / "commands"
+        # Create valid source directory at the path the plugin reads
+        commands_source = tmp_path / "nWave" / "tasks" / "nw"
         commands_source.mkdir(parents=True)
         (commands_source / "test.md").write_text("# Test")
 
@@ -815,15 +827,15 @@ class TestCommandsPluginExceptionHandling:
 
         plugin = CommandsPlugin()
 
-        # Mock iterdir to raise exception after source check
-        original_iterdir = Path.iterdir
+        # Mock glob to raise exception after source directory exists check
+        original_glob = Path.glob
 
-        def mock_iterdir(self):
-            if "commands" in str(self):
+        def mock_glob(self, pattern):
+            if "nw" in str(self) and pattern == "*.md":
                 raise PermissionError("No access")
-            return original_iterdir(self)
+            return original_glob(self, pattern)
 
-        with patch.object(Path, "iterdir", mock_iterdir):
+        with patch.object(Path, "glob", mock_glob):
             result = plugin.install(context)
 
         assert not result.success

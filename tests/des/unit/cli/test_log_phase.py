@@ -35,7 +35,9 @@ def mock_schema():
         yield schema
 
 
-def _create_execution_log(tmp_path, schema_version="2.0", project_id="test", events=None):
+def _create_execution_log(
+    tmp_path, schema_version="2.0", project_id="test", events=None
+):
     """Helper to create a minimal execution-log.yaml in tmp_path."""
     data = {
         "schema_version": schema_version,
@@ -58,13 +60,20 @@ class TestLogPhaseValidExecutedEntry:
         _create_execution_log(tmp_path)
         before = datetime.now(timezone.utc).replace(microsecond=0)
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "01-01",
-            "--phase", "PREPARE",
-            "--status", "EXECUTED",
-            "--data", "PASS",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "01-01",
+                "--phase",
+                "PREPARE",
+                "--status",
+                "EXECUTED",
+                "--data",
+                "PASS",
+            ]
+        )
 
         after = datetime.now(timezone.utc).replace(microsecond=0)
 
@@ -99,13 +108,20 @@ class TestLogPhaseValidSkippedEntry:
 
         _create_execution_log(tmp_path)
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "02-01",
-            "--phase", "REVIEW",
-            "--status", "SKIPPED",
-            "--data", "NOT_APPLICABLE: no tests needed",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "02-01",
+                "--phase",
+                "REVIEW",
+                "--status",
+                "SKIPPED",
+                "--data",
+                "NOT_APPLICABLE: no tests needed",
+            ]
+        )
 
         assert result == 0
 
@@ -123,13 +139,20 @@ class TestLogPhaseInvalidPhaseName:
 
         _create_execution_log(tmp_path)
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "01-01",
-            "--phase", "BOGUS",
-            "--status", "EXECUTED",
-            "--data", "PASS",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "01-01",
+                "--phase",
+                "BOGUS",
+                "--status",
+                "EXECUTED",
+                "--data",
+                "PASS",
+            ]
+        )
 
         assert result == 1
 
@@ -145,13 +168,20 @@ class TestLogPhaseSkippedWithoutValidPrefix:
 
         _create_execution_log(tmp_path)
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "01-01",
-            "--phase", "PREPARE",
-            "--status", "SKIPPED",
-            "--data", "just because",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "01-01",
+                "--phase",
+                "PREPARE",
+                "--status",
+                "SKIPPED",
+                "--data",
+                "just because",
+            ]
+        )
 
         assert result == 1
 
@@ -164,13 +194,20 @@ class TestLogPhaseMissingLogFile:
 
         # Do NOT create execution-log.yaml in tmp_path
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "01-01",
-            "--phase", "PREPARE",
-            "--status", "EXECUTED",
-            "--data", "PASS",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "01-01",
+                "--phase",
+                "PREPARE",
+                "--status",
+                "EXECUTED",
+                "--data",
+                "PASS",
+            ]
+        )
 
         assert result == 1
 
@@ -183,13 +220,20 @@ class TestLogPhaseYamlStructurePreserved:
 
         _create_execution_log(tmp_path, schema_version="2.0", project_id="test")
 
-        main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "01-01",
-            "--phase", "GREEN",
-            "--status", "EXECUTED",
-            "--data", "PASS",
-        ])
+        main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "01-01",
+                "--phase",
+                "GREEN",
+                "--status",
+                "EXECUTED",
+                "--data",
+                "PASS",
+            ]
+        )
 
         log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
         assert log_data["schema_version"] == "2.0"
@@ -207,13 +251,20 @@ class TestLogPhaseMultipleEntriesSequential:
 
         phases = ["PREPARE", "RED_ACCEPTANCE", "GREEN"]
         for phase in phases:
-            result = main([
-                "--project-dir", str(tmp_path),
-                "--step-id", "01-01",
-                "--phase", phase,
-                "--status", "EXECUTED",
-                "--data", "PASS",
-            ])
+            result = main(
+                [
+                    "--project-dir",
+                    str(tmp_path),
+                    "--step-id",
+                    "01-01",
+                    "--phase",
+                    phase,
+                    "--status",
+                    "EXECUTED",
+                    "--data",
+                    "PASS",
+                ]
+            )
             assert result == 0
 
         log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())

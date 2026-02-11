@@ -54,9 +54,7 @@ class AgentsPlugin(InstallationPlugin):
             target_agent_dir.mkdir(parents=True, exist_ok=True)
 
             source_agent_count = len(list(source_agent_dir.glob("nw-*.md")))
-            context.logger.info(
-                f"  ⏳ From source ({source_agent_count} agents)..."
-            )
+            context.logger.info(f"  ⏳ From source ({source_agent_count} agents)...")
 
             # Copy only nw-*.md files from source root (excludes legacy/ and README.md)
             copied_count = 0
