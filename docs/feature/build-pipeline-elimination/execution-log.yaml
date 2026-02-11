@@ -203,5 +203,56 @@ events:
   s: EXECUTED
   sid: 04-04
   t: '2026-02-11T12:18:42Z'
+- d: PASS
+  p: COMMIT
+  s: EXECUTED
+  sid: 04-04
+  t: '2026-02-11T12:19:23Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 04-02
+  t: '2026-02-11T12:20:18Z'
+- d: 'NOT_APPLICABLE: documentation-only update, no code logic to test'
+  p: RED_ACCEPTANCE
+  s: SKIPPED
+  sid: 04-02
+  t: '2026-02-11T12:20:21Z'
+- d: 'NOT_APPLICABLE: documentation update, no code logic'
+  p: RED_UNIT
+  s: SKIPPED
+  sid: 04-02
+  t: '2026-02-11T12:20:23Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 04-02
+  t: '2026-02-11T12:24:17Z'
+- d: PASS
+  p: COMMIT
+  s: EXECUTED
+  sid: 04-02
+  t: '2026-02-11T12:24:56Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 04-03
+  t: '2026-02-11T12:26:20Z'
+- d: 'NOT_APPLICABLE: cleanup step - acceptance tests for no-force-rebuild and no-dist-ide
+    already pass'
+  p: RED_ACCEPTANCE
+  s: SKIPPED
+  sid: 04-03
+  t: '2026-02-11T12:26:48Z'
+- d: 'NOT_APPLICABLE: removal/cleanup step, no new logic'
+  p: RED_UNIT
+  s: SKIPPED
+  sid: 04-03
+  t: '2026-02-11T12:26:54Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 04-03
+  t: '2026-02-11T12:27:28Z'
 project_id: build-pipeline-elimination
 schema_version: '3.0'

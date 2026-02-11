@@ -28,7 +28,6 @@ def configured_installer(tmp_path):
     with patch.object(NWaveInstaller, "__init__", lambda self, *args, **kwargs: None):
         installer = NWaveInstaller()
         installer.dry_run = False
-        installer.force_rebuild = False
         installer.claude_config_dir = tmp_path / "claude"
         installer.project_root = tmp_path
         installer.framework_source = tmp_path / "nWave"
