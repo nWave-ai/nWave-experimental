@@ -61,6 +61,18 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Outcome data (e.g., PASS, FAIL, or skip reason with prefix)",
     )
+    parser.add_argument(
+        "--turns-used",
+        type=int,
+        default=None,
+        help="Optional: number of turns consumed during this step",
+    )
+    parser.add_argument(
+        "--tokens-used",
+        type=int,
+        default=None,
+        help="Optional: number of tokens consumed during this step",
+    )
     return parser
 
 
@@ -111,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Build entry string
     entry = f"{args.step_id}|{args.phase}|{args.status}|{args.data}|{timestamp}"
+    if args.turns_used is not None and args.tokens_used is not None:
+        entry = f"{entry}|{args.turns_used}|{args.tokens_used}"
 
     # YAML read-modify-write
     log_data = yaml.safe_load(log_path.read_text())

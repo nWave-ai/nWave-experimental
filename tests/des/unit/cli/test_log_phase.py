@@ -273,3 +273,54 @@ class TestLogPhaseMultipleEntriesSequential:
 
         for i, phase in enumerate(phases):
             assert f"|{phase}|" in events[i]
+
+
+class TestLogPhaseExecStats:
+    """Test that --turns-used and --tokens-used produce 7-field entries."""
+
+    def test_entry_with_stats_has_7_fields(self, tmp_path, mock_schema, capsys):
+        from des.cli.log_phase import main
+
+        _create_execution_log(tmp_path)
+
+        result = main([
+            "--project-dir", str(tmp_path),
+            "--step-id", "07-01",
+            "--phase", "COMMIT",
+            "--status", "EXECUTED",
+            "--data", "PASS",
+            "--turns-used", "12",
+            "--tokens-used", "45000",
+        ])
+
+        assert result == 0
+
+        log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
+        entry = log_data["events"][0]
+        parts = entry.split("|")
+        assert len(parts) == 7
+        assert parts[5] == "12"
+        assert parts[6] == "45000"
+
+        captured = capsys.readouterr()
+        assert "|12|45000" in captured.out
+
+    def test_entry_without_stats_has_5_fields(self, tmp_path, mock_schema, capsys):
+        from des.cli.log_phase import main
+
+        _create_execution_log(tmp_path)
+
+        result = main([
+            "--project-dir", str(tmp_path),
+            "--step-id", "07-01",
+            "--phase", "COMMIT",
+            "--status", "EXECUTED",
+            "--data", "PASS",
+        ])
+
+        assert result == 0
+
+        log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
+        entry = log_data["events"][0]
+        parts = entry.split("|")
+        assert len(parts) == 5

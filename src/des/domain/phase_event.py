@@ -3,8 +3,10 @@
 Pure domain types for representing TDD phase execution events
 parsed from execution-log.yaml pipe-delimited event strings.
 
-Format: "step_id|phase_name|status|outcome|timestamp"
+Format (5-field legacy): "step_id|phase_name|status|outcome|timestamp"
+Format (7-field with stats): "step_id|phase_name|status|outcome|timestamp|turns_used|tokens_used"
 Example: "01-01|PREPARE|EXECUTED|PASS|2026-02-02T10:00:00Z"
+Example: "01-01|COMMIT|EXECUTED|PASS|2026-02-02T10:30:00Z|12|45000"
 """
 
 from __future__ import annotations
@@ -22,6 +24,8 @@ class PhaseEvent:
         status: Execution status (e.g., "EXECUTED", "SKIPPED")
         outcome: Outcome data (e.g., "PASS", "FAIL", or skip reason)
         timestamp: ISO 8601 timestamp string
+        turns_used: Optional number of turns consumed (for COMMIT phase stats)
+        tokens_used: Optional number of tokens consumed (for COMMIT phase stats)
     """
 
     step_id: str
@@ -29,6 +33,8 @@ class PhaseEvent:
     status: str
     outcome: str
     timestamp: str
+    turns_used: int | None = None
+    tokens_used: int | None = None
 
 
 class PhaseEventParser:
@@ -42,6 +48,7 @@ class PhaseEventParser:
     """
 
     MINIMUM_FIELDS = 5
+    STATS_FIELDS = 7
     FIELD_SEPARATOR = "|"
 
     def parse(self, event_str: str) -> PhaseEvent | None:
@@ -49,7 +56,8 @@ class PhaseEventParser:
 
         Args:
             event_str: Raw event string in format
-                "step_id|phase_name|status|outcome|timestamp"
+                "step_id|phase_name|status|outcome|timestamp" (5-field legacy)
+                or "step_id|phase_name|status|outcome|timestamp|turns|tokens" (7-field)
 
         Returns:
             PhaseEvent if the string has enough fields, None otherwise.
@@ -58,12 +66,23 @@ class PhaseEventParser:
         if len(parts) < self.MINIMUM_FIELDS:
             return None
 
+        turns_used = None
+        tokens_used = None
+        if len(parts) >= self.STATS_FIELDS:
+            try:
+                turns_used = int(parts[5])
+                tokens_used = int(parts[6])
+            except ValueError:
+                pass  # Non-integer extra fields: ignore gracefully
+
         return PhaseEvent(
             step_id=parts[0],
             phase_name=parts[1],
             status=parts[2],
             outcome=parts[3],
             timestamp=parts[4],
+            turns_used=turns_used,
+            tokens_used=tokens_used,
         )
 
     def parse_many(self, event_strings: list[str], step_id: str) -> list[PhaseEvent]:
