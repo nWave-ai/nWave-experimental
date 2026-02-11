@@ -27,7 +27,7 @@ class WorkflowValidator:
         self.verbose = verbose
         self.auto_fix = auto_fix
         self.project_root = Path(__file__).parent.parent.parent
-        self.workflow_file = self.project_root / ".github/workflows/ci-cd.yml"
+        self.workflow_file = self.project_root / ".github/workflows/ci.yml"
         self.errors = []
         self.warnings = []
         self.passed = []
@@ -204,27 +204,6 @@ class WorkflowValidator:
             self.log("Run 'pytest tests/ -v' for detailed test output", "ERROR")
             return False
 
-    def validate_build_system(self):
-        """Validate build system is operational."""
-        self.log("Validating build system...", "INFO")
-        build_script = self.project_root / "tools/core/build_ide_bundle.py"
-
-        if not build_script.exists():
-            self.warnings.append("Build script not found (optional)")
-            return True
-
-        success, output = self.run_command(
-            f"PYTHONPATH=tools python3 {build_script} --dry-run",
-            "Build system dry-run",
-        )
-
-        if success or "--dry-run" in output:  # Script might not support --dry-run
-            self.passed.append("Build system operational")
-            return True
-        else:
-            self.warnings.append("Build system validation inconclusive")
-            return True  # Non-critical
-
     def print_summary(self):
         """Print validation summary."""
         print("\n" + "=" * 70)
@@ -284,7 +263,6 @@ class WorkflowValidator:
             ("Agent Synchronization", self.validate_agent_sync),
             ("Pre-commit Hooks", self.validate_pre_commit),
             ("Test Suite", self.validate_tests),
-            ("Build System", self.validate_build_system),
         ]
 
         for name, validator in validations:

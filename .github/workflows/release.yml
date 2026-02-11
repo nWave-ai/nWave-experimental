@@ -8,7 +8,7 @@
 #
 # Jobs:
 #   - version-bump: Calculate next semver, update files, create tag, push
-#   - build: Extract version, validate, build IDE bundle, create packages
+#   - build: Extract version, validate, create packages from nWave/ source
 #   - github-release: Create GitHub Release with changelog and assets
 #   - publish-to-nwave: Sync to nwave-ai/nwave public repo
 #   - notify-slack: Release success/failure notification
@@ -147,7 +147,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_DEFAULT }}
 
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip setuptools wheel pipenv
           pipenv install --dev
@@ -171,13 +171,6 @@ jobs:
             echo "::error::Version mismatch - tag: ${TAG_VERSION}, catalog: ${CATALOG_VERSION}"
             exit 1
           fi
-
-      - name: Build IDE bundle
-        run: |
-          PYTHONPATH=tools pipenv run python3 tools/core/build_ide_bundle.py \
-            --source-dir nWave \
-            --output-dir dist/ide \
-            --verbose
 
       - name: Create release packages
         run: |
@@ -670,17 +663,9 @@ jobs:
       - name: Install build tools
         run: pip install build twine pyyaml
 
-      - name: Build IDE bundle
-        run: |
-          PYTHONPATH=tools python3 tools/core/build_ide_bundle.py \
-            --source-dir nWave \
-            --output-dir dist/ide \
-            --verbose
-
       - name: Build wheel and sdist
         run: |
           # Build wheel directly from source tree (not via sdist)
-          # to ensure force-include paths like dist/ide are found
           python -m build --wheel
           python -m build --sdist
 
