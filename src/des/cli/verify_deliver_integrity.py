@@ -24,6 +24,29 @@ from des.domain.deliver_integrity_verifier import DeliverIntegrityVerifier
 from des.domain.tdd_schema import get_tdd_schema
 
 
+def _extract_step_ids(roadmap: dict) -> list[str]:
+    """Extract step IDs from roadmap, supporting both flat and nested formats.
+
+    Flat format: top-level ``steps`` list with ``id`` or ``step_id`` keys.
+    Nested format: ``phases`` list, each containing a ``steps`` list.
+    """
+    # Flat format: top-level "steps" list
+    if "steps" in roadmap:
+        return [
+            s.get("id") or s.get("step_id")
+            for s in roadmap["steps"]
+            if s.get("id") or s.get("step_id")
+        ]
+    # Nested format: steps under phases
+    step_ids: list[str] = []
+    for phase in roadmap.get("phases", []):
+        for step in phase.get("steps", []):
+            step_id = step.get("id") or step.get("step_id")
+            if step_id:
+                step_ids.append(step_id)
+    return step_ids
+
+
 def _parse_execution_log(exec_log: dict) -> dict[str, list[str]]:
     """Parse execution-log.yaml events into step_id -> list[phase_name] mapping.
 
@@ -67,7 +90,7 @@ def main() -> int:
     roadmap = yaml.safe_load(roadmap_path.read_text())
     exec_log = yaml.safe_load(exec_log_path.read_text())
 
-    step_ids = [s.get("id") or s.get("step_id") for s in roadmap.get("steps", [])]
+    step_ids = _extract_step_ids(roadmap)
     entries = _parse_execution_log(exec_log)
 
     schema = get_tdd_schema()
