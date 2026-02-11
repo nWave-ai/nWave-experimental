@@ -25,7 +25,6 @@ scripts/
 │
 ├── framework/           # Framework operations
 │   ├── create_release_packages.py     # Release package creator
-│   ├── release_packager.py            # Core packaging system
 │   ├── release_validation.py          # Release error detection
 │   ├── sync_agent_names.py            # Agent name synchronization
 │   └── validate_tdd_phases_ci.py      # CI TDD phase validation
@@ -45,6 +44,7 @@ scripts/
 ├── mutation/            # Mutation testing
 │   └── generate_scoped_configs.py     # Scoped Cosmic Ray configs
 │
+├── build_dist.py                      # Build dist/ from source (copy + DES rewrite)
 ├── local_ci.py                        # Local CI/CD runner
 ├── testpypi_validation.py             # TestPyPI release validation
 ├── validate_step_file.py              # Step file schema validator

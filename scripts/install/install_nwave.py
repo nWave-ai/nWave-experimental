@@ -112,9 +112,12 @@ class NWaveInstaller:
         self.script_dir = Path(__file__).parent
         self.project_root = PathUtils.get_project_root(self.script_dir)
         self.claude_config_dir = PathUtils.get_claude_config_dir()
-        # Plugins read directly from nWave/ source; pass as framework_source
-        # for InstallContext contract (step 02-04 will clean up base.py)
-        self.framework_source = self.project_root / "nWave"
+        # Auto-detect dist/ if available (built by build_dist.py)
+        dist_dir = self.project_root / "dist"
+        if (dist_dir / "MANIFEST.json").exists():
+            self.framework_source = dist_dir
+        else:
+            self.framework_source = self.project_root / "nWave"
 
         log_file = self.claude_config_dir / "nwave-install.log"
         self.logger = Logger(log_file if not dry_run else None)
@@ -241,7 +244,7 @@ class NWaveInstaller:
         context = InstallContext(
             claude_dir=self.claude_config_dir,
             scripts_dir=self.project_root / "scripts" / "install",
-            templates_dir=self.project_root / "nWave" / "templates",
+            templates_dir=self.framework_source / "templates",
             logger=self.logger,
             project_root=self.project_root,
             framework_source=self.framework_source,
@@ -344,11 +347,17 @@ class NWaveInstaller:
             # Validate schema template (additional check specific to installer)
             schema_valid = self._validate_schema_template()
 
-        # Verify components: compare nWave/ source files vs installed target
+        # Verify components: compare source files vs installed target
+        # Supports both dist/ layout (agents/nw/, commands/nw/) and
+        # nWave/ source layout (agents/nw-*.md, tasks/nw/*.md)
         all_synced = True
 
-        # Agents from nWave/agents/ (nw-*.md pattern, excludes legacy/)
-        agents_source = self.project_root / "nWave" / "agents"
+        # Agents: dist/agents/nw/ or nWave/agents/
+        dist_agents = self.framework_source / "agents" / "nw"
+        if dist_agents.exists():
+            agents_source = dist_agents
+        else:
+            agents_source = self.project_root / "nWave" / "agents"
         agents_target = self.claude_config_dir / "agents" / "nw"
         if agents_source.exists():
             agent_source_files = sorted(agents_source.glob("nw-*.md"))
@@ -363,8 +372,12 @@ class NWaveInstaller:
                 f"    {'✅' if agent_ok else '❌'} Agents verified ({agent_matched}/{agent_expected})"
             )
 
-        # Commands from nWave/tasks/nw/ (*.md pattern)
-        commands_source = self.project_root / "nWave" / "tasks" / "nw"
+        # Commands: dist/commands/nw/ or nWave/tasks/nw/
+        dist_commands = self.framework_source / "commands" / "nw"
+        if dist_commands.exists():
+            commands_source = dist_commands
+        else:
+            commands_source = self.project_root / "nWave" / "tasks" / "nw"
         commands_target = self.claude_config_dir / "commands" / "nw"
         if commands_source.exists():
             cmd_source_files = sorted(commands_source.glob("*.md"))
@@ -379,8 +392,8 @@ class NWaveInstaller:
                 f"    {'✅' if cmd_ok else '❌'} Commands verified ({cmd_matched}/{cmd_expected})"
             )
 
-        # Templates from nWave/templates/
-        templates_source = self.project_root / "nWave" / "templates"
+        # Templates from framework_source/templates/
+        templates_source = self.framework_source / "templates"
         templates_target = self.claude_config_dir / "templates"
         if templates_source.exists():
             tmpl_files = [f for f in templates_source.iterdir() if f.is_file()]
@@ -395,8 +408,15 @@ class NWaveInstaller:
                 f"    {'✅' if tmpl_ok else '❌'} Templates verified ({tmpl_matched}/{tmpl_expected})"
             )
 
-        # Scripts from project_root/scripts/ (specific utility scripts)
-        scripts_source = self.project_root / "scripts"
+        # Scripts: dist/scripts/ or project_root/scripts/
+        dist_scripts = self.framework_source / "scripts"
+        if (
+            dist_scripts.exists()
+            and (dist_scripts / "install_nwave_target_hooks.py").exists()
+        ):
+            scripts_source = dist_scripts
+        else:
+            scripts_source = self.project_root / "scripts"
         scripts_target = self.claude_config_dir / "scripts"
         utility_scripts = ["install_nwave_target_hooks.py", "validate_step_file.py"]
         script_files = [s for s in utility_scripts if (scripts_source / s).exists()]

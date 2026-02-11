@@ -249,7 +249,7 @@ git push origin :refs/tags/v1.4.9
 #### Build Failures
 ```bash
 # Test release packaging locally
-python tools/create_release_packages.py
+python scripts/framework/create_release_packages.py
 
 # Check for errors in output
 ```

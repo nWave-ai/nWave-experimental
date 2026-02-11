@@ -36,8 +36,13 @@ class AgentsPlugin(InstallationPlugin):
         try:
             context.logger.info("  📦 Installing agents...")
 
-            # Source: nWave/agents/ in project root
-            source_agent_dir = context.project_root / "nWave" / "agents"
+            # dist/ layout: agents/nw/ (build_dist.py adds nw/ namespace)
+            # source layout: nWave/agents/ (nw-*.md files at root)
+            dist_agents = context.framework_source / "agents" / "nw"
+            if dist_agents.exists():
+                source_agent_dir = dist_agents
+            else:
+                source_agent_dir = context.project_root / "nWave" / "agents"
             target_agent_dir = context.claude_dir / "agents" / "nw"
 
             if not source_agent_dir.exists():

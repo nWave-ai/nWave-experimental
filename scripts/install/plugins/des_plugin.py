@@ -29,6 +29,7 @@ class DESPlugin(InstallationPlugin):
     DES_TEMPLATES = [
         ".pre-commit-config-nwave.yaml",
         ".des-audit-README.md",
+        "roadmap-schema.yaml",
     ]
 
     # Hook command template - substituted at install time:
@@ -83,9 +84,11 @@ class DESPlugin(InstallationPlugin):
                     f"Required scripts: {', '.join(self.DES_SCRIPTS)}"
                 )
 
-        # Check for DES templates
+        # Check for DES templates (use framework_source for dist/ or nWave/)
         templates_dir = (
-            context.project_root / "nWave" / "templates"
+            context.framework_source / "templates"
+            if context.framework_source
+            else context.project_root / "nWave" / "templates"
             if context.project_root
             else Path("nWave/templates")
         )
@@ -181,10 +184,12 @@ class DESPlugin(InstallationPlugin):
     def _install_des_module(self, context: InstallContext) -> PluginResult:
         """Install DES Python module to ~/.claude/lib/python/des/."""
         try:
-            # Use dist directory if available (build pipeline), fallback to src/
-            if hasattr(context, "dist_dir") and context.dist_dir:
-                source_dir = context.dist_dir / "lib" / "python" / "des"
-            # Use project_root if available, fallback to current directory
+            # Check dist/ pre-built DES module first (imports already rewritten)
+            pre_built = context.framework_source / "lib" / "python" / "des"
+            using_prebuilt = pre_built.exists() and (pre_built / "__init__.py").exists()
+
+            if using_prebuilt:
+                source_dir = pre_built
             elif context.project_root:
                 source_dir = context.project_root / "src" / "des"
             else:
@@ -217,8 +222,9 @@ class DESPlugin(InstallationPlugin):
                     shutil.rmtree(target_dir)
                 shutil.copytree(source_dir, target_dir)
 
-                # Rewrite import paths from "src.des" to "des"
-                self._rewrite_import_paths(target_dir, context)
+                # Skip rewriting if pre-built from dist/ (already done by build_dist.py)
+                if not using_prebuilt:
+                    self._rewrite_import_paths(target_dir, context)
 
                 # Clear bytecode cache to prevent stale .pyc files
                 self._clear_bytecode_cache(target_dir, context)
@@ -368,8 +374,8 @@ class DESPlugin(InstallationPlugin):
     def _install_des_templates(self, context: InstallContext) -> PluginResult:
         """Install DES templates."""
         try:
-            # Use project_root for consistent path resolution
-            source_dir = context.project_root / "nWave" / "templates"
+            # Use framework_source for dist/ or nWave/ layout
+            source_dir = context.framework_source / "templates"
             target_dir = context.claude_dir / "templates"
             target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -584,9 +590,7 @@ class DESPlugin(InstallationPlugin):
             }
 
             if context.dry_run:
-                context.logger.info(
-                    f"  🚨 [DRY RUN] Would create {config_file}"
-                )
+                context.logger.info(f"  🚨 [DRY RUN] Would create {config_file}")
             else:
                 nwave_dir.mkdir(parents=True, exist_ok=True)
                 with open(config_file, "w", encoding="utf-8") as f:

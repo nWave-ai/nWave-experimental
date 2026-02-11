@@ -107,7 +107,7 @@ Before creating a release tag, test the release packaging locally:
 rm -rf dist/
 
 # Create packages
-python tools/create_release_packages.py
+python scripts/framework/create_release_packages.py
 
 # Verify packages
 ls -lh dist/releases/
@@ -216,7 +216,7 @@ Before creating a release:
 **Cause**: Missing dependencies or invalid package structure
 
 **Solution**:
-1. Test locally: `python tools/create_release_packages.py`
+1. Test locally: `python scripts/framework/create_release_packages.py`
 2. Fix issues
 3. Delete tag and re-release
 
@@ -235,7 +235,7 @@ If CI/CD is unavailable, create release manually:
 
 ```bash
 # Create release packages
-python tools/create_release_packages.py
+python scripts/framework/create_release_packages.py
 
 # Create release using GitHub CLI
 gh release create v1.2.71 \

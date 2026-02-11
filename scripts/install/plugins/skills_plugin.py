@@ -41,8 +41,13 @@ class SkillsPlugin(InstallationPlugin):
         try:
             context.logger.info("  📦 Installing skills...")
 
-            # Source: nWave/skills/ in project root
-            skills_source = context.project_root / "nWave" / "skills"
+            # dist/ layout: skills/nw/ (build_dist.py adds nw/ namespace)
+            # source layout: nWave/skills/
+            dist_skills = context.framework_source / "skills" / "nw"
+            if dist_skills.exists():
+                skills_source = dist_skills
+            else:
+                skills_source = context.project_root / "nWave" / "skills"
 
             if not skills_source.exists():
                 context.logger.info("  ⏭️ No skills directory found, skipping")
@@ -158,8 +163,9 @@ class SkillsPlugin(InstallationPlugin):
 
             if not skills_target.exists():
                 # Skills are optional — if source didn't exist, target won't either
+                dist_skills = context.framework_source / "skills" / "nw"
                 skills_source = context.project_root / "nWave" / "skills"
-                if not skills_source.exists():
+                if not dist_skills.exists() and not skills_source.exists():
                     context.logger.info("  ⏭️ No skills to verify (none configured)")
                     return PluginResult(
                         success=True,

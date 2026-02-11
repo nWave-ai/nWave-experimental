@@ -38,8 +38,16 @@ class UtilitiesPlugin(InstallationPlugin):
         try:
             context.logger.info("  📦 Installing utilities...")
 
-            # Determine source and target directories
-            scripts_source = context.project_root / "scripts"
+            # dist/ layout: scripts/ (utility scripts collected by build_dist.py)
+            # source layout: project root scripts/
+            dist_scripts = context.framework_source / "scripts"
+            if (
+                dist_scripts.exists()
+                and (dist_scripts / "install_nwave_target_hooks.py").exists()
+            ):
+                scripts_source = dist_scripts
+            else:
+                scripts_source = context.project_root / "scripts"
             scripts_target = context.claude_dir / "scripts"
             scripts_target.mkdir(parents=True, exist_ok=True)
 

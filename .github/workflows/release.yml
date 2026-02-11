@@ -172,10 +172,15 @@ jobs:
             exit 1
           fi
 
+      - name: Build distribution
+        run: |
+          pipenv run python3 scripts/build_dist.py
+
       - name: Create release packages
         run: |
-          pipenv run python3 tools/create_release_packages.py \
+          pipenv run python3 scripts/framework/create_release_packages.py \
             --version ${{ steps.get_version.outputs.VERSION }} \
+            --source-dir dist \
             --output-dir dist/releases
 
       - name: Generate checksums
@@ -434,7 +439,6 @@ jobs:
             --exclude 'build.log' \
             --exclude 'pyproject.toml' \
             --exclude 'nwave_ai/' \
-            --exclude 'setup.py' \
             --exclude 'setup.cfg' \
             --exclude 'Pipfile' \
             --exclude 'Pipfile.lock' \
@@ -444,9 +448,8 @@ jobs:
             --exclude 'mutants/' \
             --exclude 'nwave.egg-info/' \
             --exclude 'nwave-ai.egg-info/' \
-            --exclude 'test_import_debug.py' \
-            --exclude 'test_token_minimal_architecture.py' \
-            --exclude 'update_*.py' \
+            --exclude '.execute-command-updated' \
+            --exclude '.dependency-map.yaml' \
             --exclude '__pycache__/' \
             --exclude '.pytest_cache/' \
             --exclude '.mypy_cache/' \
@@ -459,7 +462,6 @@ jobs:
             --exclude '.nwave-audit.log' \
             --exclude '.mutmut-cache' \
             --exclude '*.sqlite' \
-            --exclude 'DOCUMENTATION_UPDATES_SUMMARY.md' \
             --exclude 'test-des-hooks/' \
             --exclude 'test-des-manual/' \
             ./ nwave-target/

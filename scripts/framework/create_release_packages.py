@@ -34,12 +34,18 @@ __version__ = "1.0.0"
 class ReleasePackager:
     """Creates distributable release packages."""
 
-    def __init__(self, version: str | None = None, output_dir: Path | None = None):
+    def __init__(
+        self,
+        version: str | None = None,
+        output_dir: Path | None = None,
+        source_dir: Path | None = None,
+    ):
         """Initialize packager."""
         self.script_dir = Path(__file__).parent
         self.project_root = self.script_dir.parent
         self.dist_dir = self.project_root / "dist"
-        self.source_dir = self.project_root / "nWave"
+        self.source_dir = source_dir or (self.project_root / "nWave")
+        self.using_dist = source_dir is not None
         self.version = version or self._get_version()
         self.output_dir = output_dir or (self.dist_dir / "releases")
 
@@ -97,40 +103,57 @@ class ReleasePackager:
         temp_dir = self.output_dir / "tmp" / package_name
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy agents from nWave/agents/
-        agents_src = self.source_dir / "agents"
-        agents_dst = temp_dir / "agents" / "nw"
-        agents_dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(
-            agents_src,
-            agents_dst,
-            dirs_exist_ok=True,
-            ignore=shutil.ignore_patterns("legacy"),
-        )
+        if self.using_dist:
+            # dist/ layout: already in install-target format
+            # agents/nw/, commands/nw/, templates/, skills/nw/, lib/python/des/
+            for subdir in [
+                "agents",
+                "commands",
+                "templates",
+                "skills",
+                "scripts",
+                "lib",
+            ]:
+                src = self.source_dir / subdir
+                if src.exists():
+                    dst = temp_dir / subdir
+                    shutil.copytree(src, dst, dirs_exist_ok=True)
+        else:
+            # nWave/ source layout: needs mapping
+            # Copy agents from nWave/agents/
+            agents_src = self.source_dir / "agents"
+            agents_dst = temp_dir / "agents" / "nw"
+            agents_dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                agents_src,
+                agents_dst,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns("legacy"),
+            )
 
-        # Copy commands from nWave/tasks/nw/
-        commands_src = self.source_dir / "tasks" / "nw"
-        commands_dst = temp_dir / "commands" / "nw"
-        commands_dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(commands_src, commands_dst, dirs_exist_ok=True)
+            # Copy commands from nWave/tasks/nw/
+            commands_src = self.source_dir / "tasks" / "nw"
+            commands_dst = temp_dir / "commands" / "nw"
+            commands_dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(commands_src, commands_dst, dirs_exist_ok=True)
 
-        # Copy scripts if they exist
-        scripts_src = self.source_dir / "scripts"
-        if scripts_src.exists():
-            scripts_dst = temp_dir / "scripts"
-            scripts_dst.mkdir(parents=True, exist_ok=True)
-            for script_file in scripts_src.glob("*.py"):
-                shutil.copy2(script_file, scripts_dst / script_file.name)
+            # Copy scripts if they exist
+            scripts_src = self.source_dir / "scripts"
+            if scripts_src.exists():
+                scripts_dst = temp_dir / "scripts"
+                scripts_dst.mkdir(parents=True, exist_ok=True)
+                for script_file in scripts_src.glob("*.py"):
+                    shutil.copy2(script_file, scripts_dst / script_file.name)
 
-        # Copy templates
-        templates_src = self.source_dir / "templates"
-        if templates_src.exists():
-            templates_dst = temp_dir / "templates"
-            templates_dst.mkdir(parents=True, exist_ok=True)
-            # Copy canonical schema
-            schema_file = templates_src / "step-tdd-cycle-schema.json"
-            if schema_file.exists():
-                shutil.copy2(schema_file, templates_dst / schema_file.name)
+            # Copy templates
+            templates_src = self.source_dir / "templates"
+            if templates_src.exists():
+                templates_dst = temp_dir / "templates"
+                templates_dst.mkdir(parents=True, exist_ok=True)
+                # Copy canonical schema
+                schema_file = templates_src / "step-tdd-cycle-schema.json"
+                if schema_file.exists():
+                    shutil.copy2(schema_file, templates_dst / schema_file.name)
 
         # Create package manifest
         self._create_package_manifest(temp_dir, package_name)
@@ -412,10 +435,17 @@ def main():
         type=Path,
         help="Output directory for packages (default: dist/releases/)",
     )
+    parser.add_argument(
+        "--source-dir",
+        type=Path,
+        help="Source directory (default: nWave/). Use dist/ for pre-built layout.",
+    )
 
     args = parser.parse_args()
 
-    packager = ReleasePackager(version=args.version, output_dir=args.output_dir)
+    packager = ReleasePackager(
+        version=args.version, output_dir=args.output_dir, source_dir=args.source_dir
+    )
 
     success = packager.run()
     sys.exit(0 if success else 1)

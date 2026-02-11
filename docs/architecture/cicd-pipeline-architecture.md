@@ -676,7 +676,7 @@ jobs:
 
       - name: Create release packages
         run: |
-          pipenv run python3 tools/create_release_packages.py \
+          pipenv run python3 scripts/framework/create_release_packages.py \
             --version ${{ steps.get_version.outputs.VERSION }} \
             --output-dir dist/releases
 

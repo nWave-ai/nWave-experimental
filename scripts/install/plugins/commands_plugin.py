@@ -36,8 +36,13 @@ class CommandsPlugin(InstallationPlugin):
         try:
             context.logger.info("  📦 Installing commands...")
 
-            # Source: nWave/tasks/nw/ in project root
-            source_commands_dir = context.project_root / "nWave" / "tasks" / "nw"
+            # dist/ layout: commands/nw/ (build_dist.py maps tasks → commands)
+            # source layout: nWave/tasks/nw/
+            dist_commands = context.framework_source / "commands" / "nw"
+            if dist_commands.exists():
+                source_commands_dir = dist_commands
+            else:
+                source_commands_dir = context.project_root / "nWave" / "tasks" / "nw"
             target_commands_dir = context.claude_dir / "commands" / "nw"
 
             if not source_commands_dir.exists():

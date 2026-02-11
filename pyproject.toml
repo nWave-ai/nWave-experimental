@@ -65,25 +65,11 @@ test = [
     "respx>=0.20.0"
 ]
 
-[project.scripts]
-crafter-ai = "crafter_ai.cli:app"
-
 [project.urls]
 Homepage = "https://github.com/Undeadgrishnackh/crafter-ai"
 Documentation = "https://github.com/Undeadgrishnackh/crafter-ai#readme"
 Repository = "https://github.com/Undeadgrishnackh/crafter-ai"
 Issues = "https://github.com/Undeadgrishnackh/crafter-ai/issues"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/crafter_ai"]
-
-[tool.hatch.build.targets.sdist]
-include = [
-    "/src",
-    "/tests",
-    "/README.md",
-    "/LICENSE"
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -151,10 +137,6 @@ disallow_untyped_defs = false
 target-version = "py310"
 line-length = 88
 src = ["src", "tests"]
-exclude = [
-    "scripts/archive",  # Legacy code with Python 3.12 syntax
-]
-
 [tool.ruff.lint]
 select = [
     "E",      # pycodestyle errors
@@ -213,10 +195,6 @@ ignore = [
     "B007",     # unused loop variable
     "B008",     # function call in default argument (fixtures)
     "RUF001",   # ambiguous unicode
-]
-# Archive/legacy code - minimal enforcement
-"scripts/archive/*.py" = [
-    "ALL",      # ignore all in archive
 ]
 # Hook scripts may need inline imports
 "scripts/hooks/**/*.py" = [
