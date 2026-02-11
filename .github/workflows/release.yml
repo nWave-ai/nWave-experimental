@@ -99,12 +99,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
+      - name: Read nwave-ai public version
+        id: nwave_public
+        run: |
+          NWAVE_VERSION=$(python3 -c "
+          with open('pyproject.toml') as f:
+              for line in f:
+                  if line.strip().startswith('public_version'):
+                      print(line.split('\"')[1])
+                      break
+          ")
+          echo "version=$NWAVE_VERSION" >> $GITHUB_OUTPUT
+
       - name: Version Summary
         if: success()
         run: |
           echo "## Version Bump" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**New version**: \`${{ steps.version.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "| Package | Version |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **crafter-ai** | \`${{ steps.version.outputs.new_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **nwave-ai** | \`${{ steps.nwave_public.outputs.version }}\` (auto-bumps patch) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Tag created**: \`${{ steps.version.outputs.tag_created }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Dry run**: \`${{ inputs.dry_run }}\`" >> $GITHUB_STEP_SUMMARY
 
@@ -455,49 +471,172 @@ jobs:
             --exclude 'test-des-manual/' \
             ./ nwave-target/
 
-      - name: Read nwave public version from crafter-ai
+      - name: Auto-bump nwave-ai version
         id: nwave_version
         run: |
-          NWAVE_VERSION=$(python3 -c "
+          # Read current published version from nwave-ai/nwave
+          CURRENT=$(python3 -c "
+          import re
+          with open('nwave-target/pyproject.toml') as f:
+              for line in f:
+                  m = re.match(r'version\s*=\s*\"(.+)\"', line.strip())
+                  if m:
+                      print(m.group(1))
+                      break
+          ")
+
+          # Read public_version floor from crafter-ai
+          FLOOR=$(python3 -c "
           with open('pyproject.toml') as f:
               for line in f:
                   if line.strip().startswith('public_version'):
                       print(line.split('\"')[1])
                       break
           ")
-          echo "version=$NWAVE_VERSION" >> $GITHUB_OUTPUT
-          echo "nwave-ai public version: $NWAVE_VERSION"
 
-      - name: Update nwave-ai version in pyproject.toml
-        working-directory: nwave-target
+          # Determine new version:
+          # - If floor > current: use floor (manual override from crafter-ai)
+          # - Otherwise: bump patch from current
+          NEW_VERSION=$(python3 -c "
+          def ver(v): return tuple(int(x) for x in v.split('.'))
+          current = ver('${CURRENT}')
+          floor = ver('${FLOOR}')
+          if floor > current:
+              print('${FLOOR}')
+          else:
+              parts = '${CURRENT}'.split('.')
+              parts[-1] = str(int(parts[-1]) + 1)
+              print('.'.join(parts))
+          ")
+
+          echo "Current nwave-ai: $CURRENT"
+          echo "public_version floor: $FLOOR"
+          echo "New nwave-ai version: $NEW_VERSION"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update nwave-ai version files
         run: |
           NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
-          if [ -f pyproject.toml ]; then
-            python3 -c "
+
+          # Update pyproject.toml
+          python3 -c "
           import re
-          with open('pyproject.toml', 'r') as f:
+          with open('nwave-target/pyproject.toml', 'r') as f:
               content = f.read()
           content = re.sub(r'version = \"[^\"]+\"', 'version = \"${NWAVE_VERSION}\"', content, count=1)
-          with open('pyproject.toml', 'w') as f:
+          with open('nwave-target/pyproject.toml', 'w') as f:
               f.write(content)
           "
-            echo "Updated nwave-ai pyproject.toml to version $NWAVE_VERSION"
-          else
-            echo "::warning::No pyproject.toml found in nwave-ai/nwave - will need manual setup"
+
+          # Update __init__.py
+          if [ -f nwave-target/nwave_ai/__init__.py ]; then
+            python3 -c "
+          import re
+          with open('nwave-target/nwave_ai/__init__.py', 'r') as f:
+              content = f.read()
+          content = re.sub(r'__version__ = \"[^\"]+\"', '__version__ = \"${NWAVE_VERSION}\"', content)
+          with open('nwave-target/nwave_ai/__init__.py', 'w') as f:
+              f.write(content)
+          "
           fi
+
+          echo "Updated nwave-ai to version $NWAVE_VERSION"
 
       - name: Commit and push to nwave-ai/nwave
         working-directory: nwave-target
         run: |
+          NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
           git config user.name "nWave Release Train"
           git config user.email "noreply@nwave.ai"
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to publish"
           else
-            git commit -m "chore(release): sync v${{ steps.get_version.outputs.VERSION }} (nwave-ai v${{ steps.nwave_version.outputs.version }})"
+            git commit -m "chore(release): v${NWAVE_VERSION}"
             git push
           fi
+
+      - name: Create tag and release on nwave-ai/nwave
+        working-directory: nwave-target
+        env:
+          GH_TOKEN: ${{ secrets.RELEASETRAIN }}
+        run: |
+          NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
+          TAG="v${NWAVE_VERSION}"
+
+          # Create and push tag (skip if it already exists)
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping"
+          else
+            git tag -a "$TAG" -m "Release ${TAG}"
+            git push origin "$TAG"
+            echo "Created and pushed tag $TAG"
+          fi
+
+          # Create GitHub Release (skip if it already exists)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping"
+          else
+            cat > /tmp/release-notes.md << NOTES_EOF
+          ## nwave-ai ${TAG}
+
+          ### Install
+          pipx install nwave-ai
+          nwave-ai install
+
+          ### What's included
+          - nWave methodology framework
+          - CLI installer (nwave-ai install / nwave-ai uninstall)
+          - DES (Developer Experience System) plugin
+          - IDE integration bundles
+          NOTES_EOF
+            gh release create "$TAG" \
+              --title "nwave-ai ${TAG}" \
+              --notes-file /tmp/release-notes.md
+            echo "Created GitHub Release $TAG"
+          fi
+
+      - name: Sync public_version back to crafter-ai
+        run: |
+          NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
+
+          # Update public_version in crafter-ai pyproject.toml
+          python3 -c "
+          import re
+          with open('pyproject.toml', 'r') as f:
+              content = f.read()
+          content = re.sub(
+              r'public_version = \"[^\"]+\"',
+              'public_version = \"${NWAVE_VERSION}\"',
+              content
+          )
+          with open('pyproject.toml', 'w') as f:
+              f.write(content)
+          "
+
+          # Commit and push to crafter-ai (use GH_TOKEN for branch protection)
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git config user.name "nWave Release Train"
+          git config user.email "noreply@nwave.ai"
+          git add pyproject.toml
+          if git diff --cached --quiet; then
+            echo "public_version already up to date"
+          else
+            git commit -m "chore: bump nwave-ai public_version to ${NWAVE_VERSION}"
+            git push origin HEAD:master
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Publish Summary
+        run: |
+          NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
+          echo "## Publish to nwave-ai/nwave" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**nwave-ai version**: \`${NWAVE_VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag**: \`v${NWAVE_VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**GitHub Release**: created on nwave-ai/nwave" >> $GITHUB_STEP_SUMMARY
+          echo "**crafter-ai public_version**: synced to \`${NWAVE_VERSION}\`" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
   # PUBLISH TO PYPI - Build and upload nwave-ai wheel
@@ -647,7 +786,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "Published to GitHub Releases, synced to *nwave-ai/nwave*, and uploaded to *PyPI* (`pipx install nwave-ai`)"
+                    "text": "*nwave-ai*: \`v${{ needs.publish-to-nwave.outputs.nwave_version }}\` published to *PyPI* (`pipx install nwave-ai`)\nSynced to *nwave-ai/nwave* with tag + GitHub Release"
                   }
                 },
                 {
