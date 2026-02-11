@@ -59,7 +59,7 @@ repos:
         name: Code Formatter Availability Check
         entry: python3 scripts/hooks/check_formatter_available.py
         language: system
-        files: ^(scripts/|tools/|tests/).*\.py$
+        files: ^(scripts/|tests/).*\.py$
         exclude: \.json$
         pass_filenames: false
         stages: [pre-commit]
@@ -124,12 +124,12 @@ repos:
     rev: v0.15.0
     hooks:
       - id: ruff
-        args: [--fix, "src/", "scripts/", "tools/", "tests/"]
+        args: [--no-fix, "--exit-non-zero-on-fix", "src/", "scripts/", "tests/"]
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
       - id: ruff-format
-        args: ["src/", "scripts/", "tools/", "tests/"]
+        args: [--check, --diff, "src/", "scripts/", "tests/"]
         pass_filenames: false
         always_run: true
         stages: [pre-commit]

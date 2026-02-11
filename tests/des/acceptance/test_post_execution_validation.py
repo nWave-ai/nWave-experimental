@@ -944,7 +944,7 @@ class TestOrchestratorHookIntegration:
         # Act: Invoke validation through ENTRY POINT with real SubagentStopHook
         time_provider = SystemTimeProvider()
         orchestrator = DESOrchestrator(
-            hook=SubagentStopHook(audit_logger=Mock(), time_provider=time_provider),  # noqa: F821
+            hook=SubagentStopHook(audit_logger=Mock(), time_provider=time_provider),
             validator=TemplateValidator(),
             filesystem=RealFileSystem(),
             time_provider=time_provider,
@@ -987,7 +987,7 @@ class TestOrchestratorHookIntegration:
         # Act: Invoke validation through ENTRY POINT with real SubagentStopHook
         time_provider = SystemTimeProvider()
         orchestrator = DESOrchestrator(
-            hook=SubagentStopHook(audit_logger=Mock(), time_provider=time_provider),  # noqa: F821
+            hook=SubagentStopHook(audit_logger=Mock(), time_provider=time_provider),
             validator=TemplateValidator(),
             filesystem=RealFileSystem(),
             time_provider=time_provider,

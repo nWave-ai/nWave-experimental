@@ -102,10 +102,10 @@ jobs:
         run: pip install ruff==0.15.0
 
       - name: Ruff lint
-        run: ruff check src/ scripts/ tools/ tests/ --exit-non-zero-on-fix
+        run: ruff check src/ scripts/ tests/ --exit-non-zero-on-fix
 
       - name: Ruff format check
-        run: ruff format --check --diff src/ scripts/ tools/ tests/
+        run: ruff format --check --diff src/ scripts/ tests/
 
   file-quality:
     name: "File Quality"
