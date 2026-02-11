@@ -293,11 +293,15 @@ class NWaveInstaller:
                     "phases": 7,
                     "description": "7-phase TDD (L4-L6 moved to orchestrator)",
                 },
+                "4.0": {
+                    "phases": 5,
+                    "description": "5-phase TDD (REVIEW/REFACTOR moved to deliver)",
+                },
             }
 
             if schema_version not in valid_schemas:
                 self.logger.warn(
-                    f"  ⚠️ Schema version {schema_version}, expected 2.0 or 3.0"
+                    f"  ⚠️ Schema version {schema_version}, expected 2.0, 3.0, or 4.0"
                 )
                 return False
 
