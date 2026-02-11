@@ -1,7 +1,11 @@
 """YamlExecutionLogReader - driven adapter for reading execution log data.
 
 Implements the ExecutionLogReader port by reading YAML execution-log files
-and converting pipe-delimited event strings into domain PhaseEvent objects.
+and converting event entries into domain PhaseEvent objects.
+
+Supports two event formats via PhaseEventParser.parse_auto():
+- v2.0: pipe-delimited strings ("step_id|phase|status|data|timestamp")
+- v3.0: structured YAML dicts ({sid, p, s, d, t} with optional tu, tk)
 
 Infrastructure details (YAML format, file I/O) are hidden behind the port interface.
 The application layer only sees PhaseEvent domain objects.
@@ -22,12 +26,18 @@ from des.ports.driven_ports.execution_log_reader import (
 class YamlExecutionLogReader(ExecutionLogReader):
     """Reads execution log data from YAML files.
 
-    File format (Schema v2.0):
-        project_id: "my-project"
+    Supports both v2.0 (pipe-delimited) and v3.0 (structured dict) formats.
+    Format auto-detection is per-event via PhaseEventParser.parse_auto().
+
+    File format (Schema v2.0 - pipe-delimited strings):
+        schema_version: "2.0"
         events:
           - "01-01|PREPARE|EXECUTED|PASS|2026-02-02T10:00:00Z"
-          - "01-01|RED_ACCEPTANCE|EXECUTED|PASS|2026-02-02T10:05:00Z"
-          - ...
+
+    File format (Schema v3.0 - structured YAML objects):
+        schema_version: "3.0"
+        events:
+          - {sid: "01-01", p: PREPARE, s: EXECUTED, d: PASS, t: "2026-02-02T10:00:00Z"}
     """
 
     def __init__(self) -> None:
@@ -52,8 +62,8 @@ class YamlExecutionLogReader(ExecutionLogReader):
     def read_step_events(self, log_path: str, step_id: str) -> list[PhaseEvent]:
         """Read and parse phase events for a specific step.
 
-        Translates raw YAML pipe-delimited strings into domain PhaseEvent objects
-        using PhaseEventParser, filtered by step_id.
+        Translates raw YAML event entries (strings or dicts) into domain
+        PhaseEvent objects using PhaseEventParser, filtered by step_id.
 
         Args:
             log_path: Absolute path to the execution log file

@@ -8,8 +8,11 @@ Usage:
       --status EXECUTED \\
       --data PASS
 
-stdout (agent sees real timestamp):
-    02-03|GREEN|EXECUTED|PASS|2026-02-10T20:28:18Z
+Writes structured YAML objects (schema v3.0):
+    {sid: "02-03", p: GREEN, s: EXECUTED, d: PASS, t: "2026-02-10T20:28:18Z"}
+
+stdout (agent sees structured representation):
+    sid=02-03 p=GREEN s=EXECUTED d=PASS t=2026-02-10T20:28:18Z
 
 Exit codes:
     0 = Success, entry appended
@@ -121,10 +124,17 @@ def main(argv: list[str] | None = None) -> int:
     # Generate real UTC timestamp
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Build entry string
-    entry = f"{args.step_id}|{args.phase}|{args.status}|{args.data}|{timestamp}"
+    # Build structured entry (v3.0 format)
+    entry: dict = {
+        "sid": args.step_id,
+        "p": args.phase,
+        "s": args.status,
+        "d": args.data,
+        "t": timestamp,
+    }
     if args.turns_used is not None and args.tokens_used is not None:
-        entry = f"{entry}|{args.turns_used}|{args.tokens_used}"
+        entry["tu"] = args.turns_used
+        entry["tk"] = args.tokens_used
 
     # YAML read-modify-write
     log_data = yaml.safe_load(log_path.read_text())
@@ -133,10 +143,15 @@ def main(argv: list[str] | None = None) -> int:
     if "events" not in log_data:
         log_data["events"] = []
     log_data["events"].append(entry)
+    log_data["schema_version"] = "3.0"
     log_path.write_text(yaml.dump(log_data, default_flow_style=False))
 
-    # Print entry to stdout
-    print(entry)
+    # Print entry to stdout (human-readable key=value format)
+    parts = [f"sid={entry['sid']}", f"p={entry['p']}", f"s={entry['s']}",
+             f"d={entry['d']}", f"t={entry['t']}"]
+    if "tu" in entry:
+        parts.extend([f"tu={entry['tu']}", f"tk={entry['tk']}"])
+    print(" ".join(parts))
 
     return 0
 

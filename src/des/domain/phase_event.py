@@ -1,12 +1,18 @@
 """Phase event domain model and parser.
 
 Pure domain types for representing TDD phase execution events
-parsed from execution-log.yaml pipe-delimited event strings.
+parsed from execution-log.yaml in two formats:
 
-Format (5-field legacy): "step_id|phase_name|status|outcome|timestamp"
-Format (7-field with stats): "step_id|phase_name|status|outcome|timestamp|turns_used|tokens_used"
-Example: "01-01|PREPARE|EXECUTED|PASS|2026-02-02T10:00:00Z"
-Example: "01-01|COMMIT|EXECUTED|PASS|2026-02-02T10:30:00Z|12|45000"
+v2.0 pipe-delimited strings:
+  Format (5-field legacy): "step_id|phase_name|status|outcome|timestamp"
+  Format (7-field with stats): "step_id|phase_name|status|outcome|timestamp|turns_used|tokens_used"
+  Example: "01-01|PREPARE|EXECUTED|PASS|2026-02-02T10:00:00Z"
+  Example: "01-01|COMMIT|EXECUTED|PASS|2026-02-02T10:30:00Z|12|45000"
+
+v3.0 structured YAML dicts:
+  Format: {sid: step_id, p: phase, s: status, d: data, t: timestamp}
+  Optional: {tu: turns_used, tk: tokens_used}
+  Example: {sid: "01-01", p: "PREPARE", s: "EXECUTED", d: "PASS", t: "2026-02-02T10:00:00Z"}
 """
 
 from __future__ import annotations
@@ -38,11 +44,11 @@ class PhaseEvent:
 
 
 class PhaseEventParser:
-    """Parses pipe-delimited event strings into PhaseEvent domain objects.
+    """Parses event entries into PhaseEvent domain objects.
 
-    Replaces inline parsing in:
-    - SubagentStopHook._validate_from_execution_log() (lines 190-197)
-    - claude_code_hook_adapter._verify_step_from_append_only_log()
+    Supports two formats:
+    - v2.0: pipe-delimited strings ("step_id|phase|status|data|timestamp")
+    - v3.0: structured dicts ({sid, p, s, d, t} with optional tu, tk)
 
     This is a stateless parser with no I/O dependencies.
     """
@@ -50,6 +56,9 @@ class PhaseEventParser:
     MINIMUM_FIELDS = 5
     STATS_FIELDS = 7
     FIELD_SEPARATOR = "|"
+
+    # Required keys for v3.0 structured format
+    STRUCTURED_REQUIRED_KEYS = frozenset({"sid", "p", "s", "d", "t"})
 
     def parse(self, event_str: str) -> PhaseEvent | None:
         """Parse a pipe-delimited event string into a PhaseEvent.
@@ -85,35 +94,83 @@ class PhaseEventParser:
             tokens_used=tokens_used,
         )
 
-    def parse_many(self, event_strings: list[str], step_id: str) -> list[PhaseEvent]:
-        """Parse multiple event strings, filtering by step_id.
+    def parse_structured(self, event_dict: dict) -> PhaseEvent | None:
+        """Parse a structured dict (v3.0 format) into a PhaseEvent.
 
         Args:
-            event_strings: List of raw pipe-delimited event strings
+            event_dict: Dict with short keys {sid, p, s, d, t} and
+                optional {tu, tk} for execution stats.
+
+        Returns:
+            PhaseEvent if all required keys are present, None otherwise.
+        """
+        if not self.STRUCTURED_REQUIRED_KEYS.issubset(event_dict.keys()):
+            return None
+
+        turns_used = event_dict.get("tu")
+        tokens_used = event_dict.get("tk")
+
+        return PhaseEvent(
+            step_id=event_dict["sid"],
+            phase_name=event_dict["p"],
+            status=event_dict["s"],
+            outcome=event_dict["d"],
+            timestamp=event_dict["t"],
+            turns_used=turns_used,
+            tokens_used=tokens_used,
+        )
+
+    def parse_auto(self, event: str | dict) -> PhaseEvent | None:
+        """Auto-detect event format and parse accordingly.
+
+        Routes string events to parse() (v2.0 pipe format) and
+        dict events to parse_structured() (v3.0 structured format).
+
+        Args:
+            event: Either a pipe-delimited string or a structured dict.
+
+        Returns:
+            PhaseEvent if parsing succeeds, None otherwise.
+        """
+        if isinstance(event, str):
+            return self.parse(event)
+        if isinstance(event, dict):
+            return self.parse_structured(event)
+        return None
+
+    def parse_many(self, event_entries: list, step_id: str) -> list[PhaseEvent]:
+        """Parse multiple events, filtering by step_id.
+
+        Supports both pipe-delimited strings and structured dicts via auto-detection.
+
+        Args:
+            event_entries: List of raw event entries (strings or dicts)
             step_id: Only return events matching this step_id
 
         Returns:
             List of PhaseEvent objects matching the step_id
         """
         events = []
-        for event_str in event_strings:
-            event = self.parse(event_str)
+        for entry in event_entries:
+            event = self.parse_auto(entry)
             if event is not None and event.step_id == step_id:
                 events.append(event)
         return events
 
-    def parse_all(self, event_strings: list[str]) -> list[PhaseEvent]:
-        """Parse all event strings without filtering by step_id.
+    def parse_all(self, event_entries: list) -> list[PhaseEvent]:
+        """Parse all events without filtering by step_id.
+
+        Supports both pipe-delimited strings and structured dicts via auto-detection.
 
         Args:
-            event_strings: List of raw pipe-delimited event strings
+            event_entries: List of raw event entries (strings or dicts)
 
         Returns:
             List of all successfully parsed PhaseEvent objects
         """
         events = []
-        for event_str in event_strings:
-            event = self.parse(event_str)
+        for entry in event_entries:
+            event = self.parse_auto(entry)
             if event is not None:
                 events.append(event)
         return events

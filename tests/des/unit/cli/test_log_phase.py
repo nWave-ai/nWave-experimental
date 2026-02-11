@@ -1,7 +1,8 @@
 """Unit tests for des.cli.log_phase CLI module.
 
-Tests the log_phase CLI tool that appends phase entries to execution-log.yaml
-with real UTC timestamps. All tests use tmp_path fixture and mock get_tdd_schema.
+Tests the log_phase CLI tool that appends structured YAML objects (v3.0 format)
+to execution-log.yaml with real UTC timestamps. All tests use tmp_path fixture
+and mock get_tdd_schema.
 """
 
 from __future__ import annotations
@@ -50,7 +51,7 @@ def _create_execution_log(
 
 
 class TestLogPhaseValidExecutedEntry:
-    """Test that a valid EXECUTED entry is appended with a real timestamp."""
+    """Test that a valid EXECUTED entry is appended as structured dict with real timestamp."""
 
     def test_valid_executed_entry_appended_with_real_timestamp(
         self, tmp_path, mock_schema, capsys
@@ -84,20 +85,20 @@ class TestLogPhaseValidExecutedEntry:
         assert len(events) == 1
 
         entry = events[0]
-        parts = entry.split("|")
-        assert len(parts) == 5
-        assert parts[0] == "01-01"
-        assert parts[1] == "PREPARE"
-        assert parts[2] == "EXECUTED"
-        assert parts[3] == "PASS"
+        assert isinstance(entry, dict)
+        assert entry["sid"] == "01-01"
+        assert entry["p"] == "PREPARE"
+        assert entry["s"] == "EXECUTED"
+        assert entry["d"] == "PASS"
 
-        timestamp = datetime.strptime(parts[4], "%Y-%m-%dT%H:%M:%SZ").replace(
+        timestamp = datetime.strptime(entry["t"], "%Y-%m-%dT%H:%M:%SZ").replace(
             tzinfo=timezone.utc
         )
         assert before <= timestamp <= after
 
         captured = capsys.readouterr()
-        assert "01-01|PREPARE|EXECUTED|PASS|" in captured.out
+        assert "sid=01-01" in captured.out
+        assert "p=PREPARE" in captured.out
 
 
 class TestLogPhaseValidSkippedEntry:
@@ -128,7 +129,12 @@ class TestLogPhaseValidSkippedEntry:
         log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
         events = log_data["events"]
         assert len(events) == 1
-        assert "02-01|REVIEW|SKIPPED|NOT_APPLICABLE: no tests needed|" in events[0]
+        entry = events[0]
+        assert isinstance(entry, dict)
+        assert entry["sid"] == "02-01"
+        assert entry["p"] == "REVIEW"
+        assert entry["s"] == "SKIPPED"
+        assert entry["d"] == "NOT_APPLICABLE: no tests needed"
 
 
 class TestLogPhaseInvalidPhaseName:
@@ -213,7 +219,7 @@ class TestLogPhaseMissingLogFile:
 
 
 class TestLogPhaseYamlStructurePreserved:
-    """Test that existing YAML structure is preserved after appending an entry."""
+    """Test that YAML structure is preserved and schema_version bumped to 3.0."""
 
     def test_yaml_structure_preserved(self, tmp_path, mock_schema):
         from des.cli.log_phase import main
@@ -236,13 +242,13 @@ class TestLogPhaseYamlStructurePreserved:
         )
 
         log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
-        assert log_data["schema_version"] == "2.0"
+        assert log_data["schema_version"] == "3.0"
         assert log_data["project_id"] == "test"
         assert len(log_data["events"]) == 1
 
 
 class TestLogPhaseMultipleEntriesSequential:
-    """Test that multiple entries are appended sequentially in order."""
+    """Test that multiple structured entries are appended sequentially in order."""
 
     def test_multiple_entries_appended_sequentially(self, tmp_path, mock_schema):
         from des.cli.log_phase import main
@@ -272,13 +278,14 @@ class TestLogPhaseMultipleEntriesSequential:
         assert len(events) == 3
 
         for i, phase in enumerate(phases):
-            assert f"|{phase}|" in events[i]
+            assert isinstance(events[i], dict)
+            assert events[i]["p"] == phase
 
 
 class TestLogPhaseExecStats:
-    """Test that --turns-used and --tokens-used produce 7-field entries."""
+    """Test that --turns-used and --tokens-used produce structured entries with tu/tk."""
 
-    def test_entry_with_stats_has_7_fields(self, tmp_path, mock_schema, capsys):
+    def test_entry_with_stats_has_tu_tk_keys(self, tmp_path, mock_schema, capsys):
         from des.cli.log_phase import main
 
         _create_execution_log(tmp_path)
@@ -297,15 +304,15 @@ class TestLogPhaseExecStats:
 
         log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
         entry = log_data["events"][0]
-        parts = entry.split("|")
-        assert len(parts) == 7
-        assert parts[5] == "12"
-        assert parts[6] == "45000"
+        assert isinstance(entry, dict)
+        assert entry["tu"] == 12
+        assert entry["tk"] == 45000
 
         captured = capsys.readouterr()
-        assert "|12|45000" in captured.out
+        assert "tu=12" in captured.out
+        assert "tk=45000" in captured.out
 
-    def test_entry_without_stats_has_5_fields(self, tmp_path, mock_schema, capsys):
+    def test_entry_without_stats_has_no_tu_tk_keys(self, tmp_path, mock_schema, capsys):
         from des.cli.log_phase import main
 
         _create_execution_log(tmp_path)
@@ -322,5 +329,6 @@ class TestLogPhaseExecStats:
 
         log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
         entry = log_data["events"][0]
-        parts = entry.split("|")
-        assert len(parts) == 5
+        assert isinstance(entry, dict)
+        assert "tu" not in entry
+        assert "tk" not in entry
