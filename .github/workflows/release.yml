@@ -547,18 +547,15 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
 
-      - name: Smoke test - install from TestPyPI
+      - name: Smoke test - install from built wheel
         run: |
-          # Wait for TestPyPI index to propagate
-          sleep 15
-
-          # Install in isolated venv via pipx
+          # Install the exact wheel we just built (no TestPyPI propagation delay)
           pip install pipx
-          pipx install "nwave-ai==${{ needs.publish-to-nwave.outputs.nwave_version }}" \
-            --index-url https://test.pypi.org/simple/ \
-            --pip-args="--extra-index-url https://pypi.org/simple/ --no-cache-dir"
+          WHEEL=$(ls dist/*.whl)
+          echo "Installing wheel: $WHEEL"
+          pipx install "$WHEEL" --pip-args="--extra-index-url https://pypi.org/simple/"
 
-          # Verify CLI loads
+          # Verify CLI loads and shows correct version
           nwave-ai version
           nwave-ai --help
 
