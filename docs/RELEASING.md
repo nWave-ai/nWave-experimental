@@ -98,16 +98,13 @@ Each release includes:
 
 ## Testing Before Release
 
-### Local Build Test
+### Local Package Test
 
-Before creating a release tag, test the build locally:
+Before creating a release tag, test the release packaging locally:
 
 ```bash
-# Clean previous builds
+# Clean previous packages
 rm -rf dist/
-
-# Build framework
-python tools/build.py
 
 # Create packages
 python tools/create_release_packages.py
@@ -237,8 +234,7 @@ Before creating a release:
 If CI/CD is unavailable, create release manually:
 
 ```bash
-# Build and package
-python tools/build.py
+# Create release packages
 python tools/create_release_packages.py
 
 # Create release using GitHub CLI

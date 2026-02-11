@@ -1,3 +1,5 @@
+> **Note**: The build pipeline referenced in this document was eliminated in the build-pipeline-elimination feature. This document is preserved for historical reference only.
+
 # Root Cause Analysis: CI/CD Workflow Failure (Commit 30aa817)
 
 **Incident**: CI/CD workflow failure after pushing commit 30aa817 "ci: add comprehensive unified CI/CD workflow"

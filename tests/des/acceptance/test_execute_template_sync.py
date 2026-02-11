@@ -1,19 +1,14 @@
 """
 Test that execute.md TDD phases stay in sync with validator source of truth.
 
-The source file uses {{MANDATORY_PHASES}} template variable which the build
-system replaces from step-tdd-cycle-schema.json. This test verifies:
+The source file uses {{MANDATORY_PHASES}} template variable which is resolved
+at install time from step-tdd-cycle-schema.json. This test verifies:
 1. Source contains the template variable (not hardcoded phases)
-2. Built output contains resolved phases matching the validator
+2. Source declares Schema v4.0 and references TDDPhaseValidator
 """
 
-from pathlib import Path
-
-from des.application.validator import TDDPhaseValidator
-
-
 class TestExecuteTemplateSync:
-    """Verify execute.md TDD phases use build-time template injection."""
+    """Verify execute.md TDD phases use template injection."""
 
     def test_source_uses_template_variable(self):
         """
@@ -59,20 +54,3 @@ class TestExecuteTemplateSync:
         assert "TDDPhaseValidator.MANDATORY_PHASES" in section, (
             "execute.md must reference TDDPhaseValidator.MANDATORY_PHASES"
         )
-
-    def test_built_output_has_resolved_phases(self):
-        """
-        GIVEN execute.md processed through the build system
-        WHEN we check the built output (or source since build pipeline removed)
-        THEN {{MANDATORY_PHASES}} is resolved to actual phase list from schema
-
-        NOTE: Build pipeline was removed in step 02-04. The source file
-        uses {{MANDATORY_PHASES}} which is resolved at install time, not
-        build time. This test now verifies the source template variable
-        is present (covered by test_source_uses_template_variable above).
-        """
-        # Build pipeline eliminated -- dist/ide no longer exists.
-        # Template variable resolution happens at install time.
-        # This test is now a no-op since the source template test above
-        # already verifies the template variable is present.
-        pass

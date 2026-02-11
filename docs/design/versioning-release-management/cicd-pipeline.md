@@ -165,10 +165,9 @@ def determine_bump_type(commits: list[str]) -> str:
 **Duration**: ~5 minutes
 
 **Actions**:
-1. Run `build_ide_bundle.py` to create IDE bundle
-2. Run `create_release_packages.py` to create archives
-3. Generate SHA256 checksums for all artifacts
-4. Validate package structure
+1. Run `create_release_packages.py` to create release archives
+2. Generate SHA256 checksums for all artifacts
+3. Validate package structure
 
 **Build Artifacts**:
 ```

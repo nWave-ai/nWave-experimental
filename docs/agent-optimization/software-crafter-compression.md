@@ -1,3 +1,5 @@
+> **Note**: The build pipeline (BUILD:INJECT, dist/ide) referenced in this document was eliminated in the build-pipeline-elimination feature. This document is preserved for historical reference only.
+
 # Agent Compression: software-crafter
 
 ## Stato: Iterazione 1 completata - defect rilevato nel test A/B

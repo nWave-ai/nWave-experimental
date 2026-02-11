@@ -469,13 +469,13 @@ STEP 01-02: Create Agent Jinja2 Template (Complete)
 - DELIVERABLES: Enhanced template with YAML escaping, embedded knowledge, multiline support
 ```
 
-### Example 2: Step 08-01 (Build Integration)
+### Example 2: Step 08-01 (Release Integration)
 ```
-STEP 08-01: Update Build System
+STEP 08-01: Update Release System
 - AGENT: @agent-devop
 - STEP_FILE: docs/feature/plugin-marketplace-migration/steps/08-01.json
 - REFACTOR_LEVEL: 3
-- DELIVERABLES: TOON compiler integration in build_ide_bundle.py, token savings reporting
+- DELIVERABLES: Release packaging integration in create_release_packages.py
 ```
 
 ### Example 3: Step 08-02 (Plugin Installation - BLOCKER #3)

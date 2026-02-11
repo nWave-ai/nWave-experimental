@@ -674,14 +674,6 @@ jobs:
             exit 1
           fi
 
-      - name: Build IDE bundle
-        run: |
-          PYTHONPATH=tools pipenv run python3 tools/core/build_ide_bundle.py \
-            --source-dir nWave \
-            --output-dir dist/ide \
-            --clean \
-            --verbose
-
       - name: Create release packages
         run: |
           pipenv run python3 tools/create_release_packages.py \

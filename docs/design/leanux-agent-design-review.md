@@ -1,3 +1,5 @@
+> **Note**: The build pipeline (dist/ide) referenced in this document was eliminated in the build-pipeline-elimination feature. This document is preserved for historical reference only.
+
 # LeanUX Agent Design Review
 
 **Reviewer**: Sage (agent-builder)

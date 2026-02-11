@@ -74,12 +74,7 @@ Triggered **only when version tags are pushed** (e.g., `v1.4.8`).
    - Verify against `nWave/framework-catalog.yaml`
    - Fail if versions don't match
 
-2. **IDE Bundle Build**
-   ```bash
-   python tools/build.py --clean --verbose
-   ```
-
-3. **Release Package Creation**
+2. **Release Package Creation**
    - `nwave-claude-code-{version}.tar.gz`
    - `nwave-codex-{version}.tar.gz`
    - `install-nwave-claude-code.py`
@@ -253,10 +248,10 @@ git push origin :refs/tags/v1.4.9
 
 #### Build Failures
 ```bash
-# Test build locally
-python tools/build.py --clean --verbose
+# Test release packaging locally
+python tools/create_release_packages.py
 
-# Check for errors in build output
+# Check for errors in output
 ```
 
 #### Artifact Upload Failures

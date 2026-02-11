@@ -1,3 +1,5 @@
+> **Note**: The build pipeline referenced in this document was eliminated in the build-pipeline-elimination feature. This document is preserved for historical reference only.
+
 # CI/CD Pipeline Investigation Report
 
 **Date**: 2026-01-21
