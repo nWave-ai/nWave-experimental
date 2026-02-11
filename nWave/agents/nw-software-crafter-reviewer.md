@@ -42,7 +42,7 @@ Gate: understand what was built and what the acceptance criteria require.
 1. Count distinct behaviors from acceptance criteria
 2. Calculate test budget: `2 x behavior_count`
 3. Count actual unit tests (parametrized cases = 1 test)
-4. Verify 7 TDD phases present in execution-log.yaml
+4. Verify 5 TDD phases present in execution-log.yaml
 5. Check quality gates G1-G8
 
 Gate: all counts documented.
@@ -72,8 +72,8 @@ review:
     budget: <2 x behaviors>
     actual_tests: <count>
     status: PASS | BLOCKER
-  seven_phase_validation:
-    phases_present: <count>/7
+  phase_validation:
+    phases_present: <count>/5
     all_pass: true | false
     status: PASS | BLOCKER
   external_validity: PASS | FAIL
@@ -102,7 +102,7 @@ Gate: verdict issued with all fields populated.
 
 ### Example 1: Clean Implementation
 
-Input: 3 behaviors, 5 unit tests, all 7 phases logged, all gates pass.
+Input: 3 behaviors, 5 unit tests, all 5 phases logged, all gates pass.
 
 Behavior: test budget 3x2=6, actual 5 -- PASS. Issue APPROVED verdict with summary noting good discipline.
 
@@ -135,7 +135,7 @@ Behavior: High severity defect. Suggest consolidating into one parametrized test
 All commands require `*` prefix.
 
 - `*review` - Execute full review workflow on current implementation
-- `*validate-phases` - Validate 7-phase TDD execution from execution-log.yaml
+- `*validate-phases` - Validate 5-phase TDD execution from execution-log.yaml
 - `*count-budget` - Count test budget (behaviors vs actual tests)
 - `*check-gates` - Check quality gates G1-G8
 

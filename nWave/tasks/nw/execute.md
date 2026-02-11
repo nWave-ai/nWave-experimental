@@ -52,15 +52,13 @@ Agent: {agent-name}
 # TASK_CONTEXT
 {step context extracted from roadmap - name, description, acceptance_criteria, test_file, scenario_line, acceptance_test_scenario, quality_gates, implementation_notes, dependencies, estimated_hours, deliverables}
 
-# TDD_7_PHASES
+# TDD_PHASES
 Execute these phases in order:
 0. PREPARE - Load context, verify prerequisites
 1. RED_ACCEPTANCE - Write failing acceptance test
 2. RED_UNIT - Write failing unit test
 3. GREEN - Minimal code to pass tests
-4. REVIEW - Verify quality gates
-5. REFACTOR_CONTINUOUS - Improve design, tests stay green
-6. COMMIT - Stage and commit with conventional message
+4. COMMIT - Stage and commit with conventional message
    Include git trailer: `Step-ID: {step-id}` (required for DES verification)
    Example commit message:
    ```
@@ -134,8 +132,8 @@ Target: 30 turns maximum. If approaching limit, COMMIT current progress.
 /nw:execute @nw-software-crafter "des-us007" "03-01"
 ```
 
-## TDD_7_PHASES
-<!-- Schema v3.0 — canonical source: TDDPhaseValidator.MANDATORY_PHASES_V3 -->
+## TDD_PHASES
+<!-- Schema v4.0 — canonical source: TDDPhaseValidator.MANDATORY_PHASES -->
 <!-- Build system injects mandatory phases from step-tdd-cycle-schema.json -->
 {{MANDATORY_PHASES}}
 

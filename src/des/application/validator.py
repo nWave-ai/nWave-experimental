@@ -4,25 +4,25 @@ Pre-Invocation Template Validator
 Validates that DES prompts contain all mandatory sections and TDD phases
 before Task invocation, preventing incomplete instructions from reaching sub-agents.
 
-Uses canonical 7-phase TDD cycle from step-tdd-cycle-schema.json v3.0 (single source of truth).
+Uses canonical 5-phase TDD cycle from step-tdd-cycle-schema.json v4.0 (single source of truth).
 All phase names, skip prefixes, and validation rules loaded from schema.
 
 MANDATORY SECTIONS (9):
 1. DES_METADATA
 2. AGENT_IDENTITY
 3. TASK_CONTEXT
-4. TDD_7_PHASES (from schema)
+4. TDD_PHASES (from schema)
 5. QUALITY_GATES
 6. OUTCOME_RECORDING
 7. RECORDING_INTEGRITY
 8. BOUNDARY_RULES
 9. TIMEOUT_INSTRUCTION
 
-MANDATORY TDD PHASES (7 from schema):
+MANDATORY TDD PHASES (5 from schema):
 1. PREPARE, 2. RED_ACCEPTANCE, 3. RED_UNIT, 4. GREEN (merged GREEN_UNIT + GREEN_ACCEPTANCE)
-5. REVIEW (expanded scope, includes POST_REFACTOR_REVIEW), 6. REFACTOR_CONTINUOUS (merged L1+L2+L3)
-7. COMMIT (absorbs FINAL_VALIDATE)
-Note: L4-L6 refactoring moved to orchestrator Phase 2.25 (runs once after all steps)
+5. COMMIT (absorbs FINAL_VALIDATE)
+Note: REVIEW moved to deliver-level Phase 4 (Adversarial Review via /nw:review)
+Note: REFACTOR moved to deliver-level Phase 3 (Complete Refactoring L1-L4 via /nw:refactor)
 """
 
 import re
@@ -55,7 +55,7 @@ class MandatorySectionChecker:
         "DES_METADATA",  # Step metadata and command
         "AGENT_IDENTITY",  # Which agent executes this step
         "TASK_CONTEXT",  # What needs to be implemented
-        "TDD_7_PHASES",  # All 7 TDD phases to execute (schema v3.0 canonical)
+        "TDD_PHASES",  # All TDD phases to execute (schema v4.0 canonical)
         "QUALITY_GATES",  # Quality validation criteria
         "OUTCOME_RECORDING",  # How to track progress
         "RECORDING_INTEGRITY",  # Skip prefixes + anti-fraud rules
@@ -68,7 +68,7 @@ class MandatorySectionChecker:
         "DES_METADATA": "Add DES_METADATA section with step file path and command name",
         "AGENT_IDENTITY": "Add AGENT_IDENTITY section specifying which agent executes this step",
         "TASK_CONTEXT": "Add TASK_CONTEXT section describing what needs to be implemented",
-        "TDD_7_PHASES": "Add TDD_7_PHASES section listing all 7 phases: PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, REVIEW, REFACTOR_CONTINUOUS, COMMIT",
+        "TDD_PHASES": "Add TDD_PHASES section listing all 5 phases: PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT",
         "QUALITY_GATES": "Add QUALITY_GATES section defining validation criteria (G1-G6)",
         "OUTCOME_RECORDING": "Add OUTCOME_RECORDING section describing how to track phase completion",
         "RECORDING_INTEGRITY": (
@@ -134,10 +134,11 @@ class TDDPhaseValidator:
     """
     Validates that required TDD phases are mentioned in prompt.
 
-    Uses canonical 7-phase TDD cycle from step-tdd-cycle-schema.json v3.0:
-    PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, REVIEW, REFACTOR_CONTINUOUS, COMMIT
+    Uses canonical 5-phase TDD cycle from step-tdd-cycle-schema.json v4.0:
+    PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT
 
-    Note: REFACTOR_L4-L6 moved to orchestrator Phase 2.25 (runs once after all steps)
+    Note: REVIEW moved to deliver-level Phase 4 (Adversarial Review)
+    Note: REFACTOR moved to deliver-level Phase 3 (Complete Refactoring L1-L4)
     """
 
     def __init__(self):
@@ -151,12 +152,12 @@ class TDDPhaseValidator:
         """
         Validate that all required TDD phases are mentioned in prompt.
 
-        Uses canonical 7-phase TDD cycle from schema (single source of truth).
+        Uses canonical 5-phase TDD cycle from schema (single source of truth).
 
         Detects phases by looking for patterns:
         - Numbered list items (e.g., "1. PREPARE")
         - Phase names in text (e.g., "PREPARE")
-        - Shorthand references like "All 7 phases listed"
+        - Shorthand references like "All 5 phases listed"
 
         But excludes comments mentioning missing phases (e.g., "# MISSING: REFACTOR_L3")
 
@@ -166,9 +167,9 @@ class TDDPhaseValidator:
         Returns:
             List of error messages (empty if all phases present)
         """
-        # Check for shorthand pattern (7 phases from schema)
+        # Check for shorthand pattern (count-agnostic)
         shorthand_pattern = (
-            r"(?i)all\s+7\s+phases?\s+(listed|mentioned|included|present)"
+            r"(?i)all\s+\d+\s+phases?\s+(listed|mentioned|included|present)"
         )
         if re.search(shorthand_pattern, prompt):
             return []  # Accept shorthand as valid
@@ -254,7 +255,7 @@ class ExecutionLogValidator:
     """
     Validates phase execution log for state violations and schema compliance.
 
-    Uses canonical 7-phase TDD cycle from step-tdd-cycle-schema.json v3.0.
+    Uses canonical TDD cycle from step-tdd-cycle-schema.json v4.0.
     Detects abandoned phases, missing required fields, and invalid state sequences
     to ensure phase execution logs are complete and consistent.
     """
@@ -275,7 +276,7 @@ class ExecutionLogValidator:
         Validate phase execution log for state violations and schema compliance.
 
         Checks:
-        1. Correct number of phases (7 from schema)
+        1. Correct number of phases (from schema)
            - SKIPPED if phase_log is empty (no execution log found in prompt)
            - SKIPPED if skip_schema_validation is True
         2. Required phases present (from schema)
@@ -288,7 +289,7 @@ class ExecutionLogValidator:
 
         Args:
             phase_log: List of phase execution records
-            schema_version: Schema version (kept for backward compatibility, always "3.0")
+            schema_version: Schema version (kept for backward compatibility)
             skip_schema_validation: If True, skip phase count/presence validation.
                 Useful for unit tests that only test individual phase state rules.
 
@@ -441,7 +442,7 @@ class TemplateValidator:
         """
         Validate a complete prompt for mandatory sections and phases.
 
-        Uses canonical 7-phase TDD cycle from step-tdd-cycle-schema.json v3.0.
+        Uses canonical TDD cycle from step-tdd-cycle-schema.json v4.0.
 
         Args:
             prompt: The full prompt text to validate
@@ -462,9 +463,9 @@ class TemplateValidator:
 
         # Extract and parse phase_execution_log from prompt
         execution_log_data = self._extract_execution_log_from_prompt(prompt)
-        # Validate with schema (always v3.0)
+        # Validate with schema (always v4.0)
         execution_log_errors = self.execution_log_validator.validate(
-            execution_log_data, schema_version="3.0"
+            execution_log_data, schema_version="4.0"
         )
 
         # Combine all errors (marker first, then sections, then phases, then execution log)

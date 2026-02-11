@@ -118,24 +118,10 @@ def _make_complete_phase_events(step_id: str) -> list[PhaseEvent]:
         ),
         PhaseEvent(
             step_id=step_id,
-            phase_name="REVIEW",
-            status="EXECUTED",
-            outcome="PASS",
-            timestamp="2026-02-06T21:04:00Z",
-        ),
-        PhaseEvent(
-            step_id=step_id,
-            phase_name="REFACTOR_CONTINUOUS",
-            status="SKIPPED",
-            outcome="APPROVED_SKIP:Clean",
-            timestamp="2026-02-06T21:05:00Z",
-        ),
-        PhaseEvent(
-            step_id=step_id,
             phase_name="COMMIT",
             status="EXECUTED",
             outcome="PASS",
-            timestamp="2026-02-06T21:06:00Z",
+            timestamp="2026-02-06T21:04:00Z",
         ),
     ]
 

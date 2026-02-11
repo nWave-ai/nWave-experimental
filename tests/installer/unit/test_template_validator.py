@@ -4,7 +4,7 @@ Unit Tests: TemplateValidator Components
 Tests for des.validator module:
 - TemplateValidator: Main entry point for validation
 - MandatorySectionChecker: Validates 9 mandatory sections
-- TDDPhaseValidator: Validates 7 TDD phases
+- TDDPhaseValidator: Validates 5 TDD phases (schema v4.0)
 - ValidationResult: Data class for validation results
 """
 
@@ -31,7 +31,7 @@ class TestValidationResultDataclass:
 
         errors = [
             "MISSING: Mandatory section 'TIMEOUT_INSTRUCTION' not found",
-            "INCOMPLETE: TDD phase 'REFACTOR_CONTINUOUS' not mentioned",
+            "INCOMPLETE: TDD phase 'GREEN' not mentioned",
         ]
         result = ValidationResult(
             status="FAILED",
@@ -62,7 +62,7 @@ class TestMandatorySectionChecker:
         # TASK_CONTEXT
         Implement UserRepository
 
-        # TDD_7_PHASES
+        # TDD_PHASES
         PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN_UNIT
 
         # QUALITY_GATES
@@ -100,7 +100,7 @@ class TestMandatorySectionChecker:
         # TASK_CONTEXT
         Implement UserRepository
 
-        # TDD_7_PHASES
+        # TDD_PHASES
         PREPARE, RED_ACCEPTANCE
 
         # QUALITY_GATES
@@ -140,26 +140,24 @@ class TestMandatorySectionChecker:
         checker = MandatorySectionChecker()
         errors = checker.validate(prompt)
 
-        assert len(errors) >= 5  # Missing TDD_7_PHASES, QUALITY_GATES, etc.
+        assert len(errors) >= 5  # Missing TDD_PHASES, QUALITY_GATES, etc.
 
 
 class TestTDDPhaseValidator:
-    """TDDPhaseValidator validates 7 TDD phases."""
+    """TDDPhaseValidator validates 5 TDD phases (schema v4.0)."""
 
-    def test_all_7_phases_present(self):
-        """Prompt mentioning all 7 phases passes validation."""
+    def test_all_5_phases_present(self):
+        """Prompt mentioning all 5 phases passes validation."""
         from des.application.validator import TDDPhaseValidator
 
         prompt = """
-        # TDD_7_PHASES
+        # TDD_PHASES
         Execute in order:
         1. PREPARE
         2. RED_ACCEPTANCE
         3. RED_UNIT
         4. GREEN
-        5. REVIEW
-        6. REFACTOR_CONTINUOUS
-        7. COMMIT
+        5. COMMIT
         """
 
         validator = TDDPhaseValidator()
@@ -167,32 +165,30 @@ class TestTDDPhaseValidator:
 
         assert errors == []
 
-    def test_missing_refactor_continuous_phase(self):
-        """Prompt missing REFACTOR_CONTINUOUS returns error."""
+    def test_missing_green_phase(self):
+        """Prompt missing GREEN returns error."""
         from des.application.validator import TDDPhaseValidator
 
         prompt = """
-        # TDD_7_PHASES
+        # TDD_PHASES
         1. PREPARE
         2. RED_ACCEPTANCE
         3. RED_UNIT
-        4. GREEN
-        5. REVIEW
-        6. COMMIT
+        4. COMMIT
         """
 
         validator = TDDPhaseValidator()
         errors = validator.validate(prompt)
 
         assert len(errors) > 0
-        assert any("REFACTOR_CONTINUOUS" in error for error in errors)
+        assert any("GREEN" in error for error in errors)
 
     def test_missing_multiple_phases(self):
         """Prompt missing multiple phases returns multiple errors."""
         from des.application.validator import TDDPhaseValidator
 
         prompt = """
-        # TDD_7_PHASES
+        # TDD_PHASES
         1. PREPARE
         2. RED_ACCEPTANCE
         3. RED_UNIT
@@ -201,7 +197,7 @@ class TestTDDPhaseValidator:
         validator = TDDPhaseValidator()
         errors = validator.validate(prompt)
 
-        assert len(errors) >= 4  # Missing GREEN, REVIEW, REFACTOR_CONTINUOUS, COMMIT
+        assert len(errors) >= 2  # Missing GREEN, COMMIT
 
 
 class TestTemplateValidator:
@@ -222,14 +218,12 @@ class TestTemplateValidator:
         # TASK_CONTEXT
         Implement UserRepository
 
-        # TDD_7_PHASES
+        # TDD_PHASES
         1. PREPARE
         2. RED_ACCEPTANCE
         3. RED_UNIT
         4. GREEN
-        5. REVIEW
-        6. REFACTOR_CONTINUOUS
-        7. COMMIT
+        5. COMMIT
 
         # QUALITY_GATES
         G1: One test active
@@ -287,14 +281,12 @@ class TestTemplateValidator:
         # TASK_CONTEXT
         Implement UserRepository
 
-        # TDD_7_PHASES
+        # TDD_PHASES
         1. PREPARE
         2. RED_ACCEPTANCE
         3. RED_UNIT
         4. GREEN
-        5. REVIEW
-        6. REFACTOR_CONTINUOUS
-        7. COMMIT
+        5. COMMIT
 
         # QUALITY_GATES
         G1: One test active

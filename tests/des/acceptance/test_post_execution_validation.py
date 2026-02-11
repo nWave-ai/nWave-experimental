@@ -260,7 +260,7 @@ class TestPostExecutionStateValidation:
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
         """
-        GIVEN execution-log.yaml shows REFACTOR_CONTINUOUS phase with status "EXECUTED"
+        GIVEN execution-log.yaml shows GREEN phase with status "EXECUTED"
         AND the phase has invalid outcome (empty string instead of PASS/FAIL)
         WHEN SubagentStop hook validates the execution log
         THEN hook flags the phase as incomplete execution
@@ -270,7 +270,7 @@ class TestPostExecutionStateValidation:
                        and preventing "I finished but didn't record what I did"
                        situations.
 
-        Domain Example: Agent marked REFACTOR_CONTINUOUS as EXECUTED but forgot to
+        Domain Example: Agent marked GREEN as EXECUTED but forgot to
                        record outcome. Without valid outcome, there's no evidence
                        of work completion.
 
@@ -278,7 +278,7 @@ class TestPostExecutionStateValidation:
         """
         # Arrange: Create execution-log.yaml with EXECUTED phase with invalid outcome
         log_data = _create_execution_log_with_missing_outcome(
-            tdd_phases, "REFACTOR_CONTINUOUS"
+            tdd_phases, "GREEN"
         )
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
@@ -298,7 +298,7 @@ class TestPostExecutionStateValidation:
             f"Expected exit 0 with decision:block, got {exit_code}: {response}"
         )
         assert response["decision"] == "block"
-        assert "REFACTOR_CONTINUOUS" in response["reason"]
+        assert "GREEN" in response["reason"]
         assert "Invalid outcome" in response["reason"]
 
     # =========================================================================
@@ -310,7 +310,7 @@ class TestPostExecutionStateValidation:
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
         """
-        GIVEN execution-log.yaml shows REFACTOR_CONTINUOUS phase with status "SKIPPED"
+        GIVEN execution-log.yaml shows GREEN phase with status "SKIPPED"
         AND the phase has invalid skip reason (no valid prefix)
         WHEN SubagentStop hook validates the execution log
         THEN hook flags the skip as invalid (must have valid prefix)
@@ -320,8 +320,8 @@ class TestPostExecutionStateValidation:
                        justification. Priya can verify during PR review that
                        skips were legitimate.
 
-        Domain Example: Agent skipped REFACTOR_CONTINUOUS but didn't provide
-                       valid reason. Without valid prefix (BLOCKED_BY_DEPENDENCY,
+        Domain Example: Agent skipped GREEN but didn't provide valid reason.
+                       Without valid prefix (BLOCKED_BY_DEPENDENCY,
                        NOT_APPLICABLE, APPROVED_SKIP, etc.), we can't verify
                        if skip was legitimate.
 
@@ -329,7 +329,7 @@ class TestPostExecutionStateValidation:
         """
         # Arrange: Create execution-log.yaml with SKIPPED phase with invalid reason
         log_data = _create_execution_log_with_invalid_skip(
-            tdd_phases, "REFACTOR_CONTINUOUS"
+            tdd_phases, "GREEN"
         )
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
@@ -349,7 +349,7 @@ class TestPostExecutionStateValidation:
             f"Expected exit 0 with decision:block, got {exit_code}: {response}"
         )
         assert response["decision"] == "block"
-        assert "REFACTOR_CONTINUOUS" in response["reason"]
+        assert "GREEN" in response["reason"]
         assert "skip reason" in response["reason"].lower()
 
     # =========================================================================
@@ -433,7 +433,7 @@ class TestPostExecutionStateValidation:
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
         """
-        GIVEN software-crafter agent completes all 7 phases successfully
+        GIVEN software-crafter agent completes all 5 phases successfully
         AND each phase shows "EXECUTED" with valid outcome (PASS)
         WHEN SubagentStop hook validates the execution log
         THEN validation passes successfully
@@ -442,7 +442,7 @@ class TestPostExecutionStateValidation:
                        validated silently without unnecessary alerts, allowing
                        smooth workflow continuation.
 
-        Domain Example: Agent executed all 7 phases (PREPARE through COMMIT),
+        Domain Example: Agent executed all 5 phases (PREPARE through COMMIT),
                        each with PASS outcome. Validation confirms integrity
                        and logs success.
         """
@@ -474,7 +474,7 @@ class TestPostExecutionStateValidation:
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
         """
-        GIVEN execution-log.yaml shows REFACTOR_CONTINUOUS phase with status "SKIPPED"
+        GIVEN execution-log.yaml shows GREEN phase with status "SKIPPED"
         AND the phase has valid skip reason with APPROVED_SKIP prefix
         WHEN SubagentStop hook validates the execution log
         THEN validation passes (skip is legitimate)
@@ -483,7 +483,7 @@ class TestPostExecutionStateValidation:
                        justification are accepted, not flagged as errors.
                        Allows appropriate phase skipping when conditions warrant.
 
-        Domain Example: Agent determined no refactoring needed. Properly
+        Domain Example: Agent determined GREEN tests already pass. Properly
                        documented with APPROVED_SKIP prefix:
                        "APPROVED_SKIP:Code already meets quality standards"
         """
@@ -513,7 +513,7 @@ class TestPostExecutionStateValidation:
 
 
 def _create_execution_log_with_all_phases_complete(tdd_phases):
-    """Create execution-log.yaml data where all 7 phases are EXECUTED with PASS (Schema v2.0)."""
+    """Create execution-log.yaml data where all 5 phases are EXECUTED with PASS (Schema v2.0)."""
     events = []
     for phase in tdd_phases:
         events.append(f"01-01|{phase}|EXECUTED|PASS|2026-02-02T10:00:00+00:00")
@@ -1149,10 +1149,11 @@ def _create_execution_log_with_valid_skip(tdd_phases):
     """Create execution-log.yaml with legitimately skipped phase (Schema v2.0).
 
     Uses APPROVED_SKIP prefix which is valid and doesn't block commit.
+    Skips GREEN phase (index 3) with valid justification.
     """
     events = []
-    for i, phase in enumerate(tdd_phases):
-        if i == 5 and len(tdd_phases) > 5:  # Skip REFACTOR_CONTINUOUS (index 5)
+    for phase in tdd_phases:
+        if phase == "GREEN":
             events.append(
                 f"01-01|{phase}|SKIPPED|APPROVED_SKIP:Code already meets quality standards|2026-02-02T10:00:00+00:00"
             )

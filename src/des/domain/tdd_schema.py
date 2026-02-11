@@ -64,8 +64,8 @@ class TDDSchema:
     valid_skip_prefixes: tuple[str, ...] = field(default_factory=tuple)
     blocking_skip_prefixes: tuple[str, ...] = field(default_factory=tuple)
     terminal_phases: tuple[str, ...] = field(default_factory=tuple)
-    schema_version: str = "3.0"
-    total_phases: int = 7
+    schema_version: str = "4.0"
+    total_phases: int = 5
 
 
 class TDDSchemaLoader:
@@ -257,8 +257,7 @@ def get_tdd_schema() -> TDDSchema:
     Example:
         >>> schema = get_tdd_schema()
         >>> print(schema.tdd_phases)
-        ('PREPARE', 'RED_ACCEPTANCE', 'RED_UNIT', 'GREEN', 'REVIEW',
-         'REFACTOR_CONTINUOUS', 'COMMIT')
+        ('PREPARE', 'RED_ACCEPTANCE', 'RED_UNIT', 'GREEN', 'COMMIT')
     """
     global _global_loader
     if _global_loader is None:

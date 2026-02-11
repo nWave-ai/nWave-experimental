@@ -220,7 +220,7 @@ def step_file_complete(tmp_path, tdd_phases):
     """Create step file (JSON) with all phases complete for RealSubagentStopHook API."""
     step_file = tmp_path / "step-01-01.json"
 
-    # Build phase_execution_log with all 7 phases from schema
+    # Build phase_execution_log with all phases from schema
     phase_log = []
     for phase in tdd_phases:
         phase_log.append({"phase_name": phase, "status": "EXECUTED", "outcome": "PASS"})
@@ -265,7 +265,7 @@ def execution_log_complete(tmp_path, tdd_phases):
     log_file = tmp_path / "execution-log.yaml"
     timestamp = datetime(2026, 1, 26, 10, 0, 0, tzinfo=timezone.utc).isoformat()
 
-    # Build events for all 7 phases from schema
+    # Build events for all phases from schema
     events = []
     for phase in tdd_phases:
         # Format: "step_id|phase|status|data|timestamp"

@@ -93,9 +93,10 @@ class DeliverIntegrityVerifier:
                     f"(likely implemented without DES): {[v.step_id for v in no_entry]}"
                 )
             if partial:
+                expected = len(self._required_phases)
                 reason_parts.append(
                     f"{len(partial)} step(s) have incomplete TDD phases: "
-                    f"{[f'{v.step_id} ({v.phase_count}/7)' for v in partial]}"
+                    f"{[f'{v.step_id} ({v.phase_count}/{expected})' for v in partial]}"
                 )
             return DeliverIntegrityResult(
                 is_valid=False,

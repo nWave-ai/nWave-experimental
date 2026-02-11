@@ -23,7 +23,7 @@ Sub-agents cannot use the Skill tool or execute `/nw:*` commands. Read the relev
 
 3. **Extract step context from roadmap.yaml ONLY for the Task prompt.** Grep the roadmap for the step_id with ~50 lines context, extract fields (description, acceptance_criteria, files_to_modify), and pass them in the DES template. The crafter receives the full step context through the prompt.
 
-Consequence: The finalize verification gate checks that every completed step has valid DES-format execution-log entries (7 TDD phases with timestamps). Steps implemented without DES monitoring will be flagged, and finalize will block until they are re-executed properly via Task.
+Consequence: The finalize verification gate checks that every completed step has valid DES-format execution-log entries (5 TDD phases with timestamps). Steps implemented without DES monitoring will be flagged, and finalize will block until they are re-executed properly via Task.
 
 ## Orchestration Flow
 
@@ -53,7 +53,7 @@ INPUT: "{feature-description}"
   3. Phase 2 — Execute All Steps
      a. Extract steps from roadmap.yaml in dependency order
      b. For each step, check execution-log.yaml for prior completion (resume)
-     c. @nw-software-crafter executes TDD cycle (read ~/.claude/commands/nw/execute.md)
+     c. @nw-software-crafter executes 5-phase TDD cycle (read ~/.claude/commands/nw/execute.md)
         IMPORTANT: Use the DES Prompt Template from execute.md. Include all 4 DES
         markers (DES-VALIDATION, DES-PROJECT-ID, DES-STEP-ID) and all 9 mandatory
         sections in the Task prompt. Without these, DES validation is bypassed.
@@ -67,38 +67,52 @@ INPUT: "{feature-description}"
         that actually performed the work may write to the log.
      f. Stop on first failure
   |
-  3.5. Phase 2.9 — Deliver Integrity Verification
+  4. Phase 3 — Complete Refactoring (L1-L4, code + tests)
+     a. Orchestrator collects modified files:
+        git diff --name-only {base-commit}..HEAD -- '*.py' | sort -u
+        Split into PRODUCTION_FILES (src/) and TEST_FILES (tests/)
+     b. Orchestrator invokes /nw:refactor for each major module:
+        /nw:refactor {file-or-module} --level=4 --scope=module
+        The refactor command dispatches @nw-software-crafter to apply
+        L1 (naming), L2 (complexity), L3 (SRP), L4 (architectural patterns)
+        on the explicit file list. All tests must stay green.
+  |
+  5. Phase 4 — Adversarial Review
+     a. Orchestrator invokes /nw:review for the full feature implementation:
+        /nw:review @nw-software-crafter implementation "{execution-log-path}"
+        The review command dispatches @nw-software-crafter-reviewer (Haiku)
+        to critique code quality, test quality, and Testing Theater detection.
+     b. Review scope: ALL files modified during the feature (not just refactoring).
+        Includes Testing Theater 7-pattern detection as enforcement layer.
+     c. One revision pass on rejection (orchestrator re-invokes /nw:refactor
+        on flagged files), then proceed.
+  |
+  6. Phase 5 — Mutation Testing
+     a. Mutation testing gate >= 80% kill rate (read ~/.claude/commands/nw/mutation-test.md)
+     b. Must pass before proceeding
+  |
+  7. Phase 6 — Deliver Integrity Verification
      a. Run via Bash tool:
         python -m des.cli.verify_deliver_integrity docs/feature/{project-id}/
-     b. Exit 0 = all steps verified, proceed to refactoring
+     b. Exit 0 = all steps verified, proceed to finalize
      c. Exit 1 = violations found, STOP. Read output for details.
      d. Steps with NO entries were NOT executed through DES
      e. Steps with partial entries have incomplete TDD cycles
      f. If violations exist, re-execute affected steps via Task with DES markers
      g. Only proceed after verification passes
   |
-  4. Phase 2.25 — Complete Refactoring (L1-L4, code + tests)
-     a. @nw-software-crafter performs full L1-L4 refactoring on production code AND tests
-        (read ~/.claude/commands/nw/refactor.md, specify --level=1-4 --scope=code+tests)
-     b. @nw-software-crafter-reviewer reviews the refactoring result
-     c. One revision pass on rejection, then proceed
-  |
-  5. Phase 2.5 — Mutation Testing
-     a. Mutation testing gate >= 80% kill rate (read ~/.claude/commands/nw/mutation-test.md)
-     b. Must pass before proceeding
-  |
-  6. Phase 3 — Finalize + Cleanup
+  8. Phase 7 — Finalize + Cleanup
      a. @nw-platform-architect archives to docs/evolution/ (read ~/.claude/commands/nw/finalize.md)
      b. Commit evolution document, push when ready
      c. Remove deliver session marker: `rm -f .nwave/des/deliver-session.json .nwave/des/des-task-active`
   |
-  7. Phase 3.5 — Retrospective (conditional)
+  9. Phase 8 — Retrospective (conditional)
      a. Skip if clean execution (no failures, no retries, no warnings)
      b. @nw-troubleshooter performs 5 Whys analysis on issues found
   |
-  8. Phase 4 — Report Completion
-     a. Display summary: phases, steps, reviews, artifacts
-     b. Workflow complete. Return to DISCOVER for next feature iteration.
+  10. Phase 9 — Report Completion
+      a. Display summary: phases, steps, reviews, artifacts
+      b. Workflow complete. Return to DISCOVER for next feature iteration.
 ```
 
 ## Orchestrator Responsibilities
@@ -116,7 +130,7 @@ For each phase:
 
 All Task prompts for step execution include DES markers for validation. Without these markers, the DES hooks cannot validate the task and it passes through unmonitored.
 
-The full DES Prompt Template (all 9 mandatory sections) is defined in `~/.claude/commands/nw/execute.md`. Read that file and embed all 9 sections (DES_METADATA, AGENT_IDENTITY, TASK_CONTEXT, TDD_7_PHASES, QUALITY_GATES, OUTCOME_RECORDING, RECORDING_INTEGRITY, BOUNDARY_RULES, TIMEOUT_INSTRUCTION) in each Task prompt.
+The full DES Prompt Template (all 9 mandatory sections) is defined in `~/.claude/commands/nw/execute.md`. Read that file and embed all 9 sections (DES_METADATA, AGENT_IDENTITY, TASK_CONTEXT, TDD_PHASES, QUALITY_GATES, OUTCOME_RECORDING, RECORDING_INTEGRITY, BOUNDARY_RULES, TIMEOUT_INSTRUCTION) in each Task prompt.
 
 ```python
 Task(
@@ -174,20 +188,24 @@ docs/evolution/
 ## Quality Gates
 
 - Roadmap review (1 review, max 2 attempts)
-- Per-step TDD cycle with REVIEW + REFACTOR phases (2N reviews)
-- Mutation testing >= 80% kill rate
+- Per-step 5-phase TDD cycle (PREPARE → RED_ACCEPTANCE → RED_UNIT → GREEN → COMMIT)
+- Deliver-level Complete Refactoring (Phase 3) — L1-L4 on all modified files
+- Deliver-level Adversarial Review (Phase 4) — Testing Theater detection + code quality
+- Mutation testing >= 80% kill rate (Phase 5)
+- Deliver integrity verification (Phase 6)
 - All tests passing after each phase
-- Total: 1 + 2N mandatory reviews
 
 ## Success Criteria
 
 - [ ] Roadmap created and approved
-- [ ] All steps executed with COMMIT/PASS
-- [ ] L1-L4 refactoring complete on code and tests, reviewer approved
-- [ ] Mutation testing gate passed (>= 80%)
-- [ ] Evolution document archived
-- [ ] Retrospective completed (or clean execution noted)
-- [ ] Completion report displayed
+- [ ] All steps executed with COMMIT/PASS (5-phase TDD cycle)
+- [ ] L1-L4 refactoring complete on code and tests (Phase 3)
+- [ ] Adversarial review passed (Phase 4)
+- [ ] Mutation testing gate passed >= 80% (Phase 5)
+- [ ] Deliver integrity verification passed (Phase 6)
+- [ ] Evolution document archived (Phase 7)
+- [ ] Retrospective completed or clean execution noted (Phase 8)
+- [ ] Completion report displayed (Phase 9)
 
 ## Examples
 

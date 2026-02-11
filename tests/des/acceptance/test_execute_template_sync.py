@@ -18,17 +18,17 @@ class TestExecuteTemplateSync:
     def test_source_uses_template_variable(self):
         """
         GIVEN execute.md source file
-        WHEN we check the build-system TDD_7_PHASES section (## heading)
+        WHEN we check the build-system TDD_PHASES section (## heading)
         THEN it contains {{MANDATORY_PHASES}} template variable, not hardcoded phases
         """
         with open("nWave/tasks/nw/execute.md") as f:
             content = f.read()
 
         # Find the build-system section (## heading), not the DES prompt template
-        # (# heading inside a code block). The build-system section uses ## TDD_7_PHASES.
-        tdd_section_start = content.find("\n## TDD_7_PHASES")
+        # (# heading inside a code block). The build-system section uses ## TDD_PHASES.
+        tdd_section_start = content.find("\n## TDD_PHASES")
         assert tdd_section_start != -1, (
-            "## TDD_7_PHASES section not found in execute.md"
+            "## TDD_PHASES section not found in execute.md"
         )
 
         section = content[tdd_section_start : tdd_section_start + 500]
@@ -37,27 +37,27 @@ class TestExecuteTemplateSync:
             "execute.md source must use {{MANDATORY_PHASES}} template variable"
         )
 
-    def test_source_declares_schema_v3(self):
+    def test_source_declares_schema_v4(self):
         """
         GIVEN execute.md source file
-        WHEN we check the build-system TDD_7_PHASES section comment (## heading)
-        THEN it declares Schema v3.0 and references TDDPhaseValidator
+        WHEN we check the build-system TDD_PHASES section comment (## heading)
+        THEN it declares Schema v4.0 and references TDDPhaseValidator
         """
         with open("nWave/tasks/nw/execute.md") as f:
             content = f.read()
 
         # Find the build-system section (## heading), not the DES prompt template
-        tdd_section_start = content.find("\n## TDD_7_PHASES")
-        assert tdd_section_start != -1, "## TDD_7_PHASES section not found"
+        tdd_section_start = content.find("\n## TDD_PHASES")
+        assert tdd_section_start != -1, "## TDD_PHASES section not found"
 
         section = content[tdd_section_start : tdd_section_start + 300]
 
-        assert "Schema v3.0" in section, (
-            "execute.md must declare 'Schema v3.0' in TDD_7_PHASES section"
+        assert "Schema v4.0" in section, (
+            "execute.md must declare 'Schema v4.0' in TDD_PHASES section"
         )
 
-        assert "TDDPhaseValidator.MANDATORY_PHASES_V3" in section, (
-            "execute.md must reference TDDPhaseValidator.MANDATORY_PHASES_V3"
+        assert "TDDPhaseValidator.MANDATORY_PHASES" in section, (
+            "execute.md must reference TDDPhaseValidator.MANDATORY_PHASES"
         )
 
     def test_built_output_has_resolved_phases(self):

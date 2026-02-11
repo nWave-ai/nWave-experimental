@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Any
 
 
-# Required TDD phases - support both v1.0 (14 phases) and v2.0 (7 phases)
+# Required TDD phases - support v1.0 (14 phases), v2.0 (7 phases), and v4.0 (5 phases)
 REQUIRED_PHASES_V1 = [
     "PREPARE",
     "RED_ACCEPTANCE",
@@ -49,6 +49,14 @@ REQUIRED_PHASES_V2 = [
     "GREEN",
     "REVIEW",
     "REFACTOR_CONTINUOUS",
+    "COMMIT",
+]
+
+REQUIRED_PHASES_V4 = [
+    "PREPARE",
+    "RED_ACCEPTANCE",
+    "RED_UNIT",
+    "GREEN",
     "COMMIT",
 ]
 
@@ -154,14 +162,18 @@ def detect_schema_version(data: Dict[str, Any]) -> str:
     Detect schema version from step file data.
 
     Returns:
-        "2.0" if v2.0 schema detected, "1.0" for backward compatibility default
+        "4.0" if v4.0 schema detected, "2.0" if v2.0, "1.0" for backward compatibility default
     """
     # Check root level
-    if data.get("schema_version") == "2.0":
-        return "2.0"
+    version = data.get("schema_version", "")
 
-    # Check nested in tdd_cycle
-    if data.get("tdd_cycle", {}).get("schema_version") == "2.0":
+    # Check nested in tdd_cycle as fallback
+    if not version:
+        version = data.get("tdd_cycle", {}).get("schema_version", "")
+
+    if version in ("4.0", "4.0.0"):
+        return "4.0"
+    if version in ("3.0", "3.0.0", "2.0", "2.0.0"):
         return "2.0"
 
     # Default to v1.0 for backward compatibility
@@ -224,11 +236,14 @@ def validate_step_file(file_path: str) -> Tuple[bool, List[Dict[str, Any]], str]
             "1.0",
         )
 
-    # Detect schema version (v1.0 = 14 phases, v2.0 = 7 phases)
+    # Detect schema version (v1.0 = 14 phases, v2.0 = 7 phases, v4.0 = 5 phases)
     schema_version = detect_schema_version(data)
-    required_phases = (
-        REQUIRED_PHASES_V2 if schema_version == "2.0" else REQUIRED_PHASES_V1
-    )
+    if schema_version == "4.0":
+        required_phases = REQUIRED_PHASES_V4
+    elif schema_version == "2.0":
+        required_phases = REQUIRED_PHASES_V2
+    else:
+        required_phases = REQUIRED_PHASES_V1
 
     # REJECT OLD/WRONG FORMAT PATTERNS
     if "step_id" in data:
@@ -503,7 +518,8 @@ def print_validation_result(
     print(f"\n  Checking: {file_path}")
 
     if is_valid:
-        phase_count = 7 if schema_version == "2.0" else 14
+        phase_counts = {"4.0": 5, "2.0": 7, "1.0": 14}
+        phase_count = phase_counts.get(schema_version, 14)
         print(f"    [OK] All {phase_count} phases completed (schema v{schema_version})")
     else:
         for issue in issues:

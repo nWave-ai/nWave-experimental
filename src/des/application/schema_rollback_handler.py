@@ -53,6 +53,39 @@ PHASES_V2_OPTIMIZED = [
     "COMMIT",
 ]
 
+# V3.0 Schema: 7-phase TDD cycle (removed REFACTOR_L4 to orchestrator)
+PHASES_V3_CONSOLIDATED = [
+    "PREPARE",
+    "RED_ACCEPTANCE",
+    "RED_UNIT",
+    "GREEN",
+    "REVIEW",
+    "REFACTOR_CONTINUOUS",
+    "COMMIT",
+]
+
+# V4.0 Schema: 5-phase streamlined TDD cycle
+# REVIEW moved to deliver-level Phase 4 (Adversarial Review via /nw:review)
+# REFACTOR_CONTINUOUS moved to deliver-level Phase 3 (Complete Refactoring L1-L4)
+PHASES_V4_STREAMLINED = [
+    "PREPARE",
+    "RED_ACCEPTANCE",
+    "RED_UNIT",
+    "GREEN",
+    "COMMIT",
+]
+
+# Mapping from v3.0 phases to v4.0 (contraction: REVIEW and REFACTOR_CONTINUOUS dropped)
+PHASE_CONTRACTION_V3_TO_V4 = {
+    "PREPARE": "PREPARE",
+    "RED_ACCEPTANCE": "RED_ACCEPTANCE",
+    "RED_UNIT": "RED_UNIT",
+    "GREEN": "GREEN",
+    "REVIEW": None,  # Dropped — moved to deliver-level Phase 4
+    "REFACTOR_CONTINUOUS": None,  # Dropped — moved to deliver-level Phase 3
+    "COMMIT": "COMMIT",
+}
+
 # Mapping from v2.0 phases back to v1.0 phases for rollback
 PHASE_EXPANSION_MAP = {
     "PREPARE": ["PREPARE"],

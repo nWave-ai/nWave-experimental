@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TDD Cycle Extension for Step Files",
   "description": "Template for TDD cycle extension in step files. This schema extends existing step files without overwriting their content.",
-  "version": "3.0.0",
-  "schema_version": "3.0",
+  "version": "4.0.0",
+  "schema_version": "4.0",
   "tdd_cycle": {
     "acceptance_test": {
       "scenario_name": "",
@@ -121,36 +121,8 @@
         }
       },
       {
-        "phase_name": "REVIEW",
-        "phase_index": 4,
-        "status": "NOT_EXECUTED",
-        "started_at": null,
-        "ended_at": null,
-        "duration_minutes": null,
-        "duration_seconds": null,
-        "turn_count": 0,
-        "outcome": null,
-        "notes": "Expanded scope: covers both implementation quality AND post-refactoring quality (merges POST_REFACTOR_REVIEW)",
-        "blocked_by": null,
-        "extensions_granted": []
-      },
-      {
-        "phase_name": "REFACTOR_CONTINUOUS",
-        "phase_index": 5,
-        "status": "NOT_EXECUTED",
-        "started_at": null,
-        "ended_at": null,
-        "duration_minutes": null,
-        "duration_seconds": null,
-        "turn_count": 0,
-        "outcome": null,
-        "notes": "Combines L1 (naming clarity) + L2 (complexity reduction) + L3 (class responsibilities and organization)",
-        "blocked_by": null,
-        "extensions_granted": []
-      },
-      {
         "phase_name": "COMMIT",
-        "phase_index": 6,
+        "phase_index": 4,
         "status": "NOT_EXECUTED",
         "started_at": null,
         "ended_at": null,
@@ -169,18 +141,16 @@
     "unit_tests_must_fail_first": true,
     "no_mocks_inside_hexagon": true,
     "business_language_required": true,
-    "refactor_level": 3,
+    "refactor_level": 0,
     "in_memory_test_ratio_target": 0.8,
     "validation_after_each_phase": true,
-    "validation_after_each_review": true,
-    "validation_after_each_refactor": true,
-    "all_7_phases_mandatory": true,
+    "all_phases_mandatory": true,
     "phase_documentation_required": true
   },
   "phase_validation_rules": {
     "description": "Rules for validating phase execution status before commit",
     "all_phases_required": true,
-    "total_phases": 7,
+    "total_phases": 5,
     "valid_statuses": [
       "NOT_EXECUTED",
       "IN_PROGRESS",
@@ -234,12 +204,11 @@
         "CHECKPOINT_PENDING:": {
           "allows_commit": true,
           "example": "CHECKPOINT_PENDING: Will complete in REFACTOR checkpoint",
-          "note": "Used for TDD checkpoint commits (GREEN, REVIEW, REFACTOR, FINAL)",
+          "note": "Used for TDD checkpoint commits (GREEN, FINAL)",
           "usage": "Allows intermediate commits during TDD cycle",
           "checkpoints": [
-            "GREEN checkpoint (phases 0-3 complete, 4-6 pending)",
-            "REVIEW checkpoint (phases 0-4 complete, 5-6 pending)",
-            "FINAL checkpoint (all 7 phases complete)"
+            "GREEN checkpoint (phases 0-3 complete, 4 pending)",
+            "FINAL checkpoint (all 5 phases complete)"
           ]
         },
         "DEFERRED:": {
@@ -264,8 +233,6 @@
     "RED_ACCEPTANCE",
     "RED_UNIT",
     "GREEN",
-    "REVIEW",
-    "REFACTOR_CONTINUOUS",
     "COMMIT",
     "COMPLETED"
   ],
@@ -284,13 +251,6 @@
       "GREEN"
     ],
     "GREEN": [
-      "REVIEW"
-    ],
-    "REVIEW": [
-      "REFACTOR_CONTINUOUS",
-      "REVIEW"
-    ],
-    "REFACTOR_CONTINUOUS": [
       "COMMIT"
     ],
     "COMMIT": [
@@ -353,16 +313,15 @@
     }
   },
   "task_specification": {
-    "commit_policy": "Commit ONLY after ALL 7 PHASES complete. AUTO-PUSH after commit.",
+    "commit_policy": "Commit ONLY after ALL 5 PHASES complete. AUTO-PUSH after commit.",
     "mandatory_phases": [
       "PREPARE - Remove @skip, verify only 1 scenario enabled",
       "RED_ACCEPTANCE - Test must FAIL initially",
       "RED_UNIT - Write failing unit tests",
       "GREEN - Implement minimum code + verify acceptance (green acceptance is consequence of green unit)",
-      "REVIEW - Self-review: SOLID, coverage, acceptance criteria, refactoring quality (MANDATORY, covers both implementation AND post-refactoring)",
-      "REFACTOR_CONTINUOUS - Progressive refactoring: L1 (naming) + L2 (complexity) + L3 (organization)",
       "COMMIT - Commit with detailed message (absorbs FINAL_VALIDATE metadata checks)"
     ],
-    "l4_l6_architecture_refactoring": "Moved to orchestrator Phase 2.25 - runs ONCE after all steps complete, delegated to @software-crafter via /nw:refactor"
+    "refactoring_policy": "Moved to deliver-level Phase 3 (Complete Refactoring L1-L4) - runs ONCE after all steps complete, delegated to @software-crafter via /nw:refactor",
+    "review_policy": "Moved to deliver-level Phase 4 (Adversarial Review) - runs ONCE via /nw:review with @nw-software-crafter-reviewer"
   }
 }

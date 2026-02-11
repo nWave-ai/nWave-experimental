@@ -237,7 +237,7 @@ class TestMandatorySectionChecker:
         # DES_METADATA
         # AGENT_IDENTITY
         # TASK_CONTEXT
-        # TDD_7_PHASES
+        # TDD_PHASES
         # QUALITY_GATES
         # OUTCOME_RECORDING
         # RECORDING_INTEGRITY
@@ -257,7 +257,7 @@ class TestMandatorySectionChecker:
         # DES_METADATA
         # AGENT_IDENTITY
         # TASK_CONTEXT
-        # TDD_7_PHASES
+        # TDD_PHASES
         # QUALITY_GATES
         # OUTCOME_RECORDING
         # RECORDING_INTEGRITY
@@ -306,7 +306,7 @@ class TestTDDPhaseValidator:
             [f"        {i}. {phase}" for i, phase in enumerate(canonical_phases, 1)]
         )
         prompt = f"""
-        # TDD_{phase_count}_PHASES
+        # TDD_PHASES
         Execute all {phase_count} phases (schema v3.0):
 {phase_list}
         """
@@ -332,7 +332,7 @@ class TestTDDPhaseValidator:
             [f"        {i}. {phase}" for i, phase in enumerate(incomplete_phases, 1)]
         )
         prompt = f"""
-        # TDD_{phase_count}_PHASES
+        # TDD_PHASES
         Execute {phase_count} phases (schema v3.0):
 {phase_list}
         (missing {canonical_phases[-1]})
@@ -406,7 +406,7 @@ class TestTemplateValidator:
         # DES_METADATA
         # AGENT_IDENTITY
         # TASK_CONTEXT
-        # TDD_{phase_count}_PHASES
+        # TDD_PHASES
         Execute all {phase_count} phases (schema v3.0):
         # QUALITY_GATES
         # OUTCOME_RECORDING
@@ -466,7 +466,7 @@ class TestTemplateValidator:
         # DES_METADATA
         # AGENT_IDENTITY
         # TASK_CONTEXT
-        # TDD_{phase_count}_PHASES
+        # TDD_PHASES
         Execute all {phase_count} phases (schema v3.0):
         # QUALITY_GATES
         # OUTCOME_RECORDING
@@ -526,7 +526,7 @@ class TestTemplateValidator:
         # DES_METADATA
         # AGENT_IDENTITY
         # TASK_CONTEXT
-        # TDD_{phase_count}_PHASES
+        # TDD_PHASES
         Execute all {phase_count} phases (schema v3.0):
         # QUALITY_GATES
         # OUTCOME_RECORDING

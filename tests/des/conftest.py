@@ -125,7 +125,7 @@ step_file: steps/test-01-01.json""",
 You are @software-crafter executing this step.""",
             "TASK_CONTEXT": """## TASK_CONTEXT
 Implement test feature with complete TDD cycle.""",
-            "TDD_7_PHASES": f"""## TDD_7_PHASES
+            "TDD_PHASES": f"""## TDD_PHASES
 Execute all {len(tdd_phases)} phases from schema:
 {phases_text}""",
             "QUALITY_GATES": """## QUALITY_GATES
@@ -208,7 +208,7 @@ You are @software-crafter executing this step.
 ## TASK_CONTEXT
 Implement test feature with complete TDD cycle.
 
-## TDD_7_PHASES
+## TDD_PHASES
 Execute all {len(tdd_phases)} phases from schema:
 {phases_text}
 

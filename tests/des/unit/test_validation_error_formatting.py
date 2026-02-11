@@ -31,7 +31,7 @@ Agent: software-crafter
 # TASK_CONTEXT
 Implement UserRepository
 
-# TDD_7_PHASES
+# TDD_PHASES
 All 14 phases listed
 
 # QUALITY_GATES
@@ -120,7 +120,7 @@ Agent: software-crafter
 # TASK_CONTEXT
 Implement feature
 
-# TDD_7_PHASES
+# TDD_PHASES
 All 14 phases listed
 
 # QUALITY_GATES
@@ -220,7 +220,7 @@ Agent: software-crafter
 # TASK_CONTEXT
 Implement UserRepository with tests
 
-# TDD_7_PHASES
+# TDD_PHASES
 All 14 phases listed
 
 # QUALITY_GATES

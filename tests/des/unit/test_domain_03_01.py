@@ -34,8 +34,6 @@ def _make_schema() -> TDDSchema:
             "RED_ACCEPTANCE",
             "RED_UNIT",
             "GREEN",
-            "REVIEW",
-            "REFACTOR_CONTINUOUS",
             "COMMIT",
         ),
         valid_statuses=("NOT_EXECUTED", "IN_PROGRESS", "EXECUTED", "SKIPPED"),
@@ -68,14 +66,12 @@ def _make_event(
 
 
 def _make_all_passing_events(step_id: str = "01-01") -> list[PhaseEvent]:
-    """Create a list of all 7 phases EXECUTED with PASS."""
+    """Create a list of all 5 phases EXECUTED with PASS."""
     phases = [
         "PREPARE",
         "RED_ACCEPTANCE",
         "RED_UNIT",
         "GREEN",
-        "REVIEW",
-        "REFACTOR_CONTINUOUS",
         "COMMIT",
     ]
     return [_make_event(p, step_id=step_id) for p in phases]
@@ -300,20 +296,18 @@ class TestStepCompletionValidator:
     def test_validate_missing_phases_returns_abandoned(self):
         schema = _make_schema()
         validator = StepCompletionValidator(schema)
-        # Only 5 of 7 phases (missing REVIEW and REFACTOR_CONTINUOUS)
+        # Only 3 of 5 phases (missing GREEN and COMMIT)
         events = [
             _make_event("PREPARE"),
             _make_event("RED_ACCEPTANCE"),
             _make_event("RED_UNIT"),
-            _make_event("GREEN"),
-            _make_event("COMMIT"),
         ]
 
         result = validator.validate(events)
 
         assert result.is_valid is False
-        assert "REVIEW" in result.missing_phases
-        assert "REFACTOR_CONTINUOUS" in result.missing_phases
+        assert "GREEN" in result.missing_phases
+        assert "COMMIT" in result.missing_phases
         assert result.error_type == "ABANDONED_PHASE"
 
     def test_validate_executed_with_invalid_outcome(self):
@@ -334,7 +328,7 @@ class TestStepCompletionValidator:
         validator = StepCompletionValidator(schema)
         events = _make_all_passing_events()
         # COMMIT (terminal) with FAIL outcome
-        events[6] = _make_event("COMMIT", status="EXECUTED", outcome="FAIL")
+        events[4] = _make_event("COMMIT", status="EXECUTED", outcome="FAIL")
 
         result = validator.validate(events)
 
@@ -346,9 +340,9 @@ class TestStepCompletionValidator:
         schema = _make_schema()
         validator = StepCompletionValidator(schema)
         events = _make_all_passing_events()
-        # REVIEW skipped with valid prefix
-        events[4] = _make_event(
-            "REVIEW",
+        # GREEN skipped with valid prefix
+        events[3] = _make_event(
+            "GREEN",
             status="SKIPPED",
             outcome="NOT_APPLICABLE: No unit tests for config-only change",
         )
@@ -361,8 +355,8 @@ class TestStepCompletionValidator:
         schema = _make_schema()
         validator = StepCompletionValidator(schema)
         events = _make_all_passing_events()
-        events[4] = _make_event(
-            "REVIEW",
+        events[3] = _make_event(
+            "GREEN",
             status="SKIPPED",
             outcome="RANDOM_REASON: I just skipped it",
         )
@@ -370,15 +364,15 @@ class TestStepCompletionValidator:
         result = validator.validate(events)
 
         assert result.is_valid is False
-        assert "REVIEW" in result.invalid_skips
+        assert "GREEN" in result.invalid_skips
         assert result.error_type == "INVALID_SKIP"
 
     def test_validate_skipped_with_blocking_prefix(self):
         schema = _make_schema()
         validator = StepCompletionValidator(schema)
         events = _make_all_passing_events()
-        events[4] = _make_event(
-            "REVIEW",
+        events[3] = _make_event(
+            "GREEN",
             status="SKIPPED",
             outcome="DEFERRED: Will address in follow-up PR",
         )
@@ -386,7 +380,7 @@ class TestStepCompletionValidator:
         result = validator.validate(events)
 
         assert result.is_valid is False
-        assert "REVIEW" in result.invalid_skips
+        assert "GREEN" in result.invalid_skips
         assert any("DEFERRED" in msg for msg in result.error_messages)
 
     def test_validate_multiple_error_types(self):
@@ -395,10 +389,8 @@ class TestStepCompletionValidator:
         events = [
             _make_event("PREPARE"),
             _make_event("RED_ACCEPTANCE"),
-            _make_event("RED_UNIT"),
+            # RED_UNIT missing
             _make_event("GREEN", status="EXECUTED", outcome="PARTIAL"),
-            # REVIEW missing
-            _make_event("REFACTOR_CONTINUOUS"),
             _make_event("COMMIT"),
         ]
 
@@ -406,7 +398,7 @@ class TestStepCompletionValidator:
 
         assert result.is_valid is False
         assert result.error_type == "MULTIPLE_ERRORS"
-        assert "REVIEW" in result.missing_phases
+        assert "RED_UNIT" in result.missing_phases
         assert "GREEN" in result.incomplete_phases
 
     def test_validate_invalid_status(self):

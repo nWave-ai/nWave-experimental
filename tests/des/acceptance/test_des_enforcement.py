@@ -91,8 +91,8 @@ Role: Implement features through Outside-In TDD
 Acceptance Criteria:
 - Feature works as expected
 
-# TDD_7_PHASES
-Execute all 7 phases:
+# TDD_PHASES
+Execute all 5 phases:
 1. PREPARE
 2. RED_ACCEPTANCE
 3. RED_UNIT

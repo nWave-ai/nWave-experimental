@@ -47,8 +47,8 @@ from datetime import datetime
 from typing import Any
 
 
-# Required TDD phases in order (14 total)
-REQUIRED_PHASES = [
+# Required TDD phases by schema version
+REQUIRED_PHASES_V1 = [
     "PREPARE",
     "RED_ACCEPTANCE",
     "RED_UNIT",
@@ -64,6 +64,17 @@ REQUIRED_PHASES = [
     "FINAL_VALIDATE",
     "COMMIT",
 ]
+
+REQUIRED_PHASES_V4 = [
+    "PREPARE",
+    "RED_ACCEPTANCE",
+    "RED_UNIT",
+    "GREEN",
+    "COMMIT",
+]
+
+# Default to v1.0 for backward compatibility
+REQUIRED_PHASES = REQUIRED_PHASES_V1
 
 # Valid prefixes for SKIPPED phases that allow commit
 VALID_SKIP_PREFIXES = [
@@ -126,6 +137,13 @@ def validate_step_file(
             }
         ]
 
+    # Detect schema version and select required phases
+    schema_version = data.get("schema_version", "") or data.get("tdd_cycle", {}).get("schema_version", "")
+    if schema_version in ("4.0", "4.0.0"):
+        required_phases = REQUIRED_PHASES_V4
+    else:
+        required_phases = REQUIRED_PHASES_V1
+
     # Get phase execution log
     tdd_cycle = data.get("tdd_cycle", {})
     phase_log = tdd_cycle.get("phase_execution_log", [])
@@ -145,11 +163,11 @@ def validate_step_file(
         ]
 
     # Check phase count
-    if len(phase_log) < len(REQUIRED_PHASES):
+    if len(phase_log) < len(required_phases):
         issues.append(
             {
                 "severity": "ERROR",
-                "issue": f"Expected {len(REQUIRED_PHASES)} phases, found {len(phase_log)}",
+                "issue": f"Expected {len(required_phases)} phases, found {len(phase_log)}",
             }
         )
 
@@ -157,7 +175,7 @@ def validate_step_file(
     phase_lookup = {p.get("phase_name"): p for p in phase_log}
 
     # Validate each required phase
-    for i, phase_name in enumerate(REQUIRED_PHASES):
+    for i, phase_name in enumerate(required_phases):
         entry = phase_lookup.get(phase_name)
 
         if not entry:

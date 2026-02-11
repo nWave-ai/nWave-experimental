@@ -27,33 +27,33 @@ class TestLoadTddTemplate:
         assert "valid_tdd_phases" in template
         assert "tdd_cycle" in template
 
-    def test_template_has_version_3_0(self):
-        """Template has schema_version 3.0 as canonical version."""
+    def test_template_has_version_4_0(self):
+        """Template has schema_version 4.0 as canonical version."""
         template = load_tdd_template()
 
-        assert template["schema_version"] == "3.0"
-        assert template["version"] == "3.0.0"
+        assert template["schema_version"] == "4.0"
+        assert template["version"] == "4.0.0"
 
 
 class TestGetSchemaVersion:
     """Test schema version extraction."""
 
-    def test_get_schema_version_returns_3_0(self):
-        """Schema version extracted from template is 3.0."""
+    def test_get_schema_version_returns_4_0(self):
+        """Schema version extracted from template is 4.0."""
         version = get_schema_version()
 
-        assert version == "3.0"
+        assert version == "4.0"
 
 
 class TestGetValidTddPhases:
     """Test valid phase list extraction."""
 
-    def test_get_valid_tdd_phases_returns_7_phases(self):
-        """Valid phase list contains exactly 7 execution phases (excluding meta-phases)."""
+    def test_get_valid_tdd_phases_returns_5_phases(self):
+        """Valid phase list contains exactly 5 execution phases (excluding meta-phases)."""
         phases = get_valid_tdd_phases()
 
-        # Schema v3.0 has 7 execution phases
-        assert len(phases) == 7
+        # Schema v4.0 has 5 execution phases
+        assert len(phases) == 5
 
     def test_phases_exclude_meta_phases(self):
         """NOT_STARTED and COMPLETED meta-phases are excluded from execution phases."""
@@ -62,8 +62,8 @@ class TestGetValidTddPhases:
         assert "NOT_STARTED" not in phases
         assert "COMPLETED" not in phases
 
-    def test_phases_include_canonical_v3_phases(self):
-        """Phase list includes all canonical v3.0 execution phases."""
+    def test_phases_include_canonical_v4_phases(self):
+        """Phase list includes all canonical v4.0 execution phases."""
         phases = get_valid_tdd_phases()
 
         expected_phases = [
@@ -71,8 +71,6 @@ class TestGetValidTddPhases:
             "RED_ACCEPTANCE",
             "RED_UNIT",
             "GREEN",
-            "REVIEW",
-            "REFACTOR_CONTINUOUS",
             "COMMIT",
         ]
 
@@ -82,11 +80,11 @@ class TestGetValidTddPhases:
 class TestGetExpectedPhaseCount:
     """Test phase count calculation."""
 
-    def test_get_expected_phase_count_returns_7(self):
-        """Expected phase count matches canonical v3.0 schema (7 phases)."""
+    def test_get_expected_phase_count_returns_5(self):
+        """Expected phase count matches canonical v4.0 schema (5 phases)."""
         count = get_expected_phase_count()
 
-        assert count == 7
+        assert count == 5
 
 
 class TestGetPhaseExecutionLogTemplate:
@@ -97,7 +95,7 @@ class TestGetPhaseExecutionLogTemplate:
         log_template = get_phase_execution_log_template()
 
         assert isinstance(log_template, list)
-        assert len(log_template) == 7  # v3.0 has 7 phases
+        assert len(log_template) == 5  # v4.0 has 5 phases
 
     def test_each_phase_has_required_fields(self):
         """Each phase definition has required metadata fields."""

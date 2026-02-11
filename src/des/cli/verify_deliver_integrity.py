@@ -76,7 +76,7 @@ def main() -> int:
         print(f"INTEGRITY VIOLATIONS: {result.reason}")
         for v in result.violations:
             print(
-                f"  - {v.step_id}: {v.phase_count}/7 phases, "
+                f"  - {v.step_id}: {v.phase_count}/{len(schema.tdd_phases)} phases, "
                 f"missing: {v.missing_phases}"
             )
         return 1

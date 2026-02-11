@@ -1,11 +1,11 @@
 ---
 name: tdd-review-enforcement
-description: Test design mandate enforcement, test budget validation, 7-phase TDD validation, and external validity checks for the software crafter reviewer
+description: Test design mandate enforcement, test budget validation, 5-phase TDD validation, and external validity checks for the software crafter reviewer
 ---
 
 # TDD Review Enforcement
 
-Domain knowledge for reviewing TDD implementations against the 5 test design mandates, test budget formula, 7-phase validation, and external validity.
+Domain knowledge for reviewing TDD implementations against the 5 test design mandates, test budget formula, 5-phase validation, and external validity.
 
 ---
 
@@ -101,18 +101,16 @@ Required: delete internal tests, consolidate via parametrize, re-submit
 
 ---
 
-## 7-Phase TDD Validation
+## 5-Phase TDD Validation
 
-Verify all 7 phases present in execution-log.yaml: PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, REVIEW, REFACTOR_CONTINUOUS, COMMIT.
+Verify all 5 phases present in execution-log.yaml: PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT.
 
 ### Phase Checks
 
-- Phase completeness: all 7 entries present (Blocker if missing)
+- Phase completeness: all 5 entries present (Blocker if missing)
 - Phase outcomes: all PASS (Blocker if any FAIL)
 - Sequential execution: correct order by timestamps
-- Review iteration limit: max 2 iterations
-- Test pass discipline: 100% green after GREEN, REFACTOR_CONTINUOUS, COMMIT
-- Refactoring documented: L1-L3 techniques or "fast-path: <30 LOC"
+- Test pass discipline: 100% green after GREEN, COMMIT
 
 ### Quality Gates to Verify
 
@@ -122,12 +120,14 @@ Verify all 7 phases present in execution-log.yaml: PREPARE, RED_ACCEPTANCE, RED_
 | G2 | Acceptance test fails for valid reason | RED_ACCEPTANCE |
 | G3 | Unit test fails on assertion | RED_UNIT |
 | G4 | No mocks inside hexagon | RED_UNIT |
-| G5 | Business language in tests | REVIEW |
-| G6 | All tests green | GREEN, REFACTOR |
+| G5 | Business language in tests | GREEN |
+| G6 | All tests green | GREEN |
 | G7 | 100% passing before commit | COMMIT |
-| G8 | Test count within budget | RED_UNIT, REVIEW |
+| G8 | Test count within budget | RED_UNIT |
 
 Gates G2, G4, G7, G8 are Blockers if not verified.
+
+Note: Review and refactoring quality are verified at deliver-level Phase 4 (Adversarial Review).
 
 ### Walking Skeleton Override
 
@@ -170,7 +170,7 @@ Required: update acceptance test to invoke through entry point, wire component.
 ## Approval Decision Logic
 
 ### Approved
-All 7 phases present, all PASS, review approved, refactoring documented (>=L1), all gates satisfied, zero defects, test count within budget, no internal class tests.
+All 5 phases present, all PASS, all gates satisfied, zero defects, test count within budget, no internal class tests.
 
 ### Rejected
 Missing phases, any FAIL outcome, any defect of any severity, test budget exceeded, internal class tested directly. Zero tolerance: do not approve with known defects.

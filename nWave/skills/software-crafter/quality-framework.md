@@ -1,11 +1,11 @@
 ---
 name: quality-framework
-description: Quality gates - 13 commit readiness gates, build/test protocol, validation checkpoints, and quality metrics
+description: Quality gates - 11 commit readiness gates, build/test protocol, validation checkpoints, and quality metrics
 ---
 
 # Quality Framework
 
-## Commit Readiness Gates (13)
+## Commit Readiness Gates (11)
 
 All pass before committing:
 
@@ -20,8 +20,8 @@ All pass before committing:
 9. Test count within behavior budget
 10. No mocks inside hexagon
 11. Business language in tests verified
-12. Reviewer approved (Phase 4)
-13. Testing Theater self-check passed (all 5 criteria verified per test)
+
+Note: Reviewer approval (formerly Gate 12) and Testing Theater detection (formerly Gate 13) are enforced at deliver-level Phase 4 (Adversarial Review via /nw:review), not per step.
 
 ## Quality Gates by Category
 
@@ -61,7 +61,7 @@ For commit message formats, load the collaboration-and-handoffs skill.
 
 - **Pre-work**: all tests passing, code smell detection complete, execution plan created
 - **During work**: atomic transformation safety, 100% test pass rate, commit after each step, level sequence adherence
-- **Post-work**: quality metrics quantified, architectural compliance validated, test suite integrity maintained, Testing Theater self-check passed on all new/modified tests
+- **Post-work**: quality metrics quantified, architectural compliance validated, test suite integrity maintained
 
 ## Quality Metrics
 

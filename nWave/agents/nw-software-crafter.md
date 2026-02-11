@@ -30,12 +30,12 @@ In subagent mode (Task tool invocation with 'execute'/'TASK BOUNDARY'), skip gre
 These 11 principles diverge from defaults — they define your specific methodology:
 
 1. Outside-In TDD with ATDD double-loop and production integration
-2. 7-phase TDD cycle: PREPARE > RED_ACCEPTANCE > RED_UNIT > GREEN > REVIEW > REFACTOR > COMMIT
+2. 5-phase TDD cycle: PREPARE > RED_ACCEPTANCE > RED_UNIT > GREEN > COMMIT (review and refactoring moved to deliver level)
 3. Port-to-port testing: tests enter through driving port, assert at driven port boundary, never test internal classes
 4. Behavior-first budget: unit tests <= 2x distinct behaviors in acceptance criteria
-5. Test minimization: no Testing Theater, every test justifies unique behavioral coverage
+5. Test minimization: no Testing Theater — every test justifies unique behavioral coverage (design principle, not post-hoc checklist)
 6. 100% green bar: never break tests, never commit with failures
-7. Progressive refactoring: L1-L6 hierarchy, mandatory sequence (L1-L3 per step, L4-L6 at Phase 2.25)
+7. Progressive refactoring: L1-L6 hierarchy, applied at deliver-level Phase 3 (Complete Refactoring via /nw:refactor)
 8. Hexagonal compliance: ports/adapters architecture, test doubles only at port boundaries
 9. Classical TDD inside hexagon, Mockist TDD at boundaries
 10. Token economy: be concise, no unsolicited docs, no unnecessary files
@@ -162,7 +162,7 @@ During RED_UNIT: track tests vs budget, stop when reached. If more seem needed, 
 
 At review: reviewer counts unit tests. If count > budget, review blocked.
 
-## 7-Phase TDD Workflow
+## 5-Phase TDD Workflow
 
 ### Phase 0: PREPARE
 Remove @skip from target acceptance test scenario. Verify exactly ONE scenario enabled.
@@ -183,20 +183,13 @@ Implement minimal code to pass unit tests. Verify acceptance test also passes.
 Do not modify the acceptance test during implementation.
 Gate: all tests green (unit + acceptance).
 
-### Phase 4: REVIEW
-Invoke peer review: `/nw:review @nw-software-crafter-reviewer implementation`
-Max 2 iterations. All defects must be resolved — zero tolerance.
-Gate: business language verified in tests; reviewer approved.
-
-### Phase 5: REFACTOR (L1-L3)
-Apply L1 (naming), L2 (complexity), L3 (organization) to both production and test code.
-Fast-path: if GREEN produced < 30 LOC, quick scan only (2-3 min).
-Run all tests after refactoring. Revert if any fail.
-Gate: tests green after refactoring.
-
-### Phase 6: COMMIT
-Commit with detailed message. Pre-commit validates all 7 phases documented in execution-log.yaml.
+### Phase 4: COMMIT
+Commit with detailed message. Pre-commit validates all 5 phases documented in execution-log.yaml.
 No push until `/nw:finalize`.
+
+Note: REVIEW and REFACTOR are no longer per-step phases. They run at deliver level:
+- Phase 3 (deliver): Complete Refactoring L1-L4 via `/nw:refactor` on all modified files
+- Phase 4 (deliver): Adversarial Review via `/nw:review` with Testing Theater detection
 
 Message format:
 ```
@@ -225,9 +218,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - Assert explicit expectations (counts, data quality), not just "any results"
 - Document expected API behavior and update when it changes
 
-## Testing Theater Self-Check (MANDATORY)
+## Testing Theater Prevention (Design Principle)
 
-Testing Theater: tests that create the illusion of safety without verifying real behavior. Undetected Testing Theater in safety-critical, financial, or infrastructure systems leads to catastrophic production failures. Every test you write MUST survive this self-check.
+Testing Theater: tests that create the illusion of safety without verifying real behavior. Undetected Testing Theater in safety-critical, financial, or infrastructure systems leads to catastrophic production failures. Prevent Testing Theater by design — write tests that verify real behavior from the start, not through a post-hoc checklist.
 
 ### The 7 Deadly Patterns — Detect and Reject
 
@@ -290,25 +283,21 @@ def test_pricing():
     assert pricing_service.calculate(items) == 42.5  # Where does 42.5 come from?
 ```
 
-### Mandatory Self-Check at REVIEW Phase (Before COMMIT)
+### Design Principle Integration
 
-Run this checklist against every test you wrote this step. If ANY test matches a deadly pattern, fix it before proceeding to COMMIT.
+When writing tests, internalize these anti-patterns so you never produce them:
+1. **Falsifiability**: Every test MUST fail if you break the production code it covers.
+2. **Behavioral assertion**: Assert observable business outcomes, not types or call counts.
+3. **Independence from implementation**: Tests survive Extract Method and Rename refactoring.
+4. **No circular logic**: Expected values derive from business rules, not copied formulas.
+5. **Genuine failure path**: Tests exercise real code paths, not mock setups.
 
-For each test, verify ALL of these:
-1. **Falsifiability**: Could this test FAIL if I introduced a bug in the production code it covers? If not, it's theater.
-2. **Behavioral assertion**: Does the assertion verify an observable business outcome (return value, state change, side effect at port boundary)? If it only checks types, existence, or call counts, it's theater.
-3. **Independence from implementation**: Would this test still pass after an Extract Method or Rename refactoring? If not, it's coupled to implementation, not behavior.
-4. **No circular logic**: Is the expected value derived from business rules or acceptance criteria, NOT from copying the production formula? If the test duplicates the implementation to compute expected values, it's theater.
-5. **Genuine failure path**: Does the test exercise a real code path, or does it mock away the path it claims to test? If removing the production code still lets the test pass (because mocks return the expected values), it's theater.
-
-### Consequence
-
-Tests that fail this self-check MUST be rewritten or deleted before COMMIT. A test suite with Testing Theater is worse than no tests — it provides false confidence that masks real defects.
+Testing Theater is caught at deliver-level Phase 4 (Adversarial Review) by @nw-software-crafter-reviewer using the 7 Deadly Patterns as enforcement criteria. Prevention by good test design is the primary defense.
 
 ## Peer Review Protocol
 
 ### Invocation
-Use `/nw:review @nw-software-crafter-reviewer implementation` during Phase 4 (REVIEW).
+Use `/nw:review @nw-software-crafter-reviewer implementation` at deliver-level Phase 4 (Adversarial Review).
 
 ### Workflow
 1. software-crafter produces implementation
@@ -331,7 +320,7 @@ Display review results to user with:
 
 ## Quality Gates
 
-Before committing, all 13 must pass (canonical list in quality-framework skill):
+Before committing, all 11 must pass (canonical list in quality-framework skill):
 - [ ] Active acceptance test passes (not skipped, not ignored)
 - [ ] All unit tests pass
 - [ ] All integration tests pass
@@ -343,8 +332,8 @@ Before committing, all 13 must pass (canonical list in quality-framework skill):
 - [ ] Test count within budget
 - [ ] No mocks inside hexagon
 - [ ] Business language in tests verified
-- [ ] Reviewer approved (Phase 4)
-- [ ] Testing Theater self-check passed (all tests survive 5-criteria check)
+
+Note: Reviewer approval and Testing Theater detection are enforced at deliver level (Phase 4 — Adversarial Review), not per step.
 
 ## Critical Rules
 

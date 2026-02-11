@@ -4,7 +4,7 @@ ValidationErrorDetector: Domain service for detecting validation errors in step 
 Detects validation failures for missing mandatory sections and TDD phases,
 generating specific recovery guidance explaining WHY and HOW to fix each error.
 
-Uses canonical 7-phase TDD cycle from step-tdd-cycle-schema.json v3.0 (single source of truth).
+Uses canonical TDD cycle from step-tdd-cycle-schema.json v4.0 (single source of truth).
 
 Implements AC-005.1 and AC-005.4:
 - AC-005.1: Identifies missing required step file fields and invalid phase sequences
@@ -30,7 +30,7 @@ class ValidationErrorDetector:
     3. Missing acceptance criteria details
     4. Incomplete phase documentation
 
-    Uses canonical 7-phase TDD cycle from schema (single source of truth).
+    Uses canonical TDD cycle from schema (single source of truth).
     """
 
     # Required fields that every step file must have
@@ -105,7 +105,7 @@ class ValidationErrorDetector:
         return []
 
     def _get_valid_phase_sequence(self, phase_names: list[str]) -> tuple[str, ...]:
-        """Return canonical 7-phase TDD cycle from schema."""
+        """Return canonical TDD cycle from schema."""
         return self.VALID_PHASE_SEQUENCE
 
     def _check_phase_ordering(
@@ -219,8 +219,9 @@ class ValidationErrorDetector:
         """Guidance for invalid phase sequence."""
         return (
             "Reorder phases in phase_execution_log to follow valid TDD sequence. "
-            "For 8-phase (v2.0): PREPARE → RED_ACCEPTANCE → RED_UNIT → GREEN → REVIEW → "
-            "REFACTOR_CONTINUOUS → REFACTOR_L4 → COMMIT. "
+            "For 5-phase (v4.0): PREPARE → RED_ACCEPTANCE → RED_UNIT → GREEN → COMMIT. "
+            "For 7-phase (v3.0): PREPARE → RED_ACCEPTANCE → RED_UNIT → GREEN → REVIEW → "
+            "REFACTOR_CONTINUOUS → COMMIT. "
             "For 14-phase (v1.0): PREPARE → RED_ACCEPTANCE → RED_UNIT → GREEN_UNIT → "
             "CHECK_ACCEPTANCE → GREEN_ACCEPTANCE → REVIEW → REFACTOR_L1-L4 → "
             "POST_REFACTOR_REVIEW → FINAL_VALIDATE → COMMIT"

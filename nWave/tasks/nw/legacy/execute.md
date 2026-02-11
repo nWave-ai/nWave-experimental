@@ -272,7 +272,7 @@ Step found at line 360:
     acceptance_criteria:
       - "ScopeValidator executes git diff command successfully"
       - "Modified file list extracted from git output"
-    test_file: "tests/des/acceptance/test_us007_boundary_rules.py"
+    test_file: "tests/des/acceptance/test_boundary_rules.py"
     scenario_line: 357
     ...
 

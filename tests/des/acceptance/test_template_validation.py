@@ -39,7 +39,7 @@ class TestPreInvocationTemplateValidation:
         1. DES_METADATA
         2. AGENT_IDENTITY
         3. TASK_CONTEXT
-        4. TDD_7_PHASES (7 phases from schema v3.0)
+        4. TDD_PHASES (5 phases from schema v4.0)
         5. QUALITY_GATES
         6. OUTCOME_RECORDING
         7. RECORDING_INTEGRITY
@@ -72,19 +72,19 @@ class TestPreInvocationTemplateValidation:
 
     def test_missing_tdd_phase_blocks_task_invocation(self, prompt_missing_phase_v3):
         """
-        GIVEN orchestrator generates prompt missing REFACTOR_CONTINUOUS phase
+        GIVEN orchestrator generates prompt missing GREEN phase
         WHEN pre-invocation validation runs
         THEN validation FAILS with specific error naming missing phase
 
-        Business Value: Priya ensures all 7 TDD phases (v3.0) are communicated to
-                       sub-agents, preventing "I didn't know about refactoring"
+        Business Value: Priya ensures all 5 TDD phases (v4.0) are communicated to
+                       sub-agents, preventing "I didn't know about X"
                        excuses during PR review.
 
-        Missing Phase: REFACTOR_CONTINUOUS (one of 7 mandatory phases from schema v3.0)
+        Missing Phase: GREEN (one of 5 mandatory phases from schema v4.0)
         """
-        # Arrange: Create prompt missing REFACTOR_CONTINUOUS phase from template
+        # Arrange: Create prompt missing GREEN phase from template
         prompt_missing_phase = prompt_missing_phase_v3(
-            missing_phase="REFACTOR_CONTINUOUS"
+            missing_phase="GREEN"
         )
 
         # Act: Run pre-invocation validation
@@ -96,7 +96,7 @@ class TestPreInvocationTemplateValidation:
         # Assert: Validation fails with specific error
         assert validation_result.status == "FAILED"
         assert (
-            "INCOMPLETE: TDD phase 'REFACTOR_CONTINUOUS' not mentioned"
+            "INCOMPLETE: TDD phase 'GREEN' not mentioned"
             in validation_result.errors
         )
         assert validation_result.task_invocation_allowed is False
@@ -132,7 +132,7 @@ class TestPreInvocationTemplateValidation:
         # TASK_CONTEXT
         Implement PaymentService
 
-        # TDD_7_PHASES
+        # TDD_PHASES
         All 14 phases listed (PREPARE through COMMIT)
 
         # QUALITY_GATES
@@ -182,16 +182,16 @@ class TestPreInvocationTemplateValidation:
         Business Value: Priya sees ALL validation failures in one pass, enabling
                        complete fix without multiple trial-and-error cycles.
 
-        Issues (v3.0):
+        Issues (v4.0):
         1. Missing BOUNDARY_RULES section
-        2. Missing REFACTOR_CONTINUOUS phase
+        2. Missing GREEN phase
 
         Expected: All errors returned together, Task invocation blocked
         """
         # Arrange: Create prompt with multiple issues (missing section + missing phase)
-        # Build phase list excluding REFACTOR_CONTINUOUS
-        phases_missing_refactor = [p for p in tdd_phases if p != "REFACTOR_CONTINUOUS"]
-        phases_text = ", ".join(phases_missing_refactor)
+        # Build phase list excluding GREEN
+        phases_missing_green = [p for p in tdd_phases if p != "GREEN"]
+        phases_text = ", ".join(phases_missing_green)
 
         _prompt_with_multiple_errors = f"""<!-- DES-VALIDATION: required -->
 
@@ -206,7 +206,7 @@ You are @software-crafter executing this step.
 ## TASK_CONTEXT
 Implement InventoryService with validation.
 
-## TDD_7_PHASES
+## TDD_PHASES
 Execute all {len(tdd_phases)} phases from schema:
 {phases_text}
 
@@ -238,7 +238,7 @@ Turn budget: approximately 50 turns"""
             in validation_result.errors
         )
         assert (
-            "INCOMPLETE: TDD phase 'REFACTOR_CONTINUOUS' not mentioned"
+            "INCOMPLETE: TDD phase 'GREEN' not mentioned"
             in validation_result.errors
         )
         assert validation_result.task_invocation_allowed is False
@@ -310,7 +310,7 @@ Turn budget: approximately 50 turns"""
         # TASK_CONTEXT
         Test malformed marker handling
 
-        # TDD_7_PHASES
+        # TDD_PHASES
         PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN_UNIT, CHECK_ACCEPTANCE, GREEN_ACCEPTANCE,
         REVIEW, REFACTOR_L1, REFACTOR_L2, REFACTOR_L3, REFACTOR_L4, POST_REFACTOR_REVIEW, FINAL_VALIDATE, COMMIT
 
@@ -436,7 +436,7 @@ class TestOrchestratorIntegration:
 # =============================================================================
 # Phase execution log validation belongs in SubagentStopHook (post-execution),
 # not in TemplateValidator (pre-invocation). See:
-# - tests/acceptance/test_us003_post_execution_validation.py (acceptance tests)
+# - tests/acceptance/test_post_execution_validation.py (acceptance tests)
 # - tests/des/unit/application/test_hooks.py (unit tests)
 #
 # TemplateValidator validates PROMPTS (templates with mandatory sections).
@@ -482,7 +482,7 @@ class TestOrchestratorSubagentStopHook:
         # TASK_CONTEXT
         Integration test for subagent lifecycle
 
-        # TDD_7_PHASES
+        # TDD_PHASES
         All 14 phases listed
 
         # QUALITY_GATES

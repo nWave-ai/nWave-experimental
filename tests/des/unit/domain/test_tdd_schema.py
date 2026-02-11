@@ -35,9 +35,9 @@ class TestTDDSchemaLoader:
         schema = loader.load()
         assert isinstance(schema, TDDSchema)
 
-    def test_schema_has_seven_phases(self, tdd_schema):
-        """Schema should define exactly 7 TDD phases."""
-        assert len(tdd_schema.tdd_phases) == 7
+    def test_schema_has_five_phases(self, tdd_schema):
+        """Schema should define exactly 5 TDD phases."""
+        assert len(tdd_schema.tdd_phases) == 5
 
     def test_phases_are_in_correct_order(self, tdd_schema):
         """TDD phases should be in the expected order."""
@@ -46,8 +46,6 @@ class TestTDDSchemaLoader:
             "RED_ACCEPTANCE",
             "RED_UNIT",
             "GREEN",
-            "REVIEW",
-            "REFACTOR_CONTINUOUS",
             "COMMIT",
         )
         assert tdd_schema.tdd_phases == expected
@@ -71,13 +69,13 @@ class TestTDDSchemaLoader:
         """Blocking skip prefixes should prevent commit."""
         assert "DEFERRED:" in tdd_schema.blocking_skip_prefixes
 
-    def test_schema_version_is_3_0(self, tdd_schema):
-        """Schema version should be 3.0."""
-        assert tdd_schema.schema_version == "3.0"
+    def test_schema_version_is_4_0(self, tdd_schema):
+        """Schema version should be 4.0."""
+        assert tdd_schema.schema_version == "4.0"
 
-    def test_total_phases_is_7(self, tdd_schema):
-        """Total phases should be 7."""
-        assert tdd_schema.total_phases == 7
+    def test_total_phases_is_5(self, tdd_schema):
+        """Total phases should be 5."""
+        assert tdd_schema.total_phases == 5
 
 
 class TestTDDSchemaLoaderCaching:
