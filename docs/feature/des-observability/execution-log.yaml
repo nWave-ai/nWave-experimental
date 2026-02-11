@@ -98,5 +98,25 @@ events:
   s: EXECUTED
   sid: 08-01
   t: '2026-02-11T02:48:03Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 08-01-hotfix
+  t: '2026-02-11T03:06:27Z'
+- d: 'NOT_APPLICABLE: one-line bug fix, no new tests needed'
+  p: RED_ACCEPTANCE
+  s: SKIPPED
+  sid: 08-01-hotfix
+  t: '2026-02-11T03:06:29Z'
+- d: 'NOT_APPLICABLE: one-line bug fix, existing tests use mocked data'
+  p: RED_UNIT
+  s: SKIPPED
+  sid: 08-01-hotfix
+  t: '2026-02-11T03:06:33Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 08-01-hotfix
+  t: '2026-02-11T03:06:35Z'
 project_id: des-observability
 schema_version: '3.0'

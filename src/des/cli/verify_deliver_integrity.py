@@ -62,7 +62,7 @@ def main() -> int:
     roadmap = yaml.safe_load(roadmap_path.read_text())
     exec_log = yaml.safe_load(exec_log_path.read_text())
 
-    step_ids = [s["step_id"] for s in roadmap.get("steps", [])]
+    step_ids = [s.get("id") or s.get("step_id") for s in roadmap.get("steps", [])]
     entries = _parse_execution_log(exec_log)
 
     schema = get_tdd_schema()
