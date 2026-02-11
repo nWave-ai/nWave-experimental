@@ -422,6 +422,7 @@ jobs:
             --exclude 'SESSION_STATE*' \
             --exclude 'build.log' \
             --exclude 'pyproject.toml' \
+            --exclude 'nwave_ai/' \
             --exclude 'setup.py' \
             --exclude 'setup.cfg' \
             --exclude 'Pipfile' \
