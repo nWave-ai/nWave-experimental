@@ -556,6 +556,31 @@ def handle_pre_tool_use() -> int:
 # Transcript DES context extraction
 # ---------------------------------------------------------------------------
 
+def _normalize_message_content(content: object) -> str:
+    """Normalize message content from string or list-of-text-blocks to plain string."""
+    if isinstance(content, list):
+        return "\n".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return content if isinstance(content, str) else ""
+
+
+def _log_transcript_audit(event_type: str, transcript_path: str, **extra: object) -> None:
+    """Log a transcript-related audit event, silently swallowing failures."""
+    try:
+        _create_audit_writer().log_event(
+            AuditEvent(
+                event_type=event_type,
+                timestamp=SystemTimeProvider().now_utc().isoformat(),
+                data={"transcript_path": transcript_path, **extra},
+            )
+        )
+    except Exception:
+        pass
+
+
 def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
     """Extract DES markers from an agent's transcript file.
 
@@ -568,7 +593,6 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
     Returns:
         dict with "project_id" and "step_id" if DES markers found, None otherwise
     """
-    # Resilience 9c: missing transcript file -> return None silently
     if not Path(transcript_path).exists():
         return None
 
@@ -583,62 +607,27 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
                 except json.JSONDecodeError:
                     continue
 
-                # Look for user messages containing DES markers
                 message = entry.get("message", {})
                 if not isinstance(message, dict):
                     continue
 
-                content = message.get("content", "")
-
-                # Handle content as string or list of text blocks
-                if isinstance(content, list):
-                    text_parts = []
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text_parts.append(block.get("text", ""))
-                    content = "\n".join(text_parts)
-
-                if not isinstance(content, str) or "DES-VALIDATION" not in content:
+                content = _normalize_message_content(message.get("content", ""))
+                if "DES-VALIDATION" not in content:
                     continue
 
-                # Found DES markers - parse them
-                parser = DesMarkerParser()
-                markers = parser.parse(content)
-
+                markers = DesMarkerParser().parse(content)
                 if markers.is_des_task and markers.project_id and markers.step_id:
                     return {
                         "project_id": markers.project_id,
                         "step_id": markers.step_id,
                     }
-
-                # DES marker present but missing project_id or step_id
                 return None
 
     except (OSError, PermissionError) as e:
-        # Log transcript read failure for diagnostics
-        try:
-            _create_audit_writer().log_event(
-                AuditEvent(
-                    event_type="HOOK_TRANSCRIPT_ERROR",
-                    timestamp=SystemTimeProvider().now_utc().isoformat(),
-                    data={"error": str(e), "transcript_path": transcript_path},
-                )
-            )
-        except Exception:
-            pass
+        _log_transcript_audit("HOOK_TRANSCRIPT_ERROR", transcript_path, error=str(e))
         return None
 
-    # No DES markers found in any message
-    try:
-        _create_audit_writer().log_event(
-            AuditEvent(
-                event_type="HOOK_TRANSCRIPT_NO_MARKERS",
-                timestamp=SystemTimeProvider().now_utc().isoformat(),
-                data={"transcript_path": transcript_path},
-            )
-        )
-    except Exception:
-        pass
+    _log_transcript_audit("HOOK_TRANSCRIPT_NO_MARKERS", transcript_path)
     return None
 
 
