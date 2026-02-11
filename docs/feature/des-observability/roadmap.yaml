@@ -335,7 +335,7 @@ steps:
       - "stderr_capture is empty string (not absent) when no stderr output"
       - "stderr redirect does not interfere with normal handler operation"
       - "All existing tests pass without modification"
-    max_turns: 25
+    max_turns: 45
 
   # =====================================================================
   # EXECUTION STATISTICS TRACKING (new requirement beyond observability-plan)
@@ -385,7 +385,7 @@ steps:
       - "PhaseEventParser.parse() returns None for turns_used/tokens_used in 5-field format"
       - "YamlExecutionLogReader correctly reads both old and new format events"
       - "All existing tests pass without modification"
-    max_turns: 25
+    max_turns: 45
 
   - id: "07-02"
     title: "Extract agent stats from Task tool result and record in execution log"
@@ -430,7 +430,7 @@ steps:
       - "HOOK_COMPLETED for subagent_stop includes turns_used and tokens_used when available"
       - "Missing stats fields do not break validation (graceful None)"
       - "All existing tests pass without modification"
-    max_turns: 30
+    max_turns: 45
 
   # =====================================================================
   # LOG FORMAT STANDARDIZATION (observability-plan Section 11)
@@ -480,7 +480,7 @@ steps:
       - "Structured events with turns_used/tokens_used (tu, tk keys) are parsed"
       - "yq queries work on v3.0 format: yq '.events[] | select(.sid == \"01-01\")'"
       - "All existing tests pass without modification"
-    max_turns: 30
+    max_turns: 45
 
   # =====================================================================
   # SECTION 12: Audit Toggle -- ALREADY DONE (skip)
