@@ -841,8 +841,29 @@ def handle_post_tool_use() -> int:
         )
 
         if additional_context:
+            # Determine context_type from content
+            if "INCOMPLETE" in additional_context or "FAILED" in additional_context:
+                context_type = "failure_notification"
+            else:
+                context_type = "continuation"
+            _log_post_tool_use_decision(
+                hook_id=hook_id,
+                event_type="HOOK_POST_TOOL_USE_INJECTED",
+                is_des_task=is_des_task,
+                context_type=context_type,
+            )
             response = {"additionalContext": additional_context}
         else:
+            if is_des_task:
+                reason = "no_completion_status"
+            else:
+                reason = "non_des_task"
+            _log_post_tool_use_decision(
+                hook_id=hook_id,
+                event_type="HOOK_POST_TOOL_USE_PASSTHROUGH",
+                is_des_task=is_des_task,
+                reason=reason,
+            )
             response = {}
 
         print(json.dumps(response))
@@ -908,6 +929,42 @@ def _log_pre_write_decision(
         )
     except Exception:
         pass  # Diagnostic logging must never break the hook
+
+
+def _log_post_tool_use_decision(
+    hook_id: str,
+    event_type: str,
+    is_des_task: bool,
+    **extra: str,
+) -> None:
+    """Log a HOOK_POST_TOOL_USE_INJECTED or HOOK_POST_TOOL_USE_PASSTHROUGH event.
+
+    Emitted after PostToolUseService.check_completion_status() to record
+    whether context was injected or not. Wrapped in try/except so logging
+    never breaks the hook.
+
+    Args:
+        hook_id: UUID4 correlation ID matching the HOOK_INVOKED event.
+        event_type: Either HOOK_POST_TOOL_USE_INJECTED or HOOK_POST_TOOL_USE_PASSTHROUGH.
+        is_des_task: Whether the just-completed Task had DES markers.
+        **extra: Additional key-value pairs (context_type, reason, etc.).
+    """
+    try:
+        audit_writer = _create_audit_writer()
+        data: dict = {
+            "hook_id": hook_id,
+            "is_des_task": is_des_task,
+        }
+        data.update(extra)
+        audit_writer.log_event(
+            AuditEvent(
+                event_type=event_type,
+                timestamp=SystemTimeProvider().now_utc().isoformat(),
+                data=data,
+            )
+        )
+    except Exception:
+        pass  # Decision logging must never break the hook
 
 
 def handle_pre_write() -> int:
