@@ -23,28 +23,6 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
-@pytest.fixture(scope="session")
-def built_framework(project_root: Path) -> Path:
-    """Ensure dist/ide/ exists with built agents and commands.
-
-    Runs tools/build.py once per session if dist/ide is missing.
-    Returns the dist/ide directory path.
-    """
-    dist_ide = project_root / "dist" / "ide"
-    agents_dir = dist_ide / "agents" / "nw"
-    commands_dir = dist_ide / "commands" / "nw"
-
-    if not agents_dir.exists() or not commands_dir.exists():
-        subprocess.run(
-            [sys.executable, str(project_root / "tools" / "build.py")],
-            cwd=project_root,
-            check=True,
-            capture_output=True,
-        )
-
-    return dist_ide
-
-
 def _apply_patches(original_logger_init, claude_config_dir):
     """Apply shared patches: plain Logger, config dir redirect, subprocess mock.
 
@@ -110,7 +88,7 @@ def _restore_patches(originals, original_logger_init):
 
 
 @pytest.fixture(scope="module")
-def uninstaller_result(project_root, built_framework, tmp_path_factory):
+def uninstaller_result(project_root, tmp_path_factory):
     """Install, then uninstall with --force --backup. Return (output, exit_code).
 
     Module-scoped: runs the full install + uninstall sequence once.

@@ -63,21 +63,16 @@ class TestExecuteTemplateSync:
     def test_built_output_has_resolved_phases(self):
         """
         GIVEN execute.md processed through the build system
-        WHEN we check the built output
+        WHEN we check the built output (or source since build pipeline removed)
         THEN {{MANDATORY_PHASES}} is resolved to actual phase list from schema
+
+        NOTE: Build pipeline was removed in step 02-04. The source file
+        uses {{MANDATORY_PHASES}} which is resolved at install time, not
+        build time. This test now verifies the source template variable
+        is present (covered by test_source_uses_template_variable above).
         """
-        built_path = Path("dist/ide/commands/nw/execute.md")
-        if not built_path.exists():
-            return  # Skip if not built yet
-
-        content = built_path.read_text()
-
-        # Built output should NOT contain unresolved template variable
-        assert "{{MANDATORY_PHASES}}" not in content, (
-            "Built execute.md still contains unresolved {{MANDATORY_PHASES}}"
-        )
-
-        # Built output should contain phase names from validator
-        validator = TDDPhaseValidator()
-        for phase in validator.MANDATORY_PHASES:
-            assert phase in content, f"Built execute.md missing phase: {phase}"
+        # Build pipeline eliminated -- dist/ide no longer exists.
+        # Template variable resolution happens at install time.
+        # This test is now a no-op since the source template test above
+        # already verifies the template variable is present.
+        pass

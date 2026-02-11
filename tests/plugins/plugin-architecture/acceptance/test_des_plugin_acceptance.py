@@ -199,7 +199,7 @@ def call_registry_install_all(
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
-        framework_source=project_root / "dist" / "ide",
+        framework_source=project_root / "nWave",
         dry_run=False,
     )
 

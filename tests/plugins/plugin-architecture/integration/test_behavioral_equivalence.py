@@ -58,7 +58,7 @@ def project_root() -> Path:
 @pytest.fixture
 def framework_source(project_root: Path) -> Path:
     """Return path to the framework source directory."""
-    return project_root / "dist" / "ide"
+    return project_root / "nWave"
 
 
 @pytest.fixture

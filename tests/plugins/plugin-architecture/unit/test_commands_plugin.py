@@ -255,7 +255,7 @@ def test_commands_plugin_verify_fails_when_target_directory_missing(
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
-        framework_source=project_root / "dist" / "ide",
+        framework_source=project_root / "nWave",
         dry_run=False,
     )
 
@@ -280,7 +280,7 @@ def test_commands_plugin_verify_fails_when_no_command_files(
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
-        framework_source=project_root / "dist" / "ide",
+        framework_source=project_root / "nWave",
         dry_run=False,
     )
 

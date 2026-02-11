@@ -31,7 +31,7 @@ def configured_installer(tmp_path):
         installer.force_rebuild = False
         installer.claude_config_dir = tmp_path / "claude"
         installer.project_root = tmp_path
-        installer.framework_source = tmp_path / "dist" / "ide"
+        installer.framework_source = tmp_path / "nWave"
         installer.logger = Mock()
         installer.logger.progress_spinner = MagicMock()
         installer.logger.progress_spinner.return_value.__enter__ = Mock()
@@ -40,8 +40,8 @@ def configured_installer(tmp_path):
 
         # Create minimal source structure
         installer.framework_source.mkdir(parents=True, exist_ok=True)
-        (installer.framework_source / "agents" / "nw").mkdir(parents=True)
-        (installer.framework_source / "commands" / "nw").mkdir(parents=True)
+        (installer.framework_source / "agents").mkdir(parents=True)
+        (installer.framework_source / "tasks" / "nw").mkdir(parents=True)
 
         return installer
 

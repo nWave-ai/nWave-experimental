@@ -550,23 +550,18 @@ class TestTemplatesPluginExceptionHandling:
 class TestAgentsPluginSourceFallback:
     """Tests for source file fallback logic (lines 62-65)."""
 
-    def test_install_uses_source_when_dist_insufficient(
+    def test_install_uses_source_from_nwave_agents(
         self, tmp_path: Path, test_logger: logging.Logger, project_root: Path
     ):
-        """install should use source files when dist has insufficient agents."""
+        """install should use source files from nWave/agents/."""
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create minimal dist directory (< 5 agents)
-        dist_agents = tmp_path / "dist" / "ide" / "agents" / "nw"
-        dist_agents.mkdir(parents=True, exist_ok=True)
-        (dist_agents / "one.md").write_text("# One")
-
-        # Create source directory with more agents
+        # Create source directory with agents
         source_agents = tmp_path / "nWave" / "agents"
         source_agents.mkdir(parents=True, exist_ok=True)
         for i in range(10):
-            (source_agents / f"agent{i}.md").write_text(f"# Agent {i}")
+            (source_agents / f"nw-agent{i}.md").write_text(f"# Agent {i}")
 
         context = InstallContext(
             claude_dir=claude_dir,
@@ -574,14 +569,13 @@ class TestAgentsPluginSourceFallback:
             templates_dir=tmp_path / "templates",
             logger=test_logger,
             project_root=tmp_path,
-            framework_source=tmp_path / "dist" / "ide",
+            framework_source=tmp_path / "nWave",
         )
 
         plugin = AgentsPlugin()
         result = plugin.install(context)
 
         assert result.success
-        # Should use source (10 agents) not dist (1 agent)
         target = claude_dir / "agents" / "nw"
         assert target.exists()
 

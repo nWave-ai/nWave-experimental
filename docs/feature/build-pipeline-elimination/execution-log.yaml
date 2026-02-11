@@ -50,5 +50,26 @@ events:
 - 02-04|REVIEW|EXECUTED|PASS|2026-02-10T22:53:46Z
 - 02-04|REFACTOR_CONTINUOUS|EXECUTED|PASS|2026-02-10T22:54:27Z
 - 02-04|COMMIT|EXECUTED|PASS|2026-02-10T22:55:08Z
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 02-05
+  t: '2026-02-11T11:06:40Z'
+- d: PASS
+  p: RED_ACCEPTANCE
+  s: EXECUTED
+  sid: 02-05
+  t: '2026-02-11T11:07:15Z'
+- d: 'NOT_APPLICABLE: batch substitution of dist/ide references in test fixtures,
+    no new logic'
+  p: RED_UNIT
+  s: SKIPPED
+  sid: 02-05
+  t: '2026-02-11T11:07:21Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 02-05
+  t: '2026-02-11T11:20:11Z'
 project_id: build-pipeline-elimination
-schema_version: '2.0'
+schema_version: '3.0'

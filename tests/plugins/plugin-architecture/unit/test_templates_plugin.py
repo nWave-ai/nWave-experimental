@@ -38,13 +38,7 @@ def project_root() -> Path:
 
 @pytest.fixture
 def template_source_dir(project_root: Path) -> Path:
-    """Return the template source directory."""
-    # Try dist/ide/templates first (built distribution)
-    dist_path = project_root / "dist" / "ide" / "templates"
-    if dist_path.exists():
-        return dist_path
-
-    # Fallback to nWave/templates (source)
+    """Return the template source directory: nWave/templates/."""
     return project_root / "nWave" / "templates"
 
 
@@ -60,7 +54,7 @@ def install_context(tmp_path: Path, project_root: Path, test_logger: logging.Log
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
-        framework_source=project_root / "dist" / "ide",
+        framework_source=project_root / "nWave",
         dry_run=False,
     )
 
@@ -253,7 +247,7 @@ def test_templates_plugin_verify_fails_when_target_directory_missing(
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
-        framework_source=project_root / "dist" / "ide",
+        framework_source=project_root / "nWave",
         dry_run=False,
     )
 
@@ -282,7 +276,7 @@ def test_templates_plugin_verify_fails_when_no_template_files(
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
-        framework_source=project_root / "dist" / "ide",
+        framework_source=project_root / "nWave",
         dry_run=False,
     )
 
@@ -315,7 +309,7 @@ def test_templates_plugin_install_success_with_real_source(
         templates_dir=source_templates,
         logger=test_logger,
         project_root=project_root,
-        framework_source=project_root / "dist" / "ide",
+        framework_source=project_root / "nWave",
         dry_run=False,
     )
 

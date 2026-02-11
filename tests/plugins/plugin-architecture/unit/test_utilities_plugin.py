@@ -71,7 +71,7 @@ def install_context(
         templates_dir=mock_project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=mock_project_root,
-        framework_source=mock_project_root / "dist" / "ide",
+        framework_source=mock_project_root / "nWave",
         dry_run=False,
     )
 
@@ -264,7 +264,7 @@ def test_utilities_plugin_verify_fails_when_target_directory_missing(
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
-        framework_source=project_root / "dist" / "ide",
+        framework_source=project_root / "nWave",
         dry_run=False,
     )
 
@@ -293,7 +293,7 @@ def test_utilities_plugin_verify_fails_when_no_utility_scripts(
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
-        framework_source=project_root / "dist" / "ide",
+        framework_source=project_root / "nWave",
         dry_run=False,
     )
 
@@ -333,7 +333,7 @@ def test_utilities_plugin_install_success_with_mock_source(
         templates_dir=mock_project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=mock_project_root,
-        framework_source=mock_project_root / "dist" / "ide",
+        framework_source=mock_project_root / "nWave",
         dry_run=False,
     )
 
