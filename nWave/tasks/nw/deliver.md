@@ -66,26 +66,40 @@ INPUT: "{feature-description}"
         NEVER write execution-log entries yourself — only the agent
         that actually performed the work may write to the log.
      f. Stop on first failure
+     g. On timeout: check last completed phase in execution-log.yaml.
+        If GREEN completed → resume (just COMMIT remains, ~5 turns).
+        If stuck in GREEN with partial progress → resume.
+        Otherwise → restart with higher max_turns (resume costs ~50% more tokens/call).
   |
   4. Phase 3 — Complete Refactoring (L1-L4, code + tests)
      a. Orchestrator collects modified files:
         git diff --name-only {base-commit}..HEAD -- '*.py' | sort -u
         Split into PRODUCTION_FILES (src/) and TEST_FILES (tests/)
-     b. Orchestrator invokes /nw:refactor for each major module:
-        /nw:refactor {file-or-module} --level=4 --scope=module
-        The refactor command dispatches @nw-software-crafter to apply
-        L1 (naming), L2 (complexity), L3 (SRP), L4 (architectural patterns)
-        on the explicit file list. All tests must stay green.
+     b. Orchestrator dispatches @nw-software-crafter via Task tool with DES
+        orchestrator markers to enable source file writes:
+        ```
+        <!-- DES-VALIDATION : required -->
+        <!-- DES-PROJECT-ID : {project-id} -->
+        <!-- DES-MODE : orchestrator -->
+        ```
+        Include the explicit file list and refactoring levels (L1-L4).
+        All tests must stay green after each module.
   |
   5. Phase 4 — Adversarial Review
      a. Orchestrator invokes /nw:review for the full feature implementation:
-        /nw:review @nw-software-crafter implementation "{execution-log-path}"
+        /nw:review @nw-software-crafter-reviewer implementation "{execution-log-path}"
         The review command dispatches @nw-software-crafter-reviewer (Haiku)
         to critique code quality, test quality, and Testing Theater detection.
+        Include DES orchestrator markers in the Task prompt to enable source file writes:
+        ```
+        <!-- DES-VALIDATION : required -->
+        <!-- DES-PROJECT-ID : {project-id} -->
+        <!-- DES-MODE : orchestrator -->
+        ```
      b. Review scope: ALL files modified during the feature (not just refactoring).
         Includes Testing Theater 7-pattern detection as enforcement layer.
-     c. One revision pass on rejection (orchestrator re-invokes /nw:refactor
-        on flagged files), then proceed.
+     c. One revision pass on rejection (orchestrator re-dispatches refactoring
+        on flagged files with same orchestrator markers), then proceed.
   |
   6. Phase 5 — Mutation Testing
      a. Mutation testing gate >= 80% kill rate (read ~/.claude/commands/nw/mutation-test.md)
@@ -135,7 +149,7 @@ The full DES Prompt Template (all 9 mandatory sections) is defined in `~/.claude
 ```python
 Task(
     subagent_type="{agent}",
-    max_turns=35,
+    max_turns=35,  # Adjust per step: 20 hotfix, 35 standard, 50 complex (see execute.md)
     prompt=f'''
 <!-- DES-VALIDATION : required -->
 <!-- DES-PROJECT-ID : {project_id} -->

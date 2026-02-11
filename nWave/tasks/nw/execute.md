@@ -109,8 +109,16 @@ Target: 30 turns maximum. If approaching limit, COMMIT current progress.
 ```
 
 **Configuration:**
-- max_turns: 30
 - subagent_type: extracted agent name
+- max_turns by step complexity (measured data):
+
+| Step Type | Typical Tool Calls | Recommended max_turns |
+|-----------|-------------------|----------------------|
+| Hotfix (1 file, known fix) | 10-12 | 20 |
+| Standard TDD step (2-3 files) | 25-30 | 35 |
+| Complex step (4+ files, new module) | 35-45 | 50 |
+
+Default: 35. Heuristic: `15 + (files_to_modify count * 8)`, capped at 50.
 
 ## Error Handling
 
@@ -118,6 +126,20 @@ Target: 30 turns maximum. If approaching limit, COMMIT current progress.
 - Missing roadmap/execution-log: report path not found
 - Step not in roadmap: report available step IDs
 - Dependency failure: explain blocking tasks to user
+
+## Resume vs Restart
+
+When a subagent times out:
+
+| Last Completed Phase | Action | Rationale |
+|---------------------|--------|-----------|
+| GREEN (or later) | Resume | Only COMMIT remains (~5 turns) |
+| RED_UNIT with partial GREEN | Resume | Preserves implementation progress |
+| PREPARE or RED_ACCEPTANCE | Restart | Little context worth replaying |
+
+Resume costs ~50% more tokens per tool call due to context replay (measured:
+3.7K vs 2.5K tokens/call). For <5 remaining turns, resume is efficient.
+For 15+ turns needed, restart with higher max_turns is cheaper.
 
 ## Examples
 

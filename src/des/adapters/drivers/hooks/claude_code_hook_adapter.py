@@ -258,6 +258,7 @@ def _log_protocol_anomaly(
 # L2 Extract: shared stdin parsing and error logging across all 4 handlers
 # ---------------------------------------------------------------------------
 
+
 class _StdinParseResult:
     """Result of reading and parsing JSON from stdin.
 
@@ -444,6 +445,7 @@ def _remove_des_task_signal(project_id: str = "", step_id: str = "") -> None:
 # Handler: PreToolUse (Task validation)
 # ---------------------------------------------------------------------------
 
+
 def handle_pre_tool_use() -> int:
     """Handle PreToolUse command: validate Task tool invocation.
 
@@ -523,9 +525,15 @@ def handle_pre_tool_use() -> int:
                 exit_code = 0
                 return exit_code
             else:
+                recovery = decision.recovery_suggestions or []
+                reason_with_recovery = decision.reason or "Validation failed"
+                if recovery:
+                    reason_with_recovery += "\n\nRecovery:\n" + "\n".join(
+                        f"  {i + 1}. {s}" for i, s in enumerate(recovery)
+                    )
                 response = {
                     "decision": "block",
-                    "reason": decision.reason or "Validation failed",
+                    "reason": reason_with_recovery,
                 }
                 print(json.dumps(response))
                 exit_code = decision.exit_code
@@ -556,6 +564,7 @@ def handle_pre_tool_use() -> int:
 # Transcript DES context extraction
 # ---------------------------------------------------------------------------
 
+
 def _normalize_message_content(content: object) -> str:
     """Normalize message content from string or list-of-text-blocks to plain string."""
     if isinstance(content, list):
@@ -567,7 +576,9 @@ def _normalize_message_content(content: object) -> str:
     return content if isinstance(content, str) else ""
 
 
-def _log_transcript_audit(event_type: str, transcript_path: str, **extra: object) -> None:
+def _log_transcript_audit(
+    event_type: str, transcript_path: str, **extra: object
+) -> None:
     """Log a transcript-related audit event, silently swallowing failures."""
     try:
         _create_audit_writer().log_event(
@@ -634,6 +645,7 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # DES context resolution (direct protocol vs transcript-based)
 # ---------------------------------------------------------------------------
+
 
 def _resolve_des_context(
     hook_input: dict,
@@ -736,6 +748,7 @@ Never write log entries for phases that were not actually executed."""
 # Handler: SubagentStop (step completion validation)
 # ---------------------------------------------------------------------------
 
+
 def _extract_execution_stats(hook_input: dict) -> tuple[int | None, int | None]:
     """Extract turns_used and tokens_used from hook input.
 
@@ -834,9 +847,7 @@ def handle_subagent_stop() -> int:
 
             # Read task_start_time and task_correlation_id from signal BEFORE removing it
             task_start_time = ""
-            signal_data = _read_des_task_signal(
-                project_id=project_id, step_id=step_id
-            )
+            signal_data = _read_des_task_signal(project_id=project_id, step_id=step_id)
             if signal_data:
                 task_start_time = signal_data.get("created_at", "")
                 task_correlation_id = signal_data.get("task_correlation_id")
@@ -906,6 +917,7 @@ def handle_subagent_stop() -> int:
 # Handler: PostToolUse (failure notification injection)
 # ---------------------------------------------------------------------------
 
+
 def handle_post_tool_use() -> int:
     """Handle post-tool-use command: notify parent of sub-agent failures.
 
@@ -967,10 +979,7 @@ def handle_post_tool_use() -> int:
 
             if additional_context:
                 # Determine context_type from content
-                if (
-                    "INCOMPLETE" in additional_context
-                    or "FAILED" in additional_context
-                ):
+                if "INCOMPLETE" in additional_context or "FAILED" in additional_context:
                     context_type = "failure_notification"
                 else:
                     context_type = "continuation"
@@ -1018,6 +1027,7 @@ def handle_post_tool_use() -> int:
 # ---------------------------------------------------------------------------
 # Handler-specific diagnostic loggers
 # ---------------------------------------------------------------------------
+
 
 def _log_pre_write_decision(
     hook_id: str,
@@ -1092,6 +1102,7 @@ def _log_post_tool_use_decision(
 # ---------------------------------------------------------------------------
 # Handler: PreWrite/PreEdit (session guard)
 # ---------------------------------------------------------------------------
+
 
 def handle_pre_write() -> int:
     """Handle PreToolUse for Write/Edit: guard source writes during deliver.
@@ -1203,6 +1214,7 @@ def handle_pre_write() -> int:
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """Hook adapter entry point - routes command to appropriate handler."""

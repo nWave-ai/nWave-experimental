@@ -82,6 +82,17 @@ Orchestrator detects `package.json`, selects Stryker, delegates with Stryker-spe
 - [ ] Mutation testing executed without errors
 - [ ] Per-file breakdown in mutation-report.md
 - [ ] Kill rate meets threshold (>= 80% PASS, 70-80% WARN, < 70% FAIL)
+- [ ] Source files restored to HEAD after mutation run (git checkout -- src/ tests/)
+
+## Post-Mutation Safety (mandatory)
+
+After EVERY mutation testing run (success, failure, or interruption), restore source files:
+
+    git checkout -- src/ tests/
+
+Mutation tools apply mutations directly to source files. An interrupted run can
+leave corrupted code (e.g. `is not None` → `is  None`) in the working tree.
+The agent MUST restore source files even if the mutation run errors out.
 
 ## Quality Gate
 
