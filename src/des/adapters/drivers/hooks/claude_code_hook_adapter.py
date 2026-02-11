@@ -165,6 +165,7 @@ def _log_hook_completed(
     exit_code: int,
     decision: str,
     duration_ms: float,
+    task_correlation_id: str | None = None,
 ) -> None:
     """Log a HOOK_COMPLETED diagnostic event at handler exit.
 
@@ -177,6 +178,8 @@ def _log_hook_completed(
         exit_code: Process exit code (0=allow, 1=error, 2=block).
         decision: Human-readable decision string.
         duration_ms: Wall-clock duration of the handler in milliseconds.
+        task_correlation_id: Optional UUID4 linking events across the DES task lifecycle.
+            When provided, included in event data. When None, the field is omitted.
     """
     try:
         audit_writer = _create_audit_writer()
@@ -189,6 +192,8 @@ def _log_hook_completed(
         }
         if duration_ms > _SLOW_HOOK_THRESHOLD_MS:
             data["slow_hook"] = True
+        if task_correlation_id is not None:
+            data["task_correlation_id"] = task_correlation_id
         audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_COMPLETED",
@@ -247,12 +252,17 @@ def _signal_file_for(project_id: str, step_id: str) -> Path:
     return DES_SESSION_DIR / f"des-task-active-{safe_name}"
 
 
-def _create_des_task_signal(step_id: str = "", project_id: str = "") -> None:
+def _create_des_task_signal(step_id: str = "", project_id: str = "") -> str:
     """Create DES task active signal file, namespaced by project/step.
 
     Called when PreToolUse allows a DES-validated Task.
     Indicates a DES subagent is currently running.
+
+    Returns:
+        task_correlation_id (UUID4 string) for correlating events across hooks.
+        Returns empty string if signal creation fails.
     """
+    task_correlation_id = str(uuid.uuid4())
     try:
         DES_SESSION_DIR.mkdir(parents=True, exist_ok=True)
         from datetime import datetime, timezone
@@ -262,6 +272,7 @@ def _create_des_task_signal(step_id: str = "", project_id: str = "") -> None:
                 "step_id": step_id,
                 "project_id": project_id,
                 "created_at": datetime.now(timezone.utc).isoformat(),
+                "task_correlation_id": task_correlation_id,
             }
         )
         signal_file = _signal_file_for(project_id, step_id)
@@ -270,6 +281,7 @@ def _create_des_task_signal(step_id: str = "", project_id: str = "") -> None:
         DES_TASK_ACTIVE_FILE.write_text(signal)
     except Exception:
         pass  # Signal creation must never break the hook
+    return task_correlation_id
 
 
 def _read_des_task_signal(project_id: str = "", step_id: str = "") -> dict | None:
@@ -324,6 +336,7 @@ def handle_pre_tool_use() -> int:
     hook_id = str(uuid.uuid4())
     start_ns = time.perf_counter_ns()
     exit_code = 0
+    task_correlation_id: str | None = None
     try:
         # Read JSON from stdin
         input_data = sys.stdin.read()
@@ -393,7 +406,7 @@ def handle_pre_tool_use() -> int:
                     step_id_marker = markers.step_id
                 if markers.project_id:
                     project_id_marker = markers.project_id
-                _create_des_task_signal(
+                task_correlation_id = _create_des_task_signal(
                     step_id=step_id_marker, project_id=project_id_marker
                 )
             response = {"decision": "allow"}
@@ -436,6 +449,7 @@ def handle_pre_tool_use() -> int:
             exit_code=exit_code,
             decision=decision_str,
             duration_ms=duration_ms,
+            task_correlation_id=task_correlation_id,
         )
 
 
@@ -639,6 +653,7 @@ def handle_subagent_stop() -> int:
     hook_id = str(uuid.uuid4())
     start_ns = time.perf_counter_ns()
     exit_code = 0
+    task_correlation_id: str | None = None
     try:
         input_data = sys.stdin.read()
 
@@ -700,11 +715,12 @@ def handle_subagent_stop() -> int:
             return exit_code
         execution_log_path, project_id, step_id = result
 
-        # Read task_start_time from signal BEFORE removing it
+        # Read task_start_time and task_correlation_id from signal BEFORE removing it
         task_start_time = ""
         signal_data = _read_des_task_signal(project_id=project_id, step_id=step_id)
         if signal_data:
             task_start_time = signal_data.get("created_at", "")
+            task_correlation_id = signal_data.get("task_correlation_id")
 
         # Clean up DES task signal (subagent finished)
         _remove_des_task_signal(project_id=project_id, step_id=step_id)
@@ -768,6 +784,7 @@ def handle_subagent_stop() -> int:
             exit_code=exit_code,
             decision=decision_str,
             duration_ms=duration_ms,
+            task_correlation_id=task_correlation_id,
         )
 
 
