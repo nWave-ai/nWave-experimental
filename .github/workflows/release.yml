@@ -542,7 +542,16 @@ jobs:
           python -m build --sdist
 
       - name: Publish to TestPyPI
-        run: twine upload --repository testpypi dist/*.whl dist/*.tar.gz
+        run: |
+          twine upload --repository testpypi dist/*.whl dist/*.tar.gz || {
+            rc=$?
+            # 400 = version already exists on TestPyPI, not a real failure
+            if twine upload --repository testpypi --verbose dist/*.whl dist/*.tar.gz 2>&1 | grep -q "already exists"; then
+              echo "::warning::Version already exists on TestPyPI (skipping)"
+            else
+              exit $rc
+            fi
+          }
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
