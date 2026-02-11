@@ -71,9 +71,31 @@ For performance roadmaps, include measurement context inline so the agent can va
 - Invalid agent: report valid agents and stop
 - Missing goal: show usage syntax and stop
 
-## Post-Generation Validation
+## CLI Tools
 
-After generating roadmap.yaml, validate structure with:
+### Scaffold a new roadmap
+
+Generate a skeleton roadmap.yaml with TODO placeholders:
+
+```bash
+# Minimal: 1 phase, 1 step
+python -m des.cli.roadmap init --project-id my-project --goal "Migrate to OAuth2"
+
+# Custom phases and steps per phase
+python -m des.cli.roadmap init --project-id my-project --goal "Migrate to OAuth2" \
+  --phases 3 --steps "01:3,02:2,03:1" --output docs/feature/my-project/roadmap.yaml
+```
+
+Options:
+- `--project-id` (required): Project identifier
+- `--goal`: Goal description included as context
+- `--phases N`: Number of phases (default: 1, inferred from --steps if provided)
+- `--steps "01:3,02:2"`: Steps per phase (format: PHASE_ID:COUNT)
+- `--output FILE`: Write to file instead of stdout
+
+### Validate an existing roadmap
+
+Check structure against the roadmap schema before execution:
 
 ```bash
 python -m des.cli.roadmap validate docs/feature/{project-id}/roadmap.yaml
@@ -84,10 +106,12 @@ This catches format errors (missing fields, invalid IDs, count mismatches) befor
 ## Workflow Context
 
 ```bash
-/nw:roadmap @agent "goal"           # 1. Plan
-# validate: python -m des.cli.roadmap validate docs/feature/{project-id}/roadmap.yaml
-/nw:execute @agent "project" "01-01" # 2. Execute steps
-/nw:finalize @agent "project"        # 3. Finalize
+# 0. Scaffold (optional, if not using agent-generated roadmap)
+python -m des.cli.roadmap init --project-id my-project --goal "Goal" --output docs/feature/my-project/roadmap.yaml
+/nw:roadmap @agent "goal"           # 1. Plan (agent fills in the details)
+python -m des.cli.roadmap validate docs/feature/my-project/roadmap.yaml  # 2. Validate
+/nw:execute @agent "project" "01-01" # 3. Execute steps
+/nw:finalize @agent "project"        # 4. Finalize
 ```
 
 ## Examples
