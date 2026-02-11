@@ -1,147 +1,84 @@
-<!-- version: 1.4.0 -->
-
 # nWave Scripts Directory
 
-Organized scripts for nWave/nWave framework operations, validation, and installation.
+Scripts for nWave framework operations, validation, and installation.
 
 ## Directory Structure
 
 ```
 scripts/
-├── validation/          # Python-based validators
-│   ├── validate_agents.py          # Agent compliance validation
-│   ├── validate_commands.py        # Command template validation
-│   ├── validate_steps.py           # Step file validation
-│   ├── validate_formatter_env.py   # Dev environment checks
-│   ├── validate_readme_index.py    # Documentation sync validation
-│   └── coordinator.py              # Orchestrates all validators
+├── hooks/               # Pre-commit and post-commit hooks
+│   ├── prevent_shell_scripts.py       # Block shell/PowerShell/batch scripts
+│   ├── check_formatter_available.py   # Detect missing formatters
+│   ├── check_documentation_freshness.py # Validate docs aren't stale
+│   ├── detect_conflicts.py            # Conflicting file detection
+│   ├── validate_docs.py               # Documentation version validation
+│   ├── validate_tests.py              # Pytest wrapper
+│   ├── nwave-tdd-validator.py         # TDD phase completion gate
+│   ├── nwave-step-structure-validator.py # Step file structure validation
+│   ├── nwave-bypass-detector.py       # Commit bypass audit logger
+│   ├── commit-msg                     # Commit message hook (CI)
+│   └── commit_msg.py                  # Commit message validation
 │
-├── framework/           # nWave framework operations
-│   ├── release_package.py          # Release packaging orchestrator
-│   ├── release_packager.py         # Core packaging system
-│   ├── release_validation.py       # Release error detection
-│   └── validate_tdd_phases_ci.py   # CI/CD TDD validation
+├── validation/          # CI/CD validators
+│   ├── validate_yaml_files.py         # YAML syntax validation
+│   └── validate_source_frontmatter.py # Source frontmatter validation
 │
-├── hooks/               # Pre-commit hooks
-│   ├── validate-structure.py       # Structure validation coordinator
-│   ├── version-bump.sh             # Auto version increment
-│   ├── validate-tests.sh           # Pytest wrapper
-│   ├── validate-docs.sh            # Doc version validation
-│   └── detect-conflicts.sh         # Agent/command coupling detection
+├── framework/           # Framework operations
+│   ├── create_release_packages.py     # Release package creator
+│   ├── release_packager.py            # Core packaging system
+│   ├── release_validation.py          # Release error detection
+│   ├── sync_agent_names.py            # Agent name synchronization
+│   └── validate_tdd_phases_ci.py      # CI TDD phase validation
 │
-├── install/             # Installation tools (Python cross-platform + legacy shell)
-│   ├── install_nwave.py          # Framework installation (RECOMMENDED)
-│   ├── uninstall_nwave.py        # Framework removal (RECOMMENDED)
-│   ├── update_nwave.py           # Update pipeline (RECOMMENDED)
-│   ├── enhanced_backup_system.py    # Backup management (RECOMMENDED)
-│   ├── install_utils.py             # Shared utilities module
-│   ├── install-nwave.sh          # Legacy shell version
-│   ├── uninstall-nwave.sh        # Legacy shell version
-│   ├── update-nwave.sh           # Legacy shell version
-│   ├── enhanced-backup-system.sh    # Legacy shell version
-│   └── README.md                    # Detailed installation docs
+├── install/             # Installation system (cross-platform)
+│   ├── install_nwave.py               # Main installer
+│   ├── uninstall_nwave.py             # Framework removal
+│   ├── verify_nwave.py                # Installation verification
+│   ├── install_des_hooks.py           # DES hook installer
+│   ├── plugins/                       # Modular installation plugins
+│   └── README.md                      # Detailed installation docs
 │
-├── archive/             # Historical/unused scripts
-│   ├── run-adversarial-tests.py    # LLM-based testing (archived)
-│   ├── execute-adversarial-tests.py # LLM-based testing (archived)
-│   ├── agent-catalog-conflict-detection.sh # Outdated design (archived)
-│   ├── validate-agent-compliance-v2.py # Merged into v1 (archived)
-│   └── migrate_step_files.py       # One-time migration (archived)
+├── update/              # Update system
+│   ├── update_orchestrator.py         # Update workflow coordinator
+│   └── backup_manager.py             # Backup creation adapter
 │
-└── build-ide-bundle.sh  # IDE bundle build script
+├── mutation/            # Mutation testing
+│   └── generate_scoped_configs.py     # Scoped Cosmic Ray configs
+│
+├── local_ci.py                        # Local CI/CD runner
+├── testpypi_validation.py             # TestPyPI release validation
+├── validate_step_file.py              # Step file schema validator
+├── validate_steps_complete.py         # Finalization completeness gate
+└── install_nwave_target_hooks.py      # Target project hook installer
 ```
 
 ## Usage
 
-### Validation
-
-Run all validators:
-```bash
-python scripts/validation/coordinator.py
-```
-
-Run fast validators only:
-```bash
-python scripts/validation/coordinator.py --fast
-```
-
-Run individual validators:
-```bash
-python scripts/validation/validate_agents.py
-python scripts/validation/validate_commands.py
-python scripts/validation/validate_steps.py
-```
-
-### Framework Operations
-
-Package a release:
-```bash
-python scripts/framework/release_package.py
-```
-
-Validate TDD phases in CI:
-```bash
-python scripts/framework/validate_tdd_phases_ci.py
-```
-
 ### Pre-Commit Hooks
 
-Pre-commit hooks are automatically executed via `.pre-commit-config.yaml`.
-
-Manual execution:
+Hooks run automatically via `.pre-commit-config.yaml`:
 ```bash
 pre-commit run --all-files
 ```
 
 ### Installation
 
-Install nWave framework (Python - cross-platform):
 ```bash
 python scripts/install/install_nwave.py
-```
-
-Update framework:
-```bash
-python scripts/install/update_nwave.py --backup
-```
-
-Uninstall framework:
-```bash
 python scripts/install/uninstall_nwave.py --backup
 ```
 
-Legacy shell versions (Unix/Mac only):
+See `scripts/install/README.md` for details.
+
+### Framework Operations
+
 ```bash
-bash scripts/install/install-nwave.sh  # Legacy
-bash scripts/install/update-nwave.sh   # Legacy
-bash scripts/install/uninstall-nwave.sh # Legacy
+python scripts/framework/validate_tdd_phases_ci.py    # CI TDD validation
+python scripts/framework/create_release_packages.py    # Build release
 ```
 
-See `scripts/install/README.md` for detailed installation documentation.
+### Local CI
 
-## Integration
-
-All validators are integrated as pre-commit hooks. See `.pre-commit-config.yaml` for configuration.
-
-## Development
-
-When adding new validators:
-1. Create validator in `scripts/validation/`
-2. Add to `coordinator.py`
-3. Update `scripts/hooks/validate-structure.py` if needed
-4. Add pre-commit hook entry in `.pre-commit-config.yaml`
-
-## Cross-Platform Support
-
-- **Validators**: Python 3.7+ (Windows, Mac, Linux)
-- **Installation**: Python 3.7+ (Windows, Mac, Linux) - **RECOMMENDED**
-  - Legacy shell scripts available for Unix/Mac (not maintained)
-- **Hooks**: Mixed shell + Python (Python preferred)
-
-## Testing
-
-Validators have tests in `tests/`:
-- `tests/test_release_packaging.py`
-- `tests/test_release_validation.py`
-- `tests/test_step_file_format.py`
-- `tests/acceptance/test_validator_acceptance.py`
+```bash
+python scripts/local_ci.py
+```

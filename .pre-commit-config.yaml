@@ -18,17 +18,6 @@ repos:
         stages: [pre-commit]
         always_run: true
 
-      # Phase 0: Auto-increment version (DEPRECATED - replaced by python-semantic-release)
-      # PSR now handles version bumping in CI/CD Stage 5. See pyproject.toml [tool.semantic_release].
-      # - id: nwave-version-bump
-      #   name: nWave Version Auto-Increment
-      #   entry: python3 scripts/hooks/version_bump.py
-      #   language: system
-      #   files: ^(nWave/|tools/)
-      #   exclude: version\.md$
-      #   pass_filenames: false
-      #   stages: [pre-commit]
-
       # Phase 1: Run pytest test suite (pre-commit to block failing tests)
       - id: pytest-validation
         name: Pytest Test Validation
