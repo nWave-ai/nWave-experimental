@@ -22,6 +22,8 @@ Protocol:
   - Fail-closed: Any error causes exit 1 (BLOCK)
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
@@ -151,6 +153,9 @@ def _log_hook_invoked(
 
 # Threshold in milliseconds above which a hook is considered slow
 _SLOW_HOOK_THRESHOLD_MS = 5000.0
+
+# Maximum characters to capture from stderr in HOOK_ERROR events
+_STDERR_CAPTURE_MAX_CHARS = 1000
 
 _EXIT_CODE_TO_DECISION = {
     0: "allow",
@@ -337,102 +342,110 @@ def handle_pre_tool_use() -> int:
     start_ns = time.perf_counter_ns()
     exit_code = 0
     task_correlation_id: str | None = None
+    stderr_buffer = io.StringIO()
     try:
-        # Read JSON from stdin
-        input_data = sys.stdin.read()
+        with contextlib.redirect_stderr(stderr_buffer):
+            # Read JSON from stdin
+            input_data = sys.stdin.read()
 
-        # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
-        if not input_data or not input_data.strip():
-            _log_protocol_anomaly(
-                handler="pre_tool_use",
-                anomaly_type="empty_stdin",
-                detail="No input data received on stdin",
-                fallback_action="allow",
-            )
-            print(json.dumps({"decision": "allow"}))
-            return 0
-
-        # Parse JSON
-        try:
-            hook_input = json.loads(input_data)
-        except json.JSONDecodeError as e:
-            _log_protocol_anomaly(
-                handler="pre_tool_use",
-                anomaly_type="json_parse_error",
-                detail=f"Invalid JSON: {e!s}",
-                fallback_action="error",
-            )
-            response = {"status": "error", "reason": f"Invalid JSON: {e!s}"}
-            print(json.dumps(response))
-            exit_code = 1
-            return exit_code
-
-        # Diagnostic: confirm hook was invoked
-        tool_input = hook_input.get("tool_input", {})
-        _log_hook_invoked(
-            "pre_tool_use",
-            {
-                "subagent_type": tool_input.get("subagent_type"),
-                "has_max_turns": tool_input.get("max_turns") is not None,
-            },
-            hook_id=hook_id,
-        )
-
-        # Extract protocol fields
-        # Claude Code sends: {"tool_name": "Task", "tool_input": {...}, ...}
-        prompt = tool_input.get("prompt", "")
-        max_turns = tool_input.get("max_turns")
-
-        # Delegate to application service
-        service = create_pre_tool_use_service()
-        decision = service.validate(
-            PreToolUseInput(
-                prompt=prompt,
-                max_turns=max_turns,
-                subagent_type=tool_input.get("subagent_type"),
-            ),
-            hook_id=hook_id,
-        )
-
-        # Translate HookDecision to protocol response
-        if decision.action == "allow":
-            # Create DES task signal if this is a DES-validated task
-            if "DES-VALIDATION" in prompt:
-                # Extract step-id and project-id from DES markers
-                step_id_marker = ""
-                project_id_marker = ""
-                parser = DesMarkerParser()
-                markers = parser.parse(prompt)
-                if markers.step_id:
-                    step_id_marker = markers.step_id
-                if markers.project_id:
-                    project_id_marker = markers.project_id
-                task_correlation_id = _create_des_task_signal(
-                    step_id=step_id_marker, project_id=project_id_marker
+            # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
+            if not input_data or not input_data.strip():
+                _log_protocol_anomaly(
+                    handler="pre_tool_use",
+                    anomaly_type="empty_stdin",
+                    detail="No input data received on stdin",
+                    fallback_action="allow",
                 )
-            response = {"decision": "allow"}
-            print(json.dumps(response))
-            exit_code = 0
-            return exit_code
-        else:
-            response = {
-                "decision": "block",
-                "reason": decision.reason or "Validation failed",
-            }
-            print(json.dumps(response))
-            exit_code = decision.exit_code
-            return exit_code
+                print(json.dumps({"decision": "allow"}))
+                return 0
+
+            # Parse JSON
+            try:
+                hook_input = json.loads(input_data)
+            except json.JSONDecodeError as e:
+                _log_protocol_anomaly(
+                    handler="pre_tool_use",
+                    anomaly_type="json_parse_error",
+                    detail=f"Invalid JSON: {e!s}",
+                    fallback_action="error",
+                )
+                response = {"status": "error", "reason": f"Invalid JSON: {e!s}"}
+                print(json.dumps(response))
+                exit_code = 1
+                return exit_code
+
+            # Diagnostic: confirm hook was invoked
+            tool_input = hook_input.get("tool_input", {})
+            _log_hook_invoked(
+                "pre_tool_use",
+                {
+                    "subagent_type": tool_input.get("subagent_type"),
+                    "has_max_turns": tool_input.get("max_turns") is not None,
+                },
+                hook_id=hook_id,
+            )
+
+            # Extract protocol fields
+            # Claude Code sends: {"tool_name": "Task", "tool_input": {...}, ...}
+            prompt = tool_input.get("prompt", "")
+            max_turns = tool_input.get("max_turns")
+
+            # Delegate to application service
+            service = create_pre_tool_use_service()
+            decision = service.validate(
+                PreToolUseInput(
+                    prompt=prompt,
+                    max_turns=max_turns,
+                    subagent_type=tool_input.get("subagent_type"),
+                ),
+                hook_id=hook_id,
+            )
+
+            # Translate HookDecision to protocol response
+            if decision.action == "allow":
+                # Create DES task signal if this is a DES-validated task
+                if "DES-VALIDATION" in prompt:
+                    # Extract step-id and project-id from DES markers
+                    step_id_marker = ""
+                    project_id_marker = ""
+                    parser = DesMarkerParser()
+                    markers = parser.parse(prompt)
+                    if markers.step_id:
+                        step_id_marker = markers.step_id
+                    if markers.project_id:
+                        project_id_marker = markers.project_id
+                    task_correlation_id = _create_des_task_signal(
+                        step_id=step_id_marker, project_id=project_id_marker
+                    )
+                response = {"decision": "allow"}
+                print(json.dumps(response))
+                exit_code = 0
+                return exit_code
+            else:
+                response = {
+                    "decision": "block",
+                    "reason": decision.reason or "Validation failed",
+                }
+                print(json.dumps(response))
+                exit_code = decision.exit_code
+                return exit_code
 
     except Exception as e:
         # Fail-closed: any error blocks execution
         # Log error to audit trail so it is visible in compliance logs
+        stderr_capture = stderr_buffer.getvalue()[:_STDERR_CAPTURE_MAX_CHARS]
         try:
             audit_writer = _create_audit_writer()
             audit_writer.log_event(
                 AuditEvent(
                     event_type="HOOK_ERROR",
                     timestamp=SystemTimeProvider().now_utc().isoformat(),
-                    data={"error": str(e), "handler": "pre_tool_use"},
+                    data={
+                        "error": str(e),
+                        "handler": "pre_tool_use",
+                        "error_type": type(e).__name__,
+                        "stderr_capture": stderr_capture,
+                    },
                 )
             )
         except Exception:
@@ -655,121 +668,132 @@ def handle_subagent_stop() -> int:
     start_ns = time.perf_counter_ns()
     exit_code = 0
     task_correlation_id: str | None = None
+    stderr_buffer = io.StringIO()
     try:
-        input_data = sys.stdin.read()
+        with contextlib.redirect_stderr(stderr_buffer):
+            input_data = sys.stdin.read()
 
-        # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
-        if not input_data or not input_data.strip():
-            _log_protocol_anomaly(
-                handler="subagent_stop",
-                anomaly_type="empty_stdin",
-                detail="No input data received on stdin",
-                fallback_action="allow",
-            )
-            print(json.dumps({"decision": "allow"}))
-            return 0
+            # Resilience 9a: empty stdin → allow passthrough (not fail-closed)
+            if not input_data or not input_data.strip():
+                _log_protocol_anomaly(
+                    handler="subagent_stop",
+                    anomaly_type="empty_stdin",
+                    detail="No input data received on stdin",
+                    fallback_action="allow",
+                )
+                print(json.dumps({"decision": "allow"}))
+                return 0
 
-        try:
-            hook_input = json.loads(input_data)
-        except json.JSONDecodeError as e:
-            _log_protocol_anomaly(
-                handler="subagent_stop",
-                anomaly_type="json_parse_error",
-                detail=f"Invalid JSON: {e!s}",
-                fallback_action="error",
-            )
-            response = {"status": "error", "reason": f"Invalid JSON: {e!s}"}
-            print(json.dumps(response))
-            exit_code = 1
-            return exit_code
+            try:
+                hook_input = json.loads(input_data)
+            except json.JSONDecodeError as e:
+                _log_protocol_anomaly(
+                    handler="subagent_stop",
+                    anomaly_type="json_parse_error",
+                    detail=f"Invalid JSON: {e!s}",
+                    fallback_action="error",
+                )
+                response = {"status": "error", "reason": f"Invalid JSON: {e!s}"}
+                print(json.dumps(response))
+                exit_code = 1
+                return exit_code
 
-        # Diagnostic: confirm hook was invoked with agent details
-        _log_hook_invoked(
-            "subagent_stop",
-            {
-                "agent_type": hook_input.get("agent_type"),
-                "agent_id": hook_input.get("agent_id"),
-                "has_transcript": hook_input.get("agent_transcript_path") is not None,
-            },
-            hook_id=hook_id,
-        )
-
-        # Resolve DES context from either protocol
-        result = _resolve_des_context(hook_input)
-        if result[0] is None:
-            # Error or non-DES passthrough — log it for diagnostics
-            _, response, exit_code = result
+            # Diagnostic: confirm hook was invoked with agent details
             _log_hook_invoked(
-                "subagent_stop_passthrough",
+                "subagent_stop",
                 {
-                    "reason": "non_des_or_error",
                     "agent_type": hook_input.get("agent_type"),
                     "agent_id": hook_input.get("agent_id"),
                     "has_transcript": hook_input.get("agent_transcript_path")
                     is not None,
-                    "transcript_path": hook_input.get("agent_transcript_path"),
-                    "exit_code": exit_code,
                 },
                 hook_id=hook_id,
             )
+
+            # Resolve DES context from either protocol
+            result = _resolve_des_context(hook_input)
+            if result[0] is None:
+                # Error or non-DES passthrough — log it for diagnostics
+                _, response, exit_code = result
+                _log_hook_invoked(
+                    "subagent_stop_passthrough",
+                    {
+                        "reason": "non_des_or_error",
+                        "agent_type": hook_input.get("agent_type"),
+                        "agent_id": hook_input.get("agent_id"),
+                        "has_transcript": hook_input.get("agent_transcript_path")
+                        is not None,
+                        "transcript_path": hook_input.get("agent_transcript_path"),
+                        "exit_code": exit_code,
+                    },
+                    hook_id=hook_id,
+                )
+                print(json.dumps(response))
+                return exit_code
+            execution_log_path, project_id, step_id = result
+
+            # Read task_start_time and task_correlation_id from signal BEFORE removing it
+            task_start_time = ""
+            signal_data = _read_des_task_signal(
+                project_id=project_id, step_id=step_id
+            )
+            if signal_data:
+                task_start_time = signal_data.get("created_at", "")
+                task_correlation_id = signal_data.get("task_correlation_id")
+
+            # Clean up DES task signal (subagent finished)
+            _remove_des_task_signal(project_id=project_id, step_id=step_id)
+
+            # Delegate to application service
+            from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+
+            stop_hook_active = bool(hook_input.get("stop_hook_active", False))
+            # Pass cwd for commit verification from both protocols.
+            # Claude Code sends cwd in hook input JSON.
+            cwd = hook_input.get("cwd", "")
+            service = create_subagent_stop_service()
+            decision = service.validate(
+                SubagentStopContext(
+                    execution_log_path=execution_log_path,
+                    project_id=project_id,
+                    step_id=step_id,
+                    stop_hook_active=stop_hook_active,
+                    cwd=cwd,
+                    task_start_time=task_start_time,
+                ),
+                hook_id=hook_id,
+            )
+
+            # Translate HookDecision to protocol response
+            if decision.action == "allow":
+                print(json.dumps({"decision": "allow"}))
+                exit_code = 0
+                return exit_code
+
+            response = _build_block_notification(
+                project_id, step_id, execution_log_path, decision
+            )
             print(json.dumps(response))
-            return exit_code
-        execution_log_path, project_id, step_id = result
-
-        # Read task_start_time and task_correlation_id from signal BEFORE removing it
-        task_start_time = ""
-        signal_data = _read_des_task_signal(project_id=project_id, step_id=step_id)
-        if signal_data:
-            task_start_time = signal_data.get("created_at", "")
-            task_correlation_id = signal_data.get("task_correlation_id")
-
-        # Clean up DES task signal (subagent finished)
-        _remove_des_task_signal(project_id=project_id, step_id=step_id)
-
-        # Delegate to application service
-        from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
-
-        stop_hook_active = bool(hook_input.get("stop_hook_active", False))
-        # Pass cwd for commit verification from both protocols.
-        # Claude Code sends cwd in hook input JSON.
-        cwd = hook_input.get("cwd", "")
-        service = create_subagent_stop_service()
-        decision = service.validate(
-            SubagentStopContext(
-                execution_log_path=execution_log_path,
-                project_id=project_id,
-                step_id=step_id,
-                stop_hook_active=stop_hook_active,
-                cwd=cwd,
-                task_start_time=task_start_time,
-            ),
-            hook_id=hook_id,
-        )
-
-        # Translate HookDecision to protocol response
-        if decision.action == "allow":
-            print(json.dumps({"decision": "allow"}))
+            # Exit 0 so Claude Code processes the JSON (exit 2 ignores stdout)
             exit_code = 0
             return exit_code
-
-        response = _build_block_notification(
-            project_id, step_id, execution_log_path, decision
-        )
-        print(json.dumps(response))
-        # Exit 0 so Claude Code processes the JSON (exit 2 ignores stdout)
-        exit_code = 0
-        return exit_code
 
     except Exception as e:
         # Fail-closed: any error blocks execution via stderr + exit 1
         # Log error to audit trail so it is visible in compliance logs
+        stderr_capture = stderr_buffer.getvalue()[:_STDERR_CAPTURE_MAX_CHARS]
         try:
             audit_writer = _create_audit_writer()
             audit_writer.log_event(
                 AuditEvent(
                     event_type="HOOK_ERROR",
                     timestamp=SystemTimeProvider().now_utc().isoformat(),
-                    data={"error": str(e), "handler": "subagent_stop"},
+                    data={
+                        "error": str(e),
+                        "handler": "subagent_stop",
+                        "error_type": type(e).__name__,
+                        "stderr_capture": stderr_capture,
+                    },
                 )
             )
         except Exception:
@@ -805,99 +829,110 @@ def handle_post_tool_use() -> int:
     hook_id = str(uuid.uuid4())
     start_ns = time.perf_counter_ns()
     exit_code = 0
+    stderr_buffer = io.StringIO()
     try:
-        # Read JSON from stdin
-        input_data = sys.stdin.read()
+        with contextlib.redirect_stderr(stderr_buffer):
+            # Read JSON from stdin
+            input_data = sys.stdin.read()
 
-        if not input_data or not input_data.strip():
-            # Non-DES or missing input: passthrough
-            _log_protocol_anomaly(
-                handler="post_tool_use",
-                anomaly_type="empty_stdin",
-                detail="No input data received on stdin",
-                fallback_action="allow",
-            )
-            print(json.dumps({}))
-            return 0
+            if not input_data or not input_data.strip():
+                # Non-DES or missing input: passthrough
+                _log_protocol_anomaly(
+                    handler="post_tool_use",
+                    anomaly_type="empty_stdin",
+                    detail="No input data received on stdin",
+                    fallback_action="allow",
+                )
+                print(json.dumps({}))
+                return 0
 
-        # Parse JSON (ignore parse errors gracefully)
-        try:
-            hook_input = json.loads(input_data)
-        except json.JSONDecodeError as e:
-            _log_protocol_anomaly(
-                handler="post_tool_use",
-                anomaly_type="json_parse_error",
-                detail=f"Invalid JSON: {e!s}",
-                fallback_action="allow",
-            )
-            print(json.dumps({}))
-            return 0
+            # Parse JSON (ignore parse errors gracefully)
+            try:
+                hook_input = json.loads(input_data)
+            except json.JSONDecodeError as e:
+                _log_protocol_anomaly(
+                    handler="post_tool_use",
+                    anomaly_type="json_parse_error",
+                    detail=f"Invalid JSON: {e!s}",
+                    fallback_action="allow",
+                )
+                print(json.dumps({}))
+                return 0
 
-        # Diagnostic: confirm hook was invoked
-        _log_hook_invoked(
-            "post_tool_use",
-            {
-                "tool_name": hook_input.get("tool_name"),
-            },
-            hook_id=hook_id,
-        )
-
-        # Check if the just-completed Task was a DES task (had DES markers)
-        tool_input = hook_input.get("tool_input", {})
-        prompt = tool_input.get("prompt", "")
-        is_des_task = "DES-VALIDATION" in prompt
-
-        # Delegate to PostToolUseService
-        from des.adapters.driven.logging.jsonl_audit_log_reader import (
-            JsonlAuditLogReader,
-        )
-        from des.application.post_tool_use_service import PostToolUseService
-
-        reader = JsonlAuditLogReader()
-        service = PostToolUseService(audit_reader=reader)
-        additional_context = service.check_completion_status(
-            is_des_task=is_des_task,
-        )
-
-        if additional_context:
-            # Determine context_type from content
-            if "INCOMPLETE" in additional_context or "FAILED" in additional_context:
-                context_type = "failure_notification"
-            else:
-                context_type = "continuation"
-            _log_post_tool_use_decision(
+            # Diagnostic: confirm hook was invoked
+            _log_hook_invoked(
+                "post_tool_use",
+                {
+                    "tool_name": hook_input.get("tool_name"),
+                },
                 hook_id=hook_id,
-                event_type="HOOK_POST_TOOL_USE_INJECTED",
-                is_des_task=is_des_task,
-                context_type=context_type,
             )
-            response = {"additionalContext": additional_context}
-        else:
-            if is_des_task:
-                reason = "no_completion_status"
-            else:
-                reason = "non_des_task"
-            _log_post_tool_use_decision(
-                hook_id=hook_id,
-                event_type="HOOK_POST_TOOL_USE_PASSTHROUGH",
-                is_des_task=is_des_task,
-                reason=reason,
-            )
-            response = {}
 
-        print(json.dumps(response))
-        return 0
+            # Check if the just-completed Task was a DES task (had DES markers)
+            tool_input = hook_input.get("tool_input", {})
+            prompt = tool_input.get("prompt", "")
+            is_des_task = "DES-VALIDATION" in prompt
+
+            # Delegate to PostToolUseService
+            from des.adapters.driven.logging.jsonl_audit_log_reader import (
+                JsonlAuditLogReader,
+            )
+            from des.application.post_tool_use_service import PostToolUseService
+
+            reader = JsonlAuditLogReader()
+            service = PostToolUseService(audit_reader=reader)
+            additional_context = service.check_completion_status(
+                is_des_task=is_des_task,
+            )
+
+            if additional_context:
+                # Determine context_type from content
+                if (
+                    "INCOMPLETE" in additional_context
+                    or "FAILED" in additional_context
+                ):
+                    context_type = "failure_notification"
+                else:
+                    context_type = "continuation"
+                _log_post_tool_use_decision(
+                    hook_id=hook_id,
+                    event_type="HOOK_POST_TOOL_USE_INJECTED",
+                    is_des_task=is_des_task,
+                    context_type=context_type,
+                )
+                response = {"additionalContext": additional_context}
+            else:
+                if is_des_task:
+                    reason = "no_completion_status"
+                else:
+                    reason = "non_des_task"
+                _log_post_tool_use_decision(
+                    hook_id=hook_id,
+                    event_type="HOOK_POST_TOOL_USE_PASSTHROUGH",
+                    is_des_task=is_des_task,
+                    reason=reason,
+                )
+                response = {}
+
+            print(json.dumps(response))
+            return 0
 
     except Exception as e:
         # PostToolUse should never block - fail open
         # Log error to audit trail so it is visible in compliance logs
+        stderr_capture = stderr_buffer.getvalue()[:_STDERR_CAPTURE_MAX_CHARS]
         try:
             audit_writer = _create_audit_writer()
             audit_writer.log_event(
                 AuditEvent(
                     event_type="HOOK_ERROR",
                     timestamp=SystemTimeProvider().now_utc().isoformat(),
-                    data={"error": str(e), "handler": "post_tool_use"},
+                    data={
+                        "error": str(e),
+                        "handler": "post_tool_use",
+                        "error_type": type(e).__name__,
+                        "stderr_capture": stderr_capture,
+                    },
                 )
             )
         except Exception:
@@ -999,98 +1034,107 @@ def handle_pre_write() -> int:
     hook_id = str(uuid.uuid4())
     start_ns = time.perf_counter_ns()
     exit_code = 0
+    stderr_buffer = io.StringIO()
     try:
-        input_data = sys.stdin.read()
+        with contextlib.redirect_stderr(stderr_buffer):
+            input_data = sys.stdin.read()
 
-        if not input_data or not input_data.strip():
-            # No input = allow (fail-open for Write/Edit)
-            _log_protocol_anomaly(
-                handler="pre_write",
-                anomaly_type="empty_stdin",
-                detail="No input data received on stdin",
-                fallback_action="allow",
-            )
-            print(json.dumps({"decision": "allow"}))
-            return 0
+            if not input_data or not input_data.strip():
+                # No input = allow (fail-open for Write/Edit)
+                _log_protocol_anomaly(
+                    handler="pre_write",
+                    anomaly_type="empty_stdin",
+                    detail="No input data received on stdin",
+                    fallback_action="allow",
+                )
+                print(json.dumps({"decision": "allow"}))
+                return 0
 
-        try:
-            hook_input = json.loads(input_data)
-        except json.JSONDecodeError as e:
-            _log_protocol_anomaly(
-                handler="pre_write",
-                anomaly_type="json_parse_error",
-                detail=f"Invalid JSON: {e!s}",
-                fallback_action="allow",
-            )
-            print(json.dumps({"decision": "allow"}))
-            return 0
+            try:
+                hook_input = json.loads(input_data)
+            except json.JSONDecodeError as e:
+                _log_protocol_anomaly(
+                    handler="pre_write",
+                    anomaly_type="json_parse_error",
+                    detail=f"Invalid JSON: {e!s}",
+                    fallback_action="allow",
+                )
+                print(json.dumps({"decision": "allow"}))
+                return 0
 
-        # Extract file path from tool_input
-        tool_input = hook_input.get("tool_input", {})
-        file_path = tool_input.get("file_path", "")
+            # Extract file path from tool_input
+            tool_input = hook_input.get("tool_input", {})
+            file_path = tool_input.get("file_path", "")
 
-        # Check session and signal state
-        session_active = DES_DELIVER_SESSION_FILE.exists()
-        des_task_active = DES_TASK_ACTIVE_FILE.exists()
+            # Check session and signal state
+            session_active = DES_DELIVER_SESSION_FILE.exists()
+            des_task_active = DES_TASK_ACTIVE_FILE.exists()
 
-        # Diagnostic: confirm hook was invoked with full context
-        _log_hook_invoked(
-            "pre_write",
-            {
-                "file_path": file_path,
-                "session_active": session_active,
-                "des_task_active": des_task_active,
-            },
-            hook_id=hook_id,
-        )
-
-        policy = SessionGuardPolicy()
-        result = policy.check(
-            file_path=file_path,
-            session_active=session_active,
-            des_task_active=des_task_active,
-        )
-
-        if result.blocked:
-            _log_pre_write_decision(
+            # Diagnostic: confirm hook was invoked with full context
+            _log_hook_invoked(
+                "pre_write",
+                {
+                    "file_path": file_path,
+                    "session_active": session_active,
+                    "des_task_active": des_task_active,
+                },
                 hook_id=hook_id,
-                event_type="HOOK_PRE_WRITE_BLOCKED",
-                file_path=file_path,
-                reason=result.reason or "Source write blocked during deliver",
             )
-            response = {
-                "decision": "block",
-                "reason": result.reason or "Source write blocked during deliver",
-            }
-            print(json.dumps(response))
-            exit_code = 2
-            return exit_code
-        else:
-            # Determine allow reason for diagnostics
-            if not session_active:
-                allow_reason = "no_session"
+
+            policy = SessionGuardPolicy()
+            result = policy.check(
+                file_path=file_path,
+                session_active=session_active,
+                des_task_active=des_task_active,
+            )
+
+            if result.blocked:
+                _log_pre_write_decision(
+                    hook_id=hook_id,
+                    event_type="HOOK_PRE_WRITE_BLOCKED",
+                    file_path=file_path,
+                    reason=result.reason or "Source write blocked during deliver",
+                )
+                response = {
+                    "decision": "block",
+                    "reason": result.reason
+                    or "Source write blocked during deliver",
+                }
+                print(json.dumps(response))
+                exit_code = 2
+                return exit_code
             else:
-                allow_reason = "policy_allowed"
-            _log_pre_write_decision(
-                hook_id=hook_id,
-                event_type="HOOK_PRE_WRITE_ALLOWED",
-                file_path=file_path,
-                reason=allow_reason,
-            )
-            print(json.dumps({"decision": "allow"}))
-            exit_code = 0
-            return exit_code
+                # Determine allow reason for diagnostics
+                if not session_active:
+                    allow_reason = "no_session"
+                else:
+                    allow_reason = "policy_allowed"
+                _log_pre_write_decision(
+                    hook_id=hook_id,
+                    event_type="HOOK_PRE_WRITE_ALLOWED",
+                    file_path=file_path,
+                    reason=allow_reason,
+                )
+                print(json.dumps({"decision": "allow"}))
+                exit_code = 0
+                return exit_code
 
     except Exception as e:
         # Fail-open for Write/Edit (unlike Task which is fail-closed)
         # Log error to audit trail for diagnostics
+        stderr_capture = stderr_buffer.getvalue()[:_STDERR_CAPTURE_MAX_CHARS]
         try:
             audit_writer = _create_audit_writer()
             audit_writer.log_event(
                 AuditEvent(
                     event_type="HOOK_ERROR",
                     timestamp=SystemTimeProvider().now_utc().isoformat(),
-                    data={"error": str(e), "handler": "pre_write"},
+                    data={
+                        "error": str(e),
+                        "handler": "pre_write",
+                        "error_type": type(e).__name__,
+                        "stderr_capture": stderr_capture,
+                    },
                 )
             )
         except Exception:
