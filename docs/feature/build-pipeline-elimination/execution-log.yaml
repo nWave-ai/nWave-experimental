@@ -71,5 +71,30 @@ events:
   s: EXECUTED
   sid: 02-05
   t: '2026-02-11T11:20:11Z'
+- d: PASS
+  p: COMMIT
+  s: EXECUTED
+  sid: 02-05
+  t: '2026-02-11T11:20:53Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-11T11:22:58Z'
+- d: PASS
+  p: RED_ACCEPTANCE
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-11T11:23:07Z'
+- d: 'NOT_APPLICABLE: purely file deletion, no new logic'
+  p: RED_UNIT
+  s: SKIPPED
+  sid: 03-01
+  t: '2026-02-11T11:23:12Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-11T11:39:03Z'
 project_id: build-pipeline-elimination
 schema_version: '3.0'
