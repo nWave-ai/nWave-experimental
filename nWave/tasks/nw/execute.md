@@ -75,7 +75,7 @@ Execute these phases in order:
 # OUTCOME_RECORDING
 After ACTUALLY EXECUTING each phase, record it using the DES CLI:
 
-    PYTHONPATH=src python -m des.cli.log_phase \
+    PYTHONPATH=$HOME/.claude/lib/python python -m des.cli.log_phase \
       --project-dir docs/feature/{project-id} \
       --step-id {step-id} \
       --phase {PHASE_NAME} \
@@ -84,7 +84,7 @@ After ACTUALLY EXECUTING each phase, record it using the DES CLI:
 
 For SKIPPED phases (genuinely not applicable):
 
-    PYTHONPATH=src python -m des.cli.log_phase \
+    PYTHONPATH=$HOME/.claude/lib/python python -m des.cli.log_phase \
       --project-dir docs/feature/{project-id} \
       --step-id {step-id} \
       --phase {PHASE_NAME} \

@@ -93,7 +93,7 @@ INPUT: "{feature-description}"
   |
   7. Phase 6 — Deliver Integrity Verification
      a. Run via Bash tool:
-        python -m des.cli.verify_deliver_integrity docs/feature/{project-id}/
+        PYTHONPATH=$HOME/.claude/lib/python python -m des.cli.verify_deliver_integrity docs/feature/{project-id}/
      b. Exit 0 = all steps verified, proceed to finalize
      c. Exit 1 = violations found, STOP. Read output for details.
      d. Steps with NO entries were NOT executed through DES
