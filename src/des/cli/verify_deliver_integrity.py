@@ -21,6 +21,8 @@ from pathlib import Path
 import yaml
 
 from des.domain.deliver_integrity_verifier import DeliverIntegrityVerifier
+from des.domain.roadmap_schema import get_roadmap_schema
+from des.domain.roadmap_validator import RoadmapValidator
 from des.domain.tdd_schema import get_tdd_schema
 
 
@@ -89,6 +91,21 @@ def main() -> int:
 
     roadmap = yaml.safe_load(roadmap_path.read_text())
     exec_log = yaml.safe_load(exec_log_path.read_text())
+
+    # Structural pre-check: validate roadmap format before extracting IDs
+    try:
+        roadmap_schema = get_roadmap_schema()
+        validator = RoadmapValidator(roadmap_schema)
+        validation = validator.validate(roadmap)
+        errors = [v for v in validation.violations if v.severity == "error"]
+        if errors:
+            print(f"ROADMAP FORMAT ERRORS ({len(errors)}):")
+            for e in errors:
+                print(f"  - [{e.rule}] {e.path}: {e.message}")
+            print("Fix roadmap format before verifying deliver integrity.")
+            return 1
+    except Exception as e:
+        print(f"Warning: roadmap format pre-check skipped: {e}")
 
     step_ids = _extract_step_ids(roadmap)
     entries = _parse_execution_log(exec_log)

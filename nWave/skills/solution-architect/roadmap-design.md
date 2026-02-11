@@ -5,6 +5,10 @@ description: Roadmap concision rules, step decomposition efficiency, AC abstract
 
 # Roadmap Design
 
+## Canonical Format
+
+Use ONLY the compact nested format. See `nWave/templates/roadmap-schema.yaml` for required fields and validation rules. Structure: `roadmap` metadata at top, `phases` list with nested `steps`, `implementation_scope`, and `validation` sections. Phase IDs: two digits (`"01"`). Step IDs: `"NN-MM"` where NN matches parent phase.
+
 ## Concision Requirements
 
 Token efficiency at two levels:

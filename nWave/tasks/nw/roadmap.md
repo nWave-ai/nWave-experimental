@@ -71,10 +71,21 @@ For performance roadmaps, include measurement context inline so the agent can va
 - Invalid agent: report valid agents and stop
 - Missing goal: show usage syntax and stop
 
+## Post-Generation Validation
+
+After generating roadmap.yaml, validate structure with:
+
+```bash
+python -m des.cli.roadmap validate docs/feature/{project-id}/roadmap.yaml
+```
+
+This catches format errors (missing fields, invalid IDs, count mismatches) before the deliver wave.
+
 ## Workflow Context
 
 ```bash
 /nw:roadmap @agent "goal"           # 1. Plan
+# validate: python -m des.cli.roadmap validate docs/feature/{project-id}/roadmap.yaml
 /nw:execute @agent "project" "01-01" # 2. Execute steps
 /nw:finalize @agent "project"        # 3. Finalize
 ```
