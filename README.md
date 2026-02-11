@@ -32,7 +32,7 @@ cd nwave
 python3 scripts/install/install_nwave.py
 ```
 
-Full installation details: [Installation Guide](docs/installation/installation-guide.md)
+Full installation details: [Installation Guide](docs/guides/installation-guide.md)
 
 ### 2. Your First Development Cycle
 
@@ -76,7 +76,7 @@ nWave documentation is organized using the **DIVIO framework** for maximum usabi
 ### Getting Started
 Start here if you're new to nWave:
 - **[Jobs To Be Done Guide](docs/guides/jobs-to-be-done-guide.md)** - Understand when and how to use each workflow
-- **[Installation Guide](docs/installation/installation-guide.md)** - Step-by-step setup instructions
+- **[Installation Guide](docs/guides/installation-guide.md)** - Step-by-step setup instructions
 
 ### Practical Guides (How-To)
 Learn how to accomplish specific tasks:
