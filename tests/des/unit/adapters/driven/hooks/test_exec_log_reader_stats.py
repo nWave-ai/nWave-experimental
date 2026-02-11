@@ -26,9 +26,12 @@ class TestYamlExecutionLogReaderExecStats:
 
     def test_read_step_events_returns_stats_from_7_field_entries(self, tmp_path):
         """Reader returns turns_used and tokens_used for 7-field format entries."""
-        log_path = _write_log(tmp_path, [
-            "07-01|COMMIT|EXECUTED|PASS|2026-02-11T00:30:00Z|15|50000",
-        ])
+        log_path = _write_log(
+            tmp_path,
+            [
+                "07-01|COMMIT|EXECUTED|PASS|2026-02-11T00:30:00Z|15|50000",
+            ],
+        )
 
         reader = YamlExecutionLogReader()
         events = reader.read_step_events(log_path, "07-01")
@@ -39,10 +42,13 @@ class TestYamlExecutionLogReaderExecStats:
 
     def test_read_all_events_handles_mixed_formats(self, tmp_path):
         """Reader returns correct stats for mixed 5-field and 7-field events."""
-        log_path = _write_log(tmp_path, [
-            "07-01|PREPARE|EXECUTED|PASS|2026-02-11T00:00:00Z",
-            "07-01|COMMIT|EXECUTED|PASS|2026-02-11T00:30:00Z|10|30000",
-        ])
+        log_path = _write_log(
+            tmp_path,
+            [
+                "07-01|PREPARE|EXECUTED|PASS|2026-02-11T00:00:00Z",
+                "07-01|COMMIT|EXECUTED|PASS|2026-02-11T00:30:00Z|10|30000",
+            ],
+        )
 
         reader = YamlExecutionLogReader()
         events = reader.read_all_events(log_path)

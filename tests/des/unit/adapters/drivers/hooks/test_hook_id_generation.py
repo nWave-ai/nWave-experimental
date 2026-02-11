@@ -21,6 +21,7 @@ import pytest
 
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 
+
 UUID4_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.IGNORECASE,
@@ -129,9 +130,7 @@ def test_hook_id_unique_across_invocations(monkeypatch):
         events = []
         writer = _make_capturing_writer(events)
 
-        monkeypatch.setattr(
-            "sys.stdin", io.StringIO(_build_pre_tool_use_stdin())
-        )
+        monkeypatch.setattr("sys.stdin", io.StringIO(_build_pre_tool_use_stdin()))
         monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
         with patch.object(adapter, "_create_audit_writer", return_value=writer):
@@ -141,9 +140,7 @@ def test_hook_id_unique_across_invocations(monkeypatch):
         assert len(hook_invoked) >= 1
         all_hook_ids.append(hook_invoked[0].data["hook_id"])
 
-    assert all_hook_ids[0] != all_hook_ids[1], (
-        "hook_id must be unique per invocation"
-    )
+    assert all_hook_ids[0] != all_hook_ids[1], "hook_id must be unique per invocation"
 
 
 # --- Test 3: _log_hook_invoked with hook_id=None omits the field ---

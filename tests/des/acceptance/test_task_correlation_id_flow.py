@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 
+
 UUID4_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.IGNORECASE,
@@ -76,14 +77,16 @@ def _build_des_task_stdin() -> str:
         "# TIMEOUT_INSTRUCTION\n"
         "Turn budget: 30\n"
     )
-    return json.dumps({
-        "tool_name": "Task",
-        "tool_input": {
-            "prompt": prompt,
-            "max_turns": 30,
-            "subagent_type": "code",
-        },
-    })
+    return json.dumps(
+        {
+            "tool_name": "Task",
+            "tool_input": {
+                "prompt": prompt,
+                "max_turns": 30,
+                "subagent_type": "code",
+            },
+        }
+    )
 
 
 def test_task_correlation_id_flows_from_signal_to_hook_completed(monkeypatch, tmp_path):
@@ -141,17 +144,19 @@ def test_task_correlation_id_flows_from_signal_to_hook_completed(monkeypatch, tm
     stop_events: list[AuditEvent] = []
     stop_writer = _make_capturing_writer(stop_events)
 
-    subagent_stop_stdin = json.dumps({
-        "session_id": "s1",
-        "hook_event_name": "SubagentStop",
-        "agent_id": "a1",
-        "agent_type": "code",
-        "cwd": "/tmp",
-        "executionLogPath": "/tmp/execution-log.yaml",
-        "projectId": "test-project",
-        "stepId": "01-01",
-        "stop_hook_active": True,
-    })
+    subagent_stop_stdin = json.dumps(
+        {
+            "session_id": "s1",
+            "hook_event_name": "SubagentStop",
+            "agent_id": "a1",
+            "agent_type": "code",
+            "cwd": "/tmp",
+            "executionLogPath": "/tmp/execution-log.yaml",
+            "projectId": "test-project",
+            "stepId": "01-01",
+            "stop_hook_active": True,
+        }
+    )
     monkeypatch.setattr("sys.stdin", io.StringIO(subagent_stop_stdin))
 
     # SubagentStopService will fail validation (no real log), but HOOK_COMPLETED
@@ -175,14 +180,16 @@ def test_task_correlation_id_absent_for_non_des_tasks(monkeypatch):
     writer = _make_capturing_writer(events)
 
     # Non-DES task: no DES-VALIDATION marker in prompt
-    non_des_stdin = json.dumps({
-        "tool_name": "Task",
-        "tool_input": {
-            "prompt": "Do something without DES markers",
-            "max_turns": 15,
-            "subagent_type": "code",
-        },
-    })
+    non_des_stdin = json.dumps(
+        {
+            "tool_name": "Task",
+            "tool_input": {
+                "prompt": "Do something without DES markers",
+                "max_turns": 15,
+                "subagent_type": "code",
+            },
+        }
+    )
     monkeypatch.setattr("sys.stdin", io.StringIO(non_des_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 

@@ -4,7 +4,7 @@ Feature: Documentation Accuracy
   So that I can successfully install nWave on a fresh machine
 
   Background:
-    Given the installation guide exists at docs/installation/installation-guide.md
+    Given the installation guide exists at docs/guides/installation-guide.md
 
   # ==========================================================================
   # AC-10: Documentation Accuracy

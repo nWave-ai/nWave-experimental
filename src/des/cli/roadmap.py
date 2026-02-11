@@ -178,16 +178,12 @@ def _cmd_validate(args: list[str]) -> int:
     warnings = [v for v in result.violations if v.severity == "warning"]
 
     if result.is_valid:
-        print(
-            f"VALID: {result.phases_found} phases, {result.steps_found} steps"
-        )
+        print(f"VALID: {result.phases_found} phases, {result.steps_found} steps")
         for w in warnings:
             print(f"  WARNING [{w.rule}] {w.path}: {w.message}")
         return 0
     else:
-        print(
-            f"INVALID: {len(errors)} error(s), {len(warnings)} warning(s)"
-        )
+        print(f"INVALID: {len(errors)} error(s), {len(warnings)} warning(s)")
         for e in errors:
             print(f"  ERROR [{e.rule}] {e.path}: {e.message}")
         for w in warnings:

@@ -25,6 +25,7 @@ import pytest
 
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 
+
 UUID4_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.IGNORECASE,
@@ -105,7 +106,12 @@ def _build_pre_tool_use_block_stdin() -> str:
         ("handle_post_tool_use", _build_post_tool_use_stdin, "allow"),
         ("handle_pre_write", _build_pre_write_stdin, "allow"),
     ],
-    ids=["pre_tool_use_allow", "subagent_stop_allow", "post_tool_use_allow", "pre_write_allow"],
+    ids=[
+        "pre_tool_use_allow",
+        "subagent_stop_allow",
+        "post_tool_use_allow",
+        "pre_write_allow",
+    ],
 )
 def test_hook_completed_emitted_with_correct_exit_code_and_decision(
     handler_name, stdin_factory, expected_decision, monkeypatch
@@ -240,7 +246,9 @@ def test_hook_completed_emitted_on_exception(monkeypatch):
 
     with (
         patch.object(adapter, "_create_audit_writer", return_value=writer),
-        patch.object(adapter, "create_pre_tool_use_service", side_effect=exploding_service),
+        patch.object(
+            adapter, "create_pre_tool_use_service", side_effect=exploding_service
+        ),
     ):
         exit_code = adapter.handle_pre_tool_use()
 
@@ -296,6 +304,7 @@ def test_hook_completed_slow_hook_detection(monkeypatch):
     import time
 
     call_count = 0
+
     # Simulate 6000ms elapsed (6 seconds > any reasonable threshold)
     def fake_perf_counter_ns():
         nonlocal call_count

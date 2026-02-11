@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 import yaml
 
 from des.cli.roadmap import main
@@ -25,7 +24,15 @@ class TestInit:
         """init with --output writes file."""
         out_file = tmp_path / "roadmap.yaml"
         rc = main(
-            ["init", "--project-id", "test-proj", "--goal", "G", "--output", str(out_file)]
+            [
+                "init",
+                "--project-id",
+                "test-proj",
+                "--goal",
+                "G",
+                "--output",
+                str(out_file),
+            ]
         )
         assert rc == 0
         assert out_file.exists()
@@ -91,7 +98,15 @@ class TestInit:
     def test_init_steps_infers_phases(self, capsys):
         """init with --steps but no explicit --phases infers phase count."""
         rc = main(
-            ["init", "--project-id", "infer", "--goal", "G", "--steps", "01:1,02:1,03:1"]
+            [
+                "init",
+                "--project-id",
+                "infer",
+                "--goal",
+                "G",
+                "--steps",
+                "01:1,02:1,03:1",
+            ]
         )
         assert rc == 0
         data = yaml.safe_load(capsys.readouterr().out)
@@ -122,8 +137,16 @@ class TestValidate:
                     "id": "01",
                     "name": "Phase One",
                     "steps": [
-                        {"id": "01-01", "name": "Step one", "criteria": "criterion one"},
-                        {"id": "01-02", "name": "Step two", "criteria": "criterion two"},
+                        {
+                            "id": "01-01",
+                            "name": "Step one",
+                            "criteria": "criterion one",
+                        },
+                        {
+                            "id": "01-02",
+                            "name": "Step two",
+                            "criteria": "criterion two",
+                        },
                     ],
                 }
             ],
@@ -252,9 +275,7 @@ class TestValidate:
     def test_too_many_criteria_warning(self, tmp_path, capsys):
         """Too many criteria (>5 semicolons) produces warning."""
         data = self._valid_roadmap()
-        data["phases"][0]["steps"][0]["criteria"] = (
-            "a; b; c; d; e; f; g"
-        )
+        data["phases"][0]["steps"][0]["criteria"] = "a; b; c; d; e; f; g"
         path = self._write_roadmap(tmp_path, data)
         rc = main(["validate", str(path)])
         assert rc == 0

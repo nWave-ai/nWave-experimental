@@ -125,9 +125,7 @@ def test_acceptance_hook_error_includes_error_type_and_stderr_capture(monkeypatc
     ],
     ids=["ValueError", "TypeError", "RuntimeError", "KeyError"],
 )
-def test_hook_error_includes_error_type(
-    exception_class, expected_name, monkeypatch
-):
+def test_hook_error_includes_error_type(exception_class, expected_name, monkeypatch):
     """HOOK_ERROR event includes error_type field matching the exception class name."""
 
     def raiser():

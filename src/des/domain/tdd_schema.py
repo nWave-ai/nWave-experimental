@@ -230,7 +230,9 @@ class TDDSchemaLoader:
         Terminal phases represent successful completion and cannot have FAIL outcome.
         Example: COMMIT phase must always PASS, as FAIL indicates incomplete work.
         """
-        terminal_config = raw_data.get("phase_validation_rules", {}).get("terminal_phases", {})
+        terminal_config = raw_data.get("phase_validation_rules", {}).get(
+            "terminal_phases", {}
+        )
         phases = terminal_config.get("phases", [])
         return tuple(phases)
 

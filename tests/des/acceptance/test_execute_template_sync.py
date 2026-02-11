@@ -7,6 +7,7 @@ at install time from step-tdd-cycle-schema.json. This test verifies:
 2. Source declares Schema v4.0 and references TDDPhaseValidator
 """
 
+
 class TestExecuteTemplateSync:
     """Verify execute.md TDD phases use template injection."""
 
@@ -22,9 +23,7 @@ class TestExecuteTemplateSync:
         # Find the build-system section (## heading), not the DES prompt template
         # (# heading inside a code block). The build-system section uses ## TDD_PHASES.
         tdd_section_start = content.find("\n## TDD_PHASES")
-        assert tdd_section_start != -1, (
-            "## TDD_PHASES section not found in execute.md"
-        )
+        assert tdd_section_start != -1, "## TDD_PHASES section not found in execute.md"
 
         section = content[tdd_section_start : tdd_section_start + 500]
 

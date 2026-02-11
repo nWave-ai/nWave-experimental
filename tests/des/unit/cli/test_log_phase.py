@@ -290,15 +290,24 @@ class TestLogPhaseExecStats:
 
         _create_execution_log(tmp_path)
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "07-01",
-            "--phase", "COMMIT",
-            "--status", "EXECUTED",
-            "--data", "PASS",
-            "--turns-used", "12",
-            "--tokens-used", "45000",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "07-01",
+                "--phase",
+                "COMMIT",
+                "--status",
+                "EXECUTED",
+                "--data",
+                "PASS",
+                "--turns-used",
+                "12",
+                "--tokens-used",
+                "45000",
+            ]
+        )
 
         assert result == 0
 
@@ -317,13 +326,20 @@ class TestLogPhaseExecStats:
 
         _create_execution_log(tmp_path)
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "07-01",
-            "--phase", "COMMIT",
-            "--status", "EXECUTED",
-            "--data", "PASS",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "07-01",
+                "--phase",
+                "COMMIT",
+                "--status",
+                "EXECUTED",
+                "--data",
+                "PASS",
+            ]
+        )
 
         assert result == 0
 

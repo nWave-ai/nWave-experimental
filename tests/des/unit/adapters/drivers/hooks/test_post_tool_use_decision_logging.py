@@ -22,8 +22,6 @@ import io
 import json
 from unittest.mock import patch
 
-import pytest
-
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 
 
@@ -99,9 +97,7 @@ def test_injected_event_emitted_for_continuation_context(monkeypatch):
 
     assert exit_code == 0
 
-    injected = [
-        e for e in events if e.event_type == "HOOK_POST_TOOL_USE_INJECTED"
-    ]
+    injected = [e for e in events if e.event_type == "HOOK_POST_TOOL_USE_INJECTED"]
     assert len(injected) == 1, (
         f"Expected one HOOK_POST_TOOL_USE_INJECTED event, "
         f"got {len(injected)}. All events: {[e.event_type for e in events]}"
@@ -148,9 +144,7 @@ def test_injected_event_emitted_for_failure_notification(monkeypatch):
 
     assert exit_code == 0
 
-    injected = [
-        e for e in events if e.event_type == "HOOK_POST_TOOL_USE_INJECTED"
-    ]
+    injected = [e for e in events if e.event_type == "HOOK_POST_TOOL_USE_INJECTED"]
     assert len(injected) == 1, (
         f"Expected one HOOK_POST_TOOL_USE_INJECTED event, "
         f"got {len(injected)}. All events: {[e.event_type for e in events]}"
@@ -283,4 +277,6 @@ def test_logging_failure_does_not_affect_response(monkeypatch):
     last_output = str(printed[-1])
     assert "{}" in last_output or '"additionalContext"' in last_output
     # Verify writer was called (logging was attempted)
-    assert log_call_count > 0, "Expected audit writer to be called even though it raised"
+    assert log_call_count > 0, (
+        "Expected audit writer to be called even though it raised"
+    )

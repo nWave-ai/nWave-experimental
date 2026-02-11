@@ -991,10 +991,7 @@ def handle_post_tool_use() -> int:
                 )
                 response = {"additionalContext": additional_context}
             else:
-                if is_des_task:
-                    reason = "no_completion_status"
-                else:
-                    reason = "non_des_task"
+                reason = "no_completion_status" if is_des_task else "non_des_task"
                 _log_post_tool_use_decision(
                     hook_id=hook_id,
                     event_type="HOOK_POST_TOOL_USE_PASSTHROUGH",
@@ -1178,10 +1175,7 @@ def handle_pre_write() -> int:
                 return exit_code
             else:
                 # Determine allow reason for diagnostics
-                if not session_active:
-                    allow_reason = "no_session"
-                else:
-                    allow_reason = "policy_allowed"
+                allow_reason = "no_session" if not session_active else "policy_allowed"
                 _log_pre_write_decision(
                     hook_id=hook_id,
                     event_type="HOOK_PRE_WRITE_ALLOWED",

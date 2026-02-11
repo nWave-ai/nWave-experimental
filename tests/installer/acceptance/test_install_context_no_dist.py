@@ -81,9 +81,5 @@ class TestInstallContextNoDist:
 
         source = inspect.getsource(base)
 
-        assert "dist_dir" not in source, (
-            "base.py still references 'dist_dir'"
-        )
-        assert "dist/ide" not in source, (
-            "base.py still references 'dist/ide'"
-        )
+        assert "dist_dir" not in source, "base.py still references 'dist_dir'"
+        assert "dist/ide" not in source, "base.py still references 'dist/ide'"

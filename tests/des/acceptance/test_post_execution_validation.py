@@ -277,9 +277,7 @@ class TestPostExecutionStateValidation:
         Error Format: "Invalid outcome ''"  (in v2.0, outcome is in data field)
         """
         # Arrange: Create execution-log.yaml with EXECUTED phase with invalid outcome
-        log_data = _create_execution_log_with_missing_outcome(
-            tdd_phases, "GREEN"
-        )
+        log_data = _create_execution_log_with_missing_outcome(tdd_phases, "GREEN")
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
 
@@ -328,9 +326,7 @@ class TestPostExecutionStateValidation:
         Error Format: "Invalid skip reason" (in v2.0, must start with valid prefix)
         """
         # Arrange: Create execution-log.yaml with SKIPPED phase with invalid reason
-        log_data = _create_execution_log_with_invalid_skip(
-            tdd_phases, "GREEN"
-        )
+        log_data = _create_execution_log_with_invalid_skip(tdd_phases, "GREEN")
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
 
@@ -948,7 +944,7 @@ class TestOrchestratorHookIntegration:
         # Act: Invoke validation through ENTRY POINT with real SubagentStopHook
         time_provider = SystemTimeProvider()
         orchestrator = DESOrchestrator(
-            hook=SubagentStopHook(audit_logger=Mock(), time_provider=time_provider),
+            hook=SubagentStopHook(audit_logger=Mock(), time_provider=time_provider),  # noqa: F821
             validator=TemplateValidator(),
             filesystem=RealFileSystem(),
             time_provider=time_provider,
@@ -991,7 +987,7 @@ class TestOrchestratorHookIntegration:
         # Act: Invoke validation through ENTRY POINT with real SubagentStopHook
         time_provider = SystemTimeProvider()
         orchestrator = DESOrchestrator(
-            hook=SubagentStopHook(audit_logger=Mock(), time_provider=time_provider),
+            hook=SubagentStopHook(audit_logger=Mock(), time_provider=time_provider),  # noqa: F821
             validator=TemplateValidator(),
             filesystem=RealFileSystem(),
             time_provider=time_provider,

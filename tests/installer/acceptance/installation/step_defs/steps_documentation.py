@@ -18,7 +18,7 @@ scenarios("../features/06_documentation.feature")
 
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent
-INSTALLATION_GUIDE = PROJECT_ROOT / "docs" / "installation" / "installation-guide.md"
+INSTALLATION_GUIDE = PROJECT_ROOT / "docs" / "guides" / "installation-guide.md"
 
 
 # ============================================================================
@@ -26,7 +26,7 @@ INSTALLATION_GUIDE = PROJECT_ROOT / "docs" / "installation" / "installation-guid
 # ============================================================================
 
 
-@given("the installation guide exists at docs/installation/installation-guide.md")
+@given("the installation guide exists at docs/guides/installation-guide.md")
 def installation_guide_exists():
     """Verify installation guide exists."""
     assert INSTALLATION_GUIDE.exists(), (

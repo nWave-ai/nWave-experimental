@@ -136,9 +136,7 @@ class PreToolUseService(PreToolUsePort):
             self._log_blocked(reason, hook_id=hook_id)
             return HookDecision.block(reason=reason)
 
-    def _log_allowed(
-        self, context: str, hook_id: str | None = None
-    ) -> None:
+    def _log_allowed(self, context: str, hook_id: str | None = None) -> None:
         """Log an allowed invocation to the audit trail."""
         self._audit_writer.log_event(
             AuditEvent(
@@ -149,9 +147,7 @@ class PreToolUseService(PreToolUsePort):
             )
         )
 
-    def _log_blocked(
-        self, reason: str, hook_id: str | None = None
-    ) -> None:
+    def _log_blocked(self, reason: str, hook_id: str | None = None) -> None:
         """Log a blocked invocation to the audit trail."""
         self._audit_writer.log_event(
             AuditEvent(

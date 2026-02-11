@@ -19,11 +19,12 @@ from __future__ import annotations
 import io
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.phase_event import PhaseEvent
@@ -34,10 +35,6 @@ from des.ports.driven_ports.execution_log_reader import ExecutionLogReader
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
 from des.ports.driven_ports.time_provider_port import TimeProvider
 from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
-
-
-if TYPE_CHECKING:
-    pass
 
 
 # --- Test doubles ---
@@ -86,19 +83,61 @@ class StubScopeChecker(ScopeChecker):
 def _make_complete_events(step_id: str) -> list[PhaseEvent]:
     """Complete 5-phase TDD events that pass validation."""
     return [
-        PhaseEvent(step_id=step_id, phase_name="PREPARE", status="EXECUTED", outcome="PASS", timestamp="2026-02-11T10:00:00Z"),
-        PhaseEvent(step_id=step_id, phase_name="RED_ACCEPTANCE", status="EXECUTED", outcome="FAIL", timestamp="2026-02-11T10:01:00Z"),
-        PhaseEvent(step_id=step_id, phase_name="RED_UNIT", status="EXECUTED", outcome="FAIL", timestamp="2026-02-11T10:02:00Z"),
-        PhaseEvent(step_id=step_id, phase_name="GREEN", status="EXECUTED", outcome="PASS", timestamp="2026-02-11T10:03:00Z"),
-        PhaseEvent(step_id=step_id, phase_name="COMMIT", status="EXECUTED", outcome="PASS", timestamp="2026-02-11T10:04:00Z"),
+        PhaseEvent(
+            step_id=step_id,
+            phase_name="PREPARE",
+            status="EXECUTED",
+            outcome="PASS",
+            timestamp="2026-02-11T10:00:00Z",
+        ),
+        PhaseEvent(
+            step_id=step_id,
+            phase_name="RED_ACCEPTANCE",
+            status="EXECUTED",
+            outcome="FAIL",
+            timestamp="2026-02-11T10:01:00Z",
+        ),
+        PhaseEvent(
+            step_id=step_id,
+            phase_name="RED_UNIT",
+            status="EXECUTED",
+            outcome="FAIL",
+            timestamp="2026-02-11T10:02:00Z",
+        ),
+        PhaseEvent(
+            step_id=step_id,
+            phase_name="GREEN",
+            status="EXECUTED",
+            outcome="PASS",
+            timestamp="2026-02-11T10:03:00Z",
+        ),
+        PhaseEvent(
+            step_id=step_id,
+            phase_name="COMMIT",
+            status="EXECUTED",
+            outcome="PASS",
+            timestamp="2026-02-11T10:04:00Z",
+        ),
     ]
 
 
 def _make_incomplete_events(step_id: str) -> list[PhaseEvent]:
     """Incomplete events (missing COMMIT) that fail validation."""
     return [
-        PhaseEvent(step_id=step_id, phase_name="PREPARE", status="EXECUTED", outcome="PASS", timestamp="2026-02-11T10:00:00Z"),
-        PhaseEvent(step_id=step_id, phase_name="RED_ACCEPTANCE", status="EXECUTED", outcome="FAIL", timestamp="2026-02-11T10:01:00Z"),
+        PhaseEvent(
+            step_id=step_id,
+            phase_name="PREPARE",
+            status="EXECUTED",
+            outcome="PASS",
+            timestamp="2026-02-11T10:00:00Z",
+        ),
+        PhaseEvent(
+            step_id=step_id,
+            phase_name="RED_ACCEPTANCE",
+            status="EXECUTED",
+            outcome="FAIL",
+            timestamp="2026-02-11T10:01:00Z",
+        ),
     ]
 
 
@@ -177,7 +216,9 @@ def test_passed_event_includes_stats_when_provided():
 
     service.validate(context)
 
-    passed = [e for e in audit_spy.events if e.event_type == "HOOK_SUBAGENT_STOP_PASSED"]
+    passed = [
+        e for e in audit_spy.events if e.event_type == "HOOK_SUBAGENT_STOP_PASSED"
+    ]
     assert len(passed) == 1
     assert passed[0].data["turns_used"] == 20
     assert passed[0].data["tokens_used"] == 100000
@@ -202,7 +243,9 @@ def test_failed_event_includes_stats_when_provided():
 
     service.validate(context)
 
-    failed = [e for e in audit_spy.events if e.event_type == "HOOK_SUBAGENT_STOP_FAILED"]
+    failed = [
+        e for e in audit_spy.events if e.event_type == "HOOK_SUBAGENT_STOP_FAILED"
+    ]
     assert len(failed) == 1
     assert failed[0].data["turns_used"] == 15
     assert failed[0].data["tokens_used"] == 80000
@@ -213,7 +256,10 @@ def test_failed_event_includes_stats_when_provided():
 
 def test_commit_verified_event_includes_stats_when_provided():
     """COMMIT_VERIFIED audit event includes turns_used and tokens_used in data."""
-    from des.ports.driven_ports.commit_verifier import CommitVerificationResult, CommitVerifier
+    from des.ports.driven_ports.commit_verifier import (
+        CommitVerificationResult,
+        CommitVerifier,
+    )
 
     class StubCommitVerifier(CommitVerifier):
         def verify_commit(self, step_id: str, cwd: str) -> CommitVerificationResult:
@@ -257,15 +303,17 @@ def test_handle_subagent_stop_extracts_stats_from_hook_input(monkeypatch, tmp_pa
     writer = _make_capturing_writer(events)
 
     # Non-DES agent (passthrough) with stats in hook_input
-    stop_stdin = json.dumps({
-        "session_id": "s1",
-        "hook_event_name": "SubagentStop",
-        "agent_id": "a1",
-        "agent_type": "code",
-        "cwd": str(tmp_path),
-        "num_turns": 25,
-        "total_tokens": 150000,
-    })
+    stop_stdin = json.dumps(
+        {
+            "session_id": "s1",
+            "hook_event_name": "SubagentStop",
+            "agent_id": "a1",
+            "agent_type": "code",
+            "cwd": str(tmp_path),
+            "num_turns": 25,
+            "total_tokens": 150000,
+        }
+    )
     monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
@@ -289,13 +337,15 @@ def test_handle_subagent_stop_graceful_when_stats_missing(monkeypatch, tmp_path)
     writer = _make_capturing_writer(events)
 
     # No stats fields in hook_input
-    stop_stdin = json.dumps({
-        "session_id": "s1",
-        "hook_event_name": "SubagentStop",
-        "agent_id": "a1",
-        "agent_type": "code",
-        "cwd": str(tmp_path),
-    })
+    stop_stdin = json.dumps(
+        {
+            "session_id": "s1",
+            "hook_event_name": "SubagentStop",
+            "agent_id": "a1",
+            "agent_type": "code",
+            "cwd": str(tmp_path),
+        }
+    )
     monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
@@ -328,7 +378,9 @@ def test_passed_event_omits_stats_when_not_provided():
 
     service.validate(context)
 
-    passed = [e for e in audit_spy.events if e.event_type == "HOOK_SUBAGENT_STOP_PASSED"]
+    passed = [
+        e for e in audit_spy.events if e.event_type == "HOOK_SUBAGENT_STOP_PASSED"
+    ]
     assert len(passed) == 1
     assert "turns_used" not in passed[0].data
     assert "tokens_used" not in passed[0].data

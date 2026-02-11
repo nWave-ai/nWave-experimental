@@ -1,7 +1,5 @@
 """Unit tests for verify_deliver_integrity CLI step extraction and log parsing."""
 
-import pytest
-
 from des.cli.verify_deliver_integrity import _extract_step_ids, _parse_execution_log
 
 

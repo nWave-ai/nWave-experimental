@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from des.domain.roadmap_schema import RoadmapSchema
+
+if TYPE_CHECKING:
+    from des.domain.roadmap_schema import RoadmapSchema
 
 
 @dataclass(frozen=True)
@@ -192,9 +195,7 @@ class RoadmapValidator:
                 criteria_str = step.get("criteria", "")
                 if criteria_str and not str(criteria_str).startswith("TODO"):
                     criteria_list = [
-                        c.strip()
-                        for c in str(criteria_str).split(";")
-                        if c.strip()
+                        c.strip() for c in str(criteria_str).split(";") if c.strip()
                     ]
                     if len(criteria_list) > self._schema.max_criteria_per_step:
                         violations.append(
@@ -286,9 +287,7 @@ class RoadmapValidator:
                     severity="warning",
                 )
             )
-        elif "source_directories" not in roadmap_data.get(
-            "implementation_scope", {}
-        ):
+        elif "source_directories" not in roadmap_data.get("implementation_scope", {}):
             violations.append(
                 ValidationViolation(
                     path="implementation_scope.source_directories",

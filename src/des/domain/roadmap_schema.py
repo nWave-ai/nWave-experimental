@@ -55,8 +55,7 @@ class RoadmapSchemaLoader:
         is_installed = (
             ".claude" in module_str or ".claude" in module_resolved_str
         ) and (
-            "lib/python/des" in module_str
-            or "lib/python/des" in module_resolved_str
+            "lib/python/des" in module_str or "lib/python/des" in module_resolved_str
         )
 
         if is_installed:
@@ -64,9 +63,7 @@ class RoadmapSchemaLoader:
                 for parent in search_path.parents:
                     if parent.name == ".claude":
                         candidate = (
-                            parent
-                            / "templates"
-                            / RoadmapSchemaLoader.SCHEMA_FILENAME
+                            parent / "templates" / RoadmapSchemaLoader.SCHEMA_FILENAME
                         )
                         if candidate.exists():
                             return candidate
@@ -113,9 +110,7 @@ class RoadmapSchemaLoader:
             max_criteria_per_step=constraints.get("max_criteria_per_step", 5),
             max_step_name_words=constraints.get("max_step_name_words", 10),
             max_description_words=constraints.get("max_description_words", 50),
-            max_decomposition_ratio=constraints.get(
-                "max_decomposition_ratio", 2.5
-            ),
+            max_decomposition_ratio=constraints.get("max_decomposition_ratio", 2.5),
             valid_agents=tuple(raw.get("valid_agents", [])),
             valid_deps_strategies=tuple(raw.get("valid_deps_strategies", [])),
             valid_statuses=tuple(raw.get("valid_validation_statuses", [])),

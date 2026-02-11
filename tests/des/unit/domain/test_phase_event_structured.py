@@ -53,7 +53,12 @@ class TestParseStructured:
         ids=["executed-pass", "skipped-with-reason"],
     )
     def test_parse_structured_returns_phase_event(
-        self, event_dict, expected_step, expected_phase, expected_status, expected_outcome
+        self,
+        event_dict,
+        expected_step,
+        expected_phase,
+        expected_status,
+        expected_outcome,
     ):
         """Parser converts structured dict with short keys to PhaseEvent."""
         parser = PhaseEventParser()
@@ -70,15 +75,17 @@ class TestParseStructured:
     def test_parse_structured_extracts_stats(self):
         """Parser extracts tu and tk as turns_used and tokens_used."""
         parser = PhaseEventParser()
-        event = parser.parse_structured({
-            "sid": "08-01",
-            "p": "COMMIT",
-            "s": "EXECUTED",
-            "d": "PASS",
-            "t": "2026-02-11T10:30:00Z",
-            "tu": 25,
-            "tk": 80000,
-        })
+        event = parser.parse_structured(
+            {
+                "sid": "08-01",
+                "p": "COMMIT",
+                "s": "EXECUTED",
+                "d": "PASS",
+                "t": "2026-02-11T10:30:00Z",
+                "tu": 25,
+                "tk": 80000,
+            }
+        )
 
         assert event is not None
         assert event.turns_used == 25

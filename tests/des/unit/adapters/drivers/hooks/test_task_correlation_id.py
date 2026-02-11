@@ -20,9 +20,8 @@ import json
 import re
 from unittest.mock import patch
 
-import pytest
-
 from des.ports.driven_ports.audit_log_writer import AuditEvent
+
 
 UUID4_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -84,26 +83,30 @@ def _build_des_task_stdin() -> str:
         "# TIMEOUT_INSTRUCTION\n"
         "Turn budget: 30\n"
     )
-    return json.dumps({
-        "tool_name": "Task",
-        "tool_input": {
-            "prompt": prompt,
-            "max_turns": 30,
-            "subagent_type": "code",
-        },
-    })
+    return json.dumps(
+        {
+            "tool_name": "Task",
+            "tool_input": {
+                "prompt": prompt,
+                "max_turns": 30,
+                "subagent_type": "code",
+            },
+        }
+    )
 
 
 def _build_non_des_task_stdin() -> str:
     """Non-DES Task input (no DES-VALIDATION marker)."""
-    return json.dumps({
-        "tool_name": "Task",
-        "tool_input": {
-            "prompt": "Do something without DES markers",
-            "max_turns": 15,
-            "subagent_type": "code",
-        },
-    })
+    return json.dumps(
+        {
+            "tool_name": "Task",
+            "tool_input": {
+                "prompt": "Do something without DES markers",
+                "max_turns": 15,
+                "subagent_type": "code",
+            },
+        }
+    )
 
 
 # --- Test 1: Signal file contains valid UUID4 task_correlation_id ---
@@ -146,7 +149,9 @@ def test_signal_file_contains_valid_uuid4_task_correlation_id(monkeypatch, tmp_p
 # --- Test 2: HOOK_COMPLETED in pre_tool_use includes task_correlation_id ---
 
 
-def test_hook_completed_pre_tool_use_includes_task_correlation_id(monkeypatch, tmp_path):
+def test_hook_completed_pre_tool_use_includes_task_correlation_id(
+    monkeypatch, tmp_path
+):
     """HOOK_COMPLETED event from pre_tool_use includes the task_correlation_id for DES tasks."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
@@ -196,12 +201,16 @@ def test_hook_completed_subagent_stop_includes_task_correlation_id_from_signal(
     des_dir.mkdir(parents=True)
     known_correlation_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
     signal_file = des_dir / "des-task-active-test-project--01-01"
-    signal_file.write_text(json.dumps({
-        "step_id": "01-01",
-        "project_id": "test-project",
-        "created_at": "2026-02-11T00:00:00+00:00",
-        "task_correlation_id": known_correlation_id,
-    }))
+    signal_file.write_text(
+        json.dumps(
+            {
+                "step_id": "01-01",
+                "project_id": "test-project",
+                "created_at": "2026-02-11T00:00:00+00:00",
+                "task_correlation_id": known_correlation_id,
+            }
+        )
+    )
     legacy_file = des_dir / "des-task-active"
     legacy_file.write_text(signal_file.read_text())
 
@@ -210,23 +219,26 @@ def test_hook_completed_subagent_stop_includes_task_correlation_id_from_signal(
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: des_dir / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: des_dir
+        / f"des-task-active-{project_id}--{step_id}",
     )
 
     events: list[AuditEvent] = []
     writer = _make_capturing_writer(events)
 
-    stop_stdin = json.dumps({
-        "session_id": "s1",
-        "hook_event_name": "SubagentStop",
-        "agent_id": "a1",
-        "agent_type": "code",
-        "cwd": str(tmp_path),
-        "executionLogPath": str(tmp_path / "execution-log.yaml"),
-        "projectId": "test-project",
-        "stepId": "01-01",
-        "stop_hook_active": True,
-    })
+    stop_stdin = json.dumps(
+        {
+            "session_id": "s1",
+            "hook_event_name": "SubagentStop",
+            "agent_id": "a1",
+            "agent_type": "code",
+            "cwd": str(tmp_path),
+            "executionLogPath": str(tmp_path / "execution-log.yaml"),
+            "projectId": "test-project",
+            "stepId": "01-01",
+            "stop_hook_active": True,
+        }
+    )
     monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
@@ -277,20 +289,23 @@ def test_hook_completed_subagent_stop_graceful_when_signal_missing(
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: des_dir / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: des_dir
+        / f"des-task-active-{project_id}--{step_id}",
     )
 
     events: list[AuditEvent] = []
     writer = _make_capturing_writer(events)
 
     # Non-DES subagent stop (no transcript, no DES markers)
-    stop_stdin = json.dumps({
-        "session_id": "s1",
-        "hook_event_name": "SubagentStop",
-        "agent_id": "a1",
-        "agent_type": "code",
-        "cwd": str(tmp_path),
-    })
+    stop_stdin = json.dumps(
+        {
+            "session_id": "s1",
+            "hook_event_name": "SubagentStop",
+            "agent_id": "a1",
+            "agent_type": "code",
+            "cwd": str(tmp_path),
+        }
+    )
     monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
@@ -305,9 +320,7 @@ def test_hook_completed_subagent_stop_graceful_when_signal_missing(
 # --- Test 6: HOOK_INVOKED includes task_correlation_id when available ---
 
 
-def test_hook_invoked_includes_task_correlation_id_for_des_tasks(
-    monkeypatch, tmp_path
-):
+def test_hook_invoked_includes_task_correlation_id_for_des_tasks(monkeypatch, tmp_path):
     """HOOK_INVOKED event from pre_tool_use includes task_correlation_id for DES tasks."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 

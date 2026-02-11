@@ -39,7 +39,7 @@ class TestTDDPhaseValidatorSchemaV4Current:
         schema_version = get_schema_version()
 
         # Build prompt dynamically from canonical template
-        tdd_section = f"# TDD_PHASES\n"
+        tdd_section = "# TDD_PHASES\n"
         tdd_section += f"Execute all {phase_count} phases (schema v{schema_version}):\n"
         for i, phase in enumerate(canonical_phases, 1):
             tdd_section += f"{i}. {phase}\n"

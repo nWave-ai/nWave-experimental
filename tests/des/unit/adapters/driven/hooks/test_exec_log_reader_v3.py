@@ -30,11 +30,32 @@ class TestYamlExecutionLogReaderV3:
 
     def test_read_step_events_parses_v3_structured_dicts(self, tmp_path):
         """Reader parses v3.0 structured dict events into PhaseEvents."""
-        log_path = _write_log(tmp_path, [
-            {"sid": "08-01", "p": "PREPARE", "s": "EXECUTED", "d": "PASS", "t": "2026-02-11T10:00:00Z"},
-            {"sid": "08-01", "p": "GREEN", "s": "EXECUTED", "d": "PASS", "t": "2026-02-11T10:05:00Z"},
-            {"sid": "09-01", "p": "PREPARE", "s": "EXECUTED", "d": "PASS", "t": "2026-02-11T10:10:00Z"},
-        ])
+        log_path = _write_log(
+            tmp_path,
+            [
+                {
+                    "sid": "08-01",
+                    "p": "PREPARE",
+                    "s": "EXECUTED",
+                    "d": "PASS",
+                    "t": "2026-02-11T10:00:00Z",
+                },
+                {
+                    "sid": "08-01",
+                    "p": "GREEN",
+                    "s": "EXECUTED",
+                    "d": "PASS",
+                    "t": "2026-02-11T10:05:00Z",
+                },
+                {
+                    "sid": "09-01",
+                    "p": "PREPARE",
+                    "s": "EXECUTED",
+                    "d": "PASS",
+                    "t": "2026-02-11T10:10:00Z",
+                },
+            ],
+        )
 
         reader = YamlExecutionLogReader()
         events = reader.read_step_events(log_path, "08-01")
@@ -46,17 +67,20 @@ class TestYamlExecutionLogReaderV3:
 
     def test_read_step_events_parses_v3_with_stats(self, tmp_path):
         """Reader extracts turns_used and tokens_used from v3.0 tu/tk keys."""
-        log_path = _write_log(tmp_path, [
-            {
-                "sid": "08-01",
-                "p": "COMMIT",
-                "s": "EXECUTED",
-                "d": "PASS",
-                "t": "2026-02-11T10:30:00Z",
-                "tu": 20,
-                "tk": 60000,
-            },
-        ])
+        log_path = _write_log(
+            tmp_path,
+            [
+                {
+                    "sid": "08-01",
+                    "p": "COMMIT",
+                    "s": "EXECUTED",
+                    "d": "PASS",
+                    "t": "2026-02-11T10:30:00Z",
+                    "tu": 20,
+                    "tk": 60000,
+                },
+            ],
+        )
 
         reader = YamlExecutionLogReader()
         events = reader.read_step_events(log_path, "08-01")
@@ -89,7 +113,13 @@ class TestYamlExecutionLogReaderV3:
             tmp_path,
             [
                 "08-01|PREPARE|EXECUTED|PASS|2026-02-11T10:00:00Z",
-                {"sid": "08-01", "p": "GREEN", "s": "EXECUTED", "d": "PASS", "t": "2026-02-11T10:05:00Z"},
+                {
+                    "sid": "08-01",
+                    "p": "GREEN",
+                    "s": "EXECUTED",
+                    "d": "PASS",
+                    "t": "2026-02-11T10:05:00Z",
+                },
             ],
             schema_version="3.0",
         )

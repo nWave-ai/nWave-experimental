@@ -61,13 +61,20 @@ class TestStructuredLogRoundTrip:
 
         _create_execution_log(tmp_path)
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "08-01",
-            "--phase", "GREEN",
-            "--status", "EXECUTED",
-            "--data", "PASS",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "08-01",
+                "--phase",
+                "GREEN",
+                "--status",
+                "EXECUTED",
+                "--data",
+                "PASS",
+            ]
+        )
         assert result == 0
 
         # Verify the YAML file contains structured dict, not a pipe-delimited string
@@ -83,9 +90,7 @@ class TestStructuredLogRoundTrip:
 
         # Reader parses it correctly
         reader = YamlExecutionLogReader()
-        events = reader.read_step_events(
-            str(tmp_path / "execution-log.yaml"), "08-01"
-        )
+        events = reader.read_step_events(str(tmp_path / "execution-log.yaml"), "08-01")
         assert len(events) == 1
         event = events[0]
         assert event.step_id == "08-01"
@@ -95,23 +100,30 @@ class TestStructuredLogRoundTrip:
         assert event.turns_used is None
         assert event.tokens_used is None
 
-    def test_cli_writes_structured_format_with_stats(
-        self, tmp_path, mock_schema
-    ):
+    def test_cli_writes_structured_format_with_stats(self, tmp_path, mock_schema):
         """CLI writes structured dict with tu/tk keys for execution stats."""
         from des.cli.log_phase import main
 
         _create_execution_log(tmp_path)
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "08-01",
-            "--phase", "COMMIT",
-            "--status", "EXECUTED",
-            "--data", "PASS",
-            "--turns-used", "25",
-            "--tokens-used", "80000",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "08-01",
+                "--phase",
+                "COMMIT",
+                "--status",
+                "EXECUTED",
+                "--data",
+                "PASS",
+                "--turns-used",
+                "25",
+                "--tokens-used",
+                "80000",
+            ]
+        )
         assert result == 0
 
         log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
@@ -121,9 +133,7 @@ class TestStructuredLogRoundTrip:
         assert entry["tk"] == 80000
 
         reader = YamlExecutionLogReader()
-        events = reader.read_step_events(
-            str(tmp_path / "execution-log.yaml"), "08-01"
-        )
+        events = reader.read_step_events(str(tmp_path / "execution-log.yaml"), "08-01")
         assert len(events) == 1
         assert events[0].turns_used == 25
         assert events[0].tokens_used == 80000
@@ -140,9 +150,7 @@ class TestStructuredLogRoundTrip:
         )
 
         reader = YamlExecutionLogReader()
-        events = reader.read_step_events(
-            str(tmp_path / "execution-log.yaml"), "08-01"
-        )
+        events = reader.read_step_events(str(tmp_path / "execution-log.yaml"), "08-01")
         assert len(events) == 2
         assert events[0].phase_name == "PREPARE"
         assert events[1].phase_name == "GREEN"

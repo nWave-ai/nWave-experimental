@@ -78,25 +78,29 @@ def _build_des_task_stdin() -> str:
         "# TIMEOUT_INSTRUCTION\n"
         "Turn budget: 30\n"
     )
-    return json.dumps({
-        "tool_name": "Task",
-        "tool_input": {
-            "prompt": prompt,
-            "max_turns": 30,
-            "subagent_type": "code",
-        },
-    })
+    return json.dumps(
+        {
+            "tool_name": "Task",
+            "tool_input": {
+                "prompt": prompt,
+                "max_turns": 30,
+                "subagent_type": "code",
+            },
+        }
+    )
 
 
 def _build_no_max_turns_stdin() -> str:
     """Task input missing max_turns (triggers BLOCKED)."""
-    return json.dumps({
-        "tool_name": "Task",
-        "tool_input": {
-            "prompt": "Do something",
-            "subagent_type": "code",
-        },
-    })
+    return json.dumps(
+        {
+            "tool_name": "Task",
+            "tool_input": {
+                "prompt": "Do something",
+                "subagent_type": "code",
+            },
+        }
+    )
 
 
 # --- Test 1: PreToolUse ALLOWED event carries same hook_id as HOOK_INVOKED ---
@@ -175,7 +179,9 @@ def test_pre_tool_use_blocked_event_carries_hook_id(monkeypatch):
 # --- Test 3: SubagentStop PASSED event carries same hook_id as HOOK_INVOKED ---
 
 
-def _write_complete_execution_log(log_path: Path, project_id: str, step_id: str) -> None:
+def _write_complete_execution_log(
+    log_path: Path, project_id: str, step_id: str
+) -> None:
     """Write a complete execution-log.yaml that passes validation."""
     events = []
     phases = [
@@ -212,7 +218,8 @@ def test_subagent_stop_passed_event_carries_hook_id(monkeypatch, tmp_path):
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: des_dir / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: des_dir
+        / f"des-task-active-{project_id}--{step_id}",
     )
 
     # Write complete execution log
@@ -222,11 +229,13 @@ def test_subagent_stop_passed_event_carries_hook_id(monkeypatch, tmp_path):
     events: list[AuditEvent] = []
     writer = _make_capturing_writer(events)
 
-    stop_stdin = json.dumps({
-        "executionLogPath": str(log_path),
-        "projectId": "test-project",
-        "stepId": "01-01",
-    })
+    stop_stdin = json.dumps(
+        {
+            "executionLogPath": str(log_path),
+            "projectId": "test-project",
+            "stepId": "01-01",
+        }
+    )
     monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
@@ -261,7 +270,8 @@ def test_subagent_stop_failed_event_carries_hook_id(monkeypatch, tmp_path):
     monkeypatch.setattr(
         adapter,
         "_signal_file_for",
-        lambda project_id, step_id: des_dir / f"des-task-active-{project_id}--{step_id}",
+        lambda project_id, step_id: des_dir
+        / f"des-task-active-{project_id}--{step_id}",
     )
 
     # Write incomplete execution log (only 2 of 7 phases)
@@ -280,11 +290,13 @@ def test_subagent_stop_failed_event_carries_hook_id(monkeypatch, tmp_path):
     events: list[AuditEvent] = []
     writer = _make_capturing_writer(events)
 
-    stop_stdin = json.dumps({
-        "executionLogPath": str(log_path),
-        "projectId": "test-project",
-        "stepId": "01-01",
-    })
+    stop_stdin = json.dumps(
+        {
+            "executionLogPath": str(log_path),
+            "projectId": "test-project",
+            "stepId": "01-01",
+        }
+    )
     monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 

@@ -138,7 +138,9 @@ def validate_step_file(
         ]
 
     # Detect schema version and select required phases
-    schema_version = data.get("schema_version", "") or data.get("tdd_cycle", {}).get("schema_version", "")
+    schema_version = data.get("schema_version", "") or data.get("tdd_cycle", {}).get(
+        "schema_version", ""
+    )
     if schema_version in ("4.0", "4.0.0"):
         required_phases = REQUIRED_PHASES_V4
     else:

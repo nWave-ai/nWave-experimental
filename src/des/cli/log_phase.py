@@ -147,8 +147,13 @@ def main(argv: list[str] | None = None) -> int:
     log_path.write_text(yaml.dump(log_data, default_flow_style=False))
 
     # Print entry to stdout (human-readable key=value format)
-    parts = [f"sid={entry['sid']}", f"p={entry['p']}", f"s={entry['s']}",
-             f"d={entry['d']}", f"t={entry['t']}"]
+    parts = [
+        f"sid={entry['sid']}",
+        f"p={entry['p']}",
+        f"s={entry['s']}",
+        f"d={entry['d']}",
+        f"t={entry['t']}",
+    ]
     if "tu" in entry:
         parts.extend([f"tu={entry['tu']}", f"tk={entry['tk']}"])
     print(" ".join(parts))

@@ -57,15 +57,24 @@ class TestExecStatsRoundTrip:
 
         _create_execution_log(tmp_path)
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "07-01",
-            "--phase", "COMMIT",
-            "--status", "EXECUTED",
-            "--data", "PASS",
-            "--turns-used", "12",
-            "--tokens-used", "45000",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "07-01",
+                "--phase",
+                "COMMIT",
+                "--status",
+                "EXECUTED",
+                "--data",
+                "PASS",
+                "--turns-used",
+                "12",
+                "--tokens-used",
+                "45000",
+            ]
+        )
         assert result == 0
 
         reader = YamlExecutionLogReader()
@@ -78,19 +87,28 @@ class TestExecStatsRoundTrip:
         assert event.turns_used == 12
         assert event.tokens_used == 45000
 
-    def test_cli_without_stats_preserves_backward_compatibility(self, tmp_path, mock_schema):
+    def test_cli_without_stats_preserves_backward_compatibility(
+        self, tmp_path, mock_schema
+    ):
         """Entry without stats args produces 5-field format, reader returns None for stats."""
         from des.cli.log_phase import main
 
         _create_execution_log(tmp_path)
 
-        result = main([
-            "--project-dir", str(tmp_path),
-            "--step-id", "07-01",
-            "--phase", "PREPARE",
-            "--status", "EXECUTED",
-            "--data", "PASS",
-        ])
+        result = main(
+            [
+                "--project-dir",
+                str(tmp_path),
+                "--step-id",
+                "07-01",
+                "--phase",
+                "PREPARE",
+                "--status",
+                "EXECUTED",
+                "--data",
+                "PASS",
+            ]
+        )
         assert result == 0
 
         reader = YamlExecutionLogReader()
@@ -105,10 +123,13 @@ class TestExecStatsRoundTrip:
 
     def test_reader_handles_mixed_old_and_new_format_events(self, tmp_path):
         """Reader correctly parses a log with both 5-field and 7-field entries."""
-        log_path = _create_execution_log(tmp_path, events=[
-            "07-01|PREPARE|EXECUTED|PASS|2026-02-11T00:00:00Z",
-            "07-01|COMMIT|EXECUTED|PASS|2026-02-11T00:30:00Z|15|50000",
-        ])
+        log_path = _create_execution_log(
+            tmp_path,
+            events=[
+                "07-01|PREPARE|EXECUTED|PASS|2026-02-11T00:00:00Z",
+                "07-01|COMMIT|EXECUTED|PASS|2026-02-11T00:30:00Z|15|50000",
+            ],
+        )
 
         reader = YamlExecutionLogReader()
         events = reader.read_step_events(str(log_path), "07-01")

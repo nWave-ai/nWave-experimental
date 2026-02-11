@@ -83,9 +83,7 @@ class TestPreInvocationTemplateValidation:
         Missing Phase: GREEN (one of 5 mandatory phases from schema v4.0)
         """
         # Arrange: Create prompt missing GREEN phase from template
-        prompt_missing_phase = prompt_missing_phase_v3(
-            missing_phase="GREEN"
-        )
+        prompt_missing_phase = prompt_missing_phase_v3(missing_phase="GREEN")
 
         # Act: Run pre-invocation validation
         from des.application.validator import TemplateValidator
@@ -95,10 +93,7 @@ class TestPreInvocationTemplateValidation:
 
         # Assert: Validation fails with specific error
         assert validation_result.status == "FAILED"
-        assert (
-            "INCOMPLETE: TDD phase 'GREEN' not mentioned"
-            in validation_result.errors
-        )
+        assert "INCOMPLETE: TDD phase 'GREEN' not mentioned" in validation_result.errors
         assert validation_result.task_invocation_allowed is False
 
     # =========================================================================
@@ -237,10 +232,7 @@ Turn budget: approximately 50 turns"""
             "MISSING: Mandatory section 'BOUNDARY_RULES' not found"
             in validation_result.errors
         )
-        assert (
-            "INCOMPLETE: TDD phase 'GREEN' not mentioned"
-            in validation_result.errors
-        )
+        assert "INCOMPLETE: TDD phase 'GREEN' not mentioned" in validation_result.errors
         assert validation_result.task_invocation_allowed is False
 
     # =========================================================================

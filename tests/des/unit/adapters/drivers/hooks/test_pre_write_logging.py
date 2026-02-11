@@ -19,7 +19,6 @@ Behaviors:
 
 import io
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -40,9 +39,7 @@ def _make_capturing_writer(events: list[AuditEvent]):
 
 def _build_pre_write_stdin(file_path: str = "/tmp/test.py") -> str:
     """Build Write tool input JSON."""
-    return json.dumps(
-        {"tool_name": "Write", "tool_input": {"file_path": file_path}}
-    )
+    return json.dumps({"tool_name": "Write", "tool_input": {"file_path": file_path}})
 
 
 # --- Test 1: HOOK_INVOKED enriched with session_active and des_task_active ---
@@ -61,7 +58,9 @@ def test_hook_invoked_includes_session_state_in_input_summary(monkeypatch, tmp_p
     monkeypatch.setattr(adapter, "DES_DELIVER_SESSION_FILE", session_file)
     monkeypatch.setattr(adapter, "DES_TASK_ACTIVE_FILE", tmp_path / "nonexistent")
 
-    monkeypatch.setattr("sys.stdin", io.StringIO(_build_pre_write_stdin("/tmp/safe.txt")))
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO(_build_pre_write_stdin("/tmp/safe.txt"))
+    )
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
     with patch.object(adapter, "_create_audit_writer", return_value=writer):
