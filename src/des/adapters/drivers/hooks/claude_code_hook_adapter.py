@@ -171,6 +171,8 @@ def _log_hook_completed(
     decision: str,
     duration_ms: float,
     task_correlation_id: str | None = None,
+    turns_used: int | None = None,
+    tokens_used: int | None = None,
 ) -> None:
     """Log a HOOK_COMPLETED diagnostic event at handler exit.
 
@@ -185,6 +187,8 @@ def _log_hook_completed(
         duration_ms: Wall-clock duration of the handler in milliseconds.
         task_correlation_id: Optional UUID4 linking events across the DES task lifecycle.
             When provided, included in event data. When None, the field is omitted.
+        turns_used: Optional number of turns used by the subagent.
+        tokens_used: Optional number of tokens used by the subagent.
     """
     try:
         audit_writer = _create_audit_writer()
@@ -199,6 +203,10 @@ def _log_hook_completed(
             data["slow_hook"] = True
         if task_correlation_id is not None:
             data["task_correlation_id"] = task_correlation_id
+        if turns_used is not None:
+            data["turns_used"] = turns_used
+        if tokens_used is not None:
+            data["tokens_used"] = tokens_used
         audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_COMPLETED",
@@ -668,6 +676,8 @@ def handle_subagent_stop() -> int:
     start_ns = time.perf_counter_ns()
     exit_code = 0
     task_correlation_id: str | None = None
+    turns_used: int | None = None
+    tokens_used: int | None = None
     stderr_buffer = io.StringIO()
     try:
         with contextlib.redirect_stderr(stderr_buffer):
@@ -697,6 +707,15 @@ def handle_subagent_stop() -> int:
                 print(json.dumps(response))
                 exit_code = 1
                 return exit_code
+
+            # Extract execution stats from hook_input (future-proofing:
+            # Claude Code may add these fields to SubagentStop hook_input)
+            raw_turns = hook_input.get("num_turns")
+            raw_tokens = hook_input.get("total_tokens")
+            if raw_turns is not None:
+                turns_used = int(raw_turns)
+            if raw_tokens is not None:
+                tokens_used = int(raw_tokens)
 
             # Diagnostic: confirm hook was invoked with agent details
             _log_hook_invoked(
@@ -760,6 +779,8 @@ def handle_subagent_stop() -> int:
                     stop_hook_active=stop_hook_active,
                     cwd=cwd,
                     task_start_time=task_start_time,
+                    turns_used=turns_used,
+                    tokens_used=tokens_used,
                 ),
                 hook_id=hook_id,
             )
@@ -811,6 +832,8 @@ def handle_subagent_stop() -> int:
             decision=decision_str,
             duration_ms=duration_ms,
             task_correlation_id=task_correlation_id,
+            turns_used=turns_used,
+            tokens_used=tokens_used,
         )
 
 

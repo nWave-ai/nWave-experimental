@@ -38,6 +38,8 @@ class SubagentStopContext:
     stop_hook_active: bool = False
     cwd: str = ""
     task_start_time: str = ""
+    turns_used: int | None = None
+    tokens_used: int | None = None
 
 
 class SubagentStopPort(ABC):

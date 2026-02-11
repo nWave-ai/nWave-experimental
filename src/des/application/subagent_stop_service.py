@@ -161,12 +161,19 @@ class SubagentStopService(SubagentStopPort):
                     error_parts,
                     allowed_despite_failure=True,
                     hook_id=hook_id,
+                    turns_used=context.turns_used,
+                    tokens_used=context.tokens_used,
                 )
                 return HookDecision.allow()
 
             # First attempt: block so sub-agent can try to fix
             self._log_failed(
-                context.project_id, context.step_id, error_parts, hook_id=hook_id
+                context.project_id,
+                context.step_id,
+                error_parts,
+                hook_id=hook_id,
+                turns_used=context.turns_used,
+                tokens_used=context.tokens_used,
             )
             return HookDecision.block(
                 reason=error_message,
@@ -194,7 +201,13 @@ class SubagentStopService(SubagentStopPort):
         self._check_and_log_scope(context)
 
         # Step 5: All valid
-        self._log_passed(context.project_id, context.step_id, hook_id=hook_id)
+        self._log_passed(
+            context.project_id,
+            context.step_id,
+            hook_id=hook_id,
+            turns_used=context.turns_used,
+            tokens_used=context.tokens_used,
+        )
         return HookDecision.allow()
 
     def _check_and_correct_integrity(self, context: SubagentStopContext) -> None:
@@ -373,8 +386,15 @@ class SubagentStopService(SubagentStopPort):
         feature_name: str,
         step_id: str,
         hook_id: str | None = None,
+        turns_used: int | None = None,
+        tokens_used: int | None = None,
     ) -> None:
         """Log successful validation to the audit trail."""
+        data: dict = {}
+        if turns_used is not None:
+            data["turns_used"] = turns_used
+        if tokens_used is not None:
+            data["tokens_used"] = tokens_used
         self._audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_SUBAGENT_STOP_PASSED",
@@ -382,6 +402,7 @@ class SubagentStopService(SubagentStopPort):
                 feature_name=feature_name,
                 step_id=step_id,
                 hook_id=hook_id,
+                data=data,
             )
         )
 
@@ -392,6 +413,8 @@ class SubagentStopService(SubagentStopPort):
         error_messages: list[str],
         allowed_despite_failure: bool = False,
         hook_id: str | None = None,
+        turns_used: int | None = None,
+        tokens_used: int | None = None,
     ) -> None:
         """Log failed validation to the audit trail."""
         data: dict = {
@@ -399,6 +422,10 @@ class SubagentStopService(SubagentStopPort):
         }
         if allowed_despite_failure:
             data["allowed_despite_failure"] = True
+        if turns_used is not None:
+            data["turns_used"] = turns_used
+        if tokens_used is not None:
+            data["tokens_used"] = tokens_used
         self._audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_SUBAGENT_STOP_FAILED",
@@ -417,6 +444,15 @@ class SubagentStopService(SubagentStopPort):
         hook_id: str | None = None,
     ) -> None:
         """Log successful commit verification to the audit trail."""
+        data: dict = {
+            "commit_hash": result.commit_hash,
+            "commit_date": result.commit_date,
+            "commit_subject": result.commit_subject,
+        }
+        if context.turns_used is not None:
+            data["turns_used"] = context.turns_used
+        if context.tokens_used is not None:
+            data["tokens_used"] = context.tokens_used
         self._audit_writer.log_event(
             AuditEvent(
                 event_type="COMMIT_VERIFIED",
@@ -424,11 +460,7 @@ class SubagentStopService(SubagentStopPort):
                 feature_name=context.project_id,
                 step_id=context.step_id,
                 hook_id=hook_id,
-                data={
-                    "commit_hash": result.commit_hash,
-                    "commit_date": result.commit_date,
-                    "commit_subject": result.commit_subject,
-                },
+                data=data,
             )
         )
 
