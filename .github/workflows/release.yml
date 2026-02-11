@@ -618,6 +618,10 @@ jobs:
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           git config user.name "nWave Release Train"
           git config user.email "noreply@nwave.ai"
+
+          # Pull latest master (version-bump job pushed a commit ahead of our checkout)
+          git pull --rebase origin master
+
           git add pyproject.toml
           if git diff --cached --quiet; then
             echo "public_version already up to date"
