@@ -27,17 +27,22 @@ from des.domain.tdd_schema import get_tdd_schema
 def _parse_execution_log(exec_log: dict) -> dict[str, list[str]]:
     """Parse execution-log.yaml events into step_id -> list[phase_name] mapping.
 
-    Event format: "step_id|phase_name|status|outcome|timestamp"
+    Supports both v2.0 pipe format ("sid|phase|status|data|ts")
+    and v3.0 structured format ({sid, p, s, d, t}).
     """
     entries: dict[str, list[str]] = {}
     for event in exec_log.get("events", []):
-        if not isinstance(event, str):
-            continue
-        parts = event.split("|")
-        if len(parts) >= 2:
-            step_id = parts[0]
-            phase_name = parts[1]
-            entries.setdefault(step_id, []).append(phase_name)
+        if isinstance(event, str):
+            parts = event.split("|")
+            if len(parts) >= 2:
+                step_id = parts[0]
+                phase_name = parts[1]
+                entries.setdefault(step_id, []).append(phase_name)
+        elif isinstance(event, dict):
+            step_id = event.get("sid", "")
+            phase_name = event.get("p", "")
+            if step_id and phase_name:
+                entries.setdefault(step_id, []).append(phase_name)
     return entries
 
 
