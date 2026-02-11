@@ -36,7 +36,16 @@ repos:
         stages: [pre-commit]
         always_run: true
 
-      # Phase 3: Documentation freshness check (enforced at push, not commit)
+      # Phase 3a: Integration & e2e tests (enforced at push, not commit)
+      - id: pytest-slow-validation
+        name: Pytest Integration & E2E Validation
+        entry: python3 scripts/hooks/validate_tests_slow.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        always_run: true
+
+      # Phase 3b: Documentation freshness check (enforced at push, not commit)
       - id: docs-freshness-check
         name: Documentation Freshness Check
         entry: python3 scripts/hooks/check_documentation_freshness.py

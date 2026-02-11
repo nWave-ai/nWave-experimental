@@ -130,48 +130,53 @@ print("IMPORT_SUCCESS")
 @when(parsers.parse("I import the following DES modules:"))
 def try_import_modules(datatable, test_context: dict):
     """
-    Attempt to import multiple DES modules.
+    Attempt to import multiple DES modules in a single subprocess.
 
     Uses datatable with 'module_path' column.
+    Batches all imports into one process to avoid per-module startup cost.
     """
     pythonpath = test_context.get("pythonpath", "")
-    import_results = []
 
     # Skip header row if present
     rows = datatable[1:] if datatable and datatable[0] == ["module_path"] else datatable
 
-    for row in rows:
-        module_path = row[0] if isinstance(row, list) else row["module_path"]
-        import_statement = f"from {module_path} import *"
+    modules = [row[0] if isinstance(row, list) else row["module_path"] for row in rows]
 
-        python_code = f"""
-import sys
-# Remove development source paths but keep stdlib
-sys.path = [p for p in sys.path if '/mnt/c/Repositories' not in p and '/src' not in p]
-# Add installed DES path at the beginning
-sys.path.insert(0, '{pythonpath}')
-try:
-    {import_statement}
-    print("SUCCESS:{module_path}")
+    # Build a single script that tests all imports
+    import_tests = "\n".join(
+        f"""try:
+    from {mod} import *
+    print("SUCCESS:{mod}")
 except ImportError as e:
-    print(f"FAILED:{module_path}:{{e}}")
+    print(f"FAILED:{mod}:{{e}}")"""
+        for mod in modules
+    )
+
+    python_code = f"""
+import sys
+sys.path = [p for p in sys.path if '/mnt/c/Repositories' not in p and '/src' not in p]
+sys.path.insert(0, '{pythonpath}')
+{import_tests}
 """
 
-        result = subprocess.run(
-            [sys.executable, "-c", python_code],
-            capture_output=True,
-            text=True,
-            env={"PYTHONPATH": pythonpath},
-        )
+    result = subprocess.run(
+        [sys.executable, "-c", python_code],
+        capture_output=True,
+        text=True,
+        env={"PYTHONPATH": pythonpath},
+    )
 
-        import_results.append(
-            {
-                "module": module_path,
-                "success": f"SUCCESS:{module_path}" in result.stdout,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-            }
-        )
+    # Parse per-module results from batched output
+    stdout = result.stdout
+    import_results = [
+        {
+            "module": mod,
+            "success": f"SUCCESS:{mod}" in stdout,
+            "stdout": stdout,
+            "stderr": result.stderr,
+        }
+        for mod in modules
+    ]
 
     test_context["module_import_results"] = import_results
 

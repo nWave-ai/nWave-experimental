@@ -27,7 +27,7 @@ import pytest
 # -----------------------------------------------------------------------------
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def test_logger() -> logging.Logger:
     """Provide a configured logger for test execution."""
     logger = logging.getLogger("test.des_import_validation")
@@ -35,28 +35,30 @@ def test_logger() -> logging.Logger:
     return logger
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def project_root() -> Path:
     """Return the nWave project root directory."""
     current = Path(__file__).resolve()
     return current.parents[4]  # 4 levels up from test file
 
 
-@pytest.fixture
-def clean_test_directory(tmp_path: Path) -> Path:
+@pytest.fixture(scope="module")
+def clean_test_directory(tmp_path_factory) -> Path:
     """Provide a clean test installation directory simulating ~/.claude."""
-    test_dir = tmp_path / ".claude"
+    test_dir = tmp_path_factory.mktemp("des_import") / ".claude"
     test_dir.mkdir(parents=True, exist_ok=True)
     return test_dir
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def installed_des_context(clean_test_directory, project_root, test_logger):
     """
     Provide a context with DES fully installed.
 
     This fixture installs all plugins (including DES and its dependencies)
     and returns the InstallContext for validation testing.
+
+    Module-scoped: tests must NOT mutate the installed directory.
     """
     from scripts.install.plugins.agents_plugin import AgentsPlugin
     from scripts.install.plugins.base import InstallContext

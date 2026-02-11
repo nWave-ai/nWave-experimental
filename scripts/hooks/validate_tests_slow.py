@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Pytest Test Validation Hook
+"""Pre-push Test Validation Hook: Integration & E2E Tests
 
-Ensures all tests pass before commit.
+Runs integration and e2e tests that are excluded from the pre-commit hook.
+These are slower tests that exercise cross-component and end-to-end paths.
 """
 
 import os
@@ -11,7 +12,6 @@ import sys
 from pathlib import Path
 
 
-# Color codes
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
 YELLOW = "\033[1;33m"
@@ -20,10 +20,7 @@ NC = "\033[0m"
 
 
 def clear_git_environment():
-    """Clear git environment variables that pre-commit sets.
-
-    These can interfere with tests that create temporary git repositories.
-    """
+    """Clear git environment variables that pre-commit sets."""
     git_vars = [
         "GIT_DIR",
         "GIT_WORK_TREE",
@@ -36,22 +33,34 @@ def clear_git_environment():
         os.environ.pop(var, None)
 
 
+def collect_test_dirs():
+    """Find all integration/ and e2e/ directories under tests/."""
+    tests_root = Path("tests")
+    if not tests_root.is_dir():
+        return []
+
+    dirs = []
+    for pattern in ("**/integration", "**/e2e"):
+        for d in sorted(tests_root.glob(pattern)):
+            if d.is_dir():
+                dirs.append(str(d))
+    return dirs
+
+
 def main():
-    """Run test validation."""
+    """Run integration and e2e test validation."""
     clear_git_environment()
 
-    print(f"{BLUE}Running test validation...{NC}")
-
-    # Check if pytest is available
-    try:
-        subprocess.run(
-            ["python3", "--version"], check=True, capture_output=True, text=True
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print(f"{YELLOW}Warning: python3 not available, skipping tests{NC}")
+    test_dirs = collect_test_dirs()
+    if not test_dirs:
+        print(f"{YELLOW}No integration/e2e test directories found, skipping{NC}")
         return 0
 
-    # Determine pytest command: prefer pipenv run (matches CI) over bare python3
+    print(
+        f"{BLUE}Running integration & e2e tests ({len(test_dirs)} directories)...{NC}"
+    )
+
+    # Determine pytest command
     use_pipenv = False
     try:
         subprocess.run(
@@ -73,31 +82,17 @@ def main():
             print(f"{YELLOW}Warning: pytest not available, skipping tests{NC}")
             return 0
 
-    # Check if tests directory exists
-    if not Path("tests").is_dir():
-        print(f"{YELLOW}No tests directory found, skipping tests{NC}")
-        return 0
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.getcwd() + ":" + env.get("PYTHONPATH", "")
 
-    # Run tests and capture output
+    base_args = [*test_dirs, "-v", "--tb=short"]
+    cmd = (
+        ["pipenv", "run", "python3", "-m", "pytest", *base_args]
+        if use_pipenv
+        else ["python3", "-m", "pytest", *base_args]
+    )
+
     try:
-        # Configure environment for subprocess - ensure Python can find project modules
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.getcwd() + ":" + env.get("PYTHONPATH", "")
-
-        # Pre-commit runs unit/acceptance tests only.
-        # Integration and e2e tests run at pre-push (validate_tests_slow.py).
-        base_args = [
-            "tests/",
-            "-v",
-            "--tb=short",
-            "--ignore-glob=**/integration/**",
-            "--ignore-glob=**/e2e/**",
-        ]
-        cmd = (
-            ["pipenv", "run", "python3", "-m", "pytest", *base_args]
-            if use_pipenv
-            else ["python3", "-m", "pytest", *base_args]
-        )
         result = subprocess.run(
             cmd,
             check=False,
@@ -108,10 +103,9 @@ def main():
         test_output = result.stdout + result.stderr
         test_exit_code = result.returncode
     except Exception as e:
-        print(f"{RED}Error running tests: {e}{NC}")
+        print(f"{RED}Error running integration/e2e tests: {e}{NC}")
         return 1
 
-    # Count tests using regex
     passed_match = re.search(r"(\d+) passed", test_output)
     failed_match = re.search(r"(\d+) failed", test_output)
 
@@ -119,40 +113,35 @@ def main():
     failed_tests = int(failed_match.group(1)) if failed_match else 0
 
     if test_exit_code == 0:
-        print(f"{GREEN}All tests passing ({total_tests}/{total_tests}){NC}")
+        print(
+            f"{GREEN}Integration & e2e tests passing ({total_tests}/{total_tests}){NC}"
+        )
         return 0
     elif test_exit_code == 5:
-        # Exit code 5 = no tests collected
-        print(f"{YELLOW}No tests found, skipping test validation{NC}")
+        print(f"{YELLOW}No integration/e2e tests collected, skipping{NC}")
         return 0
     else:
         print()
-        print(f"{RED}COMMIT BLOCKED: Tests failed{NC}")
+        print(f"{RED}PUSH BLOCKED: Integration/e2e tests failed{NC}")
         print()
-
-        # Print full pytest output to see actual error details
         print(f"{RED}Full pytest output:{NC}")
         print(test_output)
         print()
 
         print(f"{RED}Failed tests:{NC}")
-
-        # Extract and display failed test lines
         for line in test_output.split("\n"):
             if "FAILED" in line or "ERROR" in line:
                 print(f"  {line}")
 
         print()
-
         if failed_tests > 0:
             passing_tests = total_tests - failed_tests
             print(
-                f"{RED}Test Results: {passing_tests}/{total_tests} passing ({failed_tests} failed){NC}"
+                f"{RED}Test Results: {passing_tests}/{total_tests} passing"
+                f" ({failed_tests} failed){NC}"
             )
-
         print()
-        print(f"{YELLOW}Fix failing tests before committing.{NC}")
-        print(f"{YELLOW}Emergency bypass: git commit --no-verify{NC}")
+        print(f"{YELLOW}Fix failing integration/e2e tests before pushing.{NC}")
         return 1
 
 
