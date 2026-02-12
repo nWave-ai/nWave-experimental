@@ -44,6 +44,10 @@ venv/
 env/
 ENV/
 
+# Pipfile.lock (pipenv resolver incompatible with PEP 517 editable installs)
+# Use requirements.lock (pip freeze) for reproducible installs instead
+Pipfile.lock
+
 # Python logs
 pytest.log
 **/pytest.log
