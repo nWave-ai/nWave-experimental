@@ -165,7 +165,7 @@ def determine_bump_type(commits: list[str]) -> str:
 **Duration**: ~5 minutes
 
 **Actions**:
-1. Run `create_release_packages.py` to create release archives
+1. Run `create_github_tarballs.py` to create release archives
 2. Generate SHA256 checksums for all artifacts
 3. Validate package structure
 

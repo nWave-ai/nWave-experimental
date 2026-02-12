@@ -181,7 +181,7 @@ Uses [python-semantic-release](https://python-semantic-release.readthedocs.io/) 
 |------|-------------|
 | Extract version | From version-bump output or tag ref |
 | Version consistency | Compares version against `framework-catalog.yaml` |
-| Release packages | `scripts/framework/create_release_packages.py --version X.Y.Z` |
+| GitHub tarballs | `scripts/framework/create_github_tarballs.py --version X.Y.Z` |
 | Checksums | SHA256 for all release files |
 | Artifact upload | `release-packages`, 90-day retention |
 

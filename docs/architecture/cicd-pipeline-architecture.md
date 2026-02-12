@@ -674,9 +674,9 @@ jobs:
             exit 1
           fi
 
-      - name: Create release packages
+      - name: Create GitHub tarballs
         run: |
-          pipenv run python3 scripts/framework/create_release_packages.py \
+          pipenv run python3 scripts/framework/create_github_tarballs.py \
             --version ${{ steps.get_version.outputs.VERSION }} \
             --output-dir dist/releases
 

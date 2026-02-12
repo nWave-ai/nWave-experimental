@@ -24,7 +24,7 @@ scripts/
 │   └── validate_source_frontmatter.py # Source frontmatter validation
 │
 ├── framework/           # Framework operations
-│   ├── create_release_packages.py     # Release package creator
+│   ├── create_github_tarballs.py       # GitHub Release tarball creator
 │   ├── release_validation.py          # Release error detection
 │   ├── sync_agent_names.py            # Agent name synchronization
 │   └── validate_tdd_phases_ci.py      # CI TDD phase validation
@@ -74,7 +74,7 @@ See `scripts/install/README.md` for details.
 
 ```bash
 python scripts/framework/validate_tdd_phases_ci.py    # CI TDD validation
-python scripts/framework/create_release_packages.py    # Build release
+python scripts/framework/create_github_tarballs.py     # Build GitHub tarballs
 ```
 
 ### Local CI
