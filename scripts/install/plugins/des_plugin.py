@@ -858,8 +858,12 @@ class DESPlugin(InstallationPlugin):
         else:
             try:
                 with open(config_file, encoding="utf-8") as f:
-                    json.load(f)
-                context.logger.info("  \u2705 DES config verified")
+                    des_cfg = json.load(f)
+                audit_on = "on" if des_cfg.get("audit_logging_enabled") else "off"
+                log_dir = des_cfg.get("audit_log_dir", "not set")
+                context.logger.info(
+                    f"  \u2705 DES config ({config_file}): audit_logging={audit_on}, log_dir={log_dir}"
+                )
             except json.JSONDecodeError:
                 errors.append("DES config is not valid JSON: .nwave/des-config.json")
 

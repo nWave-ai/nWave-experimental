@@ -2,9 +2,10 @@
 
 Tests validate the des-config.json check (step 5) added to verify():
 - Config exists and is valid JSON: verify passes with 'config OK' in message
+- Config values shown: audit_logging=on/off and log_dir displayed in output
 - Config missing: verify fails with 'DES config not found' error
 - Config has invalid JSON: verify fails with 'not valid JSON' error
-- TUI log lines emitted for the config check step
+- TUI log lines emitted for the config check step with path and values
 
 All other verify() checks (module import, scripts, templates, hooks) are
 satisfied via fixtures so these tests isolate the des-config.json behavior.
@@ -127,22 +128,33 @@ class TestDESConfigVerify:
         GIVEN: A complete DES installation with valid .nwave/des-config.json
         WHEN: verify() is called
         THEN: Returns success with 'config OK' in the message
+              AND logger output shows audit_logging=off and log_dir value
         """
         plugin, context, project_root = des_env
 
         # Check 1: mock subprocess for DES module import
         mock_subprocess.return_value = MagicMock(returncode=0, stderr="")
 
-        # Check 5: create valid des-config.json
+        # Check 5: create valid des-config.json with defaults
         nwave_dir = project_root / ".nwave"
         nwave_dir.mkdir(parents=True)
         config_file = nwave_dir / "des-config.json"
-        config_file.write_text(json.dumps({"audit_logging_enabled": False}))
+        config_file.write_text(
+            json.dumps(
+                {"audit_logging_enabled": False, "audit_log_dir": ".nwave/des/logs"}
+            )
+        )
 
         result = plugin.verify(context)
 
         assert result.success is True
         assert "config OK" in result.message
+
+        # Verify the new format shows config values
+        log_messages = [str(call) for call in context.logger.info.call_args_list]
+        log_text = " ".join(log_messages)
+        assert "audit_logging=off" in log_text
+        assert "log_dir=.nwave/des/logs" in log_text
 
     @patch("subprocess.run")
     def test_verify_fails_when_des_config_missing(self, mock_subprocess, des_env):
@@ -191,7 +203,7 @@ class TestDESConfigVerify:
         """
         GIVEN: A complete DES installation with valid des-config.json
         WHEN: verify() is called
-        THEN: Logger emits TUI lines for the config check step
+        THEN: Logger emits TUI lines showing config path and values
         """
         plugin, context, project_root = des_env
 
@@ -202,7 +214,11 @@ class TestDESConfigVerify:
         nwave_dir = project_root / ".nwave"
         nwave_dir.mkdir(parents=True)
         config_file = nwave_dir / "des-config.json"
-        config_file.write_text(json.dumps({"audit_logging_enabled": False}))
+        config_file.write_text(
+            json.dumps(
+                {"audit_logging_enabled": False, "audit_log_dir": ".nwave/des/logs"}
+            )
+        )
 
         result = plugin.verify(context)
 
@@ -210,4 +226,62 @@ class TestDESConfigVerify:
         log_messages = [str(call) for call in context.logger.info.call_args_list]
         log_text = " ".join(log_messages)
         assert "Verifying DES config" in log_text
-        assert "DES config verified" in log_text
+        # New format: shows path and config values instead of plain "DES config verified"
+        assert "DES config (" in log_text
+        assert "des-config.json" in log_text
+        assert "audit_logging=off" in log_text
+        assert "log_dir=.nwave/des/logs" in log_text
+
+    @patch("subprocess.run")
+    def test_verify_shows_audit_logging_on_when_enabled(self, mock_subprocess, des_env):
+        """
+        GIVEN: A DES config with audit_logging_enabled=True
+        WHEN: verify() is called
+        THEN: Logger output shows 'audit_logging=on'
+        """
+        plugin, context, project_root = des_env
+
+        # Check 1: mock subprocess for DES module import
+        mock_subprocess.return_value = MagicMock(returncode=0, stderr="")
+
+        # Check 5: create des-config.json with audit logging enabled
+        nwave_dir = project_root / ".nwave"
+        nwave_dir.mkdir(parents=True)
+        config_file = nwave_dir / "des-config.json"
+        config_file.write_text(
+            json.dumps(
+                {"audit_logging_enabled": True, "audit_log_dir": ".nwave/des/logs"}
+            )
+        )
+
+        result = plugin.verify(context)
+
+        assert result.success is True
+        log_messages = [str(call) for call in context.logger.info.call_args_list]
+        log_text = " ".join(log_messages)
+        assert "audit_logging=on" in log_text
+
+    @patch("subprocess.run")
+    def test_verify_shows_not_set_when_log_dir_missing(self, mock_subprocess, des_env):
+        """
+        GIVEN: A DES config with only audit_logging_enabled (no audit_log_dir key)
+        WHEN: verify() is called
+        THEN: Logger output shows 'log_dir=not set'
+        """
+        plugin, context, project_root = des_env
+
+        # Check 1: mock subprocess for DES module import
+        mock_subprocess.return_value = MagicMock(returncode=0, stderr="")
+
+        # Check 5: create des-config.json WITHOUT audit_log_dir
+        nwave_dir = project_root / ".nwave"
+        nwave_dir.mkdir(parents=True)
+        config_file = nwave_dir / "des-config.json"
+        config_file.write_text(json.dumps({"audit_logging_enabled": False}))
+
+        result = plugin.verify(context)
+
+        assert result.success is True
+        log_messages = [str(call) for call in context.logger.info.call_args_list]
+        log_text = " ".join(log_messages)
+        assert "log_dir=not set" in log_text
