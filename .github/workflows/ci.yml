@@ -287,7 +287,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS (10x) and Windows (2x) disabled to stay within free tier
+        # Re-enable for cross-platform validation before major releases
+        os: [ubuntu-latest]
         python-version: ['3.11', '3.12']
 
     steps:
