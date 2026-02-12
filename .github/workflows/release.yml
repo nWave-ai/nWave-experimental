@@ -153,7 +153,7 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip setuptools wheel pipenv
-          pipenv install --dev
+          pipenv install --dev --skip-lock
 
       - name: Extract version from tag
         id: get_version

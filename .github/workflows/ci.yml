@@ -313,7 +313,7 @@ jobs:
             ~/.cache/pip
             ~/Library/Caches/pip
             ~\AppData\Local\pip\Cache
-          key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ matrix.python-version }}-${{ hashFiles('Pipfile.lock') }}
+          key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ matrix.python-version }}-
             ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-
@@ -321,7 +321,7 @@ jobs:
       - name: Install pipenv and dependencies
         run: |
           python3 -m pip install --upgrade pip setuptools wheel pipenv
-          pipenv install --dev --deploy --ignore-pipfile || pipenv install --dev
+          pipenv install --dev --skip-lock
         shell: bash
 
       - name: Install commit-msg hook
@@ -423,7 +423,7 @@ jobs:
       - name: Install pipenv and dependencies
         run: |
           python3 -m pip install --upgrade pip pipenv
-          pipenv install --dev --deploy --ignore-pipfile || pipenv install --dev
+          pipenv install --dev --skip-lock
 
       - name: Verify agent name synchronization
         run: pipenv run python3 scripts/framework/sync_agent_names.py --verify
