@@ -459,7 +459,6 @@ jobs:
             --exclude 'CLAUDE.local.md' \
             --exclude 'SESSION_STATE*' \
             --exclude 'build.log' \
-            --exclude 'nwave_ai/' \
             --exclude 'setup.cfg' \
             --exclude 'Pipfile' \
             --exclude 'Pipfile.lock' \
