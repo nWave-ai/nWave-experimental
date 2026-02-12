@@ -428,6 +428,22 @@ jobs:
           token: ${{ secrets.RELEASETRAIN }}
           path: nwave-target
 
+      - name: Save current nwave-ai version before sync
+        id: pre_sync
+        run: |
+          # Save current public version before rsync overwrites pyproject.toml
+          CURRENT_PUBLIC_VERSION=$(python3 -c "
+          import re
+          with open('nwave-target/pyproject.toml') as f:
+              for line in f:
+                  m = re.match(r'version\s*=\s*\"(.+)\"', line.strip())
+                  if m:
+                      print(m.group(1))
+                      break
+          ")
+          echo "current_version=$CURRENT_PUBLIC_VERSION" >> $GITHUB_OUTPUT
+          echo "Saved current nwave-ai version: $CURRENT_PUBLIC_VERSION"
+
       - name: Sync files to nwave-ai/nwave
         run: |
           # Remove dangling symlinks before rsync (e.g. nWave/tasks/dw -> nw)
@@ -442,7 +458,6 @@ jobs:
             --exclude 'CLAUDE.local.md' \
             --exclude 'SESSION_STATE*' \
             --exclude 'build.log' \
-            --exclude 'pyproject.toml' \
             --exclude 'nwave_ai/' \
             --exclude 'setup.cfg' \
             --exclude 'Pipfile' \
@@ -480,18 +495,10 @@ jobs:
       - name: Auto-bump nwave-ai version
         id: nwave_version
         run: |
-          # Read current published version from nwave-ai/nwave
-          CURRENT=$(python3 -c "
-          import re
-          with open('nwave-target/pyproject.toml') as f:
-              for line in f:
-                  m = re.match(r'version\s*=\s*\"(.+)\"', line.strip())
-                  if m:
-                      print(m.group(1))
-                      break
-          ")
+          # Use pre-sync saved version (pyproject.toml was overwritten by rsync)
+          CURRENT="${{ steps.pre_sync.outputs.current_version }}"
 
-          # Read public_version floor from nwave-dev
+          # Read public_version floor from nwave-dev pyproject.toml
           FLOOR=$(python3 -c "
           with open('pyproject.toml') as f:
               for line in f:
@@ -520,21 +527,76 @@ jobs:
           echo "New nwave-ai version: $NEW_VERSION"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Update nwave-ai version files
+      - name: Patch pyproject.toml for nwave-ai publication
         run: |
           NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
 
-          # Update pyproject.toml
-          python3 -c "
+          # Transform dev pyproject.toml (crafter-ai) into public pyproject.toml (nwave-ai)
+          # rsync synced the clean build config; now patch identity fields
+          python3 << PYEOF
           import re
+
           with open('nwave-target/pyproject.toml', 'r') as f:
               content = f.read()
-          content = re.sub(r'version = \"[^\"]+\"', 'version = \"${NWAVE_VERSION}\"', content, count=1)
+
+          # 1. Swap package name: crafter-ai -> nwave-ai
+          content = re.sub(r'name = "crafter-ai"', 'name = "nwave-ai"', content)
+
+          # 2. Set public version
+          content = re.sub(r'version = "[^"]+"', 'version = "${NWAVE_VERSION}"', content, count=1)
+
+          # 3. Update description for public package
+          content = re.sub(
+              r'description = "[^"]+"',
+              'description = "CLI installer for the nWave AI methodology framework"',
+              content
+          )
+
+          # 4. Update author for public package
+          content = re.sub(
+              r'authors = \[.*?\]',
+              'authors = [\\n    { name = "nWave AI", email = "info@nwave.ai" }\\n]',
+              content,
+              flags=re.DOTALL
+          )
+
+          # 5. Add nwave-ai specific sections after [project.urls] block
+          #    - CLI entry point
+          #    - Wheel package config (nwave_ai package)
+          if '[project.scripts]' not in content:
+              # Insert after [project.urls] block (before next section)
+              content = re.sub(
+                  r'(\[project\.urls\].*?\n)(\n\[)',
+                  r'\1\n[project.scripts]\nnwave-ai = "nwave_ai.cli:main"\n\2',
+                  content,
+                  flags=re.DOTALL
+              )
+
+          if '[tool.hatch.build.targets.wheel]' not in content:
+              # Append wheel config before [tool.pytest] or at end of file
+              wheel_config = (
+                  '\\n[tool.hatch.build.targets.wheel]\\n'
+                  'packages = ["nwave_ai"]\\n'
+              )
+              if '[tool.pytest' in content:
+                  content = content.replace('[tool.pytest', wheel_config + '\\n[tool.pytest')
+              else:
+                  content += wheel_config
+
+          # 6. Remove dev-only sections
+          #    - [tool.nwave] (contains public_version floor, dev-only)
+          #    - [tool.semantic_release] (dev-only release config)
+          content = re.sub(r'\[tool\.nwave\].*?(?=\n\[|\Z)', '', content, flags=re.DOTALL)
+          content = re.sub(r'\[tool\.semantic_release\].*?(?=\n\[|\Z)', '', content, flags=re.DOTALL)
+
+          # Clean up multiple blank lines
+          content = re.sub(r'\n{3,}', '\\n\\n', content)
+
           with open('nwave-target/pyproject.toml', 'w') as f:
               f.write(content)
-          "
+          PYEOF
 
-          # Update __init__.py
+          # Update __init__.py if it exists
           if [ -f nwave-target/nwave_ai/__init__.py ]; then
             python3 -c "
           import re
@@ -546,7 +608,7 @@ jobs:
           "
           fi
 
-          echo "Updated nwave-ai to version $NWAVE_VERSION"
+          echo "Patched pyproject.toml: crafter-ai -> nwave-ai v$NWAVE_VERSION"
 
       - name: Commit and push to nwave-ai/nwave
         working-directory: nwave-target
