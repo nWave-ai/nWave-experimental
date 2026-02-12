@@ -2,6 +2,9 @@
 requires = ["hatchling>=1.21.0"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/des", "scripts/install"]
+
 [project]
 name = "nwave"
 version = "2.14.6"
