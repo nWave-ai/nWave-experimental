@@ -1,1 +1,0 @@
-# nWave constants module
