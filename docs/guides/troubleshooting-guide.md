@@ -282,6 +282,7 @@ Include this information:
 
 ### Support Resources
 
+- **Discord Community**: [Join the nWave Discord](https://discord.gg/DeYdSNk6) - Get help, share success stories, and connect with other users
 - **Documentation**: `README.md`
 - **GitHub Issues**: [https://github.com/nWave-ai/nWave/issues](https://github.com/nWave-ai/nWave/issues)
 - **Installation Logs**: `~/.claude/nwave-install.log`

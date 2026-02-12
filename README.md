@@ -90,7 +90,7 @@ Find exact specifications and configuration:
 - **[nWave Commands Reference](docs/reference/nwave-commands-reference.md)** - All commands, agents, file locations
 - **[Reviewer Agents Reference](docs/reference/reviewer-agents-reference.md)** - Reviewer specifications and configuration
 - **[Layer 4 API Reference](docs/reference/layer-4-api-reference.md)** - API contracts and interfaces
-- **[Troubleshooting Guide](docs/troubleshooting/troubleshooting-guide.md)** - Common issues and solutions
+- **[Troubleshooting Guide](docs/guides/troubleshooting-guide.md)** - Common issues and solutions
 
 ### Understanding Concepts (Explanation)
 Deepen your understanding of why nWave works:
@@ -315,6 +315,8 @@ Progressive refactoring with validation:
 
 ## Contributing
 
+Want to discuss ideas or get feedback before contributing? Join the **[nWave Discord community](https://discord.gg/DeYdSNk6)**.
+
 nWave follows clean architecture principles:
 1. Each agent has **one responsibility**
 2. Communication through **well-defined interfaces** (JSON/YAML)
@@ -348,6 +350,10 @@ See individual agent documentation in `nWave/agents/` for implementation details
 - [CI/CD Integration](docs/guides/CI-CD-README.md) - Continuous integration setup
 - [Releasing & Deployment](docs/RELEASING.md) - Release process
 - [Project Evolution](docs/evolution/) - Framework enhancements and improvements
+
+## Community
+
+Have questions, run into issues, or want to share your success stories? Join the **[nWave Discord community](https://discord.gg/DeYdSNk6)** to connect with other users and the team.
 
 ## License
 
