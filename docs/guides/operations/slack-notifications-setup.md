@@ -69,7 +69,7 @@ Before you begin, ensure you have:
 
 ### Step 1: Navigate to Repository Secrets
 
-1. Go to: https://github.com/Undeadgrishnackh/crafter-ai/settings/secrets/actions
+1. Go to: https://github.com/nWave-ai/nwave-dev/settings/secrets/actions
    - OR: Navigate to your repository → **Settings** → **Secrets and variables** → **Actions**
 2. Click **"New repository secret"**
 
@@ -160,7 +160,7 @@ After setup, verify the following:
 ```
 🚨 CI/CD Pipeline Failed
 
-Repository: Undeadgrishnackh/crafter-ai
+Repository: nWave-ai/nwave-dev
 Branch: master
 
 Commit: a1b2c3d
@@ -413,7 +413,7 @@ payload: |
 - slackapi/slack-github-action: https://github.com/slackapi/slack-github-action
 
 **Getting Help**:
-- GitHub Issues: https://github.com/Undeadgrishnackh/crafter-ai/issues
+- GitHub Issues: https://github.com/nWave-ai/nwave-dev/issues
 - Slack Support: https://slack.com/help
 - GitHub Actions Support: https://docs.github.com/en/actions
 

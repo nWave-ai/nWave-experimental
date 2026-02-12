@@ -1,9 +1,9 @@
 ❯ python tools/build.py
-2026-02-04 19:15:12,852 - INFO - Cleaned output directory: /Users/mike/ProgettiGit/Undeadgrishnackh/crafter-ai/dist/ide
-2026-02-04 19:15:12,888 - INFO - Loaded configuration from: /Users/mike/ProgettiGit/Undeadgrishnackh/crafter-ai/nWave/framework-catalog.yaml
-2026-02-04 19:15:12,889 - INFO - TemplateProcessor initialized with schema: /Users/mike/ProgettiGit/Undeadgrishnackh/crafter-ai/nWave/templates/step-tdd-cycle-schema.json
+2026-02-04 19:15:12,852 - INFO - Cleaned output directory: /Users/mike/ProgettiGit/Undeadgrishnackh/nwave/dist/ide
+2026-02-04 19:15:12,888 - INFO - Loaded configuration from: /Users/mike/ProgettiGit/Undeadgrishnackh/nwave/nWave/framework-catalog.yaml
+2026-02-04 19:15:12,889 - INFO - TemplateProcessor initialized with schema: /Users/mike/ProgettiGit/Undeadgrishnackh/nwave/nWave/templates/step-tdd-cycle-schema.json
 2026-02-04 19:15:12,890 - INFO - Starting nWave IDE bundle build at 2026-02-04 19:15:12.890102
-2026-02-04 19:15:12,890 - INFO - Validating source directory: /Users/mike/ProgettiGit/Undeadgrishnackh/crafter-ai/nWave
+2026-02-04 19:15:12,890 - INFO - Validating source directory: /Users/mike/ProgettiGit/Undeadgrishnackh/nwave/nWave
 2026-02-04 19:15:12,890 - INFO - Source validation completed successfully
 2026-02-04 19:15:12,890 - INFO - Processing agents...
 2026-02-04 19:15:12,891 - INFO - Found 30 agent files
@@ -117,9 +117,9 @@ expected <block end>, but found '<scalar>'
 2026-02-04 19:15:18,080 - INFO - Processing command: execute
 2026-02-04 19:15:18,082 - INFO - Processing command: discover
 2026-02-04 19:15:18,083 - INFO - Processing teams...
-2026-02-04 19:15:18,083 - WARNING - Agent teams directory not found: /Users/mike/ProgettiGit/Undeadgrishnackh/crafter-ai/nWave/agent-teams
+2026-02-04 19:15:18,083 - WARNING - Agent teams directory not found: /Users/mike/ProgettiGit/Undeadgrishnackh/nwave/nWave/agent-teams
 2026-02-04 19:15:18,084 - INFO - Generating IDE configuration...
-2026-02-04 19:15:18,085 - INFO - Generated IDE config: /Users/mike/ProgettiGit/Undeadgrishnackh/crafter-ai/dist/ide/agents/nw/config.json
+2026-02-04 19:15:18,085 - INFO - Generated IDE config: /Users/mike/ProgettiGit/Undeadgrishnackh/nwave/dist/ide/agents/nw/config.json
 2026-02-04 19:15:18,085 - INFO - Build completed in 5.20 seconds
 
 ============================================================
@@ -130,6 +130,6 @@ Commands processed:  23
 Teams processed:     0
 Warnings:            0
 Errors:              0
-Output directory:    /Users/mike/ProgettiGit/Undeadgrishnackh/crafter-ai/dist/ide
+Output directory:    /Users/mike/ProgettiGit/Undeadgrishnackh/nwave/dist/ide
 
 ✅ Build completed successfully!

@@ -220,7 +220,7 @@ The following steps were tested on a clean macOS machine:
 pip3 install pipenv
 
 # 2. Setup virtual environment and dependencies
-cd crafter-ai
+cd nwave
 pipenv install --dev
 
 # 3. Run installation

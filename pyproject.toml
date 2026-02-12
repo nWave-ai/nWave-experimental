@@ -3,9 +3,9 @@ requires = ["hatchling>=1.21.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "crafter-ai"
+name = "nwave"
 version = "2.14.5"
-description = "Modern CLI installer for crafter-ai with rich terminal UI"
+description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -221,7 +221,7 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.nwave]
-# Public version for nwave-ai PyPI package (independent from crafter-ai version)
+# Public version for nwave-ai PyPI package (independent from nwave dev version)
 # This is the version that gets published as 'nwave-ai' on PyPI
 public_version = "1.0.4"
 

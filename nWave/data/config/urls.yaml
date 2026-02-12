@@ -24,13 +24,13 @@ docs:
 
 repo:
   # Main repository
-  github: "https://github.com/undeadgrishnackh/crafter-ai"
+  github: "https://github.com/nWave-ai/nwave-dev"
 
   # Issues page
-  issues: "https://github.com/undeadgrishnackh/crafter-ai/issues"
+  issues: "https://github.com/nWave-ai/nwave-dev/issues"
 
   # Releases page
-  releases: "https://github.com/undeadgrishnackh/crafter-ai/releases"
+  releases: "https://github.com/nWave-ai/nwave-dev/releases"
 
 # =============================================================================
 # PACKAGE URLS
@@ -49,4 +49,4 @@ support:
   community: "https://nwave.dev/community"
 
   # Report a bug
-  bug_report: "https://github.com/undeadgrishnackh/crafter-ai/issues/new"
+  bug_report: "https://github.com/nWave-ai/nwave-dev/issues/new"

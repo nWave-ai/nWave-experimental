@@ -142,7 +142,7 @@ Successfully implemented Slack notifications for CI/CD pipeline failures followi
 ### 2. Configure GitHub Secret (One-time setup)
 
 **Steps**:
-1. Navigate to: https://github.com/Undeadgrishnackh/crafter-ai/settings/secrets/actions
+1. Navigate to: https://github.com/nWave-ai/nwave-dev/settings/secrets/actions
 2. Click "New repository secret"
 3. Name: `SLACK_WEBHOOK_URL`
 4. Value: Paste webhook URL from step 1

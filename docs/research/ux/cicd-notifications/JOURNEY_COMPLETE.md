@@ -312,7 +312,7 @@ These ideas came up during design but are NOT required for MVP:
 
 ## Journey Artifacts Location
 
-All artifacts are in `/Users/mike/ProgettiGit/Undeadgrishnackh/crafter-ai/docs/ux/`:
+All artifacts are in `/Users/mike/ProgettiGit/nWave-ai/nwave-dev/docs/ux/`:
 
 ```
 docs/ux/

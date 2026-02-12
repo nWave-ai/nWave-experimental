@@ -513,7 +513,7 @@ The user journey map should be:
 
 ### 6.5 CLI UX Synthesis for nWave
 
-| Principle | Application to crafter-ai CLI |
+| Principle | Application to nwave CLI |
 |-----------|------------------------------|
 | **Consistent Command Structure** | `crafter [phase] [action]` or similar |
 | **Progressive Disclosure** | Basic commands obvious, advanced discoverable |
@@ -806,7 +806,7 @@ Using HEART Framework adapted for CLI:
 ### 10.2 Recommendations for Further Research
 
 1. **Case Studies**: Collect internal case studies as the LeanUX agent is deployed
-2. **CLI UX Metrics**: Develop crafter-ai-specific metrics based on HEART framework
+2. **CLI UX Metrics**: Develop nwave-specific metrics based on HEART framework
 3. **Agent Collaboration Patterns**: Document what works/fails when agents hand off UX artifacts
 4. **Journey Map Evolution**: Track how journey maps change over project lifecycle
 

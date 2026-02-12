@@ -70,13 +70,13 @@ steps:
               text:
                 type: "plain_text"
                 text: "View Run"
-              url: "https://github.com/Undeadgrishnackh/crafter-ai/actions/runs/123"
+              url: "https://github.com/nWave-ai/nwave-dev/actions/runs/123"
               style: "danger"
             - type: "button"
               text:
                 type: "plain_text"
                 text: "View Commit"
-              url: "https://github.com/Undeadgrishnackh/crafter-ai/commit/a1b2c3d"
+              url: "https://github.com/nWave-ai/nwave-dev/commit/a1b2c3d"
 
         - type: "context"
           elements:
@@ -170,7 +170,7 @@ steps:
       │ Counting objects: 100% (5/5), done.                      │
       │ Writing objects: 100% (3/3), 1.23 KiB | 1.23 MiB/s       │
       │                                                          │
-      │ To github.com:Undeadgrishnackh/crafter-ai.git           │
+      │ To github.com:nWave-ai/nwave-dev.git           │
       │    a1b2c3d..b2c3d4e  installer -> installer             │
       └──────────────────────────────────────────────────────────┘
 
@@ -236,13 +236,13 @@ steps:
               text:
                 type: "plain_text"
                 text: "View Run"
-              url: "https://github.com/Undeadgrishnackh/crafter-ai/actions/runs/124"
+              url: "https://github.com/nWave-ai/nwave-dev/actions/runs/124"
               style: "primary"
             - type: "button"
               text:
                 type: "plain_text"
                 text: "View Commit"
-              url: "https://github.com/Undeadgrishnackh/crafter-ai/commit/b2c3d4e"
+              url: "https://github.com/nWave-ai/nwave-dev/commit/b2c3d4e"
 
         - type: "context"
           elements:
@@ -327,13 +327,13 @@ steps:
               text:
                 type: "plain_text"
                 text: "View Run"
-              url: "https://github.com/Undeadgrishnackh/crafter-ai/actions/runs/127"
+              url: "https://github.com/nWave-ai/nwave-dev/actions/runs/127"
               style: "primary"
             - type: "button"
               text:
                 type: "plain_text"
                 text: "View Commit"
-              url: "https://github.com/Undeadgrishnackh/crafter-ai/commit/c3d4e5f"
+              url: "https://github.com/nWave-ai/nwave-dev/commit/c3d4e5f"
 
         - type: "context"
           elements:

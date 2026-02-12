@@ -531,7 +531,7 @@ jobs:
         run: |
           NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
 
-          # Transform dev pyproject.toml (crafter-ai) into public pyproject.toml (nwave-ai)
+          # Transform dev pyproject.toml (nwave) into public pyproject.toml (nwave-ai)
           # rsync synced the clean build config; now patch identity fields
           python3 << PYEOF
           import re
@@ -539,8 +539,8 @@ jobs:
           with open('nwave-target/pyproject.toml', 'r') as f:
               content = f.read()
 
-          # 1. Swap package name: crafter-ai -> nwave-ai
-          content = re.sub(r'name = "crafter-ai"', 'name = "nwave-ai"', content)
+          # 1. Swap package name: nwave -> nwave-ai
+          content = re.sub(r'name = "nwave"', 'name = "nwave-ai"', content)
 
           # 2. Set public version
           content = re.sub(r'version = "[^"]+"', 'version = "${NWAVE_VERSION}"', content, count=1)
@@ -608,7 +608,7 @@ jobs:
           "
           fi
 
-          echo "Patched pyproject.toml: crafter-ai -> nwave-ai v$NWAVE_VERSION"
+          echo "Patched pyproject.toml: nwave -> nwave-ai v$NWAVE_VERSION"
 
       - name: Commit and push to nwave-ai/nwave
         working-directory: nwave-target

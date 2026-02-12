@@ -1,1 +1,1 @@
-"""Test suite for crafter-ai."""
+"""Test suite for nwave."""

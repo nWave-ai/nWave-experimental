@@ -46,7 +46,7 @@ class TestPyPIValidator:
         expected_agents: int = 0,
         expected_commands: int = 0,
         expected_templates: int = 0,
-        package_name: str = "crafter-ai",
+        package_name: str = "nwave",
     ) -> None:
         """Initialize the validator.
 
@@ -134,7 +134,7 @@ class TestPyPIValidator:
         """
         print(f"\n[2/4] Verifying installed version matches {self.version}...")
 
-        version_cmd = ["crafter-ai", "--version"]
+        version_cmd = ["nwave", "--version"]
         result = self.run_command(version_cmd)
 
         if result.returncode != 0:
@@ -167,7 +167,7 @@ class TestPyPIValidator:
         )
 
     def run_health_checks(self) -> ValidationResult:
-        """Run health checks via crafter-ai doctor equivalent.
+        """Run health checks via nwave doctor equivalent.
 
         Returns:
             ValidationResult indicating success or failure.
@@ -175,13 +175,13 @@ class TestPyPIValidator:
         print("\n[3/4] Running health checks...")
 
         # Try running doctor command
-        doctor_cmd = ["crafter-ai", "doctor"]
+        doctor_cmd = ["nwave", "doctor"]
         result = self.run_command(doctor_cmd)
 
         # If doctor command doesn't exist, check if the CLI is at least responsive
         if result.returncode != 0 and "unrecognized" in result.stderr.lower():
             # Fall back to help command to verify CLI is working
-            help_cmd = ["crafter-ai", "--help"]
+            help_cmd = ["nwave", "--help"]
             result = self.run_command(help_cmd)
 
             if result.returncode == 0:
@@ -370,8 +370,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--package-name",
-        default="crafter-ai",
-        help="Name of the package to install (default: crafter-ai)",
+        default="nwave",
+        help="Name of the package to install (default: nwave)",
     )
 
     args = parser.parse_args()

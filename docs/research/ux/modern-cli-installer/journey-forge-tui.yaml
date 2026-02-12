@@ -7,14 +7,14 @@ journey:
   goal: "Redesign the TUI for forge build + install as one continuous, frictionless, emotionally engaging flow"
   persona:
     name: "Mike"
-    role: "Developer building and installing crafter-ai locally"
+    role: "Developer building and installing nwave locally"
 
   emotional_arc:
     start: "Anticipation"
     middle: "Growing confidence through rapid green checkmarks, brief tension during compilation"
     end: "Joy and satisfaction at the celebration moment"
 
-  trigger: "User runs 'crafter-ai forge build' or 'crafter-ai forge build --install'"
+  trigger: "User runs 'nwave forge build' or 'nwave forge build --install'"
   success_criteria: "User sees a clean stream of progress culminating in a celebration line with version and health"
 
 design_system:
@@ -59,7 +59,7 @@ design_system:
     phase_header:
       style: "bold + emoji"
       indent: 0
-      example: "🔨 Building crafter-ai"
+      example: "🔨 Building nwave"
     check_result:
       style: "emoji + plain text"
       indent: 2
@@ -100,7 +100,7 @@ steps:
   - id: 1
     phase: "build"
     name: "Build Phase Header"
-    output: "🔨 Building crafter-ai"
+    output: "🔨 Building nwave"
     emotional_state:
       entry: "Anticipation"
       exit: "Oriented, knows what's happening"
@@ -231,7 +231,7 @@ steps:
   - id: 8
     phase: "transition"
     name: "Install Confirmation Prompt"
-    output: "📦 Install crafter-ai {version}? [Y/n]: "
+    output: "📦 Install nwave {version}? [Y/n]: "
     interaction: "confirmation_prompt"
     default: "Y (yes)"
     on_yes: "proceed to step 9"
@@ -252,7 +252,7 @@ steps:
   - id: 9
     phase: "install"
     name: "Install Phase Header"
-    output: "📦 Installing crafter-ai"
+    output: "📦 Installing nwave"
     emotional_state:
       entry: "Momentum continues, user just confirmed"
       exit: "Oriented in new phase"
@@ -282,7 +282,7 @@ steps:
         pass_message: "IDE bundle found ({agent_count} agents, {command_count} commands)"
         fail_message: "IDE bundle not found in dist/ide/"
         severity: "BLOCKING"
-        remediation: "Run 'crafter-ai forge build' to generate the IDE bundle"
+        remediation: "Run 'nwave forge build' to generate the IDE bundle"
     summary_on_pass: "Pre-flight passed"
     emotional_state:
       entry: "Slight check-in"
@@ -402,13 +402,13 @@ steps:
     shared_artifacts:
       - name: "package_name"
         source: "pyproject.toml [project].name"
-        displayed_as: "crafter-ai"
+        displayed_as: "nwave"
       - name: "version"
         source: "Wheel METADATA (via InstallResult.version)"
         displayed_as: "{version}"
       - name: "cli_entry_points"
         source: "Wheel METADATA [console_scripts]"
-        displayed_as: "crafter-ai, nw"
+        displayed_as: "nwave, nw"
         note: "Parsed from wheel METADATA entry_points. Currently not available from pipx adapter; needs new method or wheel introspection."
       - name: "install_path"
         source: "pipx list_packages() → InstalledPackage.path"
@@ -449,7 +449,7 @@ steps:
          Ready to use in Claude Code.
     degraded_output: |
       ⚠️  nWave {version} installed with warnings
-         Some features may be limited. Run 'crafter-ai doctor' for details.
+         Some features may be limited. Run 'nwave doctor' for details.
     failed_output: |
       ❌ Installation failed
          {error_message}
@@ -471,7 +471,7 @@ steps:
         source: "Wheel METADATA (via InstallResult.version)"
       - name: "product_name"
         source: "Hardcoded: 'nWave'"
-        note: "Product brand name used in user-facing celebration. Package name 'crafter-ai' used in SBOM manifest."
+        note: "Product brand name used in user-facing celebration. Package name 'nwave' used in SBOM manifest."
       - name: "health_status"
         source: "HealthChecker result"
       - name: "available_commands"
@@ -557,7 +557,7 @@ interaction_patterns:
 
   confirmation_prompt:
     description: "Inline prompt with emoji matching current phase"
-    format: "📦 Install crafter-ai {version}? [Y/n]: "
+    format: "📦 Install nwave {version}? [Y/n]: "
     default: "Y (yes)"
 
   check_list_streaming:
@@ -695,7 +695,7 @@ shared_artifacts:
       - "Step 15: SBOM manifest (CLI install location line)"
     integration_risk: "MEDIUM"
     risk_explanation: "Install path displayed to user must match actual pipx venv location. If pipx changes its path scheme, the display breaks."
-    validation: "Displayed path matches result from pipx list_packages() for crafter-ai"
+    validation: "Displayed path matches result from pipx list_packages() for nwave"
 
   cli_entry_points:
     source_of_truth: "Wheel METADATA [console_scripts] section"
@@ -707,7 +707,7 @@ shared_artifacts:
     implementation_note: |
       NOT YET AVAILABLE in current codebase. Options:
       1. Parse wheel METADATA (zipfile introspection) - clean, dynamic
-      2. Hardcode known values ("crafter-ai, nw") - pragmatic, brittle
+      2. Hardcode known values ("nwave, nw") - pragmatic, brittle
       3. Parse pipx install stdout which lists registered apps - depends on pipx output format
       Recommendation: Start with option 2, implement option 1 when refactoring pipx adapter.
 

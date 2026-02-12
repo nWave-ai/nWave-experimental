@@ -27,7 +27,7 @@ pip3 install pipenv
 ```bash
 # Clone the repository
 git clone https://github.com/nWave-ai/nWave.git
-cd crafter-ai
+cd nwave
 
 # Install dependencies in virtual environment
 pipenv install --dev

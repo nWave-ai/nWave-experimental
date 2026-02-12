@@ -464,7 +464,7 @@ SLACK_WEBHOOK_URL:
 ```
 🚨 CI/CD Pipeline Failed
 
-Repository: Undeadgrishnackh/crafter-ai
+Repository: nWave-ai/nwave-dev
 Branch: master
 
 Commit: a1b2c3d
@@ -622,7 +622,7 @@ notify-slack:
 
 **Step 2: Store Webhook URL in GitHub Secrets**
 
-1. Navigate to: `https://github.com/Undeadgrishnackh/crafter-ai/settings/secrets/actions`
+1. Navigate to: `https://github.com/nWave-ai/nwave-dev/settings/secrets/actions`
 2. Click "New repository secret"
 3. Name: `SLACK_WEBHOOK_URL`
 4. Value: Paste webhook URL
@@ -938,7 +938,7 @@ https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX
 
 | Variable | Example Value | Description |
 |----------|---------------|-------------|
-| `github.repository` | `Undeadgrishnackh/crafter-ai` | Full repository name |
+| `github.repository` | `nWave-ai/nwave-dev` | Full repository name |
 | `github.ref` | `refs/heads/master` | Full Git ref |
 | `github.ref_name` | `master` | Branch or tag name |
 | `github.sha` | `a1b2c3d4e5f6...` | Commit SHA (full) |

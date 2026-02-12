@@ -388,8 +388,8 @@ Before any feature proceeds, Luna validates:
 Luna's E2E scenarios test the complete flow:
 ```gherkin
 Scenario: User installs and verifies version
-  Given a fresh system without crafter-ai
-  When user runs "pip install crafter-ai"
+  Given a fresh system without nwave
+  When user runs "pip install nwave"
   Then the package installs successfully
   When user runs "crafter --version"
   Then the version matches pyproject.toml
@@ -666,7 +666,7 @@ integration_validation:
           ▼
 ┌─ Step 3: Verify ─────────────────────────────────────────┐
 │ $ crafter --version                                      │
-│ crafter-ai 1.2.84      ◄── THIRD version! From __init__ │
+│ nwave 1.2.84      ◄── THIRD version! From __init__ │
 └──────────────────────────────────────────────────────────┘
 ```
 

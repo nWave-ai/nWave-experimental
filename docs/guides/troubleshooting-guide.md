@@ -200,7 +200,7 @@ chmod -R 755 ~/.claude/commands/nw/
 wsl --install
 
 # Install nWave in WSL
-cd /mnt/c/path/to/crafter-ai
+cd /mnt/c/path/to/nwave
 ./scripts/install-nwave.sh
 ```
 

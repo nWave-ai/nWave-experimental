@@ -1,6 +1,6 @@
 @horizontal @e2e @tui-redesign
 Feature: Forge Build + Install TUI Journey
-  As a developer using crafter-ai
+  As a developer using nwave
   I want the build and install CLI output to feel like a modern, frictionless stream
   So that I feel confident and engaged throughout the process
 
@@ -45,13 +45,13 @@ Feature: Forge Build + Install TUI Journey
 
   @build @happy-path
   Scenario: Build phase header displays correctly
-    When I run "crafter-ai forge build"
-    Then the first non-blank line contains "🔨" and "Building crafter-ai"
+    When I run "nwave forge build"
+    Then the first non-blank line contains "🔨" and "Building nwave"
     And the line is bold
 
   @build @happy-path
   Scenario: Build pre-flight checks display as streaming list
-    When I run "crafter-ai forge build"
+    When I run "nwave forge build"
     Then I see "🔍 Pre-flight checks" indented 2 spaces
     And each check result appears on its own line indented 2 spaces
     And passed checks show "✅" followed by a descriptive message
@@ -62,14 +62,14 @@ Feature: Forge Build + Install TUI Journey
   Scenario: Version display is minimal
     Given the current version is "0.1.0"
     And the calculated next version is "0.2.0" with bump type "minor"
-    When I run "crafter-ai forge build"
+    When I run "nwave forge build"
     Then I see "📐 Version" indented 2 spaces
     And I see "0.1.0 → 0.2.0 (minor)" indented 2 spaces
     And no panel or box surrounds the version information
 
   @build @happy-path
   Scenario: Build spinner resolves to persistent line
-    When I run "crafter-ai forge build"
+    When I run "nwave forge build"
     Then a spinner appears with text "⏳ Compiling wheel..."
     And when compilation completes the spinner is replaced
     And a persistent line "✅ Wheel built" with duration appears in output
@@ -85,7 +85,7 @@ Feature: Forge Build + Install TUI Journey
 
   @build @happy-path @ide-bundle
   Scenario: IDE bundle build phase appears after wheel validation
-    When I run "crafter-ai forge build"
+    When I run "nwave forge build"
     Then I see "⚙️ Building IDE bundle" indented 2 spaces after wheel validation
     And a spinner "⏳ Processing nWave assets..." appears during bundle build
     And the spinner resolves to "✅ IDE bundle built" with duration
@@ -128,7 +128,7 @@ Feature: Forge Build + Install TUI Journey
     Given a build just completed successfully with version "0.2.0"
     When the build complete line has been displayed
     Then a blank line separates build from the prompt
-    And I see "📦 Install crafter-ai 0.2.0? [Y/n]: "
+    And I see "📦 Install nwave 0.2.0? [Y/n]: "
     And the prompt uses the 📦 emoji
     And the version in the prompt matches the version from wheel METADATA
     And the default answer is "Y" (yes)
@@ -149,12 +149,12 @@ Feature: Forge Build + Install TUI Journey
     Given a build just completed successfully
     When the install phase begins
     Then one blank line separates build from install
-    And I see "📦 Installing crafter-ai" as the install header
+    And I see "📦 Installing nwave" as the install header
     And no repeated title or border from the build phase appears
 
   @install @happy-path
   Scenario: Install pre-flight checks display as streaming list
-    When I run "crafter-ai forge install"
+    When I run "nwave forge install"
     Then I see "🔍 Pre-flight checks" indented 2 spaces
     And each install check appears on its own line indented 2 spaces
     And passed checks show "✅" followed by a descriptive message
@@ -164,17 +164,17 @@ Feature: Forge Build + Install TUI Journey
 
   @install @happy-path
   Scenario: Install pre-flight validates IDE bundle exists
-    When I run "crafter-ai forge install"
+    When I run "nwave forge install"
     Then I see "✅ IDE bundle found (30 agents, 23 commands)" in the pre-flight checks
     And the agent and command counts match the build output
 
   @error @install
   Scenario: Install blocked when IDE bundle missing
     Given no IDE bundle exists in dist/ide/
-    When I run "crafter-ai forge install"
+    When I run "nwave forge install"
     Then I see "❌ IDE bundle not found in dist/ide/"
     And the install is blocked
-    And remediation says "Run 'crafter-ai forge build' to generate the IDE bundle"
+    And remediation says "Run 'nwave forge build' to generate the IDE bundle"
 
   # ─── BACKUP SECTION ─────────────────────────────────────────────────
 
@@ -212,7 +212,7 @@ Feature: Forge Build + Install TUI Journey
   @install @happy-path @install-progress
   Scenario: CLI install closure line uses product brand name
     When the CLI install phase completes successfully
-    Then the closure line says "nWave CLI installed via pipx" not "crafter-ai installed via pipx"
+    Then the closure line says "nWave CLI installed via pipx" not "nwave installed via pipx"
     And the duration is shown in parentheses like "(2.9s)"
 
   # ─── ASSET DEPLOYMENT SECTION ──────────────────────────────────────
@@ -270,8 +270,8 @@ Feature: Forge Build + Install TUI Journey
     Then I see "📋 What was installed" indented 2 spaces
     And the SBOM contains a CLI package group:
       | Line                              |
-      | crafter-ai 0.2.0                  |
-      | CLI: crafter-ai, nw              |
+      | nwave 0.2.0                  |
+      | CLI: nwave, nw              |
       | → {pipx_install_path}            |
     And a blank line separates CLI package from IDE assets
     And the SBOM contains an IDE assets group:
@@ -325,7 +325,7 @@ Feature: Forge Build + Install TUI Journey
     When the celebration displays
     Then I see "🎉 nWave 0.2.0 installed and healthy!" in bold green
     And I see "Ready to use in Claude Code." in dim on the next line
-    And the celebration uses "nWave" not "crafter-ai"
+    And the celebration uses "nWave" not "nwave"
     And shared artifact "version" matches the version from the build phase
 
   @celebration @happy-path
@@ -353,7 +353,7 @@ Feature: Forge Build + Install TUI Journey
     When the celebration displays
     Then I see "⚠️" instead of "🎉"
     And the message says "installed with warnings" instead of "installed and healthy"
-    And a hint says "Run 'crafter-ai doctor' for details."
+    And a hint says "Run 'nwave doctor' for details."
     And the getting started section still appears
 
   # ─── ERROR STATES ────────────────────────────────────────────────────
@@ -362,7 +362,7 @@ Feature: Forge Build + Install TUI Journey
   Scenario: Blocking build pre-flight failure
     Given pyproject.toml does not exist
     And the src/ directory does not exist
-    When I run "crafter-ai forge build"
+    When I run "nwave forge build"
     Then all checks still display (both passed and failed)
     And I see "Build blocked: 2 checks failed" in red
     And each failure is repeated below with "❌" and its message
@@ -373,7 +373,7 @@ Feature: Forge Build + Install TUI Journey
   @error @install
   Scenario: Blocking install pre-flight failure
     Given no wheel file exists in dist/
-    When I run "crafter-ai forge install"
+    When I run "nwave forge install"
     Then all checks display
     And I see "Install blocked:" with failure count in red
     And remediation is shown for each failure
@@ -435,13 +435,13 @@ Feature: Forge Build + Install TUI Journey
     And the src/ directory exists with valid Python package code
     And the nWave/ directory exists with 30 agents and 23 commands
     And git working directory has uncommitted changes
-    And no previous version of crafter-ai is installed via pipx
+    And no previous version of nwave is installed via pipx
 
     # ── BUILD PHASE ──
-    When I run "crafter-ai forge build"
+    When I run "nwave forge build"
 
     # Step 1: Build header
-    Then the first non-blank output line is "🔨 Building crafter-ai" in bold
+    Then the first non-blank output line is "🔨 Building nwave" in bold
 
     # Step 2: Build pre-flight checks (streaming list, no table)
     And I see "🔍 Pre-flight checks" indented 2 spaces
@@ -486,7 +486,7 @@ Feature: Forge Build + Install TUI Journey
     # ── TRANSITION: CONFIRMATION PROMPT ──
 
     # Step 8: Install prompt (version from wheel METADATA)
-    And I see "📦 Install crafter-ai 0.2.0? [Y/n]: "
+    And I see "📦 Install nwave 0.2.0? [Y/n]: "
     And the version "0.2.0" in the prompt matches the wheel METADATA
 
     When the user confirms with "y"
@@ -494,7 +494,7 @@ Feature: Forge Build + Install TUI Journey
     # ── INSTALL PHASE ──
 
     # Step 9: Install header (seamless continuation)
-    Then I see "📦 Installing crafter-ai" in bold
+    Then I see "📦 Installing nwave" in bold
 
     # Step 10: Install pre-flight checks (MODIFIED, new IDE bundle check)
     And I see "🔍 Pre-flight checks"
@@ -534,8 +534,8 @@ Feature: Forge Build + Install TUI Journey
 
     # Step 15: SBOM manifest (EXPANDED, two groups)
     And I see "📋 What was installed" indented 2 spaces
-    And I see "crafter-ai 0.2.0" in dim at 4-space indent
-    And I see "CLI: crafter-ai, nw" in dim at 4-space indent
+    And I see "nwave 0.2.0" in dim at 4-space indent
+    And I see "CLI: nwave, nw" in dim at 4-space indent
     And I see "→" followed by the pipx install path in dim at 4-space indent
     And I see "30 agents → ~/.claude/agents/nw/" in dim
     And I see "23 commands → ~/.claude/commands/nw/" in dim
@@ -581,15 +581,15 @@ Feature: Forge Build + Install TUI Journey
   @walking-skeleton @e2e @horizontal @upgrade @unified
   Scenario: Upgrade install flow with backup, asset deployment, and complete SBOM
     Given the project has a valid pyproject.toml with version "0.1.0"
-    And crafter-ai 0.1.0 is already installed via pipx
+    And nwave 0.1.0 is already installed via pipx
     And agents, commands, and templates exist in ~/.claude/
     And a wheel for version 0.2.0 exists in dist/
     And an IDE bundle exists in dist/ide/
 
-    When I run "crafter-ai forge install"
+    When I run "nwave forge install"
 
     # Step 9: Install header
-    Then I see "📦 Installing crafter-ai" in bold
+    Then I see "📦 Installing nwave" in bold
 
     # Step 10: Install pre-flight checks (with IDE bundle check)
     And I see "🔍 Pre-flight checks"
@@ -621,8 +621,8 @@ Feature: Forge Build + Install TUI Journey
 
     # Step 15: SBOM manifest (complete dual-group format)
     And I see "📋 What was installed"
-    And I see "crafter-ai 0.2.0" in dim
-    And I see "CLI: crafter-ai, nw" in dim
+    And I see "nwave 0.2.0" in dim
+    And I see "CLI: nwave, nw" in dim
     And I see "→" followed by the pipx install path in dim
     And I see "30 agents → ~/.claude/agents/nw/" in dim
     And I see "1 config → ~/.claude/agents/nw/config.json" in dim
@@ -647,7 +647,7 @@ Feature: Forge Build + Install TUI Journey
   @horizontal @integration @sbom
   Scenario: SBOM install path matches actual pipx venv location
     When the full install flow completes
-    Then the path shown in SBOM manifest matches pipx list_packages() path for crafter-ai
+    Then the path shown in SBOM manifest matches pipx list_packages() path for nwave
     And the path is a real directory on disk
 
   @horizontal @integration @sbom

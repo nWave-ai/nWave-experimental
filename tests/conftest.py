@@ -37,13 +37,13 @@ def restore_working_directory():
 
 def pytest_html_report_title(report):
     """Set branded title for pytest-html report."""
-    report.title = "nWave crafter-ai Test Report"
+    report.title = "nWave Test Report"
 
 
 def pytest_configure(config):
     """Add project metadata to HTML report header."""
     if hasattr(config, "_metadata"):
-        config._metadata["Project"] = "crafter-ai"
+        config._metadata["Project"] = "nwave"
         config._metadata["Framework"] = "nWave"
 
 

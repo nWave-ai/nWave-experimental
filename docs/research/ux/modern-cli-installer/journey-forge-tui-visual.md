@@ -38,7 +38,7 @@
 
 | Element          | Style           | Example                                    |
 |------------------|-----------------|--------------------------------------------|
-| Phase header     | Bold + emoji    | `🔨 Building crafter-ai`                   |
+| Phase header     | Bold + emoji    | `🔨 Building nwave`                   |
 | Check result     | Emoji + text    | `  ✅ pyproject.toml found`                |
 | Summary label    | Bold            | `Version: 0.2.0`                           |
 | Secondary detail | Dim             | `(104.1 KB, 3.04s)`                        |
@@ -73,7 +73,7 @@ Next phase header
 ### Full Build + Install Flow (continuous)
 
 ```
-🔨 Building crafter-ai
+🔨 Building nwave
 
   🔍 Pre-flight checks
   ✅ pyproject.toml found
@@ -109,9 +109,9 @@ Next phase header
     crafter_ai-0.2.0-py3-none-any.whl      ← dim detail: wheel artifact
     IDE bundle: 30 agents, 23 commands      ← dim detail: IDE bundle artifact
 
-📦 Install crafter-ai 0.2.0? [Y/n]: y
+📦 Install nwave 0.2.0? [Y/n]: y
 
-📦 Installing crafter-ai
+📦 Installing nwave
 
   🔍 Pre-flight checks
   ✅ Wheel file found
@@ -148,9 +148,9 @@ Next phase header
   ✅ Deployment validated
 
   📋 What was installed
-    crafter-ai 0.2.0
-    CLI: crafter-ai, nw
-    → ~/.local/pipx/venvs/crafter-ai
+    nwave 0.2.0
+    CLI: nwave, nw
+    → ~/.local/pipx/venvs/nwave
 
     30 agents → ~/.claude/agents/nw/
     23 commands → ~/.claude/commands/nw/
@@ -182,7 +182,7 @@ Next phase header
 
 ### Key Design Decisions Explained
 
-**Phase headers** (`🔨 Building crafter-ai`, `📦 Installing crafter-ai`)
+**Phase headers** (`🔨 Building nwave`, `📦 Installing nwave`)
 use bold text and a tool emoji. They establish WHERE you are in the journey.
 
 **Check lines** are indented 2 spaces with a status emoji. Each reads as a
@@ -211,7 +211,7 @@ two artifacts, and both must be visible so the user knows what was built
 before being asked to install.
 
 **The confirmation prompt** appears between build and install as a natural
-decision point: `📦 Install crafter-ai 0.2.0? [Y/n]: y`. The `📦` emoji
+decision point: `📦 Install nwave 0.2.0? [Y/n]: y`. The `📦` emoji
 signals we are transitioning to the install phase. Default is yes (capital Y).
 No box, no panel. Just a prompt in the flow. When the user confirms, the
 install phase header follows immediately.
@@ -263,7 +263,7 @@ When no previous version exists, the backup section is a single informational
 line (no spinner needed, nothing to back up):
 
 ```
-📦 Installing crafter-ai
+📦 Installing nwave
 
   🔍 Pre-flight checks
   ✅ Wheel file found
@@ -297,9 +297,9 @@ line (no spinner needed, nothing to back up):
   ✅ Deployment validated
 
   📋 What was installed
-    crafter-ai 0.2.0
-    CLI: crafter-ai, nw
-    → ~/.local/pipx/venvs/crafter-ai
+    nwave 0.2.0
+    CLI: nwave, nw
+    → ~/.local/pipx/venvs/nwave
 
     30 agents → ~/.claude/agents/nw/
     23 commands → ~/.claude/commands/nw/
@@ -338,7 +338,7 @@ unified installer always deploys all assets to `~/.claude/`.
 ### Blocking Pre-flight Failure (Build)
 
 ```
-🔨 Building crafter-ai
+🔨 Building nwave
 
   🔍 Pre-flight checks
   ❌ pyproject.toml not found
@@ -368,7 +368,7 @@ unified installer always deploys all assets to `~/.claude/`.
 ### Blocking Pre-flight Failure (Install)
 
 ```
-📦 Installing crafter-ai
+📦 Installing nwave
 
   🔍 Pre-flight checks
   ❌ No wheel file found in dist/
@@ -379,19 +379,19 @@ unified installer always deploys all assets to `~/.claude/`.
   Install blocked: 3 checks failed
 
   ❌ No wheel file found in dist/
-     Fix: Run 'crafter-ai forge build' first
+     Fix: Run 'nwave forge build' first
 
   ❌ pipx is not installed
      Fix: pip install pipx && pipx ensurepath
 
   ❌ IDE bundle not found in dist/ide/
-     Fix: Run 'crafter-ai forge build' to generate the IDE bundle
+     Fix: Run 'nwave forge build' to generate the IDE bundle
 ```
 
 ### IDE Bundle Build Failure
 
 ```
-🔨 Building crafter-ai
+🔨 Building nwave
 
   ...pre-flight and wheel build as normal...
 
@@ -406,7 +406,7 @@ unified installer always deploys all assets to `~/.claude/`.
 ### Asset Deployment Failure
 
 ```
-📦 Installing crafter-ai
+📦 Installing nwave
 
   ...pre-flight, backup, and CLI install as normal...
 
@@ -421,7 +421,7 @@ unified installer always deploys all assets to `~/.claude/`.
 ### Deployment Validation Failure
 
 ```
-📦 Installing crafter-ai
+📦 Installing nwave
 
   ...pre-flight through asset deployment as normal...
 
@@ -434,13 +434,13 @@ unified installer always deploys all assets to `~/.claude/`.
   Deployment validation failed: 1 check failed
 
   ❌ Commands verification failed (expected 23, found 21)
-     Fix: Re-run 'crafter-ai forge install' or check ~/.claude/commands/nw/
+     Fix: Re-run 'nwave forge install' or check ~/.claude/commands/nw/
 ```
 
 ### Build Failure (compilation error)
 
 ```
-🔨 Building crafter-ai
+🔨 Building nwave
 
   🔍 Pre-flight checks
   ✅ pyproject.toml found
@@ -463,7 +463,7 @@ unified installer always deploys all assets to `~/.claude/`.
 ### Install Failure (pipx error)
 
 ```
-📦 Installing crafter-ai
+📦 Installing nwave
 
   🔍 Pre-flight checks
   ✅ Wheel file found
@@ -488,7 +488,7 @@ unified installer always deploys all assets to `~/.claude/`.
 ### Degraded Health (post-install warning)
 
 ```
-📦 Installing crafter-ai
+📦 Installing nwave
 
   ...checks and install as normal...
 
@@ -497,8 +497,8 @@ unified installer always deploys all assets to `~/.claude/`.
   ⚠️  Some optional modules not found
   ✅ Health: DEGRADED
 
-⚠️  crafter-ai 0.2.0 installed with warnings
-   Some features may be limited. Run 'crafter-ai doctor' for details.
+⚠️  nwave 0.2.0 installed with warnings
+   Some features may be limited. Run 'nwave doctor' for details.
 ```
 
 Note: When health is DEGRADED, the celebration downgrades from `🎉` to `⚠️`
@@ -549,7 +549,7 @@ for check in results:
 
 ```python
 console.print()  # blank line before phase
-console.print(f"[bold]🔨 Building crafter-ai[/bold]")
+console.print(f"[bold]🔨 Building nwave[/bold]")
 ```
 
 No panel. No box. Bold text with emoji. That's it.
@@ -557,7 +557,7 @@ No panel. No box. Bold text with emoji. That's it.
 ### Pattern 4: Confirmation Prompt
 
 ```
-📦 Install crafter-ai 0.2.0? [Y/n]:
+📦 Install nwave 0.2.0? [Y/n]:
 ```
 
 One line. Emoji matches the phase. Default is yes (capital Y).
@@ -572,12 +572,12 @@ if health_status == "HEALTHY":
     console.print("[dim]   Ready to use in Claude Code.[/dim]")
 elif health_status == "DEGRADED":
     console.print(f"[bold yellow]⚠️  nWave {version} installed with warnings[/bold yellow]")
-    console.print("[dim]   Some features may be limited. Run 'crafter-ai doctor' for details.[/dim]")
+    console.print("[dim]   Some features may be limited. Run 'nwave doctor' for details.[/dim]")
 ```
 
 The celebration is the ONLY place where the full line is colored (green for
 healthy, yellow for degraded). Everywhere else, only the emoji carries emotion.
-Note: Uses "nWave" (product brand) not "crafter-ai" (package name).
+Note: Uses "nWave" (product brand) not "nwave" (package name).
 
 ### Pattern 6: Error Detail Block
 
@@ -758,7 +758,7 @@ FORGE: INSTALL COMPLETE
 
 RIGHT:
 🔨 Build complete: crafter_ai-0.2.0-py3-none-any.whl
-🎉 crafter-ai 0.2.0 installed and healthy!
+🎉 nwave 0.2.0 installed and healthy!
 ```
 
 The tool name is in the command the user typed. No need to shout it back.
@@ -776,7 +776,7 @@ WRONG:
   Health Status: HEALTHY
 
 RIGHT:
-🎉 crafter-ai 0.2.0 installed and healthy!
+🎉 nwave 0.2.0 installed and healthy!
    Ready to use in Claude Code.
 ```
 
@@ -881,15 +881,15 @@ about where files went. A single constant is required.
 
 **Product name vs package name**: The celebration and install closure use
 "nWave" (the product brand), while the package identity in the SBOM uses
-"crafter-ai" (the PyPI package name). This is intentional: "nWave" is what
-the user thinks they installed; "crafter-ai" is the technical package name
+"nwave" (the PyPI package name). This is intentional: "nWave" is what
+the user thinks they installed; "nwave" is the technical package name
 that pipx and pip use.
 
 **SBOM data sources** (what needs to be gathered post-install):
 ```
 pipx install result → version, success
 pipx list --json    → install_path (venv path)
-wheel METADATA      → entry_points (CLI commands: crafter-ai, nw)
+wheel METADATA      → entry_points (CLI commands: nwave, nw)
 IDE bundle build    → agent_count, command_count (from dist/ide/)
 ~/.claude/ scan     → template_count, script_count (post-deploy)
 ~/.claude/ files    → config.json exists, manifest exists

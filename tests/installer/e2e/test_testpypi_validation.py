@@ -126,7 +126,7 @@ class TestTestPyPIValidatorUnit:
         assert validator.expected_agents == 47
         assert validator.expected_commands == 23
         assert validator.expected_templates == 12
-        assert validator.package_name == "crafter-ai"
+        assert validator.package_name == "nwave"
 
     def test_validator_default_values(self) -> None:
         """Test that TestPyPIValidator has correct default values."""
@@ -138,7 +138,7 @@ class TestTestPyPIValidatorUnit:
         assert validator.expected_agents == 0
         assert validator.expected_commands == 0
         assert validator.expected_templates == 0
-        assert validator.package_name == "crafter-ai"
+        assert validator.package_name == "nwave"
 
     def test_validation_result_dataclass(self) -> None:
         """Test that ValidationResult dataclass works correctly."""
@@ -245,7 +245,7 @@ class TestTestPyPIValidatorMocked:
         with patch.object(validator, "run_command") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
-                stdout="crafter-ai 1.3.0.dev20260201001\n",
+                stdout="nwave 1.3.0.dev20260201001\n",
                 stderr="",
             )
 
@@ -264,7 +264,7 @@ class TestTestPyPIValidatorMocked:
         with patch.object(validator, "run_command") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
-                stdout="crafter-ai 1.2.0\n",
+                stdout="nwave 1.2.0\n",
                 stderr="",
             )
 
