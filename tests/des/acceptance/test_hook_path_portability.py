@@ -2,8 +2,8 @@
 Acceptance Test: Hook Path Portability Across Machines
 
 BUG: DES hooks in settings.json contained hardcoded absolute paths:
-  - Python interpreter: /mnt/c/Repositories/Projects/ai-craft/.venv/bin/python3
-  - Lib path: /home/alexd/.claude/lib/python
+  - Python interpreter: /mnt/c/.../project/.venv/bin/python3
+  - Lib path: /home/<user>/.claude/lib/python
 
 Since ~/.claude/settings.json is shared across machines (synced directory),
 these machine-specific paths caused "Task Hook Error" on every other machine.
@@ -96,7 +96,7 @@ class TestNoHardcodedPaths:
         THEN no command contains a project-specific .venv/bin/python path
 
         BUG: Previously used sys.executable which resolved to
-             /mnt/c/Repositories/Projects/ai-craft/.venv/bin/python3
+             a project-specific .venv/bin/python3 path
         """
         config = _install_hooks(install_context)
         commands = _extract_all_hook_commands(config)
@@ -116,7 +116,7 @@ class TestNoHardcodedPaths:
         THEN no command contains a hardcoded /home/<user> path
 
         BUG: Previously used context.claude_dir which resolved to
-             /home/alexd/.claude/lib/python
+             /home/<user>/.claude/lib/python
         """
         config = _install_hooks(install_context)
         commands = _extract_all_hook_commands(config)
