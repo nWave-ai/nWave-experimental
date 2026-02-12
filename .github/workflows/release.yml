@@ -825,7 +825,7 @@ jobs:
               to_entries
               | map(select(.value.result == "failure"))
               | map("• " + .key)
-              | join("\n")
+              | join("\\n")
             ')
             echo "failed_jobs<<EOF" >> $GITHUB_OUTPUT
             echo "$FAILED_JOBS" >> $GITHUB_OUTPUT
@@ -870,7 +870,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*nwave-ai*: \`v${{ needs.publish-to-nwave.outputs.nwave_version }}\` published to *PyPI* (`pipx install nwave-ai`)\nSynced to *nwave-ai/nwave* with tag + GitHub Release"
+                    "text": "*nwave-ai*: `v${{ needs.publish-to-nwave.outputs.nwave_version }}` published to *PyPI* (`pipx install nwave-ai`)\nSynced to *nwave-ai/nwave* with tag + GitHub Release"
                   }
                 },
                 {
