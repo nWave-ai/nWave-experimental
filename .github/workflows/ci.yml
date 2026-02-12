@@ -130,43 +130,10 @@ jobs:
           echo "::notice::No trailing whitespace found"
 
       - name: Check end of file newlines
-        run: |
-          failed=0
-          for file in $(git ls-files | grep -v -E '^(dist/|\.git/)' | head -200); do
-            if [ -f "$file" ] && [ -s "$file" ]; then
-              if [ "$(tail -c 1 "$file" | wc -l)" -eq 0 ]; then
-                echo "::error file=$file::Missing newline at end of file"
-                failed=1
-              fi
-            fi
-          done
-          [ $failed -eq 0 ] && echo "::notice::All files have proper end-of-file newlines"
-          exit $failed
+        run: python3 scripts/hooks/check_end_of_file.py
 
       - name: Check YAML syntax
-        run: |
-          python3 << 'EOF'
-          import yaml
-          import sys
-          from pathlib import Path
-
-          errors = []
-          for pattern in ['*.yaml', '*.yml']:
-              for yaml_file in Path('.').rglob(pattern):
-                  if '.git' in str(yaml_file) or 'dist' in str(yaml_file):
-                      continue
-                  try:
-                      with open(yaml_file) as f:
-                          yaml.safe_load(f)
-                  except yaml.YAMLError as e:
-                      errors.append(f'{yaml_file}: {e}')
-
-          if errors:
-              for e in errors:
-                  print(f'::error::{e}')
-              sys.exit(1)
-          print('::notice::All YAML files have valid syntax')
-          EOF
+        run: python3 scripts/validation/validate_yaml_files.py
 
       - name: Check JSON syntax
         run: |
