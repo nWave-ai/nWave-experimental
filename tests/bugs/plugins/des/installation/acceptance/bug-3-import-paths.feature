@@ -19,7 +19,7 @@ Feature: Correct Import Paths in Installed DES
   # When bugs are fixed, these tests will PASS
   # ============================================================================
 
-  @bug-3 @failing @priority-critical
+  @bug-3 @priority-critical
   Scenario: Installed DES should not contain "from src.des" imports
     # Current Behavior (BUG): Files contain imports like:
     #   from src.des.adapters.driven.logging.audit_logger import get_audit_logger

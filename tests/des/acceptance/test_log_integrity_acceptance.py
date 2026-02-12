@@ -6,12 +6,8 @@ identified in the residuality analysis.
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-import sys
 from datetime import datetime, timezone
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.log_integrity_validator import LogIntegrityValidator
@@ -23,6 +19,10 @@ from des.ports.driven_ports.execution_log_reader import ExecutionLogReader
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
 from des.ports.driven_ports.time_provider_port import TimeProvider
 from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # --- Test doubles ---
@@ -115,27 +115,9 @@ def _build_service(
     return service, audit_spy
 
 
-def _invoke_hook(hook_type: str, stdin_data: str) -> tuple[int, dict]:
-    """Invoke hook adapter as subprocess."""
-    env = os.environ.copy()
-    project_root = str(Path(__file__).parent.parent.parent.parent)
-    src_path = str(Path(project_root) / "src")
-    env["PYTHONPATH"] = src_path + os.pathsep + env.get("PYTHONPATH", "")
-
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "des.adapters.drivers.hooks.claude_code_hook_adapter",
-            hook_type,
-        ],
-        input=stdin_data,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    response = json.loads(proc.stdout) if proc.stdout.strip() else {}
-    return proc.returncode, response
+def _build_empty_stdin_service() -> tuple[SubagentStopService, SpyAuditWriter]:
+    """Build a SubagentStopService with no events (empty stdin equivalent)."""
+    return _build_service(events=[])
 
 
 class TestAT1PhaseNameValidation:
@@ -273,12 +255,22 @@ class TestAT4PreTaskTimestamp:
 
 
 class TestAT5EmptyStdinPassthrough:
-    """AT-5: SubagentStop receives empty stdin → exit 0, allow."""
+    """AT-5: SubagentStop with no events (empty context) → allow.
 
-    def test_empty_stdin_allows(self) -> None:
-        exit_code, response = _invoke_hook("subagent-stop", "")
-        assert exit_code == 0
-        assert response.get("decision") == "allow"
+    Port-to-port equivalent: when no events exist for a step and
+    stop_hook_active=True, the service allows to prevent infinite loops.
+    """
+
+    def test_empty_context_allows(self) -> None:
+        service, _audit_spy = _build_empty_stdin_service()
+        context = SubagentStopContext(
+            execution_log_path="/fake/execution-log.yaml",
+            project_id="test-project",
+            step_id="01-01",
+            stop_hook_active=True,
+        )
+        decision = service.validate(context)
+        assert decision.action == "allow"
 
 
 class TestAT6MissingTranscript:

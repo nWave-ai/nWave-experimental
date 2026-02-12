@@ -604,53 +604,6 @@ Update step file with phase completion
     # Scenario 8: Missing TDD phase error includes phase name and fix
     # =========================================================================
 
-    @pytest.mark.skip(reason="Outside-In TDD RED state - awaiting DEVELOP wave")
-    def test_scenario_008_missing_phase_error_includes_specific_fix(
-        self, tmp_project_root
-    ):
-        """
-        GIVEN prompt validation fails due to missing POST_REFACTOR_REVIEW phase
-        WHEN validation error is returned
-        THEN error names the missing phase AND suggests how to add it
-
-        Business Value: Alex knows exactly which phase is missing and where to add it.
-                       Error: "INCOMPLETE: TDD phase 'POST_REFACTOR_REVIEW' not mentioned.
-                       Fix: Add POST_REFACTOR_REVIEW between REFACTOR_L4 and FINAL_VALIDATE."
-
-        Expected: Error message names phase AND provides positioning guidance
-        """
-        # Arrange: Prompt missing POST_REFACTOR_REVIEW phase
-        _prompt_missing_phase = """
-        <!-- DES-VALIDATION: required -->
-
-        # TDD_PHASES
-        Execute in order:
-        1. PREPARE
-        2. RED_ACCEPTANCE
-        3. RED_UNIT
-        4. GREEN_UNIT
-        5. CHECK_ACCEPTANCE
-        6. GREEN_ACCEPTANCE
-        7. REVIEW
-        8. REFACTOR_L1
-        9. REFACTOR_L2
-        10. REFACTOR_L3
-        11. REFACTOR_L4
-        # MISSING: POST_REFACTOR_REVIEW
-        12. FINAL_VALIDATE
-        13. COMMIT
-        """
-
-        # Act: Validation fails
-        # validation_result = des_validator.validate_prompt(prompt_missing_phase)
-
-        # Assert: Error includes phase name and positioning fix
-        # assert "POST_REFACTOR_REVIEW" in validation_result.error_message
-        # assert any(
-        #     keyword in validation_result.error_message
-        #     for keyword in ["REFACTOR_L4", "FINAL_VALIDATE", "between", "after"]
-        # )
-
     # =========================================================================
     # AC-005.5: Recovery suggestions include explanatory text (WHY and HOW)
     # Scenario 9: Recovery suggestion explains WHY error occurred

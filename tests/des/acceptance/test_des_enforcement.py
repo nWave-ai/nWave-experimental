@@ -13,58 +13,49 @@ BUSINESS VALUE:
 SCOPE: Covers US-011 Acceptance Criteria (AC-011.1 through AC-011.9)
 WAVE: DISTILL (Acceptance Test Creation)
 
-TEST BOUNDARY: External protocol (JSON stdin, exit code, JSON stdout).
-Tests invoke the hook adapter as a subprocess, matching Claude Code's actual
-integration protocol.
+TEST BOUNDARY: Port-to-port (driving port → application service → driven port stubs).
+Tests invoke PreToolUseService and SessionGuardPolicy directly, matching the
+business behavior without subprocess overhead.
 """
 
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
+from datetime import datetime, timezone
+
+from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
+from des.application.pre_tool_use_service import PreToolUseService
+from des.domain.des_enforcement_policy import DesEnforcementPolicy
+from des.domain.des_marker_parser import DesMarkerParser
+from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
+from des.domain.max_turns_policy import MaxTurnsPolicy
+from des.domain.session_guard_policy import SessionGuardPolicy
+from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
+from tests.des.acceptance.conftest import FakeTimeProvider
 
 
 # =============================================================================
-# TEST HELPER: Invoke hook through external protocol boundary
+# SERVICE FACTORY: Build PreToolUseService with production domain, null I/O
 # =============================================================================
 
 
-def invoke_hook(hook_type: str, payload: dict) -> tuple[int, dict]:
-    """Invoke hook adapter through its external protocol (subprocess + JSON)."""
-    env = os.environ.copy()
-    project_root = str(Path(__file__).parent.parent.parent.parent)
-    src_path = str(Path(project_root) / "src")
-    env["PYTHONPATH"] = src_path + os.pathsep + env.get("PYTHONPATH", "")
-
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "des.adapters.drivers.hooks.claude_code_hook_adapter",
-            hook_type,
-        ],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        env=env,
+def _build_pre_tool_use_service() -> PreToolUseService:
+    """Build PreToolUseService with real domain logic and null I/O adapters."""
+    return PreToolUseService(
+        max_turns_policy=MaxTurnsPolicy(),
+        marker_parser=DesMarkerParser(),
+        prompt_validator=_make_template_validator(),
+        audit_writer=NullAuditLogWriter(),
+        time_provider=FakeTimeProvider(
+            datetime(2026, 2, 12, 10, 0, 0, tzinfo=timezone.utc)
+        ),
+        enforcement_policy=DesEnforcementPolicy(),
+        completeness_policy=MarkerCompletenessPolicy(),
     )
-    response = json.loads(proc.stdout) if proc.stdout.strip() else {}
-    return proc.returncode, response
 
 
-def _read_audit_entries(audit_dir: Path) -> list[dict]:
-    """Read all JSONL audit entries from an audit directory."""
-    entries = []
-    if not audit_dir.exists():
-        return entries
-    for log_file in audit_dir.glob("audit-*.log"):
-        with open(log_file) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    entries.append(json.loads(line))
-    return entries
+def _make_template_validator():
+    """Create TemplateValidator (real validation, no I/O)."""
+    from des.application.validator import TemplateValidator
+
+    return TemplateValidator()
 
 
 def _make_valid_des_prompt(
@@ -141,20 +132,19 @@ class TestStepIdEnforcement:
         THEN exit code is 2 (block)
         AND response contains block decision
         """
-        exit_code, response = invoke_hook(
-            "pre-tool-use",
-            {
-                "tool_name": "Task",
-                "tool_input": {
-                    "prompt": "Execute step 01-01 for the authentication feature",
-                    "max_turns": 30,
-                    "subagent_type": "nw-software-crafter",
-                },
-            },
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt="Execute step 01-01 for the authentication feature",
+                max_turns=30,
+                subagent_type="nw-software-crafter",
+            )
         )
-        assert exit_code == 2, f"Expected exit 2 (block), got {exit_code}: {response}"
-        assert response.get("decision") == "block"
-        assert "DES_MARKERS_MISSING" in response.get("reason", "")
+        assert decision.exit_code == 2, (
+            f"Expected exit_code 2 (block), got {decision.exit_code}: {decision.reason}"
+        )
+        assert decision.action == "block"
+        assert "DES_MARKERS_MISSING" in (decision.reason or "")
 
     # AC-011.2: Step-id + markers present → ALLOWED
     def test_step_id_with_markers_allowed(self):
@@ -164,18 +154,17 @@ class TestStepIdEnforcement:
         WHEN PreToolUse hook fires
         THEN exit code is 0 (allow)
         """
-        exit_code, response = invoke_hook(
-            "pre-tool-use",
-            {
-                "tool_name": "Task",
-                "tool_input": {
-                    "prompt": _make_valid_des_prompt(),
-                    "max_turns": 30,
-                    "subagent_type": "nw-software-crafter",
-                },
-            },
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt=_make_valid_des_prompt(),
+                max_turns=30,
+                subagent_type="nw-software-crafter",
+            )
         )
-        assert exit_code == 0, f"Expected exit 0 (allow), got {exit_code}: {response}"
+        assert decision.exit_code == 0, (
+            f"Expected exit_code 0 (allow), got {decision.exit_code}: {decision.reason}"
+        )
 
     # AC-011.3: No step-id → ALLOWED
     def test_no_step_id_allowed(self):
@@ -184,18 +173,17 @@ class TestStepIdEnforcement:
         WHEN PreToolUse hook fires
         THEN exit code is 0 (allow)
         """
-        exit_code, response = invoke_hook(
-            "pre-tool-use",
-            {
-                "tool_name": "Task",
-                "tool_input": {
-                    "prompt": "Research authentication best practices for the project",
-                    "max_turns": 30,
-                    "subagent_type": "nw-researcher",
-                },
-            },
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt="Research authentication best practices for the project",
+                max_turns=30,
+                subagent_type="nw-researcher",
+            )
         )
-        assert exit_code == 0, f"Expected exit 0 (allow), got {exit_code}: {response}"
+        assert decision.exit_code == 0, (
+            f"Expected exit_code 0 (allow), got {decision.exit_code}: {decision.reason}"
+        )
 
     # AC-011.4: Step-id + exempt marker → ALLOWED
     def test_exempt_marker_allowed(self):
@@ -205,21 +193,20 @@ class TestStepIdEnforcement:
         WHEN PreToolUse hook fires
         THEN exit code is 0 (allow)
         """
-        exit_code, response = invoke_hook(
-            "pre-tool-use",
-            {
-                "tool_name": "Task",
-                "tool_input": {
-                    "prompt": (
-                        "<!-- DES-ENFORCEMENT : exempt -->\n"
-                        "Review roadmap step 01-01 for completeness"
-                    ),
-                    "max_turns": 30,
-                    "subagent_type": "nw-solution-architect",
-                },
-            },
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt=(
+                    "<!-- DES-ENFORCEMENT : exempt -->\n"
+                    "Review roadmap step 01-01 for completeness"
+                ),
+                max_turns=30,
+                subagent_type="nw-solution-architect",
+            )
         )
-        assert exit_code == 0, f"Expected exit 0 (allow), got {exit_code}: {response}"
+        assert decision.exit_code == 0, (
+            f"Expected exit_code 0 (allow), got {decision.exit_code}: {decision.reason}"
+        )
 
     # AC-011.5: Block reason contains DES marker template
     def test_block_reason_contains_recovery_suggestions(self):
@@ -229,57 +216,68 @@ class TestStepIdEnforcement:
         THEN block reason contains DES_MARKERS_MISSING
         AND response includes marker template guidance
         """
-        exit_code, response = invoke_hook(
-            "pre-tool-use",
-            {
-                "tool_name": "Task",
-                "tool_input": {
-                    "prompt": "Implement step 02-03 changes to the system",
-                    "max_turns": 30,
-                    "subagent_type": "nw-software-crafter",
-                },
-            },
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt="Implement step 02-03 changes to the system",
+                max_turns=30,
+                subagent_type="nw-software-crafter",
+            )
         )
-        assert exit_code == 2
-        reason = response.get("reason", "")
+        assert decision.exit_code == 2
+        reason = decision.reason or ""
         assert "DES_MARKERS_MISSING" in reason
         assert "02-03" in reason
 
     # AC-011.6: Audit log records blocked event
-    def test_audit_log_records_blocked_event(self, tmp_path, monkeypatch):
+    def test_audit_log_records_blocked_event(self):
         """
         GIVEN a Task prompt blocked by step-id enforcement
         WHEN PreToolUse hook fires
-        THEN audit log contains HOOK_PRE_TOOL_USE_BLOCKED with DES_MARKERS_MISSING
+        THEN audit writer receives HOOK_PRE_TOOL_USE_BLOCKED with DES_MARKERS_MISSING
         """
-        audit_dir = tmp_path / "audit"
-        monkeypatch.setenv("DES_AUDIT_LOG_DIR", str(audit_dir))
-        monkeypatch.setenv("DES_AUDIT_LOGGING_ENABLED", "true")
+        from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 
-        invoke_hook(
-            "pre-tool-use",
-            {
-                "tool_name": "Task",
-                "tool_input": {
-                    "prompt": "Execute step 01-01",
-                    "max_turns": 30,
-                    "subagent_type": "nw-software-crafter",
-                },
-            },
+        class SpyAuditWriter(AuditLogWriter):
+            def __init__(self):
+                self.events: list[AuditEvent] = []
+
+            def log_event(self, event: AuditEvent) -> None:
+                self.events.append(event)
+
+        spy = SpyAuditWriter()
+        service = PreToolUseService(
+            max_turns_policy=MaxTurnsPolicy(),
+            marker_parser=DesMarkerParser(),
+            prompt_validator=_make_template_validator(),
+            audit_writer=spy,
+            time_provider=FakeTimeProvider(
+                datetime(2026, 2, 12, 10, 0, 0, tzinfo=timezone.utc)
+            ),
+            enforcement_policy=DesEnforcementPolicy(),
+            completeness_policy=MarkerCompletenessPolicy(),
         )
 
-        entries = _read_audit_entries(audit_dir)
-        blocked_entries = [
-            e for e in entries if e.get("event") == "HOOK_PRE_TOOL_USE_BLOCKED"
+        service.validate(
+            PreToolUseInput(
+                prompt="Execute step 01-01",
+                max_turns=30,
+                subagent_type="nw-software-crafter",
+            )
+        )
+
+        blocked_events = [
+            e for e in spy.events if e.event_type == "HOOK_PRE_TOOL_USE_BLOCKED"
         ]
-        assert len(blocked_entries) >= 1, (
-            f"Expected HOOK_PRE_TOOL_USE_BLOCKED entry, got: {entries}"
+        assert len(blocked_events) >= 1, (
+            f"Expected HOOK_PRE_TOOL_USE_BLOCKED event, got: "
+            f"{[e.event_type for e in spy.events]}"
         )
-        assert "DES_MARKERS_MISSING" in blocked_entries[-1].get("reason", "")
+        assert "DES_MARKERS_MISSING" in (blocked_events[-1].data.get("reason", ""))
 
 
 # =============================================================================
-# PHASE 2: Marker Completeness Tests (AC-011.7 through AC-011.9)
+# PHASE 2: Session Guard Tests (AC-011.10 through AC-011.13)
 # =============================================================================
 
 
@@ -287,102 +285,72 @@ class TestSessionGuard:
     """E2E tests for Write/Edit session guard (Scenario B prevention)."""
 
     # AC-011.10: Source write blocked during deliver without DES task
-    def test_source_write_blocked_during_deliver(self, tmp_path, monkeypatch):
-        """
-        GIVEN deliver session is active (.nwave/des/deliver-session.json exists)
-        AND no DES task signal (.nwave/des/des-task-active does NOT exist)
-        WHEN Write tool targets a source file
-        THEN exit code is 2 (block)
-        """
-        monkeypatch.chdir(tmp_path)
-        session_dir = tmp_path / ".nwave" / "des"
-        session_dir.mkdir(parents=True)
-        (session_dir / "deliver-session.json").write_text(
-            '{"project_id":"test","started_at":"2026-02-09T10:00:00Z"}'
-        )
-
-        exit_code, response = invoke_hook(
-            "pre-write",
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": "src/auth/user_auth.py", "content": "..."},
-            },
-        )
-        assert exit_code == 2, f"Expected exit 2 (block), got {exit_code}: {response}"
-        assert response.get("decision") == "block"
-
-    # AC-011.11: Source write allowed with DES task active
-    def test_source_write_allowed_with_des_task(self, tmp_path, monkeypatch):
+    def test_source_write_blocked_during_deliver(self):
         """
         GIVEN deliver session is active
-        AND DES task signal exists (.nwave/des/des-task-active)
+        AND no DES task signal (des_task_active is False)
         WHEN Write tool targets a source file
-        THEN exit code is 0 (allow)
+        THEN guard result is blocked
         """
-        monkeypatch.chdir(tmp_path)
-        session_dir = tmp_path / ".nwave" / "des"
-        session_dir.mkdir(parents=True)
-        (session_dir / "deliver-session.json").write_text(
-            '{"project_id":"test","started_at":"2026-02-09T10:00:00Z"}'
+        policy = SessionGuardPolicy()
+        result = policy.check(
+            file_path="src/auth/user_auth.py",
+            session_active=True,
+            des_task_active=False,
         )
-        (session_dir / "des-task-active").write_text(
-            '{"step_id":"01-01","created_at":"2026-02-09T10:05:00Z"}'
-        )
+        assert result.blocked, f"Expected blocked, got allowed: {result.reason}"
 
-        exit_code, response = invoke_hook(
-            "pre-write",
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": "src/auth/user_auth.py", "content": "..."},
-            },
+    # AC-011.11: Source write allowed with DES task active
+    def test_source_write_allowed_with_des_task(self):
+        """
+        GIVEN deliver session is active
+        AND DES task signal exists (des_task_active is True)
+        WHEN Write tool targets a source file
+        THEN guard result is not blocked
+        """
+        policy = SessionGuardPolicy()
+        result = policy.check(
+            file_path="src/auth/user_auth.py",
+            session_active=True,
+            des_task_active=True,
         )
-        assert exit_code == 0, f"Expected exit 0 (allow), got {exit_code}: {response}"
+        assert not result.blocked, f"Expected allowed, got blocked: {result.reason}"
 
     # AC-011.12: Orchestration file allowed during deliver
-    def test_orchestration_file_allowed_during_deliver(self, tmp_path, monkeypatch):
+    def test_orchestration_file_allowed_during_deliver(self):
         """
         GIVEN deliver session is active
         AND no DES task signal
         WHEN Write tool targets docs/feature/ file
-        THEN exit code is 0 (allow)
+        THEN guard result is not blocked
         """
-        monkeypatch.chdir(tmp_path)
-        session_dir = tmp_path / ".nwave" / "des"
-        session_dir.mkdir(parents=True)
-        (session_dir / "deliver-session.json").write_text(
-            '{"project_id":"test","started_at":"2026-02-09T10:00:00Z"}'
+        policy = SessionGuardPolicy()
+        result = policy.check(
+            file_path="docs/feature/test/roadmap.yaml",
+            session_active=True,
+            des_task_active=False,
         )
-
-        exit_code, response = invoke_hook(
-            "pre-write",
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": "docs/feature/test/roadmap.yaml",
-                    "content": "...",
-                },
-            },
-        )
-        assert exit_code == 0, f"Expected exit 0 (allow), got {exit_code}: {response}"
+        assert not result.blocked, f"Expected allowed, got blocked: {result.reason}"
 
     # AC-011.13: No deliver session = all writes allowed
-    def test_no_deliver_session_allows_all(self, tmp_path, monkeypatch):
+    def test_no_deliver_session_allows_all(self):
         """
         GIVEN no deliver session marker exists
         WHEN Write tool targets a source file
-        THEN exit code is 0 (allow)
+        THEN guard result is not blocked
         """
-        monkeypatch.chdir(tmp_path)
-        # No .nwave/des/deliver-session.json
-
-        exit_code, response = invoke_hook(
-            "pre-write",
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": "src/auth/user_auth.py", "content": "..."},
-            },
+        policy = SessionGuardPolicy()
+        result = policy.check(
+            file_path="src/auth/user_auth.py",
+            session_active=False,
+            des_task_active=False,
         )
-        assert exit_code == 0, f"Expected exit 0 (allow), got {exit_code}: {response}"
+        assert not result.blocked, f"Expected allowed, got blocked: {result.reason}"
+
+
+# =============================================================================
+# PHASE 3: Marker Completeness Tests (AC-011.7 through AC-011.9)
+# =============================================================================
 
 
 class TestMarkerCompleteness:
@@ -397,24 +365,23 @@ class TestMarkerCompleteness:
         THEN exit code is 2 (block)
         AND reason contains DES_MARKERS_INCOMPLETE
         """
-        exit_code, response = invoke_hook(
-            "pre-tool-use",
-            {
-                "tool_name": "Task",
-                "tool_input": {
-                    "prompt": (
-                        "<!-- DES-VALIDATION : required -->\n"
-                        "<!-- DES-STEP-ID : 01-01 -->\n"
-                        "Execute step 01-01"
-                    ),
-                    "max_turns": 30,
-                    "subagent_type": "nw-software-crafter",
-                },
-            },
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt=(
+                    "<!-- DES-VALIDATION : required -->\n"
+                    "<!-- DES-STEP-ID : 01-01 -->\n"
+                    "Execute step 01-01"
+                ),
+                max_turns=30,
+                subagent_type="nw-software-crafter",
+            )
         )
-        assert exit_code == 2, f"Expected exit 2 (block), got {exit_code}: {response}"
-        assert "DES_MARKERS_INCOMPLETE" in response.get("reason", "")
-        assert "DES-PROJECT-ID" in response.get("reason", "")
+        assert decision.exit_code == 2, (
+            f"Expected exit_code 2 (block), got {decision.exit_code}: {decision.reason}"
+        )
+        assert "DES_MARKERS_INCOMPLETE" in (decision.reason or "")
+        assert "DES-PROJECT-ID" in (decision.reason or "")
 
     # AC-011.8: DES-VALIDATION present, DES-STEP-ID missing → BLOCKED
     def test_missing_step_id_blocked(self):
@@ -425,24 +392,23 @@ class TestMarkerCompleteness:
         THEN exit code is 2 (block)
         AND reason contains DES_MARKERS_INCOMPLETE
         """
-        exit_code, response = invoke_hook(
-            "pre-tool-use",
-            {
-                "tool_name": "Task",
-                "tool_input": {
-                    "prompt": (
-                        "<!-- DES-VALIDATION : required -->\n"
-                        "<!-- DES-PROJECT-ID : auth-upgrade -->\n"
-                        "Execute step 01-01"
-                    ),
-                    "max_turns": 30,
-                    "subagent_type": "nw-software-crafter",
-                },
-            },
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt=(
+                    "<!-- DES-VALIDATION : required -->\n"
+                    "<!-- DES-PROJECT-ID : auth-upgrade -->\n"
+                    "Execute step 01-01"
+                ),
+                max_turns=30,
+                subagent_type="nw-software-crafter",
+            )
         )
-        assert exit_code == 2, f"Expected exit 2 (block), got {exit_code}: {response}"
-        assert "DES_MARKERS_INCOMPLETE" in response.get("reason", "")
-        assert "DES-STEP-ID" in response.get("reason", "")
+        assert decision.exit_code == 2, (
+            f"Expected exit_code 2 (block), got {decision.exit_code}: {decision.reason}"
+        )
+        assert "DES_MARKERS_INCOMPLETE" in (decision.reason or "")
+        assert "DES-STEP-ID" in (decision.reason or "")
 
     # AC-011.9: DES-VALIDATION + both IDs → ALLOWED
     def test_complete_markers_allowed(self):
@@ -452,15 +418,14 @@ class TestMarkerCompleteness:
         WHEN PreToolUse hook fires
         THEN exit code is 0 (allow)
         """
-        exit_code, response = invoke_hook(
-            "pre-tool-use",
-            {
-                "tool_name": "Task",
-                "tool_input": {
-                    "prompt": _make_valid_des_prompt(),
-                    "max_turns": 30,
-                    "subagent_type": "nw-software-crafter",
-                },
-            },
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt=_make_valid_des_prompt(),
+                max_turns=30,
+                subagent_type="nw-software-crafter",
+            )
         )
-        assert exit_code == 0, f"Expected exit 0 (allow), got {exit_code}: {response}"
+        assert decision.exit_code == 0, (
+            f"Expected exit_code 0 (allow), got {decision.exit_code}: {decision.reason}"
+        )

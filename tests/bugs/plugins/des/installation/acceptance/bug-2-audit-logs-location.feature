@@ -18,7 +18,7 @@ Feature: Project-Local Audit Logs
   # When bugs are fixed, these tests will PASS
   # ============================================================================
 
-  @bug-2 @failing @priority-critical
+  @bug-2 @priority-critical
   Scenario: Audit logs should default to project-local directory
     # Current Behavior (BUG): Logs go to ~/.claude/des/logs/audit-YYYY-MM-DD.log
     # All projects share the same audit log, causing cross-contamination
@@ -30,7 +30,7 @@ Feature: Project-Local Audit Logs
     Then audit logs should be written to ".nwave/des/logs/"
     And audit logs should NOT be written to "~/.claude/des/logs/"
 
-  @bug-2 @failing @priority-critical
+  @bug-2 @priority-critical
   Scenario: Each project should have isolated audit trails
     # Bug impact: Audit logs from different projects are mixed in global location
     # Makes compliance auditing and debugging difficult
@@ -43,7 +43,7 @@ Feature: Project-Local Audit Logs
     And project-beta audit events should only appear in project-beta logs
     And the global audit log location should not contain either project's events
 
-  @bug-2 @failing @priority-high
+  @bug-2 @priority-high
   Scenario: Audit log location should be configurable via environment variable
     # Feature request tied to bug: No way to override location currently
     # Expected: DES_AUDIT_LOG_DIR environment variable should control location
@@ -54,7 +54,7 @@ Feature: Project-Local Audit Logs
     And audit logs should NOT be written to "~/.claude/des/logs/"
     And audit logs should NOT be written to ".nwave/des/logs/"
 
-  @bug-2 @failing @priority-high
+  @bug-2 @priority-high
   Scenario: Audit log location should be configurable via config file
     # Feature request: Support configuration file for audit log location
 
@@ -62,7 +62,7 @@ Feature: Project-Local Audit Logs
     When the DES audit logger initializes
     Then audit logs should be written to "/config/logs/"
 
-  @bug-2 @failing @priority-high
+  @bug-2 @priority-high
   Scenario: Environment variable should override config file
     # Configuration precedence: ENV > config file > project-local default
 
@@ -72,7 +72,7 @@ Feature: Project-Local Audit Logs
     Then audit logs should be written to "/env/logs/"
     And audit logs should NOT be written to "/config/logs/"
 
-  @bug-2 @failing @priority-medium
+  @bug-2 @priority-medium
   Scenario: Project-local log directory should be created automatically
     # Expected behavior: If .nwave/des/logs/ doesn't exist, create it
 

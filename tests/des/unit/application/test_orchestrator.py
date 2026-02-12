@@ -9,49 +9,6 @@ based on command type (execute, develop, research, ad-hoc).
 class TestDESOrchestrator:
     """Unit tests for DESOrchestrator class."""
 
-    def test_orchestrator_has_render_prompt_method(self, des_orchestrator):
-        """
-        GIVEN DESOrchestrator class instantiated
-        WHEN checking for render_prompt method
-        THEN method should exist and be callable
-        """
-        assert hasattr(des_orchestrator, "render_prompt")
-        assert callable(des_orchestrator.render_prompt)
-
-    def test_orchestrator_has_prepare_ad_hoc_prompt_method(self, des_orchestrator):
-        """
-        GIVEN DESOrchestrator class instantiated
-        WHEN checking for prepare_ad_hoc_prompt method
-        THEN method should exist and be callable
-        """
-        assert hasattr(des_orchestrator, "prepare_ad_hoc_prompt")
-        assert callable(des_orchestrator.prepare_ad_hoc_prompt)
-
-    def test_render_prompt_returns_string(self, des_orchestrator):
-        """
-        GIVEN DESOrchestrator instance
-        WHEN render_prompt is called
-        THEN it should return a string
-        """
-        result = des_orchestrator.render_prompt(
-            command="/nw:execute",
-            agent="@software-crafter",
-            step_file="steps/01-01.json",
-            project_root="/tmp/test",
-        )
-        assert isinstance(result, str)
-
-    def test_prepare_ad_hoc_prompt_returns_string(self, des_orchestrator):
-        """
-        GIVEN DESOrchestrator instance
-        WHEN prepare_ad_hoc_prompt is called
-        THEN it should return a string
-        """
-        result = des_orchestrator.prepare_ad_hoc_prompt(
-            prompt="Find all uses of UserRepository", project_root="/tmp/test"
-        )
-        assert isinstance(result, str)
-
     def test_execute_command_includes_validation_marker(self, des_orchestrator):
         """
         GIVEN /nw:execute command

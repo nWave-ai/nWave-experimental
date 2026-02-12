@@ -6,9 +6,8 @@ Comprehensive test coverage for SCOPE_VIOLATION audit events with feature_name a
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-
 from des.application.subagent_stop_service import SubagentStopService
+from des.domain.phase_event import PhaseEvent
 from des.domain.step_completion_validator import StepCompletionValidator
 from des.domain.tdd_schema import get_tdd_schema
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
@@ -36,19 +35,19 @@ class MockTimeProvider(TimeProvider):
 
 
 class MockExecutionLogReader(ExecutionLogReader):
-    """Mock execution log reader."""
+    """Mock execution log reader returning PhaseEvent objects."""
 
-    def __init__(self, project_id: str, events: list[str]):
+    def __init__(self, project_id: str, events: list[PhaseEvent]):
         self._project_id = project_id
         self._events = events
 
     def read_project_id(self, log_path: str) -> str:
         return self._project_id
 
-    def read_step_events(self, log_path: str, step_id: str) -> list[str]:
-        return self._events
+    def read_step_events(self, log_path: str, step_id: str) -> list[PhaseEvent]:
+        return [e for e in self._events if e.step_id == step_id]
 
-    def read_all_events(self, log_path: str) -> list[str]:
+    def read_all_events(self, log_path: str) -> list[PhaseEvent]:
         return self._events
 
 
@@ -67,20 +66,34 @@ class MockScopeChecker(ScopeChecker):
         )
 
 
-def _create_valid_events() -> list[str]:
-    """Helper: Create valid 7-phase TDD events."""
+def _create_valid_events(step_id: str = "02-02") -> list[PhaseEvent]:
+    """Helper: Create valid 7-phase TDD events as PhaseEvent objects."""
+    phases = [
+        ("PREPARE", "EXECUTED", "PASS", "2026-02-06T15:00:00Z"),
+        ("RED_ACCEPTANCE", "EXECUTED", "FAIL", "2026-02-06T15:01:00Z"),
+        ("RED_UNIT", "EXECUTED", "FAIL", "2026-02-06T15:02:00Z"),
+        ("GREEN", "EXECUTED", "PASS", "2026-02-06T15:03:00Z"),
+        ("REVIEW", "EXECUTED", "PASS", "2026-02-06T15:04:00Z"),
+        (
+            "REFACTOR_CONTINUOUS",
+            "SKIPPED",
+            "APPROVED_SKIP:Clean",
+            "2026-02-06T15:05:00Z",
+        ),
+        ("COMMIT", "EXECUTED", "PASS", "2026-02-06T15:06:00Z"),
+    ]
     return [
-        "02-02|PREPARE|EXECUTED|PASS|2026-02-06T15:00:00Z",
-        "02-02|RED_ACCEPTANCE|EXECUTED|FAIL|2026-02-06T15:01:00Z",
-        "02-02|RED_UNIT|EXECUTED|FAIL|2026-02-06T15:02:00Z",
-        "02-02|GREEN|EXECUTED|PASS|2026-02-06T15:03:00Z",
-        "02-02|REVIEW|EXECUTED|PASS|2026-02-06T15:04:00Z",
-        "02-02|REFACTOR_CONTINUOUS|SKIPPED|APPROVED_SKIP:Clean|2026-02-06T15:05:00Z",
-        "02-02|COMMIT|EXECUTED|PASS|2026-02-06T15:06:00Z",
+        PhaseEvent(
+            step_id=step_id,
+            phase_name=phase,
+            status=status,
+            outcome=outcome,
+            timestamp=ts,
+        )
+        for phase, status, outcome, ts in phases
     ]
 
 
-@pytest.mark.skip(reason="Initial RED phase - test should fail before implementation")
 def test_single_scope_violation_logs_feature_name():
     """AC1: Single scope violation event includes feature_name and step_id."""
     # Given: Valid completion with one scope violation
@@ -115,12 +128,11 @@ def test_single_scope_violation_logs_feature_name():
     assert len(scope_events) == 1
 
     violation_event = scope_events[0]
-    assert violation_event.data["feature_name"] == "audit-log-refactor"
-    assert violation_event.data["step_id"] == "02-02"
+    assert violation_event.feature_name == "audit-log-refactor"
+    assert violation_event.step_id == "02-02"
     assert violation_event.data["out_of_scope_file"] == "src/other/feature/file.py"
 
 
-@pytest.mark.skip(reason="Initial RED phase - test should fail before implementation")
 def test_multiple_scope_violations_each_log_feature_name():
     """AC2: Multiple scope violations each log feature_name and step_id."""
     # Given: Valid completion with multiple scope violations
@@ -160,18 +172,17 @@ def test_multiple_scope_violations_each_log_feature_name():
     assert len(scope_events) == 3
 
     for i, violation_event in enumerate(scope_events):
-        assert violation_event.data["feature_name"] == "test-feature"
-        assert violation_event.data["step_id"] == "02-02"
+        assert violation_event.feature_name == "test-feature"
+        assert violation_event.step_id == "02-02"
         assert violation_event.data["out_of_scope_file"] == violations[i]
 
 
-@pytest.mark.skip(reason="Initial RED phase - test should fail before implementation")
 def test_no_scope_violations_no_events_logged():
     """AC3: When no violations, no SCOPE_VIOLATION events logged."""
     # Given: Valid completion with no scope violations
     log_reader = MockExecutionLogReader(
         project_id="clean-feature",
-        events=_create_valid_events(),
+        events=_create_valid_events(step_id="03-01"),
     )
     scope_checker = MockScopeChecker(violations=[])  # No violations
     audit_writer = MockAuditWriter()

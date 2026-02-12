@@ -106,13 +106,25 @@ addopts = [
     "-ra",
     "-q",
     "--strict-markers",
-    "--strict-config"
+    "--strict-config",
+    "--import-mode=importlib",
 ]
 markers = [
     "unit: Unit tests (fast, isolated)",
     "integration: Integration tests (may use external resources)",
+    "acceptance: Acceptance tests (BDD scenarios, may be slow)",
     "e2e: End-to-end acceptance tests",
-    "slow: Tests that take longer to run"
+    "slow: Tests that take longer to run",
+]
+norecursedirs = [
+    ".venv",
+    ".venv-mutation",
+    "node_modules",
+    ".git",
+    "__pycache__",
+    "reports",
+    "docs",
+    ".nwave",
 ]
 asyncio_mode = "auto"
 

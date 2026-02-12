@@ -7,7 +7,6 @@ matching the framework-catalog.yaml metadata.
 
 from pathlib import Path
 
-import pytest
 import yaml
 
 
@@ -147,53 +146,3 @@ class TestCommandFrontmatterAcceptance:
         assert not missing_hints, "argument-hint mismatches:\n" + "\n".join(
             missing_hints
         )
-
-
-# ---------------------------------------------------------------------------
-# Unit tests: frontmatter structure validation
-# ---------------------------------------------------------------------------
-
-
-class TestFrontmatterStructure:
-    """Unit: Each command file has structurally valid frontmatter."""
-
-    @pytest.mark.parametrize("cmd_name", EXPECTED_COMMANDS)
-    def test_frontmatter_is_valid_yaml(self, cmd_name):
-        """Frontmatter must be parseable YAML between --- delimiters."""
-        filepath = COMMANDS_DIR / f"{cmd_name}.md"
-        content = filepath.read_text(encoding="utf-8")
-
-        assert content.startswith("---\n"), (
-            f"{cmd_name}.md does not start with --- frontmatter delimiter"
-        )
-        assert "\n---\n" in content[4:], (
-            f"{cmd_name}.md missing closing --- frontmatter delimiter"
-        )
-
-        fm = _parse_frontmatter(filepath)
-        assert fm is not None, f"{cmd_name}.md frontmatter failed to parse"
-        assert isinstance(fm, dict), f"{cmd_name}.md frontmatter is not a dict"
-
-    @pytest.mark.parametrize("cmd_name", EXPECTED_COMMANDS)
-    def test_frontmatter_has_description(self, cmd_name):
-        """Every frontmatter must contain a description field."""
-        filepath = COMMANDS_DIR / f"{cmd_name}.md"
-        fm = _parse_frontmatter(filepath)
-        assert fm is not None, f"{cmd_name}.md has no frontmatter"
-        assert "description" in fm, f"{cmd_name}.md frontmatter missing 'description'"
-        assert isinstance(fm["description"], str), (
-            f"{cmd_name}.md description is not a string"
-        )
-        assert len(fm["description"]) > 0, f"{cmd_name}.md description is empty"
-
-    @pytest.mark.parametrize("cmd_name", EXPECTED_COMMANDS)
-    def test_frontmatter_preserved_original_content(self, cmd_name):
-        """Adding frontmatter must not lose original markdown content."""
-        filepath = COMMANDS_DIR / f"{cmd_name}.md"
-        content = filepath.read_text(encoding="utf-8")
-
-        # After frontmatter, the original content (starting with # heading) must exist
-        end_pos = content.index("\n---\n", 4) + 5  # past closing ---\n
-        body = content[end_pos:]
-        assert body.strip(), f"{cmd_name}.md has no content after frontmatter"
-        assert "#" in body, f"{cmd_name}.md body should contain markdown headings"

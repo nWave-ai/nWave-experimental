@@ -71,21 +71,17 @@ def isolated_project_with_des_source_only(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def isolated_project_with_scripts_only(tmp_path: Path, project_root: Path) -> Path:
+def isolated_project_with_scripts_only(
+    tmp_path: Path, project_root: Path, shared_des_source: Path
+) -> Path:
     """Create isolated project with DES scripts but NO templates."""
-    import shutil
-
     isolated_root = tmp_path / "isolated_scripts_only"
     isolated_root.mkdir(parents=True, exist_ok=True)
 
-    # Create src/des
+    # Symlink src/des from the session-scoped shared copy
     src_des = isolated_root / "src" / "des"
-    src_des.mkdir(parents=True, exist_ok=True)
-    real_des = project_root / "src" / "des"
-    if real_des.exists():
-        shutil.copytree(real_des, src_des, dirs_exist_ok=True)
-    else:
-        (src_des / "__init__.py").write_text("# DES module\n")
+    src_des.parent.mkdir(parents=True, exist_ok=True)
+    src_des.symlink_to(shared_des_source)
 
     # Create nWave/scripts/des/ with scripts
     scripts_dir = isolated_root / "nWave" / "scripts" / "des"

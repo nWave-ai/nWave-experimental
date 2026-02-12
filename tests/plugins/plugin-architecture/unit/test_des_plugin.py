@@ -60,6 +60,20 @@ def install_context(
     )
 
 
+@pytest.fixture
+def des_installed_via_symlink(install_context: InstallContext, shared_des_source: Path):
+    """
+    Install DES module into the test context via symlink to shared copy.
+
+    Uses a session-scoped shared DES source (copied once) instead of
+    shutil.copytree per test (~3.5s saved per test).
+    """
+    target_des = install_context.claude_dir / "lib" / "python" / "des"
+    target_des.parent.mkdir(parents=True, exist_ok=True)
+    target_des.symlink_to(shared_des_source)
+    return install_context
+
+
 # -----------------------------------------------------------------------------
 # Test: DESPlugin Initialization
 # -----------------------------------------------------------------------------
@@ -135,19 +149,13 @@ class TestDESPluginVerifyModuleImport:
         assert "DES module import failed" in result.errors[0]
 
     def test_verify_succeeds_when_des_module_is_importable(
-        self, install_context: InstallContext, project_root: Path
+        self, des_installed_via_symlink: InstallContext
     ):
         """verify() should succeed when DES module is properly installed."""
         import json
-        import shutil
 
         plugin = DESPlugin()
-
-        # Install DES module properly by copying from source
-        source_des = project_root / "src" / "des"
-        target_des = install_context.claude_dir / "lib" / "python" / "des"
-        target_des.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source_des, target_des)
+        install_context = des_installed_via_symlink
 
         # Create scripts
         scripts_dir = install_context.claude_dir / "scripts"
@@ -198,18 +206,11 @@ class TestDESPluginVerifyScripts:
     """Unit tests for DESPlugin.verify() script presence validation."""
 
     def test_verify_fails_when_check_stale_phases_missing(
-        self, install_context: InstallContext, project_root: Path
+        self, des_installed_via_symlink: InstallContext
     ):
         """verify() should fail if check_stale_phases.py is missing."""
         plugin = DESPlugin()
-
-        # Install DES module properly
-        import shutil
-
-        source_des = project_root / "src" / "des"
-        target_des = install_context.claude_dir / "lib" / "python" / "des"
-        target_des.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source_des, target_des)
+        install_context = des_installed_via_symlink
 
         # Create scripts directory but only scope_boundary_check.py
         scripts_dir = install_context.claude_dir / "scripts"
@@ -229,18 +230,11 @@ class TestDESPluginVerifyScripts:
         assert any("check_stale_phases.py" in error for error in result.errors)
 
     def test_verify_fails_when_scope_boundary_check_missing(
-        self, install_context: InstallContext, project_root: Path
+        self, des_installed_via_symlink: InstallContext
     ):
         """verify() should fail if scope_boundary_check.py is missing."""
         plugin = DESPlugin()
-
-        # Install DES module properly
-        import shutil
-
-        source_des = project_root / "src" / "des"
-        target_des = install_context.claude_dir / "lib" / "python" / "des"
-        target_des.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source_des, target_des)
+        install_context = des_installed_via_symlink
 
         # Create scripts directory but only check_stale_phases.py
         scripts_dir = install_context.claude_dir / "scripts"
@@ -269,18 +263,11 @@ class TestDESPluginVerifyTemplates:
     """Unit tests for DESPlugin.verify() template presence validation."""
 
     def test_verify_fails_when_des_audit_readme_missing(
-        self, install_context: InstallContext, project_root: Path
+        self, des_installed_via_symlink: InstallContext
     ):
         """verify() should fail if .des-audit-README.md is missing."""
         plugin = DESPlugin()
-
-        # Install DES module properly
-        import shutil
-
-        source_des = project_root / "src" / "des"
-        target_des = install_context.claude_dir / "lib" / "python" / "des"
-        target_des.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source_des, target_des)
+        install_context = des_installed_via_symlink
 
         # Create scripts
         scripts_dir = install_context.claude_dir / "scripts"
@@ -300,18 +287,11 @@ class TestDESPluginVerifyTemplates:
         assert any(".des-audit-README.md" in error for error in result.errors)
 
     def test_verify_fails_when_precommit_config_missing(
-        self, install_context: InstallContext, project_root: Path
+        self, des_installed_via_symlink: InstallContext
     ):
         """verify() should fail if .pre-commit-config-nwave.yaml is missing."""
         plugin = DESPlugin()
-
-        # Install DES module properly
-        import shutil
-
-        source_des = project_root / "src" / "des"
-        target_des = install_context.claude_dir / "lib" / "python" / "des"
-        target_des.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source_des, target_des)
+        install_context = des_installed_via_symlink
 
         # Create scripts
         scripts_dir = install_context.claude_dir / "scripts"
@@ -367,19 +347,13 @@ class TestDESPluginVerifyComplete:
         assert any("DES module" in error for error in result.errors)
 
     def test_verify_message_contains_success_indicators_on_pass(
-        self, install_context: InstallContext, project_root: Path
+        self, des_installed_via_symlink: InstallContext
     ):
         """verify() success message should indicate what was verified."""
         import json
-        import shutil
 
         plugin = DESPlugin()
-
-        # Full proper installation
-        source_des = project_root / "src" / "des"
-        target_des = install_context.claude_dir / "lib" / "python" / "des"
-        target_des.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source_des, target_des)
+        install_context = des_installed_via_symlink
 
         scripts_dir = install_context.claude_dir / "scripts"
         scripts_dir.mkdir(parents=True, exist_ok=True)

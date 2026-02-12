@@ -18,7 +18,7 @@ Feature: Hook Installation Idempotency
   # When bugs are fixed, these tests will PASS
   # ============================================================================
 
-  @bug-1 @failing @priority-critical
+  @bug-1 @priority-critical
   Scenario: Multiple installs should not duplicate hooks
     # Current Behavior (BUG): After 2 installs, settings.local.json contains
     # 2 identical PreToolUse hooks and 2 identical SubagentStop hooks
@@ -31,7 +31,7 @@ Feature: Hook Installation Idempotency
     And settings.local.json should contain exactly 1 SubagentStop hook
     And no duplicate hook entries should exist
 
-  @bug-1 @failing @priority-critical
+  @bug-1 @priority-critical
   Scenario: Uninstall should remove all DES hooks including duplicates
     # Current Behavior (BUG): Uninstall may not remove all duplicate instances
     # if multiple install runs created duplicates
@@ -44,7 +44,7 @@ Feature: Hook Installation Idempotency
     And settings.local.json should contain 0 DES SubagentStop hooks
     And non-DES hooks should be preserved
 
-  @bug-1 @failing @priority-high
+  @bug-1 @priority-high
   Scenario: Install after uninstall should work cleanly
     # Validates that the install->uninstall->install cycle works correctly
     # without accumulating duplicate entries
@@ -66,7 +66,7 @@ Feature: Hook Installation Idempotency
     Then the hook detection should return True
     And installing hooks again should not add duplicates
 
-  @bug-1 @failing @priority-high
+  @bug-1 @priority-high
   Scenario: Mixed format hooks should not cause duplicates
     # Edge case: If settings.local.json has old format and we install new format,
     # both might coexist as duplicates

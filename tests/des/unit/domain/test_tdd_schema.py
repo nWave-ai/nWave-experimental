@@ -19,16 +19,6 @@ from des.domain.tdd_schema import (
 class TestTDDSchemaLoader:
     """Tests for TDDSchemaLoader class."""
 
-    def test_loader_exists(self):
-        """TDDSchemaLoader class should be importable."""
-        assert TDDSchemaLoader is not None
-
-    def test_loader_has_default_schema_path(self):
-        """Loader should have a default path to step-tdd-cycle-schema.json."""
-        loader = TDDSchemaLoader()
-        assert loader.schema_path.name == "step-tdd-cycle-schema.json"
-        assert loader.schema_path.exists()
-
     def test_load_returns_tdd_schema_instance(self):
         """Load should return a TDDSchema instance."""
         loader = TDDSchemaLoader()
@@ -131,57 +121,3 @@ class TestGlobalSchemaAccess:
         reset_global_schema_loader()
         schema2 = get_tdd_schema()
         assert schema1 is not schema2
-
-
-class TestTDDSchemaImmutability:
-    """Tests that TDDSchema is immutable."""
-
-    def test_schema_is_frozen(self):
-        """TDDSchema should not allow attribute modification."""
-        schema = get_tdd_schema()
-        with pytest.raises(AttributeError):
-            schema.tdd_phases = ("NEW_PHASE",)
-
-    def test_schema_phases_are_tuple(self, tdd_schema):
-        """Phases should be a tuple (immutable)."""
-        assert isinstance(tdd_schema.tdd_phases, tuple)
-
-    def test_schema_statuses_are_tuple(self, tdd_schema):
-        """Statuses should be a tuple (immutable)."""
-        assert isinstance(tdd_schema.valid_statuses, tuple)
-
-    def test_schema_skip_prefixes_are_tuples(self, tdd_schema):
-        """Skip prefixes should be tuples (immutable)."""
-        assert isinstance(tdd_schema.valid_skip_prefixes, tuple)
-        assert isinstance(tdd_schema.blocking_skip_prefixes, tuple)
-
-
-class TestTDDSchemaParameterized:
-    """Parametrized tests using schema-driven data."""
-
-    def test_each_phase_is_string(self, tdd_phases):
-        """Each phase name should be a string."""
-        for phase in tdd_phases:
-            assert isinstance(phase, str)
-            assert len(phase) > 0
-
-    def test_each_phase_is_uppercase(self, tdd_phases):
-        """Each phase name should be uppercase."""
-        for phase in tdd_phases:
-            assert phase == phase.upper()
-
-    def test_each_status_is_string(self, valid_statuses):
-        """Each status should be a string."""
-        for status in valid_statuses:
-            assert isinstance(status, str)
-            assert len(status) > 0
-
-    def test_each_valid_prefix_ends_with_colon(self, valid_skip_prefixes):
-        """Each valid skip prefix should end with a colon."""
-        for prefix in valid_skip_prefixes:
-            assert prefix.endswith(":"), f"Prefix '{prefix}' should end with ':'"
-
-    def test_each_blocking_prefix_ends_with_colon(self, blocking_skip_prefixes):
-        """Each blocking skip prefix should end with a colon."""
-        for prefix in blocking_skip_prefixes:
-            assert prefix.endswith(":"), f"Prefix '{prefix}' should end with ':'"

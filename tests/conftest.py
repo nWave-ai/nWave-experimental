@@ -67,6 +67,35 @@ def pytest_html_results_summary(prefix, summary, postfix):
 # 3b: Allure auto-labeling
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Tier auto-marking: maps directory prefixes to pytest markers.
+# Sorted by specificity at runtime (longest prefix wins).
+# ---------------------------------------------------------------------------
+
+TIER_MAP = {
+    # DES tiers
+    "tests/des/unit/": "unit",
+    "tests/des/acceptance/": "acceptance",
+    "tests/des/integration/": "integration",
+    "tests/des/e2e/": "e2e",
+    # Installer tiers
+    "tests/installer/unit/": "unit",
+    "tests/installer/acceptance/": "acceptance",
+    "tests/installer/e2e/": "e2e",
+    # Plugin tiers
+    "tests/plugins/plugin-architecture/unit/": "unit",
+    "tests/plugins/plugin-architecture/integration/": "integration",
+    "tests/plugins/plugin-architecture/acceptance/": "acceptance",
+    "tests/plugins/plugin-architecture/e2e/": "e2e",
+    "tests/plugins/install/": "unit",
+    "tests/plugins/": "unit",  # frontmatter tests default to unit
+    # Bug regression tests
+    "tests/bugs/": "acceptance",
+    # Root-level tests
+    "tests/validation/": "unit",
+    "tests/": "unit",  # catch-all default
+}
+
 DOMAIN_MAP = {
     "tests/des/unit/": ("DES", "Unit Tests"),
     "tests/des/acceptance/": ("DES", "Acceptance Tests"),
@@ -94,33 +123,45 @@ DOMAIN_MAP = {
 
 
 def pytest_collection_modifyitems(config, items):
-    """Auto-label tests with Allure epic/feature/story from file paths."""
+    """Auto-label tests with Allure labels and tier markers from file paths."""
     try:
         import allure
+
+        has_allure = True
     except ImportError:
-        return
+        has_allure = False
+
+    # Pre-sort TIER_MAP prefixes by length descending (longest/most-specific first)
+    sorted_tier_prefixes = sorted(TIER_MAP.keys(), key=len, reverse=True)
 
     for item in items:
         rel_path = os.path.relpath(item.fspath, config.rootdir)
         rel_path = rel_path.replace(os.sep, "/")
 
-        # Match longest prefix first (more specific wins)
-        matched_epic = None
-        matched_feature = None
-        matched_len = 0
-        for prefix, (epic, feature) in DOMAIN_MAP.items():
-            if rel_path.startswith(prefix) and len(prefix) > matched_len:
-                matched_epic = epic
-                matched_feature = feature
-                matched_len = len(prefix)
+        # --- Allure labeling (unchanged, conditional on allure) ---
+        if has_allure:
+            matched_epic = None
+            matched_feature = None
+            matched_len = 0
+            for prefix, (epic, feature) in DOMAIN_MAP.items():
+                if rel_path.startswith(prefix) and len(prefix) > matched_len:
+                    matched_epic = epic
+                    matched_feature = feature
+                    matched_len = len(prefix)
 
-        if matched_epic:
-            item.add_marker(allure.epic(matched_epic))
-            item.add_marker(allure.feature(matched_feature))
+            if matched_epic:
+                item.add_marker(allure.epic(matched_epic))
+                item.add_marker(allure.feature(matched_feature))
 
-        # Story = class name if present
-        if item.cls:
-            item.add_marker(allure.story(item.cls.__name__))
+            if item.cls:
+                item.add_marker(allure.story(item.cls.__name__))
+
+        # --- Tier auto-marking (always runs) ---
+        for prefix in sorted_tier_prefixes:
+            if rel_path.startswith(prefix):
+                tier = TIER_MAP[prefix]
+                item.add_marker(getattr(pytest.mark, tier))
+                break
 
 
 # ---------------------------------------------------------------------------

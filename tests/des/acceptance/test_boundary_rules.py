@@ -29,8 +29,6 @@ STATUS: RED (Outside-In TDD - awaiting DEVELOP wave implementation)
 
 import json
 
-import pytest
-
 
 class TestBoundaryRulesInclusion:
     """
@@ -45,7 +43,6 @@ class TestBoundaryRulesInclusion:
     # Scenario 1: Step execution prompt includes BOUNDARY_RULES section
     # =========================================================================
 
-    @pytest.mark.skip(reason="Outside-In TDD RED state - awaiting DEVELOP wave")
     def test_scenario_001_step_execution_prompt_includes_boundary_rules_section(
         self, tmp_project_root, minimal_step_file, des_orchestrator
     ):
@@ -101,7 +98,6 @@ class TestAllowedActionEnumeration:
     # Scenario 2: ALLOWED section specifies permitted files
     # =========================================================================
 
-    @pytest.mark.skip(reason="Outside-In TDD RED state - awaiting DEVELOP wave")
     def test_scenario_002_boundary_rules_enumerate_allowed_actions(
         self, tmp_project_root, minimal_step_file, des_orchestrator
     ):
@@ -165,7 +161,6 @@ class TestAllowedActionEnumeration:
         )
         assert test_allowed, "Test files must be in ALLOWED list for TDD workflow"
 
-    @pytest.mark.skip(reason="Temporarily disabled - focusing on scenario 006")
     def test_scenario_003_allowed_patterns_match_step_target_files(
         self, tmp_project_root, des_orchestrator
     ):
@@ -239,7 +234,6 @@ class TestForbiddenActionEnumeration:
     # Scenario 4: FORBIDDEN section specifies prohibited actions
     # =========================================================================
 
-    @pytest.mark.skip(reason="Temporarily disabled - focusing on scenario 006")
     def test_scenario_004_boundary_rules_enumerate_forbidden_actions(
         self, tmp_project_root, minimal_step_file, des_orchestrator
     ):
@@ -297,7 +291,6 @@ class TestForbiddenActionEnumeration:
             "FORBIDDEN must include reference to files outside scope"
         )
 
-    @pytest.mark.skip(reason="Temporarily disabled - focusing on scenario 006")
     def test_scenario_005_forbidden_includes_continuation_to_next_step(
         self, tmp_project_root, minimal_step_file, des_orchestrator
     ):
@@ -357,7 +350,6 @@ class TestScopeValidationPostExecution:
     # Scenario 6: Post-execution scope validation detects out-of-scope changes
     # =========================================================================
 
-    @pytest.mark.skip(reason="Temporarily disabled to focus on scenario 007")
     def test_scenario_006_scope_validation_detects_out_of_scope_modification(
         self, tmp_project_root, minimal_step_file
     ):
@@ -410,7 +402,6 @@ class TestScopeValidationPostExecution:
         assert result.has_violations is True
         assert "src/services/OrderService.py" in result.out_of_scope_files
 
-    @pytest.mark.skip(reason="Temporarily disabled to focus on scenario 008")
     def test_scenario_007_in_scope_modifications_pass_validation(
         self, tmp_project_root, minimal_step_file
     ):
@@ -465,7 +456,6 @@ class TestScopeValidationPostExecution:
         assert result.out_of_scope_files == []
         assert not result.skipped
 
-    @pytest.mark.skip(reason="Temporarily disabled to focus on scenario 009")
     def test_scenario_008_step_file_modification_always_allowed(
         self, tmp_project_root, minimal_step_file
     ):
@@ -536,7 +526,6 @@ class TestScopeViolationAuditLogging:
     # Scenario 9: Scope violation logged to audit trail
     # =========================================================================
 
-    @pytest.mark.skip(reason="Temporarily disabled - focusing on scenario 014")
     def test_scenario_009_scope_violation_logged_to_audit_trail(
         self, tmp_project_root, minimal_step_file
     ):
@@ -610,7 +599,6 @@ class TestScopeViolationAuditLogging:
         assert "OrderService.py" in violation_entry["out_of_scope_file"]
         assert violation_entry["timestamp"] is not None
 
-    @pytest.mark.skip(reason="Temporarily disabled - focus on test_scenario_011")
     def test_scenario_010_multiple_scope_violations_all_logged(
         self, tmp_project_root, minimal_step_file
     ):
@@ -671,10 +659,16 @@ class TestScopeViolationAuditLogging:
         # Simulate SubagentStopHook audit logging (lines 152-163)
         if scope_result.has_violations:
             allowed_patterns = step_data.get("scope", {}).get("allowed_patterns", [])
+            ts = (
+                __import__("datetime")
+                .datetime.now(__import__("datetime").timezone.utc)
+                .isoformat()
+            )
             for out_of_scope_file in scope_result.out_of_scope_files:
                 audit_writer.log_event(
                     AuditEvent(
                         event_type="SCOPE_VIOLATION",
+                        timestamp=ts,
                         data={
                             "severity": "WARNING",
                             "step_file": str(minimal_step_file),
@@ -708,7 +702,6 @@ class TestScopeViolationAuditLogging:
             "database.yml violation not logged"
         )
 
-    @pytest.mark.skip(reason="Temporarily disabled - focusing on scenario 014")
     def test_scenario_011_no_violations_no_warning_logs(
         self, tmp_project_root, minimal_step_file
     ):
@@ -800,7 +793,6 @@ class TestBoundaryRulesCompleteness:
     components as a cohesive section.
     """
 
-    @pytest.mark.skip(reason="Outside-In TDD RED state - awaiting DEVELOP wave")
     def test_scenario_012_boundary_rules_has_complete_structure(
         self, tmp_project_root, minimal_step_file, des_orchestrator
     ):
@@ -848,7 +840,6 @@ class TestBoundaryRulesCompleteness:
             "stop after step completion"
         )
 
-    @pytest.mark.skip(reason="Temporarily disabled - focusing on scenario 006")
     def test_scenario_013_develop_command_also_includes_boundary_rules(
         self, tmp_project_root, minimal_step_file, des_orchestrator
     ):

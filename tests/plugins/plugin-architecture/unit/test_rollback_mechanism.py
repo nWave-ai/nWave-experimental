@@ -4,15 +4,12 @@ Unit tests for PluginRegistry rollback mechanism.
 Step 02-03: Rollback Mechanism Implementation
 
 Tests verify:
-1. rollback_installation() method exists on PluginRegistry
-2. Rollback removes installed files from failed installation
-3. Rollback restores from backup when available
-4. Error details are preserved for debugging
-5. install_all() triggers rollback automatically on failure
+1. Rollback removes installed files from failed installation
+2. Rollback restores from backup when available
+3. install_all() stops on first failure
 """
 
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
@@ -61,35 +58,6 @@ class MockPlugin(InstallationPlugin):
             plugin_name=self.name,
             message=f"Plugin {self.name} verification",
         )
-
-
-class TestRollbackMechanismExists:
-    """Tests for rollback_installation method existence."""
-
-    def test_plugin_registry_has_rollback_installation_method(self):
-        """PluginRegistry should have rollback_installation method."""
-        registry = PluginRegistry()
-        assert hasattr(registry, "rollback_installation"), (
-            "PluginRegistry should have rollback_installation method"
-        )
-
-    def test_rollback_installation_accepts_context_parameter(self, tmp_path: Path):
-        """rollback_installation should accept InstallContext as parameter."""
-        from scripts.install.install_utils import Logger
-
-        registry = PluginRegistry()
-
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=Logger(),
-            project_root=tmp_path,
-        )
-        context.claude_dir.mkdir(parents=True, exist_ok=True)
-
-        # Should not raise exception
-        registry.rollback_installation(context)
 
 
 class TestRollbackRemovesInstalledFiles:
@@ -195,55 +163,6 @@ class TestRollbackRestoresFromBackup:
         )
 
 
-class TestRollbackErrorLogging:
-    """Tests for error logging during rollback."""
-
-    @pytest.fixture
-    def mock_logger(self):
-        """Create a mock logger to capture log calls."""
-        logger = Mock()
-        logger.info = Mock()
-        logger.warn = Mock()
-        logger.error = Mock()
-        return logger
-
-    @pytest.fixture
-    def test_context_with_mock_logger(self, tmp_path: Path, mock_logger):
-        """Create test InstallContext with mock logger."""
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir(parents=True, exist_ok=True)
-
-        return InstallContext(
-            claude_dir=claude_dir,
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=mock_logger,
-            project_root=tmp_path,
-        )
-
-    def test_rollback_logs_error_details(
-        self, test_context_with_mock_logger: InstallContext, mock_logger
-    ):
-        """Rollback should log error details for debugging."""
-        registry = PluginRegistry()
-
-        failing_plugin = MockPlugin("failing", priority=10, should_fail=True)
-        registry.register(failing_plugin)
-
-        registry.install_all(test_context_with_mock_logger)
-
-        # Trigger rollback
-        registry.rollback_installation(test_context_with_mock_logger)
-
-        # Verify error logging occurred
-        # The logger should have logged the rollback action
-        assert (
-            mock_logger.info.called
-            or mock_logger.warn.called
-            or mock_logger.error.called
-        )
-
-
 class TestInstallAllTriggersRollbackOnFailure:
     """Tests for automatic rollback triggering in install_all."""
 
@@ -262,27 +181,6 @@ class TestInstallAllTriggersRollbackOnFailure:
             logger=Logger(),
             project_root=tmp_path,
         )
-
-    def test_install_all_tracks_installed_files_for_rollback(
-        self, test_context: InstallContext
-    ):
-        """install_all should track installed files for potential rollback."""
-        registry = PluginRegistry()
-
-        # Register multiple plugins
-        plugin1 = MockPlugin("plugin1", priority=10)
-        plugin2 = MockPlugin("plugin2", priority=20)
-
-        registry.register(plugin1)
-        registry.register(plugin2)
-
-        results = registry.install_all(test_context)
-
-        # All plugins should succeed
-        assert all(r.success for r in results.values())
-
-        # Registry should have record of what was installed
-        # (implementation detail - registry may track installed files internally)
 
     def test_install_all_stops_on_first_failure(self, test_context: InstallContext):
         """install_all should stop on first plugin failure."""

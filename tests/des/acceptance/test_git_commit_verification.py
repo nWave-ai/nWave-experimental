@@ -13,61 +13,71 @@ BUSINESS VALUE:
 
 SCOPE: Covers US-010 Acceptance Criteria (AC-010.1 through AC-010.6)
 WAVE: DISTILL (Acceptance Test Creation)
-STATUS: All scenarios skip-marked except first (one-at-a-time TDD)
 
-TEST BOUNDARY: External protocol (JSON stdin, exit code, JSON stdout).
-Tests invoke the hook adapter as a subprocess, matching Claude Code's actual
-integration protocol. Internal classes are implementation details.
+TEST BOUNDARY: Port-to-port with real git adapter.
+Tests invoke SubagentStopService.validate() directly with real YamlExecutionLogReader
+(for actual YAML files) and real GitCommitVerifier (for actual git repos).
+Only the audit writer and scope checker are stubbed.
 """
 
-import json
-import os
+from __future__ import annotations
+
 import subprocess
-import sys
-from pathlib import Path
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import yaml
 
+from des.adapters.driven.git.git_commit_verifier import GitCommitVerifier
+from des.adapters.driven.hooks.yaml_execution_log_reader import (
+    YamlExecutionLogReader,
+)
+from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
+from des.application.subagent_stop_service import SubagentStopService
+from des.domain.step_completion_validator import StepCompletionValidator
+from des.domain.tdd_schema import get_tdd_schema
+from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
+from des.ports.driven_ports.time_provider_port import TimeProvider
+from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 # =============================================================================
-# TEST HELPER: Invoke hook through external protocol boundary
+# TEST DOUBLES
 # =============================================================================
 
 
-def invoke_hook(hook_type: str, payload: dict) -> tuple[int, dict]:
-    """Invoke hook adapter through its external protocol (subprocess + JSON).
+class StubTimeProvider(TimeProvider):
+    def now_utc(self) -> datetime:
+        return datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
 
-    This is the public interface that Claude Code uses:
-    - JSON on stdin
-    - Exit code: 0=allow, 1=error, 2=block
-    - JSON on stdout
 
-    Args:
-        hook_type: Hook command name (e.g., "subagent-stop", "pre-task")
-        payload: JSON-serializable dict to send on stdin
+class StubScopeChecker(ScopeChecker):
+    def check_scope(
+        self, project_root: Path, allowed_patterns: list[str]
+    ) -> ScopeCheckResult:
+        return ScopeCheckResult(has_violations=False, out_of_scope_files=[])
 
-    Returns:
-        Tuple of (exit_code, response_dict)
-    """
-    env = os.environ.copy()
-    project_root = str(Path(__file__).parent.parent.parent.parent)
-    src_path = str(Path(project_root) / "src")
-    env["PYTHONPATH"] = src_path + os.pathsep + env.get("PYTHONPATH", "")
 
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "des.adapters.drivers.hooks.claude_code_hook_adapter",
-            hook_type,
-        ],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        env=env,
+# =============================================================================
+# SERVICE FACTORY
+# =============================================================================
+
+
+def _build_service_with_git(tmp_project_root: Path) -> SubagentStopService:
+    """Build SubagentStopService with real YAML reader and real git verifier."""
+    schema = get_tdd_schema()
+    return SubagentStopService(
+        log_reader=YamlExecutionLogReader(),
+        completion_validator=StepCompletionValidator(schema=schema),
+        scope_checker=StubScopeChecker(),
+        audit_writer=NullAuditLogWriter(),
+        time_provider=StubTimeProvider(),
+        commit_verifier=GitCommitVerifier(),
     )
-    response = json.loads(proc.stdout) if proc.stdout.strip() else {}
-    return proc.returncode, response
 
 
 # =============================================================================
@@ -124,13 +134,6 @@ def _create_commit_with_step_id(
 ) -> str:
     """Create a git commit containing a Step-ID trailer in the message body.
 
-    The commit message follows the conventional trailer format:
-        Subject line
-
-        Body text
-
-        Step-ID: {step_id}
-
     Args:
         path: Git repository directory
         step_id: Step identifier to embed as trailer (e.g., "01-01")
@@ -139,7 +142,6 @@ def _create_commit_with_step_id(
     Returns:
         The commit hash (short form) of the created commit
     """
-    # Create a file change to commit
     import uuid
 
     change_file = path / f"change-{uuid.uuid4().hex[:8]}.txt"
@@ -216,17 +218,7 @@ def _create_commit_without_step_id(
 
 
 def _create_execution_log_all_phases_pass(tdd_phases) -> dict:
-    """Create execution-log.yaml data with all phases EXECUTED and PASS.
-
-    This represents a fully completed step where every TDD phase was
-    executed successfully, including the COMMIT phase.
-
-    Args:
-        tdd_phases: Ordered tuple of canonical TDD phase names from schema
-
-    Returns:
-        dict suitable for yaml.dump into execution-log.yaml
-    """
+    """Create execution-log.yaml data with all phases EXECUTED and PASS."""
     events = []
     for phase in tdd_phases:
         events.append(f"01-01|{phase}|EXECUTED|PASS|2026-02-08T10:00:00+00:00")
@@ -240,17 +232,7 @@ def _create_execution_log_all_phases_pass(tdd_phases) -> dict:
 
 
 def _create_execution_log_missing_phases(tdd_phases, phases_to_include) -> dict:
-    """Create execution-log.yaml with only some phases present.
-
-    Missing phases simulate incomplete execution (e.g., agent crash).
-
-    Args:
-        tdd_phases: Ordered tuple of canonical TDD phase names from schema
-        phases_to_include: List of phase names to include in events
-
-    Returns:
-        dict suitable for yaml.dump into execution-log.yaml
-    """
+    """Create execution-log.yaml with only some phases present."""
     events = []
     for phase in tdd_phases:
         if phase in phases_to_include:
@@ -265,29 +247,16 @@ def _create_execution_log_missing_phases(tdd_phases, phases_to_include) -> dict:
 
 
 # =============================================================================
-# DEVELOP WAVE MAPPING
-# =============================================================================
-#
-# All 6 scenarios map to DEVELOP steps:
-#   Step 1: "Implement CommitVerifier driven port and GitCommitVerifier adapter"
-#   Step 2: "Integrate CommitVerifier into SubagentStopService"
-#
-# Each scenario represents a VERIFICATION RULE the hook must enforce:
-#   - Scenario 1: Commit with Step-ID trailer found (AC-010.1)      @walking_skeleton
-#   - Scenario 2: No commit with matching trailer (AC-010.2)
-#   - Scenario 3: Git not available / not a repo (AC-010.3)
-#   - Scenario 4: Execution-log fails first, git skipped (AC-010.4)
-#   - Scenario 5: Correct commit found among multiple (AC-010.5)
-#   - Scenario 6: Step-ID in commit body, not subject (AC-010.6)
+# ACCEPTANCE TESTS
 # =============================================================================
 
 
 class TestGitCommitVerification:
     """E2E acceptance tests for US-010: Git commit verification for step completion.
 
-    All tests invoke the hook adapter through its external protocol boundary:
-    JSON on stdin -> subprocess -> exit code + JSON on stdout.
-    This matches Claude Code's actual integration and survives internal refactoring.
+    Tests invoke SubagentStopService.validate() directly through the driving port,
+    with real YamlExecutionLogReader and GitCommitVerifier adapters.
+    Git operations are real (integration test requirement).
     """
 
     # =========================================================================
@@ -325,20 +294,21 @@ class TestGitCommitVerification:
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
 
-        # Act: Invoke hook through external protocol
-        exit_code, response = invoke_hook(
-            "subagent-stop",
-            {
-                "executionLogPath": str(log_file),
-                "projectId": "test-project",
-                "stepId": "01-01",
-                "cwd": str(tmp_project_root),
-            },
+        # Act: Invoke service directly
+        service = _build_service_with_git(tmp_project_root)
+        decision = service.validate(
+            SubagentStopContext(
+                execution_log_path=str(log_file),
+                project_id="test-project",
+                step_id="01-01",
+                cwd=str(tmp_project_root),
+            )
         )
 
         # Assert: Hook allows the step (commit verified)
-        assert exit_code == 0, f"Expected allow (exit 0), got {exit_code}: {response}"
-        assert response["decision"] == "allow"
+        assert decision.action == "allow", (
+            f"Expected allow, got {decision.action}: {decision.reason}"
+        )
 
     # =========================================================================
     # AC-010.2: No commit with matching Step-ID trailer
@@ -373,24 +343,23 @@ class TestGitCommitVerification:
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
 
-        # Act: Invoke hook through external protocol
-        exit_code, response = invoke_hook(
-            "subagent-stop",
-            {
-                "executionLogPath": str(log_file),
-                "projectId": "test-project",
-                "stepId": "01-01",
-                "cwd": str(tmp_project_root),
-            },
+        # Act: Invoke service directly
+        service = _build_service_with_git(tmp_project_root)
+        decision = service.validate(
+            SubagentStopContext(
+                execution_log_path=str(log_file),
+                project_id="test-project",
+                step_id="01-01",
+                cwd=str(tmp_project_root),
+            )
         )
 
         # Assert: Hook blocks the step (no matching commit found)
-        assert exit_code == 0, (
-            f"Expected exit 0 with decision:block, got {exit_code}: {response}"
+        assert decision.action == "block", (
+            f"Expected block, got {decision.action}: {decision.reason}"
         )
-        assert response["decision"] == "block"
         # Reason should mention commit verification failure
-        reason = response.get("reason", "")
+        reason = decision.reason or ""
         assert "commit" in reason.lower() or "COMMIT_NOT_VERIFIED" in reason, (
             f"Block reason should mention commit verification, got: {reason}"
         )
@@ -425,23 +394,22 @@ class TestGitCommitVerification:
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
 
-        # Act: Invoke hook through external protocol
-        exit_code, response = invoke_hook(
-            "subagent-stop",
-            {
-                "executionLogPath": str(log_file),
-                "projectId": "test-project",
-                "stepId": "01-01",
-                "cwd": str(tmp_project_root),
-            },
+        # Act: Invoke service directly
+        service = _build_service_with_git(tmp_project_root)
+        decision = service.validate(
+            SubagentStopContext(
+                execution_log_path=str(log_file),
+                project_id="test-project",
+                step_id="01-01",
+                cwd=str(tmp_project_root),
+            )
         )
 
         # Assert: Hook blocks the step (fail-closed on git error)
-        assert exit_code == 0, (
-            f"Expected exit 0 with decision:block, got {exit_code}: {response}"
+        assert decision.action == "block", (
+            f"Expected block, got {decision.action}: {decision.reason}"
         )
-        assert response["decision"] == "block"
-        reason = response.get("reason", "")
+        reason = decision.reason or ""
         assert "commit" in reason.lower() or "git" in reason.lower(), (
             f"Block reason should mention commit/git error, got: {reason}"
         )
@@ -481,23 +449,22 @@ class TestGitCommitVerification:
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
 
-        # Act: Invoke hook through external protocol
-        exit_code, response = invoke_hook(
-            "subagent-stop",
-            {
-                "executionLogPath": str(log_file),
-                "projectId": "test-project",
-                "stepId": "01-01",
-                "cwd": str(tmp_project_root),
-            },
+        # Act: Invoke service directly
+        service = _build_service_with_git(tmp_project_root)
+        decision = service.validate(
+            SubagentStopContext(
+                execution_log_path=str(log_file),
+                project_id="test-project",
+                step_id="01-01",
+                cwd=str(tmp_project_root),
+            )
         )
 
         # Assert: Blocked for missing phases, NOT for commit verification
-        assert exit_code == 0, (
-            f"Expected exit 0 with decision:block, got {exit_code}: {response}"
+        assert decision.action == "block", (
+            f"Expected block, got {decision.action}: {decision.reason}"
         )
-        assert response["decision"] == "block"
-        reason = response.get("reason", "")
+        reason = decision.reason or ""
         assert "Missing phases" in reason, (
             f"Should block on missing phases, got: {reason}"
         )
@@ -547,20 +514,21 @@ class TestGitCommitVerification:
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
 
-        # Act: Invoke hook through external protocol
-        exit_code, response = invoke_hook(
-            "subagent-stop",
-            {
-                "executionLogPath": str(log_file),
-                "projectId": "test-project",
-                "stepId": "01-01",
-                "cwd": str(tmp_project_root),
-            },
+        # Act: Invoke service directly
+        service = _build_service_with_git(tmp_project_root)
+        decision = service.validate(
+            SubagentStopContext(
+                execution_log_path=str(log_file),
+                project_id="test-project",
+                step_id="01-01",
+                cwd=str(tmp_project_root),
+            )
         )
 
         # Assert: Hook allows the step (correct commit found)
-        assert exit_code == 0, f"Expected allow (exit 0), got {exit_code}: {response}"
-        assert response["decision"] == "allow"
+        assert decision.action == "allow", (
+            f"Expected allow, got {decision.action}: {decision.reason}"
+        )
 
     # =========================================================================
     # AC-010.6: Step-ID in commit body (not subject line)
@@ -621,17 +589,18 @@ class TestGitCommitVerification:
         log_file = tmp_project_root / "execution-log.yaml"
         log_file.write_text(yaml.dump(log_data, default_flow_style=False))
 
-        # Act: Invoke hook through external protocol
-        exit_code, response = invoke_hook(
-            "subagent-stop",
-            {
-                "executionLogPath": str(log_file),
-                "projectId": "test-project",
-                "stepId": "01-01",
-                "cwd": str(tmp_project_root),
-            },
+        # Act: Invoke service directly
+        service = _build_service_with_git(tmp_project_root)
+        decision = service.validate(
+            SubagentStopContext(
+                execution_log_path=str(log_file),
+                project_id="test-project",
+                step_id="01-01",
+                cwd=str(tmp_project_root),
+            )
         )
 
         # Assert: Hook allows the step (Step-ID found in body)
-        assert exit_code == 0, f"Expected allow (exit 0), got {exit_code}: {response}"
-        assert response["decision"] == "allow"
+        assert decision.action == "allow", (
+            f"Expected allow, got {decision.action}: {decision.reason}"
+        )

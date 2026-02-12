@@ -17,8 +17,6 @@ WAVE: DISTILL (Acceptance Test Creation)
 STATUS: RED (Outside-In TDD - awaiting DEVELOP wave implementation)
 """
 
-import pytest
-
 
 class TestPreInvocationLimitsValidation:
     """E2E acceptance tests for pre-invocation turn/timeout limits validation."""
@@ -114,9 +112,12 @@ class TestPreInvocationLimitsValidation:
     # Scenario 019: Invalid limits block invocation with error
     # =========================================================================
 
-    @pytest.mark.skip(reason="Outside-In TDD RED state - awaiting DEVELOP wave")
     def test_scenario_019_invalid_limits_block_invocation(
-        self, tmp_project_root, minimal_step_file, des_orchestrator
+        self,
+        tmp_project_root,
+        minimal_step_file,
+        des_orchestrator,
+        in_memory_filesystem,
     ):
         """
         GIVEN step file with invalid limits (negative or zero values)
@@ -131,24 +132,26 @@ class TestPreInvocationLimitsValidation:
         # GIVEN: Step file with invalid limits
         step_file_path = str(minimal_step_file.relative_to(tmp_project_root))
 
-        import json
+        # Create step data with invalid limits
+        step_data = {
+            "task_id": "07-02",
+            "project_id": "test-project",
+            "state": {
+                "status": "IN_PROGRESS",
+                "started_at": "2026-01-26T10:00:00Z",
+                "completed_at": None,
+            },
+            "tdd_cycle": {
+                "max_turns": -1,
+                "duration_minutes": 0,
+                "phase_execution_log": [],
+            },
+        }
 
-        with open(minimal_step_file) as f:
-            step_data = json.load(f)
-
-        # Set invalid limits
-        step_data["tdd_cycle"]["max_turns"] = -1
-        step_data["tdd_cycle"]["duration_minutes"] = 0
-
-        with open(minimal_step_file, "w") as f:
-            json.dump(step_data, f, indent=2)
+        in_memory_filesystem.write_json(minimal_step_file, step_data)
 
         # WHEN: Orchestrator validates limits
-        from des.application.orchestrator import DESOrchestrator
-
-        orchestrator = DESOrchestrator()
-
-        validation_result = orchestrator.validate_invocation_limits(
+        validation_result = des_orchestrator.validate_invocation_limits(
             step_file=step_file_path, project_root=tmp_project_root
         )
 
@@ -173,9 +176,12 @@ class TestPreInvocationLimitsValidation:
     # Scenario 020: Valid limits pass validation
     # =========================================================================
 
-    @pytest.mark.skip(reason="Outside-In TDD RED state - awaiting DEVELOP wave")
     def test_scenario_020_valid_limits_pass_validation(
-        self, tmp_project_root, minimal_step_file, des_orchestrator
+        self,
+        tmp_project_root,
+        minimal_step_file,
+        des_orchestrator,
+        in_memory_filesystem,
     ):
         """
         GIVEN step file with valid max_turns and duration_minutes
@@ -190,24 +196,26 @@ class TestPreInvocationLimitsValidation:
         # GIVEN: Step file with valid limits
         step_file_path = str(minimal_step_file.relative_to(tmp_project_root))
 
-        import json
+        # Create step data with valid limits
+        step_data = {
+            "task_id": "07-02",
+            "project_id": "test-project",
+            "state": {
+                "status": "IN_PROGRESS",
+                "started_at": "2026-01-26T10:00:00Z",
+                "completed_at": None,
+            },
+            "tdd_cycle": {
+                "max_turns": 50,
+                "duration_minutes": 30,
+                "phase_execution_log": [],
+            },
+        }
 
-        with open(minimal_step_file) as f:
-            step_data = json.load(f)
-
-        # Set valid limits
-        step_data["tdd_cycle"]["max_turns"] = 50
-        step_data["tdd_cycle"]["duration_minutes"] = 30
-
-        with open(minimal_step_file, "w") as f:
-            json.dump(step_data, f, indent=2)
+        in_memory_filesystem.write_json(minimal_step_file, step_data)
 
         # WHEN: Orchestrator validates limits
-        from des.application.orchestrator import DESOrchestrator
-
-        orchestrator = DESOrchestrator()
-
-        validation_result = orchestrator.validate_invocation_limits(
+        validation_result = des_orchestrator.validate_invocation_limits(
             step_file=step_file_path, project_root=tmp_project_root
         )
 

@@ -1,21 +1,13 @@
 """
 Unit tests to fill coverage gaps in plugin system.
 
-These tests specifically target uncovered lines identified by coverage analysis
-to bring total coverage above 80%.
-
-Coverage targets:
-- templates_plugin.py: lines 42, 45, 61-68, 82-84, 135-137
-- registry.py: lines 45, 66-78, 210-211, 225-226, 275-283
-- agents_plugin.py: lines 62-65, 83-85, 132-134
-- utilities_plugin.py: lines 57, 74-77, 92-94, 142-144
-- commands_plugin.py: lines 61-63, 74-76, 123-125
-- base.py: lines 25-27, 79, 91, 109
+These tests target uncovered behavioral paths identified by coverage analysis.
+Theater tests (str representation, trivial getters, duplicate registry tests,
+mock-Path exception tests) have been removed.
 """
 
 import logging
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -52,70 +44,7 @@ def project_root() -> Path:
 
 
 # =============================================================================
-# PluginResult Coverage Tests (base.py lines 25-27)
-# =============================================================================
-
-
-class TestPluginResultStringRepresentation:
-    """Tests for PluginResult.__str__() method."""
-
-    def test_str_returns_checkmark_for_successful_result(self):
-        """PluginResult.__str__ should return checkmark for success=True."""
-        result = PluginResult(
-            success=True,
-            plugin_name="test_plugin",
-            message="Installation successful",
-        )
-        string_repr = str(result)
-        assert "test_plugin" in string_repr
-        assert "Installation successful" in string_repr
-
-    def test_str_returns_x_for_failed_result(self):
-        """PluginResult.__str__ should return X for success=False."""
-        result = PluginResult(
-            success=False,
-            plugin_name="failing_plugin",
-            message="Installation failed",
-        )
-        string_repr = str(result)
-        assert "failing_plugin" in string_repr
-        assert "Installation failed" in string_repr
-
-
-# =============================================================================
-# InstallationPlugin Coverage Tests (base.py lines 79, 91, 109)
-# =============================================================================
-
-
-class ConcretePlugin(InstallationPlugin):
-    """Concrete implementation for testing abstract base class."""
-
-    def install(self, context: InstallContext) -> PluginResult:
-        return PluginResult(success=True, plugin_name=self.name, message="OK")
-
-    def verify(self, context: InstallContext) -> PluginResult:
-        return PluginResult(success=True, plugin_name=self.name, message="OK")
-
-
-class TestInstallationPluginDependencies:
-    """Tests for InstallationPlugin dependency methods."""
-
-    def test_set_dependencies_updates_dependencies_list(self):
-        """set_dependencies should update the dependencies list."""
-        plugin = ConcretePlugin(name="test", priority=50)
-        assert plugin.get_dependencies() == []
-
-        plugin.set_dependencies(["dep1", "dep2"])
-        assert plugin.get_dependencies() == ["dep1", "dep2"]
-
-    def test_get_dependencies_returns_empty_by_default(self):
-        """get_dependencies should return empty list by default."""
-        plugin = ConcretePlugin(name="test", priority=50)
-        assert plugin.get_dependencies() == []
-
-
-# =============================================================================
-# PluginRegistry Coverage Tests (registry.py lines 45, 66-78, 275-283)
+# Shared Test Helpers
 # =============================================================================
 
 
@@ -161,60 +90,13 @@ class SuccessPlugin(InstallationPlugin):
         return PluginResult(success=True, plugin_name=self.name, message="OK")
 
 
-class TestPluginRegistryDuplicateRegistration:
-    """Tests for duplicate plugin registration error (line 45)."""
-
-    def test_register_raises_error_for_duplicate_plugin_name(self):
-        """register should raise ValueError when same plugin name registered twice."""
-        registry = PluginRegistry()
-        plugin1 = ConcretePlugin(name="duplicate", priority=10)
-        plugin2 = ConcretePlugin(name="duplicate", priority=20)
-
-        registry.register(plugin1)
-
-        with pytest.raises(ValueError, match="already registered"):
-            registry.register(plugin2)
-
-
-class TestPluginRegistryCycleDetection:
-    """Tests for cycle detection via DFS (lines 66-78)."""
-
-    def test_topological_sort_raises_on_circular_dependency(self):
-        """Kahn's algorithm should raise ValueError for circular dependencies."""
-        registry = PluginRegistry()
-
-        # Create plugins with circular dependency
-        plugin_a = ConcretePlugin(name="plugin_a", priority=10)
-        plugin_b = ConcretePlugin(name="plugin_b", priority=20)
-        plugin_c = ConcretePlugin(name="plugin_c", priority=30)
-
-        # A depends on C, B depends on A, C depends on B (cycle)
-        plugin_a.set_dependencies(["plugin_c"])
-        plugin_b.set_dependencies(["plugin_a"])
-        plugin_c.set_dependencies(["plugin_b"])
-
-        registry.register(plugin_a)
-        registry.register(plugin_b)
-        registry.register(plugin_c)
-
-        with pytest.raises(ValueError, match="Circular dependency"):
-            registry.get_execution_order()
-
-    def test_topological_sort_raises_on_missing_dependency(self):
-        """Should raise ValueError when dependency plugin is not registered."""
-        registry = PluginRegistry()
-
-        plugin = ConcretePlugin(name="orphan", priority=10)
-        plugin.set_dependencies(["nonexistent"])
-
-        registry.register(plugin)
-
-        with pytest.raises(ValueError, match="missing plugin"):
-            registry.get_execution_order()
+# =============================================================================
+# PluginRegistry Coverage Tests
+# =============================================================================
 
 
 class TestPluginRegistryVerifyAll:
-    """Tests for verify_all method (lines 275-283)."""
+    """Tests for verify_all method."""
 
     @pytest.fixture
     def test_context(self, tmp_path: Path, test_logger: logging.Logger):
@@ -250,7 +132,7 @@ class TestPluginRegistryVerifyAll:
 
 
 class TestPluginRegistryRollbackFileRemoval:
-    """Tests for rollback file removal logic (lines 206-211, 217-226)."""
+    """Tests for rollback file removal logic."""
 
     @pytest.fixture
     def test_context(self, tmp_path: Path, test_logger: logging.Logger):
@@ -315,7 +197,7 @@ class TestPluginRegistryRollbackFileRemoval:
 
 
 class TestPluginRegistryBackupRestore:
-    """Tests for backup restore functionality (lines 250-264)."""
+    """Tests for backup restore functionality."""
 
     @pytest.fixture
     def context_with_backup(self, tmp_path: Path, test_logger: logging.Logger):
@@ -379,12 +261,12 @@ class TestPluginRegistryBackupRestore:
 
 
 # =============================================================================
-# TemplatesPlugin Coverage Tests (lines 42, 45-50, 61-68, 82-84, 135-137)
+# TemplatesPlugin Coverage Tests
 # =============================================================================
 
 
 class TestTemplatesPluginFallbackPath:
-    """Tests for templates_dir fallback to framework_source (line 42)."""
+    """Tests for templates_dir fallback to framework_source."""
 
     @pytest.fixture
     def context_with_nonexistent_templates_dir(
@@ -422,7 +304,7 @@ class TestTemplatesPluginFallbackPath:
 
 
 class TestTemplatesPluginNoSource:
-    """Tests for when no templates source exists (lines 45-50)."""
+    """Tests for when no templates source exists."""
 
     def test_install_fails_when_no_templates_source_exists(
         self, tmp_path: Path, test_logger: logging.Logger
@@ -448,7 +330,7 @@ class TestTemplatesPluginNoSource:
 
 
 class TestTemplatesPluginDirectoryCopy:
-    """Tests for directory copy with subdirectories (lines 61-68)."""
+    """Tests for directory copy with subdirectories."""
 
     def test_install_copies_subdirectories_recursively(
         self, tmp_path: Path, test_logger: logging.Logger
@@ -486,69 +368,13 @@ class TestTemplatesPluginDirectoryCopy:
         assert (target_subdir / "nested.md").exists()
 
 
-class TestTemplatesPluginExceptionHandling:
-    """Tests for exception handling (lines 82-84, 135-137)."""
-
-    def test_install_handles_exception_gracefully(
-        self, tmp_path: Path, test_logger: logging.Logger
-    ):
-        """install should return failure result when exception occurs."""
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create read-only directory to cause permission error
-        templates_source = tmp_path / "source_templates"
-        templates_source.mkdir(parents=True)
-        (templates_source / "test.yaml").write_text("test: true")
-
-        context = InstallContext(
-            claude_dir=claude_dir,
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=templates_source,
-            logger=test_logger,
-            project_root=tmp_path,
-            framework_source=tmp_path / "framework",
-        )
-
-        plugin = TemplatesPlugin()
-
-        # Mock iterdir to raise exception
-        with patch.object(Path, "iterdir", side_effect=PermissionError("No access")):
-            result = plugin.install(context)
-
-        assert not result.success
-        assert "failed" in result.message.lower()
-
-    def test_verify_handles_exception_gracefully(
-        self, tmp_path: Path, test_logger: logging.Logger
-    ):
-        """verify should return failure result when exception occurs."""
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=test_logger,
-            project_root=tmp_path,
-            framework_source=tmp_path / "framework",
-        )
-
-        plugin = TemplatesPlugin()
-
-        # Mock exists to raise exception
-        with patch.object(Path, "exists", side_effect=OSError("IO Error")):
-            result = plugin.verify(context)
-
-        assert not result.success
-        assert "failed" in result.message.lower()
-
-
 # =============================================================================
-# AgentsPlugin Coverage Tests (lines 62-65, 83-85, 132-134)
+# AgentsPlugin Coverage Tests
 # =============================================================================
 
 
 class TestAgentsPluginSourceFallback:
-    """Tests for source file fallback logic (lines 62-65)."""
+    """Tests for source file fallback logic."""
 
     def test_install_uses_source_from_nwave_agents(
         self, tmp_path: Path, test_logger: logging.Logger, project_root: Path
@@ -580,73 +406,13 @@ class TestAgentsPluginSourceFallback:
         assert target.exists()
 
 
-class TestAgentsPluginExceptionHandling:
-    """Tests for exception handling (lines 83-85, 132-134)."""
-
-    def test_install_handles_exception_gracefully(
-        self, tmp_path: Path, test_logger: logging.Logger
-    ):
-        """install should return failure result when exception occurs."""
-        # Create source dir so plugin proceeds past exists check
-        source_agents = tmp_path / "nWave" / "agents"
-        source_agents.mkdir(parents=True)
-        (source_agents / "nw-test.md").write_text("# Test Agent")
-
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=test_logger,
-            project_root=tmp_path,
-            framework_source=tmp_path / "framework",
-        )
-
-        plugin = AgentsPlugin()
-
-        # Mock glob to raise exception after source directory exists check
-        original_glob = Path.glob
-
-        def mock_glob(self, pattern):
-            if "agents" in str(self) and pattern == "nw-*.md":
-                raise PermissionError("No access")
-            return original_glob(self, pattern)
-
-        with patch.object(Path, "glob", mock_glob):
-            result = plugin.install(context)
-
-        assert not result.success
-        assert "failed" in result.message.lower()
-
-    def test_verify_handles_exception_gracefully(
-        self, tmp_path: Path, test_logger: logging.Logger
-    ):
-        """verify should return failure result when exception occurs."""
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=test_logger,
-            project_root=tmp_path,
-            framework_source=tmp_path / "framework",
-        )
-
-        plugin = AgentsPlugin()
-
-        # Mock exists to raise exception
-        with patch.object(Path, "exists", side_effect=OSError("IO Error")):
-            result = plugin.verify(context)
-
-        assert not result.success
-        assert "failed" in result.message.lower()
-
-
 # =============================================================================
-# UtilitiesPlugin Coverage Tests (lines 57, 74-77, 92-94, 142-144)
+# UtilitiesPlugin Coverage Tests
 # =============================================================================
 
 
 class TestUtilitiesPluginScriptNotFound:
-    """Tests for script not found continue (line 57)."""
+    """Tests for script not found continue."""
 
     def test_install_skips_missing_scripts(
         self, tmp_path: Path, test_logger: logging.Logger
@@ -680,7 +446,7 @@ class TestUtilitiesPluginScriptNotFound:
 
 
 class TestUtilitiesPluginFreshInstall:
-    """Tests for fresh install (not upgrade) path (lines 74-77)."""
+    """Tests for fresh install (not upgrade) path."""
 
     def test_install_copies_new_script_when_target_missing(
         self, tmp_path: Path, test_logger: logging.Logger
@@ -713,61 +479,13 @@ class TestUtilitiesPluginFreshInstall:
         assert target.exists()
 
 
-class TestUtilitiesPluginExceptionHandling:
-    """Tests for exception handling (lines 92-94, 142-144)."""
-
-    def test_install_handles_exception_gracefully(
-        self, tmp_path: Path, test_logger: logging.Logger
-    ):
-        """install should return failure result when exception occurs."""
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=test_logger,
-            project_root=tmp_path,
-            framework_source=tmp_path / "framework",
-        )
-
-        plugin = UtilitiesPlugin()
-
-        # Mock mkdir to raise exception
-        with patch.object(Path, "mkdir", side_effect=PermissionError("No access")):
-            result = plugin.install(context)
-
-        assert not result.success
-        assert "failed" in result.message.lower()
-
-    def test_verify_handles_exception_gracefully(
-        self, tmp_path: Path, test_logger: logging.Logger
-    ):
-        """verify should return failure result when exception occurs."""
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=test_logger,
-            project_root=tmp_path,
-            framework_source=tmp_path / "framework",
-        )
-
-        plugin = UtilitiesPlugin()
-
-        # Mock exists to raise exception
-        with patch.object(Path, "exists", side_effect=OSError("IO Error")):
-            result = plugin.verify(context)
-
-        assert not result.success
-        assert "failed" in result.message.lower()
-
-
 # =============================================================================
-# CommandsPlugin Coverage Tests (lines 61-63, 74-76, 123-125)
+# CommandsPlugin Coverage Tests
 # =============================================================================
 
 
 class TestCommandsPluginFileCopy:
-    """Tests for file (not directory) copy path (lines 61-63)."""
+    """Tests for file (not directory) copy path."""
 
     def test_install_copies_individual_files(
         self, tmp_path: Path, test_logger: logging.Logger
@@ -796,63 +514,3 @@ class TestCommandsPluginFileCopy:
         assert result.success
         target = claude_dir / "commands" / "nw" / "standalone.md"
         assert target.exists()
-
-
-class TestCommandsPluginExceptionHandling:
-    """Tests for exception handling (lines 74-76, 123-125)."""
-
-    def test_install_handles_exception_gracefully(
-        self, tmp_path: Path, test_logger: logging.Logger
-    ):
-        """install should return failure result when exception occurs."""
-        # Create valid source directory at the path the plugin reads
-        commands_source = tmp_path / "nWave" / "tasks" / "nw"
-        commands_source.mkdir(parents=True)
-        (commands_source / "test.md").write_text("# Test")
-
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=test_logger,
-            project_root=tmp_path,
-            framework_source=tmp_path / "framework",
-        )
-
-        plugin = CommandsPlugin()
-
-        # Mock glob to raise exception after source directory exists check
-        original_glob = Path.glob
-
-        def mock_glob(self, pattern):
-            if "nw" in str(self) and pattern == "*.md":
-                raise PermissionError("No access")
-            return original_glob(self, pattern)
-
-        with patch.object(Path, "glob", mock_glob):
-            result = plugin.install(context)
-
-        assert not result.success
-        assert "failed" in result.message.lower()
-
-    def test_verify_handles_exception_gracefully(
-        self, tmp_path: Path, test_logger: logging.Logger
-    ):
-        """verify should return failure result when exception occurs."""
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=test_logger,
-            project_root=tmp_path,
-            framework_source=tmp_path / "framework",
-        )
-
-        plugin = CommandsPlugin()
-
-        # Mock exists to raise exception
-        with patch.object(Path, "exists", side_effect=OSError("IO Error")):
-            result = plugin.verify(context)
-
-        assert not result.success
-        assert "failed" in result.message.lower()

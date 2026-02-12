@@ -7,7 +7,6 @@ no duplicate --- blocks, and names matching filenames.
 
 from pathlib import Path
 
-import pytest
 import yaml
 
 
@@ -139,70 +138,3 @@ class TestAgentFrontmatterAcceptance:
                     f"{agent_name}: frontmatter name='{fm_name}', expected='{agent_name}'"
                 )
         assert not mismatches, "Name mismatches:\n" + "\n".join(mismatches)
-
-
-# ---------------------------------------------------------------------------
-# Unit tests: frontmatter structure per agent
-# ---------------------------------------------------------------------------
-
-
-class TestAgentFrontmatterStructure:
-    """Unit: Each agent file has structurally valid frontmatter."""
-
-    @pytest.mark.parametrize("agent_name", EXPECTED_AGENTS)
-    def test_frontmatter_is_valid_yaml(self, agent_name):
-        """Frontmatter must be parseable YAML between --- delimiters."""
-        filepath = AGENTS_DIR / f"{agent_name}.md"
-        content = filepath.read_text(encoding="utf-8")
-
-        assert content.startswith("---\n"), (
-            f"{agent_name}.md does not start with --- frontmatter delimiter"
-        )
-        assert "\n---\n" in content[4:], (
-            f"{agent_name}.md missing closing --- frontmatter delimiter"
-        )
-
-        fm = _parse_frontmatter(filepath)
-        assert fm is not None, f"{agent_name}.md frontmatter failed to parse"
-        assert isinstance(fm, dict), f"{agent_name}.md frontmatter is not a dict"
-
-    @pytest.mark.parametrize("agent_name", EXPECTED_AGENTS)
-    def test_frontmatter_has_required_fields(self, agent_name):
-        """Every frontmatter must contain name, description, and model fields."""
-        filepath = AGENTS_DIR / f"{agent_name}.md"
-        fm = _parse_frontmatter(filepath)
-        assert fm is not None, f"{agent_name}.md has no frontmatter"
-
-        for field in REQUIRED_FIELDS:
-            assert field in fm, f"{agent_name}.md frontmatter missing '{field}'"
-            assert fm[field] is not None, f"{agent_name}.md '{field}' is None"
-
-    @pytest.mark.parametrize("agent_name", EXPECTED_AGENTS)
-    def test_frontmatter_name_matches_filename(self, agent_name):
-        """Frontmatter name must match the filename without .md extension."""
-        filepath = AGENTS_DIR / f"{agent_name}.md"
-        fm = _parse_frontmatter(filepath)
-        assert fm is not None, f"{agent_name}.md has no frontmatter"
-        assert fm["name"] == agent_name, (
-            f"{agent_name}.md: frontmatter name='{fm['name']}', expected='{agent_name}'"
-        )
-
-    @pytest.mark.parametrize("agent_name", EXPECTED_AGENTS)
-    def test_no_duplicate_frontmatter_blocks(self, agent_name):
-        """Agent file must have exactly one frontmatter block."""
-        filepath = AGENTS_DIR / f"{agent_name}.md"
-        block_count = _count_frontmatter_blocks(filepath)
-        assert block_count == 1, (
-            f"{agent_name}.md has {block_count} frontmatter blocks, expected 1"
-        )
-
-    @pytest.mark.parametrize("agent_name", EXPECTED_AGENTS)
-    def test_frontmatter_preserved_original_content(self, agent_name):
-        """Adding frontmatter must not lose original markdown content."""
-        filepath = AGENTS_DIR / f"{agent_name}.md"
-        content = filepath.read_text(encoding="utf-8")
-
-        end_pos = content.index("\n---\n", 4) + 5
-        body = content[end_pos:]
-        assert body.strip(), f"{agent_name}.md has no content after frontmatter"
-        assert "#" in body, f"{agent_name}.md body should contain markdown headings"
