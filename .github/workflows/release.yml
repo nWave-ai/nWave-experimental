@@ -573,13 +573,31 @@ jobs:
               )
 
           if '[tool.hatch.build.targets.wheel]' not in content:
-              # Append wheel config before [tool.pytest] or at end of file
-              wheel_config = (
-                  '\\n[tool.hatch.build.targets.wheel]\\n'
-                  'packages = ["nwave_ai"]\\n'
-              )
+              # Add wheel config with force-include for installer content
+              wheel_config = '\n'.join([
+                  '',
+                  '[tool.hatch.build.targets.wheel]',
+                  'packages = ["nwave_ai"]',
+                  '',
+                  '[tool.hatch.build.targets.wheel.force-include]',
+                  '"scripts" = "scripts"',
+                  '"nWave" = "nWave"',
+                  '"src/des" = "src/des"',
+                  '',
+                  '[tool.hatch.build.targets.sdist]',
+                  'include = [',
+                  '    "/pyproject.toml",',
+                  '    "/nwave_ai",',
+                  '    "/scripts",',
+                  '    "/nWave",',
+                  '    "/src/des",',
+                  '    "/README.md",',
+                  '    "/LICENSE"',
+                  ']',
+                  '',
+              ])
               if '[tool.pytest' in content:
-                  content = content.replace('[tool.pytest', wheel_config + '\\n[tool.pytest')
+                  content = content.replace('[tool.pytest', wheel_config + '[tool.pytest')
               else:
                   content += wheel_config
 
