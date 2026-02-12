@@ -177,13 +177,16 @@ class NWaveInstaller:
         self.logger.info(f"  🍾 Restoration complete from {latest_backup}")
         return True
 
-    def _create_plugin_registry(self) -> PluginRegistry:
+    def _create_plugin_registry(self, silent: bool = False) -> PluginRegistry:
         """Create and configure the plugin registry with all installation plugins.
+
+        Args:
+            silent: When True, pass logger=None to suppress registration log messages.
 
         Returns:
             PluginRegistry configured with agents, commands, templates, utilities, and DES plugins.
         """
-        registry = PluginRegistry(logger=self.logger)
+        registry = PluginRegistry(logger=None if silent else self.logger)
         registry.register(AgentsPlugin())
         registry.register(CommandsPlugin())
         registry.register(TemplatesPlugin())
@@ -347,6 +350,21 @@ class NWaveInstaller:
             # Validate schema template (additional check specific to installer)
             schema_valid = self._validate_schema_template()
 
+        # Plugin verification via registry.verify_all()
+        plugin_registry = self._create_plugin_registry(silent=True)
+        plugin_context = InstallContext(
+            claude_dir=self.claude_config_dir,
+            scripts_dir=self.project_root / "scripts" / "install",
+            templates_dir=self.framework_source / "templates",
+            logger=self.logger,
+            project_root=self.project_root,
+            framework_source=self.framework_source,
+        )
+        plugin_results = plugin_registry.verify_all(plugin_context)
+        plugin_failures = {
+            name: r for name, r in plugin_results.items() if not r.success
+        }
+
         # Verify components: compare source files vs installed target
         # Supports both dist/ layout (agents/nw/, commands/nw/) and
         # nWave/ source layout (agents/nw-*.md, tasks/nw/*.md)
@@ -439,8 +457,21 @@ class NWaveInstaller:
             for missing_file in result.missing_essential_files:
                 self.logger.error(f"    ❌ Missing essential: {missing_file}")
 
+        # Report plugin verification results
+        if plugin_failures:
+            for name, r in plugin_failures.items():
+                self.logger.error(
+                    f"    ❌ {name} plugin verification failed: {r.message}"
+                )
+                for err in r.errors:
+                    self.logger.error(f"      ❌ {err}")
+        else:
+            self.logger.info("    ✅ All plugins verified")
+
         # Determine overall success
-        overall_success = result.success and schema_valid and all_synced
+        overall_success = (
+            result.success and schema_valid and all_synced and not plugin_failures
+        )
 
         if overall_success:
             self.logger.info("  🍾 Deployment validated")
