@@ -74,8 +74,10 @@ class TestInstallFrameworkUsesPluginRegistry:
 
             mock_create.assert_called_once()
 
-    def test_install_framework_registers_all_four_plugins(self, configured_installer):
-        """Verify all 5 wrapper plugins are registered with the registry."""
+    def test_install_framework_registers_all_wrapper_plugins(
+        self, configured_installer
+    ):
+        """Verify all 6 wrapper plugins are registered with the registry."""
         installer = configured_installer
 
         # Patch PluginRegistry to capture registrations

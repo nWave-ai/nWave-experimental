@@ -18,8 +18,8 @@ from pytest_bdd import given, parsers, scenario, then, when
     "walking-skeleton.feature",
     "Install single plugin through complete infrastructure",
 )
-def test_walking_skeleton_install_agents():
-    """Walking skeleton acceptance test for AgentsPlugin."""
+def test_agents_plugin_installs_through_complete_infrastructure():
+    """Acceptance test: AgentsPlugin installs through complete plugin infrastructure."""
     pass
 
 

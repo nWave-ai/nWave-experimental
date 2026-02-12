@@ -13,54 +13,8 @@ InstallationVerifier, OutputFormatter, and ContextDetector are NOT mocked.
 """
 
 import json
-from pathlib import Path
 
 import pytest
-
-
-class TestVerifyNwaveScriptExists:
-    """Test standalone verification script existence."""
-
-    def test_verify_nwave_script_file_exists(self):
-        """
-        GIVEN: The nWave framework installation
-        WHEN: Looking for verify_nwave.py
-        THEN: The script file exists at scripts/install/verify_nwave.py
-        """
-        # ARRANGE
-        script_path = (
-            Path(__file__).parent.parent.parent.parent
-            / "scripts"
-            / "install"
-            / "verify_nwave.py"
-        )
-
-        # ASSERT
-        assert script_path.exists(), f"verify_nwave.py should exist at {script_path}"
-
-    def test_verify_nwave_module_importable(self):
-        """
-        GIVEN: The verify_nwave module exists
-        WHEN: It is imported
-        THEN: Import succeeds without error
-        """
-        try:
-            from scripts.install import verify_nwave
-
-            assert verify_nwave is not None
-        except ImportError as e:
-            pytest.fail(f"verify_nwave module should be importable: {e}")
-
-    def test_verify_nwave_exports_main_function(self):
-        """
-        GIVEN: The verify_nwave module is imported
-        WHEN: main function is accessed
-        THEN: main function exists and is callable
-        """
-        from scripts.install.verify_nwave import main
-
-        assert main is not None
-        assert callable(main)
 
 
 class TestVerifyNwaveCommandLineArgs:

@@ -16,21 +16,6 @@ AC-005.2: Generate specific recovery suggestions
 class TestPhaseStateValidator:
     """Unit tests for PhaseStateValidator domain service."""
 
-    def test_phase_state_validator_exists(self):
-        """
-        GIVEN a PhaseStateValidator class
-        WHEN it is instantiated
-        THEN it should exist and be callable for phase state validation
-
-        Acceptance Criteria (AC-005.1):
-        - Validator can be created and used to detect invalid phase states
-        """
-        from des.domain.phase_state_validator import PhaseStateValidator
-
-        validator = PhaseStateValidator()
-        assert validator is not None
-        assert callable(validator.validate_phase_state)
-
     def test_detect_executed_phase_without_outcome(self):
         """
         GIVEN a phase marked EXECUTED but missing outcome field

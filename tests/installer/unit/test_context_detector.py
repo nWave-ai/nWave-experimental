@@ -11,8 +11,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 
 class TestIsTTY:
     """Verify TTY detection via stdout.isatty()."""
@@ -159,58 +157,6 @@ class TestGetExecutionContext:
             return_value=False,
         ):
             assert get_execution_context() == ExecutionContext.TERMINAL
-
-
-class TestModuleImportability:
-    """Verify the module is importable and well-structured."""
-
-    def test_context_detector_module_importable(self):
-        """The context_detector module must be importable."""
-        try:
-            from scripts.install import context_detector
-
-            assert context_detector is not None
-        except ImportError as e:
-            pytest.fail(f"context_detector module should be importable: {e}")
-
-    def test_all_public_functions_defined(self):
-        """All expected public functions must be defined."""
-        from scripts.install import context_detector
-
-        required_functions = [
-            "is_tty",
-            "is_claude_code_context",
-            "is_interactive",
-            "get_execution_context",
-        ]
-
-        for func_name in required_functions:
-            assert hasattr(context_detector, func_name), (
-                f"Function {func_name} must be defined"
-            )
-
-    def test_execution_context_enum_defined(self):
-        """ExecutionContext enum must be defined."""
-        from scripts.install import context_detector
-
-        assert hasattr(context_detector, "ExecutionContext"), (
-            "ExecutionContext enum must be defined"
-        )
-
-    def test_ci_and_container_functions_defined(self):
-        """CI and container detection functions must be defined."""
-        from scripts.install import context_detector
-
-        required_functions = [
-            "is_ci_environment",
-            "get_ci_platform",
-            "is_container_environment",
-        ]
-
-        for func_name in required_functions:
-            assert hasattr(context_detector, func_name), (
-                f"Function {func_name} must be defined"
-            )
 
 
 class TestIsCIEnvironmentGitHubActions:

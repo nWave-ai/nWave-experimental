@@ -199,16 +199,16 @@ def test_utilities_plugin_has_priority_40():
 # -----------------------------------------------------------------------------
 
 
-def test_install_all_installs_all_four_plugins_successfully(
+def test_install_all_installs_all_registered_plugins(
     registry_with_all_plugins: PluginRegistry,
     install_context: InstallContext,
 ):
     """
-    PluginRegistry.install_all() should install all 4 plugins successfully.
+    PluginRegistry.install_all() should install all registered plugins successfully.
 
-    Given: Registry with all 4 wrapper plugins registered
+    Given: Registry with all wrapper plugins registered
     When: install_all(context) is called
-    Then: All 4 plugins install and return success
+    Then: All plugins install and return success
     """
     # Act
     results = registry_with_all_plugins.install_all(install_context)

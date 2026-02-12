@@ -71,7 +71,7 @@ def _load_catalog_commands() -> dict:
 class TestCommandFrontmatterAcceptance:
     """Acceptance: All 18 command source files have valid YAML frontmatter."""
 
-    def test_all_18_command_files_have_frontmatter(self):
+    def test_all_command_files_have_frontmatter(self):
         """Every command file must start with --- YAML frontmatter containing description."""
         missing = []
         invalid = []

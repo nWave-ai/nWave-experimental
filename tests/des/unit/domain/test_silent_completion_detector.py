@@ -19,23 +19,6 @@ ACCEPTANCE CRITERIA:
 from des.domain.silent_completion_detector import SilentCompletionDetector
 
 
-class TestSilentCompletionDetectorExists:
-    """Verify SilentCompletionDetector class can be instantiated."""
-
-    def test_silent_completion_detector_exists(self):
-        """
-        GIVEN SilentCompletionDetector class exists
-        WHEN instantiated
-        THEN instance is created successfully
-        """
-        # Act
-        detector = SilentCompletionDetector()
-
-        # Assert
-        assert detector is not None
-        assert isinstance(detector, SilentCompletionDetector)
-
-
 class TestDetectAllPhasesNotExecuted:
     """Test detection of all phases remaining NOT_EXECUTED."""
 

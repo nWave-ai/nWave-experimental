@@ -146,8 +146,8 @@ class TestMandatorySectionChecker:
 class TestTDDPhaseValidator:
     """TDDPhaseValidator validates 5 TDD phases (schema v4.0)."""
 
-    def test_all_5_phases_present(self):
-        """Prompt mentioning all 5 phases passes validation."""
+    def test_all_tdd_phases_present(self):
+        """Prompt mentioning all TDD phases passes validation."""
         from des.application.validator import TDDPhaseValidator
 
         prompt = """

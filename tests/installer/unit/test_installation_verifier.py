@@ -10,8 +10,6 @@ CRITICAL: Tests follow hexagonal architecture - domain classes use real objects.
 Only pathlib.Path is mocked at port boundaries.
 """
 
-import pytest
-
 
 class TestVerificationResultDataclass:
     """Test VerificationResult dataclass structure."""
@@ -459,37 +457,6 @@ class TestInstallationVerifierFullVerification:
         assert result.manifest_exists is False
         # Missing manifest alone should trigger failure
         assert result.success is False
-
-
-class TestInstallationVerifierModuleImport:
-    """Test module importability."""
-
-    def test_installation_verifier_module_importable(self):
-        """
-        GIVEN: The installation_verifier module exists
-        WHEN: It is imported
-        THEN: Import succeeds without error
-        """
-        try:
-            from scripts.install import installation_verifier
-
-            assert installation_verifier is not None
-        except ImportError as e:
-            pytest.fail(f"installation_verifier module should be importable: {e}")
-
-    def test_installation_verifier_exports_expected_classes(self):
-        """
-        GIVEN: The installation_verifier module is imported
-        WHEN: Required classes are accessed
-        THEN: All expected classes exist
-        """
-        from scripts.install.installation_verifier import (
-            InstallationVerifier,
-            VerificationResult,
-        )
-
-        assert InstallationVerifier is not None
-        assert VerificationResult is not None
 
 
 # ==============================================================================

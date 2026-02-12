@@ -4,8 +4,6 @@ Tests validate that error codes are consistently defined, unique,
 and properly structured for use across installer components.
 """
 
-import pytest
-
 
 class TestErrorCodesUniqueness:
     """Verify all error codes have unique values."""
@@ -82,19 +80,6 @@ class TestErrorCodesDefinitions:
 
         for name, value in codes.items():
             assert value, f"Error code {name} must not be empty"
-
-
-class TestErrorCodesImportability:
-    """Verify the module is importable and well-structured."""
-
-    def test_error_codes_module_importable(self):
-        """The error_codes module must be importable."""
-        try:
-            from scripts.install import error_codes
-
-            assert error_codes is not None
-        except ImportError as e:
-            pytest.fail(f"error_codes module should be importable: {e}")
 
     def test_error_codes_have_consistent_naming(self):
         """Error codes should follow consistent naming convention."""

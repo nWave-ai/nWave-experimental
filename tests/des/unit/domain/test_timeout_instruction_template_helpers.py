@@ -161,11 +161,11 @@ class TestRenderEarlyExitProtocol:
         # THEN
         assert "**Early Exit Protocol**:" in result
 
-    def test_render_early_exit_protocol_has_four_steps(self):
+    def test_render_early_exit_protocol_has_numbered_steps(self):
         """
         GIVEN TimeoutInstructionTemplate instance
         WHEN _render_early_exit_protocol() is called
-        THEN output contains 4 numbered steps
+        THEN output contains numbered steps
         """
         # GIVEN
         template = TimeoutInstructionTemplate()

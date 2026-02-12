@@ -4,8 +4,6 @@ Tests validate terminal error formatting with [ERROR]/[FIX]/[THEN] structure,
 ANSI color support, and human-readable error messages for various error types.
 """
 
-import pytest
-
 
 class TestTerminalErrorStructure:
     """Verify terminal error format uses [ERROR]/[FIX]/[THEN] structure."""
@@ -222,92 +220,6 @@ class TestVenvError:
         result = formatter.format_venv_error()
 
         assert "pipenv" in result.lower()
-
-
-class TestModuleImportability:
-    """Verify the module is importable and well-structured."""
-
-    def test_output_formatter_module_importable(self):
-        """The output_formatter module must be importable."""
-        try:
-            from scripts.install import output_formatter
-
-            assert output_formatter is not None
-        except ImportError as e:
-            pytest.fail(f"output_formatter module should be importable: {e}")
-
-    def test_terminal_formatter_class_defined(self):
-        """TerminalFormatter class must be defined."""
-        from scripts.install import output_formatter
-
-        assert hasattr(output_formatter, "TerminalFormatter"), (
-            "TerminalFormatter class must be defined"
-        )
-
-    def test_terminal_formatter_has_format_terminal_error(self):
-        """TerminalFormatter must have format_terminal_error method."""
-        from scripts.install.output_formatter import TerminalFormatter
-
-        assert hasattr(TerminalFormatter, "format_terminal_error"), (
-            "format_terminal_error method must be defined"
-        )
-
-    def test_terminal_formatter_has_format_dependency_error(self):
-        """TerminalFormatter must have format_dependency_error method."""
-        from scripts.install.output_formatter import TerminalFormatter
-
-        assert hasattr(TerminalFormatter, "format_dependency_error"), (
-            "format_dependency_error method must be defined"
-        )
-
-    def test_terminal_formatter_has_format_permission_error(self):
-        """TerminalFormatter must have format_permission_error method."""
-        from scripts.install.output_formatter import TerminalFormatter
-
-        assert hasattr(TerminalFormatter, "format_permission_error"), (
-            "format_permission_error method must be defined"
-        )
-
-    def test_terminal_formatter_has_format_venv_error(self):
-        """TerminalFormatter must have format_venv_error method."""
-        from scripts.install.output_formatter import TerminalFormatter
-
-        assert hasattr(TerminalFormatter, "format_venv_error"), (
-            "format_venv_error method must be defined"
-        )
-
-    def test_terminal_formatter_has_format_preflight_error_panel(self):
-        """TerminalFormatter must have format_preflight_error_panel method."""
-        from scripts.install.output_formatter import TerminalFormatter
-
-        assert hasattr(TerminalFormatter, "format_preflight_error_panel"), (
-            "format_preflight_error_panel method must be defined"
-        )
-
-
-class TestRichAvailability:
-    """Verify Rich availability detection works correctly."""
-
-    def test_rich_available_flag_exists(self):
-        """RICH_AVAILABLE flag must exist in output_formatter module."""
-        from scripts.install import output_formatter
-
-        assert hasattr(output_formatter, "RICH_AVAILABLE"), (
-            "RICH_AVAILABLE flag must be defined"
-        )
-
-    def test_rich_available_is_boolean(self):
-        """RICH_AVAILABLE must be a boolean value."""
-        from scripts.install.output_formatter import RICH_AVAILABLE
-
-        assert isinstance(RICH_AVAILABLE, bool), "RICH_AVAILABLE must be a boolean"
-
-    def test_terminal_formatter_has_use_rich_attribute(self):
-        """TerminalFormatter must have _use_rich attribute."""
-        from scripts.install.output_formatter import TerminalFormatter
-
-        formatter = TerminalFormatter(use_colors=True)
-        assert hasattr(formatter, "_use_rich"), "_use_rich attribute must be defined"
 
 
 class TestPreflightErrorPanel:

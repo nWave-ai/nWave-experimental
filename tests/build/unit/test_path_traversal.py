@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "path-traversal"
 
 
@@ -94,19 +95,19 @@ class TestPathTraversalSecurity:
     def test_encoded_traversal_blocked(self):
         """URL-encoded traversal attempts must be blocked."""
         f = FIXTURES_DIR / "encoded-traversal.md"
-        success, errors = _process_includes(f, FIXTURES_DIR)
+        success, _errors = _process_includes(f, FIXTURES_DIR)
         assert not success
 
     def test_null_byte_blocked(self):
         """Null byte injection attempts must be blocked."""
         f = FIXTURES_DIR / "null-byte.md"
-        success, errors = _process_includes(f, FIXTURES_DIR)
+        success, _errors = _process_includes(f, FIXTURES_DIR)
         assert not success
 
     def test_windows_traversal_blocked(self):
         """Windows-style backslash traversal must be blocked."""
         f = FIXTURES_DIR / "windows-traversal.md"
-        success, errors = _process_includes(f, FIXTURES_DIR)
+        success, _errors = _process_includes(f, FIXTURES_DIR)
         assert not success
 
     def test_mixed_valid_invalid_continues_processing(self):

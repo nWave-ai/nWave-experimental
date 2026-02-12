@@ -25,7 +25,7 @@ class TestTDDSchemaLoader:
         schema = loader.load()
         assert isinstance(schema, TDDSchema)
 
-    def test_schema_has_five_phases(self, tdd_schema):
+    def test_schema_defines_expected_phase_count(self, tdd_schema):
         """Schema should define exactly 5 TDD phases."""
         assert len(tdd_schema.tdd_phases) == 5
 

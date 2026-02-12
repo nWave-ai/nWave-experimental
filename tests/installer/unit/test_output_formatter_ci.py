@@ -207,50 +207,6 @@ class TestCIFormatterExitCodes:
         ), "CI error output should reference exit status/code for pipeline clarity"
 
 
-class TestCIFormatterClassStructure:
-    """Verify CIFormatter class is properly defined."""
-
-    def test_ci_formatter_class_defined(self):
-        """CIFormatter class must be defined in output_formatter module."""
-        from scripts.install import output_formatter
-
-        assert hasattr(output_formatter, "CIFormatter"), (
-            "CIFormatter class must be defined in output_formatter module"
-        )
-
-    def test_ci_formatter_has_format_ci_error_method(self):
-        """CIFormatter must have format_ci_error method."""
-        from scripts.install.output_formatter import CIFormatter
-
-        assert hasattr(CIFormatter, "format_ci_error"), (
-            "CIFormatter must have format_ci_error method"
-        )
-
-    def test_ci_formatter_has_get_exit_code_method(self):
-        """CIFormatter must have get_exit_code method."""
-        from scripts.install.output_formatter import CIFormatter
-
-        assert hasattr(CIFormatter, "get_exit_code"), (
-            "CIFormatter must have get_exit_code method"
-        )
-
-    def test_ci_formatter_has_confirm_action_method(self):
-        """CIFormatter must have confirm_action method."""
-        from scripts.install.output_formatter import CIFormatter
-
-        assert hasattr(CIFormatter, "confirm_action"), (
-            "CIFormatter must have confirm_action method"
-        )
-
-    def test_ci_formatter_has_is_interactive_method(self):
-        """CIFormatter must have is_interactive method."""
-        from scripts.install.output_formatter import CIFormatter
-
-        assert hasattr(CIFormatter, "is_interactive"), (
-            "CIFormatter must have is_interactive method"
-        )
-
-
 class TestCIFormatterIntegrationWithContextDetector:
     """Verify CIFormatter integration with context_detector."""
 

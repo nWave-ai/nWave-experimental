@@ -81,7 +81,7 @@ class TestExecutionLogValidator:
 
         assert len(errors) == 0
 
-    def test_reject_skipped_phase_without_blocked_by_reason(self):
+    def test_skipped_phase_requires_blocked_by_reason(self):
         """Validator rejects SKIPPED phase missing blocked_by reason."""
         validator = ExecutionLogValidator()
 
@@ -122,7 +122,7 @@ class TestExecutionLogValidator:
         assert "outcome" in errors[0].lower()
         assert "GREEN_UNIT" in errors[0]
 
-    def test_reject_done_task_with_not_executed_phases(self):
+    def test_task_cannot_complete_with_unexecuted_phases(self):
         """Validator rejects task marked DONE but has NOT_EXECUTED phases."""
         validator = ExecutionLogValidator()
 
@@ -229,7 +229,7 @@ class TestExecutionLogValidator:
 class TestMandatorySectionChecker:
     """MandatorySectionChecker unit tests."""
 
-    def test_pass_when_all_9_sections_present(self):
+    def test_prompt_valid_with_all_9_sections(self):
         """Checker validates all 9 mandatory sections are present."""
         checker = MandatorySectionChecker()
 
@@ -290,7 +290,7 @@ class TestMandatorySectionChecker:
 class TestTDDPhaseValidator:
     """TDDPhaseValidator unit tests - uses Single Source of Truth."""
 
-    def test_pass_when_all_canonical_phases_mentioned(self):
+    def test_prompt_requires_all_canonical_phases(self):
         """Validator passes when all canonical phases are present.
 
         Loads phase list from canonical template (Single Source of Truth).
@@ -348,7 +348,7 @@ class TestTDDPhaseValidator:
 class TestDESMarkerValidator:
     """DESMarkerValidator unit tests."""
 
-    def test_pass_when_marker_is_valid(self):
+    def test_valid_des_marker_accepted(self):
         """Validator passes with valid DES-VALIDATION marker."""
         validator = DESMarkerValidator()
 
@@ -445,7 +445,7 @@ class TestTemplateValidator:
 
         assert result.task_invocation_allowed is False
 
-    def test_allow_invocation_when_validation_passes(self):
+    def test_invocation_proceeds_on_valid_prompt(self):
         """Validator allows task invocation when validation passes.
 
         Uses canonical template to build valid prompt.

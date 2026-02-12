@@ -82,15 +82,15 @@ class TestUserJourneyPluginInstallation:
         """Create a registry with all 5 plugins registered (lightweight)."""
         return _make_registry()
 
-    def test_five_plugins_registered_and_ordered(
+    def test_all_plugins_registered_and_ordered(
         self, five_plugin_registry: PluginRegistry
     ):
         """
-        Verify 5 plugins are registered and ordered by dependencies.
+        Verify all plugins are registered and ordered by dependencies.
 
-        Given: User downloads nWave installer with 5 plugins
+        Given: User downloads nWave installer with all plugins
         When: Registry resolves execution order
-        Then: 5 plugins are scheduled in dependency order
+        Then: All plugins are scheduled in dependency order
         """
         # Act: Get execution order
         execution_order = five_plugin_registry.get_execution_order()
@@ -132,13 +132,13 @@ class TestUserJourneyPluginInstallation:
             f"DES ({des_position}) should execute after utilities ({utilities_position})"
         )
 
-    def test_all_five_plugins_install_successfully(self, installed_plugin_state):
+    def test_all_plugins_install_successfully(self, installed_plugin_state):
         """
-        Verify all 5 plugins install successfully.
+        Verify all plugins install successfully.
 
         Given: Fresh installation environment
         When: All plugins are installed
-        Then: All 5 plugins report success
+        Then: All plugins report success
         """
         _context, _registry, results = installed_plugin_state
 

@@ -14,21 +14,6 @@ These tests drive the implementation of ValidationErrorDetector domain service.
 class TestValidationErrorDetector:
     """Unit tests for ValidationErrorDetector domain service."""
 
-    def test_validation_error_detector_exists(self):
-        """
-        GIVEN a ValidationErrorDetector class
-        WHEN it is instantiated
-        THEN it should exist and be callable for validation
-
-        Acceptance Criteria (AC-005.1):
-        - Detector can be created and used to validate step files
-        """
-        from des.domain.validation_error_detector import ValidationErrorDetector
-
-        detector = ValidationErrorDetector()
-        assert detector is not None
-        assert callable(detector.detect_errors)
-
     def test_detects_missing_required_fields(self):
         """
         GIVEN a step file missing required fields (e.g., step_id, acceptance_criteria)

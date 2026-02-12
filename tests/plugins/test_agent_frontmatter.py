@@ -88,7 +88,7 @@ def _count_frontmatter_blocks(filepath: Path) -> int:
 class TestAgentFrontmatterAcceptance:
     """Acceptance: All 22 agent source files have valid YAML frontmatter."""
 
-    def test_all_22_agent_files_exist(self):
+    def test_all_agent_files_exist(self):
         """Every expected agent file must exist in the agents directory."""
         missing = [
             name for name in EXPECTED_AGENTS if not (AGENTS_DIR / f"{name}.md").exists()
