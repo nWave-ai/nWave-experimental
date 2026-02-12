@@ -235,7 +235,7 @@ tag_format = "v{version}"
 major_on_zero = false
 build_command = ""
 commit_author = "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
-commit_message = "chore(release): v{version}"
+commit_message = "chore(release): v{version} [skip ci]"
 
 [tool.semantic_release.branches.main]
 match = "master"

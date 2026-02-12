@@ -29,10 +29,6 @@ on:
         required: false
         type: boolean
         default: false
-  push:
-    tags:
-      - 'v*'
-
 permissions:
   contents: write
 
@@ -592,6 +588,7 @@ jobs:
           fi
 
       - name: Sync public_version back to nwave-dev
+        continue-on-error: true
         run: |
           NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
 
@@ -621,7 +618,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "public_version already up to date"
           else
-            git commit -m "chore: bump nwave-ai public_version to ${NWAVE_VERSION}"
+            git commit -m "chore: bump nwave-ai public_version to ${NWAVE_VERSION} [skip ci]"
             git push origin HEAD:master
           fi
         env:

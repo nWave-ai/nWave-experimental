@@ -50,10 +50,10 @@ class PluginRegistry:
             ValueError: If plugin with same name already registered
         """
         if plugin.name in self.plugins:
-            raise ValueError(f"Plugin '{plugin.name}' already registered")
+            raise ValueError(f"  🔩 Plugin '{plugin.name}' already registered")
         self.plugins[plugin.name] = plugin
         if self._logger:
-            self._logger.info(f"  🧰 {plugin.name} added to the toolbox")
+            self._logger.info(f"  🪛 {plugin.name} added to the toolbox")
 
     def _detect_cycle_dfs(
         self,
