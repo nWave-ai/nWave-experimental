@@ -92,11 +92,11 @@ class GitHubTarballCreator:
             self._log("Required directories not found in source", "ERROR")
             return False
 
-        agent_count = len(list(agents_dir.glob("*.md")))
-        command_count = len(list(commands_dir.glob("*.md")))
+        agent_count = len(list(agents_dir.rglob("*.md")))
+        command_count = len(list(commands_dir.rglob("*.md")))
 
         if agent_count == 0 or command_count == 0:
-            self._log("No agents or commands found in nWave/", "ERROR")
+            self._log("No agents or commands found in source", "ERROR")
             return False
 
         self._log(f"Found {agent_count} agents and {command_count} commands")
