@@ -849,6 +849,20 @@ class DESPlugin(InstallationPlugin):
         else:
             errors.append("settings.json not found - DES hooks not installed")
 
+        # 5. Verify DES config exists and is valid JSON
+        context.logger.info("  \U0001f50e Verifying DES config...")
+        project_root = context.project_root or Path.cwd()
+        config_file = project_root / ".nwave" / "des-config.json"
+        if not config_file.exists():
+            errors.append("DES config not found: .nwave/des-config.json")
+        else:
+            try:
+                with open(config_file, encoding="utf-8") as f:
+                    json.load(f)
+                context.logger.info("  \u2705 DES config verified")
+            except json.JSONDecodeError:
+                errors.append("DES config is not valid JSON: .nwave/des-config.json")
+
         if errors:
             return PluginResult(
                 success=False,
@@ -860,5 +874,5 @@ class DESPlugin(InstallationPlugin):
         return PluginResult(
             success=True,
             plugin_name="des",
-            message="DES verification passed (module, scripts, templates, hooks OK)",
+            message="DES verification passed (module, scripts, templates, hooks, config OK)",
         )
