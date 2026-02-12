@@ -455,6 +455,7 @@ jobs:
             --exclude '.git' \
             --exclude '.git*' \
             --exclude '.github/' \
+            --exclude 'nwave-target/' \
             --exclude 'CLAUDE.local.md' \
             --exclude 'SESSION_STATE*' \
             --exclude 'build.log' \
