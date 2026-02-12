@@ -19,6 +19,36 @@ from scripts.install.plugins.base import (
 )
 
 
+_SKILL_GROUP_EMOJIS: dict[str, str] = {
+    "acceptance-designer": "\u2705",
+    "agent-builder": "\U0001f916",
+    "data-engineer": "\U0001f4be",
+    "devop": "\U0001f527",
+    "documentarist": "\U0001f4dd",
+    "leanux-designer": "\U0001f3a8",
+    "platform-architect": "\u2601\ufe0f",
+    "product-discoverer": "\U0001f9ed",
+    "product-owner": "\U0001f4cb",
+    "researcher": "\U0001f52c",
+    "software-crafter": "\U0001f4bb",
+    "solution-architect": "\U0001f3d7\ufe0f",
+    "troubleshooter": "\U0001f6e0\ufe0f",
+}
+
+
+def _skill_group_emoji(group_name: str) -> str:
+    """Return the emoji for a skill group, stripping '-reviewer' suffix if present.
+
+    Args:
+        group_name: Skill group directory name (e.g. 'software-crafter-reviewer')
+
+    Returns:
+        Mapped emoji or fallback package emoji for unknown groups
+    """
+    base = group_name.removesuffix("-reviewer")
+    return _SKILL_GROUP_EMOJIS.get(base, "\U0001f4e6")
+
+
 class SkillsPlugin(InstallationPlugin):
     """Plugin for installing Skills into the Claude Code skills directory."""
 
@@ -195,9 +225,12 @@ class SkillsPlugin(InstallationPlugin):
             skill_groups = [d.name for d in skills_target.iterdir() if d.is_dir()]
 
             context.logger.info(
-                f"  ✅ Verified {len(skill_files)} skill files "
-                f"in {len(skill_groups)} groups: {', '.join(skill_groups)}"
+                f"  \u2705 Verified {len(skill_files)} skill files "
+                f"in {len(skill_groups)} groups:"
             )
+            for group in sorted(skill_groups):
+                emoji = _skill_group_emoji(group)
+                context.logger.info(f"    {emoji} {group}")
 
             return PluginResult(
                 success=True,
