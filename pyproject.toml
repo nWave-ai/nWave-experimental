@@ -101,7 +101,7 @@ Issues = "https://github.com/nwave-ai/nwave/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 addopts = [
     "-ra",
     "-q",
