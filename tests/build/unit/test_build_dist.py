@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+# Project root (tests/build/unit/ → 3 levels up)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -109,7 +111,7 @@ def built_dist(mock_project):
     Uses DistBuilder directly (not CLI) for fast test execution.
     """
     # Import from the real project's scripts/ directory
-    real_scripts = str(Path(__file__).parent.parent / "scripts")
+    real_scripts = str(PROJECT_ROOT / "scripts")
     sys.path.insert(0, real_scripts)
     try:
         from build_dist import DistBuilder
@@ -199,7 +201,7 @@ class TestDistStructureValidator:
             '[project]\nname = "test"\nversion = "1.0.0"\n'
         )
 
-        real_scripts = str(Path(__file__).parent.parent / "scripts")
+        real_scripts = str(PROJECT_ROOT / "scripts")
         sys.path.insert(0, real_scripts)
         try:
             from build_dist import DistBuilder
@@ -351,7 +353,7 @@ class TestDistConsistencyWithSource:
         (legacy_dir / "old-agent.md").write_text("# Old agent")
 
         # Rebuild
-        real_scripts = str(Path(__file__).parent.parent / "scripts")
+        real_scripts = str(PROJECT_ROOT / "scripts")
         sys.path.insert(0, real_scripts)
         try:
             from build_dist import DistBuilder
@@ -375,7 +377,7 @@ class TestBuildDistCLI:
 
     def test_build_creates_dist_directory(self, mock_project):
         """Running build_dist.py creates dist/ directory."""
-        build_script = Path(__file__).parent.parent / "scripts" / "build_dist.py"
+        build_script = PROJECT_ROOT / "scripts" / "build_dist.py"
         result = subprocess.run(
             [sys.executable, str(build_script), "--project-root", str(mock_project)],
             capture_output=True,
@@ -393,7 +395,7 @@ class TestBuildDistCLI:
         stale_dir.mkdir(parents=True)
         (stale_dir / "old_file.txt").write_text("stale content")
 
-        build_script = Path(__file__).parent.parent / "scripts" / "build_dist.py"
+        build_script = PROJECT_ROOT / "scripts" / "build_dist.py"
         subprocess.run(
             [sys.executable, str(build_script), "--project-root", str(mock_project)],
             capture_output=True,
@@ -408,7 +410,7 @@ class TestBuildDistCLI:
 
     def test_build_idempotent(self, mock_project):
         """Running twice produces same result."""
-        build_script = Path(__file__).parent.parent / "scripts" / "build_dist.py"
+        build_script = PROJECT_ROOT / "scripts" / "build_dist.py"
 
         # First build
         subprocess.run(
@@ -449,7 +451,7 @@ class TestBuildDistCLI:
         releases_dir.mkdir(parents=True)
         (releases_dir / "nwave-claude-code-2.13.3.tar.gz").write_text("ci artifact")
 
-        build_script = Path(__file__).parent.parent / "scripts" / "build_dist.py"
+        build_script = PROJECT_ROOT / "scripts" / "build_dist.py"
         subprocess.run(
             [sys.executable, str(build_script), "--project-root", str(mock_project)],
             capture_output=True,

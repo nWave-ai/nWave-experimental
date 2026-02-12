@@ -61,6 +61,7 @@ reports/
 # Build artifacts
 dist/
 build/
+!tests/build/
 target/
 **/build.log
 build-test.log

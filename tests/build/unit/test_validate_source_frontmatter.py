@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "validation" / "validate_source_frontmatter.py"
 
 
