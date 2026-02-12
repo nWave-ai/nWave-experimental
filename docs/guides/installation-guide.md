@@ -334,6 +334,7 @@ To update to a newer version:
 
 ## Support
 
+- **Discord Community**: [Join the nWave Discord](https://discord.gg/DeYdSNk6) - Get help with installation issues, ask questions, and share your setup experience
 - **Documentation**: Complete framework documentation in this repository
 - **Issues**: Report problems on GitHub
 - **Help**: Use `cai/atdd --help` for command help

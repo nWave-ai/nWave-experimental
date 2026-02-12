@@ -165,3 +165,5 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 ## Support
 
 This framework provides complete functionality through the proven nWave methodology with comprehensive visual architecture integration.
+
+Join the **[nWave Discord community](https://discord.gg/DeYdSNk6)** to get help, share ideas, and showcase what you've built with the framework.
