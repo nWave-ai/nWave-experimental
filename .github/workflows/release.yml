@@ -433,6 +433,8 @@ jobs:
           # Remove dangling symlinks before rsync (e.g. nWave/tasks/dw -> nw)
           find . -maxdepth 5 -type l ! -exec test -e {} \; -delete 2>/dev/null || true
 
+          # Exit code 24 = "some files vanished before transfer" (race condition, safe to ignore)
+          set +e
           rsync -avL --delete \
             --exclude '.git' \
             --exclude '.git*' \
@@ -468,6 +470,12 @@ jobs:
             --exclude 'test-des-hooks/' \
             --exclude 'test-des-manual/' \
             ./ nwave-target/
+          RSYNC_EXIT=$?
+          set -e
+          if [[ $RSYNC_EXIT -ne 0 && $RSYNC_EXIT -ne 24 ]]; then
+            echo "rsync failed with exit code $RSYNC_EXIT"
+            exit $RSYNC_EXIT
+          fi
 
       - name: Auto-bump nwave-ai version
         id: nwave_version
