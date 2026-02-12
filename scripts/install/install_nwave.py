@@ -66,7 +66,17 @@ _ANSI_NC = "\033[0m"  # No Color
 
 
 def _get_version() -> str:
-    """Read version from pyproject.toml (single source of truth)."""
+    """Read version from package metadata (installed) or pyproject.toml (dev)."""
+    # 1. Try importlib.metadata first (works when installed via pip/pipx)
+    from importlib.metadata import PackageNotFoundError, version
+
+    for pkg_name in ("nwave-ai", "nwave"):
+        try:
+            return version(pkg_name)
+        except PackageNotFoundError:
+            continue
+
+    # 2. Fallback: read pyproject.toml (dev checkout layout)
     pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
     if not pyproject_path.exists():
         return "0.0.0"
@@ -79,7 +89,6 @@ def _get_version() -> str:
             data = tomllib.load(f)
         return data.get("project", {}).get("version", "0.0.0")
     except ModuleNotFoundError:
-        # Python < 3.11 without tomli; parse version with regex
         import re
 
         content = pyproject_path.read_text()
