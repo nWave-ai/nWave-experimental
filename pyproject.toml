@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nwave"
-version = "2.14.5"
+version = "2.14.6"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
