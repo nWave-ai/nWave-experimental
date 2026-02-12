@@ -572,34 +572,38 @@ jobs:
                   flags=re.DOTALL
               )
 
-          if '[tool.hatch.build.targets.wheel]' not in content:
-              # Add wheel config with force-include for installer content
-              wheel_config = '\n'.join([
-                  '',
-                  '[tool.hatch.build.targets.wheel]',
-                  'packages = ["nwave_ai"]',
-                  '',
-                  '[tool.hatch.build.targets.wheel.force-include]',
-                  '"scripts" = "scripts"',
-                  '"nWave" = "nWave"',
-                  '"src/des" = "src/des"',
-                  '',
-                  '[tool.hatch.build.targets.sdist]',
-                  'include = [',
-                  '    "/pyproject.toml",',
-                  '    "/nwave_ai",',
-                  '    "/scripts",',
-                  '    "/nWave",',
-                  '    "/src/des",',
-                  '    "/README.md",',
-                  '    "/LICENSE"',
-                  ']',
-                  '',
-              ])
-              if '[tool.pytest' in content:
-                  content = content.replace('[tool.pytest', wheel_config + '[tool.pytest')
-              else:
-                  content += wheel_config
+          # Remove existing hatch wheel/sdist config (from dev pyproject.toml)
+          content = re.sub(r'\[tool\.hatch\.build\.targets\.wheel\].*?(?=\n\[|\Z)', '', content, flags=re.DOTALL)
+          content = re.sub(r'\[tool\.hatch\.build\.targets\.sdist\].*?(?=\n\[|\Z)', '', content, flags=re.DOTALL)
+          content = re.sub(r'\n{3,}', '\n\n', content)
+
+          # Add nwave-ai specific wheel config
+          wheel_config = '\n'.join([
+              '',
+              '[tool.hatch.build.targets.wheel]',
+              'packages = ["nwave_ai"]',
+              '',
+              '[tool.hatch.build.targets.wheel.force-include]',
+              '"scripts" = "scripts"',
+              '"nWave" = "nWave"',
+              '"src/des" = "src/des"',
+              '',
+              '[tool.hatch.build.targets.sdist]',
+              'include = [',
+              '    "/pyproject.toml",',
+              '    "/nwave_ai",',
+              '    "/scripts",',
+              '    "/nWave",',
+              '    "/src/des",',
+              '    "/README.md",',
+              '    "/LICENSE"',
+              ']',
+              '',
+          ])
+          if '[tool.pytest' in content:
+              content = content.replace('[tool.pytest', wheel_config + '[tool.pytest')
+          else:
+              content += wheel_config
 
           # 6. Remove dev-only sections
           #    - [tool.nwave] (contains public_version floor, dev-only)
