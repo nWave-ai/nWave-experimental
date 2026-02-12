@@ -258,7 +258,6 @@ When merging agent B into agent A (the surviving agent):
 - `nWave/framework-catalog.yaml` — remove deprecated agent/command entries, update surviving agent description
 - `nWave/data/agents_reference/COMMAND-AGENT-MAPPING.md` — update mappings and counts
 - `nWave/README.md` — remove deprecated command references
-- `nWave/checklists/*.md` — update agent name references
 - `nWave/templates/*.yaml` — update owner fields
 - Any other files referencing the deprecated agent name (use Grep to find them)
 - Verify zero references remain to deleted entities (legacy/ directories are exempt)
