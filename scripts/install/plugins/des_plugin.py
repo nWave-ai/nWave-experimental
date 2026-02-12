@@ -585,7 +585,7 @@ class DESPlugin(InstallationPlugin):
                 )
 
             default_config = {
-                "audit_logging_enabled": False,
+                "audit_logging_enabled": True,
                 "audit_log_dir": ".nwave/des/logs",
             }
 
@@ -853,9 +853,24 @@ class DESPlugin(InstallationPlugin):
         context.logger.info("  \U0001f50e Verifying DES config...")
         project_root = context.project_root or Path.cwd()
         config_file = project_root / ".nwave" / "des-config.json"
+        nwave_dir = project_root / ".nwave"
         if not config_file.exists():
-            errors.append("DES config not found: .nwave/des-config.json")
-        else:
+            if nwave_dir.exists():
+                default_config = {
+                    "audit_logging_enabled": True,
+                    "audit_log_dir": ".nwave/des/logs",
+                }
+                nwave_dir.mkdir(parents=True, exist_ok=True)
+                with open(config_file, "w", encoding="utf-8") as f:
+                    json.dump(default_config, f, indent=2)
+                    f.write("\n")
+                context.logger.info(
+                    f"  \u2705 DES config created (migration): {config_file}"
+                )
+                des_cfg = default_config
+            else:
+                errors.append("DES config not found: .nwave/des-config.json")
+        if not errors and config_file.exists():
             try:
                 with open(config_file, encoding="utf-8") as f:
                     des_cfg = json.load(f)

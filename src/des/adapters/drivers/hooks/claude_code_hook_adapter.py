@@ -62,8 +62,8 @@ from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
 def _create_audit_writer() -> AuditLogWriter:
     """Create appropriate AuditLogWriter based on DES configuration.
 
-    Returns NullAuditLogWriter when audit logging is disabled (default),
-    JsonlAuditLogWriter when explicitly enabled in .nwave/des-config.json.
+    Returns JsonlAuditLogWriter by default,
+    NullAuditLogWriter when explicitly disabled in .nwave/des-config.json.
     """
     from des.adapters.driven.config.des_config import DESConfig
     from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter

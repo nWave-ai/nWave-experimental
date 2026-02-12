@@ -2,11 +2,11 @@
 DES Configuration Adapter - Driven Port Implementation.
 
 Loads configuration from .nwave/des-config.json and provides access to settings.
-Falls back to safe defaults (audit logging OFF) when file is missing or invalid.
+Falls back to safe defaults (audit logging ON) when file is missing or invalid.
 
 Hexagonal Architecture:
 - DRIVEN ADAPTER: Implements configuration port (driven by business logic)
-- OFF BY DEFAULT: Audit logging disabled unless explicitly enabled in config
+- ON BY DEFAULT: Audit logging enabled unless explicitly disabled in config
 """
 
 import json
@@ -19,7 +19,7 @@ class DESConfig:
     """
     Configuration loader for DES settings.
 
-    Loads configuration from .nwave/des-config.json with off-by-default audit logging.
+    Loads configuration from .nwave/des-config.json with on-by-default audit logging.
     Does NOT auto-create config files.
     """
 
@@ -63,12 +63,12 @@ class DESConfig:
         """
         Check if audit logging is enabled.
 
-        Priority: DES_AUDIT_LOGGING_ENABLED env var > config file > default (False).
+        Priority: DES_AUDIT_LOGGING_ENABLED env var > config file > default (True).
 
         Returns:
-            True if audit logging enabled, False otherwise (defaults to False)
+            True if audit logging enabled, False otherwise (defaults to True)
         """
         env_override = os.environ.get("DES_AUDIT_LOGGING_ENABLED")
         if env_override is not None:
             return env_override.lower() in ("true", "1", "yes")
-        return self._config_data.get("audit_logging_enabled", False)
+        return self._config_data.get("audit_logging_enabled", True)

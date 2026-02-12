@@ -3,7 +3,7 @@ Unit tests for DESConfig configuration loader.
 
 Tests DESConfig behavior from driving port perspective (public interface):
 - Configuration loading from JSON file at .nwave/des-config.json
-- Default value fallback when file missing/invalid (defaults to False)
+- Default value fallback when file missing/invalid (defaults to True)
 - audit_logging_enabled setting access
 - Environment variable override (DES_AUDIT_LOGGING_ENABLED)
 
@@ -42,18 +42,18 @@ class TestDESConfigLoadsValidConfiguration:
         assert config.audit_logging_enabled is expected
 
 
-class TestDESConfigDefaultsToFalse:
-    """Test DESConfig defaults to audit_logging_enabled=False."""
+class TestDESConfigDefaultsToTrue:
+    """Test DESConfig defaults to audit_logging_enabled=True."""
 
-    def test_defaults_to_false_when_config_file_missing(self, tmp_path):
-        """DESConfig defaults to audit_logging_enabled=False when config file missing."""
+    def test_defaults_to_true_when_config_file_missing(self, tmp_path):
+        """DESConfig defaults to audit_logging_enabled=True when config file missing."""
         config_file = tmp_path / ".nwave" / "des-config.json"
 
         from des.adapters.driven.config.des_config import DESConfig
 
         config = DESConfig(config_path=config_file)
 
-        assert config.audit_logging_enabled is False
+        assert config.audit_logging_enabled is True
 
     @pytest.mark.parametrize(
         "file_content",
@@ -63,8 +63,8 @@ class TestDESConfigDefaultsToFalse:
         ],
         ids=["invalid_json", "key_absent"],
     )
-    def test_defaults_to_false_when_config_unusable(self, tmp_path, file_content):
-        """DESConfig defaults to audit_logging_enabled=False when JSON invalid or key absent."""
+    def test_defaults_to_true_when_config_unusable(self, tmp_path, file_content):
+        """DESConfig defaults to audit_logging_enabled=True when JSON invalid or key absent."""
         config_file = tmp_path / ".nwave" / "des-config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(file_content, encoding="utf-8")
@@ -73,7 +73,7 @@ class TestDESConfigDefaultsToFalse:
 
         config = DESConfig(config_path=config_file)
 
-        assert config.audit_logging_enabled is False
+        assert config.audit_logging_enabled is True
 
 
 class TestDESConfigUsesNwavePath:
