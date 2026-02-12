@@ -26,8 +26,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-import pytest
-
 from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.phase_event import PhaseEvent
@@ -570,9 +568,6 @@ class TestPostExecutionStateValidation:
 # =============================================================================
 
 
-@pytest.mark.skip(
-    reason="Internal SubagentStopHook wiring test, needs hexagonal service rewrite"
-)
 class TestOrchestratorHookIntegration:
     """
     Integration tests that verify SubagentStopHook is wired into DESOrchestrator.
@@ -585,9 +580,80 @@ class TestOrchestratorHookIntegration:
     def test_orchestrator_invokes_subagent_stop_hook_on_completion(
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
-        pass
+        """
+        GIVEN DESOrchestrator configured with a HookPort
+        WHEN on_subagent_complete() is called with a step file path
+        THEN the hook's on_agent_complete() is invoked exactly once
+        AND the step file path is forwarded to the hook
+        """
+        from des.adapters.driven.filesystem.in_memory_filesystem import (
+            InMemoryFileSystem,
+        )
+        from des.adapters.driven.time.mocked_time import MockedTimeProvider
+        from des.adapters.drivers.hooks.mocked_hook import MockedSubagentStopHook
+        from des.adapters.drivers.validators.mocked_validator import (
+            MockedTemplateValidator,
+        )
+        from des.application.orchestrator import DESOrchestrator, HookResult
+
+        hook = MockedSubagentStopHook(HookResult(validation_status="PASSED"))
+        orchestrator = DESOrchestrator(
+            hook=hook,
+            validator=MockedTemplateValidator(),
+            filesystem=InMemoryFileSystem(),
+            time_provider=MockedTimeProvider(
+                datetime(2026, 2, 2, 12, 0, 0, tzinfo=timezone.utc)
+            ),
+        )
+
+        step_path = str(minimal_step_file)
+        result = orchestrator.on_subagent_complete(step_path)
+
+        assert hook.call_count == 1, (
+            f"Hook should fire exactly once, fired {hook.call_count}"
+        )
+        assert hook.last_step_file_path == step_path
+        assert result.validation_status == "PASSED"
 
     def test_orchestrator_detects_abandoned_phase_via_entry_point(
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
-        pass
+        """
+        GIVEN DESOrchestrator configured with a hook that returns FAILED
+        WHEN on_subagent_complete() is called
+        THEN the orchestrator propagates the FAILED result with abandoned phase info
+        """
+        from des.adapters.driven.filesystem.in_memory_filesystem import (
+            InMemoryFileSystem,
+        )
+        from des.adapters.driven.time.mocked_time import MockedTimeProvider
+        from des.adapters.drivers.hooks.mocked_hook import MockedSubagentStopHook
+        from des.adapters.drivers.validators.mocked_validator import (
+            MockedTemplateValidator,
+        )
+        from des.application.orchestrator import DESOrchestrator, HookResult
+
+        hook = MockedSubagentStopHook(
+            HookResult(
+                validation_status="FAILED",
+                abandoned_phases=["GREEN"],
+                error_count=1,
+                error_message="Missing phases: GREEN",
+                recovery_suggestions=["Resume GREEN phase execution"],
+            )
+        )
+        orchestrator = DESOrchestrator(
+            hook=hook,
+            validator=MockedTemplateValidator(),
+            filesystem=InMemoryFileSystem(),
+            time_provider=MockedTimeProvider(
+                datetime(2026, 2, 2, 12, 0, 0, tzinfo=timezone.utc)
+            ),
+        )
+
+        result = orchestrator.on_subagent_complete(str(minimal_step_file))
+
+        assert result.validation_status == "FAILED"
+        assert "GREEN" in result.abandoned_phases
+        assert result.error_count == 1
+        assert "Missing phases" in (result.error_message or "")

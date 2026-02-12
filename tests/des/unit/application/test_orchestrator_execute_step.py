@@ -1,12 +1,7 @@
 """Unit tests for DESOrchestrator.execute_step() turn counting integration."""
 
-import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-
-import pytest
-
-from des.application.orchestrator import DESOrchestrator
 
 
 class TestOrchestratorExecuteStep:
@@ -373,72 +368,3 @@ class TestOrchestratorTimeoutMonitoringIntegration:
         # THEN: Warning mentions remaining time or elapsed time
         warning_text = " ".join(result.warnings_emitted).lower()
         assert "remaining" in warning_text or "elapsed" in warning_text
-
-
-class TestOrchestratorExtensionAPIIntegration:
-    """Test suite for extension API wiring in orchestrator."""
-
-    @pytest.mark.skip(reason="Extension API is OUT_OF_SCOPE for US-006")
-    def test_scenario_015_extension_request_approved_updates_limits(self, tmp_path):
-        """Extension request approved should update TurnCounter and TimeoutMonitor limits.
-
-        This is the acceptance test for step 06-01: Wire extension API to orchestrator.
-
-        Business scenario:
-        GIVEN: Orchestrator executing a phase with defined limits
-        WHEN: Agent requests extension via request_extension() and it's approved
-        THEN: TurnCounter max_turns updated with additional_turns
-        AND: TimeoutMonitor deadline extended by additional_minutes
-        AND: Extension record persisted to step file extensions_granted list
-        """
-        # GIVEN: Orchestrator with step file and active execution
-        orchestrator = DESOrchestrator()
-        step_file = tmp_path / "test_step.json"
-
-        # Initial phase with limits: 10 turns, 15 minutes
-        started_at = datetime.now(timezone.utc).isoformat()
-        step_data = {
-            "tdd_cycle": {
-                "phase_execution_log": [
-                    {
-                        "phase_name": "PREPARE",
-                        "status": "IN_PROGRESS",
-                        "turn_count": 5,  # Already used 5 turns
-                        "started_at": started_at,
-                        "max_turns": 10,
-                        "timeout_minutes": 15,
-                        "extensions_granted": [],
-                    }
-                ]
-            }
-        }
-        step_file.write_text(json.dumps(step_data))
-
-        # Initialize orchestrator state (simulate execute_step initialization)
-        orchestrator._step_file_path = str(step_file)
-        orchestrator._current_phase_name = "PREPARE"
-
-        # WHEN: Agent requests extension (approved: justified reason, within limits)
-        extension_result = orchestrator.request_extension(
-            reason="Need more time for complex integration testing with external API",
-            additional_turns=5,
-            additional_minutes=10,
-        )
-
-        # THEN: Extension approved
-        assert extension_result.approved is True
-
-        # AND: TurnCounter limit updated (10 + 5 = 15)
-        updated_data = json.loads(step_file.read_text())
-        phase_log = updated_data["tdd_cycle"]["phase_execution_log"][0]
-        assert phase_log["max_turns"] == 15
-
-        # AND: TimeoutMonitor deadline extended (15 + 10 = 25 minutes)
-        assert phase_log["timeout_minutes"] == 25
-
-        # AND: Extension persisted to step file
-        extensions = phase_log["extensions_granted"]
-        assert len(extensions) == 1
-        assert extensions[0]["additional_turns"] == 5
-        assert extensions[0]["additional_minutes"] == 10
-        assert "complex integration testing" in extensions[0]["reason"]

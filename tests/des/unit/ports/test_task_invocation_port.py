@@ -5,8 +5,6 @@ Tests validate that TaskInvocationPort interface is correctly defined and that
 ClaudeCodeTaskAdapter and MockedTaskAdapter implement the interface correctly.
 """
 
-import pytest
-
 
 def test_task_invocation_port_interface_defines_required_methods():
     """
@@ -118,16 +116,3 @@ def test_claude_code_task_adapter_implements_task_invocation_port():
 
     adapter = ClaudeCodeTaskAdapter()
     assert isinstance(adapter, TaskInvocationPort)
-
-
-@pytest.mark.skip(
-    reason="Requires actual Task tool integration - test in integration suite"
-)
-def test_claude_code_task_adapter_invokes_real_task():
-    """
-    Test that ClaudeCodeTaskAdapter invokes the actual Task tool.
-
-    This test is skipped in unit tests as it requires the actual Claude Code Task tool.
-    It should be tested in integration tests or manually verified.
-    """
-    pass
