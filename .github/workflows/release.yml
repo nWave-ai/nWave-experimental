@@ -20,10 +20,15 @@ name: Release Pipeline
 on:
   workflow_dispatch:
     inputs:
-      version_override:
-        description: 'Force specific version (leave empty for auto-bump)'
+      force_bump:
+        description: 'Force bump level: patch, minor, or major (leave empty for auto-bump)'
         required: false
-        type: string
+        type: choice
+        options:
+          - ''
+          - patch
+          - minor
+          - major
       dry_run:
         description: 'Dry run (no push, no publish)'
         required: false
@@ -76,10 +81,12 @@ jobs:
             echo "tag_created=false" >> $GITHUB_OUTPUT
             echo "new_version=$VERSION" >> $GITHUB_OUTPUT
             echo "Would bump to: $VERSION"
-          elif [[ -n "${{ inputs.version_override }}" ]]; then
-            echo "Forcing version: ${{ inputs.version_override }}"
-            semantic-release version --force "${{ inputs.version_override }}"
-            echo "new_version=${{ inputs.version_override }}" >> $GITHUB_OUTPUT
+          elif [[ -n "${{ inputs.force_bump }}" ]]; then
+            echo "Forcing bump: ${{ inputs.force_bump }}"
+            semantic-release version --${{ inputs.force_bump }}
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+            VERSION=${LATEST_TAG#v}
+            echo "new_version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag_created=true" >> $GITHUB_OUTPUT
           else
             semantic-release version

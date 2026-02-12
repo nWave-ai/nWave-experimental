@@ -163,7 +163,7 @@ Manual workflow. Triggered from the Actions UI or by pushing a `v*` tag.
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `version_override` | string | empty | Force a specific version (leave empty for auto-bump) |
+| `force_bump` | choice | empty | Force bump level: patch, minor, or major (leave empty for auto-bump) |
 | `dry_run` | boolean | `false` | Preview what would happen without pushing or publishing |
 
 ### Jobs
@@ -172,7 +172,7 @@ Manual workflow. Triggered from the Actions UI or by pushing a `v*` tag.
 
 Uses [python-semantic-release](https://python-semantic-release.readthedocs.io/) to calculate the next version from conventional commits, update `pyproject.toml` + `framework-catalog.yaml`, commit, tag, and push.
 
-- If `version_override` is set: forces that specific version
+- If `force_bump` is set: forces that bump level (patch/minor/major)
 - If `dry_run` is true: runs with `--print` to show what would happen, no changes pushed
 
 **build** (after version-bump or on tag push)
