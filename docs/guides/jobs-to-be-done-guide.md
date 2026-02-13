@@ -274,7 +274,7 @@ This section breaks down what specific job each wave command fulfills.
 | Define component boundaries | `/nw:design` | Clear module separation |
 | Communicate architecture visually | `/nw:diagram` | Stakeholder-ready diagrams |
 
-### DEVOP Wave
+### DEVOPS Wave
 
 | Job | Command | Outcome |
 |-----|---------|---------|

@@ -46,7 +46,7 @@ Quick reference for peer review agents - specifications, configuration, and look
 |----------|-------------|
 | solution-architect-reviewer | After architecture design |
 
-### DEVOP Wave
+### DEVOPS Wave
 | Reviewer | When to Use |
 |----------|-------------|
 | platform-architect-reviewer | After platform/infrastructure design |

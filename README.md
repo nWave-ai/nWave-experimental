@@ -43,7 +43,7 @@ The full workflow has six waves. Use all six for greenfield projects, or jump st
 | DISCOVER | `/nw:discover` | product-discoverer | Market validation |
 | DISCUSS | `/nw:discuss` | product-owner | Requirements |
 | DESIGN | `/nw:design` | solution-architect | Architecture + ADRs |
-| DEVOP | `/nw:devops` | platform-architect | Infrastructure readiness |
+| DEVOPS | `/nw:devops` | platform-architect | Infrastructure readiness |
 | DISTILL | `/nw:distill` | acceptance-designer | Given-When-Then tests |
 | DELIVER | `/nw:deliver` | software-crafter | Working implementation |
 
