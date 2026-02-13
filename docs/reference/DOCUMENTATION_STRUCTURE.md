@@ -34,9 +34,6 @@ Documentation is organized into exactly four types:
 
 **nWave How-to Guides**:
 - `docs/guides/invoke-reviewer-agents.md` - Request peer reviews
-- `docs/guides/5-layer-testing-developers.md` - Programmatic review API
-- `docs/guides/5-layer-testing-users.md` - Manual review workflows
-- `docs/guides/5-layer-testing-cicd.md` - CI/CD integration
 - `docs/guides/how-to-deliver-wave-step-scenario-mapping.md` - Execute DELIVER wave with step-to-scenario mapping
 - `docs/guides/troubleshooting-guide.md` - Solve common issues
 
@@ -50,7 +47,6 @@ Documentation is organized into exactly four types:
 **nWave Reference Documents**:
 - `docs/reference/nwave-commands-reference.md` - Commands and agents
 - `docs/reference/reviewer-agents-reference.md` - Reviewer specifications
-- `docs/reference/5-layer-testing-api.md` - API contracts
 - `docs/reference/step-template-mapped-scenario-field.md` - Step template schema with scenario mapping field
 - `docs/reference/des-orchestrator-api.md` - DES execution coordination API
 - `docs/reference/wave-command-output-paths.md` - Output path specifications
@@ -78,15 +74,11 @@ docs/
 │   ├── invoke-reviewer-agents.md         # How to request reviews
 │   ├── how-to-deliver-wave-step-scenario-mapping.md  # Outside-in TDD execution
 │   ├── des-audit-trail-guide.md          # DES audit tracking
-│   ├── 5-layer-testing-users.md          # Manual review workflows
-│   ├── 5-layer-testing-developers.md     # Programmatic review integration
-│   ├── 5-layer-testing-cicd.md           # CI/CD review automation
 │   └── troubleshooting-guide.md          # Common issues & solutions
 │
 └── reference/                             # REFERENCE docs (lookup)
     ├── nwave-commands-reference.md        # All commands, agents, files
     ├── reviewer-agents-reference.md       # Reviewer specifications
-    ├── 5-layer-testing-api.md             # Review API contracts & types
     ├── des-orchestrator-api.md            # DES execution coordination API
     ├── audit-log-refactor.md              # Audit event schema and writers
     ├── audit-trail-compliance-verification.md  # Compliance verification
@@ -105,7 +97,7 @@ All documentation files follow **kebab-case** naming:
 
 ✅ **Correct**:
 - `how-to-invoke-reviewers.md`
-- `5-layer-testing-developers.md`
+- `invoke-reviewer-agents.md`
 - `nwave-commands-reference.md`
 
 ❌ **Avoid**:
@@ -155,7 +147,7 @@ Documents link to each other following DIVIO principles:
 
 ### How-to → Reference
 ```markdown
-For detailed API contracts, see the [API Reference](../reference/5-layer-testing-api.md).
+For detailed reviewer specifications, see the [Reviewer Agents Reference](./reviewer-agents-reference.md).
 ```
 
 ### How-to → Explanation
@@ -170,7 +162,7 @@ For usage examples, see [How to Invoke Reviewers](./how-to-invoke-reviewers.md).
 
 ### Explanation → How-to
 ```markdown
-To get hands-on with this concept, see [Layer 4 for Developers](./5-layer-testing-developers.md).
+To get hands-on with this concept, see [How to Invoke Reviewer Agents](../guides/invoke-reviewer-agents.md).
 ```
 
 ---

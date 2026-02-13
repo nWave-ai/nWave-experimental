@@ -148,9 +148,6 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 
 ### Practical Guides
 
-- **[Quality Assurance for Users](docs/guides/5-layer-testing-users.md)** - Manual review workflows
-- **[Quality Assurance for Developers](docs/guides/5-layer-testing-developers.md)** - Programmatic review integration
-- **[Quality Assurance for CI/CD](docs/guides/5-layer-testing-cicd.md)** - Automated review in pipelines
 - **[Invoke Reviewer Agents](docs/guides/invoke-reviewer-agents.md)** - Request peer reviews
 - **[DELIVER Wave Step-to-Scenario Mapping](docs/guides/how-to-deliver-wave-step-scenario-mapping.md)** - Outside-in TDD execution
 - **[DES Audit Trail Guide](docs/guides/des-audit-trail-guide.md)** - Deterministic execution tracking
@@ -160,7 +157,6 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 
 - **[nWave Commands Reference](docs/reference/nwave-commands-reference.md)** - All commands, agents, file locations
 - **[Reviewer Agents Reference](docs/reference/reviewer-agents-reference.md)** - Reviewer specifications
-- **[Quality Assurance API](docs/reference/5-layer-testing-api.md)** - Review contracts and interfaces
 - **[DES Orchestrator API](docs/reference/des-orchestrator-api.md)** - Execution coordination API
 - **[Audit Log API](docs/reference/audit-log-refactor.md)** - Audit event schema and writers
 - **[Audit Trail Compliance](docs/reference/audit-trail-compliance-verification.md)** - Compliance verification reference
@@ -267,14 +263,12 @@ Have questions, run into issues, or want to share your success stories? Join the
 │   │   ├── jobs-to-be-done-guide.md
 │   │   ├── installation-guide.md
 │   │   ├── des-audit-trail-guide.md
-│   │   ├── 5-layer-testing-*.md (users, developers, cicd)
 │   │   ├── invoke-reviewer-agents.md
 │   │   └── troubleshooting-guide.md
 │   └── reference/              # Reference (lookup)
 │       ├── nwave-commands-reference.md
 │       ├── reviewer-agents-reference.md
 │       ├── nwave-plugin-architecture.md
-│       ├── 5-layer-testing-api.md
 │       ├── des-orchestrator-api.md
 │       ├── audit-log-refactor.md
 │       └── wave-command-output-paths.md

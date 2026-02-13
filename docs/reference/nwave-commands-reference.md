@@ -42,10 +42,10 @@ Quick reference for all nWave commands, agents, and file locations.
 | Command | Agent | Purpose |
 |---------|-------|---------|
 | `/nw:research` | researcher | Evidence-driven research with source verification |
-| `/nw:document` | researcher + documentarist | DIVIO-compliant documentation with Layer 4 peer review |
+| `/nw:document` | researcher + documentarist | DIVIO-compliant documentation with peer review |
 | `/nw:root-why` | troubleshooter | Toyota 5 Whys root cause analysis |
 | `/nw:mikado` | software-crafter | Complex refactoring roadmaps (Mikado Method) |
-| `/nw:mutation-test` | software-crafter | Layer 5 mutation testing for test suite effectiveness |
+| `/nw:mutation-test` | software-crafter | Mutation testing for test suite effectiveness |
 | `/nw:diagram` | solution-architect | Architecture diagram lifecycle management |
 
 ---
@@ -171,7 +171,7 @@ Every agent has a corresponding `*-reviewer` variant using the Haiku model:
 /nw:document "Getting Started Guide" --type=tutorial
 /nw:document "API Reference" --type=reference --research-depth=comprehensive
 
-# Mutation testing (Layer 5)
+# Mutation testing
 /nw:mutation-test --scope=module --operators=arithmetic,logic
 
 # Root cause analysis

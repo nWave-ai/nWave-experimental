@@ -4,11 +4,10 @@
 **Date**: 2026-02-13
 **Status**: Production Ready
 
-Quick reference for Layer 4 peer review agents - specifications, configuration, and lookup.
+Quick reference for peer review agents - specifications, configuration, and lookup.
 
 **Related Docs**:
 - [How to invoke reviewers](../guides/invoke-reviewer-agents.md) (how-to)
-- [5-Layer Testing API](./5-layer-testing-api.md) (reference)
 
 ---
 
@@ -100,21 +99,21 @@ Quick reference for Layer 4 peer review agents - specifications, configuration, 
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `NWAVE_LAYER4_ENABLED` | Enable Layer 4 reviews | `true` |
+| `NWAVE_REVIEW_ENABLED` | Enable peer reviews | `true` |
 | `NWAVE_MAX_ITERATIONS` | Maximum review iterations | `2` |
-| `NWAVE_AUTO_TRIGGER` | Auto-trigger after Layer 1 | `true` |
+| `NWAVE_AUTO_TRIGGER` | Auto-trigger after wave completion | `true` |
 | `NWAVE_BLOCK_HANDOFF` | Block handoff without approval | `true` |
 
 ### Configuration File
 
-**Location**: `.nwave/layer4.yaml`
+**Location**: `.nwave/review.yaml`
 
 ```yaml
-layer_4_config:
+review_config:
   enabled: true
 
   automation:
-    auto_trigger_after_layer_1: true
+    auto_trigger_after_wave: true
     auto_iterate: true
     max_iterations: 2
 
@@ -261,7 +260,7 @@ handoff_quality_gate:
 | Symptom | Cause | Solution |
 |---------|-------|----------|
 | "Reviewer not found" | Reviewers not in build | Use Task tool manual invocation |
-| Review not triggered | Layer 4 disabled | Check `NWAVE_LAYER4_ENABLED` |
+| Review not triggered | Reviews disabled | Check `NWAVE_REVIEW_ENABLED` |
 | Infinite loop | Max iterations not set | Set `max_iterations: 2` |
 | No feedback | Wrong output format | Check YAML structure |
 
