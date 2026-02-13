@@ -432,7 +432,12 @@ jobs:
         id: pre_sync
         run: |
           # Save current public version before rsync overwrites pyproject.toml
-          CURRENT_PUBLIC_VERSION=$(python3 -c "
+          # If repo is fresh (no pyproject.toml), default to 0.0.0
+          if [ ! -f nwave-target/pyproject.toml ]; then
+            echo "No pyproject.toml found in nwave-target (fresh repo), defaulting to 0.0.0"
+            echo "current_version=0.0.0" >> $GITHUB_OUTPUT
+          else
+            CURRENT_PUBLIC_VERSION=$(python3 -c "
           import re
           with open('nwave-target/pyproject.toml') as f:
               for line in f:
@@ -441,8 +446,9 @@ jobs:
                       print(m.group(1))
                       break
           ")
-          echo "current_version=$CURRENT_PUBLIC_VERSION" >> $GITHUB_OUTPUT
-          echo "Saved current nwave-ai version: $CURRENT_PUBLIC_VERSION"
+            echo "current_version=$CURRENT_PUBLIC_VERSION" >> $GITHUB_OUTPUT
+            echo "Saved current nwave-ai version: $CURRENT_PUBLIC_VERSION"
+          fi
 
       - name: Sync files to nwave-ai/nwave
         run: |
@@ -470,6 +476,8 @@ jobs:
             --exclude 'nwave-ai.egg-info/' \
             --exclude '.execute-command-updated' \
             --exclude '.dependency-map.yaml' \
+            --exclude 'docs/' \
+            --exclude 'nWave/checklists/' \
             --exclude '__pycache__/' \
             --exclude '.pytest_cache/' \
             --exclude '.mypy_cache/' \
@@ -490,6 +498,15 @@ jobs:
           if [[ $RSYNC_EXIT -ne 0 && $RSYNC_EXIT -ne 24 ]]; then
             echo "rsync failed with exit code $RSYNC_EXIT"
             exit $RSYNC_EXIT
+          fi
+
+      - name: Replace README with public version
+        run: |
+          if [ -f nwave_ai/README.public.md ]; then
+            cp nwave_ai/README.public.md nwave-target/README.md
+            echo "Replaced README.md with public version"
+          else
+            echo "::warning::nwave_ai/README.public.md not found, keeping dev README"
           fi
 
       - name: Auto-bump nwave-ai version
@@ -767,20 +784,20 @@ jobs:
           python -m build --wheel
           python -m build --sdist
 
-      - name: Publish to TestPyPI
+      - name: Publish to PyPI
         run: |
-          twine upload --repository testpypi dist/*.whl dist/*.tar.gz || {
+          twine upload dist/*.whl dist/*.tar.gz || {
             rc=$?
-            # 400 = version already exists on TestPyPI, not a real failure
-            if twine upload --repository testpypi --verbose dist/*.whl dist/*.tar.gz 2>&1 | grep -q "already exists"; then
-              echo "::warning::Version already exists on TestPyPI (skipping)"
+            # 400 = version already exists on PyPI, not a real failure
+            if twine upload --verbose dist/*.whl dist/*.tar.gz 2>&1 | grep -q "already exists"; then
+              echo "::warning::Version already exists on PyPI (skipping)"
             else
               exit $rc
             fi
           }
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 
       - name: Smoke test - install from built wheel
         run: |
