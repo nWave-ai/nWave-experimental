@@ -35,18 +35,16 @@ Use the manual step-by-step workflow with human decision points at each stage:
 ```bash
 /nw:discuss "feature requirements"           # Requirements gathering
 /nw:design --architecture=hexagonal          # Architecture design
+/nw:devops                                   # Platform readiness
 /nw:distill "user-story-name"                # Acceptance tests
-/nw:roadmap @solution-architect              # Create plan
-/nw:execute @software-crafter                # Execute tasks
-/nw:refactor                                 # Improve structure
-/nw:review @software-crafter task            # Quality check
+/nw:deliver                                  # TDD implementation + delivery
 ```
 
 For complex features or when you need business analysis first:
 
 ```bash
 /nw:discover "feature market research"       # Product discovery
-# Then continue with discuss, design, distill...
+# Then continue with discuss, design, devops, distill, deliver...
 ```
 
 ## 6-Wave Workflow
@@ -96,11 +94,10 @@ Each primary agent has a matching `*-reviewer` variant providing peer review wit
 - `/nw:design` - Architecture design
 - `/nw:devops` - Platform readiness, CI/CD, infrastructure
 - `/nw:distill` - Acceptance test creation
-- `/nw:deliver` - Outside-in TDD implementation and feature completion
+- `/nw:deliver` - Complete DELIVER wave: roadmap → execute → refactor → review → mutation-test → finalize
 
 ### Execution Commands
 
-- `/nw:roadmap` - Create comprehensive planning document
 - `/nw:execute` - Execute atomic task with state tracking
 - `/nw:review` - Expert critique and quality assurance
 - `/nw:finalize` - Archive project and clean up workflow
