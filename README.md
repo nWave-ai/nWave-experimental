@@ -134,17 +134,20 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 - **[5-Layer Testing for CI/CD](docs/guides/5-layer-testing-cicd.md)** - Automated review in pipelines
 - **[Invoke Reviewer Agents](docs/guides/invoke-reviewer-agents.md)** - Request peer reviews
 - **[DELIVER Wave Step-to-Scenario Mapping](docs/guides/how-to-deliver-wave-step-scenario-mapping.md)** - Outside-in TDD execution
+- **[DES Audit Trail Guide](docs/guides/des-audit-trail-guide.md)** - Deterministic execution tracking
 - **[Troubleshooting Guide](docs/guides/troubleshooting-guide.md)** - Common issues and solutions
 
 ### Reference (Lookup)
 
 - **[nWave Commands Reference](docs/reference/nwave-commands-reference.md)** - All commands, agents, file locations
 - **[Reviewer Agents Reference](docs/reference/reviewer-agents-reference.md)** - Reviewer specifications
-- **[DES Audit Trail Guide](docs/reference/des-audit-trail-guide.md)** - Deterministic execution tracking
 - **[5-Layer Testing API](docs/reference/5-layer-testing-api.md)** - Review contracts and interfaces
 - **[DES Orchestrator API](docs/reference/des-orchestrator-api.md)** - Execution coordination API
 - **[Audit Log API](docs/reference/audit-log-refactor.md)** - Audit event schema and writers
+- **[Audit Trail Compliance](docs/reference/audit-trail-compliance-verification.md)** - Compliance verification reference
+- **[Recovery Guidance API](docs/reference/recovery-guidance-handler-api.md)** - Recovery handler interface
 - **[Plugin Architecture](docs/reference/nwave-plugin-architecture.md)** - Plugin system API
+- **[Step-to-Scenario Mapping](docs/reference/step-template-mapped-scenario-field.md)** - mapped_scenario field spec
 - **[Wave Output Paths](docs/reference/wave-command-output-paths.md)** - Output path specifications
 - **[Documentation Structure](docs/reference/DOCUMENTATION_STRUCTURE.md)** - DIVIO framework organization
 
@@ -246,16 +249,13 @@ Have questions, run into issues, or want to share your success stories? Join the
 │   ├── guides/                # How-to guides (practical tasks)
 │   │   ├── jobs-to-be-done-guide.md
 │   │   ├── installation-guide.md
-│   │   ├── 5-layer-testing-users.md
-│   │   ├── 5-layer-testing-developers.md
-│   │   ├── 5-layer-testing-cicd.md
+│   │   ├── des-audit-trail-guide.md
+│   │   ├── 5-layer-testing-*.md (users, developers, cicd)
 │   │   ├── invoke-reviewer-agents.md
-│   │   ├── troubleshooting-guide.md
-│   │   └── knowledge-architecture-analysis.md
+│   │   └── troubleshooting-guide.md
 │   └── reference/              # Reference (lookup)
 │       ├── nwave-commands-reference.md
 │       ├── reviewer-agents-reference.md
-│       ├── des-audit-trail-guide.md
 │       ├── nwave-plugin-architecture.md
 │       ├── 5-layer-testing-api.md
 │       ├── des-orchestrator-api.md

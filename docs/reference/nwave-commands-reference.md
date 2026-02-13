@@ -10,7 +10,6 @@ Quick reference for all nWave commands, agents, and file locations.
 - [Jobs To Be Done Guide](../guides/jobs-to-be-done-guide.md) (explanation)
 - [How to Invoke Reviewers](../guides/how-to-invoke-reviewers.md) (how-to)
 - [How To: Execute DELIVER Wave with Step-to-Scenario Mapping](../guides/how-to-deliver-wave-step-scenario-mapping.md) (how-to)
-- [Outside-In TDD: Step-to-Scenario Mapping Principle](../principles/outside-in-tdd-step-mapping.md) (explanation)
 - [Step Template: mapped_scenario Field Reference](./step-template-mapped-scenario-field.md) (reference)
 
 ---
@@ -256,7 +255,7 @@ VALIDATION: num_roadmap_steps == num_acceptance_scenarios ✅ REQUIRED
 2. Count acceptance test scenarios
 3. **ENFORCE**: `assert num_steps == num_acceptance_scenarios`
 
-If mismatch detected, the split command FAILS with error message directing to [principle documentation](../principles/outside-in-tdd-step-mapping.md).
+If mismatch detected, the split command FAILS with error message directing to [principle documentation](./step-template-mapped-scenario-field.md).
 
 ### Exceptions: Infrastructure & Refactoring Steps
 
@@ -268,10 +267,8 @@ These steps have NO acceptance test scenario and do NOT count toward the 1:1 map
 
 ### Related Documentation
 
-- **Detailed Principle**: [Outside-In TDD: Step-to-Scenario Mapping Principle](../principles/outside-in-tdd-step-mapping.md)
 - **How-to Guide**: [How To: Execute DELIVER Wave](../guides/how-to-deliver-wave-step-scenario-mapping.md)
 - **Template Reference**: [Step Template: mapped_scenario Field](./step-template-mapped-scenario-field.md)
-- **Agent Spec**: [solution-architect - Step-to-Scenario Mapping core principle](../../nWave/agents/solution-architect.md)
 
 ---
 

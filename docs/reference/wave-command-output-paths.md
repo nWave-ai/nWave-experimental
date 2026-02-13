@@ -297,6 +297,5 @@ The DESIGN wave reads requirements and user stories from the DISCUSS wave:
 
 ## See Also
 
-- How-to: [Create Documentation for a New Feature](./how-to-create-feature-documentation.md) - Step-by-step guide for setting up feature documentation structure
 - Reference: [nWave Commands Reference](./nwave-commands-reference.md) - Complete command specifications and usage
-- Tutorial: [Installation and Setup](../installation/INSTALL.md) - Get nWave installed and configured
+- How-to: [Installation Guide](../guides/installation-guide.md) - Get nWave installed and configured

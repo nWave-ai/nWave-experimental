@@ -302,7 +302,7 @@ assert(num_feature_steps === num_acceptance_scenarios,
    2. Add 7 more acceptance test scenarios
    3. Re-classify extra steps as "infrastructure" type
 
-   Reference: docs/principles/outside-in-tdd-step-mapping.md
+   Reference: docs/reference/step-template-mapped-scenario-field.md
 ```
 
 ## Best Practices

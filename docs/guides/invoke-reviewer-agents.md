@@ -10,7 +10,7 @@ Step-by-step guide to requesting peer reviews from Layer 4 reviewer agents.
 
 **Related Docs**:
 - [Reviewer Agents Reference](../reference/reviewer-agents-reference.md) (lookup)
-- [Layer 4 Implementation Summary](5-layer-testing-implementation.md) (concepts)
+- [5-Layer Testing API](../reference/5-layer-testing-api.md) (reference)
 
 ---
 
