@@ -98,7 +98,7 @@ Each stage involves specialized AI agents and produces validated artifacts.
 - `@documentarist` - DIVIO-compliant documentation
 - `@agent-builder` - Create and validate new agents
 
-### Reviewer Agents (Layer 4 Quality Assurance)
+### Reviewer Agents (Quality Assurance)
 
 Each primary agent has a matching `*-reviewer` variant providing peer review with equal expertise:
 - `@product-discoverer-reviewer`, `@product-owner-reviewer`, `@solution-architect-reviewer`
@@ -130,7 +130,7 @@ Each primary agent has a matching `*-reviewer` variant providing peer review wit
 - `/nw:root-why` - Toyota 5 Whys root cause analysis
 - `/nw:refactor` - Systematic code refactoring
 - `/nw:mikado` - Complex refactoring with visual tracking
-- `/nw:mutation-test` - Layer 5 mutation testing for test effectiveness
+- `/nw:mutation-test` - Mutation testing for test effectiveness
 
 ### Utility Commands
 
@@ -148,9 +148,9 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 
 ### Practical Guides
 
-- **[5-Layer Testing for Users](docs/guides/5-layer-testing-users.md)** - Manual review workflows
-- **[5-Layer Testing for Developers](docs/guides/5-layer-testing-developers.md)** - Programmatic review integration
-- **[5-Layer Testing for CI/CD](docs/guides/5-layer-testing-cicd.md)** - Automated review in pipelines
+- **[Quality Assurance for Users](docs/guides/5-layer-testing-users.md)** - Manual review workflows
+- **[Quality Assurance for Developers](docs/guides/5-layer-testing-developers.md)** - Programmatic review integration
+- **[Quality Assurance for CI/CD](docs/guides/5-layer-testing-cicd.md)** - Automated review in pipelines
 - **[Invoke Reviewer Agents](docs/guides/invoke-reviewer-agents.md)** - Request peer reviews
 - **[DELIVER Wave Step-to-Scenario Mapping](docs/guides/how-to-deliver-wave-step-scenario-mapping.md)** - Outside-in TDD execution
 - **[DES Audit Trail Guide](docs/guides/des-audit-trail-guide.md)** - Deterministic execution tracking
@@ -160,7 +160,7 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 
 - **[nWave Commands Reference](docs/reference/nwave-commands-reference.md)** - All commands, agents, file locations
 - **[Reviewer Agents Reference](docs/reference/reviewer-agents-reference.md)** - Reviewer specifications
-- **[5-Layer Testing API](docs/reference/5-layer-testing-api.md)** - Review contracts and interfaces
+- **[Quality Assurance API](docs/reference/5-layer-testing-api.md)** - Review contracts and interfaces
 - **[DES Orchestrator API](docs/reference/des-orchestrator-api.md)** - Execution coordination API
 - **[Audit Log API](docs/reference/audit-log-refactor.md)** - Audit event schema and writers
 - **[Audit Trail Compliance](docs/reference/audit-trail-compliance-verification.md)** - Compliance verification reference
@@ -170,14 +170,16 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 - **[Wave Output Paths](docs/reference/wave-command-output-paths.md)** - Output path specifications
 - **[Documentation Structure](docs/reference/DOCUMENTATION_STRUCTURE.md)** - DIVIO framework organization
 
-## Quality Assurance: 5-Layer Testing
+## Quality Excellence
+
+Every artifact passes through progressive quality gates before handoff:
 
 ```text
-Layer 1: Unit Testing            - Individual agent output validation
-Layer 2: Integration Testing     - Handoff validation between agents
-Layer 3: Adversarial Validation  - Challenge output validity
-Layer 4: Peer Review             - Equal-expertise reviewer critique
-Layer 5: Mutation Testing        - Test suite effectiveness validation
+Unit Testing            - Individual agent output validation
+Integration Testing     - Handoff validation between agents
+Adversarial Validation  - Challenge output validity
+Peer Review             - Equal-expertise reviewer critique
+Mutation Testing        - Test suite effectiveness validation
 ```
 
 ## Core Concepts
@@ -295,8 +297,8 @@ See individual agent documentation for implementation details.
 
 - **22 Specialized AI Agents** - Primary agents plus reviewer agents for peer review
 - **6-Wave ATDD Workflow** - Proven development methodology with discovery phase
-- **Layer 4 Peer Review** - Equal-expertise reviewer critique reducing bias
-- **Layer 5 Mutation Testing** - Validate test suite effectiveness
+- **Peer Review** - Equal-expertise reviewer critique reducing bias
+- **Mutation Testing** - Validate test suite effectiveness
 - **Evidence-Based Discovery** - Market research and problem validation
 - **Evidence-Based Planning** - Baseline measurement blocks roadmap
 - **Atomic Task Execution** - Clean context per task prevents degradation
