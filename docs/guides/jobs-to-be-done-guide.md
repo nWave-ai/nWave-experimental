@@ -24,6 +24,28 @@ The framework operates as a **sequential pipeline of 6 waves**:
 
 **Skip waves you don't need** — brownfield work may start at `deliver`, bug fixes at `root-why` + `execute`.
 
+### What `/nw:deliver` Automates
+
+`/nw:deliver` orchestrates the full inner loop with DES (Deterministic Execution System):
+
+```text
+/nw:deliver = roadmap → execute → refactor → review → mutation-test → finalize
+```
+
+### Manual Inner Loop (Learning Mode)
+
+If you are still learning the framework, run each step yourself instead of `/nw:deliver`:
+
+```bash
+/nw:execute @software-crafter "step-file"    # Execute one task
+/nw:refactor                                 # Improve structure
+/nw:review @software-crafter task "step-file" # Quality check
+/nw:mutation-test                            # Validate test effectiveness
+/nw:finalize                                 # Archive and clean up
+```
+
+This gives you hands-on understanding of each step without DES orchestration. Graduate to `/nw:deliver` when the pattern feels natural.
+
 **Cross-wave commands** (can be used anytime): `research`, `diagram`, `root-why`, `document`, `refactor`, `mikado`
 
 ---

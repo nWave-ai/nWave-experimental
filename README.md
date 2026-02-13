@@ -15,6 +15,20 @@ nWave is an agentic system that guides you through systematic software developme
 
 Each phase involves specialized AI agents that understand domain-specific best practices. A comprehensive quality assurance framework with peer review, mutation testing, and deterministic execution ensures code quality at every step.
 
+### Why "Wave"?
+
+The name nWave reflects the rhythmic handoff between machine and human throughout development:
+
+```text
+  machine        human         machine        human         machine
+    │              │              │              │              │
+    ▼              ▼              ▼              ▼              ▼
+  Agent ──→ Documentation ──→ Review ──→ Decision ──→ Agent ──→ ...
+ generates    artifacts      validates   approves    continues
+```
+
+Each wave produces documentation artifacts that a human reviews before the next wave begins. The machine never runs unsupervised end-to-end. You stay in control at every stage, with AI doing the heavy lifting between your decision points.
+
 ## Quick Start
 
 ### Installation (1 minute)
@@ -30,9 +44,10 @@ Full installation details: [Installation Guide](docs/guides/installation-guide.m
 
 ### Your First Workflow
 
-Use the manual step-by-step workflow with human decision points at each stage:
+The 6-wave sequence with human decision points at each stage:
 
 ```bash
+/nw:discover "feature market research"       # Product discovery (optional)
 /nw:discuss "feature requirements"           # Requirements gathering
 /nw:design --architecture=hexagonal          # Architecture design
 /nw:devops                                   # Platform readiness
@@ -40,12 +55,18 @@ Use the manual step-by-step workflow with human decision points at each stage:
 /nw:deliver                                  # TDD implementation + delivery
 ```
 
-For complex features or when you need business analysis first:
+`/nw:deliver` automates the full inner loop: roadmap → execute → refactor → review → mutation-test → finalize. If you are still learning the framework, you can run each step manually instead:
 
 ```bash
-/nw:discover "feature market research"       # Product discovery
-# Then continue with discuss, design, devops, distill, deliver...
+# Manual inner loop (no DES orchestration, full human control)
+/nw:execute @software-crafter "step-file"    # Execute one task
+/nw:refactor                                 # Improve structure
+/nw:review @software-crafter task "step-file" # Quality check
+/nw:mutation-test                            # Validate test effectiveness
+/nw:finalize                                 # Archive and clean up
 ```
+
+The manual approach gives you hands-on understanding of each step before graduating to the automated `/nw:deliver` orchestration.
 
 ## 6-Wave Workflow
 
