@@ -84,52 +84,50 @@ The installer sets up nWave components in your `~/.claude/` directory:
 
 ```
 ~/.claude/
-├── agents/nw/                  # 22 agent specifications
-│   ├── product-discoverer.md
-│   ├── product-owner.md
-│   ├── solution-architect.md
-│   ├── acceptance-designer.md
-│   ├── software-crafter.md
-│   ├── platform-architect.md
-│   ├── researcher.md
-│   ├── troubleshooter.md
-│   ├── data-engineer.md
-│   ├── agent-builder.md
-│   ├── *-reviewer.md            # 11 reviewer agent specs
-│   └── ...
+├── agents/nw/                  # 22 agent specifications (11 primary + 11 reviewers)
+│   ├── nw-product-discoverer.md
+│   ├── nw-product-owner.md
+│   ├── nw-solution-architect.md
+│   ├── nw-platform-architect.md
+│   ├── nw-acceptance-designer.md
+│   ├── nw-software-crafter.md
+│   ├── nw-researcher.md
+│   ├── nw-troubleshooter.md
+│   ├── nw-data-engineer.md
+│   ├── nw-documentarist.md
+│   ├── nw-agent-builder.md
+│   └── nw-*-reviewer.md         # 11 matching reviewer agents
 ├── commands/nw/                # 18 slash command definitions
-│   ├── discover.md
+│   ├── discover.md              # Wave commands (6)
 │   ├── discuss.md
 │   ├── design.md
+│   ├── devops.md
 │   ├── distill.md
-│   ├── develop.md
 │   ├── deliver.md
-│   ├── baseline.md
-│   ├── roadmap.md
-│   ├── split.md
-│   ├── execute.md
+│   ├── execute.md               # Execution commands (4)
 │   ├── review.md
 │   ├── finalize.md
-│   ├── research.md
+│   ├── roadmap.md
+│   ├── research.md              # Cross-wave commands (6)
 │   ├── document.md
 │   ├── root-why.md
 │   ├── refactor.md
+│   ├── mikado.md
 │   ├── mutation-test.md
-│   ├── diagram.md
+│   ├── diagram.md               # Utility commands (2)
 │   └── forge.md
-├── templates/                  # Wave templates and DES templates
-│   ├── baseline.yaml
-│   ├── roadmap.yaml
-│   ├── step.json
+├── templates/                  # Wave and DES templates
+│   ├── execution-log-template.yaml
+│   ├── roadmap-schema.yaml
+│   ├── step-tdd-cycle-schema.json
 │   └── ...
-├── skills/                     # Agent skills (68 files, 21 groups)
+├── skills/                     # Agent knowledge files
 │   ├── common/
 │   ├── researcher/
 │   ├── software-crafter/
 │   ├── solution-architect/
 │   └── ...
-├── scripts/                    # DES utility scripts
-├── lib/python/des/             # DES runtime module
+├── scripts/                    # DES utility and validation scripts
 └── settings.json               # DES hooks registered here
 ```
 
