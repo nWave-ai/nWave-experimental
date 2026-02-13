@@ -143,6 +143,7 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 
 ### Getting Started
 
+- **[Your First Feature](docs/guides/tutorial-first-feature.md)** - Build a feature from requirements to code (tutorial)
 - **[Jobs To Be Done Guide](docs/guides/jobs-to-be-done-guide.md)** - Understand when and how to use each workflow
 - **[Installation Guide](docs/guides/installation-guide.md)** - Step-by-step setup instructions
 

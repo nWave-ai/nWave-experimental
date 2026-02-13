@@ -22,6 +22,7 @@ Documentation is organized into exactly four types:
 - **Example**: Installation guide for a new user
 
 **nWave Tutorials**:
+- `docs/guides/tutorial-first-feature.md` - Build a feature end-to-end
 - `docs/guides/installation-guide.md` - Installation instructions
 - `docs/guides/jobs-to-be-done-guide.md` - Workflow orientation
 
@@ -68,7 +69,8 @@ Documentation is organized into exactly four types:
 
 ```
 docs/
-├── guides/                                # HOW-TO guides & explanations
+├── guides/                                # Tutorials, HOW-TO guides & explanations
+│   ├── tutorial-first-feature.md         # Build a feature end-to-end (tutorial)
 │   ├── jobs-to-be-done-guide.md          # When to use each workflow
 │   ├── installation-guide.md             # Setup instructions
 │   ├── invoke-reviewer-agents.md         # How to request reviews
