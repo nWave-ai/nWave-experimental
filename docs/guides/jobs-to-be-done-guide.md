@@ -37,9 +37,9 @@ The framework operates as a **sequential pipeline of 6 waves**:
 If you are still learning the framework, run each step yourself instead of `/nw:deliver`:
 
 ```bash
-/nw:execute @software-crafter "step-file"    # Execute one task
-/nw:refactor                                 # Improve structure
-/nw:review @software-crafter task "step-file" # Quality check
+/nw:execute @software-crafter "implement login endpoint" # Execute one task
+/nw:refactor                                             # Improve structure
+/nw:review @software-crafter task "implement login endpoint" # Quality check
 /nw:mutation-test                            # Validate test effectiveness
 /nw:finalize                                 # Archive and clean up
 ```

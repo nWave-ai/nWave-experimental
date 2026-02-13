@@ -156,13 +156,13 @@ Every agent has a corresponding `*-reviewer` variant using the Haiku model:
 /nw:diagram --format=mermaid --level=container
 
 # Execute task
-/nw:execute @software-crafter "path/to/step.json"
+/nw:execute @software-crafter "implement login endpoint"
 
 # Refactor after execute
 /nw:refactor --target="ServiceName" --level=3
 
 # Review task
-/nw:review @software-crafter task "path/to/step.json"
+/nw:review @software-crafter task "implement login endpoint"
 
 # Research with embedding
 /nw:research "topic" --embed-for=solution-architect

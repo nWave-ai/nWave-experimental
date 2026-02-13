@@ -59,9 +59,9 @@ The 6-wave sequence with human decision points at each stage:
 
 ```bash
 # Manual inner loop (no DES orchestration, full human control)
-/nw:execute @software-crafter "step-file"    # Execute one task
-/nw:refactor                                 # Improve structure
-/nw:review @software-crafter task "step-file" # Quality check
+/nw:execute @software-crafter "implement login endpoint" # Execute one task
+/nw:refactor                                             # Improve structure
+/nw:review @software-crafter task "implement login endpoint" # Quality check
 /nw:mutation-test                            # Validate test effectiveness
 /nw:finalize                                 # Archive and clean up
 ```
