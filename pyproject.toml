@@ -7,7 +7,7 @@ packages = ["src/des", "scripts/install"]
 
 [project]
 name = "nwave"
-version = "2.14.9"
+version = "2.14.10"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
