@@ -508,14 +508,11 @@ jobs:
             exit $RSYNC_EXIT
           fi
 
-      - name: Replace README with public version
+      - name: Rewrite README links for PyPI rendering
         run: |
-          if [ -f nwave_ai/README.public.md ]; then
-            cp nwave_ai/README.public.md nwave-target/README.md
-            echo "Replaced README.md with public version"
-          else
-            echo "::warning::nwave_ai/README.public.md not found, keeping dev README"
-          fi
+          sed -i.bak 's|](docs/|](https://github.com/nwave-ai/nwave/tree/main/docs/|g' nwave-target/README.md
+          rm -f nwave-target/README.md.bak
+          echo "Converted relative doc links to absolute GitHub URLs"
 
       - name: Auto-bump nwave-ai version
         id: nwave_version
