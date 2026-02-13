@@ -484,6 +484,7 @@ jobs:
             --exclude 'docs/reports/' \
             --exclude 'docs/research/' \
             --exclude 'docs/ux/' \
+            --exclude 'docs/internal/' \
             --exclude 'nWave/checklists/' \
             --exclude '__pycache__/' \
             --exclude '.pytest_cache/' \
