@@ -11,6 +11,8 @@ pipx install nwave-ai
 nwave-ai install
 ```
 
+Full setup details: **[Installation Guide](https://github.com/nWave-ai/nWave/blob/main/docs/guides/installation-guide.md)**
+
 Close and reopen Claude Code, then:
 
 ```bash
@@ -53,8 +55,8 @@ The full workflow has six waves. Use all six for greenfield projects, or jump st
 
 ### Getting Started
 
+- **[Installation Guide](https://github.com/nWave-ai/nWave/blob/main/docs/guides/installation-guide.md)** — Setup instructions
 - **[Your First Feature](docs/guides/tutorial-first-feature.md)** — Build a feature end-to-end (tutorial)
-- **[Installation Guide](docs/guides/installation-guide.md)** — Setup instructions
 - **[Jobs To Be Done](docs/guides/jobs-to-be-done-guide.md)** — Which workflow fits your task
 
 ### Guides & Reference
