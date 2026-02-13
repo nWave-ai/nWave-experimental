@@ -37,7 +37,7 @@ Documentation is organized into exactly four types:
 - `docs/guides/5-layer-testing-developers.md` - Programmatic review API
 - `docs/guides/5-layer-testing-users.md` - Manual review workflows
 - `docs/guides/5-layer-testing-cicd.md` - CI/CD integration
-- `docs/guides/how-to-develop-wave-step-scenario-mapping.md` - Execute DEVELOP wave with step-to-scenario mapping
+- `docs/guides/how-to-deliver-wave-step-scenario-mapping.md` - Execute DELIVER wave with step-to-scenario mapping
 - `docs/guides/troubleshooting-guide.md` - Solve common issues
 
 ### 3. **Reference** (Information Orientation)
@@ -65,7 +65,7 @@ Documentation is organized into exactly four types:
 **nWave Explanations**:
 - `docs/guides/knowledge-architecture-analysis.md` - Why the architecture works
 - `docs/guides/knowledge-architecture-analysis.md` - Architecture decisions
-- `docs/guides/how-to-develop-wave-step-scenario-mapping.md` - Step-to-scenario mapping in DEVELOP wave
+- `docs/guides/how-to-deliver-wave-step-scenario-mapping.md` - Step-to-scenario mapping in DELIVER wave
 - `README.md` (partial) - Project vision and philosophy
 
 ---

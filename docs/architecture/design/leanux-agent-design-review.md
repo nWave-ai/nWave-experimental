@@ -104,7 +104,7 @@ DISTILL:
        | Acceptance Tests (.feature)
        | Including E2E journey scenarios
        v
-DEVELOP:
+DELIVER:
   software-crafter (Crafty)
 ```
 
@@ -278,7 +278,7 @@ design_pattern: "ReAct (iterative design with tool calling)"
 primary_wave: "DISCUSS"
 secondary_involvement:
   - "DISTILL (E2E scenario handoff to acceptance-designer)"
-  - "DEVELOP (design consultation for UX questions)"
+  - "DELIVER (design consultation for UX questions)"
 
 persona:
   name: Luna
@@ -307,7 +307,7 @@ key_responsibilities:
   - Track shared artifacts and cross-feature dependencies
   - Validate horizontal coherence before features proceed to DESIGN
   - Create E2E scenarios for acceptance testing
-  - Consult on UX questions during DEVELOP
+  - Consult on UX questions during DELIVER
 
 integration_points:
   pairs_with:
@@ -516,7 +516,7 @@ DISTILL Phase:
   (Each TUI box → Gherkin scenario)
        │
        ▼
-DEVELOP Phase:
+DELIVER Phase:
   Crafty implements to match sketch
   (TUI mockups = expected output specs)
 ```
@@ -525,7 +525,7 @@ DEVELOP Phase:
 - DISCUSS: Created by Luna, reviewed by stakeholders
 - DESIGN: Informs architecture (what components, what data flows)
 - DISTILL: Transforms directly into acceptance tests
-- DEVELOP: Serves as expected output specification
+- DELIVER: Serves as expected output specification
 
 ### Question 3: Artifact Format
 

@@ -129,7 +129,7 @@ After test creation:
 ```
 1. Create acceptance tests (acceptance-designer)
 2. REVIEW tests (acceptance-designer-reviewer) <- Add this
-3. Handoff to DEVELOP wave
+3. Handoff to DELIVER wave
 ```
 
 ---

@@ -307,7 +307,7 @@ nWave Framework v1.3.0
 
 - **Version**: 1.3.0
 - **Release Date**: 2026-01-28
-- **Methodology**: DISCUSS > DESIGN > DISTILL > DEVELOP > DELIVER
+- **Methodology**: DISCUSS > DESIGN > DEVOP > DISTILL > DELIVER
 
 ## Installation
 

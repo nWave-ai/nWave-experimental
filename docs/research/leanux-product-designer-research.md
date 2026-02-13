@@ -413,7 +413,7 @@ Create a floor of product knowledge across Product and Product-Adjacent roles. E
 The user journey map should be:
 1. **Created in DISCUSS phase** by Product Owner + LeanUX Agent
 2. **Validated before DESIGN phase** begins
-3. **Referenced in every DEVELOP sprint** to ensure features connect
+3. **Referenced in every DELIVER sprint** to ensure features connect
 4. **Updated as features complete** to reflect reality
 5. **Used as acceptance criteria** for horizontal integration testing
 
@@ -601,7 +601,7 @@ The user journey map should be:
 3. **CLI UX Consistency**: Check command naming, flags, help text against guidelines
 4. **Integration Planning**: Identify touchpoints with existing features
 
-**DEVELOP Phase (Checkpoint)**:
+**DELIVER Phase (Checkpoint)**:
 1. **Acceptance Criteria Review**: Ensure horizontal integration criteria exist
 2. **User Testing Coordination**: Plan validation of completed features
 3. **Journey Map Update**: Reflect reality as features complete
@@ -641,7 +641,7 @@ docs/design/{feature}/
 - [ ] CLI UX consistency verified
 - [ ] Integration points identified
 
-**DEVELOP Phase Gate**:
+**DELIVER Phase Gate**:
 - [ ] Implementation matches journey map
 - [ ] Horizontal integration criteria met
 - [ ] CLI commands follow established patterns

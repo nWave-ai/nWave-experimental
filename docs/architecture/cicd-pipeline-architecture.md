@@ -730,7 +730,7 @@ jobs:
 
           - **Version**: ${VERSION}
           - **Release Date**: ${RELEASE_DATE}
-          - **Methodology**: DISCUSS > DESIGN > DISTILL > DEVELOP > DELIVER
+          - **Methodology**: DISCUSS > DESIGN > DEVOP > DISTILL > DELIVER
 
           ## Installation
 

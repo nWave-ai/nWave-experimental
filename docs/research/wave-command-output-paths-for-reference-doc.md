@@ -78,7 +78,7 @@ The 6-wave nWave methodology:
 2. DISCUSS (wave 2) - Requirements gathering
 3. DESIGN (wave 3) - Architecture design
 4. DISTILL (wave 4) - Acceptance test creation
-5. DEVELOP (wave 5) - Implementation
+5. DELIVER (wave 5) - Implementation
 6. DELIVER (wave 6) - Production deployment
 
 The new folder structure aligns with waves 2-6, making the methodology visible in the file system.
@@ -178,7 +178,7 @@ Commit: `9f8ec0c` - "refactor(des): reorganize docs by nWave wave structure"
 - **Verification**: All paths verified through file system inspection
 - **Completeness**: All 4 wave commands documented (DISCUSS, DESIGN, DISTILL, DELIVER)
 
-Note: DEVELOP wave does not have "expected outputs" section as it produces implementation code in `src/` rather than documentation artifacts.
+Note: DELIVER wave does not have "expected outputs" section as it produces implementation code in `src/` rather than documentation artifacts.
 
 ---
 

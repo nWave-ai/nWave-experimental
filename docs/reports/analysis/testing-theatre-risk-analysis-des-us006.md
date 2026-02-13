@@ -65,7 +65,7 @@ print('Entry point callable:', 'TIMEOUT_INSTRUCTION' in result)
 **Evidence from test file** (lines 67-73):
 ```python
 # WHEN: Orchestrator renders full Task prompt
-# NOTE: This will fail until DEVELOP wave implements full prompt rendering
+# NOTE: This will fail until DELIVER wave implements full prompt rendering
 prompt = des_orchestrator.render_full_prompt(
     command=command,
     agent=agent,
@@ -130,8 +130,8 @@ def render_full_prompt(
 
 | Scenario | Status | Reason | Documentation |
 |----------|--------|--------|---------------|
-| 013 | ⏭️ SKIPPED | Outside-In TDD RED state - awaiting DEVELOP wave | Line 535-546 |
-| 014 | ⏭️ SKIPPED | Outside-In TDD RED state - awaiting DEVELOP wave | Line 598-664 |
+| 013 | ⏭️ SKIPPED | Outside-In TDD RED state - awaiting DELIVER wave | Line 535-546 |
+| 014 | ⏭️ SKIPPED | Outside-In TDD RED state - awaiting DELIVER wave | Line 598-664 |
 
 ✅ **PASS**: Future scenarios properly documented with `@pytest.mark.skip` decorator and clear rationale. Not missing implementation - intentionally deferred.
 
@@ -583,7 +583,7 @@ Based on this analysis, the following items should be verified before production
 
 #### 3. Outside-In TDD Discipline
 
-**Evidence**: Test file line 67 comment: "NOTE: This will fail until DEVELOP wave implements full prompt rendering"
+**Evidence**: Test file line 67 comment: "NOTE: This will fail until DELIVER wave implements full prompt rendering"
 
 **Impact**: Tests written FIRST against public API, forcing implementation to create real entry points
 

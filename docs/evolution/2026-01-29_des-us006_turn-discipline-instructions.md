@@ -87,7 +87,7 @@ Implemented complete TIMEOUT_INSTRUCTION rendering infrastructure with 4 require
 ### Methodology
 - **Framework**: nWave ATDD (Acceptance Test-Driven Development)
 - **TDD Approach**: Outside-In TDD with 8-phase cycle per step
-- **Phases**: DISCUSS → DESIGN → DISTILL → DEVELOP → DELIVER (DEMO deferred)
+- **Phases**: DISCUSS → DESIGN → DEVOP → DISTILL → DELIVER (DEMO deferred)
 
 ### Execution Statistics
 
@@ -314,7 +314,7 @@ Implemented complete TIMEOUT_INSTRUCTION rendering infrastructure with 4 require
 - **Implementation Roadmap**: `/mnt/c/Repositories/Projects/ai-craft/docs/feature/des-us006/roadmap.yaml`
 - **Production Readiness**: `/mnt/c/Repositories/Projects/ai-craft/docs/feature/des-us006/PRODUCTION_READINESS_CHECKLIST.md`
 - **DES Design Doc**: `/mnt/c/Repositories/Projects/ai-craft/docs/design/deterministic-execution-system-design.md`
-- **nWave Methodology**: Standard ATDD workflow (DISCUSS → DESIGN → DISTILL → DEVELOP → DELIVER)
+- **nWave Methodology**: Standard ATDD workflow (DISCUSS → DESIGN → DEVOP → DISTILL → DELIVER)
 
 ---
 

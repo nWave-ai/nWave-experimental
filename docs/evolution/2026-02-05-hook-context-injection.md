@@ -3,7 +3,7 @@
 **Date**: 2026-02-05
 **Project ID**: hook-context-injection
 **Feature**: Implement orchestrator notification via SubagentStop hook context injection
-**Framework**: nWave DEVELOP v2.0
+**Framework**: nWave DELIVER v2.0
 **Status**: ✅ Complete
 
 ---
@@ -311,7 +311,7 @@ python3 scripts/install/install_des_hooks.py --uninstall
 ## References
 
 - **Claude Code Hooks Documentation**: https://code.claude.com/docs/en/hooks
-- **nWave DEVELOP Specification**: `nWave/tasks/nw/develop.md`
+- **nWave DELIVER Specification**: `nWave/tasks/nw/develop.md`
 - **DES Architecture**: Hexagonal architecture (ports/adapters)
 - **Commit**: 5ddf7fa (implementation) + 315174b (retrospective)
 

@@ -1,4 +1,4 @@
-# How To: Execute DEVELOP Wave with Step-to-Scenario Mapping
+# How To: Execute DELIVER Wave with Step-to-Scenario Mapping
 
 **Document Type**: How-to Guide
 **Last Updated**: 2026-01-24
@@ -6,7 +6,7 @@
 
 ## Goal
 
-Successfully execute a DEVELOP wave where each roadmap step implements exactly one acceptance test scenario following Outside-In TDD discipline.
+Successfully execute a DELIVER wave where each roadmap step implements exactly one acceptance test scenario following Outside-In TDD discipline.
 
 ## Before You Start
 
@@ -45,7 +45,7 @@ Before proceeding, review the mapping rule:
 
 ## Step 3: Create a Measurement Baseline
 
-Initialize the DEVELOP wave with quantitative baseline data (this is mandatory).
+Initialize the DELIVER wave with quantitative baseline data (this is mandatory).
 
 **Command**:
 ```
@@ -183,7 +183,7 @@ After all steps complete successfully, finalize the wave (archival and reporting
 
 ## Validation Checklist
 
-Before declaring DEVELOP wave complete:
+Before declaring DELIVER wave complete:
 
 - [ ] Baseline created: `docs/feature/{project_id}/baseline.yaml` exists
 - [ ] Roadmap created: `docs/feature/{project_id}/roadmap.yaml` exists

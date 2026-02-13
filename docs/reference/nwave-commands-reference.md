@@ -9,7 +9,7 @@ Quick reference for all nWave commands, agents, and file locations.
 **Related Docs**:
 - [Jobs To Be Done Guide](../guides/jobs-to-be-done-guide.md) (explanation)
 - [How to Invoke Reviewers](../guides/how-to-invoke-reviewers.md) (how-to)
-- [How To: Execute DEVELOP Wave with Step-to-Scenario Mapping](../guides/how-to-develop-wave-step-scenario-mapping.md) (how-to)
+- [How To: Execute DELIVER Wave with Step-to-Scenario Mapping](../guides/how-to-deliver-wave-step-scenario-mapping.md) (how-to)
 - [Outside-In TDD: Step-to-Scenario Mapping Principle](../principles/outside-in-tdd-step-mapping.md) (explanation)
 - [Step Template: mapped_scenario Field Reference](./step-template-mapped-scenario-field.md) (reference)
 
@@ -206,7 +206,7 @@ Every agent has a corresponding `*-reviewer` variant using the Haiku model:
 
 ---
 
-## DEVELOP Wave: Step-to-Scenario Mapping Constraint
+## DELIVER Wave: Step-to-Scenario Mapping Constraint
 
 **Applies to**: `/nw:roadmap`, `/nw:split`, `/nw:execute` when creating feature steps.
 
@@ -230,7 +230,7 @@ VALIDATION: num_roadmap_steps == num_acceptance_scenarios ✅ REQUIRED
 
 - **Preserves TDD discipline**: Each step has clear RED → GREEN progression
 - **Enables traceability**: Scenario → Step → Commit (business requirement to code)
-- **Prevents architectural thinking in DEVELOP**: Focus on behavioral implementation, not technical layers
+- **Prevents architectural thinking in DELIVER**: Focus on behavioral implementation, not technical layers
 - **Maintains test granularity**: Can't batch multiple features into one step
 
 ### For solution-architect (/nw:roadmap)
@@ -269,7 +269,7 @@ These steps have NO acceptance test scenario and do NOT count toward the 1:1 map
 ### Related Documentation
 
 - **Detailed Principle**: [Outside-In TDD: Step-to-Scenario Mapping Principle](../principles/outside-in-tdd-step-mapping.md)
-- **How-to Guide**: [How To: Execute DEVELOP Wave](../guides/how-to-develop-wave-step-scenario-mapping.md)
+- **How-to Guide**: [How To: Execute DELIVER Wave](../guides/how-to-deliver-wave-step-scenario-mapping.md)
 - **Template Reference**: [Step Template: mapped_scenario Field](./step-template-mapped-scenario-field.md)
 - **Agent Spec**: [solution-architect - Step-to-Scenario Mapping core principle](../../nWave/agents/solution-architect.md)
 

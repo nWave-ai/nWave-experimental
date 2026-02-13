@@ -315,7 +315,7 @@ assert(num_feature_steps === num_acceptance_scenarios,
 
 ## Related Documentation
 
-- **How-to Guide**: [Execute DEVELOP Wave with Step-to-Scenario Mapping](../guides/how-to-develop-wave-step-scenario-mapping.md)
+- **How-to Guide**: [Execute DELIVER Wave with Step-to-Scenario Mapping](../guides/how-to-deliver-wave-step-scenario-mapping.md)
 - **Template File**: `~/.claude/templates/step-tdd-cycle-schema.json` (installed via `nwave-ai install`)
 - **Command Reference**: [nWave Commands Reference](./nwave-commands-reference.md)
 

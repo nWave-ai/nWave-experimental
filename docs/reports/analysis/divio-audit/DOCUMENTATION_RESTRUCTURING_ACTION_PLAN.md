@@ -109,7 +109,7 @@ Current document serves three incompatible user needs:
    └─ Defaults and overrides
 
 3. When to Use Which Reviewer
-   ├─ By phase (DISCUSS, DESIGN, DISTILL, DEVELOP)
+   ├─ By phase (DISCUSS, DESIGN, DEVOP, DISTILL)
    ├─ By artifact type (requirements, architecture, tests, code)
    └─ By issue type (bias, completeness, clarity, testability)
 ```

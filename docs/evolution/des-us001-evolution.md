@@ -2,7 +2,7 @@
 
 **Project**: DES (Deterministic Execution System)
 **User Story**: US-001 Command-Origin Task Filtering
-**Wave**: DEVELOP (completed)
+**Wave**: DELIVER (completed)
 **Date Range**: 2026-01-23
 **Status**: Implementation Complete (Test Infrastructure Issue Noted)
 
@@ -358,7 +358,7 @@ Target: >80% (exceeded by 20 percentage points)
 
 **Knowledge Transfer**: Architecture decisions documented, complexity measurements recorded, lessons learned captured for future user stories.
 
-**Next Wave**: Ready for DELIVER wave once test infrastructure issue resolved. Subsequent DEVELOP waves will implement US-002 through US-005 (29 remaining scenarios).
+**Next Wave**: Ready for DELIVER wave once test infrastructure issue resolved. Subsequent DELIVER waves will implement US-002 through US-005 (29 remaining scenarios).
 
 **Feature Velocity**: 11 steps completed in estimated 15h effort window, demonstrating realistic roadmap planning and execution discipline.
 

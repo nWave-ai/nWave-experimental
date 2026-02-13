@@ -49,7 +49,7 @@ Quick reference for Layer 4 peer review agents - specifications, configuration, 
 |----------|-------------|
 | acceptance-designer-reviewer | After acceptance tests written |
 
-### DEVELOP Wave
+### DELIVER Wave
 | Reviewer | When to Use |
 |----------|-------------|
 | software-crafter-reviewer | After implementation complete |
@@ -133,7 +133,7 @@ layer_4_config:
 
     software-crafter-reviewer:
       enabled: true
-      auto_invoke_on: ["DEVELOP wave completion"]
+      auto_invoke_on: ["DELIVER wave completion"]
 
   metrics:
     collect_review_metrics: true
@@ -209,8 +209,8 @@ max_iterations: 2
 |------------|-------------------|
 | DISCUSS -> DESIGN | business-analyst-reviewer |
 | DESIGN -> DISTILL | solution-architect-reviewer |
-| DISTILL -> DEVELOP | acceptance-designer-reviewer |
-| DEVELOP -> DELIVER | software-crafter-reviewer |
+| DISTILL -> DELIVER | acceptance-designer-reviewer |
+| DELIVER -> (done) | software-crafter-reviewer |
 
 ### Quality Gate Configuration
 

@@ -9,9 +9,9 @@ nWave is an agentic system that guides you through systematic software developme
 - **Discover evidence** (DISCOVER phase) - Evidence-based product discovery and market validation
 - **Gather requirements** (DISCUSS phase) - Collect business needs with AI assistance
 - **Design solutions** (DESIGN phase) - Architecture decisions with visual documentation
+- **Prepare platform** (DEVOP phase) - CI/CD, infrastructure, and deployment readiness
 - **Define acceptance tests** (DISTILL phase) - BDD scenarios that define "done"
-- **Implement with TDD** (DEVELOP phase) - Outside-in development with quality gates
-- **Validate production readiness** (DELIVER phase) - Comprehensive quality assurance
+- **Deliver with TDD** (DELIVER phase) - Outside-in development with quality gates
 
 Each phase involves specialized AI agents that understand domain-specific best practices. A comprehensive quality assurance framework with peer review, mutation testing, and deterministic execution ensures code quality at every step.
 
@@ -51,10 +51,10 @@ For complex features or when you need business analysis first:
 ## 6-Wave Workflow
 
 ```text
-DISCOVER → DISCUSS → DESIGN → DISTILL → DEVELOP → DELIVER
-   ↓         ↓         ↓        ↓         ↓         ↓
-Discovery  Requirements  Architecture  Acceptance  Test-First  Feature
-Validation Gathering     Design        Tests       Implementation Completion
+DISCOVER → DISCUSS → DESIGN → DEVOP → DISTILL → DELIVER
+   ↓         ↓         ↓        ↓        ↓         ↓
+Discovery  Requirements  Architecture  Platform  Acceptance  Test-First
+Validation Gathering     Design        Readiness Tests       Implementation
 ```
 
 Each stage involves specialized AI agents and produces validated artifacts.
@@ -66,9 +66,9 @@ Each stage involves specialized AI agents and produces validated artifacts.
 - `@product-discoverer` (DISCOVER) - Evidence-based product discovery
 - `@product-owner` (DISCUSS) - Requirements gathering and business analysis
 - `@solution-architect` (DESIGN) - Architecture design with visual diagrams
+- `@platform-architect` (DEVOP) - CI/CD, infrastructure, and deployment readiness
 - `@acceptance-designer` (DISTILL) - BDD scenarios and acceptance tests
-- `@software-crafter` (DEVELOP) - Outside-in TDD implementation
-- `@platform-architect` (DELIVER) - Production readiness and deployment
+- `@software-crafter` (DELIVER) - Outside-in TDD implementation
 
 ### Cross-Wave Specialists (use anytime)
 
@@ -93,9 +93,9 @@ Each primary agent has a matching `*-reviewer` variant providing peer review wit
 - `/nw:discover` - Evidence-based product discovery
 - `/nw:discuss` - Requirements gathering
 - `/nw:design` - Architecture design
-- `/nw:distill` - Acceptance test creation
-- `/nw:deliver` - Production readiness validation
 - `/nw:devops` - Platform readiness, CI/CD, infrastructure
+- `/nw:distill` - Acceptance test creation
+- `/nw:deliver` - Outside-in TDD implementation and feature completion
 
 ### Execution Commands
 
@@ -133,7 +133,7 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 - **[5-Layer Testing for Developers](docs/guides/5-layer-testing-developers.md)** - Programmatic review integration
 - **[5-Layer Testing for CI/CD](docs/guides/5-layer-testing-cicd.md)** - Automated review in pipelines
 - **[Invoke Reviewer Agents](docs/guides/invoke-reviewer-agents.md)** - Request peer reviews
-- **[DEVELOP Wave Step-to-Scenario Mapping](docs/guides/how-to-develop-wave-step-scenario-mapping.md)** - Outside-in TDD execution
+- **[DELIVER Wave Step-to-Scenario Mapping](docs/guides/how-to-deliver-wave-step-scenario-mapping.md)** - Outside-in TDD execution
 - **[Troubleshooting Guide](docs/guides/troubleshooting-guide.md)** - Common issues and solutions
 
 ### Reference (Lookup)
@@ -204,7 +204,7 @@ Pre-commit hooks validate automatically on commit:
 
 - Python linting and formatting (ruff)
 - YAML syntax validation
-- Test execution (58+ tests)
+- Test execution (1500+ tests)
 - Trailing whitespace removal
 
 For emergency bypass (not recommended):
@@ -271,7 +271,7 @@ Have questions, run into issues, or want to share your success stories? Join the
 nWave follows clean architecture principles:
 1. Each agent has one responsibility
 2. Communication through well-defined interfaces (JSON/YAML)
-3. Testable code with 58+ test validation suite
+3. Testable code with 1500+ test validation suite
 4. Quality gates at every commit
 
 See individual agent documentation for implementation details.

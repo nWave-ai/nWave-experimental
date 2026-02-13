@@ -2,7 +2,7 @@
 
 **Version**: 1.0
 **Date**: 2026-01-24
-**Status**: Mandatory for all nWave DEVELOP waves
+**Status**: Mandatory for all nWave DELIVER waves
 
 ---
 
@@ -24,7 +24,7 @@ DISTILL Wave Output:
     ├─ test_scenario_003_*  ← Scenario 3
     └─ test_scenario_004_*  ← Scenario 4
 
-DEVELOP Wave Roadmap (MUST match):
+DELIVER Wave Roadmap (MUST match):
   docs/feature/{project}/steps/
     ├─ 01-01.json  → Makes Scenario 1 pass (RED → GREEN)
     ├─ 01-02.json  → Makes Scenario 2 pass (RED → GREEN)
@@ -308,7 +308,7 @@ def validate_integration_boundary(project_id, test_file):
 
 **What happened**:
 - DISTILL created 4 acceptance tests (4 scenarios)
-- DEVELOP roadmap created 11 steps (architectural approach)
+- DELIVER roadmap created 11 steps (architectural approach)
 - Step 01-01 made all 4 tests pass at once
 - Violated Outside-In TDD discipline
 
@@ -320,7 +320,7 @@ def validate_integration_boundary(project_id, test_file):
 
 **Correct approach** (should have been):
 - DISTILL: 4 acceptance tests (4 scenarios)
-- DEVELOP: 4 steps (01-01 through 01-04)
+- DELIVER: 4 steps (01-01 through 01-04)
 - Each step: 1 scenario RED → GREEN
 - Result: Clean, traceable TDD progression
 
@@ -342,5 +342,5 @@ def validate_integration_boundary(project_id, test_file):
 ---
 
 **Document Owner**: AI-Craft Team
-**Review Cycle**: After each DEVELOP wave
+**Review Cycle**: After each DELIVER wave
 **Next Review**: After DES US-002 completion

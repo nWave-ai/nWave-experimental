@@ -10,7 +10,7 @@
 
 | # | Filename | Lines | Purpose | Category |
 |---|----------|-------|---------|----------|
-| 1 | develop.md | 2,394 | DEVELOP wave orchestrator - delegates roadmap/execute/review/finalize/mutation-test | orchestrator |
+| 1 | develop.md | 2,394 | DELIVER wave orchestrator - delegates roadmap/execute/review/finalize/mutation-test | orchestrator |
 | 2 | document.md | 1,191 | DIVIO documentation creation via researcher + documentarist agents | orchestrator |
 | 3 | execute.md | 1,051 | Atomic task execution engine with TDD 7-phase cycle | dispatcher |
 | 4 | finalize.md | 964 | Feature completion, archive evolution doc, cleanup | dispatcher |

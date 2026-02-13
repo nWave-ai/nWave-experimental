@@ -333,8 +333,8 @@ automation:
 **Critical Handoffs**:
 - DISCUSS → DESIGN: Requirements → Architecture
 - DESIGN → DISTILL: Architecture → Acceptance Tests
-- DISTILL → DEVELOP: Acceptance Tests → Implementation
-- DEVELOP → DEMO: Implementation → Production Deployment
+- DEVOP → DISTILL: Acceptance Tests → Implementation
+- DISTILL → DELIVER: Implementation → Production Deployment
 
 **Workflow**:
 ```
