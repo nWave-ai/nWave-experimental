@@ -23,7 +23,9 @@ Sub-agents cannot use the Skill tool or execute `/nw:*` commands. Read the relev
 
 3. **Extract step context from roadmap.yaml ONLY for the Task prompt.** Grep the roadmap for the step_id with ~50 lines context, extract fields (description, acceptance_criteria, files_to_modify), and pass them in the DES template. The crafter receives the full step context through the prompt.
 
-Consequence: The finalize verification gate checks that every completed step has valid DES-format execution-log entries (5 TDD phases with timestamps). Steps implemented without DES monitoring will be flagged, and finalize will block until they are re-executed properly via Task.
+**Circumventing DES validation for deliver steps is fraud.** Without DES monitoring, nWave cannot guarantee code quality — the entire TDD cycle, audit trail, and integrity verification exist to protect the codebase. If your Task prompt is genuinely NOT a deliver step (e.g., documentation, research, one-off edits), use the escape hatch: `<!-- DES-ENFORCEMENT : exempt -->`. That is the correct way. Faking step IDs, omitting markers, or writing execution-log entries manually to bypass validation is never acceptable.
+
+The finalize verification gate checks that every completed step has valid DES-format execution-log entries (5 TDD phases with timestamps). Steps implemented without DES monitoring will be flagged, and finalize will block until they are re-executed properly via Task.
 
 ## Orchestration Flow
 
@@ -46,6 +48,9 @@ INPUT: "{feature-description}"
   2. Phase 1 — Roadmap Creation + Review
      a. Skip if roadmap.yaml exists with validation.status == "approved"
      b. @nw-solution-architect creates roadmap.yaml (read ~/.claude/commands/nw/roadmap.md)
+        Step IDs MUST use NN-NN format (two digits, dash, two digits).
+        First pair = phase number, second pair = step number within phase.
+        Example: 01-01, 01-02, 02-01. Formats like 01-A or 1-1 are invalid.
      c. Automated quality gate (see below)
      d. @nw-software-crafter-reviewer reviews roadmap (read ~/.claude/commands/nw/review.md)
      e. Retry once on rejection, then stop for manual intervention
@@ -142,7 +147,7 @@ For each phase:
 
 ## Task Invocation Pattern
 
-All Task prompts for step execution include DES markers for validation. Without these markers, the DES hooks cannot validate the task and it passes through unmonitored.
+All Task prompts for step execution include DES markers for validation. Without these markers, the DES hooks cannot validate the task and it passes through unmonitored. The DES hooks REQUIRE step-id patterns with DES markers -- they do not block them. Proper NN-NN format is what enables DES tracking.
 
 The full DES Prompt Template (all 9 mandatory sections) is defined in `~/.claude/commands/nw/execute.md`. Read that file and embed all 9 sections (DES_METADATA, AGENT_IDENTITY, TASK_CONTEXT, TDD_PHASES, QUALITY_GATES, OUTCOME_RECORDING, RECORDING_INTEGRITY, BOUNDARY_RULES, TIMEOUT_INSTRUCTION) in each Task prompt.
 
@@ -154,6 +159,7 @@ Task(
 <!-- DES-VALIDATION : required -->
 <!-- DES-PROJECT-ID : {project_id} -->
 <!-- DES-STEP-ID : {step_id} -->
+(step_id must match NN-NN format, e.g. 01-01, 02-03. DES hooks require this pattern.)
 
 TASK BOUNDARY: {task_description}
 Return control to orchestrator after completion.
@@ -173,6 +179,7 @@ After roadmap creation, before reviewer, run these checks in your own context:
 2. Step decomposition ratio: flag if steps/files ratio exceeds 2.5
 3. Identical pattern detection: flag 3+ steps with identical AC structure (should be batched)
 4. Validation-only steps: flag steps with no files_to_modify
+5. Step ID format: flag any step_id not matching `^\d{2}-\d{2}$` (e.g. 01-A, 1-1 are invalid)
 
 If HIGH findings exist, return roadmap to architect for one revision pass.
 
