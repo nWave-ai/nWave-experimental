@@ -61,7 +61,7 @@ Documentation is organized into exactly four types:
 
 **nWave Explanations**:
 - `docs/guides/how-to-deliver-wave-step-scenario-mapping.md` - Step-to-scenario mapping in DELIVER wave
-- `README.md` (partial) - Project vision and philosophy
+- `README.md` - Project entry point and quick start
 
 ---
 
