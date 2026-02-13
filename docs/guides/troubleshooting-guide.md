@@ -20,6 +20,19 @@ If agents or commands show 0, reinstall: `nwave-ai install`
 
 ## Installation
 
+### `pipx: command not found`
+
+**Cause**: `pipx` is not installed. Don't confuse it with `pip` or `pipenv` — they are different tools.
+
+**Fix**:
+```bash
+pip install pipx
+pipx ensurepath
+```
+Restart your terminal, then retry `pipx install nwave-ai`.
+
+> **Windows users**: Use WSL (Windows Subsystem for Linux), not PowerShell. Native Windows is not supported.
+
 ### Commands not recognized (`/nw:discuss` not found)
 
 **Cause**: Framework not installed or Claude Code not restarted after install.

@@ -15,6 +15,8 @@ nwave-ai install
 
 No repository clone needed. This installs nWave from PyPI and sets up agents and commands in `~/.claude/`.
 
+> **Don't have pipx?** Install it first: `pip install pipx && pipx ensurepath`, then restart your terminal. [pipx docs](https://pipx.pypa.io). Windows users: use WSL, not PowerShell.
+
 Full setup details: **[Installation Guide](https://github.com/nWave-ai/nWave/blob/main/docs/guides/installation-guide.md)**
 
 **2. Use** (inside Claude Code, after reopening it):
