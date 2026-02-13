@@ -277,7 +277,7 @@ Review my architecture design for feasibility.
 
     Read: nWave/agents/solution-architect-reviewer.md
 
-    Review: docs/architecture/system-architecture.md
+    Review: docs/feature/{feature-name}/design/architecture-design.md
 
     Focus on:
     1. Architectural bias (premature technology choices)

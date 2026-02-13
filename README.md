@@ -38,6 +38,7 @@ Use the manual step-by-step workflow with human decision points at each stage:
 /nw:distill "user-story-name"                # Acceptance tests
 /nw:roadmap @solution-architect              # Create plan
 /nw:execute @software-crafter                # Execute tasks
+/nw:refactor                                 # Improve structure
 /nw:review @software-crafter task            # Quality check
 ```
 

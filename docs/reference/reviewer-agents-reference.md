@@ -73,19 +73,17 @@ Quick reference for Layer 4 peer review agents - specifications, configuration, 
 
 ```
 nWave/agents/
-├── acceptance-designer-reviewer.md
-├── agent-builder-reviewer.md
-├── data-engineer-reviewer.md
-├── devop-reviewer.md
-├── documentarist-reviewer.md
-├── illustrator-reviewer.md
-├── product-discoverer-reviewer.md
-├── product-owner-reviewer.md
-├── researcher-reviewer.md
-├── software-crafter-reviewer.md
-├── solution-architect-reviewer.md
-├── troubleshooter-reviewer.md
-└── visual-architect-reviewer.md
+├── nw-acceptance-designer-reviewer.md
+├── nw-agent-builder-reviewer.md
+├── nw-data-engineer-reviewer.md
+├── nw-documentarist-reviewer.md
+├── nw-platform-architect-reviewer.md
+├── nw-product-discoverer-reviewer.md
+├── nw-product-owner-reviewer.md
+├── nw-researcher-reviewer.md
+├── nw-software-crafter-reviewer.md
+├── nw-solution-architect-reviewer.md
+└── nw-troubleshooter-reviewer.md
 ```
 
 ---
