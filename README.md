@@ -1,8 +1,6 @@
-# nWave: Intelligent ATDD Pipeline with Specialized Agent Network
+# nWave: Acceptance Test Driven Development with AI
 
-<!-- version: 1.7.1 -->
-
-A systematic approach to software development using ATDD (Acceptance Test Driven Development) with intelligent AI agent orchestration. The framework automates the 6-wave workflow through 26 specialized agents (13 primary + 13 reviewers), each following the Single Responsibility Principle.
+A structured approach to software development using ATDD (Acceptance Test Driven Development) with intelligent AI agent orchestration. The nWave framework guides you through a systematic 6-wave workflow with 22 specialized agents, each following the Single Responsibility Principle.
 
 ## What is nWave?
 
@@ -15,93 +13,44 @@ nWave is an agentic system that guides you through systematic software developme
 - **Implement with TDD** (DEVELOP phase) - Outside-in development with quality gates
 - **Validate production readiness** (DELIVER phase) - Comprehensive quality assurance
 
-Each phase involves specialized AI agents that understand domain-specific best practices.
+Each phase involves specialized AI agents that understand domain-specific best practices. A comprehensive quality assurance framework with peer review, mutation testing, and deterministic execution ensures code quality at every step.
 
 ## Quick Start
 
-### 1. Installation (5 minutes)
+### Installation (1 minute)
 
 ```bash
-# macOS/Linux
-curl -O https://github.com/nWave-ai/nwave-dev/releases/latest/download/install-nwave-claude-code.py
-python3 install-nwave-claude-code.py
-
-# Or from repository
-git clone https://github.com/nWave-ai/nwave-dev.git nwave
-cd nwave
-python3 scripts/install/install_nwave.py
+pipx install nwave-ai
+nwave-ai install
 ```
+
+Close and reopen Claude Code. The nWave agents and commands will appear.
 
 Full installation details: [Installation Guide](docs/guides/installation-guide.md)
 
-### 2. Your First Development Cycle
+### Your First Workflow
+
+Use the manual step-by-step workflow with human decision points at each stage:
 
 ```bash
-# Build a complete feature with automatic workflow
-/nw:develop "Build user authentication system"
-
-# This automatically:
-# 1. Baseline: Measure starting state
-# 2. Roadmap: Create comprehensive plan
-# 3. Split: Break into atomic tasks
-# 4. Execute: Run each task with clean context
-# 5. Review: Quality gate each step
-# 6. Finalize: Archive completed work
-
-# NOTE: /nw:develop is optimized for technical development tasks.
-# For features requiring deeper business analysis or design exploration,
-# use the manual step-by-step workflow below.
+/nw:discuss "feature requirements"           # Requirements gathering
+/nw:design --architecture=hexagonal          # Architecture design
+/nw:distill "user-story-name"                # Acceptance tests
+/nw:roadmap @solution-architect              # Create plan
+/nw:execute @software-crafter                # Execute tasks
+/nw:review @software-crafter task            # Quality check
 ```
 
-Or use the complete workflow with human-in-the-loop control:
+For complex features or when you need business analysis first:
 
 ```bash
-# Full ATDD workflow with human decision points at each stage
-# (recommended for complex features, first-time use, or non-technical tasks)
-/nw:discover "authentication market research"      # Product discovery
-/nw:discuss "authentication requirements"           # Requirements gathering
-/nw:design --architecture=hexagonal                # Architecture design
-/nw:distill "user-login-story"                     # Acceptance tests
-/nw:baseline "implement authentication"             # Measure starting point
-/nw:roadmap @solution-architect "implement auth"   # Create plan
-/nw:split @devop "auth-implementation"             # Break into tasks
-/nw:execute @software-crafter "docs/workflow/..."  # Execute tasks
-/nw:review @software-crafter task "docs/workflow/..." # Quality check
+/nw:discover "feature market research"       # Product discovery
+# Then continue with discuss, design, distill...
 ```
 
-## Documentation Structure
+## 6-Wave Workflow
 
-nWave documentation is organized using the **DIVIO framework** for maximum usability. Find what you need:
-
-### Getting Started
-Start here if you're new to nWave:
-- **[Jobs To Be Done Guide](docs/guides/jobs-to-be-done-guide.md)** - Understand when and how to use each workflow
-- **[Installation Guide](docs/guides/installation-guide.md)** - Step-by-step setup instructions
-
-### Practical Guides (How-To)
-Learn how to accomplish specific tasks:
-- **[Invoke Reviewer Agents](docs/guides/invoke-reviewer-agents.md)** - Request peer reviews for quality assurance
-- **[Layer 4 for Developers](docs/guides/layer-4-for-developers.md)** - Programmatic review integration in code
-- **[Layer 4 for Users](docs/guides/layer-4-for-users.md)** - Manual review workflows
-- **[Layer 4 for CI/CD](docs/guides/layer-4-for-cicd.md)** - Automated review in pipelines
-
-### Reference (Lookup)
-Find exact specifications and configuration:
-- **[nWave Commands Reference](docs/reference/nwave-commands-reference.md)** - All commands, agents, file locations
-- **[Reviewer Agents Reference](docs/reference/reviewer-agents-reference.md)** - Reviewer specifications and configuration
-- **[Layer 4 API Reference](docs/reference/layer-4-api-reference.md)** - API contracts and interfaces
-- **[Troubleshooting Guide](docs/guides/troubleshooting-guide.md)** - Common issues and solutions
-
-### Understanding Concepts (Explanation)
-Deepen your understanding of why nWave works:
-- **[Layer 4 Implementation Summary](docs/guides/layer-4-implementation-summary.md)** - How peer review by equal-expertise agents reduces bias
-- **[Architecture Patterns](docs/guides/knowledge-architecture-analysis.md)** - Design decisions and rationale
-
-## Core Concepts
-
-### 6-Wave Workflow (ATDD Pipeline)
-
-```
+```text
 DISCOVER → DISCUSS → DESIGN → DISTILL → DEVELOP → DELIVER
    ↓         ↓         ↓        ↓         ↓         ↓
 Discovery  Requirements  Architecture  Acceptance  Test-First  Feature
@@ -110,255 +59,230 @@ Validation Gathering     Design        Tests       Implementation Completion
 
 Each stage involves specialized AI agents and produces validated artifacts.
 
-### Agent Organization (26 Agents)
+## Current Agent Roster (22 Agents)
 
-**Core Wave Agents** (one per phase):
-- `@product-discoverer` - Evidence-based product discovery (DISCOVER)
-- `@product-owner` - Requirements gathering and business analysis (DISCUSS)
-- `@solution-architect` - Architecture design with visual diagrams (DESIGN)
-- `@acceptance-designer` - BDD scenarios and acceptance tests (DISTILL)
-- `@software-crafter` - Outside-in TDD implementation (DEVELOP)
-- `@devop` - Production readiness and operations (DELIVER)
+### Core Wave Agents (one per phase)
 
-**Cross-Wave Specialists** (use anytime):
+- `@product-discoverer` (DISCOVER) - Evidence-based product discovery
+- `@product-owner` (DISCUSS) - Requirements gathering and business analysis
+- `@solution-architect` (DESIGN) - Architecture design with visual diagrams
+- `@acceptance-designer` (DISTILL) - BDD scenarios and acceptance tests
+- `@software-crafter` (DEVELOP) - Outside-in TDD implementation
+- `@platform-architect` (DELIVER) - Production readiness and deployment
+
+### Cross-Wave Specialists (use anytime)
+
 - `@researcher` - Evidence-based research and analysis
 - `@troubleshooter` - Root cause analysis (Toyota 5 Whys)
-- `@visual-architect` - Architecture diagrams and visualization
 - `@data-engineer` - Database design and query optimization
-- `@product-discoverer` - Evidence-based product discovery
+- `@documentarist` - DIVIO-compliant documentation
 - `@agent-builder` - Create and validate new agents
-- `@illustrator` - Visual diagrams and design artifacts
 
-**Reviewer Agents** (Layer 4 quality assurance):
-- 12 reviewer agents providing peer review with bias detection
-- Each reviewer has equal expertise to primary agent
-- Structured YAML feedback with severity classification
+### Reviewer Agents (Layer 4 Quality Assurance)
 
-### Quality Assurance (5-Layer Testing)
+Each primary agent has a matching `*-reviewer` variant providing peer review with equal expertise:
+- `@product-discoverer-reviewer`, `@product-owner-reviewer`, `@solution-architect-reviewer`
+- `@acceptance-designer-reviewer`, `@software-crafter-reviewer`, `@platform-architect-reviewer`
+- `@researcher-reviewer`, `@troubleshooter-reviewer`, `@data-engineer-reviewer`
+- `@documentarist-reviewer`, `@agent-builder-reviewer`
 
-```
+## Slash Commands (18 Total)
+
+### Wave Commands
+
+- `/nw:discover` - Evidence-based product discovery
+- `/nw:discuss` - Requirements gathering
+- `/nw:design` - Architecture design
+- `/nw:distill` - Acceptance test creation
+- `/nw:deliver` - Production readiness validation
+- `/nw:devops` - Platform readiness, CI/CD, infrastructure
+
+### Execution Commands
+
+- `/nw:roadmap` - Create comprehensive planning document
+- `/nw:execute` - Execute atomic task with state tracking
+- `/nw:review` - Expert critique and quality assurance
+- `/nw:finalize` - Archive project and clean up workflow
+
+### Cross-Wave Commands
+
+- `/nw:research` - Evidence-driven research with source verification
+- `/nw:document` - DIVIO-compliant documentation
+- `/nw:root-why` - Toyota 5 Whys root cause analysis
+- `/nw:refactor` - Systematic code refactoring
+- `/nw:mikado` - Complex refactoring with visual tracking
+- `/nw:mutation-test` - Layer 5 mutation testing for test effectiveness
+
+### Utility Commands
+
+- `/nw:diagram` - Architecture diagram lifecycle management
+- `/nw:forge` - Create new agents from templates
+
+## Documentation Structure
+
+nWave documentation is organized using the DIVIO framework. Find what you need:
+
+### Getting Started
+
+- **[Jobs To Be Done Guide](docs/guides/jobs-to-be-done-guide.md)** - Understand when and how to use each workflow
+- **[Installation Guide](docs/guides/installation-guide.md)** - Step-by-step setup instructions
+
+### Practical Guides
+
+- **[5-Layer Testing for Users](docs/guides/5-layer-testing-users.md)** - Manual review workflows
+- **[5-Layer Testing for Developers](docs/guides/5-layer-testing-developers.md)** - Programmatic review integration
+- **[5-Layer Testing for CI/CD](docs/guides/5-layer-testing-cicd.md)** - Automated review in pipelines
+- **[Invoke Reviewer Agents](docs/guides/invoke-reviewer-agents.md)** - Request peer reviews
+- **[Troubleshooting Guide](docs/guides/troubleshooting-guide.md)** - Common issues and solutions
+
+### Reference (Lookup)
+
+- **[nWave Commands Reference](docs/reference/nwave-commands-reference.md)** - All commands, agents, file locations
+- **[Reviewer Agents Reference](docs/reference/reviewer-agents-reference.md)** - Reviewer specifications
+- **[DES Audit Trail Guide](docs/reference/des-audit-trail-guide.md)** - Deterministic execution tracking
+
+### Understanding Concepts
+
+- **[Knowledge Architecture Analysis](docs/guides/knowledge-architecture-analysis.md)** - Design patterns and rationale
+
+## Quality Assurance: 5-Layer Testing
+
+```text
 Layer 1: Unit Testing            - Individual agent output validation
 Layer 2: Integration Testing     - Handoff validation between agents
 Layer 3: Adversarial Validation  - Challenge output validity
-Layer 4: Peer Review             - Equal-expertise reviewer critique ← Unique to nWave
-Layer 5: Mutation Testing        - Test suite effectiveness validation ← NEW
+Layer 4: Peer Review             - Equal-expertise reviewer critique
+Layer 5: Mutation Testing        - Test suite effectiveness validation
 ```
 
-## Use Cases
+## Core Concepts
 
-### Building New Features (Greenfield)
+### DES (Deterministic Execution System)
 
-```bash
-/nw:discover "feature market research"
-/nw:discuss "feature requirements"
-/nw:design --architecture=hexagonal
-/nw:distill "acceptance tests"
-/nw:baseline "measure starting state"
-/nw:roadmap @solution-architect
-/nw:split @devop
-/nw:execute @software-crafter
-/nw:review @software-crafter
-```
+DES enforces execution discipline through Claude Code hooks and audit logging:
 
-### Improving Existing System (Brownfield)
+- Pre-task validation and post-tool-use monitoring
+- Comprehensive audit logging for compliance and debugging
+- Configurable per-project via `.nwave/des-config.json`
 
-```bash
-/nw:baseline "current state measurement"        # MANDATORY - blocks roadmap
-/nw:roadmap @solution-architect                # Plan while context fresh
-/nw:split @devop                               # Break into atomic tasks
-/nw:execute @software-crafter                  # Execute with clean context
-/nw:review @software-crafter                   # Quality gate
-```
+Projects can customize DES behavior with per-project configuration.
 
-### Complex Refactoring
+### Agent Communication
 
-```bash
-/nw:baseline "measure starting state"
-/nw:roadmap @solution-architect "methodology: mikado"
-/nw:split @devop
-/nw:execute @software-crafter
-# Mikado Method ensures reversibility at every step
-```
+Agents communicate through file-based handoffs with structured JSON/YAML:
 
-### Investigating Issues
-
-```bash
-/nw:root-why "description of symptom"          # Find root cause (not symptoms)
-/nw:develop "fix-issue"                        # Implement fix with TDD
-/nw:deliver                                    # Validate production readiness
-```
-
-### Research & Learning
-
-```bash
-/nw:research "topic or technology"
-# Output: docs/research/{category}/{topic}.md
-# Then proceed with appropriate job (greenfield, brownfield, etc.)
-```
+- Clean context isolation (no accumulated confusion)
+- Traceable decisions (audit trail for compliance)
+- Parallel processing (independent task execution)
+- State tracking (TODO, IN_PROGRESS, DONE)
 
 ## Development Workflow
+
+### For Contributors
+
+After cloning the repository, set up your development environment:
+
+```bash
+# Install dependencies
+pip install -e ".[dev]"
+
+# Run tests to verify setup
+pytest
+
+# Install pre-commit hooks
+pre-commit install
+```
+
+Pre-commit hooks validate automatically on commit:
+
+- Python linting and formatting (ruff)
+- YAML syntax validation
+- Test execution (58+ tests)
+- Trailing whitespace removal
+
+For emergency bypass (not recommended):
+
+```bash
+git commit --no-verify
+```
 
 ### Making Changes to Framework
 
 After modifying agents, commands, or framework components:
 
 ```bash
-# Option 1: Full update (build + install + validate) - Recommended
-python scripts/install/update_nwave.py --force
+# Run tests to verify changes
+pytest
 
-# Option 2: Build only (without installing)
-python tools/build.py --clean
+# Format code
+ruff format .
 
-# Option 3: Manual install after build
-python scripts/install/install_nwave.py
+# Commit with conventional format
+git commit -m "feat(agents): add new capability"
 ```
-
-### Pre-Commit Hooks
-
-nWave enforces quality gates through pre-commit hooks:
-
-```bash
-# Install pre-commit (first time only)
-pip install pre-commit
-cd nwave
-pre-commit install
-
-# Hooks validate automatically on commit:
-# - nwave-version-bump: Version consistency
-# - pytest-validation: All tests pass (58 tests)
-# - docs-version-validation: Documentation stays in sync
-# - ruff: Python linting and formatting
-# - trailing-whitespace: Removes trailing spaces
-# - check-yaml: Validates YAML syntax
-```
-
-For emergency bypass (not recommended):
-```bash
-git commit --no-verify  # Bypasses ALL validation - requires immediate fix
-```
-
-## Troubleshooting
-
-**Issue**: Agents not found after installation?
-- Check: [Troubleshooting Guide](docs/troubleshooting/TROUBLESHOOTING.md)
-
-**Issue**: Tests failing on commit?
-- Run: `pytest` locally to debug
-- Ensure: All tests pass before commit
-
-**Issue**: Documentation out of sync with code?
-- Run: `pre-commit run --all-files`
-- Ensures: Version tags match across tracked files
-
-## Project Structure
-
-```
-nwave/
-├── README.md                    # This file (entry point)
-├── .claude/                     # User-specific configuration (excluded from version control)
-├── docs/                        # DIVIO-organized documentation
-│   ├── guides/                  # How-to guides (practical tasks)
-│   │   ├── jobs-to-be-done-guide.md        # When to use each workflow
-│   │   ├── how-to-invoke-reviewers.md       # How to request reviews
-│   │   ├── layer-4-for-developers.md        # Programmatic review API
-│   │   ├── layer-4-for-users.md             # Manual review workflows
-│   │   └── layer-4-for-cicd.md              # Automated review pipelines
-│   ├── reference/               # Reference (lookup)
-│   │   ├── nwave-commands-reference.md      # All commands and agents
-│   │   ├── reviewer-agents-reference.md     # Reviewer specs
-│   │   └── layer-4-api-reference.md         # API contracts
-│   ├── installation/            # Installation documentation
-│   │   ├── INSTALL.md                       # Setup guide
-│   │   └── UNINSTALL.md                     # Removal guide
-│   ├── troubleshooting/         # Troubleshooting
-│   │   └── TROUBLESHOOTING.md               # Common issues
-│   ├── analysis/                # Analysis and audits
-│   │   └── divio-audit/                     # DIVIO compliance audit
-│   └── research/                # Research and background
-│
-├── nWave/                       # ATDD workflow framework
-│   ├── agents/                  # Agent specifications
-│   ├── commands/                # Slash command definitions
-│   └── data/                    # Reference data and research
-│
-├── scripts/                     # Installation and utility scripts
-├── tools/                       # Build and development tools
-├── tests/                       # Automated test suite
-└── .pre-commit-config.yaml      # Quality gates (5-layer testing framework)
-```
-
-## Architecture Overview
-
-### Agent Communication
-
-Agents communicate through **file-based handoffs** with structured JSON/YAML:
-- Clean context isolation (no accumulated confusion)
-- Traceable decisions (audit trail)
-- Parallel processing (independent task execution)
-- State tracking (TODO → IN_PROGRESS → DONE)
-
-### Framework Configuration
-
-Centralized configuration through:
-- `nWave/framework-catalog.yaml` - Command definitions and agent mappings
-- `.dependency-map.yaml` - Version tracking and documentation synchronization
-- `.pre-commit-config.yaml` - Quality gates
-
-### Quality Gates
-
-Progressive refactoring with validation:
-- **L1 Refactoring**: Basic code cleanup
-- **L2 Refactoring**: Structure improvements
-- **L3 Refactoring**: Design pattern application
-- **L4 Refactoring**: Advanced architectural improvements
-- **L5-L6 Refactoring**: Major restructuring with comprehensive validation
-
-## Contributing
-
-Want to discuss ideas or get feedback before contributing? Join the **[nWave Discord community](https://discord.gg/DeYdSNk6)**.
-
-nWave follows clean architecture principles:
-1. Each agent has **one responsibility**
-2. Communication through **well-defined interfaces** (JSON/YAML)
-3. **Testable code** with 58-test validation suite
-4. **Quality gates** at every commit
-
-See individual agent documentation in `nWave/agents/` for implementation details.
-
-## Key Features
-
-✅ **26 Specialized AI Agents** - 13 primary agents + 13 peer reviewers, each understanding domain-specific best practices
-✅ **6-Wave ATDD Workflow** - Proven development methodology with discovery phase
-✅ **Layer 4 Peer Review** - Unique equal-expertise reviewer critique
-✅ **Progressive Refactoring** - L1-L6 quality improvement framework
-✅ **Walking Skeleton Validation** - E2E architecture proof
-✅ **Evidence-Based Discovery** - Market research and problem validation
-✅ **Evidence-Based Planning** - Baseline measurement blocks roadmap
-✅ **Atomic Task Execution** - Clean context per task (no degradation)
-✅ **Cross-Platform** - Works on Windows, macOS, Linux
-✅ **Offline Documentation** - Complete reference materials included
-
-## Version
-
-- Current Version: 1.7.1
-- Last Updated: 2026-01-25
-- Status: Production Ready
-
-## Related Documentation
-
-- [DIVIO Audit & Classification](docs/analysis/divio-audit/DIVIO_CLASSIFICATION_SUMMARY.md) - Documentation quality assessment
-- [CI/CD Integration](docs/guides/CI-CD-README.md) - Continuous integration setup
-- [Releasing & Deployment](docs/RELEASING.md) - Release process
-- [Project Evolution](docs/evolution/) - Framework enhancements and improvements
 
 ## Community
 
 Have questions, run into issues, or want to share your success stories? Join the **[nWave Discord community](https://discord.gg/DeYdSNk6)** to connect with other users and the team.
 
+## Project Structure
+
+```text
+.
+├── README.md                    # This file (entry point)
+├── pyproject.toml              # Project configuration
+├── src/des/                    # DES runtime module
+├── scripts/
+│   ├── install/               # Installation scripts and CLI
+│   └── utils/                 # Utility scripts
+├── docs/                       # DIVIO-organized documentation
+│   ├── guides/                # How-to guides (practical tasks)
+│   │   ├── jobs-to-be-done-guide.md
+│   │   ├── installation-guide.md
+│   │   ├── 5-layer-testing-users.md
+│   │   ├── 5-layer-testing-developers.md
+│   │   ├── 5-layer-testing-cicd.md
+│   │   ├── invoke-reviewer-agents.md
+│   │   ├── troubleshooting-guide.md
+│   │   └── knowledge-architecture-analysis.md
+│   ├── reference/              # Reference (lookup)
+│   │   ├── nwave-commands-reference.md
+│   │   ├── reviewer-agents-reference.md
+│   │   ├── des-audit-trail-guide.md
+│   │   └── nwave-plugin-architecture.md
+│   └── research/               # Research and background
+├── tests/                      # Automated test suite
+├── .pre-commit-config.yaml     # Quality gates
+└── LICENSE                     # MIT License
+```
+
+## Contributing
+
+nWave follows clean architecture principles:
+1. Each agent has one responsibility
+2. Communication through well-defined interfaces (JSON/YAML)
+3. Testable code with 58+ test validation suite
+4. Quality gates at every commit
+
+See individual agent documentation for implementation details.
+
+## Key Features
+
+- **22 Specialized AI Agents** - Primary agents plus reviewer agents for peer review
+- **6-Wave ATDD Workflow** - Proven development methodology with discovery phase
+- **Layer 4 Peer Review** - Equal-expertise reviewer critique reducing bias
+- **Layer 5 Mutation Testing** - Validate test suite effectiveness
+- **Evidence-Based Discovery** - Market research and problem validation
+- **Evidence-Based Planning** - Baseline measurement blocks roadmap
+- **Atomic Task Execution** - Clean context per task prevents degradation
+- **DES Hooks** - Deterministic execution with audit logging
+- **Cross-Platform** - Works on Windows, macOS, Linux
+- **Offline Documentation** - Complete reference materials included
+
 ## License
 
-This project is open source. See individual agent documentation for specific implementation details and usage patterns.
+This project is open source under the MIT License. See LICENSE for details.
 
 ---
 
-**For detailed information about specific topics, use the documentation structure above to find exactly what you need.**
+For detailed information about specific topics, use the documentation structure above to find exactly what you need.

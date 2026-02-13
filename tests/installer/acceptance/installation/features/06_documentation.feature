@@ -13,38 +13,37 @@ Feature: Documentation Accuracy
   @ac10 @manual
   Scenario: Quick start commands work on virgin machine
     Given I have a fresh machine with Python installed
-    And pipenv is installed via "pip install pipenv"
+    And pipx is installed via "pip install pipx"
     When I follow the quick start instructions:
-      | step | command                                              |
-      | 1    | pipenv install --dev                                 |
-      | 2    | pipenv run python scripts/install/install_nwave.py  |
+      | step | command            |
+      | 1    | pipx install nwave-ai |
+      | 2    | nwave-ai install      |
     Then each command should succeed
     And nWave should be installed successfully
 
   @ac10
   Scenario: Prerequisites are correctly stated
     Given I read the installation guide prerequisites
-    Then the prerequisites should include "Python 3.8 or higher"
-    And the prerequisites should include "pipenv"
+    Then the prerequisites should include "Python 3.10"
+    And the prerequisites should include "pipx"
     And the prerequisites should NOT state "Python 3.11" as minimum
 
   @ac10
   Scenario: Quick start section includes virtual environment setup
     Given I read the quick start section
-    Then the quick start should include "pipenv install"
-    And the quick start should include "pipenv run" or "pipenv shell"
-    And the quick start should NOT show bare "python3 scripts/install/install_nwave.py"
+    Then the quick start should include "pipx install nwave-ai"
+    And the quick start should include "nwave-ai install"
 
   @ac10
-  Scenario: Documentation mentions pipenv requirement
+  Scenario: Documentation mentions pipx requirement
     Given I read the installation guide
-    Then the guide should mention pipenv is required
-    And the guide should explain how to install pipenv
-    And the guide should show pipenv commands for installation
+    Then the guide should mention pipx is recommended
+    And the guide should explain how to install pipx
+    And the guide should show pipx commands for installation
 
   @ac10
   Scenario: Troubleshooting section addresses common errors
     Given I read the troubleshooting section
-    Then the section should address "ModuleNotFoundError"
-    And the section should address "not in virtual environment"
-    And each error should have a solution with pipenv commands
+    Then the section should address "Agents Not Appearing"
+    And the section should address "Installation Failed"
+    And each error should have a solution with actionable commands

@@ -1,345 +1,348 @@
-# nWave Framework Installation Guide
+# nWave Installation Guide
 
-This guide helps you install the nWave ATDD framework to your global Claude config directory, making 13 specialized agents (+ 13 reviewer agents) available across all your projects.
+This guide helps you install the nWave framework to your global Claude Code configuration, making 22 specialized agents (11 primary, 11 reviewers) and 18 slash commands available across all your projects.
 
 ## Prerequisites
 
 Before installing nWave, ensure you have:
 
-- **Python 3.8 or higher** (tested on Python 3.8, 3.9, 3.10, 3.11, 3.12)
-- **pipenv** (required for virtual environment and dependency management)
+- **Python 3.10 or higher**
+- **Claude Code CLI** installed and configured
+- **pipx** (recommended for installing nwave-ai)
 
-### Installing pipenv
-
-If pipenv is not installed, install it first:
+If you need to install pipx, run:
 
 ```bash
-# Install pipenv globally
-pip install pipenv
-# Or using pip3
-pip3 install pipenv
+pip install pipx
 ```
 
 ## Quick Start
 
-### All Platforms (Using pipenv - Recommended)
+### Install via pipx (Recommended)
 
 ```bash
-# Clone the repository
-git clone https://github.com/nWave-ai/nWave.git
-cd nwave
-
-# Install dependencies in virtual environment
-pipenv install --dev
-
-# Run the installer
-pipenv run python scripts/install/install_nwave.py
-
-# Or activate the shell and run directly
-pipenv shell
-python scripts/install/install_nwave.py
+pipx install nwave-ai
+nwave-ai install
 ```
 
-### Standalone Installer (Alternative)
+Close and reopen Claude Code. The nWave agents and slash commands will appear in your command palette.
+
+### Install via pip
+
+If you prefer pip:
 
 ```bash
-# Download the standalone installer
-curl -O https://github.com/nWave-ai/nWave/releases/latest/download/install-nwave-claude-code.py
-
-# Run within pipenv environment
-pipenv run python install-nwave-claude-code.py
-```
-
-**Prerequisites**: Python 3.8 or higher, pipenv required
-
-## What Gets Installed
-
-### Framework Components
-
-- **26 Specialized AI Agents** (13 primary + 13 reviewers) organized by wave and role
-- **cai/atdd Command Interface** with intelligent project analysis
-- **Wave Processing Architecture** with clean context isolation
-- **Centralized Configuration System** (constants.md)
-- **Quality Validation Network** with Level 1-6 refactoring
-- **Second Way DevOps**: Observability agents (metrics, logs, traces, performance)
-- **Third Way DevOps**: Experimentation agents (A/B testing, hypothesis validation, learning synthesis)
-
-### Agent Categories
-
-- 🟦 **Requirements Analysis** (5 agents) - Business requirements, UX, Security, Legal
-- 🟧 **Architecture Design** (3 agents) - System design, technology selection
-- ❤️ **Test Design** (1 agent) - Acceptance test creation
-- 🟢 **Development** (1 agent) - Outside-in TDD implementation
-- ❤️ **Quality Validation** (8 agents) - Comprehensive quality assurance
-- 🔵 **Refactoring** (2 agents) - Systematic code improvement
-- ⚫ **Coordination** (11 agents) - Workflow orchestration
-- 📊 **Observability** (4 agents) - Second Way DevOps monitoring and feedback
-- 🧪 **Experimentation** (4 agents) - Third Way DevOps learning and optimization
-
-### Installation Location
-
-```
-~/.claude/                           # Global Claude config directory
-├── agents/
-│   └── cai/                        # nWave agent specifications
-│       ├── constants.md            # Centralized configuration
-│       ├── requirements-analysis/  # Blue family agents (5)
-│       ├── architecture-design/    # Orange family agents (3)
-│       ├── test-design/           # Test design agents (1)
-│       ├── development/           # Development agents (1)
-│       ├── quality-validation/    # Quality validation agents (8)
-│       ├── refactoring/           # Refactoring agents (2)
-│       ├── coordination/          # Coordination agents (11)
-│       ├── observability/         # Second Way DevOps agents (4)
-│       ├── experimentation/       # Third Way DevOps agents (4)
-│       └── legacy-agents/         # Deprecated agents
-└── commands/                       # Command integrations
-    └── cai/
-        ├── atdd.md               # Main ATDD workflow command
-        └── root-why.md           # Root cause analysis command
+pip install nwave-ai
+nwave-ai install
 ```
 
 ## Installation Options
 
 ### Standard Installation
 
-Installs the complete framework with automatic backup:
+Installs the complete framework with automatic backup of existing configuration:
 
 ```bash
-./install-nwave.sh                    # macOS/Linux
-.\install-nwave.ps1                   # Windows PowerShell
-install-nwave.bat                     # Windows Command Prompt
+nwave-ai install
+```
+
+### Dry Run (Preview Changes)
+
+Preview what will be installed without making changes:
+
+```bash
+nwave-ai install --dry-run
 ```
 
 ### Backup Only
 
-Creates backup without installing (useful before upgrades):
+Create a backup without installing:
 
 ```bash
-./install-nwave.sh --backup-only      # macOS/Linux
-.\install-nwave.ps1 -BackupOnly       # Windows PowerShell
-install-nwave.bat --backup-only       # Windows Command Prompt
+nwave-ai install --backup-only
 ```
 
 ### Restore Previous Installation
 
-Restores from the most recent backup:
+Restore from the most recent backup:
 
 ```bash
-./install-nwave.sh --restore          # macOS/Linux
-.\install-nwave.ps1 -Restore          # Windows PowerShell
-install-nwave.bat --restore           # Windows Command Prompt
+nwave-ai install --restore
 ```
 
-### Help
+### Show Version
 
-Shows detailed usage information:
+Display the installed nwave-ai version:
 
 ```bash
-./install-nwave.sh --help             # macOS/Linux
-.\install-nwave.ps1 -Help             # Windows PowerShell
-install-nwave.bat --help              # Windows Command Prompt
+nwave-ai version
 ```
 
-## What Gets Excluded
+## What Gets Installed
 
-The installation script **excludes** project-specific files:
+The installer sets up nWave components in your `~/.claude/` directory:
 
-- `README.md` (main project documentation)
-- `.claude/agents/cai/README.md` (agent overview documentation)
-- `docs/craft-ai/` directory (project working files)
-- Git configuration and project metadata
+```
+~/.claude/
+├── agents/nw/                  # 22 agent specifications
+│   ├── product-discoverer.md
+│   ├── product-owner.md
+│   ├── solution-architect.md
+│   ├── acceptance-designer.md
+│   ├── software-crafter.md
+│   ├── platform-architect.md
+│   ├── researcher.md
+│   ├── troubleshooter.md
+│   ├── data-engineer.md
+│   ├── agent-builder.md
+│   ├── *-reviewer.md            # 11 reviewer agent specs
+│   └── ...
+├── commands/nw/                # 18 slash command definitions
+│   ├── discover.md
+│   ├── discuss.md
+│   ├── design.md
+│   ├── distill.md
+│   ├── develop.md
+│   ├── deliver.md
+│   ├── baseline.md
+│   ├── roadmap.md
+│   ├── split.md
+│   ├── execute.md
+│   ├── review.md
+│   ├── finalize.md
+│   ├── research.md
+│   ├── document.md
+│   ├── root-why.md
+│   ├── refactor.md
+│   ├── mutation-test.md
+│   ├── diagram.md
+│   └── forge.md
+├── templates/                  # Wave templates and DES templates
+│   ├── baseline.yaml
+│   ├── roadmap.yaml
+│   ├── step.json
+│   └── ...
+├── skills/                     # Agent skills (68 files, 21 groups)
+│   ├── common/
+│   ├── researcher/
+│   ├── software-crafter/
+│   ├── solution-architect/
+│   └── ...
+├── scripts/                    # DES utility scripts
+├── lib/python/des/             # DES runtime module
+└── settings.json               # DES hooks registered here
+```
 
-This ensures a clean separation between the reusable framework and project-specific documentation.
+This layout makes agents and commands available globally across all your Claude Code projects.
 
-## Installation Features
+## DES Hooks
 
-### Automatic Backup
+The installer registers DES (Deterministic Execution System) hooks in your Claude Code settings, enabling:
 
-- Creates timestamped backup of existing installation
-- Preserves customizations and previous versions
-- Enables easy rollback if needed
+- Pre-task validation before agents execute
+- Post-tool-use monitoring for error detection
+- Subagent stop tracking to prevent hung tasks
+- Comprehensive audit logging for compliance and debugging
 
-### Validation
+DES hooks are configured in `~/.claude/settings.json` and can be customized per-project.
 
-- Verifies all framework files are copied correctly
-- Checks agent category structure
-- Validates core components (constants.md, cai/atdd command)
-- Generates installation manifest
+## Per-Project Configuration
 
-### Cross-Platform Compatibility
+To customize DES behavior for a specific project, create `.nwave/des-config.json` in your project directory:
 
-- **Bash script** for macOS/Linux systems
-- **PowerShell script** for modern Windows systems
-- **Batch script** for legacy Windows systems
-- Consistent behavior across all platforms
+```json
+{
+  "audit_log_enabled": true,
+  "audit_log_path": ".nwave/audit.log",
+  "validation_enabled": true,
+  "tool_monitoring_enabled": true,
+  "max_execution_time": 3600,
+  "subagent_timeout": 300
+}
+```
 
-### Error Handling
+Settings here override global defaults for that project only.
 
-- Comprehensive error checking and reporting
-- Graceful failure with helpful messages
-- Automatic cleanup on errors
-- Rollback capability
+## Updating nWave
 
-## Usage After Installation
-
-### Command Interface
-
-Use the `cai/atdd` command in any project:
+To update to a newer version:
 
 ```bash
-# Basic workflow initiation with project analysis
-cai/atdd "implement user authentication system"
-
-# Explicit project analysis
-cai/atdd "add payment processing" --analyze-existing
-
-# Start from specific ATDD stage
-cai/atdd "OAuth2 integration" --from-stage=architect
-
-# Resume existing workflow
-cai/atdd --resume auth-feature-2024-01
-
-# Check workflow status
-cai/atdd --status
-
-# Get help
-cai/atdd --help
+pipx upgrade nwave-ai
+nwave-ai install
 ```
 
-### Global Agent Access
+The installer creates an automatic backup of your existing configuration before updating, allowing rollback if needed.
 
-All 26 agents (13 primary + 13 reviewers) are available globally:
-
-- Access specialized expertise (UX, Security, Legal, DevOps) when needed
-- Use centralized configuration across all projects
-- Benefit from wave processing architecture
-- Apply systematic quality validation
-- Leverage Second Way observability and monitoring
-- Enable Third Way experimentation and continuous learning
-
-## Troubleshooting
-
-### ModuleNotFoundError
-
-If you see `ModuleNotFoundError: No module named 'xxx'`:
-
-```bash
-# Ensure you're running within pipenv virtual environment
-pipenv install --dev
-pipenv run python scripts/install/install_nwave.py
-
-# Or check if dependencies are installed
-pipenv run pip list
-
-# If packages are missing, reinstall
-pipenv install --dev
-```
-
-### Not in Virtual Environment
-
-If you see errors about not being in a virtual environment:
-
-```bash
-# Always use pipenv to manage your environment
-pipenv install --dev
-
-# Run commands using pipenv run
-pipenv run python scripts/install/install_nwave.py
-
-# Or activate the shell
-pipenv shell
-python scripts/install/install_nwave.py
-```
-
-### Pipenv Issues
-
-If pipenv commands fail:
-
-```bash
-# Ensure pipenv is installed
-pip install pipenv
-
-# Clear and recreate the virtual environment
-pipenv --rm
-pipenv install --dev
-
-# Verify pipenv is working
-pipenv --version
-```
-
-### Permission Issues
-
-If you encounter permission errors:
-
-```bash
-# macOS/Linux: Make script executable
-chmod +x install-nwave.sh
-
-# Windows: Run as Administrator if needed
-# Right-click → "Run as administrator"
-```
-
-### Path Issues
-
-If the script can't find the framework source:
-
-```bash
-# Ensure you're running from the nwave project directory
-cd /path/to/nwave
-
-# Use pipenv to run the installer
-pipenv run python scripts/install/install_nwave.py
-```
-
-### Existing Installation
-
-If you have an existing installation:
-
-- The script automatically creates a backup
-- You can restore with `--restore` option
-- Check `~/.claude/backups/` for backup files
-
-### Validation Failures
-
-If installation validation fails:
-
-- Check the installation log: `~/.claude/nwave-install.log`
-- Verify source framework is complete
-- Ensure you ran within pipenv environment: `pipenv run ...`
-- Use `--restore` to rollback
-- Report issues with log details
-
-## Uninstallation
+## Uninstalling nWave
 
 To remove the nWave framework:
 
 ```bash
-# Remove framework directories
-rm -rf ~/.claude/agents/
-rm -rf ~/.claude/commands/cai/
-
-# Or restore from a pre-installation backup
-./install-nwave.sh --restore
+nwave-ai uninstall
+pipx uninstall nwave-ai
 ```
 
-## Updates
+This removes:
+- Agent definitions from `~/.claude/agents/nw/`
+- Slash command definitions from `~/.claude/commands/nw/`
+- Templates and skills from `~/.claude/`
+- DES hooks from settings.json
 
-To update to a newer version:
+Your project files are not affected.
 
-1. Download the latest nWave framework
-2. Run the installation script (creates automatic backup)
-3. The new version overwrites the old installation
-4. Use `--restore` if you need to rollback
+## Verifying Installation
+
+After installation, verify nWave is available:
+
+```bash
+# Show installed version
+nwave-ai version
+
+# List available agents in Claude Code by typing @ in any project
+# You should see: @product-discoverer, @product-owner, @solution-architect, etc.
+
+# List slash commands by typing / in any project
+# You should see: /nw:discover, /nw:discuss, /nw:design, /nw:distill, etc.
+```
+
+## Troubleshooting
+
+### Agents Not Appearing in Claude Code
+
+If agents don't appear after installation:
+
+1. Restart Claude Code completely (quit and reopen)
+2. Verify installation completed successfully:
+
+```bash
+nwave-ai version
+```
+
+3. Check that `~/.claude/agents/nw/` exists with agent files
+4. Ensure your Claude Code version is current (update via your package manager)
+
+### Installation Failed
+
+If the installer reports errors:
+
+1. Check Python version:
+
+```bash
+python --version
+# Must be 3.10 or higher
+```
+
+2. Ensure write access to `~/.claude/`:
+
+```bash
+ls -la ~/.claude/
+```
+
+3. If you see permission errors, check file permissions:
+
+```bash
+chmod 755 ~/.claude/
+```
+
+4. Restore from backup:
+
+```bash
+nwave-ai install --restore
+```
+
+### pipx Issues
+
+If pipx commands fail:
+
+```bash
+# Verify pipx is installed
+pipx --version
+
+# Ensure pipx is in your PATH
+which pipx
+
+# If not found, reinstall pipx
+pip install --user pipx
+```
+
+### Import Errors When Using nWave
+
+If you see import errors when running nWave commands:
+
+1. Ensure Claude Code is using the correct Python environment
+2. Reinstall nWave:
+
+```bash
+pipx uninstall nwave-ai
+pipx install nwave-ai
+nwave-ai install
+```
+
+3. Restart Claude Code
+
+### DES Audit Log Errors
+
+If audit logging isn't working:
+
+1. Create the `.nwave/` directory in your project:
+
+```bash
+mkdir -p .nwave
+```
+
+2. Verify `.nwave/` is writable:
+
+```bash
+touch .nwave/test.txt
+rm .nwave/test.txt
+```
+
+3. Check DES configuration in `.nwave/des-config.json` is valid JSON
+
+### Rollback After Update
+
+If an update causes problems:
+
+```bash
+nwave-ai install --restore
+```
+
+This restores your previous configuration from the most recent backup.
+
+## Next Steps
+
+After installation, navigate to any project and start your first workflow:
+
+```bash
+# For fresh features (greenfield)
+/nw:discover "feature market research"
+/nw:discuss "feature requirements"
+/nw:design
+/nw:distill "acceptance tests"
+/nw:baseline "measure starting state"
+/nw:roadmap
+/nw:split
+/nw:execute
+/nw:review
+
+# Or for existing code (brownfield)
+/nw:baseline "current state"
+/nw:roadmap
+/nw:split
+/nw:execute
+/nw:review
+```
+
+For workflow guidance, see [Jobs To Be Done Guide](jobs-to-be-done-guide.md).
 
 ## Support
 
-- **Discord Community**: [Join the nWave Discord](https://discord.gg/DeYdSNk6) - Get help with installation issues, ask questions, and share your setup experience
-- **Documentation**: Complete framework documentation in this repository
-- **Issues**: Report problems on GitHub
-- **Help**: Use `cai/atdd --help` for command help
+- **Discord Community**: [Join the nWave Discord](https://discord.gg/DeYdSNk6) for help with installation issues
+- **Documentation**: Complete framework documentation is available in the repository
 - **Logs**: Check `~/.claude/nwave-install.log` for installation details
+- **Version**: Run `nwave-ai version` to see your installed version
 
 ---
 
-**Next Steps**: After installation, navigate to any project and use `cai/atdd "your feature description"` to start your first ATDD workflow with intelligent project analysis!
+**Ready to build?** Start with [Jobs To Be Done Guide](jobs-to-be-done-guide.md) to learn when and how to use each workflow.

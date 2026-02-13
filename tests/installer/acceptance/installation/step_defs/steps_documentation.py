@@ -9,7 +9,6 @@ Cross-platform compatible (Windows, macOS, Linux).
 
 from pathlib import Path
 
-import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 
@@ -41,19 +40,17 @@ def fresh_machine_with_python():
 
     This is a documentation step for manual testing.
     """
-    # This step is for manual test specification
     pass
 
 
-@given(parsers.parse('pipenv is installed via "{command}"'))
-def pipenv_installed_via_command(command):
+@given(parsers.parse('pipx is installed via "{command}"'))
+def pipx_installed_via_command(command):
     """
-    Precondition for manual test: pipenv installed.
+    Precondition for manual test: pipx installed.
 
     This is a documentation step for manual testing.
     """
-    # This step is for manual test specification
-    assert "pip install pipenv" in command
+    assert "pip install pipx" in command
 
 
 @given("I read the installation guide prerequisites")
@@ -97,7 +94,6 @@ def follow_quick_start_instructions(pytestconfig):
     The table in the feature file specifies the steps to follow.
     This is documented for manual verification.
     """
-    # This step is for manual test documentation
     pass
 
 
@@ -113,7 +109,6 @@ def each_command_succeeds():
 
     This is documented for manual verification.
     """
-    # This step is for manual test documentation
     pass
 
 
@@ -124,7 +119,6 @@ def nwave_installed_successfully():
 
     This is documented for manual verification.
     """
-    # This step is for manual test documentation
     pass
 
 
@@ -132,8 +126,6 @@ def nwave_installed_successfully():
 def prerequisites_include(text):
     """Verify prerequisites section includes specified text."""
     content = INSTALLATION_GUIDE.read_text()
-
-    # Look in prerequisites section or general content
     assert text.lower() in content.lower(), f"Prerequisites don't include '{text}'"
 
 
@@ -142,12 +134,7 @@ def prerequisites_not_state(text):
     """Verify prerequisites don't incorrectly state a requirement."""
     content = INSTALLATION_GUIDE.read_text()
 
-    # Check for incorrect minimum version statement
-    # "Python 3.11" should not be stated as the minimum
-    # The correct minimum is Python 3.8
     if "Python" in text:
-        # Allow mention of the version if it's not stated as minimum
-        # But flag if it says "3.11 or higher" or "requires 3.11"
         problematic_patterns = [
             f"Python {text.split()[-1]} or higher",
             f"requires Python {text.split()[-1]}",
@@ -163,64 +150,35 @@ def prerequisites_not_state(text):
 def quick_start_includes(text):
     """Verify quick start section includes specified text."""
     content = INSTALLATION_GUIDE.read_text()
-
-    # Handle "or" pattern in text (e.g., "pipenv run" or "pipenv shell")
-    if '" or "' in text:
-        options = [opt.strip('"') for opt in text.split('" or "')]
-        found = any(opt in content for opt in options)
-        assert found, f"Quick start doesn't include any of: {options}"
-    else:
-        assert text in content, f"Quick start doesn't include '{text}'"
+    assert text in content, f"Quick start doesn't include '{text}'"
 
 
-@then(parsers.parse('the quick start should NOT show bare "{text}"'))
-def quick_start_not_bare_command(text):
-    """Verify quick start doesn't show a bare command without proper context."""
-    content = INSTALLATION_GUIDE.read_text()
-
-    # Check for the bare command without pipenv prefix
-    lines = content.split("\n")
-    for line in lines:
-        stripped = line.strip()
-        # If line starts with the command but doesn't have pipenv prefix
-        if stripped.startswith(text) and "pipenv" not in stripped:
-            # Allow if it's clearly part of explanation, not instruction
-            if not stripped.startswith("#") and not stripped.startswith("```"):
-                pytest.fail(f"Quick start shows bare '{text}' without pipenv context")
-
-
-@then("the guide should mention pipenv is required")
-def guide_mentions_pipenv():
-    """Verify guide mentions pipenv requirement."""
+@then("the guide should mention pipx is recommended")
+def guide_mentions_pipx():
+    """Verify guide mentions pipx as recommended installer."""
     content = INSTALLATION_GUIDE.read_text().lower()
-    assert "pipenv" in content, "Guide doesn't mention pipenv"
-    assert "required" in content or "prerequisite" in content, (
-        "Guide doesn't indicate pipenv is required"
+    assert "pipx" in content, "Guide doesn't mention pipx"
+    assert "recommended" in content or "prerequisite" in content, (
+        "Guide doesn't indicate pipx is recommended"
     )
 
 
-@then("the guide should explain how to install pipenv")
-def guide_explains_pipenv_install():
-    """Verify guide explains how to install pipenv."""
+@then("the guide should explain how to install pipx")
+def guide_explains_pipx_install():
+    """Verify guide explains how to install pipx."""
     content = INSTALLATION_GUIDE.read_text()
-
-    has_pipenv_install = (
-        "pip install pipenv" in content or "pip3 install pipenv" in content
-    )
-    assert has_pipenv_install, "Guide doesn't explain how to install pipenv"
+    has_pipx_install = "pip install pipx" in content or "pip3 install pipx" in content
+    assert has_pipx_install, "Guide doesn't explain how to install pipx"
 
 
-@then("the guide should show pipenv commands for installation")
-def guide_shows_pipenv_commands():
-    """Verify guide shows pipenv commands."""
+@then("the guide should show pipx commands for installation")
+def guide_shows_pipx_commands():
+    """Verify guide shows pipx commands."""
     content = INSTALLATION_GUIDE.read_text()
-
-    has_pipenv_commands = (
-        "pipenv install" in content
-        or "pipenv run" in content
-        or "pipenv shell" in content
+    has_pipx_commands = (
+        "pipx install nwave-ai" in content or "pipx upgrade nwave-ai" in content
     )
-    assert has_pipenv_commands, "Guide doesn't show pipenv commands"
+    assert has_pipx_commands, "Guide doesn't show pipx commands"
 
 
 @then(parsers.parse('the section should address "{error_type}"'))
@@ -232,21 +190,17 @@ def section_addresses_error(error_type):
     )
 
 
-@then("each error should have a solution with pipenv commands")
-def errors_have_pipenv_solutions():
-    """Verify error solutions include pipenv commands."""
+@then("each error should have a solution with actionable commands")
+def errors_have_actionable_solutions():
+    """Verify error solutions include actionable commands."""
     content = INSTALLATION_GUIDE.read_text()
 
-    # Check that troubleshooting/error sections include pipenv
-    # This is a heuristic check
-    has_troubleshooting = (
-        "troubleshoot" in content.lower()
-        or "error" in content.lower()
-        or "problem" in content.lower()
+    has_troubleshooting = "troubleshoot" in content.lower()
+    has_commands = (
+        "nwave-ai" in content or "pipx" in content or "python" in content.lower()
     )
-    has_pipenv_solution = "pipenv" in content
 
     if has_troubleshooting:
-        assert has_pipenv_solution, (
-            "Troubleshooting section doesn't include pipenv solutions"
+        assert has_commands, (
+            "Troubleshooting section doesn't include actionable commands"
         )
