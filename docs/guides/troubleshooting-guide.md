@@ -31,7 +31,7 @@ ls ~/.claude/agents/nw/ ~/.claude/commands/nw/
 nwave-ai install
 
 # If install fails, check source
-ls nWave/agents/
+ls ~/.claude/agents/nw/
 ```
 
 ### Installation Fails
@@ -46,7 +46,7 @@ ls nWave/agents/
 
 ```bash
 # Check source framework
-ls nWave/agents/
+ls ~/.claude/agents/nw/
 
 # Check permissions
 ls -la ~/.claude/

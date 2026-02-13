@@ -63,8 +63,6 @@ Documentation is organized into exactly four types:
 - **Assumes**: User wants to understand "why"
 
 **nWave Explanations**:
-- `docs/guides/knowledge-architecture-analysis.md` - Why the architecture works
-- `docs/guides/knowledge-architecture-analysis.md` - Architecture decisions
 - `docs/guides/how-to-deliver-wave-step-scenario-mapping.md` - Step-to-scenario mapping in DELIVER wave
 - `README.md` (partial) - Project vision and philosophy
 
@@ -83,7 +81,6 @@ docs/
 │   ├── 5-layer-testing-users.md          # Manual review workflows
 │   ├── 5-layer-testing-developers.md     # Programmatic review integration
 │   ├── 5-layer-testing-cicd.md           # CI/CD review automation
-│   ├── knowledge-architecture-analysis.md # Architecture design rationale
 │   └── troubleshooting-guide.md          # Common issues & solutions
 │
 └── reference/                             # REFERENCE docs (lookup)
@@ -163,7 +160,7 @@ For detailed API contracts, see the [API Reference](../reference/5-layer-testing
 
 ### How-to → Explanation
 ```markdown
-To understand why this approach works, see [Knowledge Architecture Analysis](../guides/knowledge-architecture-analysis.md).
+To understand why this approach works, see the relevant explanation document.
 ```
 
 ### Reference → How-to

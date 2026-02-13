@@ -170,10 +170,6 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 - **[Wave Output Paths](docs/reference/wave-command-output-paths.md)** - Output path specifications
 - **[Documentation Structure](docs/reference/DOCUMENTATION_STRUCTURE.md)** - DIVIO framework organization
 
-### Understanding Concepts
-
-- **[Knowledge Architecture Analysis](docs/guides/knowledge-architecture-analysis.md)** - Design patterns and rationale
-
 ## Quality Assurance: 5-Layer Testing
 
 ```text

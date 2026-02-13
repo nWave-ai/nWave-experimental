@@ -75,7 +75,7 @@ jq -r '[.timestamp, .event, .step_id, .phase_name] | @csv' .nwave/des/logs/audit
 
 | Time Period | Action |
 |-------------|--------|
-| Days 0-90 | Live logs in `~/.des/audit/` |
+| Days 0-90 | Live logs in `.nwave/des/logs/` |
 | Day 91+ | Archive to `docs/evolution/audit-archive/` |
 | Manual cleanup | No automatic deletion |
 

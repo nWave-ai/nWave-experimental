@@ -20,7 +20,7 @@ contract:
 
       - type: "context_files"
         format: "File paths or document references"
-        example: ["docs/requirements/requirements.md"]
+        example: ["docs/feature/{feature-name}/discuss/requirements.md"]
         validation: "Files must exist and be readable"
 
     optional:

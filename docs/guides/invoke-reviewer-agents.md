@@ -93,7 +93,7 @@ For interactive review sessions.
 ### Step 1: Request Persona Activation
 
 ```
-Read ~/.claude/agents/nw/nw-acceptance-designer-reviewer.md and activate as the Sentinel persona.
+Read ~/.claude/agents/nw/nw-acceptance-designer-reviewer.md and activate as the acceptance-designer-reviewer agent.
 ```
 
 ### Step 2: Provide Artifact
