@@ -96,8 +96,8 @@ docs/
 All documentation files follow **kebab-case** naming:
 
 ✅ **Correct**:
-- `how-to-invoke-reviewers.md`
 - `invoke-reviewer-agents.md`
+- `how-to-deliver-wave-step-scenario-mapping.md`
 - `nwave-commands-reference.md`
 
 ❌ **Avoid**:
@@ -157,7 +157,7 @@ To understand why this approach works, see the relevant explanation document.
 
 ### Reference → How-to
 ```markdown
-For usage examples, see [How to Invoke Reviewers](./how-to-invoke-reviewers.md).
+For usage examples, see [How to Invoke Reviewers](../guides/invoke-reviewer-agents.md).
 ```
 
 ### Explanation → How-to
