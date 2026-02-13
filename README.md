@@ -6,16 +6,20 @@ nWave runs inside [Claude Code](https://claude.ai/claude-code). You describe wha
 
 ## Quick Start
 
+**1. Install** (in your terminal — not inside Claude Code):
+
 ```bash
 pipx install nwave-ai
 nwave-ai install
 ```
 
+No repository clone needed. This installs nWave from PyPI and sets up agents and commands in `~/.claude/`.
+
 Full setup details: **[Installation Guide](https://github.com/nWave-ai/nWave/blob/main/docs/guides/installation-guide.md)**
 
-Close and reopen Claude Code, then:
+**2. Use** (inside Claude Code, after reopening it):
 
-```bash
+```
 /nw:discuss "user login with email and password"   # Requirements
 /nw:design --architecture=hexagonal                 # Architecture
 /nw:distill "user-login"                            # Acceptance tests

@@ -7,8 +7,8 @@
 Build a feature from requirements to working code using the nWave 6-wave workflow.
 
 **Prerequisites**:
-- nWave installed (`pipx install nwave-ai && nwave-ai install`)
-- Claude Code open in a Python project with pytest
+- nWave installed — run `pipx install nwave-ai && nwave-ai install` in your **terminal** (not inside Claude Code)
+- Claude Code reopened after install, open in a Python project with pytest
 - Basic familiarity with TDD concepts
 
 ---
