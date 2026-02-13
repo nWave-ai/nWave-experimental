@@ -555,7 +555,7 @@ jobs:
           # 4. Update author for public package
           content = re.sub(
               r'authors = \[.*?\]',
-              'authors = [\\n    { name = "nWave AI", email = "info@nwave.ai" }\\n]',
+              'authors = [\\n    { name = "Michele Brissoni", email = "michele.brissoni@brix.consulting" },\\n    { name = "Alessandro Digioia", email = "alessandro.digioia@brix.consulting" },\\n    { name = "nWave AI", email = "info@nwave.ai" }\\n]',
               content,
               flags=re.DOTALL
           )
