@@ -30,7 +30,7 @@ class TimeoutMonitor:
             raise ValueError("started_at cannot be None")
 
         try:
-            self.started_at = datetime.fromisoformat(started_at)
+            self.started_at = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
         except (ValueError, TypeError) as e:
             raise ValueError(f"Invalid timestamp format: {started_at}") from e
 
