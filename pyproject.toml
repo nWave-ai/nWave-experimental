@@ -263,7 +263,7 @@ line-ending = "auto"
 [tool.nwave]
 # Public version for nwave-ai PyPI package (independent from nwave dev version)
 # This is the version that gets published as 'nwave-ai' on PyPI
-public_version = "1.0.4"
+public_version = "1.0.11"
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
