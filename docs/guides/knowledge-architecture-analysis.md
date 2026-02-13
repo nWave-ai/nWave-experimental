@@ -1,8 +1,10 @@
 # Knowledge Architecture Implementation Analysis
 
+> **DEPRECATED**: This document is a historical analysis from 2025-10-09. Agent names, counts, and paths referenced here are outdated. The current agent roster (22 agents: 11 primary + 11 reviewers) is documented in the [nWave Commands Reference](../reference/nwave-commands-reference.md). This file is preserved for historical context only.
+
 **Date**: 2025-10-09
 **Task**: Complete knowledge architecture for all 21 remaining nWave agents
-**Status**: COMPLETE - Analysis finished, 1 agent implementation completed, 20 documented with gaps
+**Status**: HISTORICAL - Agent roster has changed significantly since this analysis
 
 ---
 

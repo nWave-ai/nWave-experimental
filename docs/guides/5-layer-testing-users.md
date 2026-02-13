@@ -21,8 +21,8 @@ Request a peer review:
 
 ```bash
 nwave review \
-  --artifact docs/requirements/requirements.md \
-  --reviewer business-analyst-reviewer \
+  --artifact docs/feature/{feature-name}/discuss/requirements.md \
+  --reviewer product-owner-reviewer \
   --interactive
 ```
 
@@ -34,8 +34,8 @@ nwave review \
 
 ```bash
 nwave review \
-  --artifact docs/requirements/requirements.md \
-  --reviewer business-analyst-reviewer \
+  --artifact docs/feature/{feature-name}/discuss/requirements.md \
+  --reviewer product-owner-reviewer \
   --interactive
 ```
 
@@ -43,8 +43,8 @@ nwave review \
 
 ```
 Initiating Layer 4 Peer Review...
-Reviewer: business-analyst-reviewer (Scout)
-Artifact: docs/requirements/requirements.md
+Reviewer: product-owner-reviewer
+Artifact: docs/feature/{feature-name}/discuss/requirements.md
 
 Analyzing artifact for bias, completeness, clarity, testability...
 
@@ -57,7 +57,7 @@ Review saved to: reviews/rev_20251006_152330_requirements.yaml
 Next Steps:
 1. Review feedback: cat reviews/rev_20251006_152330_requirements.yaml
 2. Address critical and high issues
-3. Re-submit: nwave review --artifact docs/requirements/requirements.md --iteration 2
+3. Re-submit: nwave review --artifact docs/feature/{feature-name}/discuss/requirements.md --iteration 2
 ```
 
 ---
@@ -69,14 +69,14 @@ Focus review on specific areas:
 ```bash
 # Review only for bias detection
 nwave review \
-  --artifact docs/requirements/requirements.md \
-  --reviewer business-analyst-reviewer \
+  --artifact docs/feature/{feature-name}/discuss/requirements.md \
+  --reviewer product-owner-reviewer \
   --dimensions bias
 
 # Review for completeness and testability
 nwave review \
-  --artifact docs/requirements/requirements.md \
-  --reviewer business-analyst-reviewer \
+  --artifact docs/feature/{feature-name}/discuss/requirements.md \
+  --reviewer product-owner-reviewer \
   --dimensions completeness,testability
 ```
 
@@ -102,14 +102,14 @@ nwave review --interactive
 **Prompts**:
 ```
 ? Select artifact to review:
-  > docs/requirements/requirements.md
+  > docs/feature/{feature-name}/discuss/requirements.md
     docs/feature/{feature-name}/design/architecture-design.md
     tests/acceptance/checkout.feature
 
 ? Select reviewer:
-  > business-analyst-reviewer (Scout) - Requirements quality
-    solution-architect-reviewer (Atlas) - Architecture quality
-    acceptance-designer-reviewer (Sentinel) - Test quality
+  > product-owner-reviewer - Requirements quality
+    solution-architect-reviewer - Architecture quality
+    acceptance-designer-reviewer - Test quality
 
 ? Review dimensions (select all that apply):
   [x] Confirmation Bias Detection
@@ -172,15 +172,15 @@ next_steps: |
 Edit your artifact to fix issues:
 
 ```bash
-vim docs/requirements/requirements.md
+vim docs/feature/{feature-name}/discuss/requirements.md
 ```
 
 ### Step 2: Re-Submit (Iteration 2)
 
 ```bash
 nwave review \
-  --artifact docs/requirements/requirements.md \
-  --reviewer business-analyst-reviewer \
+  --artifact docs/feature/{feature-name}/discuss/requirements.md \
+  --reviewer product-owner-reviewer \
   --iteration 2 \
   --revision-notes revision_notes_v1_to_v2.md
 ```
@@ -228,11 +228,11 @@ Escalation report: escalations/ESC-2025-10-06-001.yaml
 
 | Artifact Type | Reviewer | Focus |
 |--------------|----------|-------|
-| Requirements | business-analyst-reviewer | Bias, completeness, testability |
+| Requirements | product-owner-reviewer | Bias, completeness, testability |
 | Architecture | solution-architect-reviewer | ADR quality, feasibility |
 | Acceptance tests | acceptance-designer-reviewer | Happy path bias, GWT quality |
 | Code | software-crafter-reviewer | Implementation bias, complexity |
-| Research | knowledge-researcher-reviewer | Source credibility, evidence |
+| Research | researcher-reviewer | Source credibility, evidence |
 
 ---
 
@@ -245,8 +245,8 @@ Before handing off to the next wave:
 ```bash
 # After DISCUSS wave, before DESIGN
 nwave review \
-  --artifact docs/requirements/requirements.md \
-  --reviewer business-analyst-reviewer \
+  --artifact docs/feature/{feature-name}/discuss/requirements.md \
+  --reviewer product-owner-reviewer \
   --fail-on-critical
 ```
 
@@ -268,8 +268,8 @@ Comprehensive review of all dimensions:
 
 ```bash
 nwave review \
-  --artifact docs/requirements/requirements.md \
-  --reviewer business-analyst-reviewer \
+  --artifact docs/feature/{feature-name}/discuss/requirements.md \
+  --reviewer product-owner-reviewer \
   --dimensions bias,completeness,clarity,testability \
   --verbose
 ```
@@ -280,7 +280,7 @@ nwave review \
 
 ### Reviewer Not Found
 
-**Error**: `Reviewer agent 'business-analyst-reviewer' not found`
+**Error**: `Reviewer agent 'product-owner-reviewer' not found`
 
 **Fix**:
 ```bash
@@ -288,10 +288,10 @@ nwave review \
 ls -1 $NWAVE_REVIEWERS_DIR/
 
 # Verify specific reviewer
-cat $NWAVE_REVIEWERS_DIR/business-analyst-reviewer.md
+cat $NWAVE_REVIEWERS_DIR/product-owner-reviewer.md
 
 # Re-install if missing
-./scripts/install-nwave.sh
+nwave-ai install
 ```
 
 ### Review Takes Too Long
@@ -311,8 +311,8 @@ nwave review --artifact ...
 **Fix**: Use verbose mode:
 ```bash
 nwave review \
-  --artifact docs/requirements/requirements.md \
-  --reviewer business-analyst-reviewer \
+  --artifact docs/feature/{feature-name}/discuss/requirements.md \
+  --reviewer product-owner-reviewer \
   --verbose \
   --debug
 ```
@@ -329,10 +329,10 @@ nwave review --artifact ... --verbose --debug
 nwave status --layer 4
 
 # Validate reviewer agent
-nwave validate-agent business-analyst-reviewer
+nwave validate-agent product-owner-reviewer
 
 # Test reviewer without changes
-nwave test-reviewer business-analyst-reviewer --dry-run
+nwave test-reviewer product-owner-reviewer --dry-run
 ```
 
 ---

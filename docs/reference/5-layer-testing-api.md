@@ -20,7 +20,7 @@ API contracts, interfaces, configuration schemas, and technical specifications f
 ```typescript
 interface ReviewRequest {
   artifact: Artifact;                    // Artifact to review
-  reviewerAgentId: string;               // Reviewer agent ID (e.g., "business-analyst-reviewer")
+  reviewerAgentId: string;               // Reviewer agent ID (e.g., "product-owner-reviewer")
   autoIterate?: boolean;                 // Auto-handle revision cycles (default: true)
   maxIterations?: number;                // Max revision iterations (default: 2)
   criteria?: ReviewCriteria;             // Custom review criteria (optional)
@@ -33,7 +33,7 @@ interface ReviewRequest {
 ```typescript
 interface Artifact {
   id: string;
-  path: string;                          // File path (e.g., "docs/requirements/requirements.md")
+  path: string;                          // File path (e.g., "docs/feature/{feature-name}/discuss/requirements.md")
   content: string;                       // Artifact content
   metadata: {
     created: string;                     // ISO 8601 timestamp

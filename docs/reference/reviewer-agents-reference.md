@@ -1,48 +1,56 @@
 # Reviewer Agents Reference
 
-**Version**: 1.5.2
-**Date**: 2026-01-22
+**Version**: 2.0.0
+**Date**: 2026-02-13
 **Status**: Production Ready
 
 Quick reference for Layer 4 peer review agents - specifications, configuration, and lookup.
 
 **Related Docs**:
-- [How to invoke reviewers](../guides/how-to-invoke-reviewers.md) (how-to)
-- [Layer 4 Implementation Summary](../guides/LAYER_4_IMPLEMENTATION_SUMMARY.md) (explanation)
+- [How to invoke reviewers](../guides/invoke-reviewer-agents.md) (how-to)
+- [5-Layer Testing API](./5-layer-testing-api.md) (reference)
 
 ---
 
 ## Reviewer Agents Matrix
 
-| # | Primary Agent | Reviewer Agent | Persona | Focus |
-|---|---------------|----------------|---------|-------|
-| 1 | business-analyst | business-analyst-reviewer | Scout | Requirements bias, completeness, testability |
-| 2 | solution-architect | solution-architect-reviewer | Atlas | Architectural bias, ADR quality, feasibility |
-| 3 | acceptance-designer | acceptance-designer-reviewer | Sentinel | Happy path bias, GWT quality, coverage |
-| 4 | software-crafter | software-crafter-reviewer | Mentor | Implementation bias, test coupling, complexity |
-| 5 | knowledge-researcher | knowledge-researcher-reviewer | Scholar | Source bias, evidence quality, replicability |
-| 6 | data-engineer | data-engineer-reviewer | Validator | Performance claims, query optimization, security |
-| 7 | architecture-diagram-manager | architecture-diagram-manager-reviewer | Clarity | Visual clarity, consistency, accessibility |
-| 8 | visual-2d-designer | visual-2d-designer-reviewer | Critic | 12 principles compliance, timing, readability |
-| 9 | feature-completion-coordinator | feature-completion-coordinator-reviewer | Auditor | Handoff completeness, phase validation, traceability |
-| 10 | root-cause-analyzer | root-cause-analyzer-reviewer | Logician | Causality logic, evidence quality, alternatives |
-| 11 | walking-skeleton-helper | walking-skeleton-helper-reviewer | Minimalist | Minimal scope, E2E completeness, deployment viability |
-| 12 | agent-forger | agent-forger-reviewer | Inspector | Template compliance, framework completeness, design patterns |
+| # | Primary Agent | Reviewer Agent | Focus |
+|---|---------------|----------------|-------|
+| 1 | product-discoverer | product-discoverer-reviewer | Discovery evidence quality, sample sizes, bias detection |
+| 2 | product-owner | product-owner-reviewer | Requirements bias, completeness, testability |
+| 3 | solution-architect | solution-architect-reviewer | Architectural bias, ADR quality, feasibility |
+| 4 | platform-architect | platform-architect-reviewer | Deployment readiness, CI/CD quality, infrastructure |
+| 5 | acceptance-designer | acceptance-designer-reviewer | Happy path bias, GWT quality, coverage |
+| 6 | software-crafter | software-crafter-reviewer | Implementation bias, test coupling, complexity |
+| 7 | researcher | researcher-reviewer | Source bias, evidence quality, replicability |
+| 8 | troubleshooter | troubleshooter-reviewer | Causality logic, evidence quality, alternatives |
+| 9 | data-engineer | data-engineer-reviewer | Performance claims, query optimization, security |
+| 10 | documentarist | documentarist-reviewer | DIVIO compliance, classification accuracy, collapse detection |
+| 11 | agent-builder | agent-builder-reviewer | Template compliance, framework completeness, design patterns |
 
 ---
 
 ## Reviewer by Wave
 
+### DISCOVER Wave
+| Reviewer | When to Use |
+|----------|-------------|
+| product-discoverer-reviewer | After discovery research and validation |
+
 ### DISCUSS Wave
 | Reviewer | When to Use |
 |----------|-------------|
-| business-analyst-reviewer | After requirements gathering |
+| product-owner-reviewer | After requirements gathering |
 
 ### DESIGN Wave
 | Reviewer | When to Use |
 |----------|-------------|
 | solution-architect-reviewer | After architecture design |
-| architecture-diagram-manager-reviewer | After diagrams created |
+
+### DEVOP Wave
+| Reviewer | When to Use |
+|----------|-------------|
+| platform-architect-reviewer | After platform/infrastructure design |
 
 ### DISTILL Wave
 | Reviewer | When to Use |
@@ -58,21 +66,19 @@ Quick reference for Layer 4 peer review agents - specifications, configuration, 
 ### Cross-Wave
 | Reviewer | When to Use |
 |----------|-------------|
-| knowledge-researcher-reviewer | After research completed |
-| root-cause-analyzer-reviewer | After RCA investigation |
-| visual-2d-designer-reviewer | After visual artifacts created |
-| walking-skeleton-helper-reviewer | After skeleton implementation |
-| feature-completion-coordinator-reviewer | After feature completion |
-| agent-forger-reviewer | After agent creation |
+| researcher-reviewer | After research completed |
+| troubleshooter-reviewer | After RCA investigation |
+| documentarist-reviewer | After documentation created |
+| agent-builder-reviewer | After agent creation |
 
 ---
 
 ## Agent Specification Files
 
-**Location**: `nWave/agents/`
+**Location**: `~/.claude/agents/nw/`
 
 ```
-nWave/agents/
+~/.claude/agents/nw/
 ├── nw-acceptance-designer-reviewer.md
 ├── nw-agent-builder-reviewer.md
 ├── nw-data-engineer-reviewer.md
@@ -94,10 +100,10 @@ nWave/agents/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AICRAFT_LAYER4_ENABLED` | Enable Layer 4 reviews | `true` |
-| `AICRAFT_MAX_ITERATIONS` | Maximum review iterations | `2` |
-| `AICRAFT_AUTO_TRIGGER` | Auto-trigger after Layer 1 | `true` |
-| `AICRAFT_BLOCK_HANDOFF` | Block handoff without approval | `true` |
+| `NWAVE_LAYER4_ENABLED` | Enable Layer 4 reviews | `true` |
+| `NWAVE_MAX_ITERATIONS` | Maximum review iterations | `2` |
+| `NWAVE_AUTO_TRIGGER` | Auto-trigger after Layer 1 | `true` |
+| `NWAVE_BLOCK_HANDOFF` | Block handoff without approval | `true` |
 
 ### Configuration File
 
@@ -117,7 +123,7 @@ layer_4_config:
     escalate_after_max_iterations: true
 
   reviewers:
-    business-analyst-reviewer:
+    product-owner-reviewer:
       enabled: true
       auto_invoke_on: ["DISCUSS wave completion"]
 
@@ -150,8 +156,8 @@ Reviewers output structured YAML feedback:
 
 ```yaml
 review_id: "rev_{timestamp}_{artifact_name}"
-reviewer: "business-analyst-reviewer"
-artifact: "docs/requirements/requirements.md"
+reviewer: "product-owner-reviewer"
+artifact: "docs/feature/{feature-name}/discuss/requirements.md"
 
 strengths:
   - "Clear acceptance criteria for checkout flow"
@@ -205,7 +211,7 @@ max_iterations: 2
 
 | Transition | Reviewer Required |
 |------------|-------------------|
-| DISCUSS -> DESIGN | business-analyst-reviewer |
+| DISCUSS -> DESIGN | product-owner-reviewer |
 | DESIGN -> DISTILL | solution-architect-reviewer |
 | DISTILL -> DELIVER | acceptance-designer-reviewer |
 | DELIVER -> (done) | software-crafter-reviewer |
@@ -255,12 +261,12 @@ handoff_quality_gate:
 | Symptom | Cause | Solution |
 |---------|-------|----------|
 | "Reviewer not found" | Reviewers not in build | Use Task tool manual invocation |
-| Review not triggered | Layer 4 disabled | Check `AICRAFT_LAYER4_ENABLED` |
+| Review not triggered | Layer 4 disabled | Check `NWAVE_LAYER4_ENABLED` |
 | Infinite loop | Max iterations not set | Set `max_iterations: 2` |
 | No feedback | Wrong output format | Check YAML structure |
 
 ---
 
-**Last Updated**: 2026-01-21
+**Last Updated**: 2026-02-13
 **Type**: Reference
 **Purity**: 98%+

@@ -24,7 +24,7 @@ Add to your pipeline:
   run: |
     nwave review \
       --artifact docs/feature/*/discuss/requirements.md \
-      --reviewer business-analyst-reviewer \
+      --reviewer product-owner-reviewer \
       --fail-on-critical \
       --output-format json
 ```
@@ -71,7 +71,7 @@ jobs:
         run: |
           nwave review \
             --artifact docs/feature/*/discuss/requirements.md \
-            --reviewer business-analyst-reviewer \
+            --reviewer product-owner-reviewer \
             --fail-on-critical \
             --output-format json > review_requirements.json
 
@@ -160,7 +160,7 @@ layer4_peer_review:
       if [ -f "docs/feature/*/discuss/requirements.md" ]; then
         nwave review \
           --artifact docs/feature/*/discuss/requirements.md \
-          --reviewer business-analyst-reviewer \
+          --reviewer product-owner-reviewer \
           --fail-on-critical \
           --output-format json > review_requirements.json
       fi
@@ -217,7 +217,7 @@ pipeline {
             script: '''
               nwave review \
                 --artifact docs/feature/*/discuss/requirements.md \
-                --reviewer business-analyst-reviewer \
+                --reviewer product-owner-reviewer \
                 --output-format json
             ''',
             returnStdout: true
@@ -283,7 +283,7 @@ Pass pipeline with warnings:
 ```bash
 nwave review \
   --artifact docs/feature/*/discuss/requirements.md \
-  --reviewer business-analyst-reviewer \
+  --reviewer product-owner-reviewer \
   --warn-on-critical   # Don't fail, just warn
 ```
 
@@ -333,7 +333,7 @@ layer4:
 # GitHub Actions
 - name: Review Requirements
   if: contains(steps.detect.outputs.changed_files, 'docs/feature/*/discuss/')
-  run: nwave review --artifact docs/feature/*/discuss/ --reviewer business-analyst-reviewer
+  run: nwave review --artifact docs/feature/*/discuss/ --reviewer product-owner-reviewer
 
 - name: Review Architecture
   if: contains(steps.detect.outputs.changed_files, 'docs/feature/*/design/')
@@ -362,7 +362,7 @@ jobs:
       matrix:
         include:
           - artifact: docs/feature/*/discuss/
-            reviewer: business-analyst-reviewer
+            reviewer: product-owner-reviewer
           - artifact: docs/feature/*/design/
             reviewer: solution-architect-reviewer
           - artifact: tests/acceptance/
@@ -435,7 +435,7 @@ jobs:
 ```yaml
 - name: Setup nWave
   run: |
-    ./scripts/install-nwave.sh
+    nwave-ai install
     ls $NWAVE_REVIEWERS_DIR/  # Verify
 ```
 
@@ -513,7 +513,7 @@ jobs:
       - run: |
           nwave review \
             --artifact docs/feature/*/discuss/ \
-            --reviewer business-analyst-reviewer \
+            --reviewer product-owner-reviewer \
             --fail-on-critical
 
   layer5-mutation:

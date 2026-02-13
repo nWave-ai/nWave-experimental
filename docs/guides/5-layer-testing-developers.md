@@ -23,7 +23,7 @@ from nwave.layer4 import ReviewOrchestrator
 orchestrator = ReviewOrchestrator()
 result = orchestrator.request_review(
     artifact=artifact,
-    reviewer_agent_id="business-analyst-reviewer"
+    reviewer_agent_id="product-owner-reviewer"
 )
 
 if result.approved:
@@ -41,7 +41,7 @@ from nwave.agents import load_agent, invoke_review
 from nwave.layer4 import ReviewOrchestrator
 
 # Step 1: Load primary agent and produce artifact
-business_analyst = load_agent("business-analyst")
+business_analyst = load_agent("product-owner")
 artifact = business_analyst.execute("*gather-requirements", context={
     "stakeholder_interviews": "interviews/stakeholders.md",
     "business_context": "context/ecommerce_checkout.md"
@@ -51,7 +51,7 @@ artifact = business_analyst.execute("*gather-requirements", context={
 orchestrator = ReviewOrchestrator()
 review_result = orchestrator.request_review(
     artifact=artifact,
-    reviewer_agent_id="business-analyst-reviewer",
+    reviewer_agent_id="product-owner-reviewer",
     auto_iterate=True,
     max_iterations=2
 )
@@ -77,7 +77,7 @@ import { loadAgent, ReviewOrchestrator } from '@nwave/agents';
 
 async function executeWithPeerReview() {
   // Step 1: Produce artifact
-  const businessAnalyst = await loadAgent('business-analyst');
+  const businessAnalyst = await loadAgent('product-owner');
   const artifact = await businessAnalyst.execute('*gather-requirements', {
     stakeholderInterviews: 'interviews/stakeholders.md',
     businessContext: 'context/ecommerce_checkout.md'
@@ -87,7 +87,7 @@ async function executeWithPeerReview() {
   const orchestrator = new ReviewOrchestrator();
   const reviewResult = await orchestrator.requestReview({
     artifact,
-    reviewerAgentId: 'business-analyst-reviewer',
+    reviewerAgentId: 'product-owner-reviewer',
     autoIterate: true,
     maxIterations: 2
   });
@@ -130,7 +130,7 @@ custom_criteria = ReviewCriteria(
 
 review_result = orchestrator.request_review(
     artifact=artifact,
-    reviewer_agent_id="business-analyst-reviewer",
+    reviewer_agent_id="product-owner-reviewer",
     criteria=custom_criteria
 )
 ```
@@ -144,7 +144,7 @@ Add callbacks for monitoring and integration:
 ```python
 review_result = orchestrator.request_review(
     artifact=artifact,
-    reviewer_agent_id="business-analyst-reviewer",
+    reviewer_agent_id="product-owner-reviewer",
     on_issue_detected=lambda issue: log_to_monitoring(issue),
     on_approval=lambda approval: notify_team(approval),
     on_rejection=lambda rejection: create_escalation_ticket(rejection)
@@ -168,7 +168,7 @@ from nwave.layer4.exceptions import (
 try:
     review_result = orchestrator.request_review(
         artifact=artifact,
-        reviewer_agent_id="business-analyst-reviewer"
+        reviewer_agent_id="product-owner-reviewer"
     )
 except ReviewerNotFoundError as e:
     print(f"Reviewer not found: {e.reviewer_id}")
@@ -212,7 +212,7 @@ orchestrator = ReviewOrchestrator()
 # Request review
 result = orchestrator.request_review(
     artifact=artifact,
-    reviewer_agent_id="business-analyst-reviewer",
+    reviewer_agent_id="product-owner-reviewer",
     auto_iterate=True,
     max_iterations=2
 )
@@ -248,7 +248,7 @@ def test_review_approval():
 
     result = orchestrator.request_review(
         artifact=sample_artifact,
-        reviewer_agent_id="business-analyst-reviewer"
+        reviewer_agent_id="product-owner-reviewer"
     )
 
     assert result.approved is True
@@ -263,7 +263,7 @@ def test_review_rejection():
 
     result = orchestrator.request_review(
         artifact=sample_artifact,
-        reviewer_agent_id="business-analyst-reviewer",
+        reviewer_agent_id="product-owner-reviewer",
         auto_iterate=False
     )
 

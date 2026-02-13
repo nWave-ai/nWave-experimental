@@ -8,7 +8,7 @@ The Deterministic Execution System (DES) maintains an immutable audit trail of a
 
 ### Location
 
-`~/.des/audit/audit-YYYY-MM-DD.log`
+`.nwave/des/logs/audit-YYYY-MM-DD.log` (project-local) or `~/.claude/des/logs/audit-YYYY-MM-DD.log` (global fallback)
 
 ### Format
 
@@ -44,31 +44,31 @@ JSONL (JSON Lines) - one JSON object per line, newline-delimited.
 ### Find all scope violations
 
 ```bash
-grep '"event":"SCOPE_VIOLATION"' ~/.des/audit/audit-*.log | jq .
+grep '"event":"SCOPE_VIOLATION"' .nwave/des/logs/audit-*.log | jq .
 ```
 
 ### Count violations by file
 
 ```bash
-jq -r 'select(.event=="SCOPE_VIOLATION") | .file_path' ~/.des/audit/audit-*.log | sort | uniq -c | sort -rn
+jq -r 'select(.event=="SCOPE_VIOLATION") | .file_path' .nwave/des/logs/audit-*.log | sort | uniq -c | sort -rn
 ```
 
 ### View phase execution timeline
 
 ```bash
-jq -r 'select(.event | startswith("PHASE_")) | "\(.timestamp) \(.step_id) \(.phase_name) \(.outcome)"' ~/.des/audit/audit-*.log
+jq -r 'select(.event | startswith("PHASE_")) | "\(.timestamp) \(.step_id) \(.phase_name) \(.outcome)"' .nwave/des/logs/audit-*.log
 ```
 
 ### Find slow phases
 
 ```bash
-jq -r 'select(.event=="PHASE_COMPLETED") | select(.duration_seconds > 600) | "\(.step_id) \(.phase_name) \(.duration_seconds)s"' ~/.des/audit/audit-*.log
+jq -r 'select(.event=="PHASE_COMPLETED") | select(.duration_seconds > 600) | "\(.step_id) \(.phase_name) \(.duration_seconds)s"' .nwave/des/logs/audit-*.log
 ```
 
 ### Export audit trail as CSV
 
 ```bash
-jq -r '[.timestamp, .event, .step_id, .phase_name] | @csv' ~/.des/audit/audit-*.log > audit.csv
+jq -r '[.timestamp, .event, .step_id, .phase_name] | @csv' .nwave/des/logs/audit-*.log > audit.csv
 ```
 
 ## Retention Policy
@@ -89,7 +89,7 @@ Each log entry includes:
 To verify integrity:
 
 ```bash
-jq -r '.content_hash' ~/.des/audit/audit-2026-02-01.log | \
+jq -r '.content_hash' .nwave/des/logs/audit-2026-02-01.log | \
   while read hash; do
     echo -n "$hash " && echo "$hash" | sha256sum | cut -d' ' -f1
   done
@@ -104,7 +104,7 @@ Hashes should match (one per line).
 ```bash
 # Generate compliance report for project X, dates Y-Z
 jq -r 'select(.project_id=="plugin-arch") | select(.timestamp >= "2026-02-01" and .timestamp <= "2026-02-28") | "\(.timestamp) \(.step_id) \(.event) \(.outcome)"' \
-  ~/.des/audit/audit-*.log > plugin-arch-audit-2026-02.txt
+  .nwave/des/logs/audit-*.log > plugin-arch-audit-2026-02.txt
 ```
 
 ### Verify Complete Execution
@@ -112,7 +112,7 @@ jq -r 'select(.project_id=="plugin-arch") | select(.timestamp >= "2026-02-01" an
 ```bash
 # Ensure all steps were executed for project X
 project="plugin-arch"
-steps=$(jq -r "select(.project_id==\"$project\") | select(.event==\"PHASE_COMPLETED\") | .step_id" ~/.des/audit/audit-*.log | sort -u)
+steps=$(jq -r "select(.project_id==\"$project\") | select(.event==\"PHASE_COMPLETED\") | .step_id" .nwave/des/logs/audit-*.log | sort -u)
 echo "Executed steps: $steps"
 ```
 
@@ -120,7 +120,7 @@ echo "Executed steps: $steps"
 
 ```bash
 # Verify no scope violations in project X
-violations=$(jq -r "select(.project_id==\"$project\") | select(.event==\"SCOPE_VIOLATION\")" ~/.des/audit/audit-*.log | wc -l)
+violations=$(jq -r "select(.project_id==\"$project\") | select(.event==\"SCOPE_VIOLATION\")" .nwave/des/logs/audit-*.log | wc -l)
 if [ "$violations" -eq 0 ]; then
   echo "✅ No scope violations"
 else

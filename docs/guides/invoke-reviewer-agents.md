@@ -19,9 +19,9 @@ Step-by-step guide to requesting peer reviews from Layer 4 reviewer agents.
 Copy-paste this to request a review:
 
 ```
-Use the Task tool to invoke the business-analyst-reviewer agent.
-Read the specification from nWave/agents/business-analyst-reviewer.md
-Review the artifact at docs/requirements/requirements.md
+Use the Task tool to invoke the product-owner-reviewer agent.
+Read the specification from ~/.claude/agents/nw/nw-product-owner-reviewer.md
+Review the artifact at docs/feature/{feature-name}/discuss/requirements.md
 Provide YAML feedback with strengths, issues, recommendations, and approval_status.
 ```
 
@@ -37,7 +37,7 @@ Match your artifact type to the reviewer:
 
 | Artifact Type | Reviewer to Use |
 |--------------|-----------------|
-| Requirements | business-analyst-reviewer |
+| Requirements | product-owner-reviewer |
 | Architecture | solution-architect-reviewer |
 | Acceptance tests | acceptance-designer-reviewer |
 | Implementation | software-crafter-reviewer |
@@ -52,7 +52,7 @@ Match your artifact type to the reviewer:
     You are the {reviewer-name} agent.
 
     Read the complete agent specification from:
-    nWave/agents/{reviewer-name}.md
+    ~/.claude/agents/nw/nw-{reviewer-name}.md
 
     Review the artifact at:
     {path-to-artifact}
@@ -93,7 +93,7 @@ For interactive review sessions.
 ### Step 1: Request Persona Activation
 
 ```
-Read nWave/agents/acceptance-designer-reviewer.md and activate as the Sentinel persona.
+Read ~/.claude/agents/nw/nw-acceptance-designer-reviewer.md and activate as the Sentinel persona.
 ```
 
 ### Step 2: Provide Artifact
@@ -117,8 +117,8 @@ Add review steps to wave workflows.
 After requirements gathering:
 
 ```
-1. Create requirements (business-analyst)
-2. REVIEW requirements (business-analyst-reviewer) <- Add this
+1. Create requirements (product-owner)
+2. REVIEW requirements (product-owner-reviewer) <- Add this
 3. Handoff to DESIGN wave
 ```
 
@@ -180,7 +180,7 @@ The reviewer validates revisions and returns updated status.
 
 **Solution**: Use Task tool with explicit spec path:
 ```
-Read nWave/agents/{reviewer-name}.md and adopt that persona
+Read ~/.claude/agents/nw/nw-{reviewer-name}.md and adopt that persona
 ```
 
 ### No Feedback Returned
@@ -223,11 +223,11 @@ I need peer review on my requirements document.
   subagent_type: general-purpose
   description: Requirements peer review
   prompt: |
-    You are the business-analyst-reviewer (Scout persona).
+    You are the product-owner-reviewer persona.
 
-    Read: nWave/agents/business-analyst-reviewer.md
+    Read: ~/.claude/agents/nw/nw-product-owner-reviewer.md
 
-    Review: docs/requirements/checkout-requirements.md
+    Review: docs/feature/{feature-name}/discuss/checkout-requirements.md
 
     Focus on:
     1. Confirmation bias (technology assumptions)
@@ -248,9 +248,9 @@ Please review my acceptance tests for happy path bias.
   subagent_type: general-purpose
   description: Acceptance test review
   prompt: |
-    You are the acceptance-designer-reviewer (Sentinel persona).
+    You are the acceptance-designer-reviewer persona.
 
-    Read: nWave/agents/acceptance-designer-reviewer.md
+    Read: ~/.claude/agents/nw/nw-acceptance-designer-reviewer.md
 
     Review: tests/acceptance/features/checkout.feature
 
@@ -273,9 +273,9 @@ Review my architecture design for feasibility.
   subagent_type: general-purpose
   description: Architecture peer review
   prompt: |
-    You are the solution-architect-reviewer (Atlas persona).
+    You are the solution-architect-reviewer persona.
 
-    Read: nWave/agents/solution-architect-reviewer.md
+    Read: ~/.claude/agents/nw/nw-solution-architect-reviewer.md
 
     Review: docs/feature/{feature-name}/design/architecture-design.md
 

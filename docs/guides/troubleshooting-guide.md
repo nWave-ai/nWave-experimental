@@ -28,7 +28,7 @@ echo "Commands: $(ls ~/.claude/commands/nw/ 2>/dev/null | wc -l) found"
 ls ~/.claude/agents/nw/ ~/.claude/commands/nw/
 
 # If missing, reinstall
-./scripts/install-nwave.sh
+nwave-ai install
 
 # If install fails, check source
 ls nWave/agents/
@@ -52,7 +52,7 @@ ls nWave/agents/
 ls -la ~/.claude/
 
 # Test with backup
-./scripts/install-nwave.sh --backup-only
+nwave-ai install --backup-only
 
 # Check Python availability
 python3 --version
@@ -70,8 +70,8 @@ python3 --version
 
 ```bash
 # Uninstall and reinstall
-./scripts/uninstall-nwave.sh --backup --force
-./scripts/install-nwave.sh
+nwave-ai uninstall --backup --force
+nwave-ai install
 
 # Check validation logs
 cat ~/.claude/nwave-install.log
@@ -94,10 +94,10 @@ cat ~/.claude/nwave-install.log
 ls ~/.claude/commands/nw/
 
 # Expected commands
-cat ~/.claude/commands/nw/start.md
+cat ~/.claude/commands/nw/discuss.md
 
 # Reinstall commands
-./scripts/install-nwave.sh
+nwave-ai install
 ```
 
 ### Command Execution Errors
@@ -112,7 +112,7 @@ ls -la ~/.claude/commands/nw/
 find ~/.claude/commands/nw/ -name "*.md" -ls
 
 # Verify command structure
-head -20 ~/.claude/commands/nw/start.md
+head -20 ~/.claude/commands/nw/discuss.md
 ```
 
 ## Agent Issues
@@ -201,7 +201,7 @@ wsl --install
 
 # Install nWave in WSL
 cd /mnt/c/path/to/nwave
-./scripts/install-nwave.sh
+nwave-ai install
 ```
 
 ## Comprehensive Diagnostics
@@ -286,7 +286,7 @@ Include this information:
 - **Documentation**: `README.md`
 - **GitHub Issues**: [https://github.com/nWave-ai/nWave/issues](https://github.com/nWave-ai/nWave/issues)
 - **Installation Logs**: `~/.claude/nwave-install.log`
-- **Backup Recovery**: `./scripts/install-nwave.sh --restore`
+- **Backup Recovery**: `nwave-ai install --restore`
 
 ## Recovery Procedures
 
@@ -296,10 +296,10 @@ If all else fails, perform a complete reset:
 
 ```bash
 # 1. Backup current state
-./scripts/uninstall-nwave.sh --backup
+nwave-ai uninstall --backup
 
 # 2. Clean installation
-./scripts/install-nwave.sh
+nwave-ai install
 
 # 3. Test functionality
 ls ~/.claude/agents/nw/
@@ -313,7 +313,7 @@ ls ~/.claude/commands/nw/
 ls ~/.claude/backups/
 
 # Restore from backup
-./scripts/install-nwave.sh --restore
+nwave-ai install --restore
 ```
 
 ---
