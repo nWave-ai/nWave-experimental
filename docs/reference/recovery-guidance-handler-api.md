@@ -341,8 +341,16 @@ Unit tests verify:
 
 See `tests/unit/des/test_recovery_guidance_handler.py` for comprehensive test suite.
 
+## Location
+
+`src/des/application/recovery_guidance_handler.py`
+
 ## See Also
 
-- [Acceptance Test: Failure Recovery](../reference/failure-recovery-acceptance-tests.md)
-- [DES Orchestrator API](./des-orchestrator-api.md)
-- [SubagentStopHook Validation](./hooks-validation-reference.md)
+- [DES Orchestrator API Reference](./des-orchestrator-api.md)
+- [Audit Trail Compliance Verification](./audit-trail-compliance-verification.md)
+- [Audit Log Refactor API Reference](./audit-log-refactor.md)
+
+## Testing
+
+Comprehensive test suite: `tests/unit/des/test_recovery_guidance_handler.py`

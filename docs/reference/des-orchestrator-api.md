@@ -1,8 +1,8 @@
-# DESOrchestrator API Reference
+# DES Orchestrator API Reference
 
 ## Overview
 
-The DESOrchestrator provides the main entry point for DES (Determinism Error Suppression) functionality including template validation, execution coordination, and timeout/turn discipline.
+The `DESOrchestrator` provides the main entry point for DES (Deterministic Execution System) functionality including template validation, execution coordination, and timeout/turn discipline.
 
 ## Core Methods
 
@@ -48,3 +48,13 @@ Requests a timeout/turn extension during step execution.
 - `TurnCounter`: Turn tracking per phase
 - `TimeoutMonitor`: Timeout warning emission
 - `ExtensionApprovalEngine`: Extension request evaluation
+
+## Location
+
+`src/des/application/orchestrator.py`
+
+## See Also
+
+- [Recovery Guidance Handler API](./recovery-guidance-handler-api.md)
+- [Audit Trail Compliance Verification](./audit-trail-compliance-verification.md)
+- [Audit Log Refactor API Reference](./audit-log-refactor.md)

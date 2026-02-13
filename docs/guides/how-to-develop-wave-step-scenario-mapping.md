@@ -2,7 +2,7 @@
 
 **Document Type**: How-to Guide
 **Last Updated**: 2026-01-24
-**Related**: [Outside-In TDD: Step-to-Scenario Mapping Principle](../principles/outside-in-tdd-step-mapping.md)
+**Related**: [Outside-In TDD: Step-to-Scenario Mapping Principle](../reference/step-template-mapped-scenario-field.md)
 
 ## Goal
 
@@ -12,7 +12,7 @@ Successfully execute a DEVELOP wave where each roadmap step implements exactly o
 
 You will need:
 - A completed acceptance test file with scenarios (from DISTILL wave)
-- The nWave framework installed (`~/.claude/agents/cai/`)
+- The nWave framework installed via `pipx install nwave-ai && nwave-ai install`
 - A project with user story identification (e.g., `us001`, `us002`)
 
 ## Step 1: Count Your Acceptance Test Scenarios
@@ -206,7 +206,7 @@ Before declaring DEVELOP wave complete:
 3. Reduce roadmap to match scenario count
 4. Mark infrastructure steps as type `infrastructure` (not feature)
 
-**Reference**: [Outside-In TDD: Step-to-Scenario Mapping Principle](../principles/outside-in-tdd-step-mapping.md)
+**Reference**: [Outside-In TDD: Step-to-Scenario Mapping Principle](../reference/step-template-mapped-scenario-field.md)
 
 ### Issue: Multiple Scenarios Pass in One Step
 **Problem**: Step 01-01 makes tests 1, 2, and 3 pass instead of just test 1.
@@ -228,9 +228,10 @@ Before declaring DEVELOP wave complete:
 
 ## Related Documentation
 
-- **Principle**: [Outside-In TDD: Step-to-Scenario Mapping](../principles/outside-in-tdd-step-mapping.md)
-- **Command Reference**: [nWave Commands Reference](../reference/nwave-commands-reference.md)
-- **Agent Guide**: [solution-architect](../../nWave/agents/solution-architect.md)
+- **Principle**: [Outside-In TDD: Step-to-Scenario Mapping](../reference/step-template-mapped-scenario-field.md) - Understand the discipline behind step-to-scenario mapping
+- **Reference**: [Step Template Mapped Scenario Field](../reference/step-template-mapped-scenario-field.md) - Full schema specification for mapping fields
+- **Reference**: [nWave Commands Reference](../reference/nwave-commands-reference.md) - Complete command specifications
+- **Agent Specification**: See `~/.claude/agents/nw/solution-architect.md` for step generation details
 
 ---
 

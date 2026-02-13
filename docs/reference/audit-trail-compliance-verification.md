@@ -199,7 +199,13 @@ def render_prompt(self, command, step_file=None, agent=None, project_id=None):
     # ... validation logic ...
 
     # Log successful validation
-    log_audit_event("TASK_INVOCATION_VALIDATED", command=command, status="VALIDATED")
+    log_audit_event(
+        "TASK_INVOCATION_VALIDATED",
+        command=command,
+        feature_name=project_id,
+        step_id=step_id,
+        status="VALIDATED"
+    )
 ```
 
 ### SubagentStopService
@@ -269,8 +275,13 @@ jq -c 'select(.step_id == "01-01") | {event, phase: .phase_name, outcome}' .des/
 - **File System Security**: Rely on OS/file system permissions to protect audit log files
 - **Storage**: Ensure audit logs are stored on separate, protected storage for regulatory compliance
 
+## Location
+
+`src/des/adapters/driven/logging/audit_logger.py`
+`src/des/ports/driven_ports/audit_log_writer.py`
+
 ## See Also
 
-- [DES Architecture Overview](../explanation/des-hexagonal-architecture.md)
-- [TDD Phase Lifecycle](../reference/tdd-fourteen-phases.md)
-- [Event Type Reference](../reference/event-types.md)
+- [DES Orchestrator API Reference](./des-orchestrator-api.md)
+- [Recovery Guidance Handler API Reference](./recovery-guidance-handler-api.md)
+- [Audit Log Refactor API Reference](./audit-log-refactor.md)

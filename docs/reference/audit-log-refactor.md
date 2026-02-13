@@ -3,8 +3,15 @@
 Complete API specification for the audit log system after the v1.x → v2.0 schema migration.
 
 **Status**: Complete (v2.0)
-**Last Updated**: 2026-02-07
+**Last Updated**: 2026-02-13
 **Migration**: step_path (v1.x) → feature_name + step_id (v2.0)
+
+## Primary Locations
+
+- `src/des/ports/driven_ports/audit_log_writer.py` — Port definition and `PortAuditEvent` dataclass
+- `src/des/adapters/driven/logging/jsonl_audit_log_writer.py` — JSONL adapter implementation
+- `src/des/application/orchestrator.py` — DES Orchestrator audit logging
+- `src/des/application/subagent_stop_service.py` — SubagentStopService audit logging
 
 ---
 
@@ -509,15 +516,13 @@ Systems can handle logs containing both v1.x and v2.0 events:
 
 ## Related Documentation
 
-- **Evolution Document**: `docs/evolution/2026-02-05-audit-log-refactor.md` — Detailed implementation timeline and design decisions
-- **Audit Trail Guide**: `nWave/templates/.des-audit-README.md` — Audit trail structure and retention policy
-- **Port Interface**: `src/des/ports/driven_ports/audit_log_writer.py` — Abstract AuditLogWriter port definition
-- **Adapter Implementation**: `src/des/adapters/driven/logging/jsonl_audit_log_writer.py` — JsonlAuditLogWriter implementation
-- **Service Integration**: `src/des/application/subagent_stop_service.py` — SubagentStopService audit logging
-- **Orchestrator Integration**: `src/des/application/orchestrator.py` — DESOrchestrator audit logging
+- [DES Orchestrator API Reference](./des-orchestrator-api.md) — Main entry point for DES functionality
+- [Recovery Guidance Handler API Reference](./recovery-guidance-handler-api.md) — Failure recovery guidance generation
+- [Audit Trail Compliance Verification](./audit-trail-compliance-verification.md) — Audit trail integrity and compliance
 
 ---
 
-**Version**: 2.0
+**Version**: 2.0 (stable)
 **Status**: Complete and Tested (797 mutants killed, 100% mutation score)
 **Compliance**: JSONL format, append-only, immutable events
+**Last Verified**: 2026-02-13

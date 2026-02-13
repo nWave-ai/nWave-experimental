@@ -133,6 +133,7 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 - **[5-Layer Testing for Developers](docs/guides/5-layer-testing-developers.md)** - Programmatic review integration
 - **[5-Layer Testing for CI/CD](docs/guides/5-layer-testing-cicd.md)** - Automated review in pipelines
 - **[Invoke Reviewer Agents](docs/guides/invoke-reviewer-agents.md)** - Request peer reviews
+- **[DEVELOP Wave Step-to-Scenario Mapping](docs/guides/how-to-develop-wave-step-scenario-mapping.md)** - Outside-in TDD execution
 - **[Troubleshooting Guide](docs/guides/troubleshooting-guide.md)** - Common issues and solutions
 
 ### Reference (Lookup)
@@ -140,6 +141,12 @@ nWave documentation is organized using the DIVIO framework. Find what you need:
 - **[nWave Commands Reference](docs/reference/nwave-commands-reference.md)** - All commands, agents, file locations
 - **[Reviewer Agents Reference](docs/reference/reviewer-agents-reference.md)** - Reviewer specifications
 - **[DES Audit Trail Guide](docs/reference/des-audit-trail-guide.md)** - Deterministic execution tracking
+- **[5-Layer Testing API](docs/reference/5-layer-testing-api.md)** - Review contracts and interfaces
+- **[DES Orchestrator API](docs/reference/des-orchestrator-api.md)** - Execution coordination API
+- **[Audit Log API](docs/reference/audit-log-refactor.md)** - Audit event schema and writers
+- **[Plugin Architecture](docs/reference/nwave-plugin-architecture.md)** - Plugin system API
+- **[Wave Output Paths](docs/reference/wave-command-output-paths.md)** - Output path specifications
+- **[Documentation Structure](docs/reference/DOCUMENTATION_STRUCTURE.md)** - DIVIO framework organization
 
 ### Understanding Concepts
 
@@ -245,12 +252,15 @@ Have questions, run into issues, or want to share your success stories? Join the
 │   │   ├── invoke-reviewer-agents.md
 │   │   ├── troubleshooting-guide.md
 │   │   └── knowledge-architecture-analysis.md
-│   ├── reference/              # Reference (lookup)
-│   │   ├── nwave-commands-reference.md
-│   │   ├── reviewer-agents-reference.md
-│   │   ├── des-audit-trail-guide.md
-│   │   └── nwave-plugin-architecture.md
-│   └── research/               # Research and background
+│   └── reference/              # Reference (lookup)
+│       ├── nwave-commands-reference.md
+│       ├── reviewer-agents-reference.md
+│       ├── des-audit-trail-guide.md
+│       ├── nwave-plugin-architecture.md
+│       ├── 5-layer-testing-api.md
+│       ├── des-orchestrator-api.md
+│       ├── audit-log-refactor.md
+│       └── wave-command-output-paths.md
 ├── tests/                      # Automated test suite
 ├── .pre-commit-config.yaml     # Quality gates
 └── LICENSE                     # MIT License

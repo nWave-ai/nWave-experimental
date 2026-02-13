@@ -115,6 +115,8 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 - **[Jobs To Be Done Guide](https://github.com/nwave-ai/nwave/tree/main/docs/guides/jobs-to-be-done-guide.md)** - When to use each workflow
 - **[Commands Reference](https://github.com/nwave-ai/nwave/tree/main/docs/reference/nwave-commands-reference.md)** - All commands and agents
 - **[5-Layer Testing Guides](https://github.com/nwave-ai/nwave/tree/main/docs/guides/)** - Quality assurance workflows
+- **[DES API Reference](https://github.com/nwave-ai/nwave/tree/main/docs/reference/des-orchestrator-api.md)** - Execution system API
+- **[Plugin Architecture](https://github.com/nwave-ai/nwave/tree/main/docs/reference/nwave-plugin-architecture.md)** - Plugin system reference
 - **[Troubleshooting Guide](https://github.com/nwave-ai/nwave/tree/main/docs/guides/troubleshooting-guide.md)** - Common issues and solutions
 
 Complete documentation: [github.com/nwave-ai/nwave/tree/main/docs](https://github.com/nwave-ai/nwave/tree/main/docs)

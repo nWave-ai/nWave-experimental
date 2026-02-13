@@ -1,15 +1,15 @@
-# Layer 4 API Reference
+# 5-Layer Testing API Reference
 
-**Version**: 1.5.2
-**Date**: 2026-01-22
+**Version**: 2.0
+**Date**: 2026-02-13
 **Status**: Production Ready
 
-API contracts, interfaces, configuration schemas, and technical specifications for Layer 4 Adversarial Verification.
+API contracts, interfaces, configuration schemas, and technical specifications for nWave 5-layer testing framework and reviewer agent architecture.
 
-**Related Docs**:
-- [For Developers](../guides/5-layer-testing-developers.md) (how-to)
-- [For Users](../guides/5-layer-testing-users.md) (how-to)
-- [For CI/CD](../guides/5-layer-testing-cicd.md) (how-to)
+**Related Documentation**:
+- **How-to guides:** Setup, configuration, and integration examples
+- **Architecture docs:** Design patterns, agent pipeline flow, and layer relationships
+- **Reviewer agents:** Individual agent specifications at `~/.claude/agents/nw/`
 
 ---
 
@@ -177,9 +177,9 @@ class ArtifactValidationError(Exception):
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `NWAVE_HOME` | path | `/opt/nwave` | Installation directory |
-| `NWAVE_AGENTS_DIR` | path | `$NWAVE_HOME/nWave/agents` | Agents directory |
-| `NWAVE_REVIEWERS_DIR` | path | `$NWAVE_HOME/nWave/agents/reviewers` | Reviewers directory |
+| `NWAVE_HOME` | path | `$HOME/.nwave` | Installation directory |
+| `NWAVE_AGENTS_DIR` | path | `$HOME/.claude/agents/nw` | Agents directory |
+| `NWAVE_REVIEWERS_DIR` | path | `$HOME/.claude/agents/nw` | Reviewers directory (same as agents) |
 | `LAYER4_AUTO_TRIGGER` | bool | `true` | Auto-trigger after Layer 1 pass |
 | `LAYER4_MAX_ITERATIONS` | int | `2` | Maximum revision iterations |
 | `LAYER4_FAIL_ON_CRITICAL` | bool | `true` | Fail pipeline on critical issues |
@@ -358,6 +358,18 @@ layer4_iteration_count:
 
 ---
 
-**Last Updated**: 2026-01-21
+## Framework Overview
+
+The nWave framework includes:
+- **11 Primary Agents:** product-discoverer, product-owner, solution-architect, acceptance-designer, software-crafter, platform-architect, researcher, troubleshooter, data-engineer, documentarist, agent-builder
+- **11 Reviewer Agents:** Matching reviewers for each primary agent (e.g., product-discoverer-reviewer)
+- **5 Testing Layers:** Layer 1-5 validation, review, and adversarial verification pipeline
+
+All reviewer agents are installed to `~/.claude/agents/nw/` via `pipx install nwave-ai && nwave-ai install`.
+
+---
+
+**Last Updated**: 2026-02-13
 **Type**: Reference
 **Purity**: 98%+
+**DIVIO Classification**: Reference (lookup-focused API contracts and configuration schemas)

@@ -2,7 +2,7 @@
 
 **Document Type**: Reference
 **Last Updated**: 2026-01-24
-**Template Location**: `nWave/templates/step-tdd-cycle-schema.json`
+**Template Location**: `~/.claude/templates/step-tdd-cycle-schema.json`
 
 ## Overview
 
@@ -315,10 +315,9 @@ assert(num_feature_steps === num_acceptance_scenarios,
 
 ## Related Documentation
 
-- **Principle**: [Outside-In TDD: Step-to-Scenario Mapping](../principles/outside-in-tdd-step-mapping.md)
-- **How-to Guide**: [How To: Execute DEVELOP Wave](../guides/how-to-develop-wave-step-scenario-mapping.md)
-- **Template File**: `nWave/templates/step-tdd-cycle-schema.json`
-- **Command**: `/nw:develop`, `/nw:split`, `/nw:roadmap`
+- **How-to Guide**: [Execute DEVELOP Wave with Step-to-Scenario Mapping](../guides/how-to-develop-wave-step-scenario-mapping.md)
+- **Template File**: `~/.claude/templates/step-tdd-cycle-schema.json` (installed via `nwave-ai install`)
+- **Command Reference**: [nWave Commands Reference](./nwave-commands-reference.md)
 
 ---
 

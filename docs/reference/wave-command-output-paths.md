@@ -2,9 +2,9 @@
 
 ## Overview
 
-The nWave workflow generates documentation artifacts organized by feature and wave. This reference documents the complete output path specification for wave commands (DISCUSS, DESIGN, DISTILL, DELIVER) using the feature-based folder structure introduced in nWave v2.
+The nWave workflow generates documentation artifacts organized by feature and wave. This reference documents the complete output path specification for wave commands (DISCUSS, DESIGN, DISTILL, DELIVER) using the feature-based folder structure.
 
-**Effective**: 2026-01-23
+**Last Updated**: 2026-02-13
 **Applies to**: nWave commands and all feature documentation
 **Organization**: Feature-isolated paths with wave-specific subfolders
 
@@ -297,7 +297,6 @@ The DESIGN wave reads requirements and user stories from the DISCUSS wave:
 
 ## See Also
 
-- [Explanation: nWave Methodology and Wave Structure](../explanation/nwave-methodology.md)
-- [Explanation: Why Feature-Based Organization](../explanation/feature-isolation-rationale.md)
-- [How-to: Create Documentation for a New Feature](../howto/create-feature-documentation.md)
-- [Reference: nWave Wave Command Specifications](nwave-wave-commands.md)
+- How-to: [Create Documentation for a New Feature](./how-to-create-feature-documentation.md) - Step-by-step guide for setting up feature documentation structure
+- Reference: [nWave Commands Reference](./nwave-commands-reference.md) - Complete command specifications and usage
+- Tutorial: [Installation and Setup](../installation/INSTALL.md) - Get nWave installed and configured

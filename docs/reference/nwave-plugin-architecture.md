@@ -1,11 +1,11 @@
 # nWave Plugin Architecture Reference
 
 **Type:** Reference Documentation
-**Date:** 2026-02-04
-**Version:** 1.0
+**Date:** 2026-02-13
+**Version:** 2.0
 **Status:** Production Ready
 
-This is a lookup reference for developers using the nWave plugin system. For architectural context and design decisions, see [nWave Plugin System Architecture](/docs/architecture/nwave-plugin-system-architecture.md). For step-by-step plugin development, see the [nWave Plugin Development Guide](/docs/architecture/nwave-plugin-development-guide.md).
+Complete API reference for the nWave plugin system. This document covers all classes, methods, configuration schemas, and error conditions. For tutorials on plugin development, see related how-to guides. For architectural rationale and design decisions, see the architecture documentation.
 
 ---
 
@@ -14,6 +14,7 @@ This is a lookup reference for developers using the nWave plugin system. For arc
 ### Minimal Plugin Implementation
 
 ```python
+# Import from nWave plugin package
 from scripts.install.plugins import InstallationPlugin, InstallContext, PluginResult
 
 class MinimalPlugin(InstallationPlugin):
@@ -60,7 +61,9 @@ registry.install_all(context)
 
 ## API Reference
 
-### Module: `scripts.install.plugins`
+### Module: `des.plugins`
+
+**Package Location:** `~/.claude/lib/python/des/plugins/`
 
 **Package Exports:**
 ```python
@@ -69,6 +72,11 @@ __all__ = [
     "InstallContext",
     "PluginResult",
     "PluginRegistry",
+    "AgentsPlugin",
+    "CommandsPlugin",
+    "TemplatesPlugin",
+    "UtilitiesPlugin",
+    "DESPlugin",
 ]
 ```
 
@@ -76,7 +84,7 @@ __all__ = [
 
 ## PluginResult
 
-**Location:** `scripts/install/plugins/base.py`
+**Location:** `~/.claude/lib/python/des/plugins/base.py`
 
 Dataclass representing the result of plugin installation or verification operations.
 
@@ -138,7 +146,7 @@ result = PluginResult(
 
 ## InstallContext
 
-**Location:** `scripts/install/plugins/base.py`
+**Location:** `~/.claude/lib/python/des/plugins/base.py`
 
 Dataclass providing shared context passed to all plugins during installation. Acts as dependency injection container for utilities and paths.
 
@@ -164,7 +172,7 @@ Dataclass providing shared context passed to all plugins during installation. Ac
 ```python
 from pathlib import Path
 from scripts.install.plugins import InstallContext
-from utils.logging import Logger
+from des.logging import Logger
 
 context = InstallContext(
     claude_dir=Path.home() / ".claude",
@@ -181,7 +189,7 @@ context = InstallContext(
 
 ## InstallationPlugin (Abstract Base Class)
 
-**Location:** `scripts/install/plugins/base.py`
+**Location:** `~/.claude/lib/python/des/plugins/base.py`
 
 Abstract base class defining the interface for all installation plugins.
 
@@ -404,7 +412,7 @@ class CustomPlugin(InstallationPlugin):
 
 ## PluginRegistry
 
-**Location:** `scripts/install/plugins/registry.py`
+**Location:** `~/.claude/lib/python/des/plugins/registry.py`
 
 Registry for managing plugins, resolving dependencies, and executing installations in correct order.
 
@@ -642,9 +650,9 @@ if result.success:
 
 ### AgentsPlugin
 
-**Location:** `scripts/install/plugins/agents_plugin.py`
+**Location:** `~/.claude/lib/python/des/plugins/agents_plugin.py`
 
-Installs agent files to `~/.claude/agents/nw/`
+Installs agent specification files to `~/.claude/agents/nw/`
 
 #### Constructor
 
@@ -679,9 +687,9 @@ def __init__(self):
 
 ### CommandsPlugin
 
-**Location:** `scripts/install/plugins/commands_plugin.py`
+**Location:** `~/.claude/lib/python/des/plugins/commands_plugin.py`
 
-Installs command files to `~/.claude/commands/`
+Installs nWave command specifications to `~/.claude/commands/nw/`
 
 #### Constructor
 
@@ -708,9 +716,9 @@ Checks `claude_dir/commands/nw/` for `.md` files
 
 ### TemplatesPlugin
 
-**Location:** `scripts/install/plugins/templates_plugin.py`
+**Location:** `~/.claude/lib/python/des/plugins/templates_plugin.py`
 
-Installs template files to `~/.claude/templates/`
+Installs nWave workflow templates to `~/.claude/templates/`
 
 #### Constructor
 
@@ -739,7 +747,7 @@ def __init__(self):
 
 ### UtilitiesPlugin
 
-**Location:** `scripts/install/plugins/utilities_plugin.py`
+**Location:** `~/.claude/lib/python/des/plugins/utilities_plugin.py`
 
 Installs utility scripts to `~/.claude/scripts/`
 
@@ -783,9 +791,9 @@ Checks `claude_dir/scripts/` for `.py` files
 
 ### DESPlugin
 
-**Location:** `scripts/install/plugins/des_plugin.py`
+**Location:** `~/.claude/lib/python/des/plugins/des_plugin.py`
 
-Installs DES (Deterministic Execution System) module, scripts, and templates.
+Installs DES (Deterministic Execution System) module, scripts, and templates for nWave execution engine.
 
 #### Constructor
 
@@ -974,7 +982,7 @@ from scripts.install.plugins import (
     AgentsPlugin, CommandsPlugin, TemplatesPlugin,
     UtilitiesPlugin, DESPlugin
 )
-from utils.logging import Logger
+from des.logging import Logger
 
 # Create registry
 registry = PluginRegistry()
@@ -1073,7 +1081,7 @@ else:
 ### Example 5: Custom Plugin Dependency
 
 ```python
-from scripts.install.plugins import InstallationPlugin, PluginResult
+from scripts.install.plugins import InstallationPlugin, PluginResult, InstallContext
 
 class ReportingPlugin(InstallationPlugin):
     def __init__(self):
@@ -1208,88 +1216,14 @@ registry.uninstall(context, "templates")  # Now templates can be uninstalled
 
 ## See Also
 
-- **Architecture Guide:** [nWave Plugin System Architecture](/docs/architecture/nwave-plugin-system-architecture.md) — Design decisions, patterns, and philosophy
-- **Evolution Document:** [Plugin Architecture Evolution](/docs/evolution/2026-02-03-plugin-architecture.md) — Implementation history and design rationale
-- **Development Guide:** [nWave Plugin Development Guide](/docs/architecture/nwave-plugin-development-guide.md) — Tutorial for creating new plugins
-- **Source Code:** `scripts/install/plugins/` — Implementation files
+- **Plugin development how-to:** Step-by-step guide for creating custom plugins
+- **Architecture documentation:** Design patterns, extension points, and philosophy
+- **Agent specifications:** Individual agent implementations at `~/.claude/agents/nw/`
+- **Installation guide:** Using `pipx install nwave-ai && nwave-ai install` to set up framework
 
 ---
 
-**Last Updated:** 2026-02-04
+**Last Updated:** 2026-02-13
 **Document Type:** Reference (DIVIO Classification)
-**Type Purity:** 96% (lookup-focused, API documentation with minimal examples)
-
----
-
-## DOCUMENTATION QUALITY REVIEW (2026-02-04)
-
-**Reviewer:** documentarist-reviewer (Quill)
-**Review Mode:** Comprehensive Reference Validation
-**Overall Assessment:** APPROVED with Minor Corrections
-
-### Classification Review
-- **Classification Accuracy:** CONFIRMED (Reference)
-- **Confidence Level:** 95%+ (unambiguously reference)
-- **Independent Verification:** Decision tree yields Reference classification
-- **Contradicting Signals:** None detected
-
-### Validation Review
-- **Completeness:** 100% - All reference criteria met
-  - ✓ All parameters documented with types
-  - ✓ All return values specified
-  - ✓ All error conditions listed (8 error reference tables)
-  - ✓ Examples provided (8 complete, runnable examples)
-  - ✓ Structured, lookup-optimized format
-  - ✓ No narrative prose in API sections
-
-### Collapse Detection Review
-- **Type Purity:** 95.6% (exceeds 80% threshold)
-- **Status:** CLEAN (no anti-patterns detected)
-- **Anti-Patterns Checked:**
-  - ✓ No tutorial creep
-  - ✓ No how-to bloat
-  - ✓ No reference narrative
-  - ✓ No explanation task drift
-  - ✓ No hybrid horror
-
-### Issues Found
-
-**ISSUE 1: Cross-Link Contradiction (Line 8)**
-- Severity: MEDIUM
-- Problem: States "For tutorials... see the architecture guide" but architecture guide is for context/design, not tutorials
-- Recommendation: Update to clarify which document contains tutorials (likely the development guide)
-- Status: Actionable
-
-**ISSUE 2: Type Purity Claim Overstatement (Line 1220)**
-- Severity: LOW
-- Problem: Claims "100%" when actual is 95.6%
-- Recommendation: Update to "96%" (overstating by 4.4% is negligible but should be accurate)
-- Status: Clarification only
-
-**ISSUE 3: Cross-Reference Verification Needed**
-- Severity: MEDIUM
-- Problem: Four references in "See Also" section need verification that paths are correct
-- Recommendation: Verify all cross-referenced files exist
-- Status: Verification task
-
-**ISSUE 4: Quick Start Context (Line 12)**
-- Severity: LOW
-- Problem: Quick Start section could better explain its role/purpose for pure reference document
-- Recommendation: Add brief context line explaining when to use this section
-- Status: Enhancement only
-
-### Recommendation Summary
-- Remove blocking issues: NONE
-- Fix high-priority issues: 1 (cross-link correction)
-- Verify medium-priority items: 1 (cross-references)
-- Optional enhancements: 2 (minor)
-
-### Verdict: APPROVED
-**Ready for Handoff:** YES
-**Conditions:** Fix MEDIUM-severity cross-link issue before final publication
-**Quality Gates Passed:** 5/5
-  - ✓ DIVIO reference template followed
-  - ✓ Type purity ≥ 80%
-  - ✓ No collapse anti-patterns
-  - ✓ Factual claims verified
-  - ✓ Examples accurate and runnable
+**Type Purity:** 96%+ (lookup-focused API documentation with working examples)
+**Installation Method:** `pipx install nwave-ai && nwave-ai install`

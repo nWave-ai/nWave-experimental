@@ -1,15 +1,14 @@
-# nWave Documentation Structure Guide
+# nWave Documentation Structure Reference
 
-**Version**: 1.5.2
-**Date**: 2026-01-22
-**Type**: Reference + How-to Guide
+**Last Updated**: 2026-02-13
+**Type**: Reference
 **Status**: Production Ready
 
 ---
 
 ## Overview
 
-This document explains how nWave documentation is organized using the **DIVIO (Diataxis) Framework**, which ensures that each document serves one primary user need and has maximum usability.
+This reference document explains how nWave documentation is organized using the **DIVIO (Diataxis) Framework**, which ensures that each document serves one primary user need and has maximum usability.
 
 ## DIVIO Framework (Four Types)
 
@@ -23,7 +22,7 @@ Documentation is organized into exactly four types:
 - **Example**: Installation guide for a new user
 
 **nWave Tutorials**:
-- `docs/installation/INSTALL.md` - Installation instructions
+- `docs/guides/installation-guide.md` - Installation instructions
 - `docs/guides/jobs-to-be-done-guide.md` - Workflow orientation
 
 ### 2. **How-to Guide** (Task Orientation)
@@ -34,12 +33,12 @@ Documentation is organized into exactly four types:
 - **Assumes**: User has baseline knowledge; needs goal completion
 
 **nWave How-to Guides**:
-- `docs/guides/how-to-invoke-reviewers.md` - Request peer reviews
+- `docs/guides/invoke-reviewer-agents.md` - Request peer reviews
 - `docs/guides/5-layer-testing-developers.md` - Programmatic review API
 - `docs/guides/5-layer-testing-users.md` - Manual review workflows
 - `docs/guides/5-layer-testing-cicd.md` - CI/CD integration
 - `docs/guides/how-to-develop-wave-step-scenario-mapping.md` - Execute DEVELOP wave with step-to-scenario mapping
-- `docs/troubleshooting/TROUBLESHOOTING.md` - Solve common issues
+- `docs/guides/troubleshooting-guide.md` - Solve common issues
 
 ### 3. **Reference** (Information Orientation)
 - **User Need**: "What is X?" / "How do I look up Y?"
@@ -64,9 +63,9 @@ Documentation is organized into exactly four types:
 - **Assumes**: User wants to understand "why"
 
 **nWave Explanations**:
-- `docs/guides/LAYER_4_IMPLEMENTATION_SUMMARY.md` - Why Layer 4 matters
+- `docs/guides/knowledge-architecture-analysis.md` - Why the architecture works
 - `docs/guides/knowledge-architecture-analysis.md` - Architecture decisions
-- `docs/principles/outside-in-tdd-step-mapping.md` - Why step-to-scenario mapping matters for TDD discipline
+- `docs/guides/how-to-develop-wave-step-scenario-mapping.md` - Step-to-scenario mapping in DEVELOP wave
 - `README.md` (partial) - Project vision and philosophy
 
 ---
@@ -83,7 +82,7 @@ docs/
 │   ├── 5-layer-testing-developers.md          # Programmatic API usage
 │   ├── 5-layer-testing-users.md               # Manual workflows
 │   ├── 5-layer-testing-cicd.md                # CI/CD integration
-│   ├── LAYER_4_IMPLEMENTATION_SUMMARY.md  # Why Layer 4 works
+│   ├── knowledge-architecture-analysis.md # Architecture design rationale
 │   ├── knowledge-architecture-analysis.md # Architecture rationale
 │   └── [other guides...]
 │
@@ -112,38 +111,6 @@ docs/
 └── research/                              # Background & Research
     └── [research topics...]
 ```
-
----
-
-## How to Navigate Documentation
-
-### "I'm brand new to nWave"
-1. Start: `README.md` - Get oriented
-2. Read: `docs/guides/jobs-to-be-done-guide.md` - Understand when to use what
-3. Install: `docs/installation/INSTALL.md` - Set up the framework
-4. First task: `docs/guides/how-to-invoke-reviewers.md` - Try a basic workflow
-
-### "I need to do a specific task"
-1. Find the appropriate **How-to Guide** in `docs/guides/`
-2. Follow the step-by-step instructions
-3. If stuck, check `docs/troubleshooting/TROUBLESHOOTING.md`
-4. If you need API details, see `docs/reference/`
-
-### "I need to look up API details"
-1. Go directly to `docs/reference/` for your specific topic
-2. Use reference documents for fast lookup
-3. For usage examples, cross-reference to the corresponding How-to guide
-
-### "I want to understand why something works"
-1. Find the corresponding **Explanation** document
-2. Read the architecture decisions and rationale
-3. Cross-reference to How-to guides for practical application
-
-### "I'm troubleshooting an issue"
-1. Check `docs/troubleshooting/TROUBLESHOOTING.md` first
-2. Use the Quick Diagnostics section
-3. Follow solution steps specific to your issue
-4. If unresolved, check How-to guides for your workflow
 
 ---
 
@@ -208,7 +175,7 @@ For detailed API contracts, see the [API Reference](../reference/5-layer-testing
 
 ### How-to → Explanation
 ```markdown
-To understand why this approach works, see [Layer 4 Implementation Summary](./LAYER_4_IMPLEMENTATION_SUMMARY.md).
+To understand why this approach works, see [Knowledge Architecture Analysis](../guides/knowledge-architecture-analysis.md).
 ```
 
 ### Reference → How-to
@@ -269,50 +236,6 @@ This ensures documentation stays in sync with code through pre-commit validation
 
 ---
 
-## Adding New Documentation
-
-When creating new documentation:
-
-1. **Identify the user need**:
-   - Learning? → Tutorial
-   - Task completion? → How-to
-   - Lookup? → Reference
-   - Understanding why? → Explanation
-
-2. **Choose the right type**:
-   - Tutorial: "How to install" (first-time user)
-   - How-to: "How to use feature X" (known user, specific task)
-   - Reference: "API reference" (known user, lookup)
-   - Explanation: "Why we use X" (understanding design)
-
-3. **Maintain type purity**:
-   - Keep document ≥80% single type
-   - Use cross-references for other types
-   - Don't mix incompatible needs
-
-4. **Follow naming conventions**:
-   - Use kebab-case: `my-new-document.md`
-   - Be descriptive: Avoid single words
-   - Avoid abbreviations unless standard
-
-5. **Add version tag** (if user-facing):
-   ```markdown
-   <!-- version: 1.4.0 -->
-   ```
-
-6. **Cross-reference appropriately**:
-   - To tutorial: "Getting started"
-   - To how-to: "Step-by-step guide"
-   - To reference: "Full specification"
-   - To explanation: "Understand the design"
-
-7. **Validate readability**:
-   - Flesch target: 70-80
-   - Clear headers
-   - Logical flow
-
----
-
 ## Consolidation Status
 
 **Project Status**: ✅ COMPLETE
@@ -337,12 +260,5 @@ When creating new documentation:
 ## See Also
 
 - [DIVIO Framework Official](https://diataxis.fr/) - The original framework definition
-- [DIVIO Classification Summary](./analysis/divio-audit/DIVIO_CLASSIFICATION_SUMMARY.md) - Detailed audit results
-- [Documentation Consolidation Complete](./analysis/divio-audit/DOCUMENTATION_CONSOLIDATION_COMPLETE.md) - Consolidation deliverables
-
----
-
-**Type**: Reference + How-to Guide
-**Audience**: Documentation authors, content editors
-**Last Updated**: 2026-01-21
-**Status**: Production Ready
+- [nWave Commands Reference](./nwave-commands-reference.md) - All commands, agents, and file locations
+- [Reviewer Agents Reference](./reviewer-agents-reference.md) - Reviewer specifications
