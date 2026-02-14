@@ -106,13 +106,27 @@ python3 --version
 which python3
 ```
 
-### Windows
+### Windows: `No Python at 'c:\pythonXX\python.exe'`
 
-Use WSL. Native Windows is not supported.
+**Cause**: pipx was installed with an older Python version that has since been
+removed or upgraded. pipx still points to the old path.
+
+**Fix**: Reinstall pipx with your current Python:
+```bash
+py -m pip install --force-reinstall pipx
+pipx ensurepath
+```
+
+### Windows: Native Windows is not supported
+
+nWave requires WSL (Windows Subsystem for Linux). The install and agents
+will not work in cmd.exe or PowerShell.
 
 ```bash
 wsl --install
-# Then install nWave inside WSL
+# Then open a WSL terminal and run:
+pipx install nwave-ai
+nwave-ai install
 ```
 
 ---
