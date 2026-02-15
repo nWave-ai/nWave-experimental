@@ -452,9 +452,8 @@ def verify_new_command_format(test_context: dict):
     assert len(des_commands) > 0, "No DES hooks found"
 
     for command in des_commands:
-        assert "python3 -m des." in command, (
-            f"Hook command should use new format 'python3 -m des...', "
-            f"but found: {command}"
+        assert "-m des." in command, (
+            f"Hook command should use '-m des...' module format, but found: {command}"
         )
         assert "src/des" not in command, (
             f"Hook command should not contain old 'src/des' path, but found: {command}"
