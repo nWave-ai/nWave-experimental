@@ -402,12 +402,40 @@ class DESPlugin(InstallationPlugin):
                 message=f"DES templates install failed: {e}",
             )
 
+    @staticmethod
+    def _resolve_python_path() -> str:
+        """Resolve the Python interpreter path for hook commands.
+
+        Captures sys.executable (the installer's Python, which has all
+        dependencies like PyYAML and pydantic) and makes it portable by
+        replacing the home directory prefix with $HOME.
+
+        If the current Python is a project-local .venv (e.g. during
+        development), falls back to 'python3' to avoid embedding a
+        machine-specific project path in settings.json.
+
+        This ensures hooks run under the same Python that was used to
+        install nWave — whether that's a pipx venv, pip venv, or system
+        Python — so all dependencies are available at runtime.
+        """
+        python_path = sys.executable
+
+        # Project-local .venv must not leak into settings.json
+        if "/.venv/" in python_path or "\\.venv\\" in python_path:
+            return "python3"
+
+        home = str(Path.home())
+        if python_path.startswith(home):
+            python_path = "$HOME" + python_path[len(home) :]
+        return python_path
+
     def _generate_hook_command(self, context: InstallContext, action: str) -> str:
         """Generate hook command with portable paths for cross-machine use.
 
         Uses $HOME shell variable instead of absolute paths so that
         settings.json works when synced across machines (via ~/.claude).
-        Uses python3 from PATH to avoid hardcoding a project-specific venv.
+        Uses the installer's Python (with $HOME substitution) to ensure
+        dependencies like PyYAML are available at hook runtime.
 
         Args:
             context: InstallContext with claude_dir
@@ -417,7 +445,7 @@ class DESPlugin(InstallationPlugin):
             Complete command string with $HOME-based paths
         """
         lib_path = "$HOME/.claude/lib/python"
-        python_path = "python3"
+        python_path = self._resolve_python_path()
         return self.HOOK_COMMAND_TEMPLATE.format(
             lib_path=lib_path,
             python_path=python_path,
@@ -519,7 +547,7 @@ class DESPlugin(InstallationPlugin):
             # test -f exits in ~1ms when no deliver session exists
             # Uses $HOME for portability across machines
             lib_path = "$HOME/.claude/lib/python"
-            python_path = "python3"
+            python_path = self._resolve_python_path()
             write_guard_command = (
                 f"test -f .nwave/des/deliver-session.json || exit 0; "
                 f"PYTHONPATH={lib_path} {python_path} -m "
@@ -806,7 +834,8 @@ class DESPlugin(InstallationPlugin):
         """Verify DES installation."""
         errors = []
 
-        # 1. Verify DES module importable
+        # 1. Verify DES module importable under the SAME Python that hooks use
+        # (sys.executable = installer's Python, which is also the hook Python)
         try:
             lib_python = str(context.claude_dir / "lib" / "python")
             # Use repr() to properly escape backslashes on Windows paths
@@ -814,7 +843,7 @@ class DESPlugin(InstallationPlugin):
                 [
                     sys.executable,
                     "-c",
-                    f"import sys; sys.path.insert(0, {lib_python!r}); from des.application import DESOrchestrator",
+                    f"import sys; sys.path.insert(0, {lib_python!r}); import yaml; from des.application import DESOrchestrator",
                 ],
                 capture_output=True,
                 text=True,

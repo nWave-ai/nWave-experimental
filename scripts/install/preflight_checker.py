@@ -206,7 +206,6 @@ class PreflightChecker:
         """Initialize the preflight checker with the chain of checks."""
         self._checks = [
             VirtualEnvironmentCheck(),
-            PipenvCheck(),
             DependencyCheck(),
         ]
 

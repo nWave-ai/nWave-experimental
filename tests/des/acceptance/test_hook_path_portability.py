@@ -153,11 +153,20 @@ class TestNoHardcodedPaths:
                     f"PYTHONPATH should use $HOME for portability, got: {pythonpath}"
                 )
 
-    def test_python_interpreter_is_portable(self, install_context):
+    def test_python_interpreter_is_not_project_venv(self, install_context):
         """
         GIVEN DES hooks are installed
         WHEN examining the Python interpreter in hook commands
-        THEN it uses 'python3' or a $HOME-based path (not a project-specific venv)
+        THEN it does NOT use a project-specific .venv/bin/ path
+
+        The interpreter should be one of:
+        - $HOME-based path (pipx venv, portable across machines)
+        - Absolute system path like /usr/bin/python3 (system install)
+        - bare 'python3' (PATH lookup)
+
+        Any of these is acceptable because they reference the Python that
+        has nWave's dependencies installed. What is NOT acceptable is a
+        project-local .venv path which would break on other machines.
         """
         config = _install_hooks(install_context)
         commands = _extract_all_hook_commands(config)
@@ -169,21 +178,19 @@ class TestNoHardcodedPaths:
             parts = effective_cmd.split()
             # Find the python invocation (after PYTHONPATH=X)
             python_part = None
-            for i, part in enumerate(parts):
+            for part in parts:
                 if part.startswith("PYTHONPATH="):
                     continue
-                # First non-env-var part is the interpreter
                 python_part = part
                 break
 
             if python_part:
-                is_portable = (
-                    python_part == "python3"
-                    or python_part.startswith("$HOME")
-                    or python_part.startswith("${HOME}")
+                assert ".venv/bin/" not in python_part, (
+                    f"Python interpreter uses project-local venv: {python_part}\n"
+                    f"Full command: {cmd}"
                 )
-                assert is_portable, (
-                    f"Python interpreter is not portable: {python_part}\n"
+                assert ".venv\\bin\\" not in python_part, (
+                    f"Python interpreter uses project-local venv (Windows): {python_part}\n"
                     f"Full command: {cmd}"
                 )
 
