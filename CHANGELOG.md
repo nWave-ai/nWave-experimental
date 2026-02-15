@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.2.0] - 2026-02-15
+## [1.1.9] - 2026-02-15
 
 ### Fixed
 - **DES hooks fail with missing PyYAML on pipx/pip installs** ([#1](https://github.com/nWave-ai/nWave/issues/1)):
