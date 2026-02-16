@@ -736,10 +736,6 @@ Never write log entries for phases that were not actually executed."""
     return {
         "decision": "block",
         "reason": notification,
-        "hookSpecificOutput": {
-            "hookEventName": "SubagentStop",
-            "additionalContext": notification,
-        },
         "systemMessage": f"DES STEP INCOMPLETE [{project_id}/{step_id}]: {reason}",
     }
 

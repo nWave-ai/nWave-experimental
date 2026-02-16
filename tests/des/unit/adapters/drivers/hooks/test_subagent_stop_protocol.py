@@ -265,6 +265,55 @@ class TestSubagentStopWithClaudeCodeProtocol:
         assert response["decision"] == "block"
         assert "Missing phases" in response["reason"]
 
+    def test_block_response_contains_only_claude_code_recognized_fields(
+        self, tmp_path, monkeypatch
+    ):
+        """Block response must not include hookSpecificOutput with unrecognized hookEventName.
+
+        Claude Code recognizes hookSpecificOutput only for PreToolUse and
+        PermissionRequest events. Using hookEventName="SubagentStop" causes
+        a runtime error: "classifyHandoffIfNeeded is not defined".
+
+        The block response should contain only: decision, reason, systemMessage.
+        """
+        prompt = (
+            "<!-- DES-VALIDATION: required -->\n"
+            "<!-- DES-PROJECT-ID: test-project -->\n"
+            "<!-- DES-STEP-ID: 01-01 -->\n"
+            "Execute step"
+        )
+        transcript = _make_transcript(str(tmp_path), prompt)
+
+        # Create execution log with missing phases to trigger block
+        feature_dir = tmp_path / "docs" / "feature" / "test-project"
+        feature_dir.mkdir(parents=True)
+        exec_log = feature_dir / "execution-log.yaml"
+        exec_log.write_text(
+            'project_id: "test-project"\n'
+            "events:\n"
+            '  - "01-01|PREPARE|EXECUTED|PASS|2026-02-06T10:00:00Z"\n'
+        )
+
+        hook_input = self._make_hook_input(transcript, str(tmp_path))
+        monkeypatch.setattr("sys.stdin", __import__("io").StringIO(hook_input))
+
+        captured = []
+        monkeypatch.setattr("builtins.print", captured.append)
+
+        handle_subagent_stop()
+
+        response = json.loads(captured[0])
+        assert response["decision"] == "block"
+
+        # hookSpecificOutput with hookEventName="SubagentStop" is NOT recognized
+        # by Claude Code and causes "classifyHandoffIfNeeded is not defined"
+        RECOGNIZED_FIELDS = {"decision", "reason", "systemMessage"}
+        unrecognized = set(response.keys()) - RECOGNIZED_FIELDS
+        assert not unrecognized, (
+            f"Block response contains fields not recognized by Claude Code: {unrecognized}. "
+            f"hookSpecificOutput is only valid for PreToolUse/PermissionRequest events."
+        )
+
     def test_des_subagent_missing_execution_log_blocked(self, tmp_path, monkeypatch):
         """DES agent where execution-log.yaml doesn't exist should be blocked."""
         prompt = (
