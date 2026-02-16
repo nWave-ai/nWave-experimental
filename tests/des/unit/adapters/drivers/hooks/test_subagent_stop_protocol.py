@@ -274,7 +274,7 @@ class TestSubagentStopWithClaudeCodeProtocol:
         PermissionRequest events. Using hookEventName="SubagentStop" causes
         a runtime error: "classifyHandoffIfNeeded is not defined".
 
-        The block response should contain only: decision, reason, systemMessage.
+        The block response should contain only: decision, reason.
         """
         prompt = (
             "<!-- DES-VALIDATION: required -->\n"
@@ -307,7 +307,7 @@ class TestSubagentStopWithClaudeCodeProtocol:
 
         # hookSpecificOutput with hookEventName="SubagentStop" is NOT recognized
         # by Claude Code and causes "classifyHandoffIfNeeded is not defined"
-        RECOGNIZED_FIELDS = {"decision", "reason", "systemMessage"}
+        RECOGNIZED_FIELDS = {"decision", "reason"}
         unrecognized = set(response.keys()) - RECOGNIZED_FIELDS
         assert not unrecognized, (
             f"Block response contains fields not recognized by Claude Code: {unrecognized}. "

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.12] - 2026-02-16
+
+### Fixed
+- **SubagentStop hook crash: `classifyHandoffIfNeeded is not defined`**:
+  Removed unsupported `systemMessage` field from hook protocol response.
+  The field is not part of the Claude Code hook protocol and caused a JS
+  runtime error when DES blocked an incomplete step.
+
 ## [1.1.9] - 2026-02-15
 
 ### Fixed
