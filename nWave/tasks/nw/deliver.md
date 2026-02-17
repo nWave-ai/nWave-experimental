@@ -156,7 +156,7 @@ The full DES Prompt Template (all 9 mandatory sections) is defined in `~/.claude
 ```python
 Task(
     subagent_type="{agent}",
-    max_turns=35,  # Adjust per step: 20 hotfix, 35 standard, 50 complex (see execute.md)
+    max_turns=45,  # Adjust per step: 25 hotfix, 45 standard, 65 complex (see execute.md)
     prompt=f'''
 <!-- DES-VALIDATION : required -->
 <!-- DES-PROJECT-ID : {project_id} -->

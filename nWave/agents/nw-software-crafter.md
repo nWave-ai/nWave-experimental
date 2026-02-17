@@ -182,6 +182,7 @@ Gates: unit test fails on assertion; no mocks inside hexagon; test count within 
 Implement minimal code to pass unit tests. Verify acceptance test also passes.
 Do not modify the acceptance test during implementation.
 Gate: all tests green (unit + acceptance).
+When green: proceed to COMMIT immediately. Never stop or return without committing green code.
 
 ### Phase 4: COMMIT
 Commit with detailed message. Pre-commit validates all 5 phases documented in execution-log.yaml.

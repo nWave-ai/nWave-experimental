@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.14] - 2026-02-17
+
+### Fixed
+- **Crafter skipping commit after GREEN phase**: Added explicit instruction
+  in TDD execution template and software-crafter agent to always commit
+  immediately after tests go green. Agents must never stop or return without
+  committing green code — even when approaching turn limit.
+- **Timeout on complex TDD steps**: Increased `max_turns` defaults —
+  Hotfix: 20→25, Standard: 35→45, Complex: 50→65. Prevents incomplete
+  execution on steps with 4+ files.
+
 ## [1.1.13] - 2026-02-17
 
 ### Fixed

@@ -58,6 +58,8 @@ Execute these phases in order:
 1. RED_ACCEPTANCE - Write failing acceptance test
 2. RED_UNIT - Write failing unit test
 3. GREEN - Minimal code to pass tests
+   After GREEN: run the FULL test suite. If all tests pass, proceed to COMMIT immediately.
+   Never move to a new task or stop without committing green code.
 4. COMMIT - Stage and commit with conventional message
    Include git trailer: `Step-ID: {step-id}` (required for DES verification)
    Example commit message:
@@ -106,6 +108,7 @@ performed the work. A log entry without actual execution is fraud.
 
 # TIMEOUT_INSTRUCTION
 Target: 30 turns maximum. If approaching limit, COMMIT current progress.
+If GREEN is complete (all tests pass), you MUST commit before returning — even if at turn limit.
 ```
 
 **Configuration:**
@@ -114,11 +117,11 @@ Target: 30 turns maximum. If approaching limit, COMMIT current progress.
 
 | Step Type | Typical Tool Calls | Recommended max_turns |
 |-----------|-------------------|----------------------|
-| Hotfix (1 file, known fix) | 10-12 | 20 |
-| Standard TDD step (2-3 files) | 25-30 | 35 |
-| Complex step (4+ files, new module) | 35-45 | 50 |
+| Hotfix (1 file, known fix) | 10-12 | 25 |
+| Standard TDD step (2-3 files) | 25-30 | 45 |
+| Complex step (4+ files, new module) | 35-45 | 65 |
 
-Default: 35. Heuristic: `15 + (files_to_modify count * 8)`, capped at 50.
+Default: 45. Heuristic: `20 + (files_to_modify count * 8)`, capped at 65.
 
 ## Error Handling
 
