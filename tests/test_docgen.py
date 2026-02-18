@@ -9,6 +9,7 @@ import pytest
 
 from scripts.docgen import (
     DocgenError,
+    _infer_wave,
     check_pages,
     enrich,
     extract_agent,
@@ -60,6 +61,7 @@ def nwave_tree(tmp_path: Path) -> Path:
         argument-hint: '[feature] - Example: "Add auth"'
         ---
         # Body
+        Use nw-crafter to implement.
     """)
     )
 
@@ -301,6 +303,113 @@ class TestWriteAndCheck:
         stale = check_pages({"file.md": "new content"}, tmp_path)
         assert len(stale) == 1
         assert "stale" in stale[0]
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: Skill links in agent detail
+# ---------------------------------------------------------------------------
+class TestSkillLinks:
+    def test_agent_detail_links_skills_to_source(self, nwave_tree: Path):
+        paths = {
+            "agents": list((nwave_tree / "nWave" / "agents").glob("*.md")),
+            "commands": list((nwave_tree / "nWave" / "tasks" / "nw").glob("*.md")),
+            "skills": list((nwave_tree / "nWave" / "skills").rglob("*.md")),
+            "templates": list((nwave_tree / "nWave" / "templates").glob("*.yaml")),
+        }
+        data = enrich(extract_all(paths))
+        page = render(data)["agents/nw-crafter.md"]
+        # Skills should be linked, not plain text
+        assert "[tdd](../../../nWave/skills/crafter/tdd.md)" in page
+        assert "[refactoring](../../../nWave/skills/crafter/refactoring.md)" in page
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: Wave grouping in agents index
+# ---------------------------------------------------------------------------
+class TestWaveGrouping:
+    @pytest.mark.parametrize(
+        "description,expected_wave",
+        [
+            ("Handles DISCOVER wave tasks", "DISCOVER"),
+            ("Use for DISCUSS wave planning", "DISCUSS"),
+            ("Runs before DESIGN wave", "DESIGN"),
+            ("DISTILL wave acceptance tests", "DISTILL"),
+            ("DELIVER wave implementation", "DELIVER"),
+            ("DEVOP wave deployment", "DEVOP"),
+            ("A utility agent", "Other"),
+        ],
+    )
+    def test_infer_wave(self, description: str, expected_wave: str):
+        assert _infer_wave(description) == expected_wave
+
+    def test_agents_index_has_wave_sections(self, nwave_tree: Path):
+        paths = {
+            "agents": list((nwave_tree / "nWave" / "agents").glob("*.md")),
+            "commands": list((nwave_tree / "nWave" / "tasks" / "nw").glob("*.md")),
+            "skills": list((nwave_tree / "nWave" / "skills").rglob("*.md")),
+            "templates": list((nwave_tree / "nWave" / "templates").glob("*.yaml")),
+        }
+        data = enrich(extract_all(paths))
+        page = render(data)["agents/index.md"]
+        # nw-crafter has no wave keyword -> Other
+        assert "## Other" in page
+        assert "## All Agents" in page
+
+    def test_agent_detail_shows_wave(self, nwave_tree: Path):
+        paths = {
+            "agents": list((nwave_tree / "nWave" / "agents").glob("*.md")),
+            "commands": list((nwave_tree / "nWave" / "tasks" / "nw").glob("*.md")),
+            "skills": list((nwave_tree / "nWave" / "skills").rglob("*.md")),
+            "templates": list((nwave_tree / "nWave" / "templates").glob("*.yaml")),
+        }
+        data = enrich(extract_all(paths))
+        page = render(data)["agents/nw-crafter.md"]
+        assert "**Wave:** Other" in page
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: Bidirectional command<->agent cross-references
+# ---------------------------------------------------------------------------
+class TestCommandAgentCrossRefs:
+    def test_extract_command_finds_agent_refs(self, nwave_tree: Path):
+        path = nwave_tree / "nWave" / "tasks" / "nw" / "deliver.md"
+        cmd = extract_command(path)
+        assert "nw-crafter" in cmd["agents"]
+
+    def test_enrich_populates_agent_commands(self, nwave_tree: Path):
+        paths = {
+            "agents": list((nwave_tree / "nWave" / "agents").glob("*.md")),
+            "commands": list((nwave_tree / "nWave" / "tasks" / "nw").glob("*.md")),
+            "skills": list((nwave_tree / "nWave" / "skills").rglob("*.md")),
+            "templates": list((nwave_tree / "nWave" / "templates").glob("*.yaml")),
+        }
+        data = enrich(extract_all(paths))
+        agent = data["agents"][0]
+        assert "deliver" in agent["commands"]
+
+    def test_commands_index_has_agents_column(self, nwave_tree: Path):
+        paths = {
+            "agents": list((nwave_tree / "nWave" / "agents").glob("*.md")),
+            "commands": list((nwave_tree / "nWave" / "tasks" / "nw").glob("*.md")),
+            "skills": list((nwave_tree / "nWave" / "skills").rglob("*.md")),
+            "templates": list((nwave_tree / "nWave" / "templates").glob("*.yaml")),
+        }
+        data = enrich(extract_all(paths))
+        page = render(data)["commands/index.md"]
+        assert "Agents" in page
+        assert "[nw-crafter](../agents/nw-crafter.md)" in page
+
+    def test_agent_detail_has_commands_section(self, nwave_tree: Path):
+        paths = {
+            "agents": list((nwave_tree / "nWave" / "agents").glob("*.md")),
+            "commands": list((nwave_tree / "nWave" / "tasks" / "nw").glob("*.md")),
+            "skills": list((nwave_tree / "nWave" / "skills").rglob("*.md")),
+            "templates": list((nwave_tree / "nWave" / "templates").glob("*.yaml")),
+        }
+        data = enrich(extract_all(paths))
+        page = render(data)["agents/nw-crafter.md"]
+        assert "## Commands" in page
+        assert "`/nw:deliver`" in page
 
 
 # ---------------------------------------------------------------------------

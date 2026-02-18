@@ -31,12 +31,15 @@ class Agent(TypedDict):
     max_turns: int
     skills: list[str]
     source_path: str
+    wave: str
+    commands: list[str]
 
 
 class Command(TypedDict):
     name: str
     description: str
     argument_hint: str
+    agents: list[str]
     source_path: str
 
 
@@ -147,10 +150,14 @@ def extract_agent(path: Path) -> Agent:
 def extract_command(path: Path) -> Command:
     fm = parse_front_matter(path)
     require_fields(fm, ["description"], path)
+    # Extract agent references from command body
+    text = path.read_text(encoding="utf-8")
+    agent_refs = sorted(set(re.findall(r"\bnw-[a-z]+-?[a-z]*(?:-[a-z]+)*", text)))
     return Command(
         name=path.stem,
         description=fm["description"].strip('"').strip("'"),
         argument_hint=fm.get("argument-hint", fm.get("argument_hint", "")),
+        agents=agent_refs,
         source_path=str(path),
     )
 
@@ -242,13 +249,45 @@ def extract_all(paths: dict[str, list[Path]]) -> dict[str, list]:
 # ---------------------------------------------------------------------------
 # Stage 3: Enrich (cross-references)
 # ---------------------------------------------------------------------------
+# Patterns to detect wave from agent descriptions.
+# Uses "X wave" phrase matching to avoid substring false positives
+# (e.g., "product discovery" should not match DISCOVER wave).
+_WAVE_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\bDISCOVER(?:Y)?\s+wave\b", re.IGNORECASE), "DISCOVER"),
+    (re.compile(r"\bDISCUSS\s+wave\b", re.IGNORECASE), "DISCUSS"),
+    (re.compile(r"\bDISTILL\s+wave\b", re.IGNORECASE), "DISTILL"),
+    (re.compile(r"\bDESIGN\s+wave\b", re.IGNORECASE), "DESIGN"),
+    (re.compile(r"\bDELIVER\s+wave\b", re.IGNORECASE), "DELIVER"),
+    (re.compile(r"\bDEVOP\s+wave\b", re.IGNORECASE), "DEVOP"),
+]
+
+_WAVE_ORDER = [
+    "DISCOVER",
+    "DISCUSS",
+    "DESIGN",
+    "DISTILL",
+    "DELIVER",
+    "DEVOP",
+    "Other",
+]
+
+
+def _infer_wave(description: str) -> str:
+    """Infer wave from agent description. Matches 'X wave' to avoid substring hits."""
+    for pattern, wave in _WAVE_PATTERNS:
+        if pattern.search(description):
+            return wave
+    return "Other"
+
+
 def enrich(data: dict[str, list]) -> dict[str, list]:
-    """Resolve cross-references between artifacts. Returns data unchanged but validated."""
+    """Resolve cross-references and add derived fields."""
     # Build lookup: both "skill-name" and "agent-dir/skill-name" resolve
     skill_lookup: set[str] = set()
     for s in data["skills"]:
         skill_lookup.add(s["name"])
         skill_lookup.add(f"{s['agent_dir']}/{s['name']}")
+    agent_names = {a["name"] for a in data["agents"]}
     agent_dirs = {a["name"].removeprefix("nw-") for a in data["agents"]}
 
     # Validate agent→skill refs
@@ -265,6 +304,30 @@ def enrich(data: dict[str, list]) -> dict[str, list]:
             raise DocgenError(
                 f"Skill '{skill['name']}' in dir '{skill['agent_dir']}' has no matching agent"
             )
+
+    # Enrich: infer wave for each agent
+    for agent in data["agents"]:
+        agent["wave"] = _infer_wave(agent["description"])
+
+    # Enrich: reviewer agents inherit parent agent's wave
+    agent_wave = {a["name"]: a["wave"] for a in data["agents"]}
+    for agent in data["agents"]:
+        if agent["wave"] == "Other" and agent["name"].endswith("-reviewer"):
+            parent = agent["name"].removesuffix("-reviewer")
+            if parent in agent_wave and agent_wave[parent] != "Other":
+                agent["wave"] = agent_wave[parent]
+
+    # Enrich: filter command agent refs to only valid agent names
+    for cmd in data["commands"]:
+        cmd["agents"] = [a for a in cmd["agents"] if a in agent_names]
+
+    # Enrich: build agent→commands reverse mapping
+    agent_commands: dict[str, list[str]] = {}
+    for cmd in data["commands"]:
+        for agent_name in cmd["agents"]:
+            agent_commands.setdefault(agent_name, []).append(cmd["name"])
+    for agent in data["agents"]:
+        agent["commands"] = sorted(set(agent_commands.get(agent["name"], [])))
 
     return data
 
@@ -311,33 +374,65 @@ def render_master_index(data: dict[str, list]) -> str:
 
 
 def render_agents_index(agents: list[Agent], skills: list[Skill]) -> str:
-    rows = []
+    lines = ["# Agents", ""]
+    # Group by wave
+    by_wave: dict[str, list[Agent]] = {}
+    for a in agents:
+        by_wave.setdefault(a.get("wave", "Other"), []).append(a)
+    for wave in _WAVE_ORDER:
+        wave_agents = by_wave.get(wave, [])
+        if not wave_agents:
+            continue
+        lines.append(f"## {wave}")
+        lines.append("")
+        rows = []
+        for a in sorted(wave_agents, key=lambda x: x["name"]):
+            agent_skills = _skills_for_agent(a, skills)
+            link = f"[{a['name']}]({a['name']}.md)"
+            rows.append([link, a["description"], str(len(agent_skills))])
+        lines.append(_md_table(["Name", "Description", "Skills"], rows))
+        lines.append("")
+    # All Agents reference table
+    lines.append("## All Agents")
+    lines.append("")
+    all_rows = []
     for a in sorted(agents, key=lambda x: x["name"]):
         agent_skills = _skills_for_agent(a, skills)
-        skill_count = str(len(agent_skills))
         link = f"[{a['name']}]({a['name']}.md)"
-        rows.append([link, a["description"], skill_count, ", ".join(a["tools"])])
-    table = _md_table(["Name", "Description", "Skills", "Tools"], rows)
-    return f"# Agents\n\n{table}\n"
+        wave = a.get("wave", "Other")
+        all_rows.append([link, wave, a["description"], str(len(agent_skills))])
+    lines.append(_md_table(["Name", "Wave", "Description", "Skills"], all_rows))
+    lines.append("")
+    return "\n".join(lines)
 
 
 def render_agent_detail(agent: Agent, skills: list[Skill]) -> str:
     agent_skills = _skills_for_agent(agent, skills)
+    wave = agent.get("wave", "Other")
+    commands = agent.get("commands", [])
     lines = [
         f"# {agent['name']}",
         "",
         agent["description"],
         "",
+        f"**Wave:** {wave}",
         f"**Model:** {agent['model']}",
         f"**Max turns:** {agent['max_turns']}",
         f"**Tools:** {', '.join(agent['tools'])}",
         "",
     ]
+    if commands:
+        lines.append("## Commands")
+        lines.append("")
+        for cmd_name in commands:
+            lines.append(f"- [`/nw:{cmd_name}`](../commands/index.md)")
+        lines.append("")
     if agent_skills:
         lines.append("## Skills")
         lines.append("")
         for s in sorted(agent_skills, key=lambda x: x["name"]):
-            lines.append(f"- **{s['name']}** — {s['description']}")
+            skill_path = f"../../../nWave/skills/{s['agent_dir']}/{s['name']}.md"
+            lines.append(f"- [{s['name']}]({skill_path}) — {s['description']}")
         lines.append("")
     return "\n".join(lines)
 
@@ -345,8 +440,11 @@ def render_agent_detail(agent: Agent, skills: list[Skill]) -> str:
 def render_commands_index(commands: list[Command]) -> str:
     rows = []
     for c in sorted(commands, key=lambda x: x["name"]):
-        rows.append([f"`/nw:{c['name']}`", c["description"], c["argument_hint"]])
-    table = _md_table(["Command", "Description", "Arguments"], rows)
+        agent_links = ", ".join(f"[{a}](../agents/{a}.md)" for a in c.get("agents", []))
+        rows.append(
+            [f"`/nw:{c['name']}`", c["description"], agent_links, c["argument_hint"]]
+        )
+    table = _md_table(["Command", "Description", "Agents", "Arguments"], rows)
     return f"# Commands\n\n{table}\n"
 
 
@@ -356,10 +454,12 @@ def render_skills_index(skills: list[Skill]) -> str:
     for s in skills:
         by_agent.setdefault(s["agent_dir"], []).append(s)
     for agent_dir in sorted(by_agent):
-        lines.append(f"## {agent_dir}")
+        agent_link = f"[nw-{agent_dir}](../agents/nw-{agent_dir}.md)"
+        lines.append(f"## {agent_link}")
         lines.append("")
         for s in sorted(by_agent[agent_dir], key=lambda x: x["name"]):
-            lines.append(f"- **{s['name']}** — {s['description']}")
+            skill_path = f"../../../nWave/skills/{s['agent_dir']}/{s['name']}.md"
+            lines.append(f"- [{s['name']}]({skill_path}) — {s['description']}")
         lines.append("")
     return "\n".join(lines)
 
