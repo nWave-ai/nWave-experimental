@@ -12,11 +12,11 @@
 | `/nw:document` | Create evidence-based DIVIO-compliant documentation | [topic/component] - Optional: --type=[tutorial|howto|reference|explanation] --research-depth=[overview|detailed|comprehensive|deep-dive] |
 | `/nw:execute` | Execute atomic task with state tracking | [agent] [step-id] - Example: @software-crafter "01-01" |
 | `/nw:finalize` | Summarize achievements, archive to docs/evolution, clean up feature files | [agent] [project-id] - Example: @platform-architect "auth-upgrade" |
-| `/nw:forge` | Create and validate new specialized agents |  |
+| `/nw:forge` | Create and validate new specialized agents | [agent-name] - Optional: --type=[specialist|reviewer|orchestrator] --pattern=[react|reflection|router] |
 | `/nw:mikado` | [EXPERIMENTAL] Complex refactoring roadmaps with visual tracking | [refactoring-goal] - Optional: --complexity=[simple|moderate|complex] --visualization=[tree|graph] |
 | `/nw:mutation-test` | Mutation testing quality gate for test suite validation | [project-id] - Optional: --threshold=[75|80|85] --language=[auto|python|java|javascript] |
 | `/nw:refactor` | Systematic refactoring with Mikado Method | [target-class-or-module] - Optional: --level=[1-6] --method=[extract|inline|rename|move] --scope=[method|class|module] |
-| `/nw:research` | Evidence-driven knowledge research with source verification |  |
+| `/nw:research` | Evidence-driven knowledge research with source verification | [topic] - Optional: --research_depth=[overview|detailed|comprehensive|deep-dive] --skill-for=[agent-name] |
 | `/nw:review` | Expert critique and quality review - Types: roadmap, step, task, implementation | [agent] [artifact-type] [artifact-path] - Example: @software-crafter task "roadmap.yaml" |
 | `/nw:roadmap` | Create comprehensive planning document | [agent] [goal-description] - Example: @solution-architect "Migrate to microservices" |
 | `/nw:root-why` | Root cause analysis and debugging | [problem-description] - Optional: --depth=[3|5|7-whys] --output=[text|diagram|report] |

@@ -1,5 +1,6 @@
 ---
 description: "Evidence-driven knowledge research with source verification"
+argument-hint: '[topic] - Optional: --research_depth=[overview|detailed|comprehensive|deep-dive] --skill-for=[agent-name]'
 ---
 
 # NW-RESEARCH: Evidence-Driven Knowledge Research

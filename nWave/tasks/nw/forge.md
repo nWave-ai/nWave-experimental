@@ -1,5 +1,6 @@
 ---
 description: "Create and validate new specialized agents"
+argument-hint: '[agent-name] - Optional: --type=[specialist|reviewer|orchestrator] --pattern=[react|reflection|router]'
 ---
 
 # NW-FORGE: Create Agent (V2)
