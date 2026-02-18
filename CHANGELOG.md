@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.17.1 (2026-02-18)
+
+### Bug Fixes
+
+- **release**: Add git identity for nwave-dev marker tag
+  ([`3705b54`](https://github.com/nWave-ai/nwave-dev/commit/3705b54832aee375f10161017d2385d47598c61d))
+
+
 ## v2.17.0 (2026-02-18)
 
 ### Features
