@@ -285,9 +285,6 @@ match = "master"
 prerelease = false
 
 [tool.semantic_release.changelog]
-
-[tool.semantic_release.changelog.default_templates]
-changelog_file = "CHANGELOG.md"
 exclude_commit_patterns = [
     "^chore",
     "^ci",
