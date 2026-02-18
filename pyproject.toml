@@ -100,6 +100,13 @@ Documentation = "https://github.com/nwave-ai/nwave#readme"
 Repository = "https://github.com/nwave-ai/nwave"
 Issues = "https://github.com/nwave-ai/nwave/issues"
 
+[tool.nwave]
+# Override floor for nwave-ai public version (PyPI + GitHub).
+# The pipeline auto-bumps from the public repo's current version.
+# Only set this higher to force a version jump (e.g., 1.1.0 → 2.0.0).
+# Leave unchanged for normal patch releases.
+public_version = "1.1.0"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
@@ -260,11 +267,6 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
-
-[tool.nwave]
-# Public version for nwave-ai PyPI package (independent from nwave dev version)
-# This is the version that gets published as 'nwave-ai' on PyPI
-public_version = "1.1.0"
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
