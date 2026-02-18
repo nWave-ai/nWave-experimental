@@ -60,6 +60,7 @@ reports/
 
 # Build artifacts
 dist/
+plugin/
 build/
 !tests/build/
 target/
