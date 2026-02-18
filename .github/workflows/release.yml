@@ -822,6 +822,8 @@ jobs:
           NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
           TAG="nWave_v${NWAVE_VERSION}"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git config user.name "nWave Release Train"
+          git config user.email "noreply@nwave.ai"
           git tag -a "$TAG" -m "Published as nwave-ai v${NWAVE_VERSION}"
           git push origin "$TAG"
           echo "Tagged nwave-dev as $TAG"
