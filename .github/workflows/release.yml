@@ -455,6 +455,10 @@ jobs:
           # Remove dangling symlinks before rsync (e.g. nWave/tasks/dw -> nw)
           find . -maxdepth 5 -type l ! -exec test -e {} \; -delete 2>/dev/null || true
 
+          # Clean target docs/ so rsync recreates only whitelisted subdirs
+          # (rsync --exclude + --delete won't remove previously-synced dirs that are now excluded)
+          rm -rf nwave-target/docs/
+
           # Exit code 24 = "some files vanished before transfer" (race condition, safe to ignore)
           set +e
           rsync -avL --delete \
