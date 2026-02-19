@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.17.3 (2026-02-19)
+
+### Features
+
+- **docs**: Make docs/reference/ fully generated, clean up release pipeline
+  ([`9f9dcfc`](https://github.com/nWave-ai/nwave-dev/commit/9f9dcfca8c2fb495e0b933891d2d51a01b8edacb))
+
+
 ## v2.17.2 (2026-02-19)
 
 ### Bug Fixes
