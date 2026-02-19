@@ -1,8 +1,8 @@
 # nw-product-owner
 
-Use for DISCUSS wave -- Luna handles the complete requirements lifecycle from UX journey discovery through structured requirements with BDD acceptance criteria. Designs emotional arcs and shared artifacts, then crafts LeanUX user stories and enforces Definition of Ready before DESIGN wave handoff.
+Conducts UX journey design and requirements gathering with BDD acceptance criteria. Use when defining user stories, emotional arcs, or enforcing Definition of Ready.
 
-**Wave:** DISCUSS
+**Wave:** Other
 **Model:** inherit
 **Max turns:** 50
 **Tools:** Read, Write, Edit, Glob, Grep, Task

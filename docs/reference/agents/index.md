@@ -1,13 +1,5 @@
 # Agents
 
-## DISCUSS
-
-| Name | Description | Skills |
-| --- | --- | --- |
-| [nw-product-discoverer](nw-product-discoverer.md) | Use for DISCUSS wave PRE-REQUIREMENTS phase -- guiding evidence-based product discovery through customer interviews, assumption testing, and opportunity validation BEFORE writing requirements. Helps validate problems exist, prioritize opportunities, test solutions, and confirm market viability. | 3 |
-| [nw-product-discoverer-reviewer](nw-product-discoverer-reviewer.md) | Use as peer reviewer for product-discoverer outputs -- validates evidence quality, sample sizes, decision gate compliance, bias detection, and discovery anti-patterns. Runs on Haiku for cost efficiency. | 1 |
-| [nw-product-owner](nw-product-owner.md) | Use for DISCUSS wave -- Luna handles the complete requirements lifecycle from UX journey discovery through structured requirements with BDD acceptance criteria. Designs emotional arcs and shared artifacts, then crafts LeanUX user stories and enforces Definition of Ready before DESIGN wave handoff. | 9 |
-
 ## DESIGN
 
 | Name | Description | Skills |
@@ -42,6 +34,9 @@
 | [nw-data-engineer-reviewer](nw-data-engineer-reviewer.md) | Use for review and critique tasks - Data architecture and pipeline review specialist. Runs on Haiku for cost efficiency. | 1 |
 | [nw-documentarist](nw-documentarist.md) | Use for documentation quality enforcement using DIVIO/Diataxis principles. Classifies documentation type, validates against type-specific criteria, detects collapse patterns, and provides actionable improvement guidance. | 3 |
 | [nw-documentarist-reviewer](nw-documentarist-reviewer.md) | Use for reviewing documentarist assessments. Validates classification accuracy, validation completeness, collapse detection, and recommendation quality using Haiku model. | 2 |
+| [nw-product-discoverer](nw-product-discoverer.md) | Conducts evidence-based product discovery through customer interviews, assumption testing, and opportunity validation. Use when validating problems exist, prioritizing opportunities, or confirming market viability before writing requirements. | 3 |
+| [nw-product-discoverer-reviewer](nw-product-discoverer-reviewer.md) | Use as peer reviewer for product-discoverer outputs -- validates evidence quality, sample sizes, decision gate compliance, bias detection, and discovery anti-patterns. Runs on Haiku for cost efficiency. | 1 |
+| [nw-product-owner](nw-product-owner.md) | Conducts UX journey design and requirements gathering with BDD acceptance criteria. Use when defining user stories, emotional arcs, or enforcing Definition of Ready. | 9 |
 | [nw-researcher](nw-researcher.md) | Use for evidence-driven research with source verification. Gathers knowledge from web and files, cross-references across multiple sources, and produces cited research documents. | 4 |
 | [nw-researcher-reviewer](nw-researcher-reviewer.md) | Use for review and critique tasks - Research quality and evidence review specialist. Runs on Haiku for cost efficiency. | 1 |
 | [nw-troubleshooter](nw-troubleshooter.md) | Use for investigating system failures, recurring issues, unexpected behaviors, or complex bugs requiring systematic root cause analysis with evidence-based investigation. | 3 |
@@ -61,9 +56,9 @@
 | [nw-documentarist-reviewer](nw-documentarist-reviewer.md) | Other | Use for reviewing documentarist assessments. Validates classification accuracy, validation completeness, collapse detection, and recommendation quality using Haiku model. | 2 |
 | [nw-platform-architect](nw-platform-architect.md) | DESIGN | Use for DESIGN wave (infrastructure design) and DEVOP wave (deployment execution, production readiness, stakeholder sign-off). Transforms architecture into deployable infrastructure, then coordinates production delivery and outcome measurement. | 7 |
 | [nw-platform-architect-reviewer](nw-platform-architect-reviewer.md) | DESIGN | Use for review and critique tasks - Platform design, CI/CD pipeline, infrastructure, observability, deployment readiness, and production handoff review specialist. Runs on Haiku for cost efficiency. | 3 |
-| [nw-product-discoverer](nw-product-discoverer.md) | DISCUSS | Use for DISCUSS wave PRE-REQUIREMENTS phase -- guiding evidence-based product discovery through customer interviews, assumption testing, and opportunity validation BEFORE writing requirements. Helps validate problems exist, prioritize opportunities, test solutions, and confirm market viability. | 3 |
-| [nw-product-discoverer-reviewer](nw-product-discoverer-reviewer.md) | DISCUSS | Use as peer reviewer for product-discoverer outputs -- validates evidence quality, sample sizes, decision gate compliance, bias detection, and discovery anti-patterns. Runs on Haiku for cost efficiency. | 1 |
-| [nw-product-owner](nw-product-owner.md) | DISCUSS | Use for DISCUSS wave -- Luna handles the complete requirements lifecycle from UX journey discovery through structured requirements with BDD acceptance criteria. Designs emotional arcs and shared artifacts, then crafts LeanUX user stories and enforces Definition of Ready before DESIGN wave handoff. | 9 |
+| [nw-product-discoverer](nw-product-discoverer.md) | Other | Conducts evidence-based product discovery through customer interviews, assumption testing, and opportunity validation. Use when validating problems exist, prioritizing opportunities, or confirming market viability before writing requirements. | 3 |
+| [nw-product-discoverer-reviewer](nw-product-discoverer-reviewer.md) | Other | Use as peer reviewer for product-discoverer outputs -- validates evidence quality, sample sizes, decision gate compliance, bias detection, and discovery anti-patterns. Runs on Haiku for cost efficiency. | 1 |
+| [nw-product-owner](nw-product-owner.md) | Other | Conducts UX journey design and requirements gathering with BDD acceptance criteria. Use when defining user stories, emotional arcs, or enforcing Definition of Ready. | 9 |
 | [nw-product-owner-reviewer](nw-product-owner-reviewer.md) | DESIGN | Use as hard gate before DESIGN wave - validates journey coherence, emotional arc quality, shared artifact tracking, Definition of Ready checklist, LeanUX antipatterns, and story sizing. Blocks handoff if any critical issue or DoR item fails. Runs on Haiku for cost efficiency. | 3 |
 | [nw-researcher](nw-researcher.md) | Other | Use for evidence-driven research with source verification. Gathers knowledge from web and files, cross-references across multiple sources, and produces cited research documents. | 4 |
 | [nw-researcher-reviewer](nw-researcher-reviewer.md) | Other | Use for review and critique tasks - Research quality and evidence review specialist. Runs on Haiku for cost efficiency. | 1 |

@@ -476,15 +476,10 @@ jobs:
             --exclude 'nwave-ai.egg-info/' \
             --exclude '.execute-command-updated' \
             --exclude '.dependency-map.yaml' \
-            --exclude 'docs/architecture/' \
-            --exclude 'docs/archive/' \
-            --exclude 'docs/evolution/' \
-            --exclude 'docs/feature/' \
-            --exclude 'docs/features/' \
-            --exclude 'docs/reports/' \
-            --exclude 'docs/research/' \
-            --exclude 'docs/ux/' \
-            --exclude 'docs/internal/' \
+            --include 'docs/' \
+            --include 'docs/guides/**' \
+            --include 'docs/reference/**' \
+            --exclude 'docs/*' \
             --exclude 'nWave/checklists/' \
             --exclude '__pycache__/' \
             --exclude '.pytest_cache/' \
