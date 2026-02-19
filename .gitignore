@@ -85,3 +85,6 @@ mutation-test.log
 
 # nWave audit logs (local only)
 .nwave-audit.log
+
+# Auto-generated changelog (semantic-release default; not used)
+CHANGELOG.md

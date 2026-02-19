@@ -83,13 +83,13 @@ jobs:
             echo "Would bump to: $VERSION"
           elif [[ -n "${{ inputs.force_bump }}" ]]; then
             echo "Forcing bump: ${{ inputs.force_bump }}"
-            semantic-release version --${{ inputs.force_bump }}
+            semantic-release version --no-changelog --${{ inputs.force_bump }}
             LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
             VERSION=${LATEST_TAG#v}
             echo "new_version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag_created=true" >> $GITHUB_OUTPUT
           else
-            semantic-release version
+            semantic-release version --no-changelog
             LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
             VERSION=${LATEST_TAG#v}
             echo "new_version=$VERSION" >> $GITHUB_OUTPUT
