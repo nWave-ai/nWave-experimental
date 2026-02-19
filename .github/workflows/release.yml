@@ -481,7 +481,9 @@ jobs:
             --exclude '.execute-command-updated' \
             --exclude '.dependency-map.yaml' \
             --include 'docs/' \
+            --include 'docs/guides/' \
             --include 'docs/guides/**' \
+            --include 'docs/reference/' \
             --include 'docs/reference/**' \
             --exclude 'docs/*' \
             --exclude 'nWave/checklists/' \
