@@ -1,3 +1,6 @@
+# Tsunami (standalone repo: github.com/11PJ11/tsunami)
+tsunami/
+
 # Local Claude settings
 .claude/settings.local.json
 CLAUDE.local.md
