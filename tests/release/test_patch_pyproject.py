@@ -5,7 +5,7 @@ rename package, set version, update authors, rewrite build targets,
 remove dev-only sections.
 
 BDD scenario mapping:
-  - journey-stable-release.feature: "pyproject.toml is patched: name 'nwave-ai', version '1.1.6'" (Scenario 1)
+  - journey-stable-release.feature: "pyproject.toml is patched: name 'nwave-ai', version '1.1.22'" (Scenario 1)
   - journey-stable-release.feature: Dry run shows patch diff (Scenario 2)
   - US-RTR-003: Stable release pipeline, pyproject patching step.
 """
@@ -28,7 +28,7 @@ class TestPackageNameSwap:
             input_path=sample_pyproject_path,
             output_path=output_path,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
         )
         content = (tmp_path / "out.toml").read_text()
         assert 'name = "nwave-ai"' in content
@@ -44,7 +44,7 @@ class TestPackageNameSwap:
             input_path=sample_pyproject_path,
             output_path=output_path,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
         )
         content = (tmp_path / "out.toml").read_text()
         # Description still says "nWave Framework", not "nwave-ai Framework"
@@ -55,19 +55,19 @@ class TestVersionSetting:
     """Set the target version in the patched pyproject.toml."""
 
     def test_version_set_to_target(self, sample_pyproject_path, tmp_path):
-        """Given source version is '2.18.0',
-        when patching with --target-version '1.1.6',
-        then the output has version='1.1.6'.
+        """Given source version is '1.1.21',
+        when patching with --target-version '1.1.22',
+        then the output has version='1.1.22'.
         """
         output_path = str(tmp_path / "out.toml")
         result = patch_pyproject(
             input_path=sample_pyproject_path,
             output_path=output_path,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
         )
         content = (tmp_path / "out.toml").read_text()
-        assert 'version = "1.1.6"' in content
+        assert 'version = "1.1.22"' in content
         assert any("version" in c for c in result["changes"])
 
     def test_version_format_is_pep440(self, sample_pyproject_path, tmp_path):
@@ -79,7 +79,7 @@ class TestVersionSetting:
             input_path=sample_pyproject_path,
             output_path=output_path,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
         )
         content = (tmp_path / "out.toml").read_text()
         # Extract the version line
@@ -103,7 +103,7 @@ class TestBuildTargetRewrite:
             input_path=sample_pyproject_path,
             output_path=output_path,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
         )
         content = (tmp_path / "out.toml").read_text()
         # The old nWave package reference should be replaced
@@ -124,7 +124,7 @@ class TestDevSectionRemoval:
             input_path=sample_pyproject_path,
             output_path=output_path,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
         )
         content = (tmp_path / "out.toml").read_text()
         assert "[tool.nwave]" not in content
@@ -140,7 +140,7 @@ class TestDevSectionRemoval:
             input_path=sample_pyproject_path,
             output_path=output_path,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
         )
         content = (tmp_path / "out.toml").read_text()
         assert "[tool.semantic_release]" not in content
@@ -156,7 +156,7 @@ class TestDevSectionRemoval:
             input_path=sample_pyproject_path,
             output_path=output_path,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
         )
         content = (tmp_path / "out.toml").read_text()
         assert "[tool.pytest.ini_options]" in content
@@ -171,14 +171,14 @@ class TestDryRunMode:
         when running patch_pyproject,
         then result contains changes showing before/after for each field.
 
-        Maps to: Stable dry run "the patch shows name 'nwave-ai', version '1.1.6'".
+        Maps to: Stable dry run "the patch shows name 'nwave-ai', version '1.1.22'".
         """
         output_path = str(tmp_path / "out.toml")
         result = patch_pyproject(
             input_path=sample_pyproject_path,
             output_path=output_path,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
             dry_run=True,
         )
         assert result["patched"] is True
@@ -186,7 +186,7 @@ class TestDryRunMode:
         # Changes describe name and version swaps
         changes_str = " ".join(result["changes"])
         assert "nwave-ai" in changes_str
-        assert "1.1.6" in changes_str
+        assert "1.1.22" in changes_str
 
     def test_dry_run_does_not_write_output_file(self, sample_pyproject_path, tmp_path):
         """Given --dry-run flag and --output /some/path,
@@ -198,7 +198,7 @@ class TestDryRunMode:
             input_path=sample_pyproject_path,
             output_path=output_path,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
             dry_run=True,
         )
         assert not (tmp_path / "out.toml").exists()
@@ -219,13 +219,13 @@ class TestIdempotency:
             input_path=sample_pyproject_path,
             output_path=output_a,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
         )
         patch_pyproject(
             input_path=output_a,
             output_path=output_b,
             target_name="nwave-ai",
-            target_version="1.1.6",
+            target_version="1.1.22",
         )
         content_a = (tmp_path / "a.toml").read_text()
         content_b = (tmp_path / "b.toml").read_text()
@@ -246,7 +246,7 @@ class TestErrorHandling:
                 input_path=str(tmp_path / "nonexistent.toml"),
                 output_path=str(tmp_path / "out.toml"),
                 target_name="nwave-ai",
-                target_version="1.1.6",
+                target_version="1.1.22",
             )
 
     def test_malformed_toml_returns_parse_error(self, tmp_path):
@@ -262,7 +262,7 @@ class TestErrorHandling:
                 input_path=str(bad_toml),
                 output_path=str(tmp_path / "out.toml"),
                 target_name="nwave-ai",
-                target_version="1.1.6",
+                target_version="1.1.22",
             )
 
     def test_missing_project_name_returns_error(self, tmp_path):
@@ -278,5 +278,5 @@ class TestErrorHandling:
                 input_path=str(no_name),
                 output_path=str(tmp_path / "out.toml"),
                 target_name="nwave-ai",
-                target_version="1.1.6",
+                target_version="1.1.22",
             )

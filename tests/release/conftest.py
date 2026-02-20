@@ -96,7 +96,7 @@ def self_referencing_response() -> dict:
 SAMPLE_PYPROJECT = """\
 [project]
 name = "nwave"
-version = "2.18.0"
+version = "1.1.21"
 description = "nWave Framework"
 authors = [
     {name = "Mike", email = "mike@example.com"},

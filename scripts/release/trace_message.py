@@ -34,11 +34,11 @@ def compose_trace_message(
 
     Args:
         stage: Release stage ("rc" or "stable").
-        version: Version string (e.g. "2.18.0rc1" or "1.1.6").
+        version: Version string (e.g. "1.1.22rc1" or "1.1.22").
         commit_sha: Full commit SHA from nwave-dev.
-        dev_tag: Dev tag (e.g. "v2.18.0.dev3").
-        rc_tag: RC tag (e.g. "v2.18.0rc1"), required for stable stage.
-        stable_tag: Stable tag (e.g. "v2.18.0"), required for stable stage.
+        dev_tag: Dev tag (e.g. "v1.1.22.dev3").
+        rc_tag: RC tag (e.g. "v1.1.22rc1"), required for stable stage.
+        stable_tag: Stable tag (e.g. "v1.1.22"), required for stable stage.
         pipeline_url: URL of the pipeline run.
 
     Returns:
