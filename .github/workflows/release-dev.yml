@@ -218,18 +218,97 @@ jobs:
           git push origin "$TAG"
           echo "Created and pushed tag $TAG"
 
+      - name: Generate changelog
+        run: |
+          python3 << 'PYEOF'
+          import subprocess, re, os
+          from datetime import datetime, timezone
+
+          version = os.environ["VERSION"]
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          release_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+          # Find previous tag (any type: stable, rc, dev)
+          try:
+              prev_tag = subprocess.check_output(
+                  ["git", "describe", "--tags", "--abbrev=0", "HEAD^"],
+                  text=True, stderr=subprocess.DEVNULL
+              ).strip()
+          except subprocess.CalledProcessError:
+              prev_tag = ""
+
+          record_end = "<<--EOR-->>"
+          fmt = f"%s%x00%b%x00%h{record_end}"
+          cmd = ["git", "log", "--no-merges", f"--pretty=format:{fmt}"]
+          if prev_tag:
+              cmd.insert(2, f"{prev_tag}..HEAD")
+
+          try:
+              raw = subprocess.check_output(cmd, text=True)
+          except subprocess.CalledProcessError:
+              raw = ""
+
+          conventional_re = re.compile(
+              r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s*(?P<desc>.+)$"
+          )
+          breaking, features, fixes, other = [], [], [], []
+
+          for record in raw.split(record_end):
+              record = record.strip()
+              if not record:
+                  continue
+              parts = record.split("\x00")
+              if len(parts) < 3:
+                  continue
+              subject, body, sha = parts[0].strip(), parts[1].strip(), parts[2].strip()
+              if not subject or not sha:
+                  continue
+              if "chore(release):" in subject or "[skip ci]" in subject:
+                  continue
+
+              m = conventional_re.match(subject)
+              is_breaking = (m and m.group("bang")) or "BREAKING CHANGE:" in body
+              line = f"- {subject} (`{sha}`)"
+
+              if is_breaking:
+                  breaking.append(line)
+              elif m:
+                  ctype = m.group("type")
+                  if ctype == "feat": features.append(line)
+                  elif ctype == "fix": fixes.append(line)
+                  else: other.append(line)
+              else:
+                  other.append(line)
+
+          sections = [f"**Dev snapshot** `{version}` ({release_date})\n"]
+          if prev_tag:
+              sections.append(f"**Changes since**: [{prev_tag}](https://github.com/{repo}/compare/{prev_tag}...v{version})\n")
+          if breaking: sections.extend(["## Breaking Changes\n", "\n".join(breaking) + "\n"])
+          if features: sections.extend(["## Features\n", "\n".join(features) + "\n"])
+          if fixes: sections.extend(["## Bug Fixes\n", "\n".join(fixes) + "\n"])
+          if other: sections.extend(["## Other Changes\n", "\n".join(other) + "\n"])
+          if not any([breaking, features, fixes, other]):
+              sections.append("No notable changes (internal improvements)\n")
+
+          notes = "\n".join(sections)
+          with open("dist/RELEASE_NOTES.md", "w") as f:
+              f.write(notes)
+          print(notes)
+          PYEOF
+        env:
+          VERSION: ${{ needs.version-calc.outputs.version }}
+
       - name: Create GitHub pre-release
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           TAG="${{ needs.version-calc.outputs.tag }}"
-          VERSION="${{ needs.version-calc.outputs.version }}"
 
           gh release create "$TAG" \
             --title "Dev Release $TAG" \
-            --notes "Dev snapshot \`$VERSION\` from commit \`${{ needs.ci-gate.outputs.commit_sha }}\`." \
+            --notes-file dist/RELEASE_NOTES.md \
             --prerelease \
-            dist/*
+            dist/*.tar.gz dist/*.whl dist/SHA256SUMS.txt
 
   # ===========================================================================
   # DRY RUN SUMMARY

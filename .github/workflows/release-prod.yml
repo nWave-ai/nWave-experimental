@@ -361,16 +361,19 @@ jobs:
               else:
                   other.append(line)
 
+          source_rc = os.environ.get("SOURCE_RC", "")
           sections = [f"# nWave Framework v{version}\n", f"**Release Date**: {release_date}\n"]
+          if source_rc:
+              sections.append(f"**Promoted from**: `{source_rc}`\n")
           if prev_tag:
               sections.append(f"**Full Changelog**: [{prev_tag}...v{version}](https://github.com/{repo}/compare/{prev_tag}...v{version})\n")
+          sections.append("## Installation\n```bash\npip install nwave-ai\n```\n")
           if breaking: sections.extend(["## Breaking Changes\n", "\n".join(breaking) + "\n"])
           if features: sections.extend(["## Features\n", "\n".join(features) + "\n"])
           if fixes: sections.extend(["## Bug Fixes\n", "\n".join(fixes) + "\n"])
           if other: sections.extend(["## Other Changes\n", "\n".join(other) + "\n"])
           if not any([breaking, features, fixes, other]):
               sections.append("Patch release (internal improvements)\n")
-          sections.extend(["## Installation\n", "```bash\npipx install nwave-ai\nnwave-ai install\n```\n"])
 
           os.makedirs("dist", exist_ok=True)
           with open("dist/RELEASE_NOTES.md", "w") as f:
@@ -379,6 +382,7 @@ jobs:
           PYEOF
         env:
           VERSION: ${{ needs.version-calc.outputs.stable_version }}
+          SOURCE_RC: ${{ inputs.source_rc_tag }}
 
       - name: Create stable tag
         run: |
@@ -398,10 +402,7 @@ jobs:
           gh release create "$TAG" \
             --title "nWave Framework $TAG" \
             --notes-file dist/RELEASE_NOTES.md \
-            dist/*.tar.gz dist/SHA256SUMS.txt 2>/dev/null || \
-          gh release create "$TAG" \
-            --title "nWave Framework $TAG" \
-            --notes-file dist/RELEASE_NOTES.md
+            dist/*.tar.gz dist/*.whl dist/SHA256SUMS.txt
 
   # ===========================================================================
   # PYPI PUBLISH (stable)
