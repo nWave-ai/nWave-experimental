@@ -48,10 +48,10 @@ Mike decides "this commit set is ready for a dev snapshot"
               +-------------------------------+
     +-------------------------------+
     | Calculate next dev version    |   Feeling: TRUSTING
-    | v2.18.0.dev1                  |   "The system knows the sequence"
+    | v1.1.22.dev1                  |   "The system knows the sequence"
     |                               |
-    | Read current version (2.17.6) |
-    | Determine next: 2.18.0       |
+    | Read current version (1.1.21) |
+    | Determine next: 1.1.22       |
     | Append .dev{N} (sequential)   |
     +-------------------------------+
                     |
@@ -65,7 +65,7 @@ Mike decides "this commit set is ready for a dev snapshot"
        v
     +--------------+
     | Create tag   |
-    | v2.18.0.dev1 |
+    | v1.1.22.dev1 |
     | GitHub       |
     | pre-release  |
     +--------------+
@@ -80,7 +80,7 @@ Mike decides "this commit set is ready for a dev snapshot"
            v
     +-------------------------------+
     | Slack notification            |   Feeling: CONFIRMED
-    | "Dev release v2.18.0.dev1     |   "Tagged, traceable, done"
+    | "Dev release v1.1.22.dev1     |   "Tagged, traceable, done"
     |  created on nwave-dev"        |
     +-------------------------------+
 ```
@@ -89,7 +89,7 @@ Mike decides "this commit set is ready for a dev snapshot"
 
 ```
 +----------------------------------------------------------+
-| ## Dev Release: v2.18.0.dev1                             |
+| ## Dev Release: v1.1.22.dev1                             |
 |                                                          |
 | | Step              | Status  | Duration |              |
 | |-------------------|---------|----------|              |
@@ -100,7 +100,7 @@ Mike decides "this commit set is ready for a dev snapshot"
 | | TestPyPI publish  | SKIP    | --       |              |
 | | Slack notify      | PASS    | 2s       |              |
 |                                                          |
-| **Tag**: v2.18.0.dev1                                    |
+| **Tag**: v1.1.22.dev1                                    |
 | **Commit**: abc123d (feat(cli): add verbose flag)        |
 | **Pre-release**: [View on GitHub]                        |
 +----------------------------------------------------------+
@@ -110,8 +110,8 @@ Mike decides "this commit set is ready for a dev snapshot"
 
 | Artifact | Value | Consumed By |
 |----------|-------|-------------|
-| `dev_version` | `2.18.0.dev1` | Stage 2 (RC promotion) |
-| `dev_tag` | `v2.18.0.dev1` | Stage 2 (RC promotion), traceability |
+| `dev_version` | `1.1.22.dev1` | Stage 2 (RC promotion) |
+| `dev_tag` | `v1.1.22.dev1` | Stage 2 (RC promotion), traceability |
 | `source_commit_sha` | `abc123def456` | All downstream stages |
 | `github_pre_release_url` | URL | Slack notification |
 | `dist_artifacts` | wheel + sdist | TestPyPI (optional) |
@@ -125,4 +125,4 @@ Mike decides "this commit set is ready for a dev snapshot"
 | No CI run found for commit | "No CI run found for {sha}" | Push to trigger CI, then re-trigger release |
 | No version-bump commits since last tag | "No version bump needed" (workflow exits clean) | Expected; nothing to release |
 | TestPyPI upload fails | Warning in summary; tag still created | Ignore (smoke test only) |
-| Tag already exists | "Tag v2.18.0.dev1 already exists, incrementing to dev2" | Auto-handled |
+| Tag already exists | "Tag v1.1.22.dev1 already exists, incrementing to dev2" | Auto-handled |

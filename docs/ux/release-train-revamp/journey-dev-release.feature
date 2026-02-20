@@ -5,8 +5,8 @@ Feature: Dev Release (Stage 1)
 
   Background:
     Given the nwave-dev repo is on branch master
-    And the current version in pyproject.toml is "2.17.6"
-    And no existing dev tags for version "2.18.0"
+    And the current version in pyproject.toml is "1.1.21"
+    And no existing dev tags for version "1.1.22"
     And all CI checks on HEAD are green
 
   Scenario: Happy path - first dev release for a new version
@@ -17,22 +17,22 @@ Feature: Dev Release (Stage 1)
     Then all check-runs on HEAD are green
     And no tests are re-run inside the release pipeline
     When the pipeline calculates the next version
-    Then the dev version is "2.18.0.dev1"
+    Then the dev version is "1.1.22.dev1"
     And the version follows PEP 440 format
     When the pipeline builds dist packages
     Then dist packages (wheel + sdist) are built
     And SHA256 checksums are generated
     When the pipeline creates the git tag
-    Then tag "v2.18.0.dev1" exists on nwave-dev
-    And a GitHub pre-release is created for "v2.18.0.dev1"
-    And Slack receives a success notification with version "2.18.0.dev1"
+    Then tag "v1.1.22.dev1" exists on nwave-dev
+    And a GitHub pre-release is created for "v1.1.22.dev1"
+    And Slack receives a success notification with version "1.1.22.dev1"
 
   Scenario: Sequential dev counter increments correctly
-    Given a dev tag "v2.18.0.dev1" already exists
-    And a dev tag "v2.18.0.dev2" already exists
-    When Mike triggers a new dev release for version "2.18.0"
-    Then the dev version is "2.18.0.dev3"
-    And tag "v2.18.0.dev3" is created on nwave-dev
+    Given a dev tag "v1.1.22.dev1" already exists
+    And a dev tag "v1.1.22.dev2" already exists
+    When Mike triggers a new dev release for version "1.1.22"
+    Then the dev version is "1.1.22.dev3"
+    And tag "v1.1.22.dev3" is created on nwave-dev
 
   Scenario: Dry run produces no side effects
     Given Mike triggers workflow_dispatch on release-dev.yml
@@ -40,7 +40,7 @@ Feature: Dev Release (Stage 1)
     When the pipeline checks CI status on HEAD commit via GitHub API
     Then all check-runs on HEAD are green
     When the pipeline calculates the next version
-    Then the pipeline reports "Would bump to: 2.18.0.dev1"
+    Then the pipeline reports "Would bump to: 1.1.22.dev1"
     And no git tag is created
     And no GitHub release is created
     And no TestPyPI upload occurs
@@ -73,7 +73,7 @@ Feature: Dev Release (Stage 1)
 
   Scenario: Optional TestPyPI smoke test
     Given Mike triggers a dev release
-    And the pipeline successfully creates tag "v2.18.0.dev1"
+    And the pipeline successfully creates tag "v1.1.22.dev1"
     When TestPyPI publish is enabled
     Then the wheel is uploaded to TestPyPI
     And the upload is for smoke-testing mechanics only
@@ -81,7 +81,7 @@ Feature: Dev Release (Stage 1)
     And the failure appears as a warning, not a pipeline failure
 
   Scenario: No conventional commits since last tag
-    Given the last tag is "v2.17.6"
+    Given the last tag is "v1.1.21"
     And all commits since then are "chore" or "ci" type
     When Mike triggers a dev release with target_version as "auto"
     Then the pipeline reports "No version bump needed"

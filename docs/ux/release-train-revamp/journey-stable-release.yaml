@@ -16,7 +16,7 @@ journey:
       actor: "Mike"
       action: "workflow_dispatch on release-prod.yml"
       inputs:
-        - source_rc_tag: "e.g. v2.18.0rc1"
+        - source_rc_tag: "e.g. v1.1.22rc1"
         - dry_run: "boolean (default: false)"
       feeling: "Confident"
       produces:
@@ -30,7 +30,7 @@ journey:
         - source_rc_tag
       produces:
         - validated_commit_sha
-        - stable_version: "2.18.0"
+        - stable_version: "1.1.22"
       feeling: "Trusting"
       error_path:
         on_missing_tag: "STOP. List available RC tags."
@@ -74,11 +74,11 @@ journey:
         - stable_version
       produces:
         - version_bump_commit
-        - stable_tag: "v2.18.0"
+        - stable_tag: "v1.1.22"
         - github_release_url
       feeling: "Orderly"
       rules:
-        - "Commit message: chore(release): v2.18.0 [skip ci]"
+        - "Commit message: chore(release): v1.1.22 [skip ci]"
         - "GitHub Release (full, not pre-release)"
         - "Release notes generated from conventional commits"
 
@@ -111,17 +111,17 @@ journey:
       produces:
         - public_repo_commit
         - nwave_ai_version: "auto-bumped from public repo current"
-        - nwave_ai_tag: "v1.2.0"
+        - nwave_ai_tag: "v1.1.22"
         - public_repo_release_url
       feeling: "Proud"
       traceability:
         commit_message: |
-          chore(release): v1.2.0
+          chore(release): v1.1.22
 
           Source: nwave-dev@{validated_commit_sha}
-          Dev tag: v2.18.0.dev3
-          RC tag: v2.18.0rc1
-          Stable tag: v2.18.0
+          Dev tag: v1.1.22.dev3
+          RC tag: v1.1.22rc1
+          Stable tag: v1.1.22
           Pipeline: {workflow_run_url}
 
     - id: "marker-tag"
@@ -131,7 +131,7 @@ journey:
       consumes:
         - nwave_ai_version
       produces:
-        - nwave_dev_marker_tag: "v1.2.0"
+        - nwave_dev_marker_tag: "v1.1.22"
       feeling: "Traceable"
       notes: "Enables reverse traceability: public version -> dev commit"
 

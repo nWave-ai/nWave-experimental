@@ -15,67 +15,67 @@ A dedicated `release-prod.yml` workflow, triggered via `workflow_dispatch`, that
 ## Domain Examples
 
 ### Example 1: Happy path stable release from rc1
-Mike's beta testers validated `v2.18.0rc1` with no blockers. He triggers release-prod.yml with `source_rc_tag: v2.18.0rc1`. The pipeline checks out commit abc123d, builds, bumps nwave-dev to v2.18.0, publishes `nwave-ai` as stable on PyPI, syncs to nwave-ai/nwave with auto-bumped version 1.1.6, and creates marker tag `v1.1.6` on nwave-dev. Slack announces: "nwave-ai v1.1.6 released! `pip install nwave-ai`"
+Mike's beta testers validated `v1.1.22rc1` with no blockers. He triggers release-prod.yml with `source_rc_tag: v1.1.22rc1`. The pipeline checks out commit abc123d, builds, bumps nwave-dev to v1.1.22, publishes `nwave-ai` as stable on PyPI, syncs to nwave-ai/nwave with auto-bumped version 1.1.22, and creates marker tag `v1.1.22` on nwave-dev. Slack announces: "nwave-ai v1.1.22 released! `pip install nwave-ai`"
 
 ### Example 2: Version floor override for major bump
-Mike sets `public_version = "2.0.0"` in pyproject.toml's `[tool.nwave]` section because the next release has breaking changes. The current public version is 1.1.5. The pipeline sees floor (2.0.0) > current (1.1.5) and uses 2.0.0 as the nwave-ai version instead of auto-bumping to 1.1.6.
+Mike sets `public_version = "2.0.0"` in pyproject.toml's `[tool.nwave]` section because the next release has breaking changes. The current public version is 1.1.21. The pipeline sees floor (2.0.0) > current (1.1.21) and uses 2.0.0 as the nwave-ai version instead of auto-bumping to 1.1.22.
 
 ### Example 3: Tracing a bug from public to source
-A user reports a bug in nwave-ai v1.1.6. Mike looks at the nwave-dev repo, finds tag `v1.1.6`, which points to the exact commit that was released. He also checks the nWave public repo's commit message for v1.1.6 and finds "Source: nwave-dev@abc123d, Dev tag: v2.18.0.dev3, RC tag: v2.18.0rc1."
+A user reports a bug in nwave-ai v1.1.22. Mike looks at the nwave-dev repo, finds tag `v1.1.22`, which points to the exact commit that was released. He also checks the nWave public repo's commit message for v1.1.22 and finds "Source: nwave-dev@abc123d, Dev tag: v1.1.22.dev3, RC tag: v1.1.22rc1."
 
 ## UAT Scenarios (BDD)
 
 ### Scenario: Happy path stable release
-Given Mike triggers release-prod.yml with source_rc_tag "v2.18.0rc1"
-And tag "v2.18.0rc1" exists pointing to commit "abc123d"
-And the current nwave-ai version on the public repo is "1.1.5"
+Given Mike triggers release-prod.yml with source_rc_tag "v1.1.22rc1"
+And tag "v1.1.22rc1" exists pointing to commit "abc123d"
+And the current nwave-ai version on the public repo is "1.1.21"
 When the pipeline completes
-Then nwave-dev has tag "v2.18.0" with a full GitHub Release
+Then nwave-dev has tag "v1.1.22" with a full GitHub Release
 And "nwave-ai" stable version is on production PyPI
-And nWave public repo has tag "v1.1.6" with a GitHub Release
-And nwave-dev has marker tag "v1.1.6"
+And nWave public repo has tag "v1.1.22" with a GitHub Release
+And nwave-dev has marker tag "v1.1.22"
 And Slack shows "pip install nwave-ai"
 
 ### Scenario: Version floor override
 Given public_version floor is "2.0.0" in pyproject.toml
-And current public version is "1.1.5"
+And current public version is "1.1.21"
 When the pipeline calculates nwave-ai version
 Then nwave-ai version is "2.0.0"
 
 ### Scenario: Auto-bump patch version
 Given public_version floor is "1.1.0"
-And current public version is "1.1.5"
+And current public version is "1.1.21"
 When the pipeline calculates nwave-ai version
-Then nwave-ai version is "1.1.6"
+Then nwave-ai version is "1.1.22"
 
 ### Scenario: Dry run validates logic without side effects
-Given Mike triggers release-prod.yml with source_rc_tag "v2.18.0rc1" and dry_run "true"
+Given Mike triggers release-prod.yml with source_rc_tag "v1.1.22rc1" and dry_run "true"
 When the pipeline completes
 Then source RC is validated, CI status is checked, stable version is calculated, dist packages are built, nwave-ai version is calculated (floor vs auto-bump), pyproject.toml patch is composed, and full traceability chain message is composed
-And the summary reports "Would have: tagged v2.18.0, bumped nwave-dev to 2.18.0, published to PyPI, synced to nWave public as v1.1.6, created marker v1.1.6"
+And the summary reports "Would have: tagged v1.1.22, bumped nwave-dev to 1.1.22, published to PyPI, synced to nWave public as v1.1.22, created marker v1.1.22"
 And no stable tag is created, no version bump commit, no PyPI upload, no public repo sync, no marker tag, no Slack notification
 
 ### Scenario: Source RC tag missing
-Given Mike triggers with source_rc_tag "v2.18.0rc99"
+Given Mike triggers with source_rc_tag "v1.1.22rc99"
 When the pipeline validates
 Then it fails listing available RC tags
 And no stable tag is created
 
 ### Scenario: Full traceability chain
-Given stable release from "v2.18.0rc1" (from "v2.18.0.dev3") completes
-When inspecting the nWave public commit for "v1.1.6"
+Given stable release from "v1.1.22rc1" (from "v1.1.22.dev3") completes
+When inspecting the nWave public commit for "v1.1.22"
 Then the commit contains: Source SHA, Dev tag, RC tag, Stable tag, Pipeline URL
 
 ### Scenario: Reverse traceability
-Given marker tag "v1.1.6" exists on nwave-dev
+Given marker tag "v1.1.22" exists on nwave-dev
 When Mike queries that tag
 Then it points to the commit that produced the public release
 
 ### Scenario: End user gets stable, not RC
-Given both "2.18.0rc1" and "2.18.0" (as "1.1.6") are on PyPI
+Given both "1.1.22rc1" and "1.1.22" (as "1.1.22") are on PyPI
 When a user runs "pip install nwave-ai"
-Then version "1.1.6" is installed (stable)
-And "2.18.0rc1" is not installed
+Then version "1.1.22" is installed (stable)
+And "1.1.22rc1" is not installed
 
 ## Acceptance Criteria
 - [ ] Stable version on nwave-dev follows PEP 440 `X.Y.Z` format

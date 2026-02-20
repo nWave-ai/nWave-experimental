@@ -15,20 +15,20 @@ Configure Trusted Publisher (OIDC) in PyPI project settings for the nwave-ai pac
 ## Domain Examples
 
 ### Example 1: RC publish with OIDC
-Mike triggers an RC release. The `_reusable-publish-pypi.yml` workflow declares `permissions: id-token: write`. The `pypa/gh-action-pypi-publish` action contacts PyPI's OIDC endpoint, presents the GitHub Actions JWT, receives a 15-minute token, uploads `nwave-ai==2.18.0rc1`, and the token expires. No stored secret was used.
+Mike triggers an RC release. The `_reusable-publish-pypi.yml` workflow declares `permissions: id-token: write`. The `pypa/gh-action-pypi-publish` action contacts PyPI's OIDC endpoint, presents the GitHub Actions JWT, receives a 15-minute token, uploads `nwave-ai==1.1.22rc1`, and the token expires. No stored secret was used.
 
 ### Example 2: Unauthorized workflow blocked
 A contributor opens a PR that modifies the publish workflow to point to a different PyPI project. When the workflow runs, PyPI's Trusted Publisher check fails because the OIDC claims (repository, workflow file, environment) do not match the configured publisher. The upload is rejected.
 
 ### Example 3: Stable publish to PyPI
-Mike triggers a stable release. The publish job runs in the `pypi` GitHub environment, which provides additional approval gates. OIDC authentication succeeds, `nwave-ai==1.1.6` is uploaded as stable. The 15-minute token expires, and there is a full audit trail in PyPI's security log.
+Mike triggers a stable release. The publish job runs in the `pypi` GitHub environment, which provides additional approval gates. OIDC authentication succeeds, `nwave-ai==1.1.22` is uploaded as stable. The 15-minute token expires, and there is a full audit trail in PyPI's security log.
 
 ## UAT Scenarios (BDD)
 
 ### Scenario: OIDC publish succeeds
 Given Trusted Publisher is configured for nwave-ai on PyPI
 And the workflow has "permissions: id-token: write"
-When the publish step runs for "nwave-ai==2.18.0rc1"
+When the publish step runs for "nwave-ai==1.1.22rc1"
 Then the package is uploaded to PyPI
 And no stored API token was used
 And the OIDC token expires within 15 minutes

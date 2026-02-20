@@ -16,7 +16,7 @@ journey:
       actor: "Mike"
       action: "workflow_dispatch on release-rc.yml"
       inputs:
-        - source_dev_tag: "e.g. v2.18.0.dev3"
+        - source_dev_tag: "e.g. v1.1.22.dev3"
         - dry_run: "boolean (default: false)"
       feeling: "Deliberate"
       produces:
@@ -30,7 +30,7 @@ journey:
         - source_dev_tag
       produces:
         - validated_commit_sha
-        - base_version: "2.18.0"
+        - base_version: "1.1.22"
       feeling: "Trusting"
       error_path:
         on_missing_tag: "STOP. List available dev tags for that version."
@@ -62,7 +62,7 @@ journey:
         - base_version
         - existing_rc_tags
       produces:
-        - rc_version: "e.g. 2.18.0rc1"
+        - rc_version: "e.g. 1.1.22rc1"
       gate: "ci-status-gate must be green"
       rules:
         - "PEP 440 format: X.Y.ZrcN (no dot before rc)"
@@ -89,7 +89,7 @@ journey:
         - rc_version
         - dist_artifacts
       produces:
-        - rc_tag: "v2.18.0rc1"
+        - rc_tag: "v1.1.22rc1"
         - github_pre_release_url
       feeling: "Progressing"
 
@@ -121,12 +121,12 @@ journey:
         - validated_commit_sha
       produces:
         - beta_repo_commit
-        - beta_repo_tag: "v2.18.0rc1"
+        - beta_repo_tag: "v1.1.22rc1"
         - beta_repo_release_url
       feeling: "Distributing"
       traceability:
         commit_message: |
-          chore(release): v2.18.0rc1
+          chore(release): v1.1.22rc1
 
           Source: nwave-dev@{validated_commit_sha}
           Dev tag: {source_dev_tag}
@@ -149,7 +149,7 @@ journey:
       feeling: "Invited"
     - id: "install"
       actor: "Beta tester"
-      action: "pip install --pre nwave-ai==2.18.0rc1"
+      action: "pip install --pre nwave-ai==1.1.22rc1"
       feeling: "Easy"
     - id: "feedback"
       actor: "Beta tester"

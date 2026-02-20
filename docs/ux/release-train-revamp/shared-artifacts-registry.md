@@ -43,29 +43,29 @@ These artifacts are produced in one stage and consumed in another. Each must hav
 
 | Context | Format | Example | Notes |
 |---------|--------|---------|-------|
-| Dev git tag | `vX.Y.Z.devN` | `v2.18.0.dev1` | Dot before dev required by PEP 440 |
-| RC git tag | `vX.Y.ZrcN` | `v2.18.0rc1` | No dot before rc (PEP 440 normalized) |
-| Stable git tag | `vX.Y.Z` | `v2.18.0` | Standard semver with v prefix |
-| PyPI dev version | `X.Y.Z.devN` | `2.18.0.dev1` | No v prefix on PyPI |
-| PyPI RC version | `X.Y.ZrcN` | `2.18.0rc1` | No v prefix on PyPI |
-| PyPI stable version | `X.Y.Z` | `2.18.0` | No v prefix on PyPI |
-| Public marker tag | `vX.Y.Z` | `v1.2.0` | On nwave-dev, tracks public release |
+| Dev git tag | `vX.Y.Z.devN` | `v1.1.22.dev1` | Dot before dev required by PEP 440 |
+| RC git tag | `vX.Y.ZrcN` | `v1.1.22rc1` | No dot before rc (PEP 440 normalized) |
+| Stable git tag | `vX.Y.Z` | `v1.1.22` | Standard semver with v prefix |
+| PyPI dev version | `X.Y.Z.devN` | `1.1.22.dev1` | No v prefix on PyPI |
+| PyPI RC version | `X.Y.ZrcN` | `1.1.22rc1` | No v prefix on PyPI |
+| PyPI stable version | `X.Y.Z` | `1.1.22` | No v prefix on PyPI |
+| Public marker tag | `vX.Y.Z` | `v1.1.22` | On nwave-dev, tracks public release |
 
 ## Traceability Chain
 
 ```
 Forward (source -> public):
   nwave-dev commit abc123d
-    -> dev tag v2.18.0.dev3
-    -> rc tag v2.18.0rc1
-    -> stable tag v2.18.0
-    -> nWave public v1.2.0
-    -> nWave-beta v2.18.0rc1
+    -> dev tag v1.1.22.dev3
+    -> rc tag v1.1.22rc1
+    -> stable tag v1.1.22
+    -> nWave public v1.1.22
+    -> nWave-beta v1.1.22rc1
 
 Reverse (public -> source):
-  nWave public v1.2.0
+  nWave public v1.1.22
     -> commit message: "Source: nwave-dev@abc123d"
-    -> nwave-dev marker tag: v1.2.0
+    -> nwave-dev marker tag: v1.1.22
     -> nwave-dev commit abc123d
 ```
 

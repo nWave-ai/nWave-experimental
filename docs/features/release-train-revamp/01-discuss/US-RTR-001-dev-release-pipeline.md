@@ -14,11 +14,11 @@ A dedicated `release-dev.yml` workflow, triggered via `workflow_dispatch`, that 
 
 ## Domain Examples
 
-### Example 1: First dev release after v2.17.6
-Mike has merged 4 commits since v2.17.6 including `feat(cli): add verbose flag`. He triggers a dev release. The pipeline reads pyproject.toml (version "2.17.6"), determines next version is "2.18.0" based on conventional commits, appends ".dev1", runs tests, and creates tag `v2.18.0.dev1` with a GitHub pre-release.
+### Example 1: First dev release after v1.1.21
+Mike has merged 4 commits since v1.1.21 including `feat(cli): add verbose flag`. He triggers a dev release. The pipeline reads pyproject.toml (version "1.1.21"), determines next version is "1.1.22" based on conventional commits, appends ".dev1", runs tests, and creates tag `v1.1.22.dev1` with a GitHub pre-release.
 
 ### Example 2: Third dev release for the same version
-Tags `v2.18.0.dev1` and `v2.18.0.dev2` already exist. Mike triggers another dev release. The pipeline finds the highest existing dev tag (dev2), increments to "2.18.0.dev3", runs tests, and creates `v2.18.0.dev3`.
+Tags `v1.1.22.dev1` and `v1.1.22.dev2` already exist. Mike triggers another dev release. The pipeline finds the highest existing dev tag (dev2), increments to "1.1.22.dev3", runs tests, and creates `v1.1.22.dev3`.
 
 ### Example 3: Tests fail, no tag created
 Mike triggers a dev release but a regression in the CLI parser causes `test_verbose_flag` to fail. The pipeline stops after the build-test step. No git tag is created, no GitHub pre-release appears, and Slack sends a failure notification: "Dev release FAILED at Build + test."
@@ -27,23 +27,23 @@ Mike triggers a dev release but a regression in the CLI parser causes `test_verb
 
 ### Scenario: Happy path dev release
 Given Mike triggers workflow_dispatch on release-dev.yml with target_version "auto" and dry_run "false"
-And the current pyproject.toml version is "2.17.6"
+And the current pyproject.toml version is "1.1.21"
 And there are feat commits since the last tag
 When the pipeline completes
-Then tag "v2.18.0.dev1" exists on nwave-dev
+Then tag "v1.1.22.dev1" exists on nwave-dev
 And a GitHub pre-release is created
 And Slack receives a success notification
 
 ### Scenario: Sequential dev counter
-Given dev tags "v2.18.0.dev1" and "v2.18.0.dev2" exist
+Given dev tags "v1.1.22.dev1" and "v1.1.22.dev2" exist
 When Mike triggers a dev release
-Then the created tag is "v2.18.0.dev3"
+Then the created tag is "v1.1.22.dev3"
 
 ### Scenario: Dry run
 Given Mike triggers with dry_run "true"
 When the pipeline completes
 Then no git tag is created
-And the summary shows "Would bump to: 2.18.0.dev1"
+And the summary shows "Would bump to: 1.1.22.dev1"
 
 ### Scenario: Build failure blocks tag
 Given a test failure occurs during CI
@@ -52,7 +52,7 @@ Then no tag is created
 And Slack receives a failure notification
 
 ### Scenario: No version-worthy commits
-Given all commits since v2.17.6 are "chore" or "ci" type
+Given all commits since v1.1.21 are "chore" or "ci" type
 When Mike triggers a dev release with auto version
 Then the pipeline reports "No version bump needed"
 And no tag is created

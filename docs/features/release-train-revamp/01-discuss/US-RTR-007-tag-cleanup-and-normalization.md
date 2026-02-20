@@ -2,7 +2,7 @@
 
 ## Problem (The Pain)
 Mike is the nwave-dev maintainer whose repository has accumulated tags in inconsistent formats from the current pipeline.
-He finds the tag namespace cluttered with non-PEP-440 tags (e.g., `v2.17.x` style without proper dev/rc segments) that will conflict with the new 3-stage naming convention. Before the new pipeline can create `v2.18.0.dev1`, the existing tags need to be cleaned up and the tag namespace needs a clear convention.
+He finds the tag namespace cluttered with non-standard tags (e.g., `nWave_v*` marker format and legacy `v2.x` tags) that will conflict with the new 3-stage naming convention. Before the new pipeline can create `v1.1.22.dev1`, the existing tags need to be cleaned up and the tag namespace needs a clear convention.
 
 ## Who (The User)
 - Mike, cleaning up the tag namespace before enabling the new pipeline
@@ -15,10 +15,10 @@ A one-time cleanup script and documented tag convention. Remove or rename non-st
 ## Domain Examples
 
 ### Example 1: Audit existing tags
-Mike runs the tag audit script. It finds tags like `v2.17.6`, `v2.17.5` (valid), `v1.1.0` (valid marker), and potentially any malformed tags. The script reports: "47 tags found. 45 valid, 2 non-standard: [list]."
+Mike runs the tag audit script. It finds 75 tags including `nWave_v*` marker tags (RENAME to `v*`), legacy `v2.x` tags (DELETE), and other non-standard tags. The script reports: "75 tags found. 8 RENAME, 67 DELETE, 0 KEEP. After cleanup: v1.1.14 through v1.1.21."
 
 ### Example 2: Dry run cleanup
-Mike runs the cleanup script in dry-run mode. It reports what would change: "Would delete 2 non-standard tags: tag-a, tag-b. Would keep 45 tags. No PEP 440 conflicts detected." Mike reviews and confirms.
+Mike runs the cleanup script in dry-run mode. It reports what would change: "Would RENAME 8 tags (nWave_v* → v*). Would DELETE 67 tags (legacy v2.x, unversioned). After cleanup: 8 tags remain (v1.1.14 through v1.1.21)." Mike reviews and confirms.
 
 ### Example 3: Document convention for future reference
 After cleanup, a `TAG_CONVENTION.md` file in the repo documents: stable tags use `vX.Y.Z`, dev tags use `vX.Y.Z.devN`, RC tags use `vX.Y.ZrcN`, public markers use `vX.Y.Z`. This becomes the reference for the new pipeline.
@@ -26,13 +26,13 @@ After cleanup, a `TAG_CONVENTION.md` file in the repo documents: stable tags use
 ## UAT Scenarios (BDD)
 
 ### Scenario: Audit identifies non-standard tags
-Given the nwave-dev repo has 47 existing tags
+Given the nwave-dev repo has 75 existing tags
 When the audit script runs
 Then it classifies each tag as: RENAME (nWave_v* markers to v*), DELETE (legacy), or KEEP
 And it reports the count of each category
 
 ### Scenario: Dry run shows planned changes
-Given the audit found 2 non-standard tags
+Given the audit found 8 RENAME and 67 DELETE tags
 When the cleanup script runs in dry-run mode
 Then it lists the tags that would be deleted
 And it confirms no PEP 440 conflicts exist

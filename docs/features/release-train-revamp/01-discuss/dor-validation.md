@@ -12,7 +12,7 @@
 |---|----------|--------|----------|
 | 1 | Problem statement clear, domain language | PASS | "tag spam that buries meaningful releases", "manual version string editing" |
 | 2 | User/persona identified | PASS | Mike, nwave-dev maintainer, trunk-based model |
-| 3 | At least 3 domain examples with real data | PASS | 3 examples: first dev release (v2.18.0.dev1), third sequential (dev3), test failure |
+| 3 | At least 3 domain examples with real data | PASS | 3 examples: first dev release (v1.1.22.dev1), third sequential (dev3), test failure |
 | 4 | UAT scenarios in Given/When/Then (3-7) | PASS | 5 scenarios: happy path, sequential, dry run, failure, no commits |
 | 5 | Acceptance criteria from UAT | PASS | 7 checkable items derived from scenarios |
 | 6 | Right-sized (1-3 days, 3-7 scenarios) | PASS | ~2 days; 5 scenarios |
@@ -46,7 +46,7 @@
 |---|----------|--------|----------|
 | 1 | Problem statement clear, domain language | PASS | "monolithic pipeline fragile and hard to debug", "incomplete traceability" |
 | 2 | User/persona identified | PASS | Mike (releaser), end users (pip install), Mike (debugger) |
-| 3 | At least 3 domain examples with real data | PASS | 3 examples: happy path (v2.18.0 -> v1.1.6), floor override (2.0.0), tracing bug |
+| 3 | At least 3 domain examples with real data | PASS | 3 examples: happy path (v1.1.22 -> v1.1.22), floor override (2.0.0), tracing bug |
 | 4 | UAT scenarios in Given/When/Then (3-7) | PASS | 7 scenarios: happy path, floor, auto-bump, missing RC, traceability, reverse, end user |
 | 5 | Acceptance criteria from UAT | PASS | 9 checkable items derived from scenarios |
 | 6 | Right-sized (1-3 days, 3-7 scenarios) | PASS | ~3 days; 7 scenarios |
@@ -97,7 +97,7 @@
 |---|----------|--------|----------|
 | 1 | Problem statement clear, domain language | PASS | "time-consuming to trace a public release back to its source" |
 | 2 | User/persona identified | PASS | Mike (debugger), Mike (auditor), future maintainers |
-| 3 | At least 3 domain examples with real data | PASS | 3 examples: forward trace, backward trace (v1.1.6), beta trace |
+| 3 | At least 3 domain examples with real data | PASS | 3 examples: forward trace, backward trace (v1.1.22), beta trace |
 | 4 | UAT scenarios in Given/When/Then (3-7) | PASS | 4 scenarios: public commit, beta commit, reverse lookup, forward lookup |
 | 5 | Acceptance criteria from UAT | PASS | 5 checkable items derived from scenarios |
 | 6 | Right-sized (1-3 days, 3-7 scenarios) | PASS | ~1 day; 4 scenarios |
@@ -114,7 +114,7 @@
 |---|----------|--------|----------|
 | 1 | Problem statement clear, domain language | PASS | "tags in inconsistent formats", "will conflict with new naming convention" |
 | 2 | User/persona identified | PASS | Mike (cleanup), CI/CD system (counter calculation), git tag output (human scan) |
-| 3 | At least 3 domain examples with real data | PASS | 3 examples: audit (47 tags), dry run cleanup, convention doc |
+| 3 | At least 3 domain examples with real data | PASS | 3 examples: audit (75 tags, 8 RENAME, 67 DELETE), dry run cleanup, convention doc |
 | 4 | UAT scenarios in Given/When/Then (3-7) | PASS | 4 scenarios: audit, dry run, cleanup, convention doc |
 | 5 | Acceptance criteria from UAT | PASS | 6 checkable items derived from scenarios |
 | 6 | Right-sized (1-3 days, 3-7 scenarios) | PASS | ~1 day; 4 scenarios (one-time task) |

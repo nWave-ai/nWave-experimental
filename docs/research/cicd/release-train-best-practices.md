@@ -347,7 +347,7 @@ Pipeline: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID
   "version": "1.2.3",
   "source_repo": "private/nwave-dev",
   "source_commit": "abc123def456",
-  "source_tag": "v2.17.6",
+  "source_tag": "v1.1.21",
   "pipeline_run": "https://github.com/.../actions/runs/12345",
   "built_at": "2026-02-20T10:30:00Z"
 }

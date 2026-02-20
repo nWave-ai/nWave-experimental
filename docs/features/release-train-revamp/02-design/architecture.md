@@ -242,20 +242,20 @@ sequenceDiagram
     end
 
     WD->>VER: calculate dev version(pyproject.toml, existing tags)
-    VER-->>WD: "2.18.0.dev1"
+    VER-->>WD: "1.1.22.dev1"
 
     WD->>BLD: build(commit_ref=HEAD)
     BLD-->>WD: dist artifacts (wheel + sdist + checksums)
 
     alt dry_run = false
-        WD->>GH: create tag v2.18.0.dev1
+        WD->>GH: create tag v1.1.22.dev1
         WD->>GH: create GitHub pre-release
         opt TestPyPI enabled
             WD->>TPYPI: upload wheel (smoke test)
         end
         WD->>SLK: success notification
     else dry_run = true
-        Note over WD: Report "Would have: tagged v2.18.0.dev1"
+        Note over WD: Report "Would have: tagged v1.1.22.dev1"
         Note over WD: Zero side effects
     end
 ```
@@ -293,16 +293,16 @@ sequenceDiagram
     end
 
     WRC->>VER: calculate RC version(base_version, existing rc tags)
-    VER-->>WRC: "2.18.0rc1"
+    VER-->>WRC: "1.1.22rc1"
 
     WRC->>BLD: build(commit_ref=validated_commit_sha)
     BLD-->>WRC: dist artifacts
 
     alt dry_run = false
-        WRC->>GH: create tag v2.18.0rc1
+        WRC->>GH: create tag v1.1.22rc1
         WRC->>GH: create GitHub pre-release
         WRC->>PUB: publish to PyPI (OIDC, pre-release)
-        PUB->>PYPI: upload nwave-ai==2.18.0rc1
+        PUB->>PYPI: upload nwave-ai==1.1.22rc1
 
         WRC->>TRC: compose message(sha, dev_tag, pipeline_url)
         TRC-->>WRC: traceability commit message
@@ -338,7 +338,7 @@ sequenceDiagram
 
     Mike->>WP: workflow_dispatch(source_rc_tag, dry_run)
     WP->>GH: validate RC tag exists, get commit SHA
-    GH-->>WP: validated_commit_sha, stable_version="2.18.0"
+    GH-->>WP: validated_commit_sha, stable_version="1.1.22"
 
     WP->>CIG: check CI status(validated_commit_sha)
     CIG->>GH: GET /repos/.../commits/{sha}/check-runs
@@ -354,22 +354,22 @@ sequenceDiagram
 
     alt dry_run = false
         WP->>GH: bump pyproject.toml + catalog, commit [skip ci]
-        WP->>GH: create tag v2.18.0 + GitHub Release
+        WP->>GH: create tag v1.1.22 + GitHub Release
 
         WP->>PUB: publish to PyPI (OIDC, stable)
         PUB->>PYPI: upload nwave-ai (stable version)
 
         WP->>VER: calculate nwave-ai version(floor, current_public)
-        VER-->>WP: "1.1.6"
-        WP->>PAT: compute pyproject.toml patches(nwave-ai, 1.1.6)
+        VER-->>WP: "1.1.22"
+        WP->>PAT: compute pyproject.toml patches(nwave-ai, 1.1.22)
         PAT-->>WP: patch set
 
         WP->>TRC: compose full chain(sha, dev_tag, rc_tag, stable_tag, url)
         TRC-->>WP: traceability commit message
-        WP->>SYNC: sync to nWave public(code, 1.1.6, patches, message)
+        WP->>SYNC: sync to nWave public(code, 1.1.22, patches, message)
         SYNC->>PUB_REPO: rsync + patch + commit + tag + release
 
-        WP->>GH: create marker tag v1.1.6 on nwave-dev
+        WP->>GH: create marker tag v1.1.22 on nwave-dev
         WP->>SLK: success notification
     else dry_run = true
         WP->>VER: calculate nwave-ai version
@@ -401,7 +401,7 @@ sequenceDiagram
 |--------|--------------|
 | **Input** | `--stage dev|rc|stable`, `--current-version X.Y.Z`, `--existing-tags TAG1,TAG2,...` |
 | **Input (stable/nwave-ai)** | `--public-version-floor X.Y.Z`, `--current-public-version X.Y.Z` |
-| **Output** | JSON to stdout: `{"version": "2.18.0.dev1", "tag": "v2.18.0.dev1", "base_version": "2.18.0"}` |
+| **Output** | JSON to stdout: `{"version": "1.1.22.dev1", "tag": "v1.1.22.dev1", "base_version": "1.1.22"}` |
 | **Exit codes** | 0 = success, 1 = no version bump needed, 2 = invalid input |
 | **Behavior (dev)** | Read current version from pyproject.toml. Determine next X.Y.Z via conventional commit analysis. Find highest existing `.devN` for that X.Y.Z. Return `.dev{N+1}`. |
 | **Behavior (rc)** | Extract base version from source dev tag. Find highest existing `rcN` for that X.Y.Z. Return `rc{N+1}`. |
@@ -655,7 +655,7 @@ on:
   workflow_dispatch:
     inputs:
       source_dev_tag:
-        description: "Dev tag to promote (e.g., v2.18.0.dev3)"
+        description: "Dev tag to promote (e.g., v1.1.22.dev3)"
         type: string
         required: true
       dry_run:
@@ -671,7 +671,7 @@ on:
   workflow_dispatch:
     inputs:
       source_rc_tag:
-        description: "RC tag to promote (e.g., v2.18.0rc1)"
+        description: "RC tag to promote (e.g., v1.1.22rc1)"
         type: string
         required: true
       dry_run:
@@ -715,14 +715,14 @@ Each stage produces a structured summary to `$GITHUB_STEP_SUMMARY`:
 | Step | Status | Result |
 |------|--------|--------|
 | CI status gate | CHECKED | green (all 4 check-runs passed) |
-| Version calculation | COMPUTED | 2.18.0.dev1 |
+| Version calculation | COMPUTED | 1.1.22.dev1 |
 | Build dist | BUILT | wheel + sdist (12.3 MB) |
-| Create tag | SKIPPED (dry run) | Would create: v2.18.0.dev1 |
+| Create tag | SKIPPED (dry run) | Would create: v1.1.22.dev1 |
 | GitHub pre-release | SKIPPED (dry run) | Would create pre-release |
 | TestPyPI publish | SKIPPED (dry run) | Would upload to TestPyPI |
 | Slack notification | SKIPPED (dry run) | Would notify #releases |
 
-**Summary**: Would have tagged v2.18.0.dev1 on commit abc123d
+**Summary**: Would have tagged v1.1.22.dev1 on commit abc123d
 ```
 
 For RC and Stable, the report additionally shows the traceability commit message and pyproject.toml patch diff.
@@ -807,14 +807,14 @@ Error occurs in Python script
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `source_dev_tag` | string | (required) | Dev tag to promote (e.g., v2.18.0.dev3) |
+| `source_dev_tag` | string | (required) | Dev tag to promote (e.g., v1.1.22.dev3) |
 | `dry_run` | boolean | false | Execute all logic, produce zero side effects |
 
 ### 8.4 Stage 3: Stable Release
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `source_rc_tag` | string | (required) | RC tag to promote (e.g., v2.18.0rc1) |
+| `source_rc_tag` | string | (required) | RC tag to promote (e.g., v1.1.22rc1) |
 | `dry_run` | boolean | false | Execute all logic, produce zero side effects |
 
 ---
