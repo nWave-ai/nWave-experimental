@@ -367,7 +367,7 @@ jobs:
               sections.append(f"**Promoted from**: `{source_rc}`\n")
           if prev_tag:
               sections.append(f"**Full Changelog**: [{prev_tag}...v{version}](https://github.com/{repo}/compare/{prev_tag}...v{version})\n")
-          sections.append("## Installation\n```bash\npip install nwave-ai\n```\n")
+          sections.append("## Installation\n```bash\npipx install nwave-ai\n```\n")
           if breaking: sections.extend(["## Breaking Changes\n", "\n".join(breaking) + "\n"])
           if features: sections.extend(["## Features\n", "\n".join(features) + "\n"])
           if fixes: sections.extend(["## Bug Fixes\n", "\n".join(fixes) + "\n"])
@@ -636,7 +636,7 @@ jobs:
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --title "nwave-ai $TAG" \
-              --notes "Stable release \`$NWAVE_VERSION\`.\n\n\`\`\`bash\npip install nwave-ai\n\`\`\`"
+              --notes "Stable release \`$NWAVE_VERSION\`.\n\n\`\`\`bash\npipx install nwave-ai\n\`\`\`"
           fi
 
   # ===========================================================================
@@ -778,7 +778,7 @@ jobs:
                 },
                 {
                   "type": "section",
-                  "text": { "type": "mrkdwn", "text": "*nwave-ai*: `v${{ needs.sync-public.outputs.nwave_ai_version }}` published to *PyPI*\n`pip install nwave-ai`\nSynced to *nwave-ai/nwave* with tag + GitHub Release\nPromoted from `${{ inputs.source_rc_tag }}`" }
+                  "text": { "type": "mrkdwn", "text": "*nwave-ai*: `v${{ needs.sync-public.outputs.nwave_ai_version }}` published to *PyPI*\n`pipx install nwave-ai`\nSynced to *nwave-ai/nwave* with tag + GitHub Release\nPromoted from `${{ inputs.source_rc_tag }}`" }
                 },
                 {
                   "type": "actions",

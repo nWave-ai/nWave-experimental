@@ -309,7 +309,7 @@ jobs:
           sections.append(f"**Promoted from**: `{source_tag}`\n")
           if prev_tag:
               sections.append(f"**Changes since**: [{prev_tag}](https://github.com/{repo}/compare/{prev_tag}...v{version})\n")
-          sections.append("## Install\n```bash\npip install nwave-ai=={}\n```\n".format(version))
+          sections.append('## Install\n```bash\npipx install nwave-ai=={} --pip-args="--pre"\n```\n'.format(version))
           if breaking: sections.extend(["## Breaking Changes\n", "\n".join(breaking) + "\n"])
           if features: sections.extend(["## Features\n", "\n".join(features) + "\n"])
           if fixes: sections.extend(["## Bug Fixes\n", "\n".join(fixes) + "\n"])
@@ -526,7 +526,7 @@ jobs:
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --title "nwave-ai $TAG (RC)" \
-              --notes "Release candidate promoted from \`${{ inputs.source_dev_tag }}\`.\n\n\`\`\`bash\npip install nwave-ai==${{ needs.version-calc.outputs.version }}\n\`\`\`" \
+              --notes "Release candidate promoted from \`${{ inputs.source_dev_tag }}\`.\n\n\`\`\`bash\npipx install nwave-ai==${{ needs.version-calc.outputs.version }} --pip-args=\"--pre\"\n\`\`\`" \
               --prerelease
           fi
 
@@ -628,7 +628,7 @@ jobs:
                 },
                 {
                   "type": "section",
-                  "text": { "type": "mrkdwn", "text": "Promoted from `${{ inputs.source_dev_tag }}`\n*Install*: `pip install nwave-ai==${{ needs.version-calc.outputs.version }}`\nSynced to *nWave-beta* with tag + GitHub pre-release" }
+                  "text": { "type": "mrkdwn", "text": "Promoted from `${{ inputs.source_dev_tag }}`\n*Install*: `pipx install nwave-ai==${{ needs.version-calc.outputs.version }} --pip-args=\"--pre\"`\nSynced to *nWave-beta* with tag + GitHub pre-release" }
                 },
                 {
                   "type": "actions",
