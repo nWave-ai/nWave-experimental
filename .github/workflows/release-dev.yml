@@ -1,0 +1,333 @@
+# =============================================================================
+# Release Train — Stage 1: Dev Release
+# =============================================================================
+#
+# Creates a dev snapshot from HEAD on master.
+# Triggered manually via workflow_dispatch.
+#
+# Pipeline: CI gate → version calc → build → tag + pre-release → Slack
+#
+# =============================================================================
+
+name: "Release: Dev (Stage 1)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (validate everything, create nothing)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_DEFAULT: "3.12"
+
+concurrency:
+  group: release-dev-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ===========================================================================
+  # CI STATUS GATE — fail-fast API check (no re-running tests)
+  # ===========================================================================
+  ci-gate:
+    name: "CI Status Gate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      status: ${{ steps.gate.outputs.status }}
+      commit_sha: ${{ steps.sha.outputs.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install dependencies
+        run: pip install httpx
+
+      - name: Get HEAD commit SHA
+        id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Check CI status on HEAD
+        id: gate
+        run: |
+          python3 << 'PYEOF'
+          import json, sys, os
+          sys.path.insert(0, ".")
+          from scripts.release.ci_gate import fetch_check_runs, evaluate_check_runs
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["COMMIT_SHA"]
+          token = os.environ["GH_TOKEN"]
+
+          response = fetch_check_runs(repo, sha, token)
+          if "exit_code" in response:
+              print(f"::error::{response['message']}")
+              result = response
+          else:
+              result = evaluate_check_runs(response, sha, self_workflow="Release: Dev (Stage 1)")
+
+          print(json.dumps(result, indent=2))
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"status={result['status']}\n")
+
+          sys.exit(result["exit_code"])
+          PYEOF
+        env:
+          COMMIT_SHA: ${{ steps.sha.outputs.sha }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+  # ===========================================================================
+  # VERSION CALCULATION — next dev version from existing tags
+  # ===========================================================================
+  version-calc:
+    name: "Calculate Dev Version"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs: [ci-gate]
+    outputs:
+      version: ${{ steps.calc.outputs.version }}
+      tag: ${{ steps.calc.outputs.tag }}
+      base_version: ${{ steps.calc.outputs.base_version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install dependencies
+        run: pip install packaging
+
+      - name: Read current version from pyproject.toml
+        id: current
+        run: |
+          VERSION=$(python3 -c "
+          with open('pyproject.toml') as f:
+              for line in f:
+                  if line.strip().startswith('version = '):
+                      print(line.split('\"')[1])
+                      break
+          ")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Gather existing dev tags
+        id: tags
+        run: |
+          TAGS=$(git tag -l "v*.dev*" | tr '\n' ',' | sed 's/,$//')
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Calculate next dev version
+        id: calc
+        run: |
+          OUTPUT=$(python scripts/release/next_version.py \
+            --stage dev \
+            --current-version "${{ steps.current.outputs.version }}" \
+            --existing-tags "${{ steps.tags.outputs.tags }}")
+
+          echo "$OUTPUT"
+
+          VERSION=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+          TAG=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag'])")
+          BASE=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['base_version'])")
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "base_version=$BASE" >> $GITHUB_OUTPUT
+
+  # ===========================================================================
+  # BUILD — wheel + sdist + checksums
+  # ===========================================================================
+  build:
+    name: "Build Distribution"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [ci-gate, version-calc]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-dist-packages
+          path: dist/*
+          retention-days: 30
+
+  # ===========================================================================
+  # TAG + GITHUB PRE-RELEASE
+  # ===========================================================================
+  tag-release:
+    name: "Tag & GitHub Pre-Release"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [ci-gate, version-calc, build]
+    if: inputs.dry_run != true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dev-dist-packages
+          path: dist
+
+      - name: Create dev tag
+        run: |
+          TAG="${{ needs.version-calc.outputs.tag }}"
+          git config user.name "nWave Release Train"
+          git config user.email "noreply@nwave.ai"
+          git tag -a "$TAG" -m "Dev release $TAG"
+          git push origin "$TAG"
+          echo "Created and pushed tag $TAG"
+
+      - name: Create GitHub pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          TAG="${{ needs.version-calc.outputs.tag }}"
+          VERSION="${{ needs.version-calc.outputs.version }}"
+
+          gh release create "$TAG" \
+            --title "Dev Release $TAG" \
+            --notes "Dev snapshot \`$VERSION\` from commit \`${{ needs.ci-gate.outputs.commit_sha }}\`." \
+            --prerelease \
+            dist/*
+
+  # ===========================================================================
+  # DRY RUN SUMMARY
+  # ===========================================================================
+  dry-run-summary:
+    name: "Dry Run Summary"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs: [ci-gate, version-calc, build]
+    if: inputs.dry_run == true
+
+    steps:
+      - name: Report dry run results
+        run: |
+          echo "## Dry Run Report: Dev Release (Stage 1)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| CI status gate | CHECKED | ${{ needs.ci-gate.outputs.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version calculation | COMPUTED | ${{ needs.version-calc.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build dist | BUILT | wheel + sdist |" >> $GITHUB_STEP_SUMMARY
+          echo "| Create tag | SKIPPED (dry run) | Would create: ${{ needs.version-calc.outputs.tag }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub pre-release | SKIPPED (dry run) | Would create pre-release |" >> $GITHUB_STEP_SUMMARY
+          echo "| Slack notification | SKIPPED (dry run) | Would notify |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Summary**: Would have tagged \`${{ needs.version-calc.outputs.tag }}\` on commit \`${{ needs.ci-gate.outputs.commit_sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # SLACK NOTIFICATION
+  # ===========================================================================
+  notify:
+    name: "Slack Notification"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: always() && !cancelled() && inputs.dry_run != true
+    needs: [ci-gate, version-calc, build, tag-release]
+
+    steps:
+      - name: Determine status
+        id: status
+        run: |
+          if [[ "${{ needs.tag-release.result }}" == "success" ]]; then
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "result=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get timestamp
+        id: ts
+        run: echo "unix=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: Send success notification
+        if: steps.status.outputs.result == 'success'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook-type: incoming-webhook
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": { "type": "plain_text", "text": "Dev Release: ${{ needs.version-calc.outputs.tag }}", "emoji": true }
+                },
+                {
+                  "type": "section",
+                  "text": { "type": "mrkdwn", "text": "Dev snapshot created from `${{ needs.ci-gate.outputs.commit_sha }}`\n*Version*: `${{ needs.version-calc.outputs.version }}`" }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    { "type": "button", "text": { "type": "plain_text", "text": "View Release" }, "url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.version-calc.outputs.tag }}", "style": "primary" },
+                    { "type": "button", "text": { "type": "plain_text", "text": "View Run" }, "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [{ "type": "mrkdwn", "text": "Released at: <!date^${{ steps.ts.outputs.unix }}^{date_short_pretty} at {time}|timestamp>" }]
+                }
+              ]
+            }
+
+      - name: Send failure notification
+        if: steps.status.outputs.result == 'failure'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook-type: incoming-webhook
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": { "type": "plain_text", "text": "Dev Release FAILED", "emoji": true }
+                },
+                {
+                  "type": "section",
+                  "text": { "type": "mrkdwn", "text": "*Version*: `${{ needs.version-calc.outputs.version }}`\n*Commit*: `${{ needs.ci-gate.outputs.commit_sha }}`" }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    { "type": "button", "text": { "type": "plain_text", "text": "View Run" }, "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "style": "danger" }
+                  ]
+                }
+              ]
+            }

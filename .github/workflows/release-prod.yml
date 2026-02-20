@@ -1,0 +1,815 @@
+# =============================================================================
+# Release Train — Stage 3: Stable / Production Release
+# =============================================================================
+#
+# Promotes a validated RC to stable status.
+# Triggered manually via workflow_dispatch with a source RC tag.
+#
+# Pipeline: validate source → CI gate → version calc → build
+#           → version bump on nwave-dev → tag + GitHub Release
+#           → PyPI publish (stable) → sync public repo → marker tag → Slack
+#
+# =============================================================================
+
+name: "Release: Stable (Stage 3)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_rc_tag:
+        description: "Source RC tag to promote (e.g. v1.1.22rc1)"
+        required: true
+        type: string
+      dry_run:
+        description: "Dry run (validate everything, create nothing)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  PYTHON_DEFAULT: "3.12"
+
+concurrency:
+  group: release-prod-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ===========================================================================
+  # VALIDATE SOURCE — confirm RC tag exists, extract stable version
+  # ===========================================================================
+  validate-source:
+    name: "Validate Source RC Tag"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      commit_sha: ${{ steps.resolve.outputs.sha }}
+      source_rc_tag: ${{ inputs.source_rc_tag }}
+      dev_tag: ${{ steps.trace-chain.outputs.dev_tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve RC tag to commit
+        id: resolve
+        run: |
+          TAG="${{ inputs.source_rc_tag }}"
+
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG not found."
+            echo ""
+            echo "Available RC tags:"
+            git tag -l "v*rc*" --sort=-version:refname | head -10
+            exit 1
+          fi
+
+          SHA=$(git rev-parse "$TAG^{commit}")
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Resolved $TAG -> $SHA"
+
+      - name: Trace promotion chain (find source dev tag)
+        id: trace-chain
+        run: |
+          SHA="${{ steps.resolve.outputs.sha }}"
+          # Find dev tags pointing to the same commit
+          DEV_TAG=$(git tag -l "v*.dev*" --points-at "$SHA" --sort=-version:refname | head -1)
+          if [[ -z "$DEV_TAG" ]]; then
+            echo "::warning::No dev tag found at commit $SHA. Using 'unknown' for traceability."
+            DEV_TAG="unknown"
+          fi
+          echo "dev_tag=$DEV_TAG" >> $GITHUB_OUTPUT
+          echo "Traced dev tag: $DEV_TAG"
+
+  # ===========================================================================
+  # CI STATUS GATE
+  # ===========================================================================
+  ci-gate:
+    name: "CI Status Gate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs: [validate-source]
+    outputs:
+      status: ${{ steps.gate.outputs.status }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install dependencies
+        run: pip install httpx
+
+      - name: Check CI status on source commit
+        id: gate
+        run: |
+          python3 << 'PYEOF'
+          import json, sys, os
+          sys.path.insert(0, ".")
+          from scripts.release.ci_gate import fetch_check_runs, evaluate_check_runs
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["COMMIT_SHA"]
+          token = os.environ["GH_TOKEN"]
+
+          response = fetch_check_runs(repo, sha, token)
+          if "exit_code" in response:
+              print(f"::error::{response['message']}")
+              result = response
+          else:
+              result = evaluate_check_runs(response, sha, self_workflow="Release: Stable (Stage 3)")
+
+          print(json.dumps(result, indent=2))
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"status={result['status']}\n")
+
+          sys.exit(result["exit_code"])
+          PYEOF
+        env:
+          COMMIT_SHA: ${{ needs.validate-source.outputs.commit_sha }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+  # ===========================================================================
+  # VERSION CALCULATION — stable + nwave-ai versions
+  # ===========================================================================
+  version-calc:
+    name: "Calculate Stable Version"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs: [validate-source, ci-gate]
+    outputs:
+      stable_version: ${{ steps.stable.outputs.version }}
+      stable_tag: ${{ steps.stable.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install dependencies
+        run: pip install packaging
+
+      - name: Calculate stable version
+        id: stable
+        run: |
+          OUTPUT=$(python scripts/release/next_version.py \
+            --stage stable \
+            --current-version "${{ inputs.source_rc_tag }}")
+
+          echo "$OUTPUT"
+
+          VERSION=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+          TAG=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag'])")
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+  # ===========================================================================
+  # BUILD — from the exact source commit
+  # ===========================================================================
+  build:
+    name: "Build Distribution"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [validate-source, ci-gate, version-calc]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-source.outputs.commit_sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stable-dist-packages
+          path: dist/*
+          retention-days: 90
+
+  # ===========================================================================
+  # VERSION BUMP ON NWAVE-DEV — update pyproject.toml + catalog
+  # ===========================================================================
+  version-bump:
+    name: "Version Bump (nwave-dev)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [validate-source, version-calc, build]
+    if: inputs.dry_run != true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Bump version in pyproject.toml and framework-catalog.yaml
+        run: |
+          VERSION="${{ needs.version-calc.outputs.stable_version }}"
+
+          # Update pyproject.toml
+          python3 << PYEOF
+          import re
+          with open('pyproject.toml', 'r') as f:
+              content = f.read()
+          content = re.sub(r'version = "[^"]+"', 'version = "${VERSION}"', content, count=1)
+          with open('pyproject.toml', 'w') as f:
+              f.write(content)
+          PYEOF
+
+          # Update framework-catalog.yaml
+          python3 << PYEOF
+          import yaml
+          with open('nWave/framework-catalog.yaml', 'r') as f:
+              catalog = yaml.safe_load(f)
+          catalog['version'] = "${VERSION}"
+          with open('nWave/framework-catalog.yaml', 'w') as f:
+              yaml.dump(catalog, f, default_flow_style=False, sort_keys=False)
+          PYEOF
+
+          echo "Bumped version to $VERSION"
+
+      - name: Commit version bump
+        run: |
+          VERSION="${{ needs.version-calc.outputs.stable_version }}"
+          git config user.name "nWave Release Train"
+          git config user.email "noreply@nwave.ai"
+          git add pyproject.toml nWave/framework-catalog.yaml
+          git commit -m "chore(release): v${VERSION} [skip ci]"
+          git push origin master
+
+  # ===========================================================================
+  # TAG + GITHUB RELEASE (full, not pre-release)
+  # ===========================================================================
+  tag-release:
+    name: "Tag & GitHub Release"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [validate-source, version-calc, build, version-bump]
+    if: inputs.dry_run != true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: master
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Pull latest (includes version bump commit)
+        run: git pull origin master
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: stable-dist-packages
+          path: dist
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          python3 << 'PYEOF'
+          import subprocess, re, os
+          from datetime import datetime, timezone
+
+          version = os.environ.get("VERSION", "0.0.0")
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          release_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+          try:
+              prev_tag = subprocess.check_output(
+                  ["git", "describe", "--tags", "--abbrev=0", "HEAD^"],
+                  text=True, stderr=subprocess.DEVNULL
+              ).strip()
+          except subprocess.CalledProcessError:
+              prev_tag = ""
+
+          record_end = "<<--EOR-->>"
+          fmt = f"%s%x00%b%x00%h{record_end}"
+          cmd = ["git", "log", "--no-merges", f"--pretty=format:{fmt}"]
+          if prev_tag:
+              cmd.insert(2, f"{prev_tag}..HEAD")
+
+          try:
+              raw = subprocess.check_output(cmd, text=True)
+          except subprocess.CalledProcessError:
+              raw = ""
+
+          conventional_re = re.compile(
+              r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s*(?P<desc>.+)$"
+          )
+          breaking, features, fixes, other = [], [], [], []
+
+          for record in raw.split(record_end):
+              record = record.strip()
+              if not record:
+                  continue
+              parts = record.split("\x00")
+              if len(parts) < 3:
+                  continue
+              subject, body, sha = parts[0].strip(), parts[1].strip(), parts[2].strip()
+              if not subject or not sha:
+                  continue
+              if "chore(release):" in subject or "[skip ci]" in subject:
+                  continue
+
+              m = conventional_re.match(subject)
+              is_breaking = (m and m.group("bang")) or "BREAKING CHANGE:" in body
+              line = f"- {subject} (\`{sha}\`)"
+              if is_breaking:
+                  breaking.append(line)
+              elif m:
+                  ctype = m.group("type")
+                  if ctype == "feat": features.append(line)
+                  elif ctype == "fix": fixes.append(line)
+                  else: other.append(line)
+              else:
+                  other.append(line)
+
+          sections = [f"# nWave Framework v{version}\n", f"**Release Date**: {release_date}\n"]
+          if prev_tag:
+              sections.append(f"**Full Changelog**: [{prev_tag}...v{version}](https://github.com/{repo}/compare/{prev_tag}...v{version})\n")
+          if breaking: sections.extend(["## Breaking Changes\n", "\n".join(breaking) + "\n"])
+          if features: sections.extend(["## Features\n", "\n".join(features) + "\n"])
+          if fixes: sections.extend(["## Bug Fixes\n", "\n".join(fixes) + "\n"])
+          if other: sections.extend(["## Other Changes\n", "\n".join(other) + "\n"])
+          if not any([breaking, features, fixes, other]):
+              sections.append("Patch release (internal improvements)\n")
+          sections.extend(["## Installation\n", "```bash\npipx install nwave-ai\nnwave-ai install\n```\n"])
+
+          os.makedirs("dist", exist_ok=True)
+          with open("dist/RELEASE_NOTES.md", "w") as f:
+              f.write("\n".join(sections))
+          print("\n".join(sections))
+          PYEOF
+        env:
+          VERSION: ${{ needs.version-calc.outputs.stable_version }}
+
+      - name: Create stable tag
+        run: |
+          TAG="${{ needs.version-calc.outputs.stable_tag }}"
+          git config user.name "nWave Release Train"
+          git config user.email "noreply@nwave.ai"
+          git tag -a "$TAG" -m "Stable release $TAG (promoted from ${{ inputs.source_rc_tag }})"
+          git push origin "$TAG"
+          echo "Created and pushed tag $TAG"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          TAG="${{ needs.version-calc.outputs.stable_tag }}"
+
+          gh release create "$TAG" \
+            --title "nWave Framework $TAG" \
+            --notes-file dist/RELEASE_NOTES.md \
+            dist/*.tar.gz dist/SHA256SUMS.txt 2>/dev/null || \
+          gh release create "$TAG" \
+            --title "nWave Framework $TAG" \
+            --notes-file dist/RELEASE_NOTES.md
+
+  # ===========================================================================
+  # PYPI PUBLISH (stable)
+  # ===========================================================================
+  pypi-publish:
+    name: "Publish to PyPI (Stable)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [validate-source, version-calc, build, tag-release]
+    if: inputs.dry_run != true
+    environment: pypi
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-source.outputs.commit_sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install tools
+        run: pip install build packaging tomli
+
+      - name: Patch pyproject.toml for nwave-ai
+        run: |
+          python scripts/release/patch_pyproject.py \
+            --input pyproject.toml \
+            --output pyproject.toml \
+            --target-name nwave-ai \
+            --target-version "${{ needs.version-calc.outputs.stable_version }}"
+
+      - name: Build nwave-ai package
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
+
+  # ===========================================================================
+  # SYNC TO PUBLIC REPO
+  # ===========================================================================
+  sync-public:
+    name: "Sync to nWave Public Repo"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [validate-source, version-calc, build, tag-release, pypi-publish]
+    if: inputs.dry_run != true
+    outputs:
+      nwave_ai_version: ${{ steps.nwave-version.outputs.version }}
+
+    steps:
+      - name: Checkout nwave-dev (source)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-source.outputs.commit_sha }}
+          path: source
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install dependencies
+        run: pip install packaging tomli
+
+      - name: Checkout nwave-ai/nwave (target)
+        uses: actions/checkout@v4
+        with:
+          repository: nwave-ai/nwave
+          token: ${{ secrets.RELEASETRAIN }}
+          path: nwave-target
+
+      - name: Save current nwave-ai version
+        id: pre-sync
+        run: |
+          if [ ! -f nwave-target/pyproject.toml ]; then
+            echo "current_version=0.0.0" >> $GITHUB_OUTPUT
+          else
+            CURRENT=$(python3 -c "
+          import re
+          with open('nwave-target/pyproject.toml') as f:
+              for line in f:
+                  m = re.match(r'version\s*=\s*\"(.+)\"', line.strip())
+                  if m:
+                      print(m.group(1))
+                      break
+          ")
+            echo "current_version=$CURRENT" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Calculate nwave-ai version
+        id: nwave-version
+        working-directory: source
+        run: |
+          FLOOR=$(python3 -c "
+          with open('pyproject.toml') as f:
+              for line in f:
+                  if line.strip().startswith('public_version'):
+                      print(line.split('\"')[1])
+                      break
+          ")
+          CURRENT="${{ steps.pre-sync.outputs.current_version }}"
+
+          OUTPUT=$(python scripts/release/next_version.py \
+            --stage nwave-ai \
+            --current-version "0.0.0" \
+            --public-version-floor "$FLOOR" \
+            --current-public-version "$CURRENT")
+
+          VERSION=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "nwave-ai version: $VERSION (floor=$FLOOR, current=$CURRENT)"
+
+      - name: Sync files
+        run: |
+          find source/ -maxdepth 5 -type l ! -exec test -e {} \; -delete 2>/dev/null || true
+          rm -rf nwave-target/docs/
+
+          set +e
+          rsync -avL --delete \
+            --exclude '.git' \
+            --exclude '.git*' \
+            --exclude '.github/' \
+            --exclude 'nwave-target/' \
+            --exclude 'source/' \
+            --exclude 'CLAUDE.local.md' \
+            --exclude 'SESSION_STATE*' \
+            --exclude 'build.log' \
+            --exclude 'setup.cfg' \
+            --exclude 'Pipfile' \
+            --exclude 'Pipfile.lock' \
+            --exclude '_tmp/' \
+            --exclude 'htmlcov/' \
+            --exclude 'reports/' \
+            --exclude 'mutants/' \
+            --exclude 'nwave.egg-info/' \
+            --exclude 'nwave-ai.egg-info/' \
+            --exclude '.execute-command-updated' \
+            --exclude '.dependency-map.yaml' \
+            --include 'docs/' \
+            --include 'docs/guides/' \
+            --include 'docs/guides/**' \
+            --include 'docs/reference/' \
+            --include 'docs/reference/**' \
+            --exclude 'docs/*' \
+            --exclude 'nWave/checklists/' \
+            --exclude '__pycache__/' \
+            --exclude '.pytest_cache/' \
+            --exclude '.mypy_cache/' \
+            --exclude '.ruff_cache/' \
+            --exclude '.coverage' \
+            --exclude '.DS_Store' \
+            --exclude '.venv/' \
+            --exclude '.des/' \
+            --exclude '.nwave/' \
+            --exclude '.nwave-audit.log' \
+            --exclude '.mutmut-cache' \
+            --exclude '*.sqlite' \
+            --exclude 'test-des-hooks/' \
+            --exclude 'test-des-manual/' \
+            --exclude 'CHANGELOG.md' \
+            --exclude '.releaserc' \
+            --exclude '.commitlintrc.json' \
+            --exclude '.pre-commit-config.yaml' \
+            --exclude '.mcp.json' \
+            --exclude 'requirements.lock' \
+            source/ nwave-target/
+          RSYNC_EXIT=$?
+          set -e
+          if [[ $RSYNC_EXIT -ne 0 && $RSYNC_EXIT -ne 24 ]]; then
+            exit $RSYNC_EXIT
+          fi
+
+      - name: Patch pyproject.toml for nwave-ai
+        working-directory: source
+        run: |
+          python scripts/release/patch_pyproject.py \
+            --input ../nwave-target/pyproject.toml \
+            --output ../nwave-target/pyproject.toml \
+            --target-name nwave-ai \
+            --target-version "${{ steps.nwave-version.outputs.version }}"
+
+      - name: Rewrite README links
+        run: |
+          sed -i.bak 's|](docs/|](https://github.com/nwave-ai/nwave/tree/main/docs/|g' nwave-target/README.md
+          rm -f nwave-target/README.md.bak
+
+      - name: Compose traceability commit message
+        id: trace
+        working-directory: source
+        run: |
+          MSG=$(python scripts/release/trace_message.py \
+            --stage stable \
+            --version "${{ steps.nwave-version.outputs.version }}" \
+            --commit-sha "${{ needs.validate-source.outputs.commit_sha }}" \
+            --dev-tag "${{ needs.validate-source.outputs.dev_tag }}" \
+            --rc-tag "${{ inputs.source_rc_tag }}" \
+            --stable-tag "${{ needs.version-calc.outputs.stable_tag }}" \
+            --pipeline-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Commit and push to public repo
+        working-directory: nwave-target
+        run: |
+          git config user.name "nWave Release Train"
+          git config user.email "noreply@nwave.ai"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish"
+          else
+            git commit -m "${{ steps.trace.outputs.message }}"
+            git push
+          fi
+
+      - name: Tag and release on public repo
+        working-directory: nwave-target
+        env:
+          GH_TOKEN: ${{ secrets.RELEASETRAIN }}
+        run: |
+          NWAVE_VERSION="${{ steps.nwave-version.outputs.version }}"
+          TAG="v${NWAVE_VERSION}"
+
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+          fi
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "nwave-ai $TAG" \
+              --notes "Stable release \`$NWAVE_VERSION\`.\n\n\`\`\`bash\npip install nwave-ai\n\`\`\`"
+          fi
+
+  # ===========================================================================
+  # MARKER TAG — reverse traceability on nwave-dev
+  # ===========================================================================
+  marker-tag:
+    name: "Marker Tag (nwave-dev)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [validate-source, version-calc, sync-public]
+    if: inputs.dry_run != true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Create marker tag
+        run: |
+          NWAVE_VERSION="${{ needs.sync-public.outputs.nwave_ai_version }}"
+          STABLE_TAG="${{ needs.version-calc.outputs.stable_tag }}"
+          TAG="$STABLE_TAG"
+
+          git config user.name "nWave Release Train"
+          git config user.email "noreply@nwave.ai"
+
+          # Only create if it doesn't already exist (version-bump may have created it)
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag -a "$TAG" -m "Published as nwave-ai v${NWAVE_VERSION}"
+            git push origin "$TAG"
+            echo "Created marker tag $TAG"
+          else
+            echo "Tag $TAG already exists (created by version-bump step)"
+          fi
+
+  # ===========================================================================
+  # DRY RUN SUMMARY
+  # ===========================================================================
+  dry-run-summary:
+    name: "Dry Run Summary"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs: [validate-source, ci-gate, version-calc, build]
+    if: inputs.dry_run == true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-source.outputs.commit_sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install dependencies
+        run: pip install packaging tomli
+
+      - name: Compose dry-run traceability message
+        id: trace
+        run: |
+          MSG=$(python scripts/release/trace_message.py \
+            --stage stable \
+            --version "${{ needs.version-calc.outputs.stable_version }}" \
+            --commit-sha "${{ needs.validate-source.outputs.commit_sha }}" \
+            --dev-tag "${{ needs.validate-source.outputs.dev_tag }}" \
+            --rc-tag "${{ inputs.source_rc_tag }}" \
+            --stable-tag "${{ needs.version-calc.outputs.stable_tag }}" \
+            --pipeline-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Report dry run results
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY'
+          ## Dry Run Report: Stable Release (Stage 3)
+
+          | Step | Status | Result |
+          |------|--------|--------|
+          | Validate source | CHECKED | ${{ inputs.source_rc_tag }} -> ${{ needs.validate-source.outputs.commit_sha }} |
+          | CI status gate | CHECKED | ${{ needs.ci-gate.outputs.status }} |
+          | Version calculation | COMPUTED | ${{ needs.version-calc.outputs.stable_version }} |
+          | Build dist | BUILT | wheel + sdist |
+          | Version bump | SKIPPED (dry run) | Would bump nwave-dev to ${{ needs.version-calc.outputs.stable_version }} |
+          | Stable tag | SKIPPED (dry run) | Would create ${{ needs.version-calc.outputs.stable_tag }} |
+          | GitHub Release | SKIPPED (dry run) | Would create full release |
+          | PyPI publish | SKIPPED (dry run) | Would publish stable to PyPI |
+          | Sync public repo | SKIPPED (dry run) | Would sync to nwave-ai/nwave |
+          | Marker tag | SKIPPED (dry run) | Would create marker on nwave-dev |
+          | Slack notification | SKIPPED (dry run) | Would notify |
+
+          **Traceability message**:
+          ```
+          ${{ steps.trace.outputs.message }}
+          ```
+
+          **Summary**: Would have released `${{ needs.version-calc.outputs.stable_tag }}` from `${{ inputs.source_rc_tag }}`
+          SUMMARY
+
+  # ===========================================================================
+  # SLACK NOTIFICATION
+  # ===========================================================================
+  notify:
+    name: "Slack Notification"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: always() && !cancelled() && inputs.dry_run != true
+    needs: [validate-source, version-calc, build, tag-release, pypi-publish, sync-public, marker-tag]
+
+    steps:
+      - name: Determine status
+        id: status
+        run: |
+          if [[ "${{ needs.tag-release.result }}" == "success" && \
+                "${{ needs.sync-public.result }}" == "success" && \
+                "${{ needs.marker-tag.result }}" == "success" ]]; then
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "result=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get timestamp
+        id: ts
+        run: echo "unix=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: Send success notification
+        if: steps.status.outputs.result == 'success'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook-type: incoming-webhook
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": { "type": "plain_text", "text": "Stable Release: ${{ needs.version-calc.outputs.stable_tag }}", "emoji": true }
+                },
+                {
+                  "type": "section",
+                  "text": { "type": "mrkdwn", "text": "*nwave-ai*: `v${{ needs.sync-public.outputs.nwave_ai_version }}` published to *PyPI*\n`pip install nwave-ai`\nSynced to *nwave-ai/nwave* with tag + GitHub Release\nPromoted from `${{ inputs.source_rc_tag }}`" }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    { "type": "button", "text": { "type": "plain_text", "text": "View Release" }, "url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.version-calc.outputs.stable_tag }}", "style": "primary" },
+                    { "type": "button", "text": { "type": "plain_text", "text": "View Run" }, "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [{ "type": "mrkdwn", "text": "Released at: <!date^${{ steps.ts.outputs.unix }}^{date_short_pretty} at {time}|timestamp>" }]
+                }
+              ]
+            }
+
+      - name: Send failure notification
+        if: steps.status.outputs.result == 'failure'
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook-type: incoming-webhook
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": { "type": "plain_text", "text": "Stable Release FAILED", "emoji": true }
+                },
+                {
+                  "type": "section",
+                  "text": { "type": "mrkdwn", "text": "*Version*: `${{ needs.version-calc.outputs.stable_version }}`\n*Source*: `${{ inputs.source_rc_tag }}`" }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    { "type": "button", "text": { "type": "plain_text", "text": "View Run" }, "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "style": "danger" }
+                  ]
+                }
+              ]
+            }
