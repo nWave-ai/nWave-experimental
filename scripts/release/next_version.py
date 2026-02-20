@@ -12,7 +12,7 @@ Stages:
     nwave-ai -> version for public package (auto-bump or floor override)
 
 Output: JSON to stdout:
-    {"version": "2.18.0.dev1", "tag": "v2.18.0.dev1", "base_version": "2.18.0", "pep440_valid": true}
+    {"version": "1.1.22.dev1", "tag": "v1.1.22.dev1", "base_version": "1.1.22", "pep440_valid": true}
 
 Exit codes:
     0 = success
@@ -39,12 +39,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--current-version",
         required=True,
-        help="Current version from pyproject.toml (e.g. 2.17.6)",
+        help="Current version from pyproject.toml (e.g. 1.1.21)",
     )
     parser.add_argument(
         "--existing-tags",
         default="",
-        help="Comma-separated list of existing tags (e.g. v2.18.0.dev1,v2.18.0.dev2)",
+        help="Comma-separated list of existing tags (e.g. v1.1.22.dev1,v1.1.22.dev2)",
     )
     parser.add_argument(
         "--public-version-floor",
@@ -141,7 +141,7 @@ def calculate_dev(
     if no_bump:
         _error_exit("No version bump needed.", code=1)
 
-    base = _bump_minor(current_version)
+    base = _bump_patch(current_version)
     highest = _highest_counter(existing_tags, base, "dev")
     next_dev = highest + 1
     version_str = f"{base}.dev{next_dev}"
@@ -149,8 +149,8 @@ def calculate_dev(
 
 
 def calculate_rc(current_version: str, existing_tags: list[Version]) -> None:
-    # current_version for RC is the base version (e.g. "2.18.0")
-    # or a dev tag like "v2.18.0.dev3" -> strip to "2.18.0"
+    # current_version for RC is the base version (e.g. "1.1.22")
+    # or a dev tag like "v1.1.22.dev3" -> strip to "1.1.22"
     raw = current_version.lstrip("v")
     try:
         parsed = Version(raw)

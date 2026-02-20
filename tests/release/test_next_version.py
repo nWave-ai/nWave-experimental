@@ -43,21 +43,21 @@ class TestDevVersionCalculation:
         "current_version, existing_tags, expected_version",
         [
             pytest.param(
-                "2.17.6",
+                "1.1.21",
                 [],
-                "2.18.0.dev1",
-                id="first-dev-release-after-feat-commit",
+                "1.1.22.dev1",
+                id="first-dev-release",
             ),
             pytest.param(
-                "2.17.6",
-                ["v2.18.0.dev1"],
-                "2.18.0.dev2",
+                "1.1.21",
+                ["v1.1.22.dev1"],
+                "1.1.22.dev2",
                 id="second-dev-release",
             ),
             pytest.param(
-                "2.17.6",
-                ["v2.18.0.dev1", "v2.18.0.dev2"],
-                "2.18.0.dev3",
+                "1.1.21",
+                ["v1.1.22.dev1", "v1.1.22.dev2"],
+                "1.1.22.dev3",
                 id="third-dev-sequential",
             ),
         ],
@@ -80,21 +80,21 @@ class TestDevVersionCalculation:
         assert output["version"] == expected_version
 
     def test_dev_version_gaps_in_counter_handled(self):
-        """Given tags v2.18.0.dev1 and v2.18.0.dev5 exist (gap in sequence),
+        """Given tags v1.1.22.dev1 and v1.1.22.dev5 exist (gap in sequence),
         when calculating the next dev version,
-        then the result is v2.18.0.dev6 (highest + 1, not fill gaps).
+        then the result is v1.1.22.dev6 (highest + 1, not fill gaps).
         """
         result = run_next_version(
             "--stage",
             "dev",
             "--current-version",
-            "2.17.6",
+            "1.1.21",
             "--existing-tags",
-            "v2.18.0.dev1,v2.18.0.dev5",
+            "v1.1.22.dev1,v1.1.22.dev5",
         )
         assert result.returncode == 0
         output = parse_output(result)
-        assert output["version"] == "2.18.0.dev6"
+        assert output["version"] == "1.1.22.dev6"
 
     def test_no_version_bump_commits_exits_cleanly(self):
         """Given all commits since the last tag are chore/ci type,
@@ -107,7 +107,7 @@ class TestDevVersionCalculation:
             "--stage",
             "dev",
             "--current-version",
-            "2.17.6",
+            "1.1.21",
             "--no-bump",
         )
         assert result.returncode == 1
@@ -116,19 +116,19 @@ class TestDevVersionCalculation:
 
     def test_output_includes_tag_and_base_version(self):
         """The JSON output must include 'version', 'tag', and 'base_version'.
-        Example: {"version": "2.18.0.dev1", "tag": "v2.18.0.dev1", "base_version": "2.18.0"}.
+        Example: {"version": "1.1.22.dev1", "tag": "v1.1.22.dev1", "base_version": "1.1.22"}.
         """
         result = run_next_version(
             "--stage",
             "dev",
             "--current-version",
-            "2.17.6",
+            "1.1.21",
         )
         assert result.returncode == 0
         output = parse_output(result)
-        assert output["version"] == "2.18.0.dev1"
-        assert output["tag"] == "v2.18.0.dev1"
-        assert output["base_version"] == "2.18.0"
+        assert output["version"] == "1.1.22.dev1"
+        assert output["tag"] == "v1.1.22.dev1"
+        assert output["base_version"] == "1.1.22"
 
     def test_dev_version_is_pep440_compliant(self):
         """The returned version string must be parseable by packaging.version.Version."""
@@ -136,7 +136,7 @@ class TestDevVersionCalculation:
             "--stage",
             "dev",
             "--current-version",
-            "2.17.6",
+            "1.1.21",
         )
         assert result.returncode == 0
         output = parse_output(result)
@@ -152,21 +152,21 @@ class TestRCVersionCalculation:
         "base_version, existing_tags, expected_version",
         [
             pytest.param(
-                "2.18.0",
+                "1.1.22",
                 [],
-                "2.18.0rc1",
+                "1.1.22rc1",
                 id="first-rc-for-version",
             ),
             pytest.param(
-                "2.18.0",
-                ["v2.18.0rc1"],
-                "2.18.0rc2",
+                "1.1.22",
+                ["v1.1.22rc1"],
+                "1.1.22rc2",
                 id="second-rc-sequential",
             ),
             pytest.param(
-                "2.18.0",
-                ["v2.18.0rc1", "v2.18.0rc2", "v2.18.0rc3"],
-                "2.18.0rc4",
+                "1.1.22",
+                ["v1.1.22rc1", "v1.1.22rc2", "v1.1.22rc3"],
+                "1.1.22rc4",
                 id="fourth-rc-sequential",
             ),
         ],
@@ -189,20 +189,20 @@ class TestRCVersionCalculation:
         assert output["version"] == expected_version
 
     def test_rc_version_extracts_base_from_dev_tag(self):
-        """Given source dev tag 'v2.18.0.dev3',
+        """Given source dev tag 'v1.1.22.dev3',
         when calculating the RC version,
-        then the base version is '2.18.0' (dev suffix stripped).
+        then the base version is '1.1.22' (dev suffix stripped).
         """
         result = run_next_version(
             "--stage",
             "rc",
             "--current-version",
-            "v2.18.0.dev3",
+            "v1.1.22.dev3",
         )
         assert result.returncode == 0
         output = parse_output(result)
-        assert output["base_version"] == "2.18.0"
-        assert output["version"] == "2.18.0rc1"
+        assert output["base_version"] == "1.1.22"
+        assert output["version"] == "1.1.22rc1"
 
     def test_rc_version_is_pep440_compliant(self):
         """The returned RC version string must be parseable by packaging.version.Version."""
@@ -210,7 +210,7 @@ class TestRCVersionCalculation:
             "--stage",
             "rc",
             "--current-version",
-            "2.18.0",
+            "1.1.22",
         )
         assert result.returncode == 0
         output = parse_output(result)
@@ -223,20 +223,20 @@ class TestStableVersionCalculation:
     """Stable version extraction for Stage 3 (stable releases)."""
 
     def test_stable_strips_rc_suffix(self):
-        """Given source RC tag 'v2.18.0rc1',
+        """Given source RC tag 'v1.1.22rc1',
         when calculating the stable version,
-        then the version is '2.18.0' (rc suffix stripped).
+        then the version is '1.1.22' (rc suffix stripped).
         """
         result = run_next_version(
             "--stage",
             "stable",
             "--current-version",
-            "v2.18.0rc1",
+            "v1.1.22rc1",
         )
         assert result.returncode == 0
         output = parse_output(result)
-        assert output["version"] == "2.18.0"
-        assert output["tag"] == "v2.18.0"
+        assert output["version"] == "1.1.22"
+        assert output["tag"] == "v1.1.22"
 
     def test_stable_version_is_pep440_compliant(self):
         """The returned stable version must be parseable by packaging.version.Version."""
@@ -244,7 +244,7 @@ class TestStableVersionCalculation:
             "--stage",
             "stable",
             "--current-version",
-            "v2.18.0rc1",
+            "v1.1.22rc1",
         )
         assert result.returncode == 0
         output = parse_output(result)
@@ -262,20 +262,20 @@ class TestNwaveAIVersionCalculation:
         [
             pytest.param(
                 "1.1.0",
-                "1.1.5",
-                "1.1.6",
+                "1.1.21",
+                "1.1.22",
                 id="floor-below-current-auto-bumps-patch",
             ),
             pytest.param(
                 "2.0.0",
-                "1.1.5",
+                "1.1.21",
                 "2.0.0",
                 id="floor-above-current-uses-floor",
             ),
             pytest.param(
-                "1.1.5",
-                "1.1.5",
-                "1.1.6",
+                "1.1.21",
+                "1.1.21",
+                "1.1.22",
                 id="floor-equals-current-auto-bumps-patch",
             ),
         ],
@@ -292,7 +292,7 @@ class TestNwaveAIVersionCalculation:
             "--stage",
             "nwave-ai",
             "--current-version",
-            "2.18.0",
+            "1.1.22",
             "--public-version-floor",
             floor,
             "--current-public-version",
@@ -316,7 +316,7 @@ class TestVersionInputValidation:
             "--stage",
             "beta",
             "--current-version",
-            "2.17.6",
+            "1.1.21",
         )
         assert result.returncode == 2
         output = parse_output(result)
@@ -332,7 +332,7 @@ class TestVersionInputValidation:
             "--stage",
             "dev",
             "--current-version",
-            "2.17.6",
+            "1.1.21",
             "--existing-tags",
             "not-a-version",
         )
