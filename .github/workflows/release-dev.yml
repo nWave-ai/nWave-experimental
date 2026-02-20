@@ -45,46 +45,52 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_DEFAULT }}
-
-      - name: Install dependencies
-        run: pip install httpx
-
       - name: Get HEAD commit SHA
         id: sha
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Check CI status on HEAD
+      - name: Check CI Pipeline status on HEAD
         id: gate
-        run: |
-          python3 << 'PYEOF'
-          import json, sys, os
-          sys.path.insert(0, ".")
-          from scripts.release.ci_gate import fetch_check_runs, evaluate_check_runs
-
-          repo = os.environ["GITHUB_REPOSITORY"]
-          sha = os.environ["COMMIT_SHA"]
-          token = os.environ["GH_TOKEN"]
-
-          response = fetch_check_runs(repo, sha, token)
-          if "exit_code" in response:
-              print(f"::error::{response['message']}")
-              result = response
-          else:
-              result = evaluate_check_runs(response, sha, self_workflow="Release: Dev (Stage 1)")
-
-          print(json.dumps(result, indent=2))
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"status={result['status']}\n")
-
-          sys.exit(result["exit_code"])
-          PYEOF
         env:
-          COMMIT_SHA: ${{ steps.sha.outputs.sha }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          SHA="${{ steps.sha.outputs.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+
+          # Query CI Pipeline workflow runs for this specific commit
+          RUN_JSON=$(gh run list \
+            --workflow ci.yml \
+            --commit "$SHA" \
+            --limit 1 \
+            --json status,conclusion,databaseId \
+            -q '.[0]' 2>/dev/null || echo "")
+
+          if [[ -z "$RUN_JSON" || "$RUN_JSON" == "null" ]]; then
+            echo "::error::No CI Pipeline run found for $SHORT_SHA. Push to trigger CI first."
+            echo "status=none" >> $GITHUB_OUTPUT
+            exit 3
+          fi
+
+          STATUS=$(echo "$RUN_JSON" | jq -r '.status')
+          CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion')
+          RUN_ID=$(echo "$RUN_JSON" | jq -r '.databaseId')
+
+          echo "CI Pipeline run $RUN_ID: status=$STATUS, conclusion=$CONCLUSION"
+
+          if [[ "$STATUS" != "completed" ]]; then
+            echo "::error::CI still running on $SHORT_SHA (run $RUN_ID), retry later."
+            echo "status=pending" >> $GITHUB_OUTPUT
+            exit 2
+          fi
+
+          if [[ "$CONCLUSION" != "success" ]]; then
+            echo "::error::CI failed on $SHORT_SHA (run $RUN_ID, conclusion: $CONCLUSION)."
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "CI Pipeline passed on $SHORT_SHA (run $RUN_ID)"
+          echo "status=green" >> $GITHUB_OUTPUT
 
   # ===========================================================================
   # VERSION CALCULATION — next dev version from existing tags
