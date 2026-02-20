@@ -19,7 +19,7 @@ These artifacts are produced in one stage and consumed in another. Each must hav
 | `stable_version` | string | Stage 3 (Stable) | validate-source | Version bump, PyPI, public repo | PEP 440: `X.Y.Z` |
 | `stable_tag` | string | Stage 3 (Stable) | version-bump | GitHub Release, traceability | `vX.Y.Z` |
 | `nwave_ai_version` | string | Stage 3 (Stable) | sync-public-repo | Public PyPI, marker tag | PEP 440: `X.Y.Z` |
-| `nwave_dev_marker` | string | Stage 3 (Stable) | marker-tag | Reverse traceability | `nWave_vX.Y.Z` |
+| `nwave_dev_marker` | string | Stage 3 (Stable) | marker-tag | Reverse traceability | `vX.Y.Z` |
 | `ci_check_status` | string | Each stage | ci-status-gate | Gate for build step in all stages | `green \| failed \| pending \| none` |
 | `dist_artifacts` | files | Each stage | build step | Tag upload, PyPI, TestPyPI | wheel + sdist |
 | `checksums` | file | Each stage | build step | GitHub Release assets | SHA256SUMS.txt |
@@ -49,7 +49,7 @@ These artifacts are produced in one stage and consumed in another. Each must hav
 | PyPI dev version | `X.Y.Z.devN` | `2.18.0.dev1` | No v prefix on PyPI |
 | PyPI RC version | `X.Y.ZrcN` | `2.18.0rc1` | No v prefix on PyPI |
 | PyPI stable version | `X.Y.Z` | `2.18.0` | No v prefix on PyPI |
-| Public marker tag | `nWave_vX.Y.Z` | `nWave_v1.2.0` | On nwave-dev, tracks public release |
+| Public marker tag | `vX.Y.Z` | `v1.2.0` | On nwave-dev, tracks public release |
 
 ## Traceability Chain
 
@@ -65,7 +65,7 @@ Forward (source -> public):
 Reverse (public -> source):
   nWave public v1.2.0
     -> commit message: "Source: nwave-dev@abc123d"
-    -> nwave-dev marker tag: nWave_v1.2.0
+    -> nwave-dev marker tag: v1.2.0
     -> nwave-dev commit abc123d
 ```
 

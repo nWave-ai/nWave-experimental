@@ -15,13 +15,13 @@ A dedicated `release-prod.yml` workflow, triggered via `workflow_dispatch`, that
 ## Domain Examples
 
 ### Example 1: Happy path stable release from rc1
-Mike's beta testers validated `v2.18.0rc1` with no blockers. He triggers release-prod.yml with `source_rc_tag: v2.18.0rc1`. The pipeline checks out commit abc123d, builds, bumps nwave-dev to v2.18.0, publishes `nwave-ai` as stable on PyPI, syncs to nwave-ai/nwave with auto-bumped version 1.1.6, and creates marker tag `nWave_v1.1.6` on nwave-dev. Slack announces: "nwave-ai v1.1.6 released! `pip install nwave-ai`"
+Mike's beta testers validated `v2.18.0rc1` with no blockers. He triggers release-prod.yml with `source_rc_tag: v2.18.0rc1`. The pipeline checks out commit abc123d, builds, bumps nwave-dev to v2.18.0, publishes `nwave-ai` as stable on PyPI, syncs to nwave-ai/nwave with auto-bumped version 1.1.6, and creates marker tag `v1.1.6` on nwave-dev. Slack announces: "nwave-ai v1.1.6 released! `pip install nwave-ai`"
 
 ### Example 2: Version floor override for major bump
 Mike sets `public_version = "2.0.0"` in pyproject.toml's `[tool.nwave]` section because the next release has breaking changes. The current public version is 1.1.5. The pipeline sees floor (2.0.0) > current (1.1.5) and uses 2.0.0 as the nwave-ai version instead of auto-bumping to 1.1.6.
 
 ### Example 3: Tracing a bug from public to source
-A user reports a bug in nwave-ai v1.1.6. Mike looks at the nwave-dev repo, finds tag `nWave_v1.1.6`, which points to the exact commit that was released. He also checks the nWave public repo's commit message for v1.1.6 and finds "Source: nwave-dev@abc123d, Dev tag: v2.18.0.dev3, RC tag: v2.18.0rc1."
+A user reports a bug in nwave-ai v1.1.6. Mike looks at the nwave-dev repo, finds tag `v1.1.6`, which points to the exact commit that was released. He also checks the nWave public repo's commit message for v1.1.6 and finds "Source: nwave-dev@abc123d, Dev tag: v2.18.0.dev3, RC tag: v2.18.0rc1."
 
 ## UAT Scenarios (BDD)
 
@@ -33,7 +33,7 @@ When the pipeline completes
 Then nwave-dev has tag "v2.18.0" with a full GitHub Release
 And "nwave-ai" stable version is on production PyPI
 And nWave public repo has tag "v1.1.6" with a GitHub Release
-And nwave-dev has marker tag "nWave_v1.1.6"
+And nwave-dev has marker tag "v1.1.6"
 And Slack shows "pip install nwave-ai"
 
 ### Scenario: Version floor override
@@ -52,7 +52,7 @@ Then nwave-ai version is "1.1.6"
 Given Mike triggers release-prod.yml with source_rc_tag "v2.18.0rc1" and dry_run "true"
 When the pipeline completes
 Then source RC is validated, CI status is checked, stable version is calculated, dist packages are built, nwave-ai version is calculated (floor vs auto-bump), pyproject.toml patch is composed, and full traceability chain message is composed
-And the summary reports "Would have: tagged v2.18.0, bumped nwave-dev to 2.18.0, published to PyPI, synced to nWave public as v1.1.6, created marker nWave_v1.1.6"
+And the summary reports "Would have: tagged v2.18.0, bumped nwave-dev to 2.18.0, published to PyPI, synced to nWave public as v1.1.6, created marker v1.1.6"
 And no stable tag is created, no version bump commit, no PyPI upload, no public repo sync, no marker tag, no Slack notification
 
 ### Scenario: Source RC tag missing
@@ -67,7 +67,7 @@ When inspecting the nWave public commit for "v1.1.6"
 Then the commit contains: Source SHA, Dev tag, RC tag, Stable tag, Pipeline URL
 
 ### Scenario: Reverse traceability
-Given marker tag "nWave_v1.1.6" exists on nwave-dev
+Given marker tag "v1.1.6" exists on nwave-dev
 When Mike queries that tag
 Then it points to the commit that produced the public release
 
@@ -86,13 +86,13 @@ And "2.18.0rc1" is not installed
 - [ ] nWave public repo synced with pyproject.toml patched for nwave-ai identity
 - [ ] nwave-ai version auto-bumped from current, or uses floor if floor > current
 - [ ] Full traceability chain in target repo commit messages (SHA, dev tag, RC tag, pipeline URL)
-- [ ] Reverse-lookup marker tag `nWave_vX.Y.Z` on nwave-dev
+- [ ] Reverse-lookup marker tag `vX.Y.Z` on nwave-dev
 - [ ] Dry run mode executes all logic (validate, CI gate, version calc, build, version floor calc, pyproject patch compose, traceability chain compose) but produces zero side effects (no tag, no version bump commit, no release, no PyPI upload, no public sync, no marker tag, no Slack)
 
 ## Technical Notes
 - Depends on: US-RTR-002 (RC pipeline must exist to produce source RC tags)
 - RELEASETRAIN token for cross-repo push
 - pyproject.toml patching (name, version, authors, build config) currently uses regex; consider templating
-- Changelog generated from conventional commits between nWave_v* tags
+- Changelog generated from conventional commits between production marker tags
 - Workflow file: `.github/workflows/release-prod.yml`
 - Calls reusable workflows: `_reusable-build.yml`, `_reusable-publish-pypi.yml`, `_reusable-sync-repo.yml`

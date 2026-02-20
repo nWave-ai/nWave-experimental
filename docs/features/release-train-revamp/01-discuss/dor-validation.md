@@ -97,7 +97,7 @@
 |---|----------|--------|----------|
 | 1 | Problem statement clear, domain language | PASS | "time-consuming to trace a public release back to its source" |
 | 2 | User/persona identified | PASS | Mike (debugger), Mike (auditor), future maintainers |
-| 3 | At least 3 domain examples with real data | PASS | 3 examples: forward trace, backward trace (nWave_v1.1.6), beta trace |
+| 3 | At least 3 domain examples with real data | PASS | 3 examples: forward trace, backward trace (v1.1.6), beta trace |
 | 4 | UAT scenarios in Given/When/Then (3-7) | PASS | 4 scenarios: public commit, beta commit, reverse lookup, forward lookup |
 | 5 | Acceptance criteria from UAT | PASS | 5 checkable items derived from scenarios |
 | 6 | Right-sized (1-3 days, 3-7 scenarios) | PASS | ~1 day; 4 scenarios |

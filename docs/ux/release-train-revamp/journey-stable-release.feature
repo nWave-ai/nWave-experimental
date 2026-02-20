@@ -37,8 +37,8 @@ Feature: Stable Release (Stage 3)
     And the commit message contains full traceability chain
     And tag "v1.1.6" exists on the public repo
     And a GitHub Release is created on the public repo
-    When the pipeline creates the dev marker
-    Then tag "nWave_v1.1.6" exists on nwave-dev
+    When the pipeline creates the production marker
+    Then tag "v1.1.6" exists on nwave-dev
     And Slack receives a success notification with install instructions
 
   Scenario: Dry run validates all logic but produces no side effects
@@ -61,7 +61,7 @@ Feature: Stable Release (Stage 3)
     And the message contains "Dev tag: v2.18.0.dev3"
     And the message contains "RC tag: v2.18.0rc1"
     And the message contains "Stable tag: v2.18.0"
-    And the pipeline reports "Would have: tagged v2.18.0, bumped nwave-dev to 2.18.0, published to PyPI, synced to nWave public as v1.1.6, created marker nWave_v1.1.6"
+    And the pipeline reports "Would have: tagged v2.18.0, bumped nwave-dev to 2.18.0, published to PyPI, synced to nWave public as v1.1.6, created marker v1.1.6"
     And no stable tag is created on nwave-dev
     And no version bump commit is created on nwave-dev
     And no GitHub Release is created
@@ -133,8 +133,8 @@ Feature: Stable Release (Stage 3)
     And the commit message contains the pipeline run URL
 
   Scenario: Reverse traceability from public to dev
-    Given the stable release created marker tag "nWave_v1.1.6" on nwave-dev
-    When querying nwave-dev for tag "nWave_v1.1.6"
+    Given the stable release created marker tag "v1.1.6" on nwave-dev
+    When querying nwave-dev for tag "v1.1.6"
     Then the tag points to the commit that was released
     And the tag annotation contains "Published as nwave-ai v1.1.6"
 

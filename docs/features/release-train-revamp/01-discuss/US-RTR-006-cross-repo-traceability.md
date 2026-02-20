@@ -10,7 +10,7 @@ He finds it time-consuming to trace a public release back to its source: the cur
 - Future maintainers who need to understand the release provenance
 
 ## Solution (What We Build)
-Enhance the cross-repo commit messages to include a full traceability chain: source commit SHA, dev tag, RC tag, and pipeline run URL. Create a reverse-lookup marker tag on nwave-dev (`nWave_vX.Y.Z`) that enables tracing from any public version back to the dev commit in a single query.
+Enhance the cross-repo commit messages to include a full traceability chain: source commit SHA, dev tag, RC tag, and pipeline run URL. Create a reverse-lookup marker tag on nwave-dev (`vX.Y.Z`) that enables tracing from any public version back to the dev commit in a single query.
 
 ## Domain Examples
 
@@ -27,7 +27,7 @@ Pipeline: https://github.com/Undeadgrishnackh/crafter-ai/actions/runs/12345
 ```
 
 ### Example 2: Tracing backward (public to dev)
-A user reports a bug in nwave-ai v1.1.6. Mike runs `git tag -l "nWave_v1.1.6"` on nwave-dev and finds the tag. He runs `git log -1 nWave_v1.1.6` and sees the exact commit and its annotation "Published as nwave-ai v1.1.6". He can now bisect from that point.
+A user reports a bug in nwave-ai v1.1.6. Mike runs `git tag -l "v1.1.6"` on nwave-dev and finds the tag. He runs `git log -1 v1.1.6` and sees the exact commit and its annotation "Published as nwave-ai v1.1.6". He can now bisect from that point.
 
 ### Example 3: Beta repo traceability
 A beta tester reports an issue with RC `v2.18.0rc1` on nWave-beta. Mike looks at the nWave-beta commit message and finds "Source: nwave-dev@abc123d, Dev tag: v2.18.0.dev3" which tells him exactly which dev snapshot was promoted.
@@ -50,8 +50,8 @@ Then the commit message contains the source commit SHA
 And the commit message contains the dev tag
 
 ### Scenario: Reverse lookup via marker tag
-Given stable release created marker tag "nWave_v1.1.6"
-When Mike runs "git show nWave_v1.1.6" on nwave-dev
+Given stable release created marker tag "v1.1.6"
+When Mike runs "git show v1.1.6" on nwave-dev
 Then the tag annotation shows "Published as nwave-ai v1.1.6"
 And the tag points to the correct source commit
 
@@ -61,17 +61,17 @@ When Mike starts from commit abc123d on nwave-dev
 Then he can find tag v2.18.0.dev3 (dev)
 And he can find tag v2.18.0rc1 (RC)
 And he can find tag v2.18.0 (stable)
-And he can find tag nWave_v1.1.6 (public marker)
+And he can find tag v1.1.6 (public marker)
 
 ## Acceptance Criteria
 - [ ] Public repo commits include: source SHA, dev tag, RC tag, stable tag, pipeline URL
 - [ ] Beta repo commits include: source SHA, dev tag, pipeline URL
-- [ ] Marker tag `nWave_vX.Y.Z` created on nwave-dev for each public release
+- [ ] Marker tag `vX.Y.Z` created on nwave-dev for each public release
 - [ ] Marker tag annotation includes "Published as nwave-ai vX.Y.Z"
 - [ ] Any public version can be traced to its source commit in a single git command
 
 ## Technical Notes
 - Requires passing the full traceability chain through workflow outputs between stages
-- Marker tag format: `nWave_v{nwave_ai_version}` (existing convention, already used)
+- Marker tag format: `v{nwave_ai_version}` (PEP 440 compliant, no prefix)
 - Commit message template should be centralized (in the reusable sync workflow)
 - Dependency: US-RTR-004 (reusable sync workflow is where commit messages are composed)

@@ -94,7 +94,7 @@ Mike reviews RC v2.18.0rc1 feedback: "No blockers, beta testers happy"
                     v
     +-------------------------------+
     | Tag nwave-dev with marker     |   Feeling: TRACEABLE
-    | nWave_v{public_version}       |   "I can trace from any repo
+    | v{public_version}             |   "I can trace from any repo
     |                               |    back to source"
     +-------------------------------+
                     |
@@ -144,7 +144,7 @@ Mike reviews RC v2.18.0rc1 feedback: "No blockers, beta testers happy"
 | `stable_tag` | `v2.18.0` | GitHub Release, traceability |
 | `nwave_ai_version` | `1.2.0` | Public repo, PyPI |
 | `nwave_ai_tag` | `v1.2.0` | Public repo GitHub Release |
-| `nwave_dev_marker` | `nWave_v1.2.0` | Reverse traceability |
+| `nwave_dev_marker` | `v1.2.0` | Reverse traceability |
 | `source_commit_sha` | `abc123def456` | Cross-repo commit messages |
 | `full_traceability_chain` | dev3 -> rc1 -> stable | Commit messages in target repos |
 | `pypi_stable_url` | PyPI URL | Slack, public docs |

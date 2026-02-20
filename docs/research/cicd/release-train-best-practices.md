@@ -339,7 +339,7 @@ Pipeline: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID
 
 **Recommendation:**
 1. Add the source commit SHA to the target repo's commit message
-2. Your existing `nWave_v${NWAVE_VERSION}` tag on the dev repo is good for reverse traceability
+2. Your existing `v${NWAVE_VERSION}` marker tag on the dev repo is good for reverse traceability
 3. Consider adding a `RELEASE_MANIFEST.json` to the target repo with full provenance:
 
 ```json

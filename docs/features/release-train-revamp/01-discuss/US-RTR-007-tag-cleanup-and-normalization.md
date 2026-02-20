@@ -15,20 +15,20 @@ A one-time cleanup script and documented tag convention. Remove or rename non-st
 ## Domain Examples
 
 ### Example 1: Audit existing tags
-Mike runs the tag audit script. It finds tags like `v2.17.6`, `v2.17.5` (valid), `nWave_v1.1.0` (valid marker), and potentially any malformed tags. The script reports: "47 tags found. 45 valid, 2 non-standard: [list]."
+Mike runs the tag audit script. It finds tags like `v2.17.6`, `v2.17.5` (valid), `v1.1.0` (valid marker), and potentially any malformed tags. The script reports: "47 tags found. 45 valid, 2 non-standard: [list]."
 
 ### Example 2: Dry run cleanup
 Mike runs the cleanup script in dry-run mode. It reports what would change: "Would delete 2 non-standard tags: tag-a, tag-b. Would keep 45 tags. No PEP 440 conflicts detected." Mike reviews and confirms.
 
 ### Example 3: Document convention for future reference
-After cleanup, a `TAG_CONVENTION.md` file in the repo documents: stable tags use `vX.Y.Z`, dev tags use `vX.Y.Z.devN`, RC tags use `vX.Y.ZrcN`, public markers use `nWave_vX.Y.Z`. This becomes the reference for the new pipeline.
+After cleanup, a `TAG_CONVENTION.md` file in the repo documents: stable tags use `vX.Y.Z`, dev tags use `vX.Y.Z.devN`, RC tags use `vX.Y.ZrcN`, public markers use `vX.Y.Z`. This becomes the reference for the new pipeline.
 
 ## UAT Scenarios (BDD)
 
 ### Scenario: Audit identifies non-standard tags
 Given the nwave-dev repo has 47 existing tags
 When the audit script runs
-Then it classifies each tag as: stable (vX.Y.Z), marker (nWave_vX.Y.Z), or non-standard
+Then it classifies each tag as: RENAME (nWave_v* markers to v*), DELETE (legacy), or KEEP
 And it reports the count of each category
 
 ### Scenario: Dry run shows planned changes
@@ -61,6 +61,6 @@ And it specifies PEP 440 compliance rules
 ## Technical Notes
 - One-time task; the script does not need to be maintained long-term
 - Must handle both local and remote tag cleanup (`git push --delete origin <tag>`)
-- Should preserve all valid `vX.Y.Z` and `nWave_vX.Y.Z` tags
+- Should preserve all valid `vX.Y.Z` and `vX.Y.Z` tags
 - Run before enabling US-RTR-001 (dev release pipeline) to avoid counter conflicts
 - Consider: should this be a script in `scripts/` or a manual procedure documented in a runbook?

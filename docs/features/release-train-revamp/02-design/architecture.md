@@ -369,7 +369,7 @@ sequenceDiagram
         WP->>SYNC: sync to nWave public(code, 1.1.6, patches, message)
         SYNC->>PUB_REPO: rsync + patch + commit + tag + release
 
-        WP->>GH: create marker tag nWave_v1.1.6 on nwave-dev
+        WP->>GH: create marker tag v1.1.6 on nwave-dev
         WP->>SLK: success notification
     else dry_run = true
         WP->>VER: calculate nwave-ai version
@@ -458,7 +458,7 @@ inputs:
     description: "Path to write RELEASE_NOTES.md"
     default: "dist/releases/RELEASE_NOTES.md"
   scope:
-    description: "Tag scope: 'dev' uses v* tags, 'public' uses nWave_v* tags"
+    description: "Tag scope: 'dev' uses v* tags, 'public' uses v* tags (public version range)"
     default: "dev"
 
 outputs:

@@ -127,11 +127,11 @@ journey:
     - id: "marker-tag"
       name: "Tag nwave-dev with public release marker"
       actor: "CI/CD system"
-      action: "Create nWave_v{nwave_ai_version} tag on nwave-dev"
+      action: "Create v{nwave_ai_version} marker tag on nwave-dev"
       consumes:
         - nwave_ai_version
       produces:
-        - nwave_dev_marker_tag: "nWave_v1.2.0"
+        - nwave_dev_marker_tag: "v1.2.0"
       feeling: "Traceable"
       notes: "Enables reverse traceability: public version -> dev commit"
 
