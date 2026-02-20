@@ -18,8 +18,13 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 
-import tomli
+
+if sys.version_info >= (3, 11):
+    import tomllib as tomli
+else:
+    import tomli
 
 
 class PatchError(Exception):
