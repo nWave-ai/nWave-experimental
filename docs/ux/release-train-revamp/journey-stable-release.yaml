@@ -1,0 +1,182 @@
+journey:
+  name: "Stable Release"
+  epic: "release-train-revamp"
+  stage: 3
+  trigger: "Manual workflow_dispatch, referencing an RC tag"
+  persona: "Mike (maintainer, promoting RC to stable)"
+
+  emotional_arc:
+    start: "Confident - RC has been tested by beta testers"
+    middle: "Meticulous - every step traced back to source"
+    end: "Celebratory - public release, pip install just works"
+
+  steps:
+    - id: "trigger"
+      name: "Trigger stable promotion"
+      actor: "Mike"
+      action: "workflow_dispatch on release-prod.yml"
+      inputs:
+        - source_rc_tag: "e.g. v2.18.0rc1"
+        - dry_run: "boolean (default: false)"
+      feeling: "Confident"
+      produces:
+        - workflow_run_id
+
+    - id: "validate-source"
+      name: "Validate source RC tag"
+      actor: "CI/CD system"
+      action: "Confirm RC tag exists, checkout that exact commit"
+      consumes:
+        - source_rc_tag
+      produces:
+        - validated_commit_sha
+        - stable_version: "2.18.0"
+      feeling: "Trusting"
+      error_path:
+        on_missing_tag: "STOP. List available RC tags."
+
+    - id: "ci-status-gate"
+      name: "CI Status Gate"
+      actor: "CI/CD system"
+      action: "Query GitHub API check-runs for the validated commit SHA; verify all checks passed"
+      consumes:
+        - validated_commit_sha
+      produces:
+        - ci_check_status: "green | failed | pending | none"
+      feeling: "Trusting"
+      rules:
+        - "Single API call: GET /repos/{owner}/{repo}/commits/{sha}/check-runs"
+        - "Four outcomes: all green (proceed), any failed (STOP), any pending (STOP), no checks (STOP)"
+        - "No tests re-run; the commit was already validated by trunk CI"
+      error_path:
+        on_failed: "STOP. 'CI failed on {sha}'. No stable release created."
+        on_pending: "STOP. 'CI still running on {sha}, retry later'."
+        on_none: "STOP. 'No CI run found for {sha}'."
+
+    - id: "build"
+      name: "Build from same commit"
+      actor: "CI/CD system"
+      action: "Build dist packages from the validated commit"
+      consumes:
+        - validated_commit_sha
+      produces:
+        - dist_artifacts: "wheel + sdist"
+        - checksums: "SHA256SUMS.txt"
+      feeling: "Meticulous"
+      gate: "ci-status-gate must be green"
+      notes: "Same source commit as dev and RC. Promotion chain preserved."
+
+    - id: "version-bump"
+      name: "Version bump on nwave-dev"
+      actor: "CI/CD system"
+      action: "Update pyproject.toml and framework-catalog.yaml, commit and tag"
+      consumes:
+        - stable_version
+      produces:
+        - version_bump_commit
+        - stable_tag: "v2.18.0"
+        - github_release_url
+      feeling: "Orderly"
+      rules:
+        - "Commit message: chore(release): v2.18.0 [skip ci]"
+        - "GitHub Release (full, not pre-release)"
+        - "Release notes generated from conventional commits"
+
+    - id: "pypi-publish"
+      name: "Publish to PyPI production (stable)"
+      actor: "CI/CD system"
+      action: "Upload stable version to PyPI via OIDC"
+      consumes:
+        - dist_artifacts
+      produces:
+        - pypi_stable_url
+      feeling: "Releasing"
+      rules:
+        - "Trusted Publisher (OIDC)"
+        - "No pre-release marker: pip install nwave-ai gets this"
+        - "Separate build and publish jobs (OIDC security)"
+      error_path:
+        on_version_exists: "STOP. Stable version collision is a serious error."
+
+    - id: "sync-public-repo"
+      name: "Sync to nWave public repo"
+      actor: "CI/CD system"
+      action: "rsync to nwave-ai/nwave, patch pyproject.toml, commit, tag, release"
+      consumes:
+        - source_code_at_commit
+        - stable_version
+        - validated_commit_sha
+        - source_dev_tag: "from RC promotion chain"
+        - source_rc_tag
+      produces:
+        - public_repo_commit
+        - nwave_ai_version: "auto-bumped from public repo current"
+        - nwave_ai_tag: "v1.2.0"
+        - public_repo_release_url
+      feeling: "Proud"
+      traceability:
+        commit_message: |
+          chore(release): v1.2.0
+
+          Source: nwave-dev@{validated_commit_sha}
+          Dev tag: v2.18.0.dev3
+          RC tag: v2.18.0rc1
+          Stable tag: v2.18.0
+          Pipeline: {workflow_run_url}
+
+    - id: "marker-tag"
+      name: "Tag nwave-dev with public release marker"
+      actor: "CI/CD system"
+      action: "Create nWave_v{nwave_ai_version} tag on nwave-dev"
+      consumes:
+        - nwave_ai_version
+      produces:
+        - nwave_dev_marker_tag: "nWave_v1.2.0"
+      feeling: "Traceable"
+      notes: "Enables reverse traceability: public version -> dev commit"
+
+    - id: "notify"
+      name: "Slack notification"
+      actor: "CI/CD system"
+      action: "Send stable release notification"
+      consumes:
+        - stable_version
+        - nwave_ai_version
+        - pypi_stable_url
+        - public_repo_release_url
+      feeling: "Celebratory"
+
+  shared_artifacts:
+    - name: "stable_version"
+      source: "validate-source"
+      consumers: ["version-bump", "sync-public-repo", "notify"]
+    - name: "stable_tag"
+      source: "version-bump"
+      consumers: ["sync-public-repo commit message", "traceability chain"]
+    - name: "nwave_ai_version"
+      source: "sync-public-repo"
+      consumers: ["marker-tag", "notify", "PyPI"]
+    - name: "nwave_dev_marker_tag"
+      source: "marker-tag"
+      consumers: ["reverse traceability lookup"]
+    - name: "ci_check_status"
+      source: "ci-status-gate"
+      consumers: ["build gate"]
+    - name: "validated_commit_sha"
+      source: "validate-source"
+      consumers: ["ci-status-gate", "build", "sync-public-repo commit message"]
+    - name: "full_traceability_chain"
+      source: "composite: dev_tag + rc_tag + stable_tag + nwave_ai_tag + marker_tag"
+      consumers: ["cross-repo commit messages", "audit trail"]
+
+  integration_checkpoints:
+    - between: ["validate-source", "ci-status-gate"]
+      validates: "RC tag resolves to valid commit"
+    - between: ["ci-status-gate", "build"]
+      validates: "CI passed on the source commit SHA; safe to build"
+    - between: ["build", "pypi-publish"]
+      validates: "Build succeeded; wheel passes twine check"
+    - between: ["pypi-publish", "sync-public-repo"]
+      validates: "Stable package on PyPI before public repo update"
+    - between: ["sync-public-repo", "marker-tag"]
+      validates: "Public repo version known before creating dev marker"

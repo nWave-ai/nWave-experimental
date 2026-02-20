@@ -1,0 +1,135 @@
+journey:
+  name: "Dev Release"
+  epic: "release-train-revamp"
+  stage: 1
+  trigger: "Manual workflow_dispatch on master"
+  persona: "Mike (maintainer)"
+
+  emotional_arc:
+    start: "Intentional - choosing to mark this commit set"
+    middle: "Trusting - the system handles versioning and sequencing"
+    end: "Confirmed - tagged, traceable, done"
+
+  steps:
+    - id: "trigger"
+      name: "Trigger dev release"
+      actor: "Mike"
+      action: "workflow_dispatch on release-dev.yml"
+      inputs:
+        - target_version: "auto (default) or explicit X.Y.Z"
+        - dry_run: "boolean (default: false)"
+      feeling: "Intentional"
+      produces:
+        - workflow_run_id
+
+    - id: "ci-status-gate"
+      name: "CI Status Gate"
+      actor: "CI/CD system"
+      action: "Query GitHub API check-runs for HEAD commit SHA; verify all checks passed"
+      consumes:
+        - source_commit_sha
+      produces:
+        - ci_check_status: "green | failed | pending | none"
+      feeling: "Trusting"
+      rules:
+        - "Single API call: GET /repos/{owner}/{repo}/commits/{sha}/check-runs"
+        - "Four outcomes: all green (proceed), any failed (STOP), any pending (STOP), no checks (STOP)"
+        - "No tests re-run; trunk-based development means CI already validated this commit"
+        - "Fail fast: cheapest validation first (2-second API call before version calculation)"
+      error_path:
+        on_failed: "STOP. 'CI failed on {sha}'. No tag created. Slack failure notification."
+        on_pending: "STOP. 'CI still running on {sha}, retry later'. No tag created."
+        on_none: "STOP. 'No CI run found for {sha}'. No tag created."
+
+    - id: "version-calc"
+      name: "Calculate next dev version"
+      actor: "CI/CD system"
+      action: "Read current version, determine next, append .devN"
+      consumes:
+        - pyproject_toml_version
+        - existing_dev_tags
+      produces:
+        - dev_version: "e.g. 2.18.0.dev1"
+      feeling: "Trusting"
+      gate: "ci-status-gate must be green"
+      rules:
+        - "PEP 440 format: X.Y.Z.devN"
+        - "Sequential integer for N"
+        - "N increments from highest existing .devN for same X.Y.Z"
+
+    - id: "build-dist"
+      name: "Build dist packages"
+      actor: "CI/CD system"
+      action: "Build wheel and sdist, generate checksums (no tests)"
+      consumes:
+        - source_code_at_commit
+      produces:
+        - dist_artifacts: "wheel + sdist"
+        - checksums: "SHA256SUMS.txt"
+      feeling: "Efficient"
+      gate: "ci-status-gate must be green"
+
+    - id: "tag-release"
+      name: "Create tag and GitHub pre-release"
+      actor: "CI/CD system"
+      action: "git tag vX.Y.Z.devN, create GitHub pre-release"
+      consumes:
+        - dev_version
+        - dist_artifacts
+        - checksums
+      produces:
+        - dev_tag: "v2.18.0.dev1"
+        - github_pre_release_url
+      feeling: "Confirmed"
+      gate: "ci-status-gate must be green, build-dist must succeed"
+
+    - id: "testpypi-publish"
+      name: "Optional TestPyPI publish"
+      actor: "CI/CD system"
+      action: "Upload to TestPyPI for smoke testing upload mechanics"
+      optional: true
+      consumes:
+        - dist_artifacts
+      produces:
+        - testpypi_url: "optional"
+      feeling: "Verifying"
+      notes: "NOT for distribution; only for testing upload plumbing"
+
+    - id: "notify"
+      name: "Slack notification"
+      actor: "CI/CD system"
+      action: "Send success/failure notification to Slack"
+      consumes:
+        - dev_version
+        - github_pre_release_url
+        - workflow_run_id
+      feeling: "Confirmed"
+
+  shared_artifacts:
+    - name: "dev_version"
+      source: "version-calc"
+      consumers: ["tag-release", "notify", "Stage 2 RC promotion"]
+    - name: "dev_tag"
+      source: "tag-release"
+      consumers: ["Stage 2 RC promotion", "traceability chain"]
+    - name: "source_commit_sha"
+      source: "trigger (HEAD at dispatch time)"
+      consumers: ["all downstream stages"]
+    - name: "ci_check_status"
+      source: "ci-status-gate"
+      consumers: ["build-dist gate", "Slack notification on failure"]
+    - name: "dist_artifacts"
+      source: "build-dist"
+      consumers: ["tag-release", "testpypi-publish"]
+
+  integration_checkpoints:
+    - between: ["trigger", "ci-status-gate"]
+      validates: "HEAD commit SHA available for API query"
+    - between: ["ci-status-gate", "version-calc"]
+      validates: "CI passed on commit SHA; safe to proceed with version calculation"
+    - between: ["version-calc", "build-dist"]
+      validates: "Calculated version is valid PEP 440"
+    - between: ["build-dist", "tag-release"]
+      validates: "Build succeeded; artifacts exist"
+    - between: ["tag-release", "Stage 2"]
+      validates: "Dev tag exists and points to green commit"

@@ -58,6 +58,7 @@ def pytest_html_results_summary(prefix, summary, postfix):
             "<li><strong>Plugins</strong> — nWave plugins and install scripts</li>",
             "<li><strong>Acceptance</strong> — End-to-end acceptance tests</li>",
             "<li><strong>Bugs</strong> — Regression tests for tracked bugs</li>",
+            "<li><strong>Release Train</strong> — Release pipeline script tests</li>",
             "</ul>",
         ]
     )
@@ -89,6 +90,8 @@ TIER_MAP = {
     "tests/plugins/plugin-architecture/e2e/": "e2e",
     "tests/plugins/install/": "unit",
     "tests/plugins/": "unit",  # frontmatter tests default to unit
+    # Release train tests
+    "tests/release/": "unit",
     # Bug regression tests
     "tests/bugs/": "acceptance",
     # Root-level tests
@@ -119,6 +122,7 @@ DOMAIN_MAP = {
     "tests/plugins/install/": ("Plugins", "Install Scripts"),
     "tests/plugins/": ("Plugins", "nWave Plugins"),
     "tests/bugs/": ("Bugs", "Regression"),
+    "tests/release/": ("Release Train", "Unit Tests"),
 }
 
 
@@ -197,6 +201,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         "tests/plugins/install/": "Plugins (install)",
         "tests/plugins/": "Plugins",
         "tests/bugs/": "Bugs",
+        "tests/release/": "Release Train",
     }
 
     # Sorted by specificity (longest prefix first)

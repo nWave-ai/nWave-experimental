@@ -1,0 +1,198 @@
+"""Patch pyproject.toml for public nWave repo distribution.
+
+Renames package, sets version, removes dev-only sections,
+rewrites build targets.
+
+CLI:
+    python patch_pyproject.py --input PATH --output PATH \\
+        --target-name NAME --target-version VERSION [--dry-run]
+
+Exit codes:
+    0 = success
+    1 = input file not found / parse error / missing field
+    2 = (reserved)
+    3 = no changes needed
+"""
+
+from __future__ import annotations
+
+import os
+import re
+
+import tomli
+
+
+class PatchError(Exception):
+    """Raised when patching fails (file not found, parse error, missing field)."""
+
+
+# Dev-only TOML sections to strip from public distribution.
+_DEV_SECTIONS = frozenset({"[tool.nwave]", "[tool.semantic_release]"})
+
+
+def _read_and_validate(input_path: str) -> tuple[str, dict]:
+    """Read raw TOML text and parse it for validation.
+
+    Returns (raw_text, parsed_dict).
+    Raises PatchError on file-not-found, parse error, or missing fields.
+    """
+    if not os.path.isfile(input_path):
+        msg = f"Input file not found: {input_path}"
+        raise PatchError(msg)
+
+    raw = open(input_path).read()
+
+    try:
+        parsed = tomli.loads(raw)
+    except tomli.TOMLDecodeError as exc:
+        msg = f"TOML parse error in {input_path}: {exc}"
+        raise PatchError(msg) from exc
+
+    project = parsed.get("project", {})
+    if "name" not in project:
+        msg = "pyproject.toml missing required field: [project] name"
+        raise PatchError(msg)
+
+    return raw, parsed
+
+
+def _patch_name(text: str, old_name: str, new_name: str) -> tuple[str, str | None]:
+    """Replace the project name value (exact match inside [project] name line)."""
+    pattern = re.compile(
+        r'^(name\s*=\s*")' + re.escape(old_name) + r'(")', re.MULTILINE
+    )
+    new_text, count = pattern.subn(rf"\g<1>{new_name}\2", text)
+    if count == 0:
+        return text, None
+    return new_text, f"name: {old_name} -> {new_name}"
+
+
+def _patch_version(
+    text: str, old_version: str, new_version: str
+) -> tuple[str, str | None]:
+    """Replace the project version value."""
+    pattern = re.compile(
+        r'^(version\s*=\s*")' + re.escape(old_version) + r'(")',
+        re.MULTILINE,
+    )
+    new_text, count = pattern.subn(rf"\g<1>{new_version}\2", text)
+    if count == 0:
+        return text, None
+    return new_text, f"version: {old_version} -> {new_version}"
+
+
+def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
+    """Rewrite [tool.hatch.build.targets.wheel] packages to the public name."""
+    # Convert target-name (e.g. "nwave-ai") to Python package name (e.g. "nwave_ai")
+    pkg_name = new_name.replace("-", "_")
+    pattern = re.compile(r'^(packages\s*=\s*\[)"[^"]*"(\])', re.MULTILINE)
+    new_text, count = pattern.subn(rf'\1"{pkg_name}"\2', text)
+    if count == 0:
+        return text, None
+    return new_text, f'packages: rewritten to ["{pkg_name}"]'
+
+
+def _remove_section(text: str, header: str) -> tuple[str, str | None]:
+    """Remove an entire TOML section (header + all lines until next section or EOF)."""
+    # Match the section header and all lines up to (but not including) the next section header
+    escaped = re.escape(header)
+    pattern = re.compile(
+        r"^" + escaped + r"\s*\n(?:(?!\[).+\n?)*",
+        re.MULTILINE,
+    )
+    new_text, count = pattern.subn("", text)
+    if count == 0:
+        return text, None
+    # Clean up any resulting double blank lines
+    new_text = re.sub(r"\n{3,}", "\n\n", new_text)
+    return new_text, f"removed section: {header}"
+
+
+def patch_pyproject(
+    input_path: str,
+    output_path: str,
+    target_name: str,
+    target_version: str,
+    dry_run: bool = False,
+) -> dict:
+    """Patch a pyproject.toml for public distribution.
+
+    Returns a dict with keys: patched, changes, output_path.
+    """
+    raw, parsed = _read_and_validate(input_path)
+
+    old_name = parsed["project"]["name"]
+    old_version = parsed["project"].get("version", "0.0.0")
+
+    text = raw
+    changes: list[str] = []
+
+    # 1. Name swap
+    text, change = _patch_name(text, old_name, target_name)
+    if change:
+        changes.append(change)
+
+    # 2. Version set
+    text, change = _patch_version(text, old_version, target_version)
+    if change:
+        changes.append(change)
+
+    # 3. Rewrite wheel packages
+    text, change = _patch_wheel_packages(text, target_name)
+    if change:
+        changes.append(change)
+
+    # 4. Remove dev-only sections
+    for section in sorted(_DEV_SECTIONS):
+        text, change = _remove_section(text, section)
+        if change:
+            changes.append(change)
+
+    patched = len(changes) > 0
+
+    if not dry_run:
+        with open(output_path, "w") as f:
+            f.write(text)
+
+    return {
+        "patched": patched,
+        "changes": changes,
+        "output_path": output_path,
+    }
+
+
+if __name__ == "__main__":
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="Patch pyproject.toml for public distribution"
+    )
+    parser.add_argument(
+        "--input", required=True, dest="input_path", help="Source pyproject.toml"
+    )
+    parser.add_argument(
+        "--output", required=True, dest="output_path", help="Output path"
+    )
+    parser.add_argument("--target-name", required=True, help="Target package name")
+    parser.add_argument("--target-version", required=True, help="Target version")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show diff without writing"
+    )
+
+    args = parser.parse_args()
+
+    try:
+        result = patch_pyproject(
+            input_path=args.input_path,
+            output_path=args.output_path,
+            target_name=args.target_name,
+            target_version=args.target_version,
+            dry_run=args.dry_run,
+        )
+        print(json.dumps(result))
+        sys.exit(0)
+    except PatchError as exc:
+        print(json.dumps({"error": str(exc)}), file=sys.stderr)
+        sys.exit(1)
