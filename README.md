@@ -56,7 +56,7 @@ The full workflow has six waves. Use all six for greenfield projects, or jump st
 | DISTILL | `/nw:distill` | acceptance-designer | Given-When-Then tests |
 | DELIVER | `/nw:deliver` | software-crafter | Working implementation |
 
-22 agents total: 6 wave agents, 5 cross-wave specialists, 11 peer reviewers. Full list: **[Commands Reference](docs/internal/nwave-commands-reference.md)**
+22 agents total: 6 wave agents, 5 cross-wave specialists, 11 peer reviewers. Full list: **[Commands Reference](docs/reference/commands/index.md)**
 
 ## Documentation
 
@@ -68,10 +68,9 @@ The full workflow has six waves. Use all six for greenfield projects, or jump st
 
 ### Guides & Reference
 
-- **[All Commands & Agents](docs/internal/nwave-commands-reference.md)** — Complete reference
+- **[Agents & Commands Reference](docs/reference/index.md)** — All agents, commands, skills, templates
 - **[Invoke Reviewers](docs/guides/invoke-reviewer-agents.md)** — Peer review workflow
 - **[Troubleshooting](docs/guides/troubleshooting-guide.md)** — Common issues and fixes
-- **[Full Documentation Index](docs/internal/DOCUMENTATION_STRUCTURE.md)** — DIVIO-organized docs
 
 ## Community
 
