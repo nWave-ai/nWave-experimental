@@ -515,6 +515,44 @@ def check_pages(pages: dict[str, str], output_dir: Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Link validation
+# ---------------------------------------------------------------------------
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+
+
+def check_links(root: Path, dirs: list[str]) -> list[str]:
+    """Validate markdown links in specified directories. Returns list of broken links."""
+    broken: list[str] = []
+    files_to_check: list[Path] = []
+
+    for d in dirs:
+        target = root / d
+        if target.is_file():
+            files_to_check.append(target)
+        elif target.is_dir():
+            files_to_check.extend(target.rglob("*.md"))
+
+    for md_file in sorted(files_to_check):
+        text = md_file.read_text(encoding="utf-8")
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for match in _MD_LINK_RE.finditer(line):
+                target = match.group(2)
+                # Skip external URLs, anchors-only, mailto
+                if target.startswith(("http://", "https://", "#", "mailto:")):
+                    continue
+                # Strip anchor from target
+                target_path = target.split("#")[0]
+                if not target_path:
+                    continue
+                # Resolve relative to the file's directory
+                resolved = (md_file.parent / target_path).resolve()
+                if not resolved.exists():
+                    rel = md_file.relative_to(root)
+                    broken.append(f"{rel}:{lineno}: broken link → {target}")
+    return broken
+
+
+# ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 def run_pipeline(root: Path, output_dir: Path) -> dict[str, str]:
@@ -543,6 +581,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Check if generated docs are up to date (exit 1 if stale)",
     )
+    parser.add_argument(
+        "--check-links",
+        action="store_true",
+        help="Validate markdown links in README and docs/ (exit 1 if broken)",
+    )
     args = parser.parse_args(argv)
 
     root = Path(__file__).resolve().parent.parent
@@ -562,6 +605,16 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {s}", file=sys.stderr)
             return 1
         print("Documentation is up to date.")
+        return 0
+
+    if args.check_links:
+        broken = check_links(root, ["README.md", "docs/guides", "docs/reference"])
+        if broken:
+            print(f"Found {len(broken)} broken link(s):", file=sys.stderr)
+            for b in broken:
+                print(f"  {b}", file=sys.stderr)
+            return 1
+        print("All links valid.")
         return 0
 
     write_pages(pages, output_dir)

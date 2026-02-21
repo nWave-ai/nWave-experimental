@@ -1,6 +1,6 @@
 """Tests for command source file YAML frontmatter.
 
-Validates that all 18 command source files in nWave/tasks/nw/*.md
+Validates that all 21 command source files in nWave/tasks/nw/*.md
 have valid YAML frontmatter with description (and optionally argument-hint)
 matching the framework-catalog.yaml metadata.
 """
@@ -16,6 +16,7 @@ CATALOG_PATH = PROJECT_ROOT / "nWave" / "framework-catalog.yaml"
 
 EXPECTED_COMMANDS = sorted(
     [
+        "continue",
         "deliver",
         "design",
         "devops",
@@ -25,10 +26,12 @@ EXPECTED_COMMANDS = sorted(
         "distill",
         "document",
         "execute",
+        "fast-forward",
         "finalize",
         "forge",
         "mikado",
         "mutation-test",
+        "new",
         "refactor",
         "research",
         "review",
@@ -69,7 +72,7 @@ def _load_catalog_commands() -> dict:
 
 
 class TestCommandFrontmatterAcceptance:
-    """Acceptance: All 18 command source files have valid YAML frontmatter."""
+    """Acceptance: All 21 command source files have valid YAML frontmatter."""
 
     def test_all_command_files_have_frontmatter(self):
         """Every command file must start with --- YAML frontmatter containing description."""

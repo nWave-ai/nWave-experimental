@@ -257,6 +257,31 @@ commands:
     argument_hint: '[agent] [project-id] - Example: @platform-architect "auth-upgrade"'
     outputs:
     - evolution_document
+  new:
+    description: Guided wizard to start a new feature. Asks what you want to build,
+      recommends the right starting wave, and launches it.
+    argument_hint: '[feature-description] - Example: "Add rate limiting to the API
+      gateway"'
+    agents: []
+    wave: CROSS_WAVE
+    outputs:
+    - wave_dispatch
+  continue:
+    description: Detects current wave progress for a feature and resumes at the next
+      step. Scans docs/feature/ for artifacts.
+    argument_hint: '[project-id] - Optional: omit to auto-detect from docs/feature/'
+    agents: []
+    wave: CROSS_WAVE
+    outputs:
+    - wave_dispatch
+  fast-forward:
+    description: Fast-forwards through remaining waves end-to-end without stopping
+      for review between waves.
+    argument_hint: '[feature-description] - Optional: --from=[discuss|design|devops|distill|deliver]'
+    agents: []
+    wave: CROSS_WAVE
+    outputs:
+    - complete_feature
 quality_gates:
   knowledge_preservation:
     software-crafter: 925_lines_methodology

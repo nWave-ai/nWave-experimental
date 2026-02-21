@@ -10,6 +10,7 @@ import pytest
 from scripts.docgen import (
     DocgenError,
     _infer_wave,
+    check_links,
     check_pages,
     enrich,
     extract_agent,
@@ -453,3 +454,60 @@ class TestIntegration:
         """Pipeline completes without DocgenError means all cross-refs are valid."""
         pages = run_pipeline(real_root, real_root / "docs" / "generated")
         assert pages  # No DocgenError raised
+
+
+# ---------------------------------------------------------------------------
+# Link validation
+# ---------------------------------------------------------------------------
+class TestCheckLinks:
+    def test_valid_links_pass(self, tmp_path: Path):
+        """Valid relative links between files produce no errors."""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "target.md").write_text("# Target")
+        (tmp_path / "docs" / "source.md").write_text("[link](target.md)")
+        assert check_links(tmp_path, ["docs"]) == []
+
+    def test_broken_relative_link_detected(self, tmp_path: Path):
+        """Broken relative link is reported with file:line format."""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "source.md").write_text("[broken](nonexistent.md)")
+        broken = check_links(tmp_path, ["docs"])
+        assert len(broken) == 1
+        assert "source.md:1" in broken[0]
+        assert "nonexistent.md" in broken[0]
+
+    def test_external_urls_skipped(self, tmp_path: Path):
+        """External URLs (https://) are not validated."""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "source.md").write_text(
+            "[ext](https://example.com)\n[mail](mailto:a@b.com)"
+        )
+        assert check_links(tmp_path, ["docs"]) == []
+
+    def test_anchor_links_file_verified(self, tmp_path: Path):
+        """file.md#section passes when file.md exists (anchor not validated)."""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "target.md").write_text("# Section")
+        (tmp_path / "docs" / "source.md").write_text("[link](target.md#section)")
+        assert check_links(tmp_path, ["docs"]) == []
+
+    def test_anchor_only_links_skipped(self, tmp_path: Path):
+        """Anchor-only links (#section) are skipped."""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "source.md").write_text("[link](#section)")
+        assert check_links(tmp_path, ["docs"]) == []
+
+    def test_single_file_target(self, tmp_path: Path):
+        """Can check a single file (not just directories)."""
+        readme = tmp_path / "README.md"
+        readme.write_text("[link](nonexistent.md)")
+        broken = check_links(tmp_path, ["README.md"])
+        assert len(broken) == 1
+
+    def test_integration_real_tree(self):
+        """Run check_links on actual repo docs — validates our own docs."""
+        root = Path(__file__).resolve().parent.parent
+        if not (root / "docs" / "guides").exists():
+            pytest.skip("docs/guides not found")
+        broken = check_links(root, ["README.md", "docs/guides", "docs/reference"])
+        assert broken == [], "Broken links in repo:\n" + "\n".join(broken)
