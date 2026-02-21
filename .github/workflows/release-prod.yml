@@ -312,11 +312,18 @@ jobs:
           repo = os.environ.get("GITHUB_REPOSITORY", "")
           release_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+          # Find previous STABLE tag (vX.Y.Z only, skip rc/dev pre-releases)
           try:
-              prev_tag = subprocess.check_output(
-                  ["git", "describe", "--tags", "--abbrev=0", "HEAD^"],
+              all_tags = subprocess.check_output(
+                  ["git", "tag", "--sort=-v:refname", "--merged", "HEAD"],
                   text=True, stderr=subprocess.DEVNULL
-              ).strip()
+              ).strip().splitlines()
+              stable_re = re.compile(r"^v\d+\.\d+\.\d+$")
+              current_tag = f"v{version}"
+              prev_tag = next(
+                  (t for t in all_tags if stable_re.match(t) and t != current_tag),
+                  ""
+              )
           except subprocess.CalledProcessError:
               prev_tag = ""
 
