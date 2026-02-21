@@ -87,14 +87,59 @@ def _patch_version(
 
 
 def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
-    """Rewrite [tool.hatch.build.targets.wheel] packages to the public name."""
-    # Convert target-name (e.g. "nwave-ai") to Python package name (e.g. "nwave_ai")
+    """Rewrite [tool.hatch.build.targets.wheel] packages and add force-include."""
     pkg_name = new_name.replace("-", "_")
-    pattern = re.compile(r'^(packages\s*=\s*\[)"[^"]*"(\])', re.MULTILINE)
-    new_text, count = pattern.subn(rf'\1"{pkg_name}"\2', text)
+
+    # Remove existing wheel section (base) and force-include subsection if present
+    force_include = re.compile(
+        r"^\[tool\.hatch\.build\.targets\.wheel\.force-include\]\s*\n(?:(?!\[).+\n?)*",
+        re.MULTILINE,
+    )
+    text_clean = force_include.sub("", text)
+
+    wheel_section = re.compile(
+        r"^\[tool\.hatch\.build\.targets\.wheel\]\s*\n(?:(?!\[).+\n?)*",
+        re.MULTILINE,
+    )
+    replacement = (
+        "[tool.hatch.build.targets.wheel]\n"
+        f'packages = ["{pkg_name}"]\n'
+        "\n"
+        "[tool.hatch.build.targets.wheel.force-include]\n"
+        '"scripts" = "scripts"\n'
+        '"nWave" = "nWave"\n'
+        '"src/des" = "src/des"\n'
+    )
+    new_text, count = wheel_section.subn(replacement, text_clean)
     if count == 0:
         return text, None
-    return new_text, f'packages: rewritten to ["{pkg_name}"]'
+    return (
+        new_text,
+        f'wheel config: rewritten with packages=["{pkg_name}"] + force-include',
+    )
+
+
+def _add_cli_entry_point(text: str, new_name: str) -> tuple[str, str | None]:
+    """Add [project.scripts] CLI entry point after [project.urls] section."""
+    if "[project.scripts]" in text:
+        return text, None
+
+    pkg_name = new_name.replace("-", "_")
+    scripts_block = f'\n[project.scripts]\n{new_name} = "{pkg_name}.cli:main"\n'
+
+    # Insert after [project.urls] block (before next section)
+    pattern = re.compile(r"(\[project\.urls\].*?\n)(\n\[)", re.DOTALL)
+    new_text, count = pattern.subn(rf"\1{scripts_block}\2", text)
+    if count == 0:
+        # Fallback: append before first [tool.] section
+        pattern2 = re.compile(r"(\n)(\[tool\.)")
+        new_text, count = pattern2.subn(rf"\1{scripts_block}\2", text, count=1)
+        if count == 0:
+            return text, None
+    return (
+        new_text,
+        f'added [project.scripts] entry point: {new_name} = "{pkg_name}.cli:main"',
+    )
 
 
 def _remove_section(text: str, header: str) -> tuple[str, str | None]:
@@ -142,16 +187,24 @@ def patch_pyproject(
     if change:
         changes.append(change)
 
-    # 3. Rewrite wheel packages
+    # 3. Rewrite wheel packages + force-include
     text, change = _patch_wheel_packages(text, target_name)
     if change:
         changes.append(change)
 
-    # 4. Remove dev-only sections
+    # 4. Add CLI entry point
+    text, change = _add_cli_entry_point(text, target_name)
+    if change:
+        changes.append(change)
+
+    # 5. Remove dev-only sections
     for section in sorted(_DEV_SECTIONS):
         text, change = _remove_section(text, section)
         if change:
             changes.append(change)
+
+    # Final cleanup: collapse triple+ blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
 
     patched = len(changes) > 0
 

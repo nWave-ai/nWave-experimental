@@ -102,6 +102,9 @@ authors = [
     {name = "Mike", email = "mike@example.com"},
 ]
 
+[project.urls]
+Homepage = "https://github.com/nwave-ai/nwave"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

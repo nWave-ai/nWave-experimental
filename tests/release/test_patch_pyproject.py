@@ -110,6 +110,67 @@ class TestBuildTargetRewrite:
         assert 'packages = ["nWave"]' not in content
         assert 'packages = ["nwave_ai"]' in content
 
+    def test_force_include_added(self, sample_pyproject_path, tmp_path):
+        """Given source has simple wheel config,
+        when patching for nwave-ai,
+        then force-include entries are added for scripts, nWave, src/des.
+        """
+        output_path = str(tmp_path / "out.toml")
+        patch_pyproject(
+            input_path=sample_pyproject_path,
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+        content = (tmp_path / "out.toml").read_text()
+        assert "[tool.hatch.build.targets.wheel.force-include]" in content
+        assert '"scripts" = "scripts"' in content
+        assert '"nWave" = "nWave"' in content
+        assert '"src/des" = "src/des"' in content
+
+
+class TestCliEntryPoint:
+    """Add CLI entry point for pipx install support."""
+
+    def test_project_scripts_added(self, sample_pyproject_path, tmp_path):
+        """Given source has no [project.scripts],
+        when patching for nwave-ai,
+        then [project.scripts] is added with the CLI entry point.
+        """
+        output_path = str(tmp_path / "out.toml")
+        patch_pyproject(
+            input_path=sample_pyproject_path,
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+        content = (tmp_path / "out.toml").read_text()
+        assert "[project.scripts]" in content
+        assert 'nwave-ai = "nwave_ai.cli:main"' in content
+
+    def test_existing_scripts_not_duplicated(self, tmp_path):
+        """Given source already has [project.scripts],
+        when patching,
+        then no duplicate section is added.
+        """
+        toml_with_scripts = (
+            '[project]\nname = "nwave"\nversion = "1.0.0"\n\n'
+            '[project.urls]\nHomepage = "https://example.com"\n\n'
+            '[project.scripts]\nnwave = "nwave.cli:main"\n\n'
+            '[tool.hatch.build.targets.wheel]\npackages = ["nWave"]\n'
+        )
+        src = tmp_path / "src.toml"
+        src.write_text(toml_with_scripts)
+        output_path = str(tmp_path / "out.toml")
+        patch_pyproject(
+            input_path=str(src),
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+        content = (tmp_path / "out.toml").read_text()
+        assert content.count("[project.scripts]") == 1
+
 
 class TestDevSectionRemoval:
     """Remove dev-only sections from the public pyproject.toml."""
