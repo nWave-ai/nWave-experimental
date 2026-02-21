@@ -11,6 +11,7 @@
 # =============================================================================
 
 name: "Release: RC (Stage 2)"
+run-name: "RC Release from ${{ inputs.source_dev_tag }}${{ inputs.dry_run == true && ' (dry run)' || '' }}"
 
 on:
   workflow_dispatch:
@@ -369,6 +370,9 @@ jobs:
 
       - name: Install tools
         run: pip install build packaging tomli
+
+      - name: Clean broken symlinks
+        run: find . -maxdepth 5 -type l ! -exec test -e {} \; -delete 2>/dev/null || true
 
       - name: Patch pyproject.toml for nwave-ai
         run: |

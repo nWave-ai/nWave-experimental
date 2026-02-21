@@ -10,6 +10,7 @@
 # =============================================================================
 
 name: "Release: Dev (Stage 1)"
+run-name: "Dev Release${{ inputs.dry_run == true && ' (dry run)' || '' }}"
 
 on:
   workflow_dispatch:
