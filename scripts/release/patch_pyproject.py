@@ -101,13 +101,24 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         r"^\[tool\.hatch\.build\.targets\.wheel\]\s*\n(?:(?!\[).+\n?)*",
         re.MULTILINE,
     )
+    # Selective includes: only directories needed in the public package.
+    # Avoids broken symlinks and dev-only directories.
     replacement = (
         "[tool.hatch.build.targets.wheel]\n"
         f'packages = ["{pkg_name}"]\n'
         "\n"
         "[tool.hatch.build.targets.wheel.force-include]\n"
+        '"nWave/agents" = "nWave/agents"\n'
+        '"nWave/data" = "nWave/data"\n'
+        '"nWave/hooks" = "nWave/hooks"\n'
+        '"nWave/scripts" = "nWave/scripts"\n'
+        '"nWave/skills" = "nWave/skills"\n'
+        '"nWave/tasks/nw" = "nWave/tasks/nw"\n'
+        '"nWave/templates" = "nWave/templates"\n'
+        '"nWave/framework-catalog.yaml" = "nWave/framework-catalog.yaml"\n'
+        '"nWave/VERSION" = "nWave/VERSION"\n'
+        '"nWave/README.md" = "nWave/README.md"\n'
         '"scripts" = "scripts"\n'
-        '"nWave" = "nWave"\n'
         '"src/des" = "src/des"\n'
     )
     new_text, count = wheel_section.subn(replacement, text_clean)

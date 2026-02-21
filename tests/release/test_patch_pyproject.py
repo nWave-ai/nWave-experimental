@@ -113,7 +113,7 @@ class TestBuildTargetRewrite:
     def test_force_include_added(self, sample_pyproject_path, tmp_path):
         """Given source has simple wheel config,
         when patching for nwave-ai,
-        then force-include entries are added for scripts, nWave, src/des.
+        then selective force-include entries are added.
         """
         output_path = str(tmp_path / "out.toml")
         patch_pyproject(
@@ -125,8 +125,13 @@ class TestBuildTargetRewrite:
         content = (tmp_path / "out.toml").read_text()
         assert "[tool.hatch.build.targets.wheel.force-include]" in content
         assert '"scripts" = "scripts"' in content
-        assert '"nWave" = "nWave"' in content
+        assert '"nWave/agents" = "nWave/agents"' in content
+        assert '"nWave/skills" = "nWave/skills"' in content
+        assert '"nWave/tasks/nw" = "nWave/tasks/nw"' in content
         assert '"src/des" = "src/des"' in content
+        # Should NOT include nWave/ as a whole (avoids broken symlinks)
+        lines = content.splitlines()
+        assert not any(line.strip() == '"nWave" = "nWave"' for line in lines)
 
 
 class TestCliEntryPoint:
