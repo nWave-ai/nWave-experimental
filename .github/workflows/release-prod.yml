@@ -404,6 +404,13 @@ jobs:
             --notes-file dist/RELEASE_NOTES.md \
             dist/*.tar.gz dist/*.whl dist/SHA256SUMS.txt
 
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: stable-release-notes
+          path: dist/RELEASE_NOTES.md
+          retention-days: 5
+
   # ===========================================================================
   # PYPI PUBLISH (stable)
   # ===========================================================================
@@ -413,7 +420,7 @@ jobs:
     timeout-minutes: 10
     needs: [validate-source, version-calc, build, tag-release]
     if: inputs.dry_run != true
-    environment: pypi
+    environment: prod
 
     steps:
       - uses: actions/checkout@v4
@@ -620,6 +627,12 @@ jobs:
             git push
           fi
 
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: stable-release-notes
+          path: release-notes
+
       - name: Tag and release on public repo
         working-directory: nwave-target
         env:
@@ -636,7 +649,7 @@ jobs:
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --title "nwave-ai $TAG" \
-              --notes "Stable release \`$NWAVE_VERSION\`.\n\n\`\`\`bash\npipx install nwave-ai\n\`\`\`"
+              --notes-file ../release-notes/RELEASE_NOTES.md
           fi
 
   # ===========================================================================

@@ -339,6 +339,13 @@ jobs:
             --prerelease \
             dist/*.tar.gz dist/*.whl dist/SHA256SUMS.txt
 
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-release-notes
+          path: dist/RELEASE_NOTES.md
+          retention-days: 5
+
   # ===========================================================================
   # PYPI PUBLISH (pre-release)
   # ===========================================================================
@@ -348,7 +355,7 @@ jobs:
     timeout-minutes: 10
     needs: [validate-source, version-calc, build, tag-release]
     if: inputs.dry_run != true
-    environment: pypi
+    environment: beta
 
     steps:
       - name: Checkout nwave-ai/nwave (target for build)
@@ -511,6 +518,12 @@ jobs:
             git push
           fi
 
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: rc-release-notes
+          path: release-notes
+
       - name: Tag and release on beta repo
         working-directory: beta-target
         env:
@@ -526,7 +539,7 @@ jobs:
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --title "nwave-ai $TAG (RC)" \
-              --notes "Release candidate promoted from \`${{ inputs.source_dev_tag }}\`.\n\n\`\`\`bash\npipx install nwave-ai==${{ needs.version-calc.outputs.version }} --pip-args=\"--pre\"\n\`\`\`" \
+              --notes-file ../release-notes/RELEASE_NOTES.md \
               --prerelease
           fi
 
