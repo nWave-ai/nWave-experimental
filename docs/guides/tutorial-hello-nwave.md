@@ -124,4 +124,4 @@ The feature is tested, committed, and ready to use.
 
 - **Bigger feature**: See [Your First Feature](./tutorial-first-feature.md) for a multi-phase workflow with architecture design
 - **Existing codebase**: See [Jobs To Be Done Guide](./jobs-to-be-done-guide.md) for adding features to brownfield projects
-- **All commands**: See [nWave Commands Reference](../reference/nwave-commands-reference.md)
+- **All commands**: See [nWave Commands Reference](../reference/commands/index.md)

@@ -350,7 +350,7 @@ Skip early waves when:
 
 ## Agent Selection
 
-For complete agent specifications and selection guidance, see the [nWave Commands Reference](../reference/nwave-commands-reference.md).
+For complete agent specifications and selection guidance, see the [nWave Commands Reference](../reference/commands/index.md).
 
 **Quick Overview**:
 - **Core Wave Agents**: product-discoverer, product-owner, solution-architect, platform-architect, acceptance-designer, software-crafter
@@ -432,4 +432,4 @@ For complete agent specifications and selection guidance, see the [nWave Command
 
 ## Command and File Reference
 
-For complete command specifications, agent selection, and file locations, see the [nWave Commands Reference](../reference/nwave-commands-reference.md).
+For complete command specifications, agent selection, and file locations, see the [nWave Commands Reference](../reference/commands/index.md).

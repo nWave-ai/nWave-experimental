@@ -157,7 +157,7 @@ Your feature artifacts live in `docs/feature/user-login/` — requirements, arch
 - **Other workflows**: See [Jobs To Be Done Guide](./jobs-to-be-done-guide.md) for brownfield, bug fix, and refactoring patterns
 - **Manual control**: Run each DELIVER step individually instead of using the automated orchestration — see [README](../../README.md)
 - **Peer review**: Add quality gates with reviewer agents — see [How to Invoke Reviewers](./invoke-reviewer-agents.md)
-- **All commands**: See [nWave Commands Reference](../reference/nwave-commands-reference.md)
+- **All commands**: See [nWave Commands Reference](../reference/commands/index.md)
 
 ---
 

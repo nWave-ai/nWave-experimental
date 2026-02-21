@@ -9,8 +9,8 @@ Step-by-step guide to requesting peer reviews from reviewer agents.
 **Prerequisites**: Familiarity with Task tool and wave workflows.
 
 **Related Docs**:
-- [Reviewer Agents Reference](../reference/reviewer-agents-reference.md) (lookup)
-- [Reviewer Agents Reference](../reference/reviewer-agents-reference.md) (reference)
+- [Reviewer Agents Reference](../reference/agents/index.md) (lookup)
+- [Reviewer Agents Reference](../reference/agents/index.md) (reference)
 
 ---
 

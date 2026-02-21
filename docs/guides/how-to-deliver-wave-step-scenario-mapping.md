@@ -2,7 +2,7 @@
 
 **Document Type**: How-to Guide
 **Last Updated**: 2026-01-24
-**Related**: [Outside-In TDD: Step-to-Scenario Mapping Principle](../reference/step-template-mapped-scenario-field.md)
+**Related**: Outside-In TDD: Step-to-Scenario Mapping Principle
 
 ## Goal
 
@@ -179,7 +179,7 @@ Before declaring DELIVER wave complete:
 3. Reduce roadmap to match scenario count
 4. Mark infrastructure steps as type `infrastructure` (not feature)
 
-**Reference**: [Outside-In TDD: Step-to-Scenario Mapping Principle](../reference/step-template-mapped-scenario-field.md)
+**Reference**: See the Step-to-Scenario Mapping sections above
 
 ### Issue: Multiple Scenarios Pass in One Step
 **Problem**: Step 01-01 makes tests 1, 2, and 3 pass instead of just test 1.
@@ -201,9 +201,8 @@ Before declaring DELIVER wave complete:
 
 ## Related Documentation
 
-- **Principle**: [Outside-In TDD: Step-to-Scenario Mapping](../reference/step-template-mapped-scenario-field.md) - Understand the discipline behind step-to-scenario mapping
-- **Reference**: [Step Template Mapped Scenario Field](../reference/step-template-mapped-scenario-field.md) - Full schema specification for mapping fields
-- **Reference**: [nWave Commands Reference](../reference/nwave-commands-reference.md) - Complete command specifications
+- **Principle**: Outside-In TDD: Step-to-Scenario Mapping - See the sections above for the discipline behind step-to-scenario mapping
+- **Reference**: [nWave Commands Reference](../reference/commands/index.md) - Complete command specifications
 - **Agent Specification**: See `~/.claude/agents/nw/solution-architect.md` for step generation details
 
 ---
