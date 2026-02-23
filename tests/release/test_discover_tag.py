@@ -82,7 +82,6 @@ class TestWalkingSkeleton:
     and returns JSON with found: true and the correct tag.
     """
 
-    @pytest.mark.skip(reason="DEVELOP wave: enable first (walking skeleton)")
     def test_auto_discover_highest_dev_tag(self, dev_tags_mixed_versions):
         """Given dev tags for versions 1.1.22 and 1.1.23 exist,
         when discovering the latest dev tag,
@@ -107,7 +106,6 @@ class TestWalkingSkeleton:
 class TestDevTagHappyPath:
     """Dev tag auto-discovery selects the highest semantic version."""
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_mixed_base_versions_returns_globally_highest(
         self, dev_tags_mixed_versions
     ):
@@ -133,7 +131,6 @@ class TestDevTagHappyPath:
 class TestDevTagDigitTransition:
     """packaging.Version sort guarantees dev10 > dev9, dev11 > dev10."""
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_digit_transition_dev11_beats_dev9(self, dev_tags_digit_transition):
         """Given 11 dev tags (dev1 through dev11) for version 1.1.23,
         when discovering the latest dev tag,
@@ -163,7 +160,6 @@ class TestDevTagDigitTransition:
 class TestRCTagHappyPath:
     """RC tag auto-discovery selects the highest semantic version."""
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_auto_discover_highest_rc_tag(self, rc_tags_mixed):
         """Given RC tags for versions 1.1.22 and 1.1.23 exist,
         when discovering the latest RC tag,
@@ -187,7 +183,6 @@ class TestRCTagHappyPath:
 class TestRCTagDigitTransition:
     """packaging.Version sort guarantees rc10 > rc9, rc11 > rc10."""
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_digit_transition_rc11_beats_rc9(self, rc_tags_digit_transition):
         """Given 11 RC tags (rc1 through rc11) for version 1.1.23,
         when discovering the latest RC tag,
@@ -216,7 +211,6 @@ class TestRCTagDigitTransition:
 class TestExplicitTagValidation:
     """When a user provides an explicit tag, validate it exists in the list."""
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_validate_existing_tag_returns_it_directly(self, dev_tags_mixed_versions):
         """Given dev tag v1.1.22.dev2 exists in the tag list,
         when validating that specific tag,
@@ -238,7 +232,6 @@ class TestExplicitTagValidation:
         assert output["tag"] == "v1.1.22.dev2"
         assert output["version"] == "1.1.22.dev2"
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_validate_missing_tag_returns_not_found(self, dev_tags_mixed_versions):
         """Given dev tag v9.9.9.dev1 does NOT exist in the tag list,
         when validating that specific tag,
@@ -269,7 +262,6 @@ class TestExplicitTagValidation:
 class TestNoTagsExist:
     """When no matching tags exist, the script returns actionable guidance."""
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_no_dev_tags_returns_stage_1_guidance(self):
         """Given no dev tags exist (empty tag list),
         when discovering the latest dev tag,
@@ -291,7 +283,6 @@ class TestNoTagsExist:
             or "dev release" in output["error"].lower()
         )
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_no_rc_tags_returns_stage_2_guidance(self):
         """Given no RC tags exist (empty tag list),
         when discovering the latest RC tag,
@@ -317,7 +308,6 @@ class TestNoTagsExist:
 class TestInvalidInput:
     """Invalid CLI arguments produce exit code 2 with a clear error."""
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_invalid_pattern_returns_exit_code_2(self):
         """Given --pattern 'stable' (not dev or rc),
         when running discover_tag.py,
@@ -336,7 +326,6 @@ class TestInvalidInput:
             "invalid" in output["error"].lower() or "pattern" in output["error"].lower()
         )
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_invalid_tags_filtered_valid_ones_sorted(self):
         """Given a tag list with a mix of valid and non-PEP-440 tags,
         when discovering the latest dev tag,
@@ -364,7 +353,6 @@ class TestInvalidInput:
 class TestEdgeCases:
     """Boundary conditions and corner cases."""
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_empty_tag_list_string_treated_as_no_tags(self):
         """Given --tag-list is an empty string,
         when discovering the latest dev tag,
