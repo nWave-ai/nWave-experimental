@@ -11,15 +11,16 @@
 # =============================================================================
 
 name: "Release: RC (Stage 2)"
-run-name: "RC Release from ${{ inputs.source_dev_tag }}${{ inputs.dry_run == true && ' (dry run)' || '' }}"
+run-name: "RC Release from ${{ inputs.source_dev_tag || '(auto-latest)' }}${{ inputs.dry_run == true && ' (dry run)' || '' }}"
 
 on:
   workflow_dispatch:
     inputs:
       source_dev_tag:
-        description: "Source dev tag to promote (e.g. v1.1.22.dev3)"
-        required: true
+        description: "Source dev tag (leave empty for latest, or enter e.g. v1.1.23.dev3)"
+        required: false
         type: string
+        default: ""
       dry_run:
         description: "Dry run (validate everything, create nothing)"
         required: false
@@ -47,29 +48,66 @@ jobs:
     timeout-minutes: 2
     outputs:
       commit_sha: ${{ steps.resolve.outputs.sha }}
-      source_dev_tag: ${{ inputs.source_dev_tag }}
+      resolved_tag: ${{ steps.discover.outputs.resolved_tag }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Resolve dev tag to commit
-        id: resolve
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install dependencies
+        run: pip install packaging
+
+      - name: Auto-discover or validate source tag
+        id: discover
         run: |
           TAG="${{ inputs.source_dev_tag }}"
+          TAG=$(echo "$TAG" | xargs)  # trim whitespace
+
+          if [ -z "$TAG" ]; then
+            echo "No tag provided, auto-discovering latest dev tag..."
+            OUTPUT=$(python scripts/release/discover_tag.py --pattern dev)
+          else
+            echo "Validating provided tag: $TAG"
+            OUTPUT=$(python scripts/release/discover_tag.py --pattern dev --validate "$TAG")
+          fi
+
+          echo "$OUTPUT"
+          FOUND=$(echo "$OUTPUT" | jq -r '.found')
+          if [ "$FOUND" != "true" ]; then
+            ERROR=$(echo "$OUTPUT" | jq -r '.error // "Unknown error"')
+            echo "::error::$ERROR"
+            exit 1
+          fi
+
+          RESOLVED=$(echo "$OUTPUT" | jq -r '.tag')
+          COMMITS_BEHIND=$(echo "$OUTPUT" | jq -r '.commits_behind // "null"')
+          echo "resolved_tag=$RESOLVED" >> $GITHUB_OUTPUT
+          echo "commits_behind=$COMMITS_BEHIND" >> $GITHUB_OUTPUT
+          echo "Resolved tag: $RESOLVED (commits behind: $COMMITS_BEHIND)"
+
+      - name: Resolve tag to commit
+        id: resolve
+        run: |
+          TAG="${{ steps.discover.outputs.resolved_tag }}"
 
           if ! git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "::error::Tag $TAG not found."
-            echo ""
-            echo "Available dev tags:"
-            git tag -l "v*.dev*" --sort=-version:refname | head -10
+            echo "::error::Tag $TAG not found in git."
             exit 1
           fi
 
           SHA=$(git rev-parse "$TAG^{commit}")
           echo "sha=$SHA" >> $GITHUB_OUTPUT
           echo "Resolved $TAG -> $SHA"
+
+      - name: Staleness warning
+        if: steps.discover.outputs.commits_behind != 'null' && steps.discover.outputs.commits_behind != '0'
+        run: |
+          echo "::warning::Source tag ${{ steps.discover.outputs.resolved_tag }} is ${{ steps.discover.outputs.commits_behind }} commit(s) behind HEAD. Consider creating a fresh dev release."
 
   # ===========================================================================
   # CI STATUS GATE
@@ -163,14 +201,14 @@ jobs:
         run: |
           OUTPUT=$(python scripts/release/next_version.py \
             --stage rc \
-            --current-version "${{ inputs.source_dev_tag }}" \
+            --current-version "${{ needs.validate-source.outputs.resolved_tag }}" \
             --existing-tags "${{ steps.tags.outputs.tags }}")
 
           echo "$OUTPUT"
 
-          VERSION=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
-          TAG=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag'])")
-          BASE=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['base_version'])")
+          VERSION=$(echo "$OUTPUT" | jq -r '.version')
+          TAG=$(echo "$OUTPUT" | jq -r '.tag')
+          BASE=$(echo "$OUTPUT" | jq -r '.base_version')
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
@@ -240,100 +278,28 @@ jobs:
           SHA="${{ needs.validate-source.outputs.commit_sha }}"
           git config user.name "nWave Release Train"
           git config user.email "noreply@nwave.ai"
-          git tag -a "$TAG" "$SHA" -m "RC release $TAG (promoted from ${{ inputs.source_dev_tag }})"
+          git tag -a "$TAG" "$SHA" -m "RC release $TAG (promoted from ${{ needs.validate-source.outputs.resolved_tag }})"
           git push origin "$TAG"
           echo "Created and pushed tag $TAG on $SHA"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install changelog dependencies
+        run: pip install packaging
+
       - name: Generate changelog
         run: |
-          python3 << 'PYEOF'
-          import subprocess, re, os
-          from datetime import datetime, timezone
-
-          version = os.environ["VERSION"]
-          source_tag = os.environ["SOURCE_TAG"]
-          repo = os.environ.get("GITHUB_REPOSITORY", "")
-          release_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-          # Find previous RC tag (vX.Y.ZrcN only, skip dev/stable tags)
-          try:
-              all_tags = subprocess.check_output(
-                  ["git", "tag", "--sort=-v:refname", "--merged", "HEAD"],
-                  text=True, stderr=subprocess.DEVNULL
-              ).strip().splitlines()
-              rc_re = re.compile(r"^v\d+\.\d+\.\d+rc\d+$")
-              current_tag = f"v{version}"
-              prev_tag = next(
-                  (t for t in all_tags if rc_re.match(t) and t != current_tag),
-                  ""
-              )
-          except subprocess.CalledProcessError:
-              prev_tag = ""
-
-          record_end = "<<--EOR-->>"
-          fmt = f"%s%x00%b%x00%h{record_end}"
-          cmd = ["git", "log", "--no-merges", f"--pretty=format:{fmt}"]
-          if prev_tag:
-              cmd.insert(2, f"{prev_tag}..HEAD")
-
-          try:
-              raw = subprocess.check_output(cmd, text=True)
-          except subprocess.CalledProcessError:
-              raw = ""
-
-          conventional_re = re.compile(
-              r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s*(?P<desc>.+)$"
-          )
-          breaking, features, fixes, other = [], [], [], []
-
-          for record in raw.split(record_end):
-              record = record.strip()
-              if not record:
-                  continue
-              parts = record.split("\x00")
-              if len(parts) < 3:
-                  continue
-              subject, body, sha = parts[0].strip(), parts[1].strip(), parts[2].strip()
-              if not subject or not sha:
-                  continue
-              if "chore(release):" in subject or "[skip ci]" in subject:
-                  continue
-
-              m = conventional_re.match(subject)
-              is_breaking = (m and m.group("bang")) or "BREAKING CHANGE:" in body
-              line = f"- {subject} (`{sha}`)"
-
-              if is_breaking:
-                  breaking.append(line)
-              elif m:
-                  ctype = m.group("type")
-                  if ctype == "feat": features.append(line)
-                  elif ctype == "fix": fixes.append(line)
-                  else: other.append(line)
-              else:
-                  other.append(line)
-
-          sections = [f"**Release candidate** `{version}` ({release_date})\n"]
-          sections.append(f"**Promoted from**: `{source_tag}`\n")
-          if prev_tag:
-              sections.append(f"**Changes since**: [{prev_tag}](https://github.com/{repo}/compare/{prev_tag}...v{version})\n")
-          sections.append('## Install\n```bash\npipx install nwave-ai=={} --pip-args="--pre"\n```\n'.format(version))
-          if breaking: sections.extend(["## Breaking Changes\n", "\n".join(breaking) + "\n"])
-          if features: sections.extend(["## Features\n", "\n".join(features) + "\n"])
-          if fixes: sections.extend(["## Bug Fixes\n", "\n".join(fixes) + "\n"])
-          if other: sections.extend(["## Other Changes\n", "\n".join(other) + "\n"])
-          if not any([breaking, features, fixes, other]):
-              sections.append("No notable changes (internal improvements)\n")
-
-          notes = "\n".join(sections)
-          os.makedirs("dist", exist_ok=True)
-          with open("dist/RELEASE_NOTES.md", "w") as f:
-              f.write(notes)
-          print(notes)
-          PYEOF
+          python scripts/release/generate_changelog.py \
+            --stage rc \
+            --version "$VERSION" \
+            --source-tag "$SOURCE_TAG" \
+            --repo "${{ github.repository }}" \
+            --output dist/RELEASE_NOTES.md
         env:
           VERSION: ${{ needs.version-calc.outputs.version }}
-          SOURCE_TAG: ${{ inputs.source_dev_tag }}
+          SOURCE_TAG: ${{ needs.validate-source.outputs.resolved_tag }}
 
       - name: Create GitHub pre-release
         env:
@@ -514,7 +480,7 @@ jobs:
             --stage rc \
             --version "${{ needs.version-calc.outputs.version }}" \
             --commit-sha "${{ needs.validate-source.outputs.commit_sha }}" \
-            --dev-tag "${{ inputs.source_dev_tag }}" \
+            --dev-tag "${{ needs.validate-source.outputs.resolved_tag }}" \
             --pipeline-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
           echo "message<<EOF" >> $GITHUB_OUTPUT
           echo "$MSG" >> $GITHUB_OUTPUT
@@ -587,7 +553,7 @@ jobs:
             --stage rc \
             --version "${{ needs.version-calc.outputs.version }}" \
             --commit-sha "${{ needs.validate-source.outputs.commit_sha }}" \
-            --dev-tag "${{ inputs.source_dev_tag }}" \
+            --dev-tag "${{ needs.validate-source.outputs.resolved_tag }}" \
             --pipeline-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
           echo "message<<EOF" >> $GITHUB_OUTPUT
           echo "$MSG" >> $GITHUB_OUTPUT
@@ -600,7 +566,7 @@ jobs:
 
           | Step | Status | Result |
           |------|--------|--------|
-          | Validate source | CHECKED | ${{ inputs.source_dev_tag }} -> ${{ needs.validate-source.outputs.commit_sha }} |
+          | Validate source | CHECKED | ${{ needs.validate-source.outputs.resolved_tag }} -> ${{ needs.validate-source.outputs.commit_sha }} |
           | CI status gate | CHECKED | ${{ needs.ci-gate.outputs.status }} |
           | Version calculation | COMPUTED | ${{ needs.version-calc.outputs.version }} |
           | Build dist | BUILT | wheel + sdist |
@@ -656,7 +622,7 @@ jobs:
                 },
                 {
                   "type": "section",
-                  "text": { "type": "mrkdwn", "text": "Promoted from `${{ inputs.source_dev_tag }}`\n*Install*: `pipx install nwave-ai==${{ needs.version-calc.outputs.version }} --pip-args=\"--pre\"`\nSynced to *nWave-beta* with tag + GitHub pre-release" }
+                  "text": { "type": "mrkdwn", "text": "Promoted from `${{ needs.validate-source.outputs.resolved_tag }}`\n*Install*: `pipx install nwave-ai==${{ needs.version-calc.outputs.version }} --pip-args=\"--pre\"`\nSynced to *nWave-beta* with tag + GitHub pre-release" }
                 },
                 {
                   "type": "actions",
@@ -687,7 +653,7 @@ jobs:
                 },
                 {
                   "type": "section",
-                  "text": { "type": "mrkdwn", "text": "*Version*: `${{ needs.version-calc.outputs.version }}`\n*Source*: `${{ inputs.source_dev_tag }}`" }
+                  "text": { "type": "mrkdwn", "text": "*Version*: `${{ needs.version-calc.outputs.version }}`\n*Source*: `${{ needs.validate-source.outputs.resolved_tag }}`" }
                 },
                 {
                   "type": "actions",
