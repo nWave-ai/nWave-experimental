@@ -88,3 +88,6 @@ mutation-test.log
 
 # Auto-generated changelog (semantic-release default; not used)
 CHANGELOG.md
+
+# script to migrate and converge nwave-dev to nWave-beta and nWave project unique version
+scripts/release/cleanup/__init__.py

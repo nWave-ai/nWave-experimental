@@ -1,31 +1,38 @@
 """Tests for scripts/release/generate_changelog.py
 
 Generates markdown release notes from conventional commits between git tags.
-Two modes: RC (release candidate) and stable, with different headers and install commands.
+Three modes: dev (snapshot), RC (release candidate), and stable,
+with different headers and install commands.
 
-Scenario inventory (12 scenarios):
+Scenario inventory (16 scenarios):
+
+  Dev changelog:
+    1. Dev changelog with features and fixes
+    2. Dev changelog finds previous tag of any type
+    3. Dev changelog has no install section
+    4. Dev changelog empty history shows no notable changes
 
   RC changelog:
-    1. RC changelog with features and fixes
-    2. RC changelog shows promoted-from source tag
-    3. RC changelog empty history shows no notable changes
+    5. RC changelog with features and fixes
+    6. RC changelog shows promoted-from source tag
+    7. RC changelog empty history shows no notable changes
 
   Stable changelog:
-    4. Stable changelog with breaking changes
-    5. Stable install command has no --pre flag
+    8. Stable changelog with breaking changes
+    9. Stable install command has no --pre flag
 
   Commit parsing (pure function tests):
-    6. feat commit categorized as feature
-    7. fix commit categorized as fix
-    8. chore(release) commits are filtered
-    9. bang notation marks breaking change
-   10. non-conventional commit goes to other
+   10. feat commit categorized as feature
+   11. fix commit categorized as fix
+   12. chore(release) commits are filtered
+   13. bang notation marks breaking change
+   14. non-conventional commit goes to other
 
   Compare link:
-   11. Compare link included when previous tag exists
+   15. Compare link included when previous tag exists
 
   Output file:
-   12. Output file created at specified path
+   16. Output file created at specified path
 """
 
 import subprocess
@@ -89,6 +96,122 @@ def _run_changelog_in_repo(repo_path, *args):
 def _read_output(path):
     """Read the generated release notes file."""
     return Path(path).read_text()
+
+
+# ===========================================================================
+# Dev Changelog
+# ===========================================================================
+class TestDevChangelog:
+    """Dev snapshot changelog generation from conventional commits."""
+
+    def test_dev_changelog_with_features_and_fixes(self, tmp_path):
+        """Given a repo with feat and fix commits after any tag,
+        when generating dev changelog,
+        then notes contain Features and Bug Fixes sections with Dev snapshot header."""
+        _init_git_repo(tmp_path)
+        _create_commit(tmp_path, "initial commit")
+        _create_tag(tmp_path, "v1.1.22")
+        _create_commit(tmp_path, "feat: add streaming support")
+        _create_commit(tmp_path, "fix: handle empty payload")
+
+        output_file = str(tmp_path / "notes.md")
+        result = _run_changelog_in_repo(
+            tmp_path,
+            "--stage",
+            "dev",
+            "--version",
+            "1.1.23.dev1",
+            "--repo",
+            "nwave-ai/nwave-dev",
+            "--output",
+            output_file,
+        )
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        notes = _read_output(output_file)
+        assert "**Dev snapshot**" in notes
+        assert "## Features" in notes
+        assert "add streaming support" in notes
+        assert "## Bug Fixes" in notes
+        assert "handle empty payload" in notes
+
+    def test_dev_changelog_finds_previous_tag_of_any_type(self, tmp_path):
+        """Given a stable tag v1.1.22, then an rc tag v1.1.23rc1, then a feat commit,
+        when generating dev changelog for 1.1.23.dev1,
+        then compare link references v1.1.23rc1 (most recent tag regardless of type)."""
+        _init_git_repo(tmp_path)
+        _create_commit(tmp_path, "initial commit")
+        _create_tag(tmp_path, "v1.1.22")
+        _create_commit(tmp_path, "chore(release): v1.1.23rc1 [skip ci]")
+        _create_tag(tmp_path, "v1.1.23rc1")
+        _create_commit(tmp_path, "feat: new feature for dev")
+
+        output_file = str(tmp_path / "notes.md")
+        result = _run_changelog_in_repo(
+            tmp_path,
+            "--stage",
+            "dev",
+            "--version",
+            "1.1.23.dev1",
+            "--repo",
+            "nwave-ai/nwave-dev",
+            "--output",
+            output_file,
+        )
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        notes = _read_output(output_file)
+        assert "v1.1.23rc1" in notes
+        assert (
+            "https://github.com/nwave-ai/nwave-dev/compare/v1.1.23rc1...v1.1.23.dev1"
+        ) in notes
+
+    def test_dev_changelog_has_no_install_section(self, tmp_path):
+        """Given dev stage,
+        when generating changelog,
+        then output does NOT contain Install or pipx install."""
+        _init_git_repo(tmp_path)
+        _create_commit(tmp_path, "feat: initial")
+
+        output_file = str(tmp_path / "notes.md")
+        result = _run_changelog_in_repo(
+            tmp_path,
+            "--stage",
+            "dev",
+            "--version",
+            "1.1.23.dev1",
+            "--output",
+            output_file,
+        )
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        notes = _read_output(output_file)
+        assert "Install" not in notes
+        assert "pipx install" not in notes
+
+    def test_dev_changelog_empty_history_shows_no_notable_changes(self, tmp_path):
+        """Given only chore(release) commits,
+        when generating dev changelog,
+        then output shows 'No notable changes'."""
+        _init_git_repo(tmp_path)
+        _create_commit(tmp_path, "chore(release): v1.1.22 [skip ci]")
+        _create_tag(tmp_path, "v1.1.22")
+        _create_commit(tmp_path, "chore(release): v1.1.23.dev1 [skip ci]")
+
+        output_file = str(tmp_path / "notes.md")
+        result = _run_changelog_in_repo(
+            tmp_path,
+            "--stage",
+            "dev",
+            "--version",
+            "1.1.23.dev1",
+            "--output",
+            output_file,
+        )
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        notes = _read_output(output_file)
+        assert "No notable changes (internal improvements)" in notes
 
 
 # ===========================================================================

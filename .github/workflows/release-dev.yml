@@ -121,13 +121,8 @@ jobs:
       - name: Read current version from pyproject.toml
         id: current
         run: |
-          VERSION=$(python3 -c "
-          with open('pyproject.toml') as f:
-              for line in f:
-                  if line.strip().startswith('version = '):
-                      print(line.split('\"')[1])
-                      break
-          ")
+          VERSION=$(python scripts/release/read_toml_field.py \
+            --file pyproject.toml --key project.version)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Gather existing dev tags
@@ -146,9 +141,9 @@ jobs:
 
           echo "$OUTPUT"
 
-          VERSION=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
-          TAG=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag'])")
-          BASE=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['base_version'])")
+          VERSION=$(echo "$OUTPUT" | jq -r '.version')
+          TAG=$(echo "$OUTPUT" | jq -r '.tag')
+          BASE=$(echo "$OUTPUT" | jq -r '.base_version')
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
@@ -219,85 +214,17 @@ jobs:
           git push origin "$TAG"
           echo "Created and pushed tag $TAG"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
       - name: Generate changelog
         run: |
-          python3 << 'PYEOF'
-          import subprocess, re, os
-          from datetime import datetime, timezone
-
-          version = os.environ["VERSION"]
-          repo = os.environ.get("GITHUB_REPOSITORY", "")
-          release_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-          # Find previous tag (any type: stable, rc, dev)
-          try:
-              prev_tag = subprocess.check_output(
-                  ["git", "describe", "--tags", "--abbrev=0", "HEAD^"],
-                  text=True, stderr=subprocess.DEVNULL
-              ).strip()
-          except subprocess.CalledProcessError:
-              prev_tag = ""
-
-          record_end = "<<--EOR-->>"
-          fmt = f"%s%x00%b%x00%h{record_end}"
-          cmd = ["git", "log", "--no-merges", f"--pretty=format:{fmt}"]
-          if prev_tag:
-              cmd.insert(2, f"{prev_tag}..HEAD")
-
-          try:
-              raw = subprocess.check_output(cmd, text=True)
-          except subprocess.CalledProcessError:
-              raw = ""
-
-          conventional_re = re.compile(
-              r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s*(?P<desc>.+)$"
-          )
-          breaking, features, fixes, other = [], [], [], []
-
-          for record in raw.split(record_end):
-              record = record.strip()
-              if not record:
-                  continue
-              parts = record.split("\x00")
-              if len(parts) < 3:
-                  continue
-              subject, body, sha = parts[0].strip(), parts[1].strip(), parts[2].strip()
-              if not subject or not sha:
-                  continue
-              if "chore(release):" in subject or "[skip ci]" in subject:
-                  continue
-
-              m = conventional_re.match(subject)
-              is_breaking = (m and m.group("bang")) or "BREAKING CHANGE:" in body
-              line = f"- {subject} (`{sha}`)"
-
-              if is_breaking:
-                  breaking.append(line)
-              elif m:
-                  ctype = m.group("type")
-                  if ctype == "feat": features.append(line)
-                  elif ctype == "fix": fixes.append(line)
-                  else: other.append(line)
-              else:
-                  other.append(line)
-
-          sections = [f"**Dev snapshot** `{version}` ({release_date})\n"]
-          if prev_tag:
-              sections.append(f"**Changes since**: [{prev_tag}](https://github.com/{repo}/compare/{prev_tag}...v{version})\n")
-          if breaking: sections.extend(["## Breaking Changes\n", "\n".join(breaking) + "\n"])
-          if features: sections.extend(["## Features\n", "\n".join(features) + "\n"])
-          if fixes: sections.extend(["## Bug Fixes\n", "\n".join(fixes) + "\n"])
-          if other: sections.extend(["## Other Changes\n", "\n".join(other) + "\n"])
-          if not any([breaking, features, fixes, other]):
-              sections.append("No notable changes (internal improvements)\n")
-
-          notes = "\n".join(sections)
-          with open("dist/RELEASE_NOTES.md", "w") as f:
-              f.write(notes)
-          print(notes)
-          PYEOF
-        env:
-          VERSION: ${{ needs.version-calc.outputs.version }}
+          python scripts/release/generate_changelog.py \
+            --stage dev \
+            --version "${{ needs.version-calc.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --output dist/RELEASE_NOTES.md
 
       - name: Create GitHub pre-release
         env:

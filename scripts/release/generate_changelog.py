@@ -1,11 +1,12 @@
 """Generate release notes from conventional commits between git tags.
 
 CLI interface:
-    python generate_changelog.py --stage rc|stable --version VERSION
+    python generate_changelog.py --stage dev|rc|stable --version VERSION
         [--source-tag SOURCE_TAG] [--repo GITHUB_REPOSITORY]
         --output OUTPUT_PATH
 
 Stages:
+    dev    -> Dev snapshot notes (no install section)
     rc     -> Release candidate notes with --pre install flag
     stable -> Stable release notes with standard install
 
@@ -32,8 +33,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--stage",
         required=True,
-        choices=("rc", "stable"),
-        help="Release stage: rc or stable",
+        choices=("dev", "rc", "stable"),
+        help="Release stage: dev, rc, or stable",
     )
     parser.add_argument(
         "--version",
@@ -64,7 +65,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _find_previous_tag(stage: str, current_version: str) -> str:
-    """Find previous tag of the same type (RC or stable) merged into HEAD."""
+    """Find previous tag for changelog comparison.
+
+    For dev: nearest tag of ANY type via ``git describe``.
+    For rc/stable: most recent tag of the same type merged into HEAD.
+    """
+    if stage == "dev":
+        try:
+            result = subprocess.run(
+                ["git", "describe", "--tags", "--abbrev=0", "HEAD^"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                return ""
+            return result.stdout.strip()
+        except OSError:
+            return ""
+
     try:
         result = subprocess.run(
             ["git", "tag", "--sort=-v:refname", "--merged", "HEAD"],
@@ -198,7 +216,15 @@ def _render_markdown(
     """Render categorized commits into markdown release notes."""
     sections: list[str] = []
 
-    if stage == "rc":
+    if stage == "dev":
+        sections.append(f"**Dev snapshot** `{version}` ({release_date})\n")
+        if prev_tag and repo:
+            sections.append(
+                f"**Changes since**: [{prev_tag}]"
+                f"(https://github.com/{repo}/compare/{prev_tag}...v{version})\n"
+            )
+        empty_message = "No notable changes (internal improvements)\n"
+    elif stage == "rc":
         sections.append(f"**Release candidate** `{version}` ({release_date})\n")
         if source_tag:
             sections.append(f"**Promoted from**: `{source_tag}`\n")
