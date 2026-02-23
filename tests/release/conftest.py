@@ -1,7 +1,8 @@
 """Shared fixtures for release train tests.
 
 Provides mock GitHub API responses and common test data
-for ci_gate, next_version, trace_message, and patch_pyproject tests.
+for ci_gate, next_version, trace_message, patch_pyproject,
+and discover_tag tests.
 """
 
 import pytest
@@ -121,6 +122,51 @@ version_variable = "pyproject.toml:version"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 """
+
+
+# ---------------------------------------------------------------------------
+# Tag discovery: sample tag lists for discover_tag.py tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def dev_tags_mixed_versions() -> list[str]:
+    """Dev tags across two base versions (1.1.22 and 1.1.23).
+
+    Expected highest: v1.1.23.dev1 (cross-base semantic comparison).
+    """
+    return ["v1.1.22.dev1", "v1.1.22.dev2", "v1.1.23.dev1"]
+
+
+@pytest.fixture()
+def dev_tags_digit_transition() -> list[str]:
+    """11 dev tags for version 1.1.23: dev1 through dev11.
+
+    Proves 1-digit to 2-digit sort correctness.
+    String sort would give dev9 > dev11. packaging.Version gives dev11.
+    Must have exactly 11 entries.
+    """
+    return [f"v1.1.23.dev{n}" for n in range(1, 12)]
+
+
+@pytest.fixture()
+def rc_tags_mixed() -> list[str]:
+    """RC tags across two base versions (1.1.22 and 1.1.23).
+
+    Expected highest: v1.1.23rc1 (cross-base semantic comparison).
+    """
+    return ["v1.1.22rc1", "v1.1.22rc2", "v1.1.23rc1"]
+
+
+@pytest.fixture()
+def rc_tags_digit_transition() -> list[str]:
+    """11 RC tags for version 1.1.23: rc1 through rc11.
+
+    Proves 1-digit to 2-digit sort correctness.
+    String sort would give rc9 > rc11. packaging.Version gives rc11.
+    Must have exactly 11 entries.
+    """
+    return [f"v1.1.23rc{n}" for n in range(1, 12)]
 
 
 @pytest.fixture()
