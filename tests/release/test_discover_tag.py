@@ -419,46 +419,31 @@ class TestStalenessDetection:
 # ---------------------------------------------------------------------------
 # Git helpers for integration tests
 # ---------------------------------------------------------------------------
+def _git(path, *command):
+    """Run a git command in the given repo directory."""
+    subprocess.run(
+        ["git", *command],
+        cwd=str(path),
+        capture_output=True,
+        check=True,
+    )
+
+
 def _init_git_repo(path):
     """Initialize a git repo in the given directory."""
-    subprocess.run(
-        ["git", "init"],
-        cwd=str(path),
-        capture_output=True,
-        check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=str(path),
-        capture_output=True,
-        check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test"],
-        cwd=str(path),
-        capture_output=True,
-        check=True,
-    )
+    _git(path, "init")
+    _git(path, "config", "user.email", "test@example.com")
+    _git(path, "config", "user.name", "Test")
 
 
 def _create_commit(path, message):
     """Create an empty commit in the given git repo."""
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", message],
-        cwd=str(path),
-        capture_output=True,
-        check=True,
-    )
+    _git(path, "commit", "--allow-empty", "-m", message)
 
 
 def _create_tag(path, tag_name):
     """Create a lightweight tag at HEAD in the given git repo."""
-    subprocess.run(
-        ["git", "tag", tag_name],
-        cwd=str(path),
-        capture_output=True,
-        check=True,
-    )
+    _git(path, "tag", tag_name)
 
 
 def _project_root():

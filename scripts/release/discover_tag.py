@@ -48,34 +48,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _emit_and_exit(payload: dict, exit_code: int) -> None:
+    """Print JSON payload to stdout and exit with the given code."""
+    print(json.dumps(payload))
+    sys.exit(exit_code)
+
+
 def _output_success(tag: str, version: str, commits_behind: int | None = None) -> None:
-    result = {
-        "tag": tag,
-        "version": version,
-        "found": True,
-        "commits_behind": commits_behind,
-    }
-    print(json.dumps(result))
-    sys.exit(0)
+    _emit_and_exit(
+        {
+            "tag": tag,
+            "version": version,
+            "found": True,
+            "commits_behind": commits_behind,
+        },
+        exit_code=0,
+    )
 
 
 def _output_not_found(error: str) -> None:
-    result = {
-        "tag": None,
-        "version": None,
-        "found": False,
-        "error": error,
-    }
-    print(json.dumps(result))
-    sys.exit(1)
+    _emit_and_exit(
+        {"tag": None, "version": None, "found": False, "error": error},
+        exit_code=1,
+    )
 
 
 def _output_error(error: str) -> None:
-    result = {
-        "error": error,
-    }
-    print(json.dumps(result))
-    sys.exit(2)
+    _emit_and_exit({"error": error}, exit_code=2)
 
 
 def _parse_tag(tag: str) -> Version | None:
@@ -108,7 +107,7 @@ def _filter_by_pattern(tags: list[str], pattern: str) -> list[tuple[str, Version
 
 def _split_tag_list(tag_list_str: str) -> list[str]:
     """Split a comma-separated tag list, filtering empty strings."""
-    return [t.strip() for t in tag_list_str.split(",") if t.strip()]
+    return [tag.strip() for tag in tag_list_str.split(",") if tag.strip()]
 
 
 def _stage_guidance(pattern: str) -> str:
@@ -126,7 +125,7 @@ def _git_tags() -> list[str]:
     )
     if result.returncode != 0:
         return []
-    return [t.strip() for t in result.stdout.strip().splitlines() if t.strip()]
+    return [tag.strip() for tag in result.stdout.strip().splitlines() if tag.strip()]
 
 
 def _commits_behind(tag: str) -> int | None:
