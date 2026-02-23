@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 
 from packaging.version import InvalidVersion, Version
@@ -116,6 +117,33 @@ def _stage_guidance(pattern: str) -> str:
     return "No rc tags found. Run Stage 2 (RC Release) first."
 
 
+def _git_tags() -> list[str]:
+    """Fetch all tags from the current git repository via git tag -l."""
+    result = subprocess.run(
+        ["git", "tag", "-l"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return []
+    return [t.strip() for t in result.stdout.strip().splitlines() if t.strip()]
+
+
+def _commits_behind(tag: str) -> int | None:
+    """Count commits between tag and HEAD via git rev-list --count TAG..HEAD."""
+    result = subprocess.run(
+        ["git", "rev-list", "--count", f"{tag}..HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        return int(result.stdout.strip())
+    except ValueError:
+        return None
+
+
 def _version_to_tag(version: Version) -> str:
     return f"v{version}"
 
@@ -124,17 +152,19 @@ def _version_to_str(version: Version) -> str:
     return str(version)
 
 
-def discover(tags: list[str], pattern: str) -> None:
+def discover(tags: list[str], pattern: str, use_git: bool = False) -> None:
     """Discover the highest semantic version tag matching pattern."""
     matched = _filter_by_pattern(tags, pattern)
     if not matched:
         _output_not_found(_stage_guidance(pattern))
 
     _highest_tag, highest_version = max(matched, key=lambda pair: pair[1])
+    tag_str = _version_to_tag(highest_version)
+    staleness = _commits_behind(tag_str) if use_git else None
     _output_success(
-        tag=_version_to_tag(highest_version),
+        tag=tag_str,
         version=_version_to_str(highest_version),
-        commits_behind=None,
+        commits_behind=staleness,
     )
 
 
@@ -158,13 +188,13 @@ def main(argv: list[str] | None = None) -> None:
     if pattern not in ("dev", "rc"):
         _output_error(f"Invalid pattern '{pattern}'. Must be 'dev' or 'rc'.")
 
-    tag_list_str = args.tag_list if args.tag_list is not None else ""
-    tags = _split_tag_list(tag_list_str)
+    use_git = args.tag_list is None
+    tags = _git_tags() if use_git else _split_tag_list(args.tag_list)
 
     if args.validate is not None:
         validate(tags, args.validate, pattern)
     else:
-        discover(tags, pattern)
+        discover(tags, pattern, use_git=use_git)
 
 
 if __name__ == "__main__":

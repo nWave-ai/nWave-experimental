@@ -44,8 +44,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 
 SCRIPT = "scripts/release/discover_tag.py"
 
@@ -53,8 +51,6 @@ SCRIPT = "scripts/release/discover_tag.py"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
 def run_discover_tag(*args: str) -> subprocess.CompletedProcess:
     """Run discover_tag.py as a subprocess, returning the CompletedProcess."""
     return subprocess.run(
@@ -72,8 +68,6 @@ def parse_output(result: subprocess.CompletedProcess) -> dict:
 # ===========================================================================
 # Walking Skeleton: simplest end-to-end path with observable value
 # ===========================================================================
-
-
 class TestWalkingSkeleton:
     """The simplest user journey: auto-discover the highest dev tag.
 
@@ -101,8 +95,6 @@ class TestWalkingSkeleton:
 # ===========================================================================
 # Dev tag discovery: happy path
 # ===========================================================================
-
-
 class TestDevTagHappyPath:
     """Dev tag auto-discovery selects the highest semantic version."""
 
@@ -126,8 +118,6 @@ class TestDevTagHappyPath:
 # ===========================================================================
 # Dev tag sort correctness: integer sort, not string sort
 # ===========================================================================
-
-
 class TestDevTagDigitTransition:
     """packaging.Version sort guarantees dev10 > dev9, dev11 > dev10."""
 
@@ -155,8 +145,6 @@ class TestDevTagDigitTransition:
 # ===========================================================================
 # RC tag discovery: happy path
 # ===========================================================================
-
-
 class TestRCTagHappyPath:
     """RC tag auto-discovery selects the highest semantic version."""
 
@@ -178,8 +166,6 @@ class TestRCTagHappyPath:
 # ===========================================================================
 # RC tag sort correctness: integer sort, not string sort
 # ===========================================================================
-
-
 class TestRCTagDigitTransition:
     """packaging.Version sort guarantees rc10 > rc9, rc11 > rc10."""
 
@@ -206,8 +192,6 @@ class TestRCTagDigitTransition:
 # ===========================================================================
 # Explicit tag validation
 # ===========================================================================
-
-
 class TestExplicitTagValidation:
     """When a user provides an explicit tag, validate it exists in the list."""
 
@@ -257,8 +241,6 @@ class TestExplicitTagValidation:
 # ===========================================================================
 # Error paths
 # ===========================================================================
-
-
 class TestNoTagsExist:
     """When no matching tags exist, the script returns actionable guidance."""
 
@@ -348,8 +330,6 @@ class TestInvalidInput:
 # ===========================================================================
 # Edge cases
 # ===========================================================================
-
-
 class TestEdgeCases:
     """Boundary conditions and corner cases."""
 
@@ -373,8 +353,6 @@ class TestEdgeCases:
 # ===========================================================================
 # Staleness detection (integration tests requiring a real git repo)
 # ===========================================================================
-
-
 class TestStalenessDetection:
     """Commits-behind detection requires a real git repository.
 
@@ -382,7 +360,6 @@ class TestStalenessDetection:
     to verify the commits_behind field in the JSON output.
     """
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_tag_at_head_shows_zero_commits_behind(self, tmp_path):
         """Given a git repo where the latest dev tag points at HEAD,
         when discovering the latest dev tag (without --tag-list),
@@ -401,7 +378,6 @@ class TestStalenessDetection:
         assert output["tag"] == "v1.1.23.dev1"
         assert output["commits_behind"] == 0
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_tag_behind_head_shows_commit_count(self, tmp_path):
         """Given a git repo where 3 commits landed after the latest dev tag,
         when discovering the latest dev tag (without --tag-list),
@@ -422,7 +398,6 @@ class TestStalenessDetection:
         assert output["tag"] == "v1.1.23.dev1"
         assert output["commits_behind"] == 3
 
-    @pytest.mark.skip(reason="Enable after walking skeleton passes")
     def test_commits_behind_is_null_with_tag_list(self, dev_tags_mixed_versions):
         """Given --tag-list is provided (no git context),
         when discovering the latest dev tag,
@@ -444,8 +419,6 @@ class TestStalenessDetection:
 # ---------------------------------------------------------------------------
 # Git helpers for integration tests
 # ---------------------------------------------------------------------------
-
-
 def _init_git_repo(path):
     """Initialize a git repo in the given directory."""
     subprocess.run(
