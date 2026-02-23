@@ -143,26 +143,19 @@ def _commits_behind(tag: str) -> int | None:
         return None
 
 
-def _version_to_tag(version: Version) -> str:
-    return f"v{version}"
-
-
-def _version_to_str(version: Version) -> str:
-    return str(version)
-
-
 def discover(tags: list[str], pattern: str, use_git: bool = False) -> None:
     """Discover the highest semantic version tag matching pattern."""
     matched = _filter_by_pattern(tags, pattern)
     if not matched:
         _output_not_found(_stage_guidance(pattern))
+        return
 
     _, highest_version = max(matched, key=lambda pair: pair[1])
-    tag_str = _version_to_tag(highest_version)
+    tag_str = f"v{highest_version}"
     staleness = _commits_behind(tag_str) if use_git else None
     _output_success(
         tag=tag_str,
-        version=_version_to_str(highest_version),
+        version=str(highest_version),
         commits_behind=staleness,
     )
 
@@ -174,9 +167,10 @@ def validate(tags: list[str], target: str) -> None:
         if parsed is not None:
             _output_success(
                 tag=target,
-                version=_version_to_str(parsed),
+                version=str(parsed),
                 commits_behind=None,
             )
+            return
     _output_not_found(f"Tag '{target}' not found in tag list.")
 
 
@@ -186,6 +180,7 @@ def main(argv: list[str] | None = None) -> None:
     pattern = args.pattern
     if pattern not in ("dev", "rc"):
         _output_error(f"Invalid pattern '{pattern}'. Must be 'dev' or 'rc'.")
+        return
 
     use_git = args.tag_list is None
     tags = _git_tags() if use_git else _split_tag_list(args.tag_list)
