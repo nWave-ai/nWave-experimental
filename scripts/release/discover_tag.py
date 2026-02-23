@@ -157,7 +157,7 @@ def discover(tags: list[str], pattern: str, use_git: bool = False) -> None:
     if not matched:
         _output_not_found(_stage_guidance(pattern))
 
-    _highest_tag, highest_version = max(matched, key=lambda pair: pair[1])
+    _, highest_version = max(matched, key=lambda pair: pair[1])
     tag_str = _version_to_tag(highest_version)
     staleness = _commits_behind(tag_str) if use_git else None
     _output_success(
@@ -167,7 +167,7 @@ def discover(tags: list[str], pattern: str, use_git: bool = False) -> None:
     )
 
 
-def validate(tags: list[str], target: str, pattern: str) -> None:
+def validate(tags: list[str], target: str) -> None:
     """Validate that a specific tag exists in the tag list."""
     if target in tags:
         parsed = _parse_tag(target)
@@ -191,7 +191,7 @@ def main(argv: list[str] | None = None) -> None:
     tags = _git_tags() if use_git else _split_tag_list(args.tag_list)
 
     if args.validate is not None:
-        validate(tags, args.validate, pattern)
+        validate(tags, args.validate)
     else:
         discover(tags, pattern, use_git=use_git)
 
