@@ -452,7 +452,7 @@ jobs:
           if [ ! -f nwave-target/pyproject.toml ]; then
             echo "current_version=0.0.0" >> $GITHUB_OUTPUT
           else
-            CURRENT=$(python scripts/release/read_toml_field.py --file nwave-target/pyproject.toml --key project.version)
+            CURRENT=$(python source/scripts/release/read_toml_field.py --file nwave-target/pyproject.toml --key project.version)
             echo "current_version=$CURRENT" >> $GITHUB_OUTPUT
           fi
 
