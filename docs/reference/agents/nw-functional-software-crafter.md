@@ -7,6 +7,11 @@ DELIVER wave - Outside-In TDD with functional paradigm. Pure functions, pipeline
 **Max turns:** 50
 **Tools:** Read, Write, Edit, Bash, Glob, Grep, Task
 
+## Commands
+
+- [`/nw:deliver`](../commands/index.md)
+- [`/nw:design`](../commands/index.md)
+
 ## Skills
 
 - [collaboration-and-handoffs](../../../nWave/skills/software-crafter/collaboration-and-handoffs.md) — Cross-agent collaboration protocols, workflow handoff patterns, and commit message formats for TDD/Mikado/refactoring workflows

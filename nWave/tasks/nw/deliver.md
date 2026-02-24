@@ -46,6 +46,19 @@ INPUT: "{feature-description}"
         mkdir -p .nwave/des && echo '{"project_id":"{project-id}","started_at":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > .nwave/des/deliver-session.json
         ```
   |
+  1.5. Detect development paradigm
+     a. Read the project's CLAUDE.md (at project root, NOT ~/.claude/CLAUDE.md)
+     b. Search for "## Development Paradigm" section
+     c. If found: extract paradigm (functional or object-oriented) and crafter agent:
+        - "functional" or "@nw-functional-software-crafter" → use @nw-functional-software-crafter
+        - "object-oriented" or "@nw-software-crafter" → use @nw-software-crafter (default)
+     d. If not found (design wave was skipped): ask user "OOP or Functional?" and offer
+        to write the paradigm section to project CLAUDE.md for future runs
+     e. Store the selected crafter agent name for use in all Phase 2 step dispatches
+     f. If functional paradigm: property-based testing is the DEFAULT testing approach.
+        Acceptance criteria tagged @property by DISTILL signal the crafter to use PBT.
+        Example-based tests are fallback only when properties are hard to express.
+  |
   2. Phase 1 — Roadmap Creation + Review
      a. Skip if roadmap.yaml exists with validation.status == "approved"
      b. @nw-solution-architect creates roadmap.yaml (read ~/.claude/commands/nw/roadmap.md)
@@ -59,7 +72,10 @@ INPUT: "{feature-description}"
   3. Phase 2 — Execute All Steps
      a. Extract steps from roadmap.yaml in dependency order
      b. For each step, check execution-log.yaml for prior completion (resume)
-     c. @nw-software-crafter executes 5-phase TDD cycle (read ~/.claude/commands/nw/execute.md)
+     c. {selected-crafter} executes 5-phase TDD cycle (read ~/.claude/commands/nw/execute.md)
+        Use the crafter determined in step 1.5 (@nw-software-crafter or @nw-functional-software-crafter).
+        When using @nw-functional-software-crafter: property-based testing is the default approach
+        for domain logic. The @property tag on acceptance criteria signals PBT.
         IMPORTANT: Use the DES Prompt Template from execute.md. Include all 4 DES
         markers (DES-VALIDATION, DES-PROJECT-ID, DES-STEP-ID) and all 9 mandatory
         sections in the Task prompt. Without these, DES validation is bypassed.
@@ -83,7 +99,8 @@ INPUT: "{feature-description}"
         Split into PRODUCTION_FILES (src/) and TEST_FILES (tests/)
      b. Orchestrator invokes /nw:refactor to apply systematic refactoring:
         /nw:refactor {production-files} {test-files} --levels L1-L4
-        The refactor command dispatches @nw-software-crafter via Task tool
+        The refactor command dispatches {selected-crafter} via Task tool
+        (use the same crafter determined in step 1.5 for paradigm consistency)
         with DES orchestrator markers to enable source file writes:
         ```
         <!-- DES-VALIDATION : required -->
@@ -213,6 +230,7 @@ docs/evolution/
 
 - Roadmap review (1 review, max 2 attempts)
 - Per-step 5-phase TDD cycle (PREPARE → RED_ACCEPTANCE → RED_UNIT → GREEN → COMMIT)
+- Paradigm-appropriate crafter used for all steps (functional crafter for FP, standard crafter for OOP)
 - Deliver-level Complete Refactoring (Phase 3) — L1-L4 on all modified files
 - Deliver-level Adversarial Review (Phase 4) — Testing Theater detection + code quality
 - Mutation testing >= 80% kill rate (Phase 5)

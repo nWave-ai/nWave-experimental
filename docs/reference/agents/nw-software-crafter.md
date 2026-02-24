@@ -10,6 +10,7 @@ DELIVER wave - Outside-In TDD and progressive refactoring. Research-optimized co
 ## Commands
 
 - [`/nw:deliver`](../commands/index.md)
+- [`/nw:design`](../commands/index.md)
 - [`/nw:distill`](../commands/index.md)
 - [`/nw:execute`](../commands/index.md)
 - [`/nw:finalize`](../commands/index.md)
