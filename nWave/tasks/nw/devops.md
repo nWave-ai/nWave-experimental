@@ -98,6 +98,49 @@ If Yes to Decision 7:
 
 This decision directly influences CI/CD pipeline design: trigger rules, branch protection, environment promotion, and release automation.
 
+### Decision 9: Mutation Testing Strategy
+**Question**: When should mutation testing run?
+**Options**:
+1. **per-feature** (default) -- Runs after each feature delivery (refactoring + review), scoped to modified files. Best for small/medium projects where per-feature overhead is acceptable. Fastest feedback loop but adds ~5-15 min per delivery.
+2. **nightly-delta** -- Runs in CI nightly on files modified that day. Best for large projects where per-feature mutation testing is too slow. Delays feedback but keeps delivery fast.
+3. **pre-release** -- Runs before each release on the entire solution. Best for projects with long release cycles where comprehensive mutation coverage matters most at release boundaries. Slowest feedback but most thorough.
+4. **disabled** -- No mutation testing. Only appropriate for prototypes, spikes, or projects where test quality is validated through other means.
+
+Apex presents all 4 options with trade-offs. User selects one. After selection:
+- Apex asks user permission to write the choice to the project's CLAUDE.md (at project root) under a `## Mutation Testing Strategy` section
+- If approved, Apex appends the section to CLAUDE.md
+- This enables all downstream commands (especially `/nw:deliver`) to auto-detect the strategy without re-asking
+
+**CLAUDE.md section format** (per-feature):
+```markdown
+## Mutation Testing Strategy
+
+This project uses **per-feature** mutation testing. Mutation testing runs after refactoring during each feature delivery, scoped to modified files. Kill rate gate: >= 80%.
+```
+
+**CLAUDE.md section format** (nightly-delta):
+```markdown
+## Mutation Testing Strategy
+
+This project uses **nightly-delta** mutation testing. CI runs mutation testing on files modified each day. Mutation testing is NOT run during feature delivery.
+```
+
+**CLAUDE.md section format** (pre-release):
+```markdown
+## Mutation Testing Strategy
+
+This project uses **pre-release** mutation testing. Mutation testing runs on the entire solution before each release. Delivery is not blocked by mutation testing.
+```
+
+**CLAUDE.md section format** (disabled):
+```markdown
+## Mutation Testing Strategy
+
+Mutation testing is **disabled** for this project. Test quality is validated through code review and CI test coverage.
+```
+
+Default if user does not choose: **per-feature** (preserves current behavior).
+
 ## Context Files Required
 
 - docs/feature/{feature-name}/design/architecture-design.md - From DESIGN wave
@@ -126,6 +169,7 @@ Context files: see Context Files Required above.
 - deployment_strategy: {from Decision 6}
 - continuous_learning: {from Decision 7}
 - git_branching_strategy: {from Decision 8}
+- mutation_testing_strategy: {from Decision 9}
 
 ## Success Criteria
 
@@ -136,6 +180,7 @@ Context files: see Context Files Required above.
 - [ ] Infrastructure integration assessed (if existing infra)
 - [ ] Continuous learning capabilities designed (if applicable)
 - [ ] Git branching strategy selected and CI/CD pipeline triggers aligned to it
+- [ ] Mutation testing strategy selected and persisted to project CLAUDE.md
 - [ ] Handoff accepted by acceptance-designer (DISTILL wave)
 
 ## Next Wave

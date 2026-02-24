@@ -59,6 +59,14 @@ INPUT: "{feature-description}"
         Acceptance criteria tagged @property by DISTILL signal the crafter to use PBT.
         Example-based tests are fallback only when properties are hard to express.
   |
+  1.6. Detect mutation testing strategy
+     a. In the same project CLAUDE.md read in step 1.5, search for "## Mutation Testing Strategy"
+     b. If found: extract the strategy keyword (per-feature, nightly-delta, pre-release, disabled)
+     c. If not found (devops wave was skipped): default to "per-feature" (current behavior)
+     d. Store the selected mutation testing strategy for use in Phase 5
+     e. Log the selected strategy for traceability: record "Mutation Testing Strategy: {strategy}" in the execution context so Phase 5 decisions are auditable
+     Note: The strategy extracted in step 1.6 is locked for the entire deliver run. If the project's CLAUDE.md is edited during delivery, the new strategy takes effect on the next `/nw:deliver` invocation, not the current one.
+  |
   2. Phase 1 — Roadmap Creation + Review
      a. Skip if roadmap.yaml exists with validation.status == "approved"
      b. @nw-solution-architect creates roadmap.yaml (read ~/.claude/commands/nw/roadmap.md)
@@ -126,9 +134,16 @@ INPUT: "{feature-description}"
      c. One revision pass on rejection (orchestrator re-dispatches refactoring
         on flagged files with same orchestrator markers), then proceed.
   |
-  6. Phase 5 — Mutation Testing
-     a. Mutation testing gate >= 80% kill rate (read ~/.claude/commands/nw/mutation-test.md)
-     b. Must pass before proceeding
+  6. Phase 5 — Mutation Testing (conditional on strategy from step 1.6)
+     a. If strategy is "per-feature" (or not specified):
+        Run mutation testing gate >= 80% kill rate (read ~/.claude/commands/nw/mutation-test.md)
+        Must pass before proceeding.
+     b. If strategy is "nightly-delta":
+        SKIP. Log: "Mutation testing skipped — handled by CI nightly pipeline (nightly-delta strategy)."
+     c. If strategy is "pre-release":
+        SKIP. Log: "Mutation testing skipped — handled at release boundary (pre-release strategy)."
+     d. If strategy is "disabled":
+        SKIP. Log: "Mutation testing skipped — disabled per project configuration."
   |
   7. Phase 6 — Deliver Integrity Verification
      a. Run via Bash tool:
@@ -233,7 +248,7 @@ docs/evolution/
 - Paradigm-appropriate crafter used for all steps (functional crafter for FP, standard crafter for OOP)
 - Deliver-level Complete Refactoring (Phase 3) — L1-L4 on all modified files
 - Deliver-level Adversarial Review (Phase 4) — Testing Theater detection + code quality
-- Mutation testing >= 80% kill rate (Phase 5)
+- Mutation testing >= 80% kill rate (Phase 5, if strategy is "per-feature")
 - Deliver integrity verification (Phase 6)
 - All tests passing after each phase
 
@@ -243,7 +258,7 @@ docs/evolution/
 - [ ] All steps executed with COMMIT/PASS (5-phase TDD cycle)
 - [ ] L1-L4 refactoring complete on code and tests (Phase 3)
 - [ ] Adversarial review passed (Phase 4)
-- [ ] Mutation testing gate passed >= 80% (Phase 5)
+- [ ] Mutation testing gate passed >= 80% (Phase 5, or skipped per project strategy)
 - [ ] Deliver integrity verification passed (Phase 6)
 - [ ] Evolution document archived (Phase 7)
 - [ ] Retrospective completed or clean execution noted (Phase 8)
