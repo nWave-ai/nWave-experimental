@@ -17,6 +17,7 @@ Usage:
 """
 
 import importlib.util
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -58,10 +59,16 @@ def is_virtual_environment() -> bool:
     Uses the standard detection method: sys.prefix != sys.base_prefix
     when running in a virtual environment (venv, virtualenv, etc.).
 
+    Falls back to checking the VIRTUAL_ENV environment variable, which
+    covers cases where nwave-ai was installed outside the active venv
+    (e.g., globally or via pipx).
+
     Returns:
         True if in a virtual environment, False otherwise.
     """
-    return sys.prefix != sys.base_prefix
+    if sys.prefix != sys.base_prefix:
+        return True
+    return "VIRTUAL_ENV" in os.environ
 
 
 class VirtualEnvironmentCheck:
@@ -95,7 +102,10 @@ class VirtualEnvironmentCheck:
                 "installer:\n"
                 "  python -m venv .venv\n"
                 "  source .venv/bin/activate  # Unix/macOS\n"
-                "  .venv\\Scripts\\activate   # Windows"
+                "  .venv\\Scripts\\activate   # Windows\n"
+                "\n"
+                "If you already have a venv activated, install nwave-ai inside it:\n"
+                "  pip install nwave-ai"
             ),
         )
 

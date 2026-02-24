@@ -5,6 +5,7 @@ CRITICAL: Tests follow hexagonal architecture - domain classes use real objects.
 These tests validate virtual environment detection and preflight check orchestration.
 """
 
+import os
 import sys
 from unittest.mock import patch
 
@@ -37,7 +38,7 @@ class TestIsVirtualEnvironment:
 
     def test_is_virtual_environment_returns_false_when_not_in_venv(self):
         """
-        GIVEN: sys.prefix equals sys.base_prefix (no venv)
+        GIVEN: sys.prefix equals sys.base_prefix and no VIRTUAL_ENV env var
         WHEN: is_virtual_environment() is called
         THEN: Returns False
         """
@@ -45,11 +46,46 @@ class TestIsVirtualEnvironment:
         same_path = "/usr/local/python"
         with patch.object(sys, "prefix", same_path):
             with patch.object(sys, "base_prefix", same_path):
-                # ACT
-                result = is_virtual_environment()
+                with patch.dict(os.environ, {}, clear=True):
+                    # ACT
+                    result = is_virtual_environment()
 
-                # ASSERT
-                assert result is False
+                    # ASSERT
+                    assert result is False
+
+    def test_is_virtual_environment_returns_true_via_virtual_env_var(self):
+        """
+        GIVEN: sys.prefix equals sys.base_prefix (global install)
+               but VIRTUAL_ENV environment variable is set (venv active in shell)
+        WHEN: is_virtual_environment() is called
+        THEN: Returns True (fallback detection)
+        """
+        # ARRANGE
+        same_path = "/usr/local/python"
+        with patch.object(sys, "prefix", same_path):
+            with patch.object(sys, "base_prefix", same_path):
+                with patch.dict(os.environ, {"VIRTUAL_ENV": "/path/to/venv"}):
+                    # ACT
+                    result = is_virtual_environment()
+
+                    # ASSERT
+                    assert result is True
+
+    def test_is_virtual_environment_sys_prefix_works_without_virtual_env_var(self):
+        """
+        GIVEN: sys.prefix differs from sys.base_prefix and no VIRTUAL_ENV env var
+        WHEN: is_virtual_environment() is called
+        THEN: Returns True (original detection method still works)
+        """
+        # ARRANGE
+        with patch.object(sys, "prefix", "/path/to/venv"):
+            with patch.object(sys, "base_prefix", "/usr/local/python"):
+                with patch.dict(os.environ, {}, clear=True):
+                    # ACT
+                    result = is_virtual_environment()
+
+                    # ASSERT
+                    assert result is True
 
 
 class TestCheckResult:
@@ -121,9 +157,10 @@ class TestVirtualEnvironmentCheck:
 
     def test_virtual_environment_check_fails_when_not_in_venv(self):
         """
-        GIVEN: Running outside a virtual environment
+        GIVEN: Running outside a virtual environment (no sys.prefix diff, no VIRTUAL_ENV)
         WHEN: VirtualEnvironmentCheck.run() is called
-        THEN: Returns CheckResult with passed=False and ENV_NO_VENV error
+        THEN: Returns CheckResult with passed=False, ENV_NO_VENV error,
+              and remediation includes pip install nwave-ai suggestion
         """
         # ARRANGE
         check = VirtualEnvironmentCheck()
@@ -131,15 +168,19 @@ class TestVirtualEnvironmentCheck:
 
         with patch.object(sys, "prefix", same_path):
             with patch.object(sys, "base_prefix", same_path):
-                # ACT
-                result = check.run()
+                with patch.dict(os.environ, {}, clear=True):
+                    # ACT
+                    result = check.run()
 
-                # ASSERT
-                assert result.passed is False
-                assert result.error_code == ENV_NO_VENV
-                assert "not running in a virtual environment" in result.message.lower()
-                assert result.remediation is not None
-                assert "venv" in result.remediation.lower()
+                    # ASSERT
+                    assert result.passed is False
+                    assert result.error_code == ENV_NO_VENV
+                    assert (
+                        "not running in a virtual environment" in result.message.lower()
+                    )
+                    assert result.remediation is not None
+                    assert "venv" in result.remediation.lower()
+                    assert "pip install nwave-ai" in result.remediation
 
 
 class TestPreflightChecker:
@@ -180,14 +221,15 @@ class TestPreflightChecker:
 
         with patch.object(sys, "prefix", same_path):
             with patch.object(sys, "base_prefix", same_path):
-                # ACT
-                results = checker.run_all_checks(skip_checks=True)
+                with patch.dict(os.environ, {}, clear=True):
+                    # ACT
+                    results = checker.run_all_checks(skip_checks=True)
 
-                # ASSERT
-                assert len(results) > 0
-                venv_result = results[0]  # Virtual env check is always first
-                assert venv_result.passed is False
-                assert venv_result.error_code == ENV_NO_VENV
+                    # ASSERT
+                    assert len(results) > 0
+                    venv_result = results[0]  # Virtual env check is always first
+                    assert venv_result.passed is False
+                    assert venv_result.error_code == ENV_NO_VENV
 
     def test_has_blocking_failures_returns_true_when_check_fails(self):
         """
@@ -289,11 +331,12 @@ class TestPreflightChecker:
 
         with patch.object(sys, "prefix", same_path):
             with patch.object(sys, "base_prefix", same_path):
-                # ACT
-                results = checker.run_all_checks()
+                with patch.dict(os.environ, {}, clear=True):
+                    # ACT
+                    results = checker.run_all_checks()
 
-                # ASSERT
-                assert checker.has_blocking_failures(results) is True
-                failed = checker.get_failed_checks(results)
-                assert len(failed) == 1
-                assert failed[0].error_code == ENV_NO_VENV
+                    # ASSERT
+                    assert checker.has_blocking_failures(results) is True
+                    failed = checker.get_failed_checks(results)
+                    assert len(failed) == 1
+                    assert failed[0].error_code == ENV_NO_VENV
