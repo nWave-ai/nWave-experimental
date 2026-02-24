@@ -147,7 +147,6 @@
 
 - [architecture-patterns](../../../nWave/skills/solution-architect/architecture-patterns.md) — Comprehensive architecture patterns, methodologies, quality frameworks, and evaluation methods for solution architects. Load when designing system architecture or selecting patterns.
 - [critique-dimensions](../../../nWave/skills/solution-architect/critique-dimensions.md) — Architecture quality critique dimensions for peer review. Load when invoking solution-architect-reviewer or performing self-review of architecture documents.
-- [residuality-theory](../../../nWave/skills/solution-architect/residuality-theory.md) — Residuality Theory methodology for designing architectures that survive unknown stresses. Load when designing high-uncertainty, mission-critical, or complex socio-technical systems.
 - [roadmap-design](../../../nWave/skills/solution-architect/roadmap-design.md) — Roadmap concision rules, step decomposition efficiency, AC abstraction guidelines, and step-to-scenario mapping. Load when creating implementation roadmaps.
 - [stress-analysis](../../../nWave/skills/solution-architect/stress-analysis.md) — Advanced architecture stress analysis methodology for designing systems that survive unknown stresses. Load when --residuality flag is used or when designing high-uncertainty, mission-critical systems.
 
