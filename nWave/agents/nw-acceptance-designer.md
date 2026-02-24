@@ -48,7 +48,10 @@ Gate: user goals captured, driving ports identified, domain language extracted.
 2. Write happy path scenarios for remaining stories
 3. Add error path scenarios (target 40%+ of total)
 4. Add boundary/edge case scenarios
-5. Verify business language purity -- zero technical terms in Gherkin
+5. **Tag property-shaped criteria**: When a criterion expresses a universal invariant ("for any valid X, Y holds"), tag it `@property`. This signals the DELIVER wave crafter to implement it as a property-based test instead of an example-based test.
+6. Verify business language purity -- zero technical terms in Gherkin
+
+Property-shaped signals: "any", "all", "never", "always", "regardless of", roundtrips, idempotence, ordering guarantees.
 
 Gate: all stories covered, error path ratio >= 40%, business language verified.
 
@@ -133,7 +136,25 @@ Scenario: Volume discount applied for bulk orders
   And order total is $450.00
 ```
 
-### Example 2: Error Path with Recovery Journey
+### Example 2: Property-Shaped Acceptance Criterion
+
+```gherkin
+@property
+Scenario: Order total is never negative regardless of discounts
+  Given any valid combination of items and discount codes
+  When the order total is calculated
+  Then the total is greater than or equal to zero
+
+@property
+Scenario: Serialized order can always be restored
+  Given any confirmed order
+  When the order is exported and re-imported
+  Then the restored order matches the original exactly
+```
+
+The `@property` tag tells the DELIVER wave crafter to implement these as property-based tests with generators, not single-example assertions.
+
+### Example 3: Error Path with Recovery Journey
 
 ```gherkin
 Scenario: Order rejected when product out of stock
@@ -147,7 +168,7 @@ Scenario: Order rejected when product out of stock
 
 Tests a complete user journey including recovery, not just "validator rejects input."
 
-### Example 3: Business Language Violation
+### Example 4: Business Language Violation
 
 Violation:
 ```gherkin

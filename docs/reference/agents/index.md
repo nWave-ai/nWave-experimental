@@ -21,6 +21,7 @@
 
 | Name | Description | Skills |
 | --- | --- | --- |
+| [nw-functional-software-crafter](nw-functional-software-crafter.md) | DELIVER wave - Outside-In TDD with functional paradigm. Pure functions, pipeline composition, types as documentation, property-based testing. Use when the project follows a functional-first approach (F#, Haskell, Scala, Clojure, Elixir, or FP-heavy TypeScript/Python/Kotlin). | 16 |
 | [nw-software-crafter](nw-software-crafter.md) | DELIVER wave - Outside-In TDD and progressive refactoring. Research-optimized core (~375L) with Skills for deep knowledge. Includes Mikado Method for complex refactoring. | 11 |
 | [nw-software-crafter-reviewer](nw-software-crafter-reviewer.md) | Use for review and critique tasks - Code quality and implementation review specialist. Runs on Haiku for cost efficiency. | 2 |
 
@@ -54,6 +55,7 @@
 | [nw-data-engineer-reviewer](nw-data-engineer-reviewer.md) | Other | Use for review and critique tasks - Data architecture and pipeline review specialist. Runs on Haiku for cost efficiency. | 1 |
 | [nw-documentarist](nw-documentarist.md) | Other | Use for documentation quality enforcement using DIVIO/Diataxis principles. Classifies documentation type, validates against type-specific criteria, detects collapse patterns, and provides actionable improvement guidance. | 3 |
 | [nw-documentarist-reviewer](nw-documentarist-reviewer.md) | Other | Use for reviewing documentarist assessments. Validates classification accuracy, validation completeness, collapse detection, and recommendation quality using Haiku model. | 2 |
+| [nw-functional-software-crafter](nw-functional-software-crafter.md) | DELIVER | DELIVER wave - Outside-In TDD with functional paradigm. Pure functions, pipeline composition, types as documentation, property-based testing. Use when the project follows a functional-first approach (F#, Haskell, Scala, Clojure, Elixir, or FP-heavy TypeScript/Python/Kotlin). | 16 |
 | [nw-platform-architect](nw-platform-architect.md) | DESIGN | Use for DESIGN wave (infrastructure design) and DEVOP wave (deployment execution, production readiness, stakeholder sign-off). Transforms architecture into deployable infrastructure, then coordinates production delivery and outcome measurement. | 7 |
 | [nw-platform-architect-reviewer](nw-platform-architect-reviewer.md) | DESIGN | Use for review and critique tasks - Platform design, CI/CD pipeline, infrastructure, observability, deployment readiness, and production handoff review specialist. Runs on Haiku for cost efficiency. | 3 |
 | [nw-product-discoverer](nw-product-discoverer.md) | Other | Conducts evidence-based product discovery through customer interviews, assumption testing, and opportunity validation. Use when validating problems exist, prioritizing opportunities, or confirming market viability before writing requirements. | 3 |

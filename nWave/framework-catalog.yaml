@@ -41,6 +41,13 @@ agents:
     role: outside_in_tdd
     knowledge_preservation: COMPLETE
     description: Outside-in TDD implementation and refactoring
+  functional-software-crafter:
+    wave: DELIVER
+    priority: 2
+    role: functional_outside_in_tdd
+    knowledge_preservation: COMPLETE
+    description: Outside-In TDD with functional paradigm. Pure functions, pipeline
+      composition, types as documentation, property-based testing.
   platform-architect:
     wave: DEVOP
     priority: 1
