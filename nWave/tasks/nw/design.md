@@ -1,6 +1,6 @@
 ---
 description: "Designs system architecture with C4 diagrams and technology selection. Use when defining component boundaries, choosing tech stacks, or creating architecture documents."
-argument-hint: "[component-name] - Optional: --residuality (enable residuality analysis for complex/critical systems)"
+argument-hint: "[component-name] - Optional: --residuality --paradigm=[auto|oop|fp]"
 ---
 
 # NW-DESIGN: Architecture Design
@@ -64,8 +64,10 @@ If functional paradigm was selected, Morgan adapts architectural strategy:
 - Immutable state: state changes produce new values, no mutation in the domain
 These are strategic guidance items for the architecture document — no code snippets.
 
-### Step 5: Residuality Analysis (OPTIONAL)
-Offered only when: `--residuality` flag provided, OR system has regulatory constraints, complex failure modes, or volatile business environment. Skipped for simple projects.
+### Step 5: Advanced Architecture Stress Analysis (HIDDEN -- activated by `--residuality` flag only)
+When activated: Morgan applies complexity-science-based stress analysis to identify how the architecture behaves under extreme and unexpected conditions. Generates stressors, identifies system attractors and residues, builds incidence matrix, and modifies architecture for resilience. See the `stress-analysis` skill for full methodology.
+
+When not activated: Skip this step entirely. Do not mention or propose it.
 
 ### Step 6: Produce Deliverables
 - Architecture document with component boundaries, tech stack, integration patterns
@@ -87,7 +89,7 @@ Context files: see Context Files Required above.
 - interactive: moderate
 - output_format: markdown
 - diagram_format: mermaid (C4)
-- residuality: {true if --residuality flag, false otherwise}
+- stress_analysis: {true if --residuality flag, false otherwise}
 
 ## Success Criteria
 

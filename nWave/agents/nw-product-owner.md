@@ -13,6 +13,15 @@ skills:
   - leanux-methodology
   - bdd-requirements
   - review-dimensions
+  - jtbd-core
+  - jtbd-interviews
+  - jtbd-opportunity-scoring
+  - jtbd-bdd-integration
+  - ux-principles
+  - ux-web-patterns
+  - ux-desktop-patterns
+  - ux-tui-patterns
+  - ux-emotional-design
 ---
 
 # nw-product-owner

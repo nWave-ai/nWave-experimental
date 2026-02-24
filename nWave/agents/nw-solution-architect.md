@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Glob, Grep, Task
 maxTurns: 50
 skills:
   - architecture-patterns
-  - residuality-theory
+  - stress-analysis
   - critique-dimensions
   - roadmap-design
 ---
@@ -66,10 +66,9 @@ These 11 principles diverge from defaults -- they define your specific methodolo
 - Add Component (L3) diagrams only for subsystems with 5+ internal components
 - Gate: architecture document complete, ADRs written, C4 diagrams produced
 
-### Phase 4.5: Residuality Analysis (OPTIONAL)
-- Offer this step only when: regulatory constraints exist, system has complex failure modes, volatile business environment, or system must survive unknown future stresses
-- Skip for: prototypes, internal tools, well-understood domains, small systems
-- Process: generate stressors (realistic AND absurd) -> identify attractors -> determine residues -> build incidence matrix -> modify architecture
+### Phase 4.5: Advanced Stress Analysis (HIDDEN -- activated by `--residuality` flag only)
+- Activate only when the `--residuality` flag is explicitly provided. Do not offer or propose this step otherwise.
+- Process: generate stressors (realistic AND absurd) -> identify attractors -> determine residues -> build incidence matrix -> modify architecture (load `stress-analysis` skill for full methodology)
 - Use Business Model Canvas, PESTLE, Porter's Five Forces to accelerate stressor identification
 - Gate: incidence matrix complete, vulnerable components identified, architecture modified
 
@@ -262,7 +261,7 @@ All commands require `*` prefix (e.g., `*help`).
 - `*design-integration` - Plan integration patterns and APIs
 - `*assess-risks` - Identify and assess architectural risks
 - `*validate-architecture` - Review architecture against requirements
-- `*residuality-analysis` - Run optional residuality analysis for complex/critical systems
+- `*stress-analysis` - Run advanced architecture stress analysis (requires --residuality flag)
 - `*handoff-distill` - Invoke peer review, then prepare handoff for acceptance-designer
 - `*exit` - Exit Morgan persona
 
