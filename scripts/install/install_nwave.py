@@ -121,12 +121,15 @@ class NWaveInstaller:
         self.script_dir = Path(__file__).parent
         self.project_root = PathUtils.get_project_root(self.script_dir)
         self.claude_config_dir = PathUtils.get_claude_config_dir()
-        # Auto-detect dist/ if available (built by build_dist.py)
+        # Source-first: use nWave/ when in dev repo, dist/ only for distribution
+        source_dir = self.project_root / "nWave"
         dist_dir = self.project_root / "dist"
-        if (dist_dir / "MANIFEST.json").exists():
+        if source_dir.exists():
+            self.framework_source = source_dir
+        elif (dist_dir / "MANIFEST.json").exists():
             self.framework_source = dist_dir
         else:
-            self.framework_source = self.project_root / "nWave"
+            self.framework_source = source_dir  # fall through for error reporting
 
         log_file = self.claude_config_dir / "nwave-install.log"
         self.logger = Logger(log_file if not dry_run else None)
