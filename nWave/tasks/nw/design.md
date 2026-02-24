@@ -21,6 +21,9 @@ Morgan analyzes the existing codebase, evaluates open-source alternatives, and p
 - docs/feature/{feature-name}/discuss/user-stories.md - From DISCUSS wave
 - docs/feature/{feature-name}/discuss/domain-model.md - From DISCUSS wave
 - docs/feature/{feature-name}/discuss/ux-journey.md - From DISCUSS wave
+- docs/feature/{feature-name}/discuss/jtbd-job-stories.md - Job stories from DISCUSS wave (JTBD Phase 1)
+- docs/feature/{feature-name}/discuss/jtbd-four-forces.md - Four Forces analysis from DISCUSS wave
+- docs/feature/{feature-name}/discuss/jtbd-opportunity-scores.md - Opportunity scores (if multiple jobs)
 - docs/feature/{feature-name}/design/constraints.md - Technical and business constraints
 
 ## Discovery Flow
@@ -28,6 +31,7 @@ Morgan analyzes the existing codebase, evaluates open-source alternatives, and p
 Architecture decisions are driven by quality attributes, not pattern shopping:
 
 ### Step 1: Understand the Problem
+Review JTBD artifacts from the DISCUSS wave to understand which jobs the architecture must serve.
 Morgan asks: What are we building? For whom? What quality attributes matter most? (scalability, maintainability, testability, time-to-market, fault tolerance, auditability)
 
 ### Step 2: Understand Constraints

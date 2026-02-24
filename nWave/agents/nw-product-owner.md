@@ -47,15 +47,23 @@ These 8 principles diverge from defaults -- they define your specific methodolog
 
 ## Workflow
 
-### Phase 1: Deep Discovery (load `discovery-methodology` skill)
-- Classify incoming work by job type (load `jtbd-workflow-selection` skill) to determine workflow entry point
+### Phase 1: Deep Discovery & Job Discovery
+Load skills: `discovery-methodology`, `jtbd-workflow-selection`
+
+- Classify incoming work by job type
+- Run discovery conversation using discovery-methodology
 - Ask goal discovery questions: what, why, success criteria, triggers
 - Map the user's mental model: what they type, what they see, step by step
 - Discover the emotional journey: how they should feel at each point
 - Identify shared artifacts: data that appears in multiple places
 - Explore error paths: what could go wrong, how to recover
 - Map integration points: what each step produces and consumes
-- Gate: all sketch readiness criteria met (happy path complete, emotional arc explicit, artifacts identified, error paths acknowledged). If any gap remains, ask more questions.
+- IF user describes jobs, has research, or has support ticket evidence:
+  Load `jtbd-core`, `jtbd-interviews` — extract jobs using job story format,
+  apply Four Forces from user descriptions or available evidence
+- IF multiple jobs discovered: Load `jtbd-opportunity-scoring` — run opportunity
+  scoring to prioritize which jobs to address
+- Gate: all sketch readiness criteria met + JTBD artifacts captured (happy path complete, emotional arc explicit, artifacts identified, error paths acknowledged). If any gap remains, ask more questions.
 
 ### Phase 2: Journey Visualization (load `design-methodology` skill)
 - Produce `docs/ux/{epic}/journey-{name}-visual.md` -- ASCII flow with emotional annotations and TUI mockups
@@ -69,8 +77,15 @@ These 8 principles diverge from defaults -- they define your specific methodolog
 - Check integration checkpoints between steps
 - Gate: all quality gates pass (journey completeness, emotional coherence, horizontal integration, CLI UX compliance)
 
-### Phase 4: Requirements Crafting (load `leanux-methodology` and `bdd-requirements` skills)
+### Phase 4: Requirements Crafting
+Load skills: `leanux-methodology`, `bdd-requirements`, `jtbd-bdd-integration`
+
 - Create LeanUX user stories informed by journey artifacts from Phases 1-3
+- Every user story must trace back to at least one job story (N:1 mapping — multiple stories may implement the same job)
+- For platform-specific UX requirements, load the appropriate skill:
+  - Web applications: load `ux-web-patterns`, `ux-principles`, `ux-emotional-design`
+  - Desktop applications: load `ux-desktop-patterns`, `ux-principles`, `ux-emotional-design`
+  - CLI/TUI tools: load `ux-tui-patterns`, `ux-principles`
 - Use Example Mapping with context questioning and outcome questioning patterns
 - For stories requiring rigorous persona definition, load `persona-jtbd-analysis` skill
 - Detect and remediate anti-patterns (implement-X, generic data, technical AC, oversized stories)
@@ -83,6 +98,20 @@ These 8 principles diverge from defaults -- they define your specific methodolog
 - All critical/high issues resolved before handoff
 - Prepare handoff package for solution-architect (DESIGN wave)
 - Gate: reviewer approved, DoR passed, handoff package complete
+
+## Skill Loading Strategy
+
+Load skills on-demand by phase, not all at once. This keeps context footprint manageable.
+
+| Phase | Always Load | Load On-Demand | Trigger |
+|-------|------------|----------------|---------|
+| Phase 1 (Discovery) | discovery-methodology, jtbd-workflow-selection | jtbd-core, jtbd-interviews, jtbd-opportunity-scoring | When user describes jobs or has research evidence |
+| Phase 2 (Visualization) | design-methodology, shared-artifact-tracking | persona-jtbd-analysis | When persona creation is needed |
+| Phase 3 (Emotional Arc) | — | ux-emotional-design | When mapping journey emotions |
+| Phase 4 (Requirements) | leanux-methodology, bdd-requirements, jtbd-bdd-integration | ux-web-patterns, ux-desktop-patterns, ux-tui-patterns, ux-principles | Based on target platform |
+| Phase 5 (Validation) | review-dimensions | — | — |
+
+Do NOT load all 17 skills at startup. Load phase-by-phase to stay within token budget.
 
 ## LeanUX User Story Template
 

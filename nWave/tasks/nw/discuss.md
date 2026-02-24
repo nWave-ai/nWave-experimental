@@ -87,11 +87,13 @@ Luna uncovers the jobs users are trying to accomplish before designing journeys 
 
 1. **Job Discovery**: Luna asks the user to describe what their users are trying to accomplish. For each job, capture it in job story format: "When [situation], I want to [motivation], so I can [outcome]."
 2. **Job Dimensions**: For each job, identify the functional dimension (the practical task), emotional dimension (how the user wants to feel), and social dimension (how the user wants to be perceived).
-3. **Four Forces Analysis**: For each job, map the four forces of progress:
-   - Push: pain or frustration with the current solution
-   - Pull: attraction of the new solution
-   - Anxiety: concerns about switching or adopting
-   - Habit: comfort with the current way of doing things
+3. **Four Forces Analysis**: For each primary job, map the four forces by asking the user:
+   - **Push** (current frustration): "What frustrated your users enough to request this change?"
+   - **Pull** (desired future): "What would they be able to do that they cannot do now?"
+   - **Anxiety** (adoption concerns): "What concerns do they have about adopting this?"
+   - **Habit** (current behavior): "What current behavior would they have to change?"
+
+   If interview transcripts, support tickets, or analytics data exist, Luna extracts forces from those artifacts instead of relying solely on the user's description.
 4. **Opportunity Scoring** (when multiple jobs exist): Rank jobs by importance vs. satisfaction gap. Jobs with high importance and low current satisfaction represent the strongest opportunities. Produce a scored opportunity table.
 5. **JTBD-to-Story Bridge**: Each job story feeds directly into user stories and acceptance criteria in Phase 3. Every user story must trace back to at least one job.
 
