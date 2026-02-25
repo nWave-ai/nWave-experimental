@@ -10,6 +10,7 @@ Commands:
   python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter pre-tool-use
   python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter subagent-stop
   python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter post-tool-use
+  python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter session-start
   python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter subagent-start
 
 Exit Codes:

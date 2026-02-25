@@ -15,11 +15,6 @@ import json
 import sys
 
 
-_UPDATE_AVAILABLE_TEMPLATE = (
-    "nWave update available: {local} \u2192 {latest}. Changes: {changelog}"
-)
-
-
 def _get_local_version() -> str:
     """Return installed nwave-ai version, or '0.0.0' if unavailable."""
     from des.application.update_check_service import _detect_local_version
@@ -38,11 +33,8 @@ def _build_update_check_service():
 
 def _build_update_message(local: str, latest: str, changelog: str | None) -> str:
     """Format the additionalContext message for an available update."""
-    return _UPDATE_AVAILABLE_TEMPLATE.format(
-        local=local,
-        latest=latest,
-        changelog=changelog or "",
-    )
+    changes = changelog or ""
+    return f"nWave update available: {local} \u2192 {latest}. Changes: {changes}"
 
 
 def handle_session_start() -> int:

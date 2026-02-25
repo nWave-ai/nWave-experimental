@@ -8,10 +8,10 @@ Fail-open: any exception exits 0 so the spawned sub-agent session is never
 blocked by a reminder hook.
 
 Output format (for nw-* agents only):
-    {"additionalContext": "MANDATORY: You are @nw-software-crafter. Load your
-    relevant skill files from ~/.claude/skills/nw/nw-software-crafter/ before
-    beginning work. Skills encode your methodology — load the ones applicable
-    to your current task at the appropriate phase."}
+    {"additionalContext": "MANDATORY: You are @{agent_type}. Load your relevant
+    skill files from ~/.claude/skills/nw/{agent_type}/ before beginning work.
+    Skills encode your methodology — load the ones applicable to your current
+    task at the appropriate phase."}
 """
 
 from __future__ import annotations
