@@ -6,174 +6,109 @@ argument-hint: '[feature-description] - Example: "Implement user authentication 
 
 # NW-DELIVER: Complete DELIVER Wave Orchestrator
 
-**Wave**: DELIVER (wave 6 of 6)
-**Agent**: Main Instance (self -- orchestrator)
-**Command**: `/nw:deliver "{feature-description}"`
+**Wave**: DELIVER (wave 6 of 6)|**Agent**: Main Instance (orchestrator)|**Command**: `/nw:deliver "{feature-description}"`
 
 ## Overview
 
-Orchestrates the complete DELIVER wave: from feature description to production-ready code with mandatory quality gates. You (the main Claude instance) coordinate by delegating to specialized agents via the Task tool. Final wave in nWave (DISCOVER > DISCUSS > DESIGN > DEVOP > DISTILL > DELIVER).
+Orchestrates complete DELIVER wave: feature description → production-ready code with mandatory quality gates. You (main Claude instance) coordinate by delegating to specialized agents via Task tool. Final wave (DISCOVER > DISCUSS > DESIGN > DEVOP > DISTILL > DELIVER).
 
-Sub-agents cannot use the Skill tool or execute `/nw:*` commands. Read the relevant command file yourself, extract instructions, and embed them in the Task prompt.
+Sub-agents cannot use Skill tool or `/nw:*` commands. Read relevant command file, extract instructions, embed in Task prompt.
 
 ## CRITICAL BOUNDARY RULES
 
-1. **NEVER implement roadmap steps directly.** ALL step implementation MUST be delegated to @nw-software-crafter via the Task tool with DES markers. You are the ORCHESTRATOR — you coordinate, you do not implement.
+1. **NEVER implement steps directly.** ALL implementation MUST be delegated to @nw-software-crafter via Task tool with DES markers. You are ORCHESTRATOR — coordinate, not implement.
+2. **NEVER write phase entries to execution-log.yaml.** Only the crafter subagent that performed TDD work may append entries.
+3. **Extract step context from roadmap.yaml ONLY for Task prompt.** Grep roadmap for step_id ~50 lines context, extract (description|acceptance_criteria|files_to_modify), pass in DES template.
 
-2. **NEVER write phase entries to execution-log.yaml.** Only the software-crafter subagent that performed the TDD work may append phase entries. If you write entries yourself, finalize will detect the violation and block.
+**DES circumvention is fraud.** Without DES monitoring, nWave cannot guarantee code quality. For non-deliver tasks (docs, research, one-off edits): `<!-- DES-ENFORCEMENT : exempt -->`. Faking step IDs, omitting markers, or writing log entries manually is never acceptable.
 
-3. **Extract step context from roadmap.yaml ONLY for the Task prompt.** Grep the roadmap for the step_id with ~50 lines context, extract fields (description, acceptance_criteria, files_to_modify), and pass them in the DES template. The crafter receives the full step context through the prompt.
-
-**Circumventing DES validation for deliver steps is fraud.** Without DES monitoring, nWave cannot guarantee code quality — the entire TDD cycle, audit trail, and integrity verification exist to protect the codebase. If your Task prompt is genuinely NOT a deliver step (e.g., documentation, research, one-off edits), use the escape hatch: `<!-- DES-ENFORCEMENT : exempt -->`. That is the correct way. Faking step IDs, omitting markers, or writing execution-log entries manually to bypass validation is never acceptable.
-
-The finalize verification gate checks that every completed step has valid DES-format execution-log entries (5 TDD phases with timestamps). Steps implemented without DES monitoring will be flagged, and finalize will block until they are re-executed properly via Task.
+Finalize verification checks every completed step has valid DES-format entries (5 TDD phases + timestamps). Steps without DES monitoring → flagged, finalize blocks until re-executed via Task.
 
 ## Orchestration Flow
 
 ```
 INPUT: "{feature-description}"
   |
-  1. Parse input, derive project-id (kebab-case), create docs/feature/{project-id}/
-     a. Create execution-log.yaml if it doesn't exist:
-        ```yaml
-        schema_version: "2.0"
-        project_id: "{project-id}"
-        events: []
-        ```
-     b. This ensures the execute command can append from step 1
-     c. Create deliver session marker for Write/Edit guard:
-        ```bash
-        mkdir -p .nwave/des && echo '{"project_id":"{project-id}","started_at":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > .nwave/des/deliver-session.json
-        ```
+  1. Parse input|derive project-id (kebab-case)|create docs/feature/{project-id}/
+     a. Create execution-log.yaml if missing: schema_version "2.0"|project_id|events: []
+     b. Create deliver session marker: .nwave/des/deliver-session.json
   |
   1.5. Detect development paradigm
-     a. Read the project's CLAUDE.md (at project root, NOT ~/.claude/CLAUDE.md)
-     b. Search for "## Development Paradigm" section
-     c. If found: extract paradigm (functional or object-oriented) and crafter agent:
-        - "functional" or "@nw-functional-software-crafter" → use @nw-functional-software-crafter
-        - "object-oriented" or "@nw-software-crafter" → use @nw-software-crafter (default)
-     d. If not found (design wave was skipped): ask user "OOP or Functional?" and offer
-        to write the paradigm section to project CLAUDE.md for future runs
-     e. Store the selected crafter agent name for use in all Phase 2 step dispatches
-     f. If functional paradigm: property-based testing is the DEFAULT testing approach.
-        Acceptance criteria tagged @property by DISTILL signal the crafter to use PBT.
-        Example-based tests are fallback only when properties are hard to express.
+     a. Read project CLAUDE.md (project root, NOT ~/.claude/CLAUDE.md)
+     b. Search "## Development Paradigm"
+     c. Found → extract paradigm: "functional"/@nw-functional-software-crafter or "object-oriented"/@nw-software-crafter (default)
+     d. Not found → ask user "OOP or Functional?"|offer to write to CLAUDE.md
+     e. Store selected crafter for all Phase 2 dispatches
+     f. Functional → property-based testing default|@property tags signal PBT|example-based = fallback
   |
   1.6. Detect mutation testing strategy
-     a. In the same project CLAUDE.md read in step 1.5, search for "## Mutation Testing Strategy"
-     b. If found: extract the strategy keyword (per-feature, nightly-delta, pre-release, disabled)
-     c. If not found (devops wave was skipped): default to "per-feature" (current behavior)
-     d. Store the selected mutation testing strategy for use in Phase 5
-     e. Log the selected strategy for traceability: record "Mutation Testing Strategy: {strategy}" in the execution context so Phase 5 decisions are auditable
-     Note: The strategy extracted in step 1.6 is locked for the entire deliver run. If the project's CLAUDE.md is edited during delivery, the new strategy takes effect on the next `/nw:deliver` invocation, not the current one.
+     a. Same CLAUDE.md|search "## Mutation Testing Strategy"
+     b. Found → extract: per-feature|nightly-delta|pre-release|disabled
+     c. Not found → default "per-feature"
+     d. Log strategy for traceability
+     Note: Strategy locks at deliver start. CLAUDE.md edits during delivery take effect next run.
   |
   2. Phase 1 — Roadmap Creation + Review
      a. Skip if roadmap.yaml exists with validation.status == "approved"
      b. @nw-solution-architect creates roadmap.yaml (read ~/.claude/commands/nw/roadmap.md)
-        Step IDs MUST use NN-NN format (two digits, dash, two digits).
-        First pair = phase number, second pair = step number within phase.
-        Example: 01-01, 01-02, 02-01. Formats like 01-A or 1-1 are invalid.
+        Step IDs: NN-NN format (01-01, 01-02, 02-01). 01-A or 1-1 = invalid.
      c. Automated quality gate (see below)
-     d. @nw-software-crafter-reviewer reviews roadmap (read ~/.claude/commands/nw/review.md)
-     e. Retry once on rejection, then stop for manual intervention
+     d. @nw-software-crafter-reviewer reviews (read ~/.claude/commands/nw/review.md)
+     e. Retry once on rejection → stop for manual intervention
   |
   3. Phase 2 — Execute All Steps
      a. Extract steps from roadmap.yaml in dependency order
-     b. For each step, check execution-log.yaml for prior completion (resume)
+     b. Check execution-log.yaml for prior completion (resume)
      c. {selected-crafter} executes 5-phase TDD cycle (read ~/.claude/commands/nw/execute.md)
-        Use the crafter determined in step 1.5 (@nw-software-crafter or @nw-functional-software-crafter).
-        When using @nw-functional-software-crafter: property-based testing is the default approach
-        for domain logic. The @property tag on acceptance criteria signals PBT.
-        IMPORTANT: Use the DES Prompt Template from execute.md. Include all 4 DES
-        markers (DES-VALIDATION, DES-PROJECT-ID, DES-STEP-ID) and all 9 mandatory
-        sections in the Task prompt. Without these, DES validation is bypassed.
-        NOTE: The OUTCOME_RECORDING section instructs agents to use the DES CLI
-        (`python -m des.cli.log_phase`) for recording phases with real timestamps.
-        If an agent bypasses the CLI and edits execution-log.yaml directly,
-        the SubagentStop hook corrects fabricated timestamps automatically.
-     d. Verify COMMIT/PASS in execution-log.yaml after each step
-     e. If a phase is missing: RE-DISPATCH the agent to execute it.
-        NEVER write execution-log entries yourself — only the agent
-        that actually performed the work may write to the log.
+        Use crafter from step 1.5|@nw-functional-software-crafter → PBT default|@property tags signal PBT
+        IMPORTANT: Use DES Prompt Template from execute.md|Include DES markers (DES-VALIDATION|DES-PROJECT-ID|DES-STEP-ID) + 9 mandatory sections
+        OUTCOME_RECORDING: agents use DES CLI (python -m des.cli.log_phase)|CLI bypass → SubagentStop hook corrects timestamps
+     d. Verify COMMIT/PASS in execution-log.yaml per step
+     e. Missing phase → RE-DISPATCH agent. NEVER write entries yourself.
      f. Stop on first failure
-     g. On timeout: check last completed phase in execution-log.yaml.
-        If GREEN completed → resume (just COMMIT remains, ~5 turns).
-        If stuck in GREEN with partial progress → resume.
-        Otherwise → restart with higher max_turns (resume costs ~50% more tokens/call).
+     g. Timeout recovery: GREEN completed → resume (~5 turns)|GREEN partial → resume|Otherwise → restart higher max_turns
   |
-  4. Phase 3 — Complete Refactoring (L1-L4, code + tests)
-     a. Orchestrator collects modified files:
-        git diff --name-only {base-commit}..HEAD -- '*.py' | sort -u
-        Split into PRODUCTION_FILES (src/) and TEST_FILES (tests/)
-     b. Orchestrator invokes /nw:refactor to apply systematic refactoring:
-        /nw:refactor {production-files} {test-files} --levels L1-L4
-        The refactor command dispatches {selected-crafter} via Task tool
-        (use the same crafter determined in step 1.5 for paradigm consistency)
-        with DES orchestrator markers to enable source file writes:
-        ```
-        <!-- DES-VALIDATION : required -->
-        <!-- DES-PROJECT-ID : {project-id} -->
-        <!-- DES-MODE : orchestrator -->
-        ```
-        Include the explicit file list and refactoring levels (L1-L4).
-        All tests must stay green after each module.
+  4. Phase 3 — Complete Refactoring (L1-L4)
+     a. Collect modified files: git diff --name-only {base-commit}..HEAD -- '*.py' | sort -u
+        Split: PRODUCTION_FILES (src/) | TEST_FILES (tests/)
+     b. /nw:refactor {files} --levels L1-L4 via {selected-crafter} with DES orchestrator markers:
+        <!-- DES-VALIDATION : required -->|<!-- DES-PROJECT-ID : {project-id} -->|<!-- DES-MODE : orchestrator -->
+     c. All tests green after each module
   |
   5. Phase 4 — Adversarial Review
-     a. Orchestrator invokes /nw:review for the full feature implementation:
-        /nw:review @nw-software-crafter-reviewer implementation "{execution-log-path}"
-        The review command dispatches @nw-software-crafter-reviewer (Haiku)
-        to critique code quality, test quality, and Testing Theater detection.
-        Include DES orchestrator markers in the Task prompt to enable source file writes:
-        ```
-        <!-- DES-VALIDATION : required -->
-        <!-- DES-PROJECT-ID : {project-id} -->
-        <!-- DES-MODE : orchestrator -->
-        ```
-     b. Review scope: ALL files modified during the feature (not just refactoring).
-        Includes Testing Theater 7-pattern detection as enforcement layer.
-     c. One revision pass on rejection (orchestrator re-dispatches refactoring
-        on flagged files with same orchestrator markers), then proceed.
+     a. /nw:review @nw-software-crafter-reviewer implementation "{execution-log-path}"
+        Include DES orchestrator markers (same as Phase 3)
+     b. Scope: ALL files modified during feature|includes Testing Theater 7-pattern detection
+     c. One revision pass on rejection → proceed
   |
-  6. Phase 5 — Mutation Testing (conditional on strategy from step 1.6)
-     a. If strategy is "per-feature" (or not specified):
-        Run mutation testing gate >= 80% kill rate (read ~/.claude/commands/nw/mutation-test.md)
-        Must pass before proceeding.
-     b. If strategy is "nightly-delta":
-        SKIP. Log: "Mutation testing skipped — handled by CI nightly pipeline (nightly-delta strategy)."
-     c. If strategy is "pre-release":
-        SKIP. Log: "Mutation testing skipped — handled at release boundary (pre-release strategy)."
-     d. If strategy is "disabled":
-        SKIP. Log: "Mutation testing skipped — disabled per project configuration."
+  6. Phase 5 — Mutation Testing (conditional on step 1.6)
+     per-feature → gate ≥80% kill rate (read ~/.claude/commands/nw/mutation-test.md)
+     nightly-delta → SKIP|log "handled by CI nightly pipeline"
+     pre-release → SKIP|log "handled at release boundary"
+     disabled → SKIP|log "disabled per project configuration"
   |
   7. Phase 6 — Deliver Integrity Verification
-     a. Run via Bash tool:
-        PYTHONPATH=$HOME/.claude/lib/python python -m des.cli.verify_deliver_integrity docs/feature/{project-id}/
-     b. Exit 0 = all steps verified, proceed to finalize
-     c. Exit 1 = violations found, STOP. Read output for details.
-     d. Steps with NO entries were NOT executed through DES
-     e. Steps with partial entries have incomplete TDD cycles
-     f. If violations exist, re-execute affected steps via Task with DES markers
-     g. Only proceed after verification passes
+     a. PYTHONPATH=$HOME/.claude/lib/python python -m des.cli.verify_deliver_integrity docs/feature/{project-id}/
+     b. Exit 0 → proceed|Exit 1 → STOP, read output
+     c. No entries = not executed through DES|Partial = incomplete TDD
+     d. Violations → re-execute via Task with DES markers|Only proceed after pass
   |
-  8. Phase 7 — Finalize + Cleanup
+  8. Phase 7 — Finalize
      a. @nw-platform-architect archives to docs/evolution/ (read ~/.claude/commands/nw/finalize.md)
-     b. Commit evolution document, push when ready
-     c. Remove deliver session marker: `rm -f .nwave/des/deliver-session.json .nwave/des/des-task-active`
+     b. Commit + push|rm -f .nwave/des/deliver-session.json .nwave/des/des-task-active
   |
   9. Phase 8 — Retrospective (conditional)
-     a. Skip if clean execution (no failures, no retries, no warnings)
-     b. @nw-troubleshooter performs 5 Whys analysis on issues found
+     Skip if clean execution|@nw-troubleshooter 5 Whys on issues found
   |
   10. Phase 9 — Report Completion
-      a. Display summary: phases, steps, reviews, artifacts
-      b. Workflow complete. Return to DISCOVER for next feature iteration.
+      Display summary: phases|steps|reviews|artifacts|Return to DISCOVER for next iteration
 ```
 
 ## Orchestrator Responsibilities
 
-You follow this flow directly. Do not delegate orchestration to another agent.
+Follow this flow directly. Do not delegate orchestration.
 
-For each phase:
+Per phase:
 1. Read the relevant command file (paths listed above)
 2. Extract instructions and embed them in the Task prompt
 3. Include task boundary instructions to prevent workflow continuation
@@ -182,26 +117,23 @@ For each phase:
 
 ## Task Invocation Pattern
 
-All Task prompts for step execution include DES markers for validation. Without these markers, the DES hooks cannot validate the task and it passes through unmonitored. The DES hooks REQUIRE step-id patterns with DES markers -- they do not block them. Proper NN-NN format is what enables DES tracking.
-
-The full DES Prompt Template (all 9 mandatory sections) is defined in `~/.claude/commands/nw/execute.md`. Read that file and embed all 9 sections (DES_METADATA, AGENT_IDENTITY, TASK_CONTEXT, TDD_PHASES, QUALITY_GATES, OUTCOME_RECORDING, RECORDING_INTEGRITY, BOUNDARY_RULES, TIMEOUT_INSTRUCTION) in each Task prompt.
+DES markers required for step execution. Without markers → unmonitored. Full DES Prompt Template (9 sections) in `~/.claude/commands/nw/execute.md`.
 
 ```python
 Task(
     subagent_type="{agent}",
-    max_turns=45,  # Adjust per step: 25 hotfix, 45 standard, 65 complex (see execute.md)
+    max_turns=45,  # 25 hotfix|45 standard|65 complex
     prompt=f'''
 <!-- DES-VALIDATION : required -->
 <!-- DES-PROJECT-ID : {project_id} -->
 <!-- DES-STEP-ID : {step_id} -->
-(step_id must match NN-NN format, e.g. 01-01, 02-03. DES hooks require this pattern.)
+(step_id: NN-NN format. DES hooks require this.)
 
 TASK BOUNDARY: {task_description}
 Return control to orchestrator after completion.
 
-Read the full DES Prompt Template from ~/.claude/commands/nw/execute.md and embed all 9 mandatory sections below.
-Fill placeholders with: step_id={step_id}, project_id={project_id}, agent={agent},
-task_context={instructions_extracted_from_command_file}
+Read full DES Prompt Template from ~/.claude/commands/nw/execute.md.
+Fill: step_id={step_id}|project_id={project_id}|agent={agent}|task_context={instructions}
 ''',
     description="{phase description}"
 )
@@ -209,88 +141,68 @@ task_context={instructions_extracted_from_command_file}
 
 ## Roadmap Quality Gate (Automated, Zero Token Cost)
 
-After roadmap creation, before reviewer, run these checks in your own context:
-1. AC implementation coupling: flag acceptance criteria referencing private methods (`_method()`)
-2. Step decomposition ratio: flag if steps/files ratio exceeds 2.5
-3. Identical pattern detection: flag 3+ steps with identical AC structure (should be batched)
-4. Validation-only steps: flag steps with no files_to_modify
-5. Step ID format: flag any step_id not matching `^\d{2}-\d{2}$` (e.g. 01-A, 1-1 are invalid)
+After roadmap creation, before reviewer:
+1. AC coupling: flag AC referencing private methods (`_method()`)
+2. Decomposition ratio: flag steps/files > 2.5
+3. Identical patterns: flag 3+ steps with same AC structure (batch them)
+4. Validation-only: flag steps with no files_to_modify
+5. Step ID format: flag non-matching `^\d{2}-\d{2}$`
 
-If HIGH findings exist, return roadmap to architect for one revision pass.
+HIGH findings → return to architect for one revision.
 
-## Skip and Resume Logic
+## Skip and Resume
 
-- Check `.develop-progress.json` on start to resume from last failure
-- Skip artifact creation if file exists with `validation.status == "approved"`
-- Skip completed steps by checking execution-log.yaml for COMMIT/PASS
-- Max 2 retry attempts per review rejection, then stop for manual intervention
+- Check `.develop-progress.json` on start for resume
+- Skip if file exists with validation.status == "approved"
+- Skip completed steps via execution-log.yaml COMMIT/PASS
+- Max 2 retry per review rejection → stop for manual intervention
 
 ## Input
 
-- `feature-description` (string, required): natural language, minimum 10 characters
-- Derive project-id: strip common prefixes (implement, add, create), remove stop words, kebab-case, max 5 words
+- `feature-description` (string, required, min 10 chars)
+- project-id: strip prefixes (implement|add|create)|remove stop words|kebab-case|max 5 words
 
 ## Output Artifacts
 
 ```
 docs/feature/{project-id}/
-  roadmap.yaml              # Phase 1
-  execution-log.yaml        # Phase 2 (append-only state)
-  .develop-progress.json    # Resume tracking
+  roadmap.yaml|execution-log.yaml|.develop-progress.json
 docs/evolution/
-  {project-id}-evolution.md # Phase 3
+  {project-id}-evolution.md
 ```
 
 ## Quality Gates
 
-- Roadmap review (1 review, max 2 attempts)
-- Per-step 5-phase TDD cycle (PREPARE → RED_ACCEPTANCE → RED_UNIT → GREEN → COMMIT)
-- Paradigm-appropriate crafter used for all steps (functional crafter for FP, standard crafter for OOP)
-- Deliver-level Complete Refactoring (Phase 3) — L1-L4 on all modified files
-- Deliver-level Adversarial Review (Phase 4) — Testing Theater detection + code quality
-- Mutation testing >= 80% kill rate (Phase 5, if strategy is "per-feature")
-- Deliver integrity verification (Phase 6)
-- All tests passing after each phase
+Roadmap review (1 review, max 2 attempts)|Per-step 5-phase TDD (PREPARE→RED_ACCEPTANCE→RED_UNIT→GREEN→COMMIT)|Paradigm-appropriate crafter|L1-L4 refactoring (Phase 3)|Adversarial review + Testing Theater detection (Phase 4)|Mutation ≥80% if per-feature (Phase 5)|Integrity verification (Phase 6)|All tests passing per phase
 
 ## Success Criteria
 
 - [ ] Roadmap created and approved
-- [ ] All steps executed with COMMIT/PASS (5-phase TDD cycle)
-- [ ] L1-L4 refactoring complete on code and tests (Phase 3)
+- [ ] All steps COMMIT/PASS (5-phase TDD)
+- [ ] L1-L4 refactoring complete (Phase 3)
 - [ ] Adversarial review passed (Phase 4)
-- [ ] Mutation testing gate passed >= 80% (Phase 5, or skipped per project strategy)
-- [ ] Deliver integrity verification passed (Phase 6)
-- [ ] Evolution document archived (Phase 7)
-- [ ] Retrospective completed or clean execution noted (Phase 8)
-- [ ] Completion report displayed (Phase 9)
+- [ ] Mutation gate ≥80% or skipped per strategy (Phase 5)
+- [ ] Integrity verification passed (Phase 6)
+- [ ] Evolution archived (Phase 7)
+- [ ] Retrospective or clean execution noted (Phase 8)
+- [ ] Completion report (Phase 9)
 
 ## Examples
 
-### Example 1: Fresh Feature
+### 1: Fresh Feature
+`/nw:deliver "Implement user authentication with JWT"` → roadmap → review → TDD all steps → mutation → finalize → report
 
-```bash
-/nw:deliver "Implement user authentication with JWT tokens"
+### 2: Resume After Failure
+Same command → loads .develop-progress.json → skips completed → resumes from failure
+
+### 3: Single Step Alternative
+For manual granular control, use individual commands:
 ```
-
-Creates roadmap, reviews it, executes all steps with TDD, runs mutation testing, finalizes to docs/evolution/, reports completion.
-
-### Example 2: Resume After Failure
-
-```bash
-/nw:deliver "Implement user authentication with JWT tokens"
-```
-
-Same command. Loads .develop-progress.json, skips completed phases, resumes from failure point.
-
-### Example 3: Single Step Alternative
-
-For manual granular control, use individual commands instead:
-```bash
-/nw:roadmap @nw-solution-architect "goal description"
+/nw:roadmap @nw-solution-architect "goal"
 /nw:execute @nw-software-crafter "project-id" "01-01"
 /nw:finalize @nw-platform-architect "project-id"
 ```
 
 ## Completion
 
-DELIVER is the final wave. After completion, return to DISCOVER for the next feature iteration or mark the project as complete.
+DELIVER is final wave. After completion → DISCOVER for next feature or mark project complete.
