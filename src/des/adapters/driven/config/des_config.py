@@ -142,3 +142,55 @@ class DESConfig:
     def rigor_refactor_pass(self) -> bool:
         """Check if refactoring pass is enabled. Default: True."""
         return self._config_data.get("rigor", {}).get("refactor_pass", True)
+
+    @property
+    def update_check_frequency(self) -> str:
+        """Get update check frequency. Default: 'daily'."""
+        return self._config_data.get("update_check", {}).get("frequency", "daily")
+
+    @property
+    def update_check_last_checked(self) -> str | None:
+        """Get last update check timestamp (ISO 8601 UTC). Default: None."""
+        return self._config_data.get("update_check", {}).get("last_checked", None)
+
+    @property
+    def update_check_skipped_versions(self) -> list[str]:
+        """Get list of versions skipped by user. Default: empty list."""
+        return self._config_data.get("update_check", {}).get("skipped_versions", [])
+
+    def save_update_check_state(
+        self,
+        last_checked: str,
+        skipped_versions: list[str],
+        frequency: str | None = None,
+    ) -> None:
+        """
+        Persist update check state to config file.
+
+        Read-modify-write: preserves all other config keys.
+        Creates update_check key when absent.
+
+        Args:
+            last_checked: ISO 8601 UTC timestamp of last check
+            skipped_versions: list of version strings user has skipped
+            frequency: if None, preserves existing frequency (or leaves default)
+        """
+        current_data: dict[str, Any] = {}
+        if self._config_path.exists():
+            try:
+                current_data = json.loads(self._config_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                current_data = {}
+
+        update_check = dict(current_data.get("update_check", {}))
+        update_check["last_checked"] = last_checked
+        update_check["skipped_versions"] = skipped_versions
+        if frequency is not None:
+            update_check["frequency"] = frequency
+
+        current_data["update_check"] = update_check
+
+        self._config_path.parent.mkdir(parents=True, exist_ok=True)
+        self._config_path.write_text(
+            json.dumps(current_data, indent=2), encoding="utf-8"
+        )
