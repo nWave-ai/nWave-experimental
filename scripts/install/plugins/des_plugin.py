@@ -44,7 +44,13 @@ class DESPlugin(InstallationPlugin):
     )
 
     # Hook event types that DES registers
-    HOOK_EVENTS = ("PreToolUse", "SubagentStop", "PostToolUse")
+    HOOK_EVENTS = (
+        "PreToolUse",
+        "SubagentStop",
+        "PostToolUse",
+        "SessionStart",
+        "SubagentStart",
+    )
 
     def __init__(self):
         """Initialize DES plugin with name, priority, and dependencies."""
@@ -484,6 +490,12 @@ class DESPlugin(InstallationPlugin):
             new_pretask_command = self._generate_hook_command(context, "pre-task")
             new_stop_command = self._generate_hook_command(context, "subagent-stop")
             new_post_command = self._generate_hook_command(context, "post-tool-use")
+            new_session_start_command = self._generate_hook_command(
+                context, "session-start"
+            )
+            new_subagent_start_command = self._generate_hook_command(
+                context, "subagent-start"
+            )
 
             def _has_command(hooks_list, command):
                 return any(
@@ -503,6 +515,12 @@ class DESPlugin(InstallationPlugin):
             has_correct_post = _has_command(
                 config["hooks"]["PostToolUse"], new_post_command
             )
+            has_correct_session_start = _has_command(
+                config["hooks"]["SessionStart"], new_session_start_command
+            )
+            has_correct_subagent_start = _has_command(
+                config["hooks"]["SubagentStart"], new_subagent_start_command
+            )
             has_write_guard = _has_matcher(config["hooks"]["PreToolUse"], "Write")
             has_edit_guard = _has_matcher(config["hooks"]["PreToolUse"], "Edit")
 
@@ -510,6 +528,8 @@ class DESPlugin(InstallationPlugin):
                 has_correct_pretask
                 and has_correct_stop
                 and has_correct_post
+                and has_correct_session_start
+                and has_correct_subagent_start
                 and has_write_guard
                 and has_edit_guard
             ):
@@ -567,12 +587,25 @@ class DESPlugin(InstallationPlugin):
                 "hooks": [{"type": "command", "command": edit_guard_command}],
             }
 
+            # Generate SessionStart hook (session-level event, matcher="startup")
+            session_start_hook = {
+                "matcher": "startup",
+                "hooks": [{"type": "command", "command": new_session_start_command}],
+            }
+
+            # Generate SubagentStart hook (no matcher — fires for all agent types)
+            subagent_start_hook = {
+                "hooks": [{"type": "command", "command": new_subagent_start_command}],
+            }
+
             # Add DES hooks
             config["hooks"]["PreToolUse"].append(pretooluse_hook)
             config["hooks"]["PreToolUse"].append(write_hook)
             config["hooks"]["PreToolUse"].append(edit_hook)
             config["hooks"]["SubagentStop"].append(subagent_stop_hook)
             config["hooks"]["PostToolUse"].append(posttooluse_hook)
+            config["hooks"]["SessionStart"].append(session_start_hook)
+            config["hooks"]["SubagentStart"].append(subagent_start_hook)
 
             if not context.dry_run:
                 self._save_settings(settings_file, config, context)
@@ -590,11 +623,82 @@ class DESPlugin(InstallationPlugin):
                 message=f"DES hooks install failed: {e}",
             )
 
+    _DEFAULT_UPDATE_CHECK_CONFIG = {
+        "frequency": "daily",
+        "skipped_versions": [],
+    }
+
+    _DEFAULT_DES_CONFIG = {
+        "audit_logging_enabled": True,
+        "audit_log_dir": ".nwave/des/logs",
+    }
+
+    def _write_json_config(self, path: Path, data: dict) -> None:
+        """Write dict as pretty-printed JSON with trailing newline."""
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+
+    def _read_json_config(self, path: Path) -> dict:
+        """Read JSON config file, returning empty dict on parse or IO error."""
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _migrate_config(
+        self, config_file: Path, context: InstallContext
+    ) -> PluginResult:
+        """Add update_check to existing config that lacks it (migration path)."""
+        existing = self._read_json_config(config_file)
+
+        if "update_check" in existing:
+            context.logger.info("  ✅ DES config already exists")
+            return PluginResult(
+                success=True,
+                plugin_name="des",
+                message="DES config already exists",
+            )
+
+        existing["update_check"] = self._DEFAULT_UPDATE_CHECK_CONFIG
+        if not context.dry_run:
+            self._write_json_config(config_file, existing)
+            context.logger.info(
+                f"  ✅ DES config migrated (update_check added): {config_file}"
+            )
+        return PluginResult(
+            success=True,
+            plugin_name="des",
+            message=f"DES config migrated (update_check added) at {config_file}",
+        )
+
+    def _create_config(
+        self, config_file: Path, nwave_dir: Path, context: InstallContext
+    ) -> PluginResult:
+        """Create des-config.json with default settings."""
+        default_config = {
+            **self._DEFAULT_DES_CONFIG,
+            "update_check": self._DEFAULT_UPDATE_CHECK_CONFIG,
+        }
+        if context.dry_run:
+            context.logger.info(f"  🚨 [DRY RUN] Would create {config_file}")
+        else:
+            nwave_dir.mkdir(parents=True, exist_ok=True)
+            self._write_json_config(config_file, default_config)
+            context.logger.info(f"  ✅ DES config created: {config_file}")
+        return PluginResult(
+            success=True,
+            plugin_name="des",
+            message=f"DES config bootstrapped at {config_file}",
+        )
+
     def _bootstrap_des_config(self, context: InstallContext) -> PluginResult:
         """Bootstrap .nwave/des-config.json with default settings.
 
-        Creates the config file if it doesn't exist. If it already exists,
-        leaves it untouched to preserve user customizations.
+        Creates the config file if it doesn't exist. If it already exists
+        and lacks the update_check key, adds it without overwriting any other
+        keys (migration path). If update_check already present, no changes made.
 
         The config lives in the project directory (.nwave/), not ~/.claude,
         because audit log paths are project-relative.
@@ -605,32 +709,9 @@ class DESPlugin(InstallationPlugin):
             config_file = nwave_dir / "des-config.json"
 
             if config_file.exists():
-                context.logger.info("  ✅ DES config already exists")
-                return PluginResult(
-                    success=True,
-                    plugin_name="des",
-                    message="DES config already exists",
-                )
+                return self._migrate_config(config_file, context)
 
-            default_config = {
-                "audit_logging_enabled": True,
-                "audit_log_dir": ".nwave/des/logs",
-            }
-
-            if context.dry_run:
-                context.logger.info(f"  🚨 [DRY RUN] Would create {config_file}")
-            else:
-                nwave_dir.mkdir(parents=True, exist_ok=True)
-                with open(config_file, "w", encoding="utf-8") as f:
-                    json.dump(default_config, f, indent=2)
-                    f.write("\n")
-                context.logger.info(f"  ✅ DES config created: {config_file}")
-
-            return PluginResult(
-                success=True,
-                plugin_name="des",
-                message=f"DES config bootstrapped at {config_file}",
-            )
+            return self._create_config(config_file, nwave_dir, context)
 
         except Exception as e:
             return PluginResult(

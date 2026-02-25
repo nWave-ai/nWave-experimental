@@ -10,6 +10,8 @@ Commands:
   python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter pre-tool-use
   python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter subagent-stop
   python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter post-tool-use
+  python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter session-start
+  python3 -m src.des.adapters.drivers.hooks.claude_code_hook_adapter subagent-start
 
 Exit Codes:
   0 = allow/continue
@@ -45,6 +47,8 @@ from des.adapters.driven.hooks.yaml_execution_log_reader import (
 from des.adapters.driven.logging.jsonl_audit_log_writer import JsonlAuditLogWriter
 from des.adapters.driven.time.system_time import SystemTimeProvider
 from des.adapters.driven.validation.git_scope_checker import GitScopeChecker
+from des.adapters.drivers.hooks.session_start_handler import handle_session_start
+from des.adapters.drivers.hooks.subagent_start_handler import handle_subagent_start
 from des.application.pre_tool_use_service import PreToolUseService
 from des.application.subagent_stop_service import SubagentStopService
 from des.application.validator import TemplateValidator
@@ -1306,6 +1310,10 @@ def main() -> None:
         exit_code = handle_post_tool_use()
     elif command in ("pre-write", "pre-edit"):
         exit_code = handle_pre_write()
+    elif command == "session-start":
+        exit_code = handle_session_start()
+    elif command == "subagent-start":
+        exit_code = handle_subagent_start()
     else:
         print(json.dumps({"status": "error", "reason": f"Unknown command: {command}"}))
         exit_code = 1

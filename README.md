@@ -20,6 +20,8 @@ No repository clone needed. This installs nWave from PyPI and sets up agents and
 
 Full setup details: **[Installation Guide](https://github.com/nWave-ai/nWave/blob/main/docs/guides/installation-guide.md)**
 
+**Staying updated** — nWave checks for new versions when you open Claude Code. When an update is available, you'll see a note in Claude's context with the version and what changed. To update, run two commands in your terminal: `pip install --upgrade nwave-ai` (pulls the new package), then `nwave-ai install` (deploys the new framework files). To control check frequency: set `update_check.frequency` in `~/.nwave/des-config.json` (`daily` / `weekly` / `every_session` / `never`).
+
 **2. Use** (inside Claude Code, after reopening it):
 
 ```
@@ -60,6 +62,21 @@ Pick once — it persists across sessions. Change anytime. Every `/nw:deliver`, 
 /nw:rigor standard    # ready to ship — bump up
 /nw:deliver           # sonnet crafter, haiku reviewer, full TDD
 ```
+
+## Understanding DES Messages
+
+DES is nWave's quality enforcement layer — it monitors every agent Task invocation during feature delivery to prevent unbounded execution, enforce TDD discipline, and protect accidental edits. Most DES messages are normal enforcement, not errors. They appear when agents skip required safety checks or when your code contains patterns that look like step execution.
+
+| Message | What It Means | What To Do |
+|---------|---------------|-----------|
+| **MISSING_MAX_TURNS** | Task invocation forgot to set `max_turns` parameter. | Add `max_turns=30` (or appropriate value) to the Task call. Recommended: 15 (quick), 25 (background), 30 (standard), 35 (research). |
+| **DES_MARKERS_MISSING** | Task prompt mentions a step ID (01-01 pattern) but lacks DES markers. | Either: add DES markers for step execution, OR add `<!-- DES-ENFORCEMENT : exempt -->` comment if it's not actually step work. |
+| **Source write blocked** | You tried to edit a file during active `/nw:deliver` outside a DES task. | Edit requests must go through the active deliver session. If you need to make changes, finalize the current session first. |
+| **TDD phase incomplete** | Sub-agent returned without finishing all required TDD phases. | Re-dispatch the same agent to complete missing phases (typically COMMIT or refactoring steps). |
+| **nWave update available** | SessionStart detected a newer version available. | Optional. Run `nwave-ai install` when ready to upgrade, or dismiss and continue working. |
+| **False positive blocks** | Your prompt accidentally matches step-ID pattern (e.g., dates like "2026-02-09"). | Add `<!-- DES-ENFORCEMENT : exempt -->` comment to exempt the Task from step-ID enforcement. |
+
+These messages protect code quality but never prevent your work — they guide you toward the safe path.
 
 ## How It Works
 
