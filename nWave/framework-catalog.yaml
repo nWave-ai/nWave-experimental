@@ -293,10 +293,10 @@ commands:
     - complete_feature
   rigor:
     description: Selects a quality-vs-token-consumption profile (lean, standard, thorough,
-      exhaustive, inherit) and persists it to .nwave/des-config.json. Use when tuning
-      how much rigor wave commands apply.
-    argument_hint: '[profile] - Optional: lean, standard, thorough, exhaustive, inherit.
-      Omit for interactive selection.'
+      exhaustive, custom, inherit) and persists it to .nwave/des-config.json. Use when
+      tuning how much rigor wave commands apply.
+    argument_hint: '[profile] - Optional: lean, standard, thorough, exhaustive, custom,
+      inherit. Omit for interactive selection.'
     agents: []
     wave: CROSS_WAVE
     outputs:

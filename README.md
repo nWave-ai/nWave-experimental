@@ -40,6 +40,7 @@ nWave enforces proven engineering practices — TDD, peer review, mutation testi
 ```
 /nw:rigor                    # Interactive: compare profiles, pick one
 /nw:rigor lean               # Quick switch: apply immediately
+/nw:rigor custom             # Build your own: choose each setting
 ```
 
 | Profile | Agent | Reviewer | Review | TDD | Mutation | Est. Cost | When to Use |
@@ -48,9 +49,10 @@ nWave enforces proven engineering practices — TDD, peer review, mutation testi
 | **standard** ⭐ | sonnet | haiku | single | full 5-phase | no | moderate | Most work |
 | **thorough** | opus | sonnet | double | full 5-phase | no | higher | Critical features |
 | **exhaustive** | opus | opus | double | full 5-phase | ≥80% kill | highest | Production core |
+| **custom** | *you choose* | *you choose* | *you choose* | *you choose* | *you choose* | depends | Your exact combo |
 | **inherit** | *yours* | haiku | single | full 5-phase | no | varies | You pick the model |
 
-Pick once — it persists across sessions. Change anytime. Every `/nw:deliver`, `/nw:design`, `/nw:review` respects your choice automatically.
+Pick once — it persists across sessions. Change anytime. Every `/nw:deliver`, `/nw:design`, `/nw:review` respects your choice automatically. Need a combination no preset covers? `/nw:rigor custom` walks you through each setting.
 
 ```
 /nw:rigor lean        # prototype fast

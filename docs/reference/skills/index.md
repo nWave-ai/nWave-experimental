@@ -43,22 +43,22 @@
 ## [nw-functional-software-crafter](../agents/nw-functional-software-crafter.md)
 
 - [fp-algebra-driven-design](../../../nWave/skills/functional-software-crafter/fp-algebra-driven-design.md) — Algebraic thinking for API design. Discover the right API before implementing by specifying rules (equations) that operations must satisfy.
-- [fp-clojure](../../../nWave/skills/functional-software-crafter/fp-clojure.md) — - Best for: data-centric domains, REPL-driven exploration, rapid prototyping, systems where data shapes evolve frequently
-- [fp-domain-modeling](../../../nWave/skills/functional-software-crafter/fp-domain-modeling.md) — Domain modeling with types. Making illegal states unrepresentable, workflows as pipelines, error handling at the type level.
-- [fp-fsharp](../../../nWave/skills/functional-software-crafter/fp-fsharp.md) — - Best for: domain modeling on .NET, DDD, railway-oriented programming, pipeline-first design, finance
-- [fp-haskell](../../../nWave/skills/functional-software-crafter/fp-haskell.md) — - Best for: correctness-critical systems, compiler-enforced purity, maximum type safety, financial systems
-- [fp-hexagonal-architecture](../../../nWave/skills/functional-software-crafter/fp-hexagonal-architecture.md) — Ports and adapters in functional programming. How to structure applications with a pure core and side-effect shell.
-- [fp-kotlin](../../../nWave/skills/functional-software-crafter/fp-kotlin.md) — - Best for: gentlest FP onboarding for Java teams, Android, coroutines, pragmatic FP with great IDE support
+- [fp-clojure](../../../nWave/skills/functional-software-crafter/fp-clojure.md) — - Best for: data-centric domains | REPL-driven exploration | rapid prototyping | frequently evolving data shapes
+- [fp-domain-modeling](../../../nWave/skills/functional-software-crafter/fp-domain-modeling.md) — Domain modeling with types. Make illegal states unrepresentable, workflows as pipelines, error handling at the type level.
+- [fp-fsharp](../../../nWave/skills/functional-software-crafter/fp-fsharp.md) — - Best for: domain modeling on .NET | DDD | railway-oriented programming | pipeline-first design | finance
+- [fp-haskell](../../../nWave/skills/functional-software-crafter/fp-haskell.md) — - Best for: correctness-critical systems | compiler-enforced purity | maximum type safety | financial systems
+- [fp-hexagonal-architecture](../../../nWave/skills/functional-software-crafter/fp-hexagonal-architecture.md) — Ports and adapters in functional programming. Structure applications with a pure core and side-effect shell.
+- [fp-kotlin](../../../nWave/skills/functional-software-crafter/fp-kotlin.md) — - Best for: gentlest FP onboarding for Java teams | Android | coroutines | pragmatic FP with great IDE support
 - [fp-principles](../../../nWave/skills/functional-software-crafter/fp-principles.md) — Core functional programming thinking patterns. Language-agnostic.
-- [fp-scala](../../../nWave/skills/functional-software-crafter/fp-scala.md) — - Best for: JVM with full FP power, large-scale systems, data engineering, richest effect ecosystem
-- [fp-usable-design](../../../nWave/skills/functional-software-crafter/fp-usable-design.md) — Making functional code usable. The developer is the user of your design. Apply usability thinking to code organization, naming, and architecture.
+- [fp-scala](../../../nWave/skills/functional-software-crafter/fp-scala.md) — - Best for: JVM with full FP power | large-scale systems | data engineering | richest effect ecosystem
+- [fp-usable-design](../../../nWave/skills/functional-software-crafter/fp-usable-design.md) — Make functional code usable. The developer is the user of your design. Apply usability thinking to code organization, naming, and architecture.
 - [pbt-dotnet](../../../nWave/skills/functional-software-crafter/pbt-dotnet.md) — | Framework | Language | Shrinking | Stateful | Parallel | Choose When |
 - [pbt-erlang-elixir](../../../nWave/skills/functional-software-crafter/pbt-erlang-elixir.md) — | Framework | Language | Stateful | Parallel | Choose When |
 - [pbt-fundamentals](../../../nWave/skills/functional-software-crafter/pbt-fundamentals.md) — Core property-based testing knowledge, language-agnostic. Load language-specific skills for framework syntax.
 - [pbt-go](../../../nWave/skills/functional-software-crafter/pbt-go.md) — | Framework | Shrinking | Stateful | API Style | Choose When |
 - [pbt-haskell](../../../nWave/skills/functional-software-crafter/pbt-haskell.md) — | Framework | Shrinking | Stateful | Choose When |
 - [pbt-jvm](../../../nWave/skills/functional-software-crafter/pbt-jvm.md) — | Framework | Language | Shrinking | Stateful | Choose When |
-- [pbt-python](../../../nWave/skills/functional-software-crafter/pbt-python.md) — **Hypothesis** is the only serious choice for Python PBT. No competitive alternatives exist.
+- [pbt-python](../../../nWave/skills/functional-software-crafter/pbt-python.md) — **Hypothesis** is the only serious choice for Python PBT. No competitive alternatives.
 - [pbt-rust](../../../nWave/skills/functional-software-crafter/pbt-rust.md) — | Framework | Shrinking | Stateful | Choose When |
 - [pbt-stateful](../../../nWave/skills/functional-software-crafter/pbt-stateful.md) — Stateful property-based testing for systems with mutable state. Language-agnostic concepts; load language skills for framework syntax.
 - [pbt-typescript](../../../nWave/skills/functional-software-crafter/pbt-typescript.md) — **fast-check** is the dominant PBT framework for TypeScript/JavaScript. No serious competitors.

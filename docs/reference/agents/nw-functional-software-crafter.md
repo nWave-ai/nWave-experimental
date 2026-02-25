@@ -16,10 +16,10 @@ DELIVER wave - Outside-In TDD with functional paradigm. Pure functions, pipeline
 
 - [collaboration-and-handoffs](../../../nWave/skills/software-crafter/collaboration-and-handoffs.md) — Cross-agent collaboration protocols, workflow handoff patterns, and commit message formats for TDD/Mikado/refactoring workflows
 - [fp-algebra-driven-design](../../../nWave/skills/functional-software-crafter/fp-algebra-driven-design.md) — Algebraic thinking for API design. Discover the right API before implementing by specifying rules (equations) that operations must satisfy.
-- [fp-domain-modeling](../../../nWave/skills/functional-software-crafter/fp-domain-modeling.md) — Domain modeling with types. Making illegal states unrepresentable, workflows as pipelines, error handling at the type level.
-- [fp-hexagonal-architecture](../../../nWave/skills/functional-software-crafter/fp-hexagonal-architecture.md) — Ports and adapters in functional programming. How to structure applications with a pure core and side-effect shell.
+- [fp-domain-modeling](../../../nWave/skills/functional-software-crafter/fp-domain-modeling.md) — Domain modeling with types. Make illegal states unrepresentable, workflows as pipelines, error handling at the type level.
+- [fp-hexagonal-architecture](../../../nWave/skills/functional-software-crafter/fp-hexagonal-architecture.md) — Ports and adapters in functional programming. Structure applications with a pure core and side-effect shell.
 - [fp-principles](../../../nWave/skills/functional-software-crafter/fp-principles.md) — Core functional programming thinking patterns. Language-agnostic.
-- [fp-usable-design](../../../nWave/skills/functional-software-crafter/fp-usable-design.md) — Making functional code usable. The developer is the user of your design. Apply usability thinking to code organization, naming, and architecture.
+- [fp-usable-design](../../../nWave/skills/functional-software-crafter/fp-usable-design.md) — Make functional code usable. The developer is the user of your design. Apply usability thinking to code organization, naming, and architecture.
 - [hexagonal-testing](../../../nWave/skills/software-crafter/hexagonal-testing.md) — 5-layer agent output validation, I/O contract specification, vertical slice development, and test doubles policy with per-layer examples
 - [pbt-fundamentals](../../../nWave/skills/functional-software-crafter/pbt-fundamentals.md) — Core property-based testing knowledge, language-agnostic. Load language-specific skills for framework syntax.
 - [pbt-stateful](../../../nWave/skills/functional-software-crafter/pbt-stateful.md) — Stateful property-based testing for systems with mutable state. Language-agnostic concepts; load language skills for framework syntax.

@@ -1,7 +1,7 @@
 ---
-description: "Selects a quality-vs-token-consumption profile (lean, standard, thorough, exhaustive, inherit) and persists it to .nwave/des-config.json. Use when tuning how much rigor wave commands apply."
+description: "Selects a quality-vs-token-consumption profile (lean, standard, thorough, exhaustive, custom, inherit) and persists it to .nwave/des-config.json. Use when tuning how much rigor wave commands apply."
 disable-model-invocation: true
-argument-hint: '[profile] - Optional: lean, standard, thorough, exhaustive, inherit. Omit for interactive selection.'
+argument-hint: '[profile] - Optional: lean, standard, thorough, exhaustive, custom, inherit. Omit for interactive selection.'
 ---
 
 # NW-RIGOR: Quality Profile Selection
@@ -30,7 +30,9 @@ You (the main Claude instance) run this directly. No subagent delegation.
 
 ### Mode Detection
 
-If argument provided -> Mode 2 (Quick Switch). Otherwise -> Mode 1 (Interactive).
+- No argument -> Mode 1 (Interactive Selection)
+- Argument is a preset name (lean, standard, thorough, exhaustive, inherit) -> Mode 2 (Quick Switch)
+- Argument is `custom` -> Mode 3 (Custom Builder)
 
 ### Mode 1: Interactive Selection (no argument)
 
@@ -64,17 +66,21 @@ Display this table:
 +-----------+--------+----------+----------+------------+---------+
 ```
 
-Mark "standard" as [recommended].
+Mark "standard" as [recommended]. Below the table, note: "Or choose **custom** to configure each setting individually. Type **inherit** to use your current session model."
 
 #### Step 3: User Selection
 
-Ask user to select by number (1-5) or name via AskUserQuestion:
+Ask user to select via AskUserQuestion (4 options + Other for inherit/custom):
 
-1. lean
-2. standard [recommended]
+1. standard [recommended]
+2. lean
 3. thorough
 4. exhaustive
-5. inherit
+
+Note in the question text: "Type 'custom' to build your own profile, or 'inherit' to use your session model."
+
+If user selects or types "custom" -> jump to Mode 3 (Custom Builder).
+If user types "inherit" -> proceed with inherit profile to Step 4.
 
 #### Step 4: Detail View
 
@@ -222,7 +228,9 @@ Rigor profile saved: {name}
 
 #### Step 1: Validate Argument
 
-If argument is not one of: lean, standard, thorough, exhaustive, inherit -> error: "Unknown profile '{name}'. Available: lean, standard, thorough, exhaustive, inherit"
+If argument is not one of: lean, standard, thorough, exhaustive, custom, inherit -> error: "Unknown profile '{name}'. Available: lean, standard, thorough, exhaustive, custom, inherit"
+
+If argument is `custom` -> redirect to Mode 3 (Custom Builder).
 
 Read `.nwave/des-config.json`. If missing -> same error as Mode 1 Step 1.
 
@@ -262,13 +270,115 @@ Ask user to confirm via AskUserQuestion:
 
 Same as Mode 1 Steps 6 and 7.
 
+### Mode 3: Custom Builder (`/nw:rigor custom` or selected from interactive)
+
+Build a profile setting by setting. Each question uses AskUserQuestion with sensible defaults (standard values pre-selected). After all questions, show summary and confirm.
+
+#### Step 1: Config Check
+
+Same as Mode 1 Step 1 (read config, handle missing/corrupt).
+
+#### Step 2: Agent Model
+
+Ask via AskUserQuestion:
+```
+Which model should agents use? (crafter, architect, acceptance-designer)
+```
+Options:
+1. sonnet (Recommended) — balanced quality and speed
+2. haiku — fastest, lowest cost
+3. opus — strongest reasoning, highest cost
+4. inherit — use your current session model
+
+#### Step 3: Reviewer Model
+
+Ask via AskUserQuestion:
+```
+Which model for peer reviewers?
+```
+Options:
+1. haiku (Recommended) — cost-effective review
+2. sonnet — deeper analysis
+3. opus — most thorough review
+4. skip — no peer review
+
+#### Step 4: Double Review
+
+Ask via AskUserQuestion:
+```
+Run peer review twice (two independent passes)?
+```
+Options:
+1. No (Recommended) — single review pass
+2. Yes — two independent review passes (higher cost)
+
+Only show this question if reviewer_model is not "skip". If "skip", set double_review = false automatically.
+
+#### Step 5: TDD Phases
+
+Ask via AskUserQuestion:
+```
+Which TDD phases should agents execute?
+```
+Options:
+1. Full 5-phase (Recommended) — PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT
+2. Minimal (RED→GREEN) — RED_UNIT and GREEN only (fastest, skips setup and refactoring)
+
+#### Step 6: Refactoring Pass
+
+Ask via AskUserQuestion:
+```
+Include a dedicated refactoring pass after implementation?
+```
+Options:
+1. Yes (Recommended) — L1-L4 refactoring in COMMIT phase
+2. No — skip refactoring pass
+
+Only show if TDD phases is "Full 5-phase". If minimal, set refactor_pass = false automatically.
+
+#### Step 7: Mutation Testing
+
+Ask via AskUserQuestion:
+```
+Enable mutation testing (>= 80% kill rate gate)?
+```
+Options:
+1. No (Recommended) — skip mutation testing
+2. Yes — run mutmut after implementation, gate at 80% kill rate
+
+#### Step 8: Summary + Confirm
+
+Display the assembled profile:
+
+```
+Custom profile:
+
+  +-----------------------+---------------------------------------------------+
+  | agent_model           | {value}                                           |
+  | reviewer_model        | {value}                                           |
+  | double_review         | {value}                                           |
+  | tdd_phases            | {value}                                           |
+  | refactor_pass         | {value}                                           |
+  | mutation_enabled      | {value}                                           |
+  +-----------------------+---------------------------------------------------+
+```
+
+Ask to confirm via AskUserQuestion:
+1. Yes, apply this custom profile
+2. Start over (return to Step 2)
+3. Cancel (exit without saving)
+
+#### Step 9: Save + Summary
+
+Same as Mode 1 Steps 6 and 7. Save with `"profile": "custom"`.
+
 ## Error Handling
 
 | Error | Response |
 |-------|----------|
 | Missing `.nwave/` directory | "No nWave config directory found. Run nwave install first." |
 | Invalid JSON in des-config.json | Backup as `.bak`, reset to `{}`, proceed with notice |
-| Unknown profile name | "Unknown profile '{name}'. Available: lean, standard, thorough, exhaustive, inherit" |
+| Unknown profile name | "Unknown profile '{name}'. Available: lean, standard, thorough, exhaustive, custom, inherit" |
 | inherit with undetectable session model | Fallback to sonnet with notice: "Could not detect session model. Defaulting agent_model to sonnet." |
 
 ## Success Criteria
@@ -299,13 +409,19 @@ Current profile is "standard". Shows diff: loses review, loses PREPARE/COMMIT ph
 ```
 Current profile is "standard". Shows diff: sonnet->opus agent, haiku->sonnet reviewer, double review enabled. No losses to highlight (pure upgrade). User confirms. Config updated.
 
-### Example 4: Invalid profile name
+### Example 4: Custom profile builder
+```
+/nw:rigor custom
+```
+Walks through 6 questions: agent model (opus), reviewer (haiku), double review (no), TDD (full 5-phase), refactoring (yes), mutation (yes). Saves as custom profile with opus agent, haiku reviewer, single review, full TDD, refactoring, and mutation testing — a combination no preset offers.
+
+### Example 5: Invalid profile name
 ```
 /nw:rigor turbo
 ```
 Error: "Unknown profile 'turbo'. Available: lean, standard, thorough, exhaustive, inherit"
 
-### Example 5: No nWave installed
+### Example 6: No nWave installed
 ```
 /nw:rigor
 ```
