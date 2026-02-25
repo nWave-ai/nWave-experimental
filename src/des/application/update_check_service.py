@@ -53,6 +53,9 @@ class UpdateCheckResult:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_PYPI_URL = "https://pypi.org/pypi/nwave-ai/json"
+_DEFAULT_GITHUB_RELEASES_URL = (
+    "https://api.github.com/repos/nwave-ai/nwave/releases/latest"
+)
 _DEFAULT_TIMEOUT = 5  # seconds
 
 
@@ -68,17 +71,20 @@ class UpdateCheckService:
         pypi_url: str = _DEFAULT_PYPI_URL,
         local_version: str | None = None,
         timeout: float = _DEFAULT_TIMEOUT,
+        github_releases_url: str = _DEFAULT_GITHUB_RELEASES_URL,
     ) -> None:
         """Initialise the service.
 
         Args:
-            pypi_url:      PyPI JSON endpoint (injectable for tests).
-            local_version: Local package version string; auto-detected when None.
-            timeout:       HTTP request timeout in seconds (default 5).
+            pypi_url:             PyPI JSON endpoint (injectable for tests).
+            local_version:        Local package version string; auto-detected when None.
+            timeout:              HTTP request timeout in seconds (default 5).
+            github_releases_url:  GitHub Releases API endpoint (injectable for tests).
         """
         self._pypi_url = pypi_url
         self._local_version = local_version or _detect_local_version()
         self._timeout = timeout
+        self._github_releases_url = github_releases_url
 
     # ------------------------------------------------------------------
     # Public API (driving port)
@@ -96,8 +102,11 @@ class UpdateCheckService:
             return UpdateCheckResult(status=UpdateStatus.SKIP)
 
         if _is_newer(latest, self._local_version):
+            changelog = self._fetch_changelog(latest)
             return UpdateCheckResult(
-                status=UpdateStatus.UPDATE_AVAILABLE, latest=latest
+                status=UpdateStatus.UPDATE_AVAILABLE,
+                latest=latest,
+                changelog=changelog,
             )
 
         return UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
@@ -120,6 +129,34 @@ class UpdateCheckService:
         try:
             data = json.loads(raw)
             return str(data["info"]["version"])
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return None
+
+    def _fetch_changelog(self, latest_version: str) -> str | None:
+        """Fetch release notes from GitHub for the latest version tag.
+
+        Returns the release body when the response tag matches the latest version.
+        Returns None on any failure or when the tag does not match.
+        """
+        try:
+            req = urllib.request.Request(self._github_releases_url)
+            req.add_header("Accept", "application/vnd.github+json")
+            with urllib.request.urlopen(req, timeout=self._timeout) as response:
+                if response.status != 200:
+                    return None
+                raw = response.read()
+        except Exception:
+            return None
+
+        try:
+            data = json.loads(raw)
+            tag_name: str = str(data["tag_name"])
+            # Accept tags like "v2.0.0" or "2.0.0" matching the version
+            normalised_tag = tag_name.lstrip("v")
+            if normalised_tag != latest_version:
+                return None
+            body = data.get("body")
+            return str(body) if body else None
         except (json.JSONDecodeError, KeyError, TypeError):
             return None
 
