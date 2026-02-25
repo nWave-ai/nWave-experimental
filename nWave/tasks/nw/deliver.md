@@ -14,7 +14,7 @@ Orchestrates complete DELIVER wave: feature description → production-ready cod
 
 Sub-agents cannot use Skill tool or `/nw:*` commands. You MUST:
 - Read the relevant command file and embed instructions in the Task prompt
-- Remind the crafter to load its skills as needed for the task (sub-agents can read their own skill files from `~/.claude/skills/`)
+- Remind the crafter to load its skills as needed for the task (skill files are at `~/.claude/skills/nw/{agent-name}/`)
 
 ## CRITICAL BOUNDARY RULES
 
