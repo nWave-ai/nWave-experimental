@@ -1,0 +1,257 @@
+journey:
+  name: "Auto-Update Check and Notification"
+  epic: "nw-update"
+  trigger: "Claude Code SessionStart hook fires with source: startup"
+  personas:
+    - "RTodorov (curious installer)"
+    - "Kai Nakamura (breaking-change-wary daily user)"
+    - "Priya Sharma (team lead with predictable update windows)"
+
+  emotional_arc:
+    start: "Unaware -- user does not know if their nWave is current"
+    middle_no_update: "Reassured -- silence confirms they are current; no interruption"
+    middle_update: "Informed -- they learn what changed and what their options are"
+    end_skip: "In control -- deliberate choice to skip, not passive ignorance"
+    end_later: "Trust -- tool will remind them, they can focus now"
+    end_install: "Satisfied -- up to date, back to work in seconds"
+
+  steps:
+    - id: "hook-fires"
+      name: "SessionStart hook is invoked"
+      actor: "Claude Code"
+      action: "Fires pre-tool-use hook with session_id, source='startup', transcript_path, cwd, model"
+      feeling: "Unaware (user does not experience this step)"
+      produces:
+        - session_source
+        - session_cwd
+      rules:
+        - "Only proceed if source == 'startup'; skip for resume, clear, compact"
+        - "All subsequent steps are fire-and-forget; no blocking of session"
+
+    - id: "frequency-gate"
+      name: "Decide whether to check based on frequency setting"
+      actor: "nWave hook"
+      action: "Read update_check.frequency and update_check.last_checked from .nwave/des-config.json"
+      feeling: "Unaware (background)"
+      consumes:
+        - session_source
+      produces:
+        - check_decision
+      rules:
+        - "frequency: never -> skip immediately, emit nothing"
+        - "frequency: daily -> check if last_checked is more than 24 hours ago"
+        - "frequency: weekly -> check if last_checked is more than 7 days ago"
+        - "frequency: every_session -> always check"
+        - "Missing config (first run) -> treat as daily and proceed"
+        - "Corrupted config -> treat as first run, log warning silently"
+
+    - id: "version-fetch"
+      name: "Fetch latest version from PyPI"
+      actor: "nWave hook"
+      action: "HTTP GET https://pypi.org/pypi/nwave-ai/json, extract latest version string"
+      feeling: "Unaware (background)"
+      consumes:
+        - check_decision
+      produces:
+        - local_version
+        - latest_version
+        - fetch_timestamp
+      rules:
+        - "Timeout: 5 seconds maximum; do not block session if PyPI is slow"
+        - "On timeout or network error: emit nothing, update last_checked silently"
+        - "local_version from importlib.metadata.version('nwave-ai')"
+        - "Store fetch_timestamp as last_checked regardless of result"
+
+    - id: "version-compare"
+      name: "Compare local vs latest version"
+      actor: "nWave hook"
+      action: "Semantic version comparison: local_version vs latest_version"
+      feeling: "Unaware (background)"
+      consumes:
+        - local_version
+        - latest_version
+      produces:
+        - update_available
+        - skipped_version_match
+      rules:
+        - "If local_version >= latest_version: emit nothing, done"
+        - "If latest_version in update_check.skipped_versions: emit nothing, done"
+        - "If update available and not skipped: proceed to changelog-fetch"
+
+    - id: "changelog-fetch"
+      name: "Fetch changelog between local and latest versions"
+      actor: "nWave hook"
+      action: "HTTP GET https://api.github.com/repos/nwave-ai/nwave/releases, filter releases between local_version and latest_version"
+      feeling: "Unaware (background)"
+      consumes:
+        - local_version
+        - latest_version
+      produces:
+        - changelog_summary
+        - release_count
+        - has_breaking_changes
+      rules:
+        - "Timeout: 5 seconds; if timeout proceed with version numbers only, no changelog"
+        - "Summarize: number of releases, breaking changes flagged, top 3-5 salient items"
+        - "Breaking changes identified by 'BREAKING CHANGE' in release body or '!' in commit subject"
+        - "changelog_summary is plain text, max 8 lines, no markdown rendering"
+
+    - id: "notify"
+      name: "Display update notification to user"
+      actor: "nWave hook (via stdout additionalContext)"
+      action: "Output structured notification: version info, changelog summary, action options"
+      feeling: "Informed -- user sees what changed and what they can do"
+      consumes:
+        - local_version
+        - latest_version
+        - changelog_summary
+        - has_breaking_changes
+      produces:
+        - displayed_notification
+      rules:
+        - "Output via stdout as additionalContext injected into session"
+        - "Notification is compact: header + changelog + 3 action options"
+        - "If has_breaking_changes: prepend '[BREAKING CHANGE]' warning prominently"
+        - "If changelog unavailable: show version numbers only with link to releases page"
+        - "First notification ever: append frequency-control prompt at the bottom"
+        - "Notification must not exceed 20 lines total"
+
+    - id: "user-decides"
+      name: "User responds to notification via Claude"
+      actor: "User"
+      action: "Tell Claude to install now / remind me later / skip this version / change frequency"
+      feeling: "In control -- deliberate choice, not passive scrolling"
+      consumes:
+        - displayed_notification
+      produces:
+        - user_action
+      rules:
+        - "Claude interprets natural language: 'update it' / 'not now' / 'skip 1.2.68'"
+        - "Three canonical actions: install_now, remind_later, skip_version"
+        - "Frequency change can be combined: 'update weekly from now on'"
+        - "No action taken: equivalent to remind_later (next session will show again if frequency allows)"
+
+    - id: "install-action"
+      name: "Execute upgrade (if user chose install now)"
+      actor: "nWave (via Claude executing shell)"
+      action: "Run pip install --upgrade nwave-ai && nwave install"
+      feeling: "Satisfied -- one decision, tool handles the rest"
+      consumes:
+        - user_action
+      produces:
+        - install_result
+        - new_local_version
+      rules:
+        - "Show the commands being run before executing"
+        - "On success: confirm new version installed, suggest /reload or session restart"
+        - "On failure: show error output, preserve old installation, do not leave broken state"
+        - "Update last_checked and clear skipped_versions after successful install"
+
+    - id: "skip-action"
+      name: "Record skipped version (if user chose skip)"
+      actor: "nWave hook"
+      action: "Append latest_version to update_check.skipped_versions in des-config.json"
+      feeling: "In control -- will not see this version again"
+      consumes:
+        - user_action
+        - latest_version
+      produces:
+        - updated_skipped_versions
+      rules:
+        - "Read-modify-write: preserve all other config keys"
+        - "skipped_versions is an array; do not deduplicate, preserve order"
+        - "A future version higher than the skipped one will still notify"
+
+    - id: "frequency-set"
+      name: "Persist frequency preference (if user set one)"
+      actor: "nWave hook"
+      action: "Write update_check.frequency to des-config.json"
+      feeling: "Settled -- preference remembered, not asked again"
+      consumes:
+        - user_action
+      produces:
+        - update_check_config
+      rules:
+        - "Valid values: every_session, daily, weekly, never"
+        - "Read-modify-write: preserve all other config keys"
+        - "Frequency set takes effect from the next session"
+
+  shared_artifacts:
+    - name: "update_check_config"
+      source: "frequency-set or first-run default"
+      consumers: ["frequency-gate (every session start)", "skip-action", "install-action"]
+      format: |
+        {
+          "update_check": {
+            "frequency": "daily",
+            "last_checked": "2026-02-25T10:00:00Z",
+            "skipped_versions": ["1.2.68"]
+          }
+        }
+      storage: ".nwave/des-config.json under update_check key"
+
+    - name: "local_version"
+      source: "version-fetch (importlib.metadata)"
+      consumers: ["version-compare", "notify", "install-action"]
+      format: "semver string e.g. '1.2.65'"
+
+    - name: "latest_version"
+      source: "version-fetch (PyPI API)"
+      consumers: ["version-compare", "notify", "skip-action"]
+      format: "semver string e.g. '1.2.68'"
+
+    - name: "changelog_summary"
+      source: "changelog-fetch (GitHub Releases API)"
+      consumers: ["notify"]
+      format: "plain text, max 8 lines"
+
+    - name: "has_breaking_changes"
+      source: "changelog-fetch"
+      consumers: ["notify (determines warning level)"]
+      format: "boolean"
+
+    - name: "displayed_notification"
+      source: "notify (stdout additionalContext)"
+      consumers: ["user-decides (via Claude session context)"]
+      format: "structured text block injected as session context"
+
+  integration_checkpoints:
+    - between: ["hook-fires", "frequency-gate"]
+      validates: "source == 'startup' before any network call is made"
+    - between: ["version-fetch", "des-config.json"]
+      validates: "last_checked is written after every fetch attempt regardless of result"
+    - between: ["notify", "claude-session"]
+      validates: "notification text appears in session context before user's first message"
+    - between: ["user-decides", "skip-action"]
+      validates: "skipped version is written to des-config.json before session continues"
+    - between: ["install-action", "des-config.json"]
+      validates: "skipped_versions cleared and last_checked updated after successful install"
+
+  error_paths:
+    - trigger: "PyPI API timeout or network unreachable"
+      user_sees: "Nothing -- silent skip, session starts normally"
+      recovery: "Automatic -- last_checked updated, will retry next session"
+
+    - trigger: "GitHub Releases API timeout"
+      user_sees: "nWave ${latest_version} is available (changelog unavailable). See: https://github.com/nwave-ai/nwave/releases"
+      recovery: "Partial notification shown, user can still choose action"
+
+    - trigger: "des-config.json corrupted"
+      user_sees: "Nothing -- treated as first run with defaults"
+      recovery: "Automatic -- config recreated with defaults on next /nw:rigor or frequency set"
+
+    - trigger: "des-config.json not writable"
+      user_sees: "Nothing -- silent skip, preference not saved"
+      recovery: "Manual -- fix file permissions; user will be asked frequency again next session"
+
+    - trigger: "nwave-ai not installed or importlib.metadata fails"
+      user_sees: "Nothing -- hook exits cleanly, session starts normally"
+      recovery: "Automatic exit -- cannot check version of something not installed"
+
+    - trigger: "pip install --upgrade fails"
+      user_sees: "Update failed: {error output}. Your current installation (${local_version}) is unchanged."
+      recovery: "Manual -- user can retry or update manually; old version remains functional"
+
+    - trigger: "First run, no update_check key in config"
+      user_sees: "Normal notification if update available, plus frequency-control prompt appended"
+      recovery: "Automatic -- defaults applied (frequency: daily)"

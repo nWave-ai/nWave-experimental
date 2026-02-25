@@ -1,0 +1,203 @@
+roadmap:
+  project_id: nw-update
+  created_at: '2026-02-25T17:39:50Z'
+  total_steps: 10
+  phases: 3
+phases:
+- id: '01'
+  name: Domain and config layer
+  steps:
+  - id: 01-01
+    name: UpdateCheckPolicy domain rule
+    description: >
+      Pure domain policy enforcing frequency windows (every_session / daily / weekly / never),
+      skip-version logic, and first-run detection. No I/O.
+    criteria:
+      - Policy returns SKIP for frequency=never regardless of timestamps.
+      - Policy returns SKIP when latest version is in skipped_versions list.
+      - Policy returns CHECK when update_check key is absent from config (first run).
+      - Policy returns SKIP when last_checked is within the active frequency window.
+      - Policy returns CHECK when last_checked is outside the active frequency window.
+    files:
+      - src/des/domain/update_check_policy.py
+    tests:
+      - tests/des/unit/domain/test_update_check_policy.py
+
+  - id: 01-02
+    name: DESConfig update_check properties
+    description: >
+      Extend DESConfig with typed properties for update_check.frequency,
+      update_check.last_checked, and update_check.skipped_versions.
+      Also add a write method to persist updated last_checked and skipped_versions back to file.
+    criteria:
+      - update_check_frequency returns "daily" when key is absent (default).
+      - update_check_last_checked returns None when key is absent.
+      - update_check_skipped_versions returns empty list when key is absent.
+      - save_update_check_state writes frequency, last_checked, and skipped_versions without
+        modifying unrelated config keys.
+      - save_update_check_state creates update_check key when absent.
+    files:
+      - src/des/adapters/driven/config/des_config.py
+    tests:
+      - tests/des/unit/adapters/driven/config/test_des_config_update_check.py
+
+- id: '02'
+  name: Application service layer
+  steps:
+  - id: 02-01
+    name: UpdateCheckService — version comparison
+    description: >
+      Application service that fetches latest version from PyPI with a 5-second timeout,
+      compares to local version via importlib.metadata, and returns a structured result.
+      On timeout or network error, returns a silent-skip result (no exception propagates).
+    criteria:
+      - Returns UpdateCheckResult(status=UP_TO_DATE) when local equals latest PyPI version.
+      - Returns UpdateCheckResult(status=UPDATE_AVAILABLE, latest=...) when newer version exists.
+      - Returns UpdateCheckResult(status=SKIP) on network timeout (5s) with no exception raised.
+      - Returns UpdateCheckResult(status=SKIP) on any HTTP or JSON error with no exception raised.
+      - PyPI URL is configurable via constructor parameter (enables test injection).
+    files:
+      - src/des/application/update_check_service.py
+    tests:
+      - tests/des/unit/application/test_update_check_service.py
+
+  - id: 02-02
+    name: UpdateCheckService — changelog fetch
+    description: >
+      Extend UpdateCheckService with GitHub Releases API fetch to retrieve changelog
+      between local and latest versions. On API failure, returns version-only result
+      (changelog unavailable is non-fatal).
+    criteria:
+      - Returns release notes when GitHub API responds with matching tag.
+      - Returns version-only result (no changelog field) when GitHub API times out.
+      - Returns version-only result when no release tag matches the latest version.
+      - GitHub API URL is configurable via constructor parameter (enables test injection).
+      - Changelog fetch uses same 5-second timeout as version check.
+    files:
+      - src/des/application/update_check_service.py
+    tests:
+      - tests/des/unit/application/test_update_check_service_changelog.py
+
+  - id: 02-03
+    name: UpdateCheckService — frequency gate and state persistence
+    description: >
+      Integrate UpdateCheckPolicy into UpdateCheckService. Before network calls, evaluate
+      policy. After a successful check, persist last_checked timestamp via DESConfig.
+      Coordinates policy, version fetch, and state write in one orchestrated flow.
+    criteria:
+      - Service exits silently without network calls when policy returns SKIP.
+      - Service persists last_checked=now after a successful PyPI fetch (UP_TO_DATE or UPDATE_AVAILABLE).
+      - Service does not persist last_checked when PyPI call returns SKIP (network failure).
+      - Service sets frequency=daily and proceeds with check when update_check key absent (first run).
+      - Policy receives skipped_versions from DESConfig when evaluating skip logic.
+    files:
+      - src/des/application/update_check_service.py
+    tests:
+      - tests/des/unit/application/test_update_check_service_frequency.py
+
+- id: '03'
+  name: Hook adapter and installer
+  steps:
+  - id: 03-01
+    name: SessionStart hook handler
+    description: >
+      New driver-side hook handler for the SessionStart event. Reads hook input JSON,
+      invokes UpdateCheckService, and writes additionalContext JSON to stdout when an
+      update is available. Exits silently (exit 0, no stdout) when up-to-date or skipped.
+    criteria:
+      - Writes additionalContext JSON to stdout when UPDATE_AVAILABLE.
+      - Produces no stdout output and exits 0 when UP_TO_DATE.
+      - Produces no stdout output and exits 0 when service returns SKIP.
+      - Any unhandled exception exits 0 (fail-open: session must not be blocked).
+      - additionalContext message includes local version, latest version, and changelog summary.
+    files:
+      - src/des/adapters/drivers/hooks/session_start_handler.py
+    tests:
+      - tests/des/unit/adapters/drivers/hooks/test_session_start_handler.py
+
+  - id: 03-02
+    name: Hook adapter — session-start command routing
+    description: >
+      Add session-start command to claude_code_hook_adapter dispatch table.
+      Route to session_start_handler. Update module docstring command list.
+    criteria:
+      - Running adapter with "session-start" argument invokes session_start_handler.
+      - Unknown command still exits 1 (existing behaviour unchanged).
+      - Existing pre-tool-use, subagent-stop, and post-tool-use routing unaffected.
+    files:
+      - src/des/adapters/drivers/hooks/claude_code_hook_adapter.py
+    tests:
+      - tests/des/unit/adapters/drivers/hooks/test_session_start_routing.py
+
+  - id: 03-03
+    name: DES plugin — register SessionStart hook
+    description: >
+      Register the session-start command as a SessionStart hook in settings.json.
+      Matcher: "startup". Add SessionStart to HOOK_EVENTS. Add idempotency check
+      so re-running install does not duplicate the hook entry.
+    criteria:
+      - After install, settings.json contains SessionStart entry with matcher "startup".
+      - SessionStart hook command uses $HOME-based PYTHONPATH (same pattern as existing hooks).
+      - Re-running install does not add a duplicate SessionStart hook.
+      - Uninstall removes SessionStart hook while preserving all other settings keys.
+      - Existing PreToolUse, SubagentStop, and PostToolUse hook registration unaffected.
+    files:
+      - scripts/install/plugins/des_plugin.py
+    tests:
+      - tests/des/unit/install/test_install_des_hooks.py
+
+  - id: 03-04
+    name: DES plugin — bootstrap update_check in des-config.json
+    description: >
+      Extend _bootstrap_des_config to include update_check defaults when creating a new
+      des-config.json. When config already exists and lacks update_check key, add it
+      without overwriting other keys (migration path).
+    criteria:
+      - Newly created des-config.json contains update_check.frequency="daily".
+      - Existing des-config.json missing update_check key receives the key on next install.
+      - Existing update_check key is not overwritten by reinstall.
+      - skipped_versions initialised as empty list in bootstrapped config.
+    files:
+      - scripts/install/plugins/des_plugin.py
+    tests:
+      - tests/des/unit/install/test_install_des_hooks.py
+
+  - id: 03-05
+    name: Integration test — full session-start handler flow
+    description: >
+      Integration test covering the complete session-start path: DESConfig reads frequency,
+      UpdateCheckPolicy gates, UpdateCheckService calls stubbed PyPI and GitHub endpoints,
+      session_start_handler writes correct stdout JSON. Validates all failure paths
+      (timeout, API failure, skip) produce silent exit 0.
+    criteria:
+      - Full flow with UPDATE_AVAILABLE produces valid additionalContext JSON on stdout.
+      - Full flow with UP_TO_DATE produces no stdout and exit 0.
+      - Full flow with PyPI timeout produces no stdout and exit 0.
+      - Full flow with GitHub API failure produces additionalContext with version only (no changelog).
+      - Frequency=never produces no stdout and exit 0 without any network calls.
+    files:
+      - tests/des/integration/test_session_start_handler.py
+    tests:
+      - tests/des/integration/test_session_start_handler.py
+
+implementation_scope:
+  source_directories:
+  - src/des/domain/
+  - src/des/application/
+  - src/des/adapters/driven/config/
+  - src/des/adapters/drivers/hooks/
+  - scripts/install/plugins/
+  test_directories:
+  - tests/des/unit/domain/
+  - tests/des/unit/application/
+  - tests/des/unit/adapters/driven/config/
+  - tests/des/unit/adapters/drivers/hooks/
+  - tests/des/unit/install/
+  - tests/des/integration/
+  excluded_patterns:
+  - __init__.py
+  - __pycache__/**
+validation:
+  status: pending
+  reviewer: solution-architect-reviewer
+  approved_at: ~

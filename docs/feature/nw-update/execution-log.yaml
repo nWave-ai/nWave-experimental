@@ -253,5 +253,11 @@ events:
   s: EXECUTED
   sid: 03-05
   t: '2026-02-25T19:58:27Z'
+- d: '{"commit": "d6ccae70", "note": "Integration test file committed as part of step
+    03-05 output"}'
+  p: COMMIT
+  s: EXECUTED
+  sid: 03-05
+  t: '2026-02-25T21:28:29Z'
 project_id: nw-update
 schema_version: '3.0'
