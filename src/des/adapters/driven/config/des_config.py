@@ -59,6 +59,32 @@ class DESConfig:
             return {}
 
     @property
+    def skill_tracking_enabled(self) -> bool:
+        """
+        Check if skill loading tracking is enabled.
+
+        Priority: DES_SKILL_TRACKING env var > config file > default (False).
+
+        Returns:
+            True if skill tracking enabled, False otherwise (defaults to False)
+        """
+        env_override = os.environ.get("DES_SKILL_TRACKING")
+        if env_override is not None:
+            return env_override.lower() in ("true", "1", "yes")
+        strategy = self._config_data.get("skill_tracking", "disabled")
+        return strategy != "disabled"
+
+    @property
+    def skill_tracking_strategy(self) -> str:
+        """
+        Get skill tracking strategy.
+
+        Returns:
+            Strategy string: "disabled", "passive-logging", or "token-tracking"
+        """
+        return self._config_data.get("skill_tracking", "disabled")
+
+    @property
     def audit_logging_enabled(self) -> bool:
         """
         Check if audit logging is enabled.

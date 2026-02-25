@@ -356,6 +356,44 @@ def _log_hook_error(handler: str, error: Exception, stderr_capture: str) -> None
 
 
 # ---------------------------------------------------------------------------
+# Skill loading tracking
+# ---------------------------------------------------------------------------
+
+
+def _maybe_track_skill_load(hook_input: dict) -> None:
+    """Track skill file reads for observability. Fail-open, never blocks.
+
+    Intercepts Read tool calls to skill files under /skills/nw/ and logs
+    them to .nwave/skill-loading-log.jsonl for token cost analysis.
+
+    Args:
+        hook_input: Raw hook input dict with tool_name and tool_input
+    """
+    try:
+        from des.adapters.driven.config.des_config import DESConfig
+
+        config = DESConfig()
+        if not config.skill_tracking_enabled:
+            return
+
+        from des.adapters.driven.tracking.jsonl_skill_tracker import JsonlSkillTracker
+        from des.application.skill_tracking_service import SkillTrackingService
+
+        tracker = JsonlSkillTracker()
+        service = SkillTrackingService(
+            tracker=tracker,
+            time_provider=SystemTimeProvider(),
+            strategy=config.skill_tracking_strategy,
+        )
+
+        tool_name = hook_input.get("tool_name", "")
+        tool_input = hook_input.get("tool_input", {})
+        service.maybe_track(tool_name, tool_input)
+    except Exception:
+        pass  # Fail-open: tracking must never block agent execution
+
+
+# ---------------------------------------------------------------------------
 # DES task signal file management
 # ---------------------------------------------------------------------------
 
@@ -954,6 +992,9 @@ def handle_post_tool_use() -> int:
                 },
                 hook_id=hook_id,
             )
+
+            # Skill loading tracking (non-blocking, fail-open)
+            _maybe_track_skill_load(hook_input)
 
             # Check if the just-completed Task was a DES task (had DES markers)
             tool_input = hook_input.get("tool_input", {})
