@@ -312,7 +312,11 @@ class TestHookAdapterFunctionality:
             sys.stdout = original_stdout
 
     def test_pre_tool_use_rejects_missing_max_turns(self):
-        """PreToolUse must block when max_turns is absent from tool_input."""
+        """PreToolUse must block DES tasks when max_turns is absent.
+
+        Non-DES tasks bypass max_turns validation (nwave-ai/nwave#9),
+        so this test uses a DES-marked prompt to verify the policy.
+        """
         import sys
         from io import StringIO
 
@@ -322,7 +326,12 @@ class TestHookAdapterFunctionality:
             {
                 "tool_name": "Task",
                 "tool_input": {
-                    "prompt": "Find all Python files",
+                    "prompt": (
+                        "<!-- DES-VALIDATION : required -->\n"
+                        "<!-- DES-PROJECT-ID : test-project -->\n"
+                        "<!-- DES-STEP-ID : 01-01 -->\n"
+                        "Find all Python files"
+                    ),
                     "subagent_type": "Explore",
                 },
             }

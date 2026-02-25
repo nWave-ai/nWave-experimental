@@ -1,6 +1,5 @@
 ---
 description: "Orchestrates the full DELIVER wave end-to-end (roadmap > execute-all > finalize). Use when all prior waves are complete and the feature is ready for implementation."
-disable-model-invocation: true
 argument-hint: '[feature-description] - Example: "Implement user authentication with JWT"'
 ---
 

@@ -91,12 +91,21 @@ def _build_des_task_stdin() -> str:
 
 
 def _build_no_max_turns_stdin() -> str:
-    """Task input missing max_turns (triggers BLOCKED)."""
+    """DES task input missing max_turns (triggers BLOCKED).
+
+    Must include DES markers so the task is recognized as a DES task;
+    non-DES tasks bypass max_turns validation entirely (nwave-ai/nwave#9).
+    """
     return json.dumps(
         {
             "tool_name": "Task",
             "tool_input": {
-                "prompt": "Do something",
+                "prompt": (
+                    "<!-- DES-VALIDATION : required -->\n"
+                    "<!-- DES-PROJECT-ID : test-project -->\n"
+                    "<!-- DES-STEP-ID : 01-01 -->\n"
+                    "Do something"
+                ),
                 "subagent_type": "code",
             },
         }

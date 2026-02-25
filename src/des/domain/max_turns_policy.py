@@ -38,7 +38,7 @@ class MaxTurnsPolicy:
     MAX_TURNS = 100
 
     MISSING_REASON = (
-        "MISSING_MAX_TURNS: The max_turns parameter is required for all Task invocations. "
+        "MISSING_MAX_TURNS: The max_turns parameter is required for DES Task invocations. "
         "Add max_turns parameter (e.g., max_turns=30) to prevent unbounded execution."
     )
 

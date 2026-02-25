@@ -277,6 +277,120 @@ class TestStepIdEnforcement:
 
 
 # =============================================================================
+# PHASE 1.5: Non-DES Task Passthrough (nwave-ai/nwave#9)
+# =============================================================================
+
+
+class TestNonDesTaskPassthrough:
+    """Tests that non-DES Task invocations bypass all DES validation.
+
+    Bug: max_turns was checked BEFORE DES marker parsing, so non-DES
+    tasks without max_turns were blocked. Fix: parse markers first,
+    allow non-DES tasks immediately with no further checks.
+    """
+
+    def test_non_des_task_without_max_turns_allowed(self):
+        """
+        GIVEN a Task prompt without DES markers
+        AND max_turns is not provided (None)
+        WHEN PreToolUse hook fires
+        THEN exit code is 0 (allow)
+        """
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt="Summarize the authentication module for me",
+                max_turns=None,
+                subagent_type="default",
+            )
+        )
+        assert decision.exit_code == 0, (
+            f"Expected exit_code 0 (allow), got {decision.exit_code}: {decision.reason}"
+        )
+        assert decision.action == "allow"
+
+    def test_non_des_task_with_max_turns_allowed(self):
+        """
+        GIVEN a Task prompt without DES markers
+        AND max_turns is provided
+        WHEN PreToolUse hook fires
+        THEN exit code is 0 (allow)
+        """
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt="Research best practices for error handling",
+                max_turns=30,
+                subagent_type="default",
+            )
+        )
+        assert decision.exit_code == 0, (
+            f"Expected exit_code 0 (allow), got {decision.exit_code}: {decision.reason}"
+        )
+
+    def test_des_task_without_max_turns_blocked(self):
+        """
+        GIVEN a Task prompt WITH DES markers
+        AND max_turns is not provided (None)
+        WHEN PreToolUse hook fires
+        THEN exit code is 2 (block)
+        AND reason contains MISSING_MAX_TURNS
+        """
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt=_make_valid_des_prompt(),
+                max_turns=None,
+                subagent_type="nw-software-crafter",
+            )
+        )
+        assert decision.exit_code == 2, (
+            f"Expected exit_code 2 (block), got {decision.exit_code}: {decision.reason}"
+        )
+        assert "MISSING_MAX_TURNS" in (decision.reason or "")
+
+    def test_des_task_with_valid_max_turns_allowed(self):
+        """
+        GIVEN a Task prompt WITH DES markers and valid structure
+        AND max_turns is provided within valid range
+        WHEN PreToolUse hook fires
+        THEN exit code is 0 (allow)
+        """
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt=_make_valid_des_prompt(),
+                max_turns=30,
+                subagent_type="nw-software-crafter",
+            )
+        )
+        assert decision.exit_code == 0, (
+            f"Expected exit_code 0 (allow), got {decision.exit_code}: {decision.reason}"
+        )
+
+    def test_des_task_with_out_of_range_max_turns_blocked(self):
+        """
+        GIVEN a Task prompt WITH DES markers
+        AND max_turns is outside valid range (e.g., 5)
+        WHEN PreToolUse hook fires
+        THEN exit code is 2 (block)
+        AND reason contains INVALID_MAX_TURNS
+        """
+        service = _build_pre_tool_use_service()
+        decision = service.validate(
+            PreToolUseInput(
+                prompt=_make_valid_des_prompt(),
+                max_turns=5,
+                subagent_type="nw-software-crafter",
+            )
+        )
+        assert decision.exit_code == 2, (
+            f"Expected exit_code 2 (block), got {decision.exit_code}: {decision.reason}"
+        )
+        assert "INVALID_MAX_TURNS" in (decision.reason or "")
+
+
+# =============================================================================
 # PHASE 2: Session Guard Tests (AC-011.10 through AC-011.13)
 # =============================================================================
 
