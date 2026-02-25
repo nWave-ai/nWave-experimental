@@ -13,16 +13,18 @@ from __future__ import annotations
 
 import json
 import sys
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as pkg_version
+
+
+_UPDATE_AVAILABLE_TEMPLATE = (
+    "nWave update available: {local} \u2192 {latest}. Changes: {changelog}"
+)
 
 
 def _get_local_version() -> str:
     """Return installed nwave-ai version, or '0.0.0' if unavailable."""
-    try:
-        return pkg_version("nwave-ai")
-    except PackageNotFoundError:
-        return "0.0.0"
+    from des.application.update_check_service import _detect_local_version
+
+    return _detect_local_version()
 
 
 def _build_update_check_service():
@@ -32,6 +34,15 @@ def _build_update_check_service():
 
     des_config = DESConfig()
     return UpdateCheckService(des_config=des_config)
+
+
+def _build_update_message(local: str, latest: str, changelog: str | None) -> str:
+    """Format the additionalContext message for an available update."""
+    return _UPDATE_AVAILABLE_TEMPLATE.format(
+        local=local,
+        latest=latest,
+        changelog=changelog or "",
+    )
 
 
 def handle_session_start() -> int:
@@ -53,11 +64,10 @@ def handle_session_start() -> int:
         from des.application.update_check_service import UpdateStatus
 
         if result.status == UpdateStatus.UPDATE_AVAILABLE:
-            local = _get_local_version()
-            latest = result.latest or ""
-            changelog = result.changelog or ""
-            message = (
-                f"nWave update available: {local} \u2192 {latest}. Changes: {changelog}"
+            message = _build_update_message(
+                local=_get_local_version(),
+                latest=result.latest or "",
+                changelog=result.changelog,
             )
             print(json.dumps({"additionalContext": message}))
 

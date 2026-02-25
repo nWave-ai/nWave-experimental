@@ -159,7 +159,8 @@ class UpdateCheckService:
 
     def _evaluate_policy(self, latest_version: str | None = None) -> CheckDecision:
         """Evaluate the update check policy using DESConfig state."""
-        assert self._des_config is not None
+        if self._des_config is None:
+            return CheckDecision.CHECK
         frequency: str | None = self._des_config.update_check_frequency
         last_checked_str = self._des_config.update_check_last_checked
         skipped_versions = self._des_config.update_check_skipped_versions
@@ -181,7 +182,8 @@ class UpdateCheckService:
 
     def _persist_last_checked(self) -> None:
         """Write last_checked=now to DESConfig. Silently ignores any errors."""
-        assert self._des_config is not None
+        if self._des_config is None:
+            return
         try:
             now_iso = datetime.now(tz=timezone.utc).isoformat()
             self._des_config.save_update_check_state(
@@ -191,17 +193,35 @@ class UpdateCheckService:
         except Exception:
             pass  # State persistence is best-effort; never block the service
 
-    def _fetch_latest_version(self) -> str | None:
-        """Fetch latest version from PyPI. Returns None on any failure."""
+    def _fetch_json(
+        self, url: str, extra_headers: dict[str, str] | None = None
+    ) -> bytes | None:
+        """Fetch JSON bytes from URL. Returns None on any HTTP or network failure.
+
+        Args:
+            url: The URL to fetch.
+            extra_headers: Optional headers to add to the request.
+
+        Returns:
+            Raw response bytes on HTTP 200, None on any failure.
+        """
         try:
-            req = urllib.request.Request(self._pypi_url)
+            req = urllib.request.Request(url)
+            if extra_headers:
+                for name, value in extra_headers.items():
+                    req.add_header(name, value)
             with urllib.request.urlopen(req, timeout=self._timeout) as response:
                 if response.status != 200:
                     return None
-                raw = response.read()
+                return response.read()
         except Exception:
             return None
 
+    def _fetch_latest_version(self) -> str | None:
+        """Fetch latest version from PyPI. Returns None on any failure."""
+        raw = self._fetch_json(self._pypi_url)
+        if raw is None:
+            return None
         try:
             data = json.loads(raw)
             return str(data["info"]["version"])
@@ -214,16 +234,12 @@ class UpdateCheckService:
         Returns the release body when the response tag matches the latest version.
         Returns None on any failure or when the tag does not match.
         """
-        try:
-            req = urllib.request.Request(self._github_releases_url)
-            req.add_header("Accept", "application/vnd.github+json")
-            with urllib.request.urlopen(req, timeout=self._timeout) as response:
-                if response.status != 200:
-                    return None
-                raw = response.read()
-        except Exception:
+        raw = self._fetch_json(
+            self._github_releases_url,
+            extra_headers={"Accept": "application/vnd.github+json"},
+        )
+        if raw is None:
             return None
-
         try:
             data = json.loads(raw)
             tag_name: str = str(data["tag_name"])

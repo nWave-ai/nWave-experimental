@@ -14,7 +14,7 @@ Behaviors:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -117,8 +117,6 @@ class TestUpdateCheckPolicyWithinWindow:
     )
     def test_within_window_returns_skip(self, policy, frequency, hours_ago):
         """Given last_checked within the window, policy returns SKIP."""
-        from datetime import timedelta
-
         current_time = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
         last_checked = current_time - timedelta(hours=hours_ago)
 
@@ -149,8 +147,6 @@ class TestUpdateCheckPolicyOutsideWindow:
     )
     def test_outside_window_returns_check(self, policy, frequency, hours_ago):
         """Given last_checked outside the window (or every_session), returns CHECK."""
-        from datetime import timedelta
-
         current_time = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
         last_checked = current_time - timedelta(hours=hours_ago)
 

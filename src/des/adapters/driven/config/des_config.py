@@ -99,25 +99,33 @@ class DESConfig:
             return env_override.lower() in ("true", "1", "yes")
         return self._config_data.get("audit_logging_enabled", True)
 
+    def _rigor(self) -> dict:
+        """Return rigor sub-config dict, defaulting to empty dict."""
+        return self._config_data.get("rigor", {})
+
+    def _update_check(self) -> dict:
+        """Return update_check sub-config dict, defaulting to empty dict."""
+        return self._config_data.get("update_check", {})
+
     @property
     def rigor_profile(self) -> str:
         """Get rigor profile name. Default: 'standard'."""
-        return self._config_data.get("rigor", {}).get("profile", "standard")
+        return self._rigor().get("profile", "standard")
 
     @property
     def rigor_agent_model(self) -> str:
         """Get agent model from rigor config. Default: 'sonnet'."""
-        return self._config_data.get("rigor", {}).get("agent_model", "sonnet")
+        return self._rigor().get("agent_model", "sonnet")
 
     @property
     def rigor_reviewer_model(self) -> str:
         """Get reviewer model. Default: 'haiku'."""
-        return self._config_data.get("rigor", {}).get("reviewer_model", "haiku")
+        return self._rigor().get("reviewer_model", "haiku")
 
     @property
     def rigor_tdd_phases(self) -> tuple[str, ...]:
         """Get TDD phases as tuple. Default: full 5-phase."""
-        phases = self._config_data.get("rigor", {}).get(
+        phases = self._rigor().get(
             "tdd_phases",
             ["PREPARE", "RED_ACCEPTANCE", "RED_UNIT", "GREEN", "COMMIT"],
         )
@@ -126,37 +134,37 @@ class DESConfig:
     @property
     def rigor_review_enabled(self) -> bool:
         """Check if peer review is enabled. Default: True."""
-        return self._config_data.get("rigor", {}).get("review_enabled", True)
+        return self._rigor().get("review_enabled", True)
 
     @property
     def rigor_double_review(self) -> bool:
         """Check if double review is enabled. Default: False."""
-        return self._config_data.get("rigor", {}).get("double_review", False)
+        return self._rigor().get("double_review", False)
 
     @property
     def rigor_mutation_enabled(self) -> bool:
         """Check if mutation testing is enabled. Default: False."""
-        return self._config_data.get("rigor", {}).get("mutation_enabled", False)
+        return self._rigor().get("mutation_enabled", False)
 
     @property
     def rigor_refactor_pass(self) -> bool:
         """Check if refactoring pass is enabled. Default: True."""
-        return self._config_data.get("rigor", {}).get("refactor_pass", True)
+        return self._rigor().get("refactor_pass", True)
 
     @property
     def update_check_frequency(self) -> str:
         """Get update check frequency. Default: 'daily'."""
-        return self._config_data.get("update_check", {}).get("frequency", "daily")
+        return self._update_check().get("frequency", "daily")
 
     @property
     def update_check_last_checked(self) -> str | None:
         """Get last update check timestamp (ISO 8601 UTC). Default: None."""
-        return self._config_data.get("update_check", {}).get("last_checked", None)
+        return self._update_check().get("last_checked", None)
 
     @property
     def update_check_skipped_versions(self) -> list[str]:
         """Get list of versions skipped by user. Default: empty list."""
-        return self._config_data.get("update_check", {}).get("skipped_versions", [])
+        return self._update_check().get("skipped_versions", [])
 
     def save_update_check_state(
         self,

@@ -604,6 +604,76 @@ class DESPlugin(InstallationPlugin):
                 message=f"DES hooks install failed: {e}",
             )
 
+    _DEFAULT_UPDATE_CHECK_CONFIG = {
+        "frequency": "daily",
+        "skipped_versions": [],
+    }
+
+    _DEFAULT_DES_CONFIG = {
+        "audit_logging_enabled": True,
+        "audit_log_dir": ".nwave/des/logs",
+    }
+
+    def _write_json_config(self, path: Path, data: dict) -> None:
+        """Write dict as pretty-printed JSON with trailing newline."""
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+
+    def _read_json_config(self, path: Path) -> dict:
+        """Read JSON config file, returning empty dict on parse or IO error."""
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _migrate_config(
+        self, config_file: Path, context: InstallContext
+    ) -> PluginResult:
+        """Add update_check to existing config that lacks it (migration path)."""
+        existing = self._read_json_config(config_file)
+
+        if "update_check" in existing:
+            context.logger.info("  ✅ DES config already exists")
+            return PluginResult(
+                success=True,
+                plugin_name="des",
+                message="DES config already exists",
+            )
+
+        existing["update_check"] = self._DEFAULT_UPDATE_CHECK_CONFIG
+        if not context.dry_run:
+            self._write_json_config(config_file, existing)
+            context.logger.info(
+                f"  ✅ DES config migrated (update_check added): {config_file}"
+            )
+        return PluginResult(
+            success=True,
+            plugin_name="des",
+            message=f"DES config migrated (update_check added) at {config_file}",
+        )
+
+    def _create_config(
+        self, config_file: Path, nwave_dir: Path, context: InstallContext
+    ) -> PluginResult:
+        """Create des-config.json with default settings."""
+        default_config = {
+            **self._DEFAULT_DES_CONFIG,
+            "update_check": self._DEFAULT_UPDATE_CHECK_CONFIG,
+        }
+        if context.dry_run:
+            context.logger.info(f"  🚨 [DRY RUN] Would create {config_file}")
+        else:
+            nwave_dir.mkdir(parents=True, exist_ok=True)
+            self._write_json_config(config_file, default_config)
+            context.logger.info(f"  ✅ DES config created: {config_file}")
+        return PluginResult(
+            success=True,
+            plugin_name="des",
+            message=f"DES config bootstrapped at {config_file}",
+        )
+
     def _bootstrap_des_config(self, context: InstallContext) -> PluginResult:
         """Bootstrap .nwave/des-config.json with default settings.
 
@@ -619,62 +689,10 @@ class DESPlugin(InstallationPlugin):
             nwave_dir = project_root / ".nwave"
             config_file = nwave_dir / "des-config.json"
 
-            _default_update_check = {
-                "frequency": "daily",
-                "skipped_versions": [],
-            }
-
             if config_file.exists():
-                # Migration path: add update_check if missing, preserve everything else
-                try:
-                    with open(config_file, encoding="utf-8") as f:
-                        existing = json.load(f)
-                except (json.JSONDecodeError, OSError):
-                    existing = {}
+                return self._migrate_config(config_file, context)
 
-                if "update_check" in existing:
-                    context.logger.info("  ✅ DES config already exists")
-                    return PluginResult(
-                        success=True,
-                        plugin_name="des",
-                        message="DES config already exists",
-                    )
-
-                # Add update_check to existing config
-                existing["update_check"] = _default_update_check
-                if not context.dry_run:
-                    with open(config_file, "w", encoding="utf-8") as f:
-                        json.dump(existing, f, indent=2)
-                        f.write("\n")
-                    context.logger.info(
-                        f"  ✅ DES config migrated (update_check added): {config_file}"
-                    )
-                return PluginResult(
-                    success=True,
-                    plugin_name="des",
-                    message=f"DES config migrated (update_check added) at {config_file}",
-                )
-
-            default_config = {
-                "audit_logging_enabled": True,
-                "audit_log_dir": ".nwave/des/logs",
-                "update_check": _default_update_check,
-            }
-
-            if context.dry_run:
-                context.logger.info(f"  🚨 [DRY RUN] Would create {config_file}")
-            else:
-                nwave_dir.mkdir(parents=True, exist_ok=True)
-                with open(config_file, "w", encoding="utf-8") as f:
-                    json.dump(default_config, f, indent=2)
-                    f.write("\n")
-                context.logger.info(f"  ✅ DES config created: {config_file}")
-
-            return PluginResult(
-                success=True,
-                plugin_name="des",
-                message=f"DES config bootstrapped at {config_file}",
-            )
+            return self._create_config(config_file, nwave_dir, context)
 
         except Exception as e:
             return PluginResult(
