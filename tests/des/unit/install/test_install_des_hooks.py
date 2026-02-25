@@ -158,6 +158,114 @@ class TestSessionStartHookRegistration:
 
 
 # ---------------------------------------------------------------------------
+# Step 04-01 — TestSubagentStartHookRegistration
+# Test budget: 4 distinct behaviors x 2 = 8 max unit tests (using 5)
+# ---------------------------------------------------------------------------
+
+
+class TestSubagentStartHookRegistration:
+    """SubagentStart hook is registered in settings.json with no matcher."""
+
+    def _install_hooks(self, context) -> dict:
+        """Helper: run _install_des_hooks and return parsed settings.json."""
+        from scripts.install.plugins.des_plugin import DESPlugin
+
+        plugin = DESPlugin()
+        result = plugin._install_des_hooks(context)
+        assert result.success, f"Hook install failed: {result.message}"
+        settings_file = context.claude_dir / "settings.json"
+        return json.loads(settings_file.read_text())
+
+    def test_subagent_start_hook_registered_in_settings(self, _install_context):
+        """After install, settings.json contains a SubagentStart entry."""
+        config = self._install_hooks(_install_context)
+
+        assert "hooks" in config
+        assert "SubagentStart" in config["hooks"], (
+            "SubagentStart key missing from hooks after install"
+        )
+        assert len(config["hooks"]["SubagentStart"]) >= 1
+
+    def test_subagent_start_hook_has_no_matcher(self, _install_context):
+        """SubagentStart hook entry has no matcher — fires for all agent types."""
+        config = self._install_hooks(_install_context)
+
+        subagent_start_hooks = config["hooks"]["SubagentStart"]
+        assert len(subagent_start_hooks) >= 1
+        entry = subagent_start_hooks[0]
+        assert "matcher" not in entry, (
+            "SubagentStart hook must have no matcher (fires for all agents)"
+        )
+
+    def test_subagent_start_hook_command_uses_subagent_start_action(
+        self, _install_context
+    ):
+        """SubagentStart hook command passes 'subagent-start' action to adapter."""
+        config = self._install_hooks(_install_context)
+
+        subagent_start_hooks = config["hooks"]["SubagentStart"]
+        entry = subagent_start_hooks[0]
+        inner_hooks = entry.get("hooks", [])
+        assert len(inner_hooks) >= 1
+        command = inner_hooks[0]["command"]
+        assert "$HOME/.claude/lib/python" in command, (
+            "Command must use $HOME-based PYTHONPATH for portability"
+        )
+        assert "subagent-start" in command, (
+            "Command must pass 'subagent-start' action to hook adapter"
+        )
+
+    def test_subagent_start_install_is_idempotent(self, _install_context):
+        """Re-running install does not duplicate SubagentStart hook entries."""
+        from scripts.install.plugins.des_plugin import DESPlugin
+
+        plugin = DESPlugin()
+        plugin._install_des_hooks(_install_context)
+        plugin._install_des_hooks(_install_context)
+
+        settings_file = _install_context.claude_dir / "settings.json"
+        config = json.loads(settings_file.read_text())
+
+        subagent_start_hooks = config["hooks"]["SubagentStart"]
+        assert len(subagent_start_hooks) == 1, (
+            f"Expected 1 SubagentStart entry after idempotent install, "
+            f"got {len(subagent_start_hooks)}"
+        )
+
+    def test_uninstall_removes_subagent_start_hook(self, _install_context):
+        """Uninstall removes SubagentStart hook while preserving other settings."""
+        from scripts.install.plugins.des_plugin import DESPlugin
+
+        plugin = DESPlugin()
+        plugin._install_des_hooks(_install_context)
+
+        # Add a non-DES key to verify preservation
+        settings_file = _install_context.claude_dir / "settings.json"
+        config = json.loads(settings_file.read_text())
+        config["someOtherKey"] = "preserved"
+        settings_file.write_text(json.dumps(config, indent=2))
+
+        plugin._uninstall_des_hooks(_install_context)
+
+        config_after = json.loads(settings_file.read_text())
+        # Other settings preserved
+        assert config_after.get("someOtherKey") == "preserved"
+        # SubagentStart DES hooks removed
+        subagent_start_hooks = config_after.get("hooks", {}).get("SubagentStart", [])
+        des_subagent_start_hooks = [
+            h
+            for h in subagent_start_hooks
+            if any(
+                "claude_code_hook_adapter" in sub.get("command", "")
+                for sub in h.get("hooks", [])
+            )
+        ]
+        assert len(des_subagent_start_hooks) == 0, (
+            "DES SubagentStart hook should be removed by uninstall"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Step 03-04 — TestBootstrapUpdateCheckConfig
 # Test budget: 3 distinct behaviors x 2 = 6 max unit tests (using 4)
 # ---------------------------------------------------------------------------
