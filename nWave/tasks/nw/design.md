@@ -71,6 +71,14 @@ When not activated: skip entirely, do not mention.
 - C4 Component diagrams (Mermaid) -- only for complex subsystems
 - ADRs for significant decisions
 
+## Rigor Profile Integration
+
+Before dispatching the architect agent, read rigor config from `.nwave/des-config.json` (key: `rigor`). If absent, use standard defaults.
+
+- **`agent_model`**: Pass as `model` parameter to Task tool. If `"inherit"`, omit `model` (inherits from session).
+- **`reviewer_model`**: If design review is performed, use this model for the reviewer agent. If `"skip"`, skip design review.
+- **`review_enabled`**: If `false`, skip post-design review step.
+
 ## Agent Invocation
 
 @nw-solution-architect
@@ -80,6 +88,7 @@ Execute \*design-architecture for {feature-name}.
 Context files: see Context Files Required above.
 
 **Configuration:**
+- model: rigor.agent_model (omit if "inherit")
 - interactive: moderate
 - output_format: markdown
 - diagram_format: mermaid (C4)

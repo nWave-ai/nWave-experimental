@@ -6,8 +6,9 @@ Tests DESConfig behavior from driving port perspective (public interface):
 - Default value fallback when file missing/invalid (defaults to True)
 - audit_logging_enabled setting access
 - Environment variable override (DES_AUDIT_LOGGING_ENABLED)
+- Rigor configuration properties (profile, models, phases, flags)
 
-Test Budget: 8 behaviors x 2 = 16 max. Actual: 8 tests (4 parametrized).
+Test Budget: 13 behaviors x 2 = 26 max. Actual: 13 tests (4 parametrized).
 """
 
 import json
@@ -151,3 +152,171 @@ class TestDESConfigEnvVarOverride:
         config = DESConfig(config_path=config_file)
 
         assert config.audit_logging_enabled is True
+
+
+class TestDESConfigRigorDefaults:
+    """Test DESConfig rigor properties default to 'standard' profile values."""
+
+    def test_no_rigor_key_defaults_to_standard(self, tmp_path):
+        """All rigor properties return standard defaults when no rigor key in config."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(
+            json.dumps({"audit_logging_enabled": True}), encoding="utf-8"
+        )
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        assert cfg.rigor_profile == "standard"
+        assert cfg.rigor_agent_model == "sonnet"
+        assert cfg.rigor_reviewer_model == "haiku"
+        assert cfg.rigor_review_enabled is True
+        assert cfg.rigor_double_review is False
+        assert cfg.rigor_mutation_enabled is False
+        assert cfg.rigor_refactor_pass is True
+        assert cfg.rigor_tdd_phases == (
+            "PREPARE",
+            "RED_ACCEPTANCE",
+            "RED_UNIT",
+            "GREEN",
+            "COMMIT",
+        )
+
+    def test_missing_config_file_defaults_to_standard(self, tmp_path):
+        """All rigor properties return standard defaults when config file missing."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        assert cfg.rigor_profile == "standard"
+        assert cfg.rigor_agent_model == "sonnet"
+        assert cfg.rigor_tdd_phases == (
+            "PREPARE",
+            "RED_ACCEPTANCE",
+            "RED_UNIT",
+            "GREEN",
+            "COMMIT",
+        )
+
+    def test_partial_rigor_fills_missing_with_standard_defaults(self, tmp_path):
+        """Missing rigor sub-keys get standard defaults."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(
+            json.dumps({"rigor": {"profile": "custom"}}), encoding="utf-8"
+        )
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        assert cfg.rigor_profile == "custom"
+        assert cfg.rigor_agent_model == "sonnet"
+        assert cfg.rigor_reviewer_model == "haiku"
+        assert cfg.rigor_review_enabled is True
+
+
+class TestDESConfigRigorExplicitProfiles:
+    """Test DESConfig rigor properties with explicit profile configurations."""
+
+    def test_lean_profile_values(self, tmp_path):
+        """Lean profile config returns lean values for all rigor properties."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(
+            json.dumps(
+                {
+                    "rigor": {
+                        "profile": "lean",
+                        "agent_model": "haiku",
+                        "reviewer_model": "haiku",
+                        "tdd_phases": ["GREEN", "COMMIT"],
+                        "review_enabled": False,
+                        "double_review": False,
+                        "mutation_enabled": False,
+                        "refactor_pass": False,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        assert cfg.rigor_profile == "lean"
+        assert cfg.rigor_agent_model == "haiku"
+        assert cfg.rigor_reviewer_model == "haiku"
+        assert cfg.rigor_tdd_phases == ("GREEN", "COMMIT")
+        assert cfg.rigor_review_enabled is False
+        assert cfg.rigor_double_review is False
+        assert cfg.rigor_mutation_enabled is False
+        assert cfg.rigor_refactor_pass is False
+
+    def test_exhaustive_profile_values(self, tmp_path):
+        """Exhaustive profile config returns exhaustive values for all rigor properties."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(
+            json.dumps(
+                {
+                    "rigor": {
+                        "profile": "exhaustive",
+                        "agent_model": "opus",
+                        "reviewer_model": "opus",
+                        "tdd_phases": [
+                            "PREPARE",
+                            "RED_ACCEPTANCE",
+                            "RED_UNIT",
+                            "GREEN",
+                            "COMMIT",
+                        ],
+                        "review_enabled": True,
+                        "double_review": True,
+                        "mutation_enabled": True,
+                        "refactor_pass": True,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        assert cfg.rigor_profile == "exhaustive"
+        assert cfg.rigor_agent_model == "opus"
+        assert cfg.rigor_reviewer_model == "opus"
+        assert cfg.rigor_tdd_phases == (
+            "PREPARE",
+            "RED_ACCEPTANCE",
+            "RED_UNIT",
+            "GREEN",
+            "COMMIT",
+        )
+        assert cfg.rigor_review_enabled is True
+        assert cfg.rigor_double_review is True
+        assert cfg.rigor_mutation_enabled is True
+        assert cfg.rigor_refactor_pass is True
+
+    def test_rigor_tdd_phases_returns_tuple_not_list(self, tmp_path):
+        """rigor_tdd_phases always returns a tuple even when config has a list."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(
+            json.dumps({"rigor": {"tdd_phases": ["GREEN", "COMMIT"]}}),
+            encoding="utf-8",
+        )
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        assert isinstance(cfg.rigor_tdd_phases, tuple)
+        assert cfg.rigor_tdd_phases == ("GREEN", "COMMIT")

@@ -47,6 +47,12 @@ Create E2E acceptance tests from requirements|architecture|infrastructure design
 - docs/feature/{feature-name}/design/architecture-design.md | component-boundaries.md | technology-stack.md
 - docs/feature/{feature-name}/deliver/* (infrastructure design from DEVOP)
 
+## Rigor Profile Integration
+
+Before dispatching the acceptance designer, read rigor config from `.nwave/des-config.json` (key: `rigor`). If absent, use standard defaults.
+
+- **`agent_model`**: Pass as `model` parameter to Task tool. If `"inherit"`, omit `model` (inherits from session).
+
 ## Agent Invocation
 
 @nw-acceptance-designer
@@ -56,6 +62,7 @@ Execute \*create-acceptance-tests for {feature-name}.
 Context files: see above.
 
 **Configuration:**
+- model: rigor.agent_model (omit if "inherit")
 - test_type: {Decision 1: core|extension|bugfix}
 - test_framework: {Decision 2: specflow|cucumber|pytest-bdd}
 - integration_approach: {Decision 3} | infrastructure_testing: {Decision 4}

@@ -26,10 +26,39 @@ Sub-agents cannot use Skill tool or `/nw:*` commands. You MUST:
 
 Finalize verification checks every completed step has valid DES-format entries (5 TDD phases + timestamps). Steps without DES monitoring → flagged, finalize blocks until re-executed via Task.
 
+## Rigor Profile Integration
+
+Before dispatching any agent, read the rigor profile from `.nwave/des-config.json` (key: `rigor`). If absent, use standard defaults.
+
+**How rigor affects deliver phases:**
+
+| Setting | Effect |
+|---------|--------|
+| `agent_model` | Pass as `model` parameter to all Task tool invocations for crafter agents. If `"inherit"`, omit `model` parameter (Task tool inherits from session). |
+| `reviewer_model` | Pass as `model` parameter to reviewer Task invocations. If `"skip"`, skip Phase 4 entirely. |
+| `review_enabled` | If `false`, skip Phase 4 (Adversarial Review). |
+| `double_review` | If `true`, run Phase 4 twice with separate review scopes. |
+| `tdd_phases` | Pass to crafter in DES template. Replace `# TDD_PHASES` section with the configured phases. If only `[RED_UNIT, GREEN]`, omit PREPARE/RED_ACCEPTANCE/COMMIT instructions. |
+| `refactor_pass` | If `false`, skip Phase 3 (Complete Refactoring). |
+| `mutation_enabled` | If `false`, skip Phase 5 regardless of mutation strategy in CLAUDE.md. |
+
+**Task invocation with rigor model:**
+```python
+Task(
+    subagent_type="{agent}",
+    model=rigor_agent_model,  # omit this line entirely if "inherit"
+    max_turns=45,
+    prompt=...,
+)
+```
+
 ## Orchestration Flow
 
 ```
 INPUT: "{feature-description}"
+  |
+  0. Read rigor profile from .nwave/des-config.json (default: standard)
+     Store: agent_model|reviewer_model|tdd_phases|review_enabled|double_review|mutation_enabled|refactor_pass
   |
   1. Parse input|derive project-id (kebab-case)|create docs/feature/{project-id}/
      a. Create execution-log.yaml if missing: schema_version "2.0"|project_id|events: []
@@ -70,20 +99,25 @@ INPUT: "{feature-description}"
      f. Stop on first failure
      g. Timeout recovery: GREEN completed → resume (~5 turns)|GREEN partial → resume|Otherwise → restart higher max_turns
   |
-  4. Phase 3 — Complete Refactoring (L1-L4)
+  4. Phase 3 — Complete Refactoring (L1-L4) [SKIP if rigor.refactor_pass = false]
      a. Collect modified files: git diff --name-only {base-commit}..HEAD -- '*.py' | sort -u
         Split: PRODUCTION_FILES (src/) | TEST_FILES (tests/)
      b. /nw:refactor {files} --levels L1-L4 via {selected-crafter} with DES orchestrator markers:
         <!-- DES-VALIDATION : required -->|<!-- DES-PROJECT-ID : {project-id} -->|<!-- DES-MODE : orchestrator -->
      c. All tests green after each module
   |
-  5. Phase 4 — Adversarial Review
-     a. /nw:review @nw-software-crafter-reviewer implementation "{execution-log-path}"
+  5. Phase 4 — Adversarial Review [SKIP if rigor.review_enabled = false]
+     a. If rigor.reviewer_model = "skip" → SKIP phase entirely
+     b. /nw:review @nw-software-crafter-reviewer implementation "{execution-log-path}"
+        Use model=rigor.reviewer_model for reviewer Task invocation
         Include DES orchestrator markers (same as Phase 3)
-     b. Scope: ALL files modified during feature|includes Testing Theater 7-pattern detection
-     c. One revision pass on rejection → proceed
+     c. If rigor.double_review = true → run review a second time with different scope focus
+     d. Scope: ALL files modified during feature|includes Testing Theater 7-pattern detection
+     e. One revision pass on rejection → proceed
   |
-  6. Phase 5 — Mutation Testing (conditional on step 1.6)
+  6. Phase 5 — Mutation Testing [SKIP if rigor.mutation_enabled = false]
+     If rigor.mutation_enabled = false → SKIP regardless of CLAUDE.md strategy
+     Otherwise, apply CLAUDE.md strategy:
      per-feature → gate ≥80% kill rate (read ~/.claude/commands/nw/mutation-test.md)
      nightly-delta → SKIP|log "handled by CI nightly pipeline"
      pre-release → SKIP|log "handled at release boundary"
@@ -124,6 +158,7 @@ DES markers required for step execution. Without markers → unmonitored. Full D
 ```python
 Task(
     subagent_type="{agent}",
+    model=rigor_agent_model,  # omit if "inherit"
     max_turns=45,  # 25 hotfix|45 standard|65 complex
     prompt=f'''
 <!-- DES-VALIDATION : required -->

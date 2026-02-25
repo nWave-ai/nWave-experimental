@@ -59,6 +59,14 @@ Findings MUST be priority-ordered: blocking issues first, then suggestions, then
 - `--dimensions=rpp` - Triggers RPP code smell scan alongside standard review (Dimension 4)
 - `--from=N` / `--to=N` - RPP level range (default: 1-6). Requires `--dimensions=rpp`
 
+## Rigor Profile Integration
+
+Before dispatching the reviewer agent, read rigor config from `.nwave/des-config.json` (key: `rigor`). If absent, use standard defaults.
+
+- **`review_enabled`**: If `false`, skip the review entirely. Output: "Review skipped per rigor profile (review_enabled=false)."
+- **`reviewer_model`**: Pass as `model` parameter to Task tool. If `"skip"`, skip the review. Overrides the default Haiku model.
+- **`double_review`**: If `true` and called from deliver Phase 4, the caller is responsible for invoking review twice.
+
 ## Agent Derivation
 
 | User provides | Reviewer invoked |
@@ -67,16 +75,18 @@ Findings MUST be priority-ordered: blocking issues first, then suggestions, then
 | `@nw-solution-architect` | `nw-solution-architect-reviewer` |
 | `@nw-platform-architect` | `nw-platform-architect-reviewer` |
 
-All `-reviewer` agents use Haiku model for cost efficiency.
+Default model: Haiku (overridden by `rigor.reviewer_model` when set).
 
 ## Agent Invocation
 
 Parse parameters, validate, then invoke via Task tool:
 
-```
-@{agent-name}-reviewer
-
-Review {artifact-type}: {absolute-artifact-path} [step_id={id}]
+```python
+Task(
+    subagent_type="{agent-name}-reviewer",
+    model=rigor_reviewer_model,  # omit if using default haiku
+    prompt="Review {artifact-type}: {absolute-artifact-path} [step_id={id}]"
+)
 ```
 
 Reviewer handles: reading artifact|applying domain expertise|generating structured critique|updating original artifact with review metadata.

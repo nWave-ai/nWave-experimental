@@ -23,12 +23,21 @@ Dispatch a single roadmap step to an agent. Orchestrator extracts step context f
 - `docs/feature/{project-id}/roadmap.yaml` — Orchestrator reads once, extracts step context
 - `docs/feature/{project-id}/execution-log.yaml` — Agent appends only (never reads)
 
+## Rigor Profile Integration
+
+Before dispatching the agent, read rigor config from `.nwave/des-config.json` (key: `rigor`). If absent, use standard defaults.
+
+- **`agent_model`**: Pass as `model` parameter to Task tool. If `"inherit"`, omit `model` (inherits from session).
+- **`tdd_phases`**: If `["RED_UNIT", "GREEN"]` (lean), modify the TDD_PHASES section in the DES template to only include those 2 phases. Remove PREPARE/RED_ACCEPTANCE/COMMIT instructions.
+- **`refactor_pass`**: If `false`, skip COMMIT phase refactoring instructions.
+
 ## Dispatcher Workflow
 
 1. Parse parameters: agent name|project ID|step ID
-2. Validate roadmap and execution-log exist
-3. Grep roadmap for `step_id: "{step-id}"` with ~50 lines context
-4. Extract step fields and invoke Task tool with DES template below
+2. Read rigor profile from `.nwave/des-config.json` (default: standard)
+3. Validate roadmap and execution-log exist
+4. Grep roadmap for `step_id: "{step-id}"` with ~50 lines context
+5. Extract step fields and invoke Task tool with DES template below, applying rigor model and phases
 
 ## Agent Invocation
 

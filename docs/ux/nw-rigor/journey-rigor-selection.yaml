@@ -1,0 +1,163 @@
+journey:
+  name: "Rigor Profile Selection"
+  epic: "nw-rigor"
+  trigger: "User runs /nw:rigor or starts first session without profile"
+  personas:
+    - "Kai Nakamura (pragmatic crafter)"
+    - "Priya Sharma (budget-conscious lead)"
+    - "Tomasz Kowalski (model-opinionated dev)"
+
+  emotional_arc:
+    start: "Uncertain - not sure how much ceremony is right"
+    middle: "Informed - can see exactly what each level costs and provides"
+    end: "Confident - made a deliberate choice, knows what to expect"
+
+  steps:
+    - id: "welcome"
+      name: "Show current state and introduction"
+      actor: "nWave"
+      action: "Display current profile (or 'none set') with brief explanation of what rigor means"
+      feeling: "Welcomed"
+      produces:
+        - current_profile_state
+
+    - id: "compare"
+      name: "Show profile comparison table"
+      actor: "nWave"
+      action: "Display side-by-side comparison of all 5 profiles with costs, features, and recommendation"
+      feeling: "Informed"
+      produces:
+        - comparison_table
+      rules:
+        - "'standard' is always marked as [recommended]"
+        - "Show both what's included AND what's excluded"
+        - "Estimated token cost shown as percentage of 'standard' baseline"
+        - "Estimated time per step shown in minutes"
+
+    - id: "select"
+      name: "User selects profile"
+      actor: "User"
+      action: "Enter profile number (1-5) or name"
+      feeling: "Guided"
+      consumes:
+        - comparison_table
+      produces:
+        - selected_profile
+      rules:
+        - "Accept both number and name input"
+        - "Invalid input shows available options"
+        - "Quick switch: /nw:rigor {name} skips to detail view"
+
+    - id: "detail"
+      name: "Show detailed view of selected profile"
+      actor: "nWave"
+      action: "Display what you GET, what you LOSE, when to use, estimated impact"
+      feeling: "Transparent"
+      consumes:
+        - selected_profile
+      produces:
+        - detail_view
+      rules:
+        - "WHAT YOU LOSE section is mandatory and prominent"
+        - "Use concrete language: 'No peer review' not 'reduced quality'"
+        - "WHEN TO USE gives real scenarios"
+        - "'back' returns to comparison table"
+
+    - id: "confirm"
+      name: "User confirms selection"
+      actor: "User"
+      action: "Confirm or go back"
+      feeling: "Decided"
+      consumes:
+        - detail_view
+      produces:
+        - confirmed_profile
+      rules:
+        - "Default is confirm (Enter = yes)"
+        - "'n' cancels, 'back' returns to list"
+
+    - id: "save"
+      name: "Persist to config"
+      actor: "nWave"
+      action: "Write rigor profile to .nwave/des-config.json under 'rigor' key"
+      feeling: "Decided"
+      consumes:
+        - confirmed_profile
+      produces:
+        - rigor_profile
+        - agent_model
+        - reviewer_model
+        - tdd_phases
+        - review_enabled
+        - mutation_enabled
+      rules:
+        - "Merge into existing config, do not overwrite other keys"
+        - "Create .nwave/ if it does not exist"
+        - "Backup corrupted config before overwriting"
+
+    - id: "summary"
+      name: "Show session confirmation"
+      actor: "nWave"
+      action: "Display active profile summary with all resolved settings"
+      feeling: "Confident"
+      consumes:
+        - rigor_profile
+      rules:
+        - "Show every resolved setting explicitly"
+        - "Remind user how to change: /nw:rigor"
+        - "Show quick switch syntax: /nw:rigor {name}"
+
+  shared_artifacts:
+    - name: "rigor_profile"
+      source: "save"
+      consumers: ["all /nw:* wave commands", "DES orchestrator"]
+      format: "string: lean|standard|thorough|exhaustive|inherit"
+    - name: "agent_model"
+      source: "save (derived from rigor_profile)"
+      consumers: ["Task tool invocations", "agent frontmatter override"]
+      format: "string: haiku|sonnet|opus|inherit"
+    - name: "reviewer_model"
+      source: "save (derived from rigor_profile)"
+      consumers: ["/nw:review", "/nw:deliver Phase 4"]
+      format: "string: skip|haiku|sonnet|opus"
+    - name: "tdd_phases"
+      source: "save (derived from rigor_profile)"
+      consumers: ["DES TDD cycle enforcement", "/nw:execute"]
+      format: "array of phase names"
+    - name: "review_enabled"
+      source: "save (derived from rigor_profile)"
+      consumers: ["/nw:deliver Phase 4", "/nw:design"]
+      format: "boolean"
+    - name: "mutation_enabled"
+      source: "save (derived from rigor_profile)"
+      consumers: ["/nw:deliver Phase 5"]
+      format: "boolean"
+
+  integration_checkpoints:
+    - between: ["save", "wave-commands"]
+      validates: "des-config.json is valid JSON with rigor key"
+    - between: ["save", "des-orchestrator"]
+      validates: "DES reads rigor profile and adjusts TDD phases"
+    - between: ["save", "task-invocations"]
+      validates: "Task tool model parameter matches rigor profile"
+    - between: ["rigor", "deliver"]
+      validates: "/nw:deliver reads rigor.review_enabled before dispatching reviewer"
+    - between: ["rigor", "deliver-mutation"]
+      validates: "/nw:deliver reads rigor.mutation_enabled before Phase 5"
+
+  error_paths:
+    - trigger: ".nwave/ directory missing"
+      user_sees: "No nWave config directory found. Run nwave install first."
+      recovery: "Install nWave"
+    - trigger: "des-config.json not writable"
+      user_sees: "Cannot write to .nwave/des-config.json: permission denied"
+      recovery: "Fix file permissions"
+    - trigger: "Invalid profile name entered"
+      user_sees: "Unknown profile 'turbo'. Available: lean, standard, thorough, exhaustive, inherit"
+      recovery: "Re-enter valid name"
+    - trigger: "Config file corrupted JSON"
+      user_sees: "Config file corrupted. Resetting to defaults (backup saved as des-config.json.bak)"
+      recovery: "Automatic -- old file backed up"
+    - trigger: "inherit selected but no session model detectable"
+      user_sees: "Cannot detect current session model. Using 'sonnet' as fallback."
+      recovery: "Automatic fallback with notice"
