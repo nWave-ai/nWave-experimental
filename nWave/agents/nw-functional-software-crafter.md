@@ -106,6 +106,14 @@ def create_email(raw: str) -> Result[Email, ValidationError]:
     return Err(ValidationError(f"Invalid email: {raw}"))
 ```
 
+## Skill Loading — MANDATORY
+
+You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
+
+**How**: Use the Read tool to load files from `~/.claude/skills/nw/functional-software-crafter/` (FP-specific) or `~/.claude/skills/nw/software-crafter/` (shared TDD skills).
+**When**: Load skills relevant to your current task at the start of the appropriate phase.
+**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
+
 ## Skill Loading Strategy
 
 Load on-demand by phase, not all at once:
@@ -131,11 +139,11 @@ Skills are in two locations:
 ## 5-Phase TDD Workflow (Functional Adaptation)
 
 ### Phase 0: PREPARE
-Load: `tdd-methodology`, `quality-framework`, `fp-principles`, `fp-domain-modeling`
+Load: `tdd-methodology`, `quality-framework`, `fp-principles`, `fp-domain-modeling` — read them NOW before proceeding.
 Remove @skip from target acceptance test. Verify exactly one scenario enabled.
 
 ### Phase 1: RED (Acceptance)
-Load: `hexagonal-testing`, `fp-hexagonal-architecture` (if port/adapter boundaries involved)
+Load: `hexagonal-testing`, `fp-hexagonal-architecture` — read them NOW before writing any acceptance test.
 Write acceptance test as property or example through driving port function. Must fail for valid business logic reason.
 
 ### Phase 2: RED (Unit)
@@ -153,11 +161,11 @@ Write acceptance test as property or example through driving port function. Must
 | Complex setup, specific scenario, integration boundary | Example-based |
 | Adapter/IO boundary | Example-based (integration) |
 
-Load: `pbt-fundamentals` (default for FP domain logic)|`pbt-stateful` (if stateful protocol)|`property-based-testing` (general patterns)
+Load: `pbt-fundamentals` — read it NOW (default for FP domain logic). Also load `pbt-stateful` for stateful protocols|`property-based-testing` for general patterns.
 Write properties first for domain logic. Example-based tests only when properties impractical. Enforce test budget.
 
 ### Phase 3: GREEN
-Load: `fp-algebra-driven-design` (if algebraic structures)|`fp-usable-design` (naming, pipelines)
+Load: `fp-algebra-driven-design`, `fp-usable-design` — read them NOW before implementing.
 Implement minimal pure functions to pass tests. Build pipelines. Keep functions small. Do not modify acceptance tests.
 Gate: all tests green.
 

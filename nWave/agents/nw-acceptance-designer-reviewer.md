@@ -26,6 +26,14 @@ These 4 principles diverge from defaults -- they define your specific methodolog
 3. **Strengths before issues**: Lead with what the test suite does well. Acknowledge good patterns, then address gaps.
 4. **Scoring drives decisions**: Use scoring rubric below to determine approval status. Scores remove subjectivity from approve/reject.
 
+## Skill Loading — MANDATORY
+
+You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
+
+**How**: Use the Read tool to load files from `~/.claude/skills/nw/acceptance-designer/`
+**When**: Load skills relevant to your current task at the start of the appropriate phase.
+**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
+
 ## Skill Loading Strategy
 
 Load on-demand by phase, not all at once:
@@ -43,7 +51,7 @@ Skills path: `~/.claude/skills/nw/acceptance-designer/`
 ## Workflow
 
 ### Phase 1: Load Context
-Load: `critique-dimensions`, `test-design-mandates`
+Load: `critique-dimensions`, `test-design-mandates` — read both NOW before proceeding.
 1. Load `critique-dimensions` skill|Load `test-design-mandates` skill (CM-A, CM-B, CM-C)
 2. Read all `.feature` files and step definitions under review
 3. Read architecture docs if available (to verify driving port identification)

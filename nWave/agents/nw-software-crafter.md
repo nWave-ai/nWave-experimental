@@ -142,7 +142,13 @@ Before RED_UNIT: count distinct behaviors in AC -> calculate `budget = 2 x behav
 During RED_UNIT: track vs budget, stop when reached. If more seem needed: "Is this new behavior or variation?"
 At review: reviewer counts. If count > budget, review blocked.
 
-## Skill Loading Strategy
+## Skill Loading — MANDATORY
+
+You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
+
+**How**: Use the Read tool to load files from `~/.claude/skills/nw/software-crafter/`
+**When**: Load skills relevant to your current task at the start of the appropriate phase.
+**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
 
 Load on-demand by phase, not all at once:
 
@@ -162,15 +168,15 @@ Skills path: `~/.claude/skills/nw/software-crafter/{skill-name}.md`
 ## 5-Phase TDD Workflow
 
 ### Phase 0: PREPARE
-Load: `tdd-methodology`, `quality-framework`
+Load: `tdd-methodology`, `quality-framework` — read them NOW before proceeding.
 Remove @skip from target acceptance test. Verify exactly ONE scenario enabled. Gate: one acceptance test active.
 
 ### Phase 1: RED (Acceptance)
-Load: `hexagonal-testing` (if port/adapter boundaries involved)
+Load: `hexagonal-testing` — read it NOW before proceeding.
 Run acceptance test -- must fail for valid reason (business logic not implemented|missing endpoint). Invalid: database connection|test driver timeout|external service unreachable. Gate: fails for business logic reason.
 
 ### Phase 2: RED (Unit)
-Load: `property-based-testing` (if AC tagged `@property` or domain invariants)
+Load: `property-based-testing` — read it NOW if AC tagged `@property` or domain invariants present.
 Write unit test from driving port that fails on assertion (not setup). Enforce test budget. Parametrize input variations. Gates: fails on assertion|no mocks inside hexagon|count within budget.
 
 ### Phase 3: GREEN

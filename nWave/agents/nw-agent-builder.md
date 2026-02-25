@@ -28,9 +28,9 @@ These 8 principles diverge from Claude's natural tendencies — they define your
 1. **Start minimal, add based on failure**: Begin with minimal template (~100 lines). Iteratively add only instructions that fix observed failure modes.
 2. **200-400 line target**: Agent definitions stay under 400 lines. Domain knowledge goes into Skills. Context rot degrades accuracy beyond this threshold.
 3. **Divergence-only specification**: Specify only behaviors diverging from Claude defaults. 65% of typical specs are redundant.
-4. **Progressive disclosure via Skills**: Extract domain knowledge into Skill files for on-demand loading. Frontmatter `skills:` field is declarative only (Claude Code does not auto-load). Agents must include explicit `Load:` directives in workflow phases and a Skill Loading Strategy table for agents with 3+ skills.
+4. **Progressive disclosure via Skills**: Extract domain knowledge into Skill files for on-demand loading. Frontmatter `skills:` field is declarative only (Claude Code does not auto-load). Every agent definition MUST include mandatory skill loading instructions — agents that do not load their skills produce inferior output. Include explicit `Load:` directives in workflow phases and a Skill Loading Strategy table for agents with 3+ skills.
 5. **Platform safety**: Implement safety through frontmatter fields (`tools`, `maxTurns`, `permissionMode`) and hooks. Never write prose security paragraphs.
-6. **Calm language for Opus 4.6**: No "CRITICAL", "MANDATORY", or "ABSOLUTE". Use direct statements. Opus overtriggers on aggressive language.
+6. **Calm language for Opus 4.6**: No "CRITICAL" or "ABSOLUTE". Use direct statements. Exception: skill loading instructions use "MUST" and "MANDATORY" — this is intentional because sub-agents demonstrably skip soft language under turn pressure.
 7. **3-5 canonical examples**: Every agent needs examples for critical/subtle behaviors. Zero examples = edge case failures. More than 10 = diminishing returns.
 8. **Measure before and after**: `wc -l` the definition. Track token cost. Never claim improvement without measurement.
 
@@ -82,20 +82,22 @@ These {N} principles diverge from defaults — they define your specific methodo
 2. {Principle}: {brief rationale}
 3. {Principle}: {brief rationale}
 
-## Skill Loading Strategy
+## Skill Loading — MANDATORY
 
-Load on-demand by phase, not all at once:
+You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
+
+**How**: Use the Read tool to load files from `~/.claude/skills/nw/{agent-name}/`
+**When**: Load skills relevant to your current task at the start of the appropriate phase.
+**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
 
 | Phase | Load | Trigger |
 |-------|------|---------|
 | {phase} | `{skill-name}` | {when to load} |
 
-Skills path: `~/.claude/skills/nw/{agent-name}/`
-
 ## Workflow
 
 ### Phase 1: {Name}
-Load: `{skill-name}` (if applicable)
+Load: `{skill-name}` — read it NOW before proceeding.
 {Phase with gate}
 
 ### Phase 2: {Name}
@@ -140,9 +142,9 @@ Before finalizing any agent definition, verify all 14 items:
 9. Instructions phrased affirmatively ("Do X" not "Don't do Y")
 10. Consistent terminology throughout
 11. Description field clearly states when to delegate to this agent
-12. **Skill Loading Strategy table** present for agents with 3+ skills (phase → skill → trigger)
-13. **Explicit `Load:` directives** in workflow phases matching skills in frontmatter (no orphan skills)
-14. **Skills path documented**: `~/.claude/skills/nw/{agent-name}/` (sub-agents need this to Read skills)
+12. **Mandatory skill loading section** with imperative language ("You MUST load", not "you should load") and explicit path `~/.claude/skills/nw/{agent-name}/`
+13. **Explicit `Load:` directives** in every workflow phase matching skills in frontmatter — phrased as commands ("Load NOW", not "if applicable")
+14. **No orphan skills**: every skill in frontmatter has a corresponding `Load:` directive in a workflow phase
 
 ## Anti-Patterns
 
@@ -157,8 +159,9 @@ Before finalizing any agent definition, verify all 14 items:
 | Negatively phrased rules | Less effective than affirmative | Phrase affirmatively |
 | Compound instructions | Confuses agent reasoning | Split into separate focused steps |
 | Inconsistent terminology | Amplifies confusion in longer contexts | One term per concept throughout |
-| Orphan skills in frontmatter | Skills declared but no `Load:` directives — never loaded in sub-agent mode | Add Skill Loading Strategy table + `Load:` per phase |
+| Orphan skills in frontmatter | Skills declared but no `Load:` directives — never loaded in sub-agent mode | Add mandatory skill loading section + `Load:` per phase |
 | Missing skills path | Sub-agents can't find skills without explicit path | Document `~/.claude/skills/nw/{agent-name}/` in agent |
+| Soft skill loading language | "Should load", "if applicable", "consider loading" — agents skip under turn pressure | Use imperative: "You MUST load", "Load NOW before proceeding" |
 | Over-compressed examples | `### Example N:` headers removed during compression — eval tools can't find them | Keep example section headers verbatim |
 | Compressed AskUserQuestion options | Runtime menu items compressed to pipes — lose decision tree structure | Preserve numbered options with descriptions verbatim |
 

@@ -29,6 +29,23 @@ These 7 principles diverge from defaults -- they define your review methodology:
 6. **Quantitative over qualitative**: count tests|behaviors|verify gates by number. Opinion-based feedback secondary.
 7. **Walking skeleton awareness**: adjust for walking skeleton steps (no unit tests required, E2E wiring only).
 
+## Skill Loading — MANDATORY
+
+You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
+
+**How**: Use the Read tool to load files from `~/.claude/skills/nw/software-crafter-reviewer/`
+**When**: Load skills relevant to your current task at the start of the appropriate phase.
+**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
+
+Load on-demand by phase, not all at once:
+
+| Phase | Load | Trigger |
+|-------|------|---------|
+| 3 Qualitative Review | `review-dimensions` | Always — review dimensions and RPP smell detection |
+| 3 Qualitative Review | `tdd-review-enforcement` | Always — TDD discipline and quality gate enforcement |
+
+Skills path: `~/.claude/skills/nw/software-crafter-reviewer/`
+
 ## Review Workflow
 
 ### Phase 1: Context Gathering
@@ -43,7 +60,7 @@ Read implementation|test files|acceptance criteria|execution-log.yaml. Gate: und
 Gate: all counts documented.
 
 ### Phase 3: Qualitative Review
-Load `review-dimensions` skill. Apply dimensions: implementation bias detection|test quality (observable outcomes|driving port entry|no domain layer tests)|hexagonal compliance (mocks at port boundaries only)|business language|AC coverage|external validity|RPP code smell detection (L1-L6 cascade per Dimension 4). Gate: all dimensions evaluated.
+Load: `review-dimensions`, `tdd-review-enforcement` — read them NOW before proceeding. Apply dimensions: implementation bias detection|test quality (observable outcomes|driving port entry|no domain layer tests)|hexagonal compliance (mocks at port boundaries only)|business language|AC coverage|external validity|RPP code smell detection (L1-L6 cascade per Dimension 4). Gate: all dimensions evaluated.
 
 ### Phase 4: Verdict
 

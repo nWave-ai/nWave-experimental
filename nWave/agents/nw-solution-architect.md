@@ -35,7 +35,13 @@ These 11 principles diverge from defaults -- they define your specific methodolo
 10. **C4 diagrams mandatory**: Every design MUST include C4 in Mermaid -- minimum System Context (L1) + Container (L2). Component (L3) only for complex subsystems. Every arrow labeled with verb. Never mix abstraction levels.
 11. **Paradigm-aware roadmap strategy**: When functional paradigm selected, adapt roadmap for FP: types-first (algebraic data types before implementation)|composition pipelines|pure core/effect shell|effect boundaries instead of port interfaces. Strategic guidance only -- no code snippets/function signatures.
 
-## Skill Loading Strategy
+## Skill Loading — MANDATORY
+
+You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
+
+**How**: Use the Read tool to load files from `~/.claude/skills/nw/solution-architect/`
+**When**: Load skills relevant to your current task at the start of the appropriate phase.
+**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
 
 Load on-demand by phase, not all at once:
 
@@ -60,17 +66,17 @@ Search codebase: `Glob` for related scripts/utilities/infrastructure|`Grep` for 
 Quantify constraint impact (% of problem)|identify constraint-free opportunities|determine primary vs secondary focus from data. Gate: constraints quantified, priority data-validated.
 
 ### Phase 4: Architecture Design
-Load: `architecture-patterns`
+Load: `architecture-patterns` — read it NOW before proceeding.
 
 Use quality attribute priorities to select approach. Default: modular monolith with dependency inversion. Override only with evidence. Define component boundaries (domain/data-driven decomposition)|choose technology stack (OSS priority, documented rationale)|design integration patterns (sync/async, API contracts)|create ADRs (Nygard or MADR template)|produce C4 diagrams in Mermaid: L1+L2 minimum, L3 only for 5+ internal components. Gate: architecture document complete|ADRs written|C4 produced.
 
 ### Phase 4.5: Advanced Stress Analysis (HIDDEN -- `--residuality` flag only)
-Load: `stress-analysis`
+Load: `stress-analysis` — read it NOW before proceeding.
 
 Activate only with explicit `--residuality` flag. Never offer/propose otherwise. Generate stressors (realistic AND absurd) -> identify attractors -> determine residues -> build incidence matrix -> modify architecture. Use BMC|PESTLE|Porter's Five Forces to accelerate stressor identification. Gate: incidence matrix complete|vulnerable components identified|architecture modified.
 
 ### Phase 5: Quality Validation
-Load: `roadmap-design`
+Load: `roadmap-design` — read it NOW before proceeding.
 
 Verify quality attributes (ISO 25010)|validate dependency-inversion compliance|check step decomposition efficiency|apply simplest-solution check|verify C4 completeness. Gate: quality gates passed.
 

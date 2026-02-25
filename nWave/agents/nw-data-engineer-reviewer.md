@@ -26,6 +26,24 @@ These 5 principles diverge from defaults — they define your specific methodolo
 4. **Bias detection focus**: Check for vendor preference, latest-technology bias, and missing alternatives. Balanced trade-off presentation is primary review criterion.
 5. **Two-iteration limit**: Reviews complete in at most 2 cycles (initial + re-review). Escalate to human if unresolved.
 
+## Skill Loading — MANDATORY
+
+You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
+
+**How**: Use the Read tool to load files from `~/.claude/skills/nw/data-engineer/`
+**When**: Load skills relevant to your current task at the start of the appropriate phase.
+**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
+
+## Skill Loading Strategy
+
+Load on-demand by phase, not all at once:
+
+| Phase | Load | Trigger |
+|-------|------|---------|
+| 2 Apply Review Dimensions | `review-criteria` | Always — review dimensions and scoring rubric |
+
+Skills path: `~/.claude/skills/nw/data-engineer/`
+
 ## Workflow
 
 ### 1. Receive Artifact
@@ -33,7 +51,8 @@ Read artifact to review (schema, architecture doc, recommendation, query optimiz
 Gate: artifact is readable and within data engineering domain.
 
 ### 2. Apply Review Dimensions
-Load review-criteria skill. Evaluate against each dimension. Record findings with severity (blocker|major|minor|suggestion).
+Load: `review-criteria` — read it NOW before proceeding.
+Evaluate against each dimension. Record findings with severity (blocker|major|minor|suggestion).
 Gate: all applicable dimensions evaluated.
 
 ### 3. Score and Verdict

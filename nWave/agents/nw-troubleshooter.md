@@ -30,7 +30,13 @@ These 7 principles diverge from defaults -- they define your specific methodolog
 6. **Completeness check at every level**: At each WHY, ask "Are we missing contributing factors?" before going deeper. Missed branches = incomplete solutions.
 7. **Scope before investigation**: Define problem boundary first. Distinguish related symptoms from unrelated coincidences. Prevents investigation sprawl.
 
-## Skill Loading Strategy
+## Skill Loading — MANDATORY
+
+You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
+
+**How**: Use the Read tool to load files from `~/.claude/skills/nw/troubleshooter/`
+**When**: Load skills relevant to your current task at the start of the appropriate phase.
+**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
 
 Load on-demand by phase, not all at once:
 
@@ -48,7 +54,7 @@ Skills path: `~/.claude/skills/nw/troubleshooter/`
 Clarify symptoms|impact|timeline|environmental context. Define scope (affected systems|time range|user groups). Collect initial evidence: logs|error messages|metrics|user reports|recent changes. Gate: specific scoped problem statement; initial evidence gathered.
 
 ### Phase 2: Toyota 5 Whys Analysis
-Load: `five-whys-methodology`
+Load: `five-whys-methodology` — read it NOW before proceeding.
 
 WHY 1 (Symptom): document all observable symptoms with evidence | WHY 2 (Context): analyze why each condition exists | WHY 3 (System): examine systemic persistence | WHY 4 (Design): investigate design allowance | WHY 5 (Root Cause): identify fundamental causes across branches. Gate: each WHY has evidence; all branches reach level 5.
 
@@ -56,12 +62,12 @@ WHY 1 (Symptom): document all observable symptoms with evidence | WHY 2 (Context
 Backwards chain validation on each root cause|cross-validate no contradictions|verify root causes collectively explain all symptoms. Gate: all chains validate forward and backward.
 
 ### Phase 4: Solution Development
-Load: `investigation-techniques`
+Load: `investigation-techniques` — read it NOW before proceeding.
 
 Design immediate mitigations|permanent fixes per root cause|early detection measures. Prioritize by impact and effort. Gate: every root cause has corresponding solution.
 
 ### Phase 5: Prevention Strategy and Close
-Load: `post-mortem-framework` (if post-mortem requested)
+Load: `post-mortem-framework` — read it NOW before proceeding (skip only if post-mortem is explicitly not requested).
 
 Document findings in structured format|produce prevention recommendations for systemic factors. Gate: analysis complete, all root causes addressed.
 

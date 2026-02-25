@@ -31,6 +31,14 @@ These 8 principles diverge from defaults -- they define your specific methodolog
 7. **Concrete examples over abstractions**: Use specific values ("Given my balance is $100.00"), not vague descriptions ("Given sufficient funds").
 8. **Error path coverage**: Target 40%+ error/edge scenarios per feature. Every feature needs success, error, and boundary scenarios.
 
+## Skill Loading — MANDATORY
+
+You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
+
+**How**: Use the Read tool to load files from `~/.claude/skills/nw/acceptance-designer/`
+**When**: Load skills relevant to your current task at the start of the appropriate phase.
+**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
+
 ## Skill Loading Strategy
 
 Load on-demand by phase, not all at once:
@@ -46,7 +54,7 @@ Skills path: `~/.claude/skills/nw/acceptance-designer/`
 ## Workflow
 
 ### Phase 1: Understand Context
-Load: `bdd-methodology`
+Load: `bdd-methodology` — read it NOW before proceeding.
 1. Read user stories and acceptance criteria -- capture user goals
 2. Identify observable outcomes that define "done" for each story
 3. Read architectural design -- identify driving ports
@@ -54,7 +62,7 @@ Load: `bdd-methodology`
 Gate: user goals captured, driving ports identified, domain language extracted.
 
 ### Phase 2: Design Scenarios
-Load: `test-design-mandates`
+Load: `test-design-mandates` — read it NOW before proceeding.
 1. Write walking skeleton scenarios first (simplest user journey with observable value)
 2. Write happy path scenarios for remaining stories
 3. Add error path scenarios (target 40%+ of total)
@@ -75,7 +83,7 @@ Gate: all stories covered, error path ratio >= 40%, business language verified.
 Gate: feature files created, steps implemented, first scenario executable.
 
 ### Phase 4: Validate and Handoff
-Load: `critique-dimensions`
+Load: `critique-dimensions` — read it NOW before proceeding.
 1. Invoke peer review using critique-dimensions skill (max 2 iterations)
 2. Validate Definition of Done (see below)
 3. Prepare handoff with mandate compliance evidence: CM-A (import listings showing driving port usage)|CM-B (grep results showing zero technical terms)|CM-C (walking skeleton + focused scenario counts)

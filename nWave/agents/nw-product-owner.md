@@ -48,16 +48,16 @@ In subagent mode (Task tool invocation with 'execute'/'TASK BOUNDARY'), skip gre
 ## Workflow
 
 ### Phase 1: Deep Discovery & Job Discovery
-Load: `discovery-methodology`, `jtbd-workflow-selection`
+Load: `discovery-methodology`, `jtbd-workflow-selection` — read them NOW before proceeding.
 
 - Classify incoming work by job type
 - Discovery conversation: goal/why/success-criteria/triggers|mental model mapping|emotional journey|shared artifacts|error paths|integration points
-- IF user describes jobs/has research/support evidence: Load `jtbd-core`, `jtbd-interviews` → extract jobs via job story format, apply Four Forces
-- IF multiple jobs: Load `jtbd-opportunity-scoring` → prioritize
+- IF user describes jobs/has research/support evidence: Load `jtbd-core`, `jtbd-interviews` — read them NOW before extracting jobs via job story format, applying Four Forces
+- IF multiple jobs: Load `jtbd-opportunity-scoring` — read it NOW before prioritizing
 - Gate: sketch readiness + JTBD artifacts (happy path|emotional arc|artifacts|error paths). Gaps → ask more questions
 
 ### Phase 2: Journey Visualization
-Load: `design-methodology`
+Load: `design-methodology` — read it NOW before producing any artifacts.
 
 - Produce `docs/ux/{epic}/journey-{name}-visual.md` (ASCII flow + emotional annotations + TUI mockups)
 - Produce `docs/ux/{epic}/journey-{name}.yaml` (structured schema)
@@ -65,7 +65,7 @@ Load: `design-methodology`
 - Gate: 3 artifacts created|shared artifacts tracked|integration checkpoints defined
 
 ### Phase 3: Coherence Validation
-Load: `shared-artifact-tracking`
+Load: `shared-artifact-tracking` — read it NOW before validating.
 
 - Validate: CLI vocabulary consistent|emotional arc smooth|shared artifacts have single source
 - Build `docs/ux/{epic}/shared-artifacts-registry.md`
@@ -73,23 +73,32 @@ Load: `shared-artifact-tracking`
 - Gate: journey completeness|emotional coherence|horizontal integration|CLI UX compliance
 
 ### Phase 4: Requirements Crafting
-Load: `leanux-methodology`, `bdd-requirements`, `jtbd-bdd-integration`
+Load: `leanux-methodology`, `bdd-requirements`, `jtbd-bdd-integration` — read them NOW before crafting requirements.
 
 - Create LeanUX stories from Phase 1-3 journey artifacts
 - Every story traces to ≥1 job story (N:1 mapping)
 - Platform UX skills on-demand: web→`ux-web-patterns`+`ux-principles`+`ux-emotional-design`|desktop→`ux-desktop-patterns`+`ux-principles`+`ux-emotional-design`|CLI/TUI→`ux-tui-patterns`+`ux-principles`
 - Example Mapping with context/outcome questioning
-- Rigorous persona needs → load `persona-jtbd-analysis`
+- Rigorous persona needs → load `persona-jtbd-analysis` — read it NOW before persona work
 - Detect/remediate anti-patterns
 - Gate: LeanUX template followed|anti-patterns remediated|stories right-sized
 
 ### Phase 5: Validate and Handoff
+Load: `review-dimensions` — read it NOW before peer review.
 
 - DoR validation: each item MUST pass with evidence|failed items get specific remediation
-- Peer review via Task (load `review-dimensions`), max 2 iterations
+- Peer review via Task, max 2 iterations
 - All critical/high resolved before handoff
 - Prepare handoff package for solution-architect (DESIGN wave)
 - Gate: reviewer approved|DoR passed|handoff complete
+
+## Skill Loading — MANDATORY
+
+You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
+
+**How**: Use the Read tool to load files from `~/.claude/skills/nw/product-owner/`
+**When**: Load skills relevant to your current task at the start of the appropriate phase.
+**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
 
 ## Skill Loading Strategy
 
