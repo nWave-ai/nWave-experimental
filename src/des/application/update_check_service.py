@@ -4,9 +4,12 @@ Fetches the latest version from PyPI, compares to the local version via
 importlib.metadata, and returns a structured result. On timeout or any
 network/JSON error, returns a silent-skip result (no exception propagates).
 
+Integrates UpdateCheckPolicy for frequency gating. Persists last_checked
+via DESConfig after each successful network check.
+
 Architecture: application layer service.
 - Driving port: check_for_updates() public method
-- Driven port boundaries: HTTP endpoint (injectable via constructor)
+- Driven port boundaries: HTTP endpoint (injectable via constructor), DESConfig
 """
 
 from __future__ import annotations
@@ -15,9 +18,17 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from des.adapters.driven.config.des_config import DESConfig
+
+from des.domain.update_check_policy import CheckDecision, UpdateCheckPolicy
 
 
 # ---------------------------------------------------------------------------
@@ -62,8 +73,13 @@ _DEFAULT_TIMEOUT = 5  # seconds
 class UpdateCheckService:
     """Checks for available updates by querying PyPI.
 
-    Constructor accepts injectable URLs and local version to enable testing
-    without real network calls.
+    Constructor accepts injectable URLs, local version, and DESConfig to
+    enable testing without real network calls or filesystem access.
+
+    When des_config is provided, the service:
+    - Evaluates UpdateCheckPolicy before making any network calls (frequency gate)
+    - Persists last_checked timestamp after a successful PyPI fetch
+    - Passes skipped_versions from config to the policy
     """
 
     def __init__(
@@ -72,6 +88,7 @@ class UpdateCheckService:
         local_version: str | None = None,
         timeout: float = _DEFAULT_TIMEOUT,
         github_releases_url: str = _DEFAULT_GITHUB_RELEASES_URL,
+        des_config: DESConfig | None = None,
     ) -> None:
         """Initialise the service.
 
@@ -80,11 +97,15 @@ class UpdateCheckService:
             local_version:        Local package version string; auto-detected when None.
             timeout:              HTTP request timeout in seconds (default 5).
             github_releases_url:  GitHub Releases API endpoint (injectable for tests).
+            des_config:           DESConfig instance for frequency gating and state
+                                  persistence. When None, frequency gating is skipped.
         """
         self._pypi_url = pypi_url
         self._local_version = local_version or _detect_local_version()
         self._timeout = timeout
         self._github_releases_url = github_releases_url
+        self._des_config = des_config
+        self._policy = UpdateCheckPolicy()
 
     # ------------------------------------------------------------------
     # Public API (driving port)
@@ -93,27 +114,82 @@ class UpdateCheckService:
     def check_for_updates(self) -> UpdateCheckResult:
         """Fetch latest version from PyPI and compare to local version.
 
+        When des_config is provided:
+        - Evaluates frequency policy before any network calls.
+        - Persists last_checked after a successful UP_TO_DATE or UPDATE_AVAILABLE result.
+
         Returns:
             UpdateCheckResult with status UP_TO_DATE, UPDATE_AVAILABLE, or SKIP.
             Never raises an exception.
         """
+        if self._des_config is not None:
+            decision = self._evaluate_policy()
+            if decision == CheckDecision.SKIP:
+                return UpdateCheckResult(status=UpdateStatus.SKIP)
+
         latest = self._fetch_latest_version()
         if latest is None:
             return UpdateCheckResult(status=UpdateStatus.SKIP)
 
+        # Re-check policy with actual latest version (for skipped_versions rule)
+        if self._des_config is not None:
+            decision = self._evaluate_policy(latest_version=latest)
+            if decision == CheckDecision.SKIP:
+                return UpdateCheckResult(status=UpdateStatus.SKIP)
+
         if _is_newer(latest, self._local_version):
             changelog = self._fetch_changelog(latest)
-            return UpdateCheckResult(
+            result = UpdateCheckResult(
                 status=UpdateStatus.UPDATE_AVAILABLE,
                 latest=latest,
                 changelog=changelog,
             )
+        else:
+            result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
 
-        return UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
+        # Persist last_checked after successful network fetch
+        if self._des_config is not None:
+            self._persist_last_checked()
+
+        return result
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _evaluate_policy(self, latest_version: str | None = None) -> CheckDecision:
+        """Evaluate the update check policy using DESConfig state."""
+        assert self._des_config is not None
+        frequency: str | None = self._des_config.update_check_frequency
+        last_checked_str = self._des_config.update_check_last_checked
+        skipped_versions = self._des_config.update_check_skipped_versions
+
+        last_checked: datetime | None = None
+        if last_checked_str is not None:
+            try:
+                last_checked = datetime.fromisoformat(last_checked_str)
+            except ValueError:
+                last_checked = None
+
+        return self._policy.evaluate(
+            frequency=frequency,
+            last_checked=last_checked,
+            latest_version=latest_version,
+            skipped_versions=skipped_versions,
+            current_time=datetime.now(tz=timezone.utc),
+        )
+
+    def _persist_last_checked(self) -> None:
+        """Write last_checked=now to DESConfig. Silently ignores any errors."""
+        assert self._des_config is not None
+        try:
+            now_iso = datetime.now(tz=timezone.utc).isoformat()
+            self._des_config.save_update_check_state(
+                last_checked=now_iso,
+                skipped_versions=self._des_config.update_check_skipped_versions,
+            )
+        except Exception:
+            pass  # State persistence is best-effort; never block the service
 
     def _fetch_latest_version(self) -> str | None:
         """Fetch latest version from PyPI. Returns None on any failure."""
