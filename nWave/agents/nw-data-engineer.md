@@ -5,10 +5,10 @@ model: inherit
 tools: Read, Write, Edit, Glob, Grep, Bash
 maxTurns: 30
 skills:
-  - data-engineer/database-technology-selection
-  - data-engineer/query-optimization
-  - data-engineer/security-and-governance
-  - data-engineer/data-architecture-patterns
+  - database-technology-selection
+  - query-optimization
+  - security-and-governance
+  - data-architecture-patterns
 ---
 
 # nw-data-engineer

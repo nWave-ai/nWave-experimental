@@ -5,7 +5,7 @@ model: haiku
 tools: Read, Glob, Grep, Task
 maxTurns: 20
 skills:
-  - researcher-reviewer/critique-dimensions
+  - critique-dimensions
 ---
 
 # nw-researcher-reviewer

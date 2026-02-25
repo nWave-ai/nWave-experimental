@@ -5,9 +5,9 @@ model: haiku
 tools: Read, Glob, Grep, Task
 maxTurns: 30
 skills:
-  - platform-architect-reviewer/critique-dimensions
-  - platform-architect-reviewer/review-output-format
-  - platform-architect-reviewer/review-criteria
+  - critique-dimensions
+  - review-output-format
+  - review-criteria
 ---
 
 # nw-platform-architect-reviewer

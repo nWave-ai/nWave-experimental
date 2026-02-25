@@ -5,9 +5,9 @@ model: haiku
 tools: Read, Glob, Grep
 maxTurns: 30
 skills:
-  - product-owner-reviewer/review-criteria
-  - product-owner-reviewer/dor-validation
-  - product-owner/review-dimensions
+  - review-criteria
+  - dor-validation
+  - review-dimensions  # cross-ref: loaded from product-owner/ group
 ---
 
 # nw-product-owner-reviewer

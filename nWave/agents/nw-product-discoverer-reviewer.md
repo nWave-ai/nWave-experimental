@@ -5,7 +5,7 @@ model: haiku
 tools: Read, Glob, Grep, Task
 maxTurns: 30
 skills:
-  - product-discoverer-reviewer/review-criteria
+  - review-criteria
 ---
 
 # nw-product-discoverer-reviewer

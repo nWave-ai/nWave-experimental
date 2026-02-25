@@ -5,8 +5,8 @@ model: haiku
 tools: Read, Glob, Grep, Task
 maxTurns: 15
 skills:
-  - acceptance-designer/critique-dimensions
-  - acceptance-designer/test-design-mandates
+  - critique-dimensions  # cross-ref: from acceptance-designer/
+  - test-design-mandates  # cross-ref: from acceptance-designer/
 ---
 
 # nw-acceptance-designer-reviewer

@@ -5,8 +5,8 @@ model: haiku
 tools: [Read, Glob, Grep]
 maxTurns: 25
 skills:
-  - documentarist-reviewer/review-criteria
-  - documentarist/divio-framework
+  - review-criteria
+  - divio-framework  # cross-ref: from documentarist/
 ---
 
 # nw-documentarist-reviewer

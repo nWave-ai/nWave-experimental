@@ -5,8 +5,8 @@ model: haiku
 tools: Read, Glob, Grep, Task
 maxTurns: 30
 skills:
-  - software-crafter/review-dimensions
-  - software-crafter-reviewer/tdd-review-enforcement
+  - review-dimensions  # cross-ref: from software-crafter/
+  - tdd-review-enforcement
 ---
 
 # nw-software-crafter-reviewer

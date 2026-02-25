@@ -134,9 +134,10 @@ def extract_agent(path: Path) -> Agent:
         if isinstance(tools_raw, str)
         else tools_raw
     )
-    skills = fm.get("skills", [])
-    if isinstance(skills, str):
-        skills = [skills]
+    skills_raw = fm.get("skills", [])
+    if isinstance(skills_raw, str):
+        skills_raw = [skills_raw]
+    skills = [s.split("#")[0].strip() for s in skills_raw]
     return Agent(
         name=fm["name"],
         description=fm["description"],

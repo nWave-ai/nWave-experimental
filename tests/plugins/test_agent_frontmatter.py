@@ -124,6 +124,46 @@ class TestAgentFrontmatterAcceptance:
         ]
         assert not duplicates, f"Agents with duplicate frontmatter blocks: {duplicates}"
 
+    def test_all_skill_references_resolve_to_existing_files(self):
+        """Every skill in frontmatter must resolve to a file on disk.
+
+        Resolution order:
+        1. Own group: nWave/skills/{agent-name}/{skill}.md
+        2. Any group: nWave/skills/**/{skill}.md (cross-ref)
+        """
+        skills_dir = PROJECT_ROOT / "nWave" / "skills"
+        # Build index: skill-name → set of groups that contain it
+        skill_index: dict[str, set[str]] = {}
+        for skill_file in skills_dir.rglob("*.md"):
+            group = skill_file.parent.name
+            name = skill_file.stem
+            skill_index.setdefault(name, set()).add(group)
+
+        broken: list[str] = []
+        for agent_name in EXPECTED_AGENTS:
+            filepath = AGENTS_DIR / f"{agent_name}.md"
+            fm = _parse_frontmatter(filepath)
+            if fm is None or "skills" not in fm:
+                continue
+            agent_group = agent_name.removeprefix("nw-")
+            raw_skills = fm["skills"]
+            if isinstance(raw_skills, str):
+                raw_skills = [raw_skills]
+            for raw in raw_skills:
+                skill = raw.split("#")[0].strip()
+                if not skill:
+                    continue
+                # Check own group first, then any group
+                if skill not in skill_index:
+                    broken.append(f"{agent_name}: '{skill}' not found in any group")
+                elif agent_group not in skill_index[skill]:
+                    # Cross-ref: exists in another group — valid but worth noting
+                    pass
+
+        assert not broken, f"Broken skill references ({len(broken)}):\n" + "\n".join(
+            f"  {b}" for b in broken
+        )
+
     def test_agent_names_in_frontmatter_match_filenames(self):
         """Frontmatter name field must match filename (nw-*.md -> nw-*)."""
         mismatches = []
