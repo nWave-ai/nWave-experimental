@@ -3,11 +3,16 @@
 Compose Method pattern: small, well-named methods for each responsibility.
 Intercepts Read tool calls to skill files and logs tracking events.
 
+Two entry points:
+- maybe_track(): called per tool invocation (post-tool-use hook)
+- track_from_transcript(): called at subagent-stop with full JSONL transcript
+
 Fail-open: never raises exceptions that could block agent execution.
 """
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from des.domain.skill_load_event import SkillLoadEvent
@@ -144,3 +149,97 @@ class SkillTrackingService:
         if des_context is None:
             return None
         return des_context.get("step_id")
+
+    # ------------------------------------------------------------------
+    # Transcript-based tracking (SubagentStop hook)
+    # ------------------------------------------------------------------
+
+    def track_from_transcript(self, transcript_path: str) -> list[SkillLoadEvent]:
+        """Extract and log skill loads from a sub-agent JSONL transcript.
+
+        Scans transcript for Read tool calls targeting skill files.
+        Each match is logged via the tracker port. Fail-open: returns
+        empty list on any error.
+
+        Args:
+            transcript_path: Path to the sub-agent's JSONL transcript file.
+
+        Returns:
+            List of SkillLoadEvent objects extracted from the transcript.
+        """
+        try:
+            tool_calls = self._read_transcript_tool_calls(transcript_path)
+            skill_reads = self._filter_skill_reads(tool_calls)
+            events = self._build_events(skill_reads)
+            self._log_events(events)
+            return events
+        except Exception:
+            return []  # Fail-open: tracking must never block
+
+    def _read_transcript_tool_calls(self, transcript_path: str) -> list[dict]:
+        """Read JSONL transcript and extract tool_use entries.
+
+        Supports two formats:
+        - Direct: {"type": "tool_use", "name": "Read", "input": {...}}
+        - Content block: {"type": "content_block", "content_block": {"type": "tool_use", ...}}
+
+        Malformed lines are silently skipped.
+        """
+        tool_calls: list[dict] = []
+        with open(transcript_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                tool_call = self._extract_tool_call(entry)
+                if tool_call is not None:
+                    tool_calls.append(tool_call)
+        return tool_calls
+
+    def _extract_tool_call(self, entry: dict) -> dict | None:
+        """Extract tool_use dict from a transcript entry.
+
+        Returns dict with 'name' and 'input' keys, or None.
+        """
+        entry_type = entry.get("type", "")
+        if entry_type == "tool_use":
+            return entry
+        if entry_type == "content_block":
+            block = entry.get("content_block", {})
+            if block.get("type") == "tool_use":
+                return block
+        return None
+
+    def _filter_skill_reads(self, tool_calls: list[dict]) -> list[dict]:
+        """Filter to only Read calls targeting skill files."""
+        return [
+            tc
+            for tc in tool_calls
+            if self._is_skill_read(tc.get("name", ""), tc.get("input", {}))
+        ]
+
+    def _build_events(self, skill_reads: list[dict]) -> list[SkillLoadEvent]:
+        """Build SkillLoadEvent objects from filtered skill Read calls."""
+        events: list[SkillLoadEvent] = []
+        for tc in skill_reads:
+            file_path = tc.get("input", {}).get("file_path", "")
+            agent_name, skill_name = self._parse_skill_info(file_path)
+            estimated_tokens = self._estimate_tokens(file_path)
+            event = SkillLoadEvent(
+                timestamp=self._time.now_utc().isoformat(),
+                agent_name=agent_name,
+                skill_name=skill_name,
+                file_path=file_path,
+                estimated_tokens=estimated_tokens,
+            )
+            events.append(event)
+        return events
+
+    def _log_events(self, events: list[SkillLoadEvent]) -> None:
+        """Log all events via the tracker port."""
+        for event in events:
+            self._tracker.log_skill_load(event)
