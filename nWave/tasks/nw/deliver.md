@@ -12,11 +12,13 @@ argument-hint: '[feature-description] - Example: "Implement user authentication 
 
 Orchestrates complete DELIVER wave: feature description → production-ready code with mandatory quality gates. You (main Claude instance) coordinate by delegating to specialized agents via Task tool. Final wave (DISCOVER > DISCUSS > DESIGN > DEVOP > DISTILL > DELIVER).
 
-Sub-agents cannot use Skill tool or `/nw:*` commands. Read relevant command file, extract instructions, embed in Task prompt.
+Sub-agents cannot use Skill tool or `/nw:*` commands. You MUST:
+- Read the relevant command file and embed instructions in the Task prompt
+- Remind the crafter to load its skills as needed for the task (sub-agents can read their own skill files from `~/.claude/skills/`)
 
 ## CRITICAL BOUNDARY RULES
 
-1. **NEVER implement steps directly.** ALL implementation MUST be delegated to @nw-software-crafter via Task tool with DES markers. You are ORCHESTRATOR — coordinate, not implement.
+1. **NEVER implement steps directly.** ALL implementation MUST be delegated to the selected crafter (@nw-software-crafter or @nw-functional-software-crafter per step 1.5) via Task tool with DES markers. You are ORCHESTRATOR — coordinate, not implement.
 2. **NEVER write phase entries to execution-log.yaml.** Only the crafter subagent that performed TDD work may append entries.
 3. **Extract step context from roadmap.yaml ONLY for Task prompt.** Grep roadmap for step_id ~50 lines context, extract (description|acceptance_criteria|files_to_modify), pass in DES template.
 
@@ -199,7 +201,7 @@ Same command → loads .develop-progress.json → skips completed → resumes fr
 For manual granular control, use individual commands:
 ```
 /nw:roadmap @nw-solution-architect "goal"
-/nw:execute @nw-software-crafter "project-id" "01-01"
+/nw:execute {selected-crafter} "project-id" "01-01"
 /nw:finalize @nw-platform-architect "project-id"
 ```
 
