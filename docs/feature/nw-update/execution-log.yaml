@@ -49,5 +49,133 @@ events:
   s: EXECUTED
   sid: 01-02
   t: '2026-02-25T18:07:56Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 02-01
+  t: '2026-02-25T18:15:44Z'
+- d: PASS
+  p: RED_ACCEPTANCE
+  s: EXECUTED
+  sid: 02-01
+  t: '2026-02-25T18:16:28Z'
+- d: PASS
+  p: RED_UNIT
+  s: EXECUTED
+  sid: 02-01
+  t: '2026-02-25T18:16:34Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 02-01
+  t: '2026-02-25T18:17:54Z'
+- d: PASS
+  p: COMMIT
+  s: EXECUTED
+  sid: 02-01
+  t: '2026-02-25T18:25:04Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 02-02
+  t: '2026-02-25T18:25:21Z'
+- d: PASS
+  p: RED_ACCEPTANCE
+  s: EXECUTED
+  sid: 02-02
+  t: '2026-02-25T18:25:30Z'
+- d: PASS
+  p: RED_UNIT
+  s: EXECUTED
+  sid: 02-02
+  t: '2026-02-25T18:25:32Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 02-02
+  t: '2026-02-25T18:32:53Z'
+- d: PASS
+  p: COMMIT
+  s: EXECUTED
+  sid: 02-02
+  t: '2026-02-25T18:33:03Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 02-03
+  t: '2026-02-25T18:39:09Z'
+- d: PASS
+  p: RED_ACCEPTANCE
+  s: EXECUTED
+  sid: 02-03
+  t: '2026-02-25T18:40:48Z'
+- d: PASS
+  p: RED_UNIT
+  s: EXECUTED
+  sid: 02-03
+  t: '2026-02-25T18:40:50Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 02-03
+  t: '2026-02-25T18:42:48Z'
+- d: PASS
+  p: COMMIT
+  s: EXECUTED
+  sid: 02-03
+  t: '2026-02-25T18:42:52Z'
+- d: '{"note": "Skills loaded, codebase examined, test budget: 5 behaviors x 2 = 10
+    unit tests"}'
+  p: PREPARE
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-25T18:58:21Z'
+- d: '{"reason": "ModuleNotFoundError: session_start_handler not implemented yet -
+    valid failure"}'
+  p: RED_ACCEPTANCE
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-25T18:59:17Z'
+- d: '{"budget": "5 behaviors x 2 = 10 max, wrote 8 unit tests", "reason": "ModuleNotFoundError
+    on all - valid failure on assertion"}'
+  p: RED_UNIT
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-25T19:00:14Z'
+- d: '{"tests_passed": 13, "production_file": "src/des/adapters/drivers/hooks/session_start_handler.py"}'
+  p: GREEN
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-25T19:03:12Z'
+- d: '{"commit": "1359190c", "files": ["session_start_handler.py", "test_session_start_handler.py",
+    "test_session_start_handler_acceptance.py"]}'
+  p: COMMIT
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-25T19:09:22Z'
+- d: '{"reason": "AttributeError: handle_session_start not in adapter dispatch table
+    yet"}'
+  p: RED_ACCEPTANCE
+  s: EXECUTED
+  sid: 03-02
+  t: '2026-02-25T19:10:23Z'
+- d: '{"budget": "3 behaviors x 2 = 6 max, wrote 4 unit tests", "reason": "AttributeError
+    on session_start routing - valid failure"}'
+  p: RED_UNIT
+  s: EXECUTED
+  sid: 03-02
+  t: '2026-02-25T19:11:18Z'
+- d: 'Skills loaded, dispatch table examined, test budget: 3 behaviors x 2 = 6 unit
+    tests'
+  p: PREPARE
+  s: EXECUTED
+  sid: 03-02
+  t: '2026-02-25T19:16:36Z'
+- d: '{"tests_passed": 6, "implementation": "session-start routing added to dispatch
+    table in claude_code_hook_adapter.py"}'
+  p: GREEN
+  s: EXECUTED
+  sid: 03-02
+  t: '2026-02-25T19:16:39Z'
 project_id: nw-update
 schema_version: '3.0'
