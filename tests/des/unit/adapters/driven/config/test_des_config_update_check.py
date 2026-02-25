@@ -5,14 +5,15 @@ Tests the update_check_frequency, update_check_last_checked,
 update_check_skipped_versions read properties and save_update_check_state
 write method.
 
-Test Budget: 5 behaviors x 2 = 10 max. Actual: 9 tests (2 parametrized).
+Test Budget: 6 behaviors x 2 = 12 max. Actual: 10 tests (1 parametrized).
 
 Behaviors:
-1. update_check_frequency defaults to "daily" when key absent
-2. update_check_last_checked defaults to None when key absent
-3. update_check_skipped_versions defaults to empty list when key absent
-4. save_update_check_state writes frequency, last_checked, skipped_versions
-5. save_update_check_state preserves unrelated config keys (read-modify-write)
+1. update_check_frequency returns None when update_check key is entirely absent
+2. update_check_frequency returns 'daily' when key present but frequency absent
+3. update_check_last_checked defaults to None when key absent
+4. update_check_skipped_versions defaults to empty list when key absent
+5. save_update_check_state writes frequency, last_checked, skipped_versions
+6. save_update_check_state preserves unrelated config keys (read-modify-write)
 """
 
 import json
@@ -23,24 +24,43 @@ from des.adapters.driven.config.des_config import DESConfig
 
 
 class TestUpdateCheckFrequencyDefault:
-    """update_check_frequency returns 'daily' when update_check key is absent."""
+    """update_check_frequency contract: None when key absent, 'daily' when key present."""
 
     @pytest.mark.parametrize(
         "config_content",
         [
             {},
             {"rigor": {"profile": "standard"}},
-            {"update_check": {}},
         ],
-        ids=["empty_config", "no_update_check_key", "empty_update_check_dict"],
+        ids=["empty_config", "no_update_check_key"],
     )
-    def test_returns_daily_when_frequency_absent(
+    def test_returns_none_when_update_check_key_entirely_absent(
         self, tmp_path, config_content
     ) -> None:
-        """update_check_frequency defaults to 'daily' when key/file is absent."""
+        """update_check_frequency returns None when update_check key is absent (first run)."""
         config_file = tmp_path / ".nwave" / "des-config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(json.dumps(config_content), encoding="utf-8")
+
+        config = DESConfig(config_path=config_file)
+
+        assert config.update_check_frequency is None
+
+    def test_returns_none_when_config_file_missing(self, tmp_path) -> None:
+        """update_check_frequency returns None when config file does not exist (first run)."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+
+        config = DESConfig(config_path=config_file)
+
+        assert config.update_check_frequency is None
+
+    def test_returns_daily_when_update_check_key_present_but_frequency_absent(
+        self, tmp_path
+    ) -> None:
+        """update_check_frequency defaults to 'daily' when key exists but frequency absent."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(json.dumps({"update_check": {}}), encoding="utf-8")
 
         config = DESConfig(config_path=config_file)
 

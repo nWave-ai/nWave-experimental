@@ -152,9 +152,17 @@ class DESConfig:
         return self._rigor().get("refactor_pass", True)
 
     @property
-    def update_check_frequency(self) -> str:
-        """Get update check frequency. Default: 'daily'."""
-        return self._update_check().get("frequency", "daily")
+    def update_check_frequency(self) -> str | None:
+        """Get update check frequency.
+
+        Returns None when the update_check key is entirely absent from config
+        (indicates first run — no config bootstrapped yet). Returns 'daily'
+        when the update_check key exists but frequency sub-key is absent.
+        """
+        update_check = self._config_data.get("update_check")
+        if update_check is None:
+            return None  # key absent = first run, no config yet
+        return update_check.get("frequency", "daily")
 
     @property
     def update_check_last_checked(self) -> str | None:
@@ -195,6 +203,9 @@ class DESConfig:
         update_check["skipped_versions"] = skipped_versions
         if frequency is not None:
             update_check["frequency"] = frequency
+        elif "frequency" not in update_check:
+            # Bootstrap default on first save (e.g. after first-run check)
+            update_check["frequency"] = "daily"
 
         current_data["update_check"] = update_check
 

@@ -3,12 +3,13 @@
 Tests the changelog fetch behavior through the public API (check_for_updates),
 verifying observable outcomes at the driven port boundary (GitHub API injection).
 
-Test Budget: 3 behaviors x 2 = 6 max unit tests. Actual: 3 tests.
+Test Budget: 4 behaviors x 2 = 8 max unit tests. Actual: 4 tests.
 
 Behaviors:
 1. Returns release notes when GitHub API responds with matching tag
 2. Returns version-only result when GitHub API times out or fails
 3. Returns version-only result when no release tag matches the latest version
+4. Changelog is capped at 2000 chars to protect additionalContext token budget
 """
 
 from __future__ import annotations
@@ -197,5 +198,35 @@ class TestUpdateCheckServiceChangelog:
             assert result.status == UpdateStatus.UPDATE_AVAILABLE
             assert result.latest == "2.0.0"
             assert result.changelog is None
+        finally:
+            server.shutdown()
+
+    def test_changelog_is_capped_at_2000_chars(self) -> None:
+        """Changelog injected into additionalContext is capped at 2000 characters.
+
+        A GitHub release body longer than 2000 chars must be truncated before
+        being returned, protecting the additionalContext token budget.
+        """
+        long_body = "A" * 3000  # 3000 chars — exceeds cap
+
+        class LongBodyHandler(_DualEndpointHandler):
+            pypi_version = "2.0.0"
+            github_tag = "v2.0.0"
+            github_body = long_body
+            github_status = 200
+
+        server, base_url = _start_server(LongBodyHandler)
+        try:
+            service = UpdateCheckService(
+                pypi_url=f"{base_url}/pypi/nwave-ai/json",
+                github_releases_url=f"{base_url}/repos/nwave/releases/latest",
+                local_version="1.0.0",
+            )
+            result = service.check_for_updates()
+            assert result.status == UpdateStatus.UPDATE_AVAILABLE
+            assert result.changelog is not None
+            assert len(result.changelog) <= 2000, (
+                f"Changelog exceeds 2000 chars: {len(result.changelog)}"
+            )
         finally:
             server.shutdown()

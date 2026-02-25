@@ -3,13 +3,14 @@
 Tests the service through its public API (check_for_updates), verifying
 observable outcomes at driven port boundaries (HTTP endpoint injection).
 
-Test Budget: 4 behaviors x 2 = 8 max unit tests. Actual: 5 tests (1 parametrized).
+Test Budget: 5 behaviors x 2 = 10 max unit tests. Actual: 6 tests (1 parametrized).
 
 Behaviors:
 1. Returns UP_TO_DATE when local version equals latest PyPI version
 2. Returns UPDATE_AVAILABLE when newer version exists on PyPI
 3. Returns SKIP on network timeout (no exception propagated)
 4. Returns SKIP on HTTP or JSON error (no exception propagated)
+5. Returns UP_TO_DATE (safe fallback) when PyPI returns a pre-release version string
 """
 
 from __future__ import annotations
@@ -165,5 +166,26 @@ class TestUpdateCheckServiceVersionComparison:
             )
             result = service.check_for_updates()
             assert result.status == UpdateStatus.SKIP
+        finally:
+            server.shutdown()
+
+    def test_pre_release_version_on_pypi_treated_as_up_to_date(self) -> None:
+        """When PyPI returns a pre-release version string, treat as UP_TO_DATE (safe fallback).
+
+        _parse_version raises ValueError on pre-release strings like '2.0.0rc1'
+        (which contain non-integer parts). _is_newer catches the error and returns
+        False, so the service reports UP_TO_DATE. This is a known limitation —
+        documented here to ensure the silent-false behavior remains intentional
+        and is not accidentally removed.
+        """
+        server, base_url = _start_server(_PyPIHandlerFactory.ok("2.0.0rc1"))
+        try:
+            service = UpdateCheckService(
+                pypi_url=f"{base_url}/pypi/nwave-ai/json",
+                local_version="1.0.0",
+            )
+            result = service.check_for_updates()
+            # Pre-release version cannot be parsed → _is_newer returns False safely
+            assert result.status == UpdateStatus.UP_TO_DATE
         finally:
             server.shutdown()

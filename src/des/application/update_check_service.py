@@ -158,7 +158,11 @@ class UpdateCheckService:
     # ------------------------------------------------------------------
 
     def _evaluate_policy(self, latest_version: str | None = None) -> CheckDecision:
-        """Evaluate the update check policy using DESConfig state."""
+        """Evaluate the update check policy using DESConfig state.
+
+        When frequency is None (update_check key absent — first run), the policy
+        receives None and evaluates Rule 3 (frequency=None, last_checked=None → CHECK).
+        """
         if self._des_config is None:
             return CheckDecision.CHECK
         frequency: str | None = self._des_config.update_check_frequency
@@ -248,7 +252,10 @@ class UpdateCheckService:
             if normalised_tag != latest_version:
                 return None
             body = data.get("body")
-            return str(body) if body else None
+            if not body:
+                return None
+            # Cap changelog injection to 2000 chars to limit additionalContext token use
+            return str(body)[:2000]
         except (json.JSONDecodeError, KeyError, TypeError):
             return None
 
