@@ -1,5 +1,5 @@
 name: nWave
-version: 1.1.25
+version: 1.1.26
 description: "Comprehensive DISCOVER\u2192DISCUSS\u2192DESIGN\u2192DEVOP\u2192DISTILL\u2192\
   DELIVER methodology with visual architecture lifecycle management"
 author: nWave Team
@@ -293,8 +293,8 @@ commands:
     - complete_feature
   rigor:
     description: Selects a quality-vs-token-consumption profile (lean, standard, thorough,
-      exhaustive, custom, inherit) and persists it to .nwave/des-config.json. Use when
-      tuning how much rigor wave commands apply.
+      exhaustive, custom, inherit) and persists it to .nwave/des-config.json. Use
+      when tuning how much rigor wave commands apply.
     argument_hint: '[profile] - Optional: lean, standard, thorough, exhaustive, custom,
       inherit. Omit for interactive selection.'
     agents: []
