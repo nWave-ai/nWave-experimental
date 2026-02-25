@@ -20,7 +20,7 @@ No repository clone needed. This installs nWave from PyPI and sets up agents and
 
 Full setup details: **[Installation Guide](https://github.com/nWave-ai/nWave/blob/main/docs/guides/installation-guide.md)**
 
-**Staying updated** — nWave checks for new versions when you open Claude Code. When an update is available, you'll see a note in Claude's context with the version and what changed. To update: run `nwave-ai install` in your terminal (same command as install — it upgrades in place). To control frequency: set `update_check.frequency` in `~/.nwave/des-config.json` (`daily` / `weekly` / `every_session` / `never`).
+**Staying updated** — nWave checks for new versions when you open Claude Code. When an update is available, you'll see a note in Claude's context with the version and what changed. To update, run two commands in your terminal: `pip install --upgrade nwave-ai` (pulls the new package), then `nwave-ai install` (deploys the new framework files). To control check frequency: set `update_check.frequency` in `~/.nwave/des-config.json` (`daily` / `weekly` / `every_session` / `never`).
 
 **2. Use** (inside Claude Code, after reopening it):
 
