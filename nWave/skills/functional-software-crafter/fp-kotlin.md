@@ -1,11 +1,11 @@
 # FP in Kotlin -- Functional Software Crafter Skill
 
-Cross-references: [fp-principles](./fp-principles.md), [fp-domain-modeling](./fp-domain-modeling.md), [pbt-jvm](./pbt-jvm.md)
+Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md) | [pbt-jvm](./pbt-jvm.md)
 
 ## When to Choose Kotlin
 
-- Best for: gentlest FP onboarding for Java teams, Android, coroutines, pragmatic FP with great IDE support
-- Not ideal for: teams wanting compiler-enforced purity, full effect systems, higher-kinded type abstractions
+- Best for: gentlest FP onboarding for Java teams | Android | coroutines | pragmatic FP with great IDE support
+- Not ideal for: teams wanting compiler-enforced purity | full effect systems | higher-kinded type abstractions
 
 ## [STARTER] Quick Setup
 
@@ -28,7 +28,7 @@ sealed interface PaymentMethod {
 }
 ```
 
-Exhaustive `when` expressions ensure all cases are handled.
+Exhaustive `when` expressions ensure all cases handled.
 
 ### Record Types and Domain Wrappers
 
@@ -52,7 +52,7 @@ value class EmailAddress private constructor(val value: String) {
 }
 ```
 
-Value classes are inlined by the compiler -- zero allocation overhead.
+Value classes inlined by compiler -- zero allocation overhead.
 
 ### [INTERMEDIATE] Validated Construction with Raise DSL
 
@@ -108,7 +108,7 @@ fun validateCustomer(raw: RawCustomer): Either<NonEmptyList<ValidationError>, Cu
 
 ## [INTERMEDIATE] Effect Management
 
-Kotlin is impure by default. `suspend` marks functions that perform side effects or async work.
+Kotlin is impure by default. `suspend` marks functions performing side effects or async work.
 
 ### Pure Core / Imperative Shell with Coroutines
 
@@ -155,7 +155,7 @@ DI: constructor injection via Koin, Dagger/Hilt, or manual wiring.
 
 ## [INTERMEDIATE] Testing
 
-**Frameworks**: Kotest (test framework + PBT), jqwik (PBT on JUnit 5), MockK (coroutine-aware mocking). See [pbt-jvm](./pbt-jvm.md) for detailed PBT patterns.
+**Frameworks**: Kotest (test framework + PBT) | jqwik (PBT on JUnit 5) | MockK (coroutine-aware mocking). See [pbt-jvm](./pbt-jvm.md) for detailed PBT patterns.
 
 ### Property Test (Kotest)
 
@@ -204,16 +204,16 @@ fun getCustomer(id: CustomerId): Customer =
 
 ## Arrow Maturity Caveat
 
-Arrow is a capable library with active development, but carries honest risks:
+Arrow is capable with active development, but carries honest risks:
 
-- **Context receivers/parameters** (which Raise DSL relies on) are still experimental in Kotlin. The feature has been renamed and redesigned multiple times.
+- **Context receivers/parameters** (Raise DSL relies on) are still experimental in Kotlin. Feature renamed and redesigned multiple times.
 - Arrow's API changed significantly between 1.x and 2.x, requiring substantial rewrites.
 - Smaller contributor base than ZIO or Cats Effect.
-- For teams needing long-term stability, evaluate whether Arrow's API surface will remain stable for your project's lifetime.
+- For long-term stability needs, evaluate whether Arrow's API surface will remain stable for your project's lifetime.
 
 ## Common Pitfalls
 
 1. **Arrow API instability**: Pin versions carefully. Read migration guides before major upgrades.
-2. **No higher-kinded types**: Use concrete types or Arrow's Raise DSL as the abstraction mechanism.
-3. **FP is library-dependent**: Without Arrow, Kotlin FP is limited to null safety, sealed classes, and extensions.
-4. **Coroutine complexity**: `CoroutineScope`, `Dispatcher`, and `SupervisorJob` interactions are subtle. Test with `runTest`.
+2. **No higher-kinded types**: Use concrete types or Arrow's Raise DSL as abstraction mechanism.
+3. **FP is library-dependent**: Without Arrow, Kotlin FP limited to null safety, sealed classes, and extensions.
+4. **Coroutine complexity**: `CoroutineScope`, `Dispatcher`, `SupervisorJob` interactions are subtle. Test with `runTest`.

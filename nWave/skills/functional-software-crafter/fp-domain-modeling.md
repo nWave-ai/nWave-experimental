@@ -1,8 +1,8 @@
 # FP Domain Modeling
 
-Domain modeling with types. Making illegal states unrepresentable, workflows as pipelines, error handling at the type level.
+Domain modeling with types. Make illegal states unrepresentable, workflows as pipelines, error handling at the type level.
 
-Cross-references: [fp-principles](./fp-principles.md), [fp-hexagonal-architecture](./fp-hexagonal-architecture.md), [fp-algebra-driven-design](./fp-algebra-driven-design.md)
+Cross-references: [fp-principles](./fp-principles.md) | [fp-hexagonal-architecture](./fp-hexagonal-architecture.md) | [fp-algebra-driven-design](./fp-algebra-driven-design.md)
 
 ---
 
@@ -12,8 +12,8 @@ Cross-references: [fp-principles](./fp-principles.md), [fp-hexagonal-architectur
 
 All domain types compose from two operations:
 
-- **AND (Record Types)**: A value has ALL of these fields. An Order requires CustomerInfo AND ShippingAddress AND OrderLines.
-- **OR (Choice Types)**: A value is ONE OF these alternatives. A ProductCode is either a WidgetCode OR a GizmoCode.
+- **AND (Record Types)**: Value has ALL of these fields. Order requires CustomerInfo AND ShippingAddress AND OrderLines.
+- **OR (Choice Types)**: Value is ONE OF these alternatives. ProductCode is either WidgetCode OR GizmoCode.
 
 Combined recursively, these express virtually any domain structure.
 
@@ -23,11 +23,11 @@ Combined recursively, these express virtually any domain structure.
 
 [STARTER]
 
-Primitive values (strings, integers) are never used directly in the domain model. Each domain concept gets its own wrapper type.
+Never use primitives directly in the domain model. Each domain concept gets its own wrapper type.
 
 **What**: Wrap primitives so the compiler distinguishes CustomerId from OrderId.
-**When to use**: Every primitive that has domain meaning.
-**Why it matters**: Prevents accidental mixing (compiler rejects comparing CustomerId with OrderId). Each wrapper carries its own validation rules. The type name IS the documentation.
+**When**: Every primitive with domain meaning.
+**Why**: Prevents accidental mixing (compiler rejects comparing CustomerId with OrderId). Each wrapper carries its own validation rules. The type name IS the documentation.
 
 ---
 
@@ -35,12 +35,12 @@ Primitive values (strings, integers) are never used directly in the domain model
 
 [STARTER]
 
-The raw constructor is private. A `create` function validates input and returns a Result type, making validation failure explicit.
+Raw constructor is private. A `create` function validates input and returns a Result type, making validation failure explicit.
 
-**Pattern**: A UnitQuantity must be between 1 and 1000. Its `create` function rejects values outside that range. A companion `value` function provides read access to the inner primitive.
+**Pattern**: UnitQuantity must be between 1 and 1000. Its `create` function rejects values outside that range. A companion `value` function provides read access to the inner primitive.
 
-**When to use**: Every domain wrapper that has validation rules.
-**Why it matters**: Once constructed, a value is guaranteed valid. No defensive checks deeper in the code.
+**When**: Every domain wrapper with validation rules.
+**Why**: Once constructed, a value is guaranteed valid. No defensive checks deeper in the code.
 
 ---
 
@@ -60,7 +60,7 @@ Instead of `{ Email: option; Address: option }` (where both could be None), crea
 
 ### NonEmptyList for "At Least One" Rules
 
-Define a type that guarantees at least one element. An Order with `OrderLines: NonEmptyList<OrderLine>` cannot have zero lines.
+Define a type guaranteeing at least one element. Order with `OrderLines: NonEmptyList<OrderLine>` cannot have zero lines.
 
 ---
 
@@ -82,9 +82,9 @@ Workflows decompose into steps, each transforming one document type into the nex
 UnvalidatedOrder -> ValidatedOrder -> PricedOrder -> Events
 ```
 
-Each step is stateless, pure, has a single input/output type, and is independently testable. The workflow assembles by piping steps together.
+Each step is stateless, pure, has single input/output type, and is independently testable. The workflow assembles by piping steps together.
 
-**Why it matters**: The pipeline makes the business process visible. Each step name is a domain concept.
+**Why**: Pipeline makes the business process visible. Each step name is a domain concept.
 
 ---
 
@@ -94,13 +94,13 @@ Each step is stateless, pure, has a single input/output type, and is independent
 
 Rather than one Order type with flags, create separate types for each lifecycle stage:
 
-- `UnvalidatedOrder` (raw input, all fields are strings)
+- `UnvalidatedOrder` (raw input, all fields strings)
 - `ValidatedOrder` (all fields checked)
 - `PricedOrder` (prices calculated)
 
-A top-level Order choice type unifies all states. New states (e.g., `Refunded`) can be added without breaking existing code.
+A top-level Order choice type unifies all states. New states (e.g., `Refunded`) added without breaking existing code.
 
-**When to use**: Domain entities with distinct lifecycle stages where different data is available at each stage.
+**When**: Domain entities with distinct lifecycle stages where different data is available at each stage.
 
 ---
 
@@ -116,7 +116,7 @@ ShoppingCart = EmptyCart | ActiveCart of ActiveCartData | PaidCart of PaidCartDa
 
 Transition functions take the choice type, pattern-match on current state, return new state.
 
-**Benefits**: All states explicit. Each state has its own data. Invalid transitions prevented by types. Pattern matching warnings reveal unhandled edge cases.
+**Benefits**: All states explicit | each state has own data | invalid transitions prevented by types | pattern matching warnings reveal unhandled edge cases.
 
 ---
 
@@ -124,7 +124,7 @@ Transition functions take the choice type, pattern-match on current state, retur
 
 [INTERMEDIATE]
 
-Each function returns a Result type. The pipeline short-circuits on first failure.
+Each function returns a Result type. Pipeline short-circuits on first failure.
 
 ```
 rawInput
@@ -136,10 +136,10 @@ rawInput
 ```
 
 **Key combinators**:
-- **map**: Transform the success value (one-track into two-track)
-- **bind**: Chain a function that itself returns a Result
-- **mapError**: Transform the error value
-- **tee**: Perform a side effect without changing the value (logging)
+- **map**: Transform success value (one-track into two-track)
+- **bind**: Chain a function that itself returns Result
+- **mapError**: Transform error value
+- **tee**: Perform side effect without changing value (logging)
 
 ### Error Classification
 
@@ -157,9 +157,9 @@ Each step may have its own error type. Define a common error choice type and use
 
 [ADVANCED]
 
-Standard bind short-circuits on first error. For validation where you want ALL errors, use Combinable Containers (Applicative) style -- runs all validations and accumulates errors into a list. See [fp-principles](./fp-principles.md) section 5 (Combinable Containers) for the abstraction details.
+Standard bind short-circuits on first error. For validation where you want ALL errors, use Applicative style -- runs all validations and accumulates errors into a list. See [fp-principles](./fp-principles.md) section 5.
 
-**When to use**: Form validation, batch input checking, any place the user needs all errors at once.
+**When**: Form validation | batch input checking | any place user needs all errors at once.
 
 ---
 
@@ -174,11 +174,11 @@ CheckProductCodeExists : ProductCode -> bool
 GetProductPrice        : ProductCode -> Price
 ```
 
-**Convention**: Dependencies first in parameter list, primary input last. This enables partial application (functional dependency injection).
+**Convention**: Dependencies first in parameter list, primary input last. Enables partial application (functional DI).
 
-**Public vs. internal**: The top-level workflow hides dependencies from callers. Internal steps make them explicit.
+**Public vs. internal**: Top-level workflow hides dependencies from callers. Internal steps make them explicit.
 
-See [fp-hexagonal-architecture](./fp-hexagonal-architecture.md) section 5 for the full DI decision tree.
+See [fp-hexagonal-architecture](./fp-hexagonal-architecture.md) section 5 for full DI decision tree.
 
 ---
 
@@ -186,7 +186,7 @@ See [fp-hexagonal-architecture](./fp-hexagonal-architecture.md) section 5 for th
 
 [INTERMEDIATE]
 
-The domain model has no awareness of databases. Two distinct type hierarchies:
+Domain model has no awareness of databases. Two distinct type hierarchies:
 
 - **Domain types**: Rich, nested, use choice types, validated wrappers. Not serialization-friendly.
 - **DTO types**: Flat, primitives, nullable, arrays. Designed for serialization.
@@ -202,7 +202,7 @@ The domain model has no awareness of databases. Two distinct type hierarchies:
 JSON -> deserialize -> DTO -> toDomain -> [WORKFLOW] -> fromDomain -> DTO -> serialize -> JSON
 ```
 
-The domain workflow never sees JSON or DTOs directly.
+Domain workflow never sees JSON or DTOs directly.
 
 ---
 
@@ -210,11 +210,11 @@ The domain workflow never sees JSON or DTOs directly.
 
 [ADVANCED]
 
-Each context has its own dialect of the domain language. Contexts communicate only through events and DTOs. Design for autonomy.
+Each context has its own dialect of domain language. Contexts communicate only through events and DTOs. Design for autonomy.
 
 **Trust boundaries**: Input gate validates and converts incoming DTOs to domain types. Output gate converts domain types to DTOs, deliberately dropping private information.
 
-**Inter-context relationships**: Shared Kernel (shared design), Customer/Supplier (downstream defines contract), Anti-Corruption Layer (translator preventing external model from corrupting internal domain).
+**Inter-context relationships**: Shared Kernel (shared design) | Customer/Supplier (downstream defines contract) | Anti-Corruption Layer (translator preventing external model from corrupting internal domain).
 
 ---
 
@@ -244,15 +244,15 @@ Is it a simple value with validation rules?
 
 1. **Start from events and workflows**, not data structures
 2. **Let the domain expert drive naming** -- their vocabulary, not technical jargon
-3. **Use types to enforce business rules at compile time** -- every rule in the type system is a rule that needs no unit test
-4. **Document effects in signatures** -- Result for errors, Async for I/O, Option for missing data
-5. **Separate domain types from serialization types** -- the domain is pure; serialization is infrastructure
+3. **Use types to enforce business rules at compile time** -- every rule in the type system needs no unit test
+4. **Document effects in signatures** -- Result for errors | Async for I/O | Option for missing data
+5. **Separate domain types from serialization types** -- domain is pure; serialization is infrastructure
 6. **Prefer explicit over implicit** -- every input and dependency is a function parameter
 
 ### Naming Patterns
 
-- **Types as nouns**: Order, ProductCode, CustomerInfo
-- **Workflows as verbs**: ValidateOrder, PriceOrder, PlaceOrder
-- **Events in past tense**: OrderPlaced, OrderShipped
-- **Commands in imperative**: PlaceOrder, ShipOrder, CancelOrder
-- **Lifecycle prefixes**: UnvalidatedOrder, ValidatedOrder, PricedOrder
+- **Types as nouns**: Order | ProductCode | CustomerInfo
+- **Workflows as verbs**: ValidateOrder | PriceOrder | PlaceOrder
+- **Events in past tense**: OrderPlaced | OrderShipped
+- **Commands in imperative**: PlaceOrder | ShipOrder | CancelOrder
+- **Lifecycle prefixes**: UnvalidatedOrder | ValidatedOrder | PricedOrder

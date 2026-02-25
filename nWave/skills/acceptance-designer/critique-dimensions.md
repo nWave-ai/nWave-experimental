@@ -5,18 +5,13 @@ description: Review dimensions for acceptance test quality - happy path bias, GW
 
 # Acceptance Test Critique Dimensions
 
-Load this skill when performing peer review of acceptance tests (during *handoff-develop).
+Load when performing peer review of acceptance tests (during *handoff-develop).
 
 ## Dimension 1: Happy Path Bias
 
-**Pattern**: Tests only cover successful scenarios, error paths missing.
+**Pattern**: Only successful scenarios, error paths missing.
 
-Detection: Count success vs error scenarios. Error scenarios should be at least 40% of total.
-
-Examples of missing coverage:
-- Login success tested but invalid password not covered
-- Payment processing tested but decline/timeout scenarios missing
-- Search results tested but empty results and errors absent
+Detection: Count success vs error scenarios. Error should be at least 40%. Missing coverage examples: login success but no invalid password | Payment processed but no decline/timeout | Search results but no empty/error cases.
 
 Severity: blocker (production error handling untested).
 
@@ -24,12 +19,7 @@ Severity: blocker (production error handling untested).
 
 **Pattern**: Scenarios violate Given-When-Then structure.
 
-Violations:
-- Missing Given context setup
-- Multiple When actions (split into separate scenarios)
-- Then with technical assertions instead of business outcomes
-
-Each scenario has: Given (context), When (single action), Then (observable outcome).
+Violations: Missing Given context | Multiple When actions (split into separate scenarios) | Then with technical assertions instead of business outcomes. Each scenario: Given (context), When (single action), Then (observable outcome).
 
 Severity: high (tests not behavior-driven).
 
@@ -37,12 +27,9 @@ Severity: high (tests not behavior-driven).
 
 **Pattern**: Technical terms leak into acceptance tests.
 
-Terms to flag: database, API, HTTP, REST, JSON, classes, methods, services, controllers, status codes (500, 404), infrastructure terms (Redis, Kafka, Lambda).
+Flag: database, API, HTTP, REST, JSON, classes, methods, services, controllers, status codes (500, 404), infrastructure (Redis, Kafka, Lambda).
 
-Business alternatives:
-- "Customer data is stored" not "Database persists record"
-- "Order is confirmed" not "API returns 200 OK"
-- "Payment fails" not "Gateway throws exception"
+Business alternatives: "Customer data is stored" not "Database persists record" | "Order is confirmed" not "API returns 200 OK" | "Payment fails" not "Gateway throws exception"
 
 Severity: high (tests coupled to implementation).
 
@@ -50,38 +37,28 @@ Severity: high (tests coupled to implementation).
 
 **Pattern**: User stories lack acceptance test coverage.
 
-Validation:
-- Map each user story to acceptance test scenarios
-- Verify all acceptance criteria have corresponding tests
-- Confirm edge cases and boundaries tested
+Validation: Map each story to scenarios | Verify all AC have corresponding tests | Confirm edge cases and boundaries tested.
 
 Severity: blocker (unverified requirements).
 
 ## Dimension 5: Walking Skeleton User-Centricity
 
-**Pattern**: Walking skeletons describe technical layer connectivity instead of user value delivery.
+**Pattern**: Walking skeletons describe technical layer connectivity instead of user value.
 
-Detection: Read each `@walking_skeleton` scenario and apply the litmus test:
-- Does the title describe a user goal or a technical flow?
-- Do the Then steps describe what the user observes or internal system side effects?
-- Could a non-technical stakeholder read it and confirm "yes, that is what users need"?
+Detection litmus test for `@walking_skeleton` scenarios:
+- Title describes user goal or technical flow?
+- Then steps describe user observations or internal side effects?
+- Could non-technical stakeholder confirm "yes, that is what users need"?
 
-Examples of violations:
-- "End-to-end order flow through all layers" (technical framing)
-- Then steps like "order row inserted in database" or "message published to queue" (internal side effects)
-- Given steps that set up technical state ("Given database contains user record") instead of user context ("Given customer has an account")
+Violations: "End-to-end order flow through all layers" (technical framing) | Then "order row inserted in database" (internal side effects) | Given "database contains user record" instead of "customer has an account"
 
-Severity: high (skeletons that only prove wiring miss the point -- the first passing skeleton should be demo-able to a stakeholder).
+Severity: high (skeletons that only prove wiring miss the point -- first skeleton should be demo-able to stakeholder).
 
 ## Dimension 6: Priority Validation
 
 **Pattern**: Tests address secondary concerns while larger gaps exist.
 
-Questions:
-1. Is this the largest bottleneck? (Evidence: timing data or gap analysis)
-2. Were simpler alternatives considered?
-3. Is constraint prioritization correct?
-4. Are test design decisions data-justified?
+Questions: 1. Is this the largest bottleneck? (timing data or gap analysis) | 2. Simpler alternatives considered? | 3. Constraint prioritization correct? | 4. Test design decisions data-justified?
 
 Severity: blocker if wrong problem addressed, high if no measurement data.
 

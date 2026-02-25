@@ -7,7 +7,7 @@
 | rapid | Internal (Hypothesis-like) | Yes (StateMachine) | Idiomatic Go (`*rapid.T`) | Default choice. Simpler API, better shrinking. |
 | gopter | Type-based | Yes (commands) | Explicit generator construction | Need maximum control over generation |
 
-**Default recommendation**: rapid. More idiomatic Go API and fully automatic shrinking.
+**Default**: rapid. More idiomatic Go API and fully automatic shrinking.
 
 ## Quick Start (rapid)
 
@@ -121,11 +121,11 @@ func TestStore(t *testing.T) {
 }
 ```
 
-No parallel/linearizability testing support in rapid.
+No parallel/linearizability testing in rapid.
 
 ## Stateful Testing (gopter)
 
-gopter provides stateful testing via the `commands` package:
+gopter provides stateful testing via `commands` package:
 
 ```go
 import (
@@ -218,7 +218,7 @@ func TestSortLength(t *testing.T) {
 - **Idiomatic Go**: Uses `*rapid.T` like Go's `*testing.T`
 - **Internal shrinking**: Fully automatic, no user code needed
 - **Draw pattern**: Generators called inline (`rapid.Int().Draw(t, "name")`)
-- **StateMachine**: Methods on a struct define commands; `Init`, `Check` are special
+- **StateMachine**: Methods on struct define commands; `Init`, `Check` are special
 
 ### gopter
 - **commands package**: Traditional state machine testing with pre/post conditions

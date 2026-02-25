@@ -23,10 +23,8 @@ Use Outside-In when: architectural boundaries known (hexagonal), program to inte
 ## ATDD Integration (Lightweight)
 
 Original 2008 heavyweight ATDD was "too heavyweight for most real teams." Updated approach (Hendrickson 2024):
-- Few Given/When/Then examples, not many
-- Separate requirements (communicate intent) from tests (verify behavior)
-- Smallest subset of team with relevant skills
-- Value = shared understanding, not executable specs
+- Few Given/When/Then examples, not many | Separate requirements from tests
+- Smallest subset of team with relevant skills | Value = shared understanding, not executable specs
 - Automate only where high-value
 
 ## BDD Integration
@@ -36,7 +34,6 @@ BDD reframes TDD as design/specification technique, not just testing. More acces
 Gherkin: structured format bridging technical/non-technical. Use pragmatically - automate only where high value.
 
 ## Outside-In Development Workflow (Bache)
-
 1. Write Guiding Test (acceptance) from user perspective - thick slice of functionality
 2. Start at top-level entry point, design collaborating classes incrementally
 3. Use mocks to experiment with interfaces/protocols
@@ -46,7 +43,7 @@ Gherkin: structured format bridging technical/non-technical. Use pragmatically -
 ## Port-to-Port Testing
 
 Tests enter through driving port (application service / public API) and assert outcomes at driven port boundaries.
-Internal classes (entities, value objects, domain services) are exercised indirectly - never instantiated directly in test code.
+Internal classes (entities, value objects, domain services) exercised indirectly - never instantiated directly in test code.
 
 Flow: Driving Port -> Application -> Domain -> Driven Port (mocked)
 
@@ -73,19 +70,18 @@ Key question: "Can you explain this test to a stakeholder?" If not, you're testi
 
 ## Classical vs Mockist Verification
 
-Classical TDD: real objects, state verification, less coupled to implementation, survives refactoring better.
-Mockist TDD: mocks for objects with behavior, behavior verification, lighter setup, more coupled to impl.
+Classical TDD: real objects | state verification | less coupled to implementation | survives refactoring better.
+Mockist TDD: mocks for objects with behavior | behavior verification | lighter setup | more coupled to impl.
 Best practice: combine strategically. Behavior verification at layer boundaries, state verification within layers.
 
 ## Test Doubles Taxonomy (Meszaros)
-
 - Dummy: passed but never used
 - Fake: working impl with shortcuts (in-memory DB)
 - Stub: predefined answers
 - Spy: stub that records interactions
 - Mock: pre-programmed with expectations for behavior verification
 
-Choose type by need: mock for interaction design, stub when don't care about interaction, fake for integration bridge.
+Choose type by need: mock for interaction design | stub when don't care about interaction | fake for integration bridge.
 
 ## Hexagonal Architecture Testing Strategy
 
@@ -126,7 +122,7 @@ Do not mock inside the hexagon:
 
 At most one walking skeleton per new feature. When `is_walking_skeleton: true` in roadmap:
 - Write exactly ONE E2E/acceptance test proving end-to-end wiring
-- Implement the thinnest possible slice - hardcoded values, minimal branching
+- Implement thinnest possible slice - hardcoded values, minimal branching
 - Do NOT write unit tests - the E2E test IS the deliverable
 - Do NOT add error handling, edge cases, or validation
 - Skip inner TDD loop, go directly from RED_ACCEPTANCE to GREEN
@@ -180,7 +176,6 @@ throw new NotImplementedException(
 - Assert: validate business outcome and state changes
 
 ## Environment-Adaptive Testing
-
 - Local development: in-memory infrastructure for fast feedback (~100ms)
 - CI/CD pipeline: production-like infrastructure for integration validation (~2-5s)
 - Same scenarios: single source of truth across all environments

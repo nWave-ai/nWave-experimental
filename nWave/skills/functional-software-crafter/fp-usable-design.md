@@ -1,8 +1,8 @@
 # FP Usable Design
 
-Making functional code usable. The developer is the user of your design. Apply usability thinking to code organization, naming, and architecture.
+Make functional code usable. The developer is the user of your design. Apply usability thinking to code organization, naming, and architecture.
 
-Cross-references: [fp-domain-modeling](./fp-domain-modeling.md), [fp-hexagonal-architecture](./fp-hexagonal-architecture.md), [fp-algebra-driven-design](./fp-algebra-driven-design.md)
+Cross-references: [fp-domain-modeling](./fp-domain-modeling.md) | [fp-hexagonal-architecture](./fp-hexagonal-architecture.md) | [fp-algebra-driven-design](./fp-algebra-driven-design.md)
 
 ---
 
@@ -10,7 +10,7 @@ Cross-references: [fp-domain-modeling](./fp-domain-modeling.md), [fp-hexagonal-a
 
 [STARTER]
 
-The user of software design is the developer, not the end user of the product. When developers struggle, blame the design, not the people. Pressure, team churn, unclear specs, and noisy environments produce unusable designs. The response is to improve the design.
+The user of software design is the developer, not the end user. When developers struggle, blame the design, not the people. Pressure, team churn, unclear specs, and noisy environments produce unusable designs. Improve the design.
 
 ---
 
@@ -18,15 +18,13 @@ The user of software design is the developer, not the end user of the product. W
 
 [STARTER]
 
-Use these to assess any codebase or API:
-
 | Goal | What It Means | How to Assess |
 |---|---|---|
 | **Learnability** | How quickly a new developer becomes productive | Timed tasks for unfamiliar developers |
 | **Efficiency** | How fast common tasks are performed | Count unnecessary navigation and decisions |
 | **Memorability** | How easily proficiency returns after time away | What do returning developers re-learn? |
 | **Error resistance** | How many bugs the design induces | Track bug locations; ask "what design change prevents this category?" |
-| **Satisfaction** | How pleasant it is to work in the codebase | Developer interviews, retrospectives |
+| **Satisfaction** | How pleasant to work in the codebase | Developer interviews, retrospectives |
 
 ---
 
@@ -36,11 +34,9 @@ Use these to assess any codebase or API:
 
 ### Domain Language in Function Names
 
-Use the domain expert's vocabulary, not mathematical conventions or technical jargon. No `OrderFactory`, `OrderManager`, `OrderHelper`. A domain expert would not know what these mean.
+Use domain expert's vocabulary, not mathematical conventions or technical jargon. No `OrderFactory`, `OrderManager`, `OrderHelper`.
 
 ### Verb-Noun for Transformations (Pipeline-Friendly)
-
-Functions that transform data use verb-noun naming. This reads naturally in pipelines:
 
 ```
 rawOrder
@@ -61,15 +57,11 @@ canPlaceOrder        -- not: orderOk, validateOrderBool
 
 ### When Short Names Are Acceptable
 
-Single-letter names are appropriate only in:
-- Library internals and generic utility functions
-- Lambda parameters in trivial operations (domain names still preferred)
-- Type variables
-- Mathematical domains where the convention IS the domain language
+Single-letter names appropriate only in: library internals and generic utilities | lambda parameters in trivial operations | type variables | mathematical domains where convention IS domain language.
 
 ### Lifecycle Prefixes
 
-Types at different workflow stages get prefixed: `UnvalidatedOrder`, `ValidatedOrder`, `PricedOrder`. The stage is immediately visible in any type signature.
+Types at different workflow stages get prefixed: `UnvalidatedOrder`, `ValidatedOrder`, `PricedOrder`. Stage immediately visible in any type signature.
 
 ### Error Type Naming
 
@@ -81,7 +73,7 @@ Named after what went wrong, scoped to context: `ValidationError`, `PricingError
 
 [STARTER]
 
-Organize code by feature domain rather than technical layer.
+Organize by feature domain rather than technical layer.
 
 **Instead of** (technical layers):
 ```
@@ -98,15 +90,15 @@ speakers/profile/
 order/
 ```
 
-**When to use**: When developers frequently need to find and modify all code related to a specific feature.
-**Why it matters**: When something changes in "call for speakers," it is obvious where to look. Technical layering scatters related code across the entire codebase.
+**When**: Developers frequently need to find and modify all code related to a specific feature.
+**Why**: When something changes in "call for speakers," it's obvious where to look. Technical layering scatters related code across entire codebase.
 
 ### Module Organization Within a Feature
 
-- Simple types at the top (no dependencies)
-- Compound domain types in the middle
-- Aggregates and workflow types at the bottom
-- Types and functions in the same file or types-first, functions-second
+- Simple types at top (no dependencies)
+- Compound domain types in middle
+- Aggregates and workflow types at bottom
+- Types and functions in same file or types-first, functions-second
 
 ---
 
@@ -114,13 +106,13 @@ order/
 
 [STARTER]
 
-The typical developer workflow (find, navigate, read, write, test) executes hundreds of times per day. Small improvements compound.
+Typical developer workflow (find, navigate, read, write, test) executes hundreds of times per day. Small improvements compound.
 
-**Eliminate**: Long methods requiring scrolling. Unclear method names that force reading implementations. Tests that cannot be related to features. Inconsistent placement of similar logic.
+**Eliminate**: Long methods requiring scrolling | unclear method names forcing reading implementations | tests unrelatable to features | inconsistent placement of similar logic.
 
-**Naming as navigation**: Establish consistent patterns where suffix/prefix indicates design role. Names precise enough that search yields 3-4 results at most. IDE-friendly casing enables fast jump-to.
+**Naming as navigation**: Consistent patterns where suffix/prefix indicates design role. Names precise enough that search yields 3-4 results at most. IDE-friendly casing enables fast jump-to.
 
-**Why it matters**: Navigability is a quasi-ignored dimension with enormous cumulative impact.
+**Why**: Navigability is quasi-ignored with enormous cumulative impact.
 
 ---
 
@@ -128,7 +120,7 @@ The typical developer workflow (find, navigate, read, write, test) executes hund
 
 [INTERMEDIATE]
 
-Define a set of constrained roles for your codebase. Each role specifies: what it is responsible for, what it can collaborate with, and how to test it.
+Define constrained roles for your codebase. Each role specifies: responsibilities, allowed collaborators, and testing approach.
 
 | Role | Responsibilities | Can Call | Test With |
 |---|---|---|---|
@@ -138,13 +130,13 @@ Define a set of constrained roles for your codebase. Each role specifies: what i
 | Database Query | Read-only data access | Database only | Unit tests |
 | View Model | Shapes data for presentation | Nothing | Unit tests |
 
-**Why it matters**: Makes the design "easy to use correctly and hard to use incorrectly." A Controller cannot write to the database, so database bugs cannot originate in Controllers.
+**Why**: Makes design "easy to use correctly, hard to use incorrectly." Controller can't write to database, so database bugs can't originate in Controllers.
 
 **Rules for design elements**:
-- Derive them after building 10+ features, not upfront
+- Derive after building 10+ features, not upfront
 - Cover 80% of cases; handle exceptions case-by-case
-- Review periodically as the product evolves
-- Make compliance easier than deviation (provide samples, generators, testing support)
+- Review periodically as product evolves
+- Make compliance easier than deviation (samples, generators, testing support)
 
 ---
 
@@ -154,9 +146,9 @@ Define a set of constrained roles for your codebase. Each role specifies: what i
 
 Deliberately restrict what each component can do. Constrain both behavior (what a thing does) and collaboration (what it can call).
 
-**Why it matters**: Unconstrained components can express too much. Good abstractions restrict what is possible to make the remaining possibilities clearer. Immutability is a prime example: constraining mutation improves usability.
+**Why**: Unconstrained components express too much. Good abstractions restrict possibilities to make remaining ones clearer. Immutability is a prime example.
 
-**When a use case does not fit**: Extract it into a separate module with its own consistency rules rather than polluting the main design.
+**When a use case doesn't fit**: Extract into separate module with its own consistency rules rather than polluting main design.
 
 ---
 
@@ -164,11 +156,11 @@ Deliberately restrict what each component can do. Constrain both behavior (what 
 
 [INTERMEDIATE]
 
-Ask "what design change would prevent this category of bug?" rather than fixing individual instances. Track which code areas are most bug-prone and redesign those areas.
+Ask "what design change prevents this category of bug?" rather than fixing individual instances. Track bug-prone areas and redesign them.
 
-**Fear of making changes signals a design problem**: unclear side effects, missing tests, tangled responsibilities. Fixing individual bugs without addressing the design guarantees recurrence.
+**Fear of making changes signals design problem**: unclear side effects | missing tests | tangled responsibilities. Fixing individual bugs without addressing design guarantees recurrence.
 
-See [fp-algebra-driven-design](./fp-algebra-driven-design.md) section 5 for using algebraic contradiction analysis to find structural root causes.
+See [fp-algebra-driven-design](./fp-algebra-driven-design.md) section 5 for algebraic contradiction analysis.
 
 ---
 
@@ -176,9 +168,9 @@ See [fp-algebra-driven-design](./fp-algebra-driven-design.md) section 5 for usin
 
 [INTERMEDIATE]
 
-Assign a testing approach to each design element role. Controllers get component tests. Command objects get unit tests. This removes the "how should I test this?" decision entirely.
+Assign testing approach to each design element role. Controllers get component tests. Command objects get unit tests. Removes "how should I test this?" decision entirely.
 
-**Why it matters**: Reduces decision fatigue. Tests also document and enforce what each role should do.
+**Why**: Reduces decision fatigue. Tests also document and enforce what each role should do.
 
 ---
 
@@ -217,21 +209,21 @@ Does this module represent a feature domain?
 
 ## 11. Design Heuristics
 
-1. **Blame the design, not the people** -- the foundational heuristic
+1. **Blame the design, not the people** -- foundational heuristic
 2. **No best practices, only contextual practices** -- SOLID helps when you need low cost of change; skip it otherwise
 3. **Constraints enable creativity** -- limiting what a component can do leads to more focused solutions
-4. **Improve incrementally** -- use the imperfect name now, improve it next time you cannot find it
+4. **Improve incrementally** -- use the imperfect name now, improve next time you can't find it
 5. **Action over analysis** -- make things work first, then refine structure
-6. **Consistency at module level** -- system-wide conceptual integrity is hard; module-level consistency is practical and valuable
+6. **Consistency at module level** -- system-wide conceptual integrity is hard; module-level consistency is practical
 
 ---
 
 ## 12. Combining with Other Patterns
 
-**Design Elements + Algebraic Rules**: Each element's constraints ("a Controller can only call Services") are formalizable as algebraic rules, making constraints machine-checkable. See [fp-algebra-driven-design](./fp-algebra-driven-design.md). Example: an architecture test asserts `imports(controllerModule) intersect dbModules == empty`.
+**Design Elements + Algebraic Rules**: Each element's constraints ("a Controller can only call Services") are formalizable as algebraic rules, making constraints machine-checkable. See [fp-algebra-driven-design](./fp-algebra-driven-design.md). Example: `imports(controllerModule) intersect dbModules == empty`.
 
-**Navigability + Simple Rules**: Algebraic decomposition produces small, orthogonal operations with simple rules. Small operations are easy to name well. Good names improve navigability. Example: `applyDiscount` and `calculateTax` are instantly searchable; `processOrder` is not.
+**Navigability + Simple Rules**: Algebraic decomposition produces small, orthogonal operations with simple rules. Small operations are easy to name well. Example: `applyDiscount` and `calculateTax` are instantly searchable; `processOrder` is not.
 
-**Feature Organization + Domain Modeling**: Feature folders align with bounded contexts. Each feature owns its domain types and workflows. See [fp-domain-modeling](./fp-domain-modeling.md). Example: `order/types.fs`, `order/validate.fs`, `order/price.fs` -- all order logic in one place.
+**Feature Organization + Domain Modeling**: Feature folders align with bounded contexts. Each feature owns its domain types and workflows. See [fp-domain-modeling](./fp-domain-modeling.md). Example: `order/types.fs`, `order/validate.fs`, `order/price.fs`.
 
-**Prescribed Testing + Property-Based Testing**: Design elements prescribe WHAT kind of test. PBT patterns prescribe HOW to write those tests as properties. Example: Command objects get conservation properties (`forAll(order -> totalOf(applyDiscount(order)) <= totalOf(order))`). Controllers get round-trip properties.
+**Prescribed Testing + Property-Based Testing**: Design elements prescribe WHAT kind of test. PBT prescribes HOW to write those tests as properties. Example: Command objects get conservation properties (`forAll(order -> totalOf(applyDiscount(order)) <= totalOf(order))`). Controllers get round-trip properties.

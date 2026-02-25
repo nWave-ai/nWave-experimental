@@ -5,45 +5,30 @@ description: Documentation collapse anti-patterns - detection rules, bad example
 
 # Collapse Detection
 
-Documentation collapse occurs when types merge inappropriately, creating content that serves no audience well.
+Documentation collapse = types merge inappropriately, serving no audience well.
 
 ## Anti-Patterns
 
 ### Tutorial Creep
-- **Description**: Tutorial starts explaining "why" extensively
-- **Detection**: Explanation content >20% in tutorial
-- **Fix**: Extract explanation to separate document, link back
+Description: Tutorial explains "why" extensively | Detection: explanation >20% | Fix: extract to separate doc, link back
 
 ### How-to Bloat
-- **Description**: How-to teaches basics before the task
-- **Detection**: Teaching fundamentals before steps begin
-- **Fix**: Link to tutorial for basics; assume reader has baseline knowledge
+Description: How-to teaches basics first | Detection: teaching fundamentals before steps | Fix: link to tutorial, assume baseline
 
 ### Reference Narrative
-- **Description**: Reference includes conversational explanation
-- **Detection**: Prose paragraphs in reference entries
-- **Fix**: Move prose to explanation document, keep reference factual
+Description: Reference includes conversational prose | Detection: prose paragraphs in entries | Fix: move to explanation doc, keep factual
 
 ### Explanation Task Drift
-- **Description**: Explanation ends with "do this" steps
-- **Detection**: Step-by-step instructions appearing in explanation
-- **Fix**: Move steps to how-to guide, link from explanation
+Description: Explanation ends with "do this" steps | Detection: step-by-step in explanation | Fix: move steps to how-to, link
 
 ### Hybrid Horror
-- **Description**: Single document tries all four types
-- **Detection**: Content from 3+ quadrants in one document
-- **Fix**: Split into separate documents with clear boundaries
+Description: Single doc tries all four types | Detection: 3+ quadrants in one doc | Fix: split with clear boundaries
 
 ## Detection Rules
 
-Flag a collapse violation when any of these conditions are true:
-- Document has >20% content from an adjacent quadrant
-- Document attempts to serve two user needs simultaneously
-- User journey stage is ambiguous
-- "Why" explanations appear in tutorials
-- Task steps appear in explanations
-- Teaching appears in how-to guides
-- Narrative prose appears in reference entries
+Flag collapse when:
+- >20% content from adjacent quadrant | Two user needs served simultaneously | Ambiguous user journey stage
+- "Why" in tutorials | Task steps in explanations | Teaching in how-tos | Narrative in references
 
 ## Bad Examples for Calibration
 

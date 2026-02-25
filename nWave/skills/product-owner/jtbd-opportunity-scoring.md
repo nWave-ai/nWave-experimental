@@ -5,11 +5,11 @@ description: JTBD opportunity scoring and prioritization - outcome statement for
 
 # JTBD Opportunity Scoring
 
-Use this skill when prioritizing features, stories, or backlog items based on customer-defined outcomes. Opportunity scoring (Ulwick's ODI) provides a quantitative method that replaces gut-feel prioritization with evidence-based ranking.
+Use when prioritizing features, stories, or backlog items based on customer-defined outcomes. Opportunity scoring (Ulwick's ODI) replaces gut-feel prioritization with evidence-based ranking.
 
 ## Outcome Statements
 
-Every customer need is expressed as a desired outcome statement following a strict format:
+Every customer need expressed as a desired outcome following strict format:
 
 ```
 [Direction] + the [metric] + [object of control] + [contextual clarifier]
@@ -28,15 +28,11 @@ Every customer need is expressed as a desired outcome statement following a stri
 
 ### Quality Checks
 
-An outcome statement must be:
-- **Solution-free**: No reference to specific technology or implementation
-- **Measurable**: Can be rated on importance and satisfaction scales (1-5)
-- **Controllable**: The customer can assess whether the outcome improved
-- **Unambiguous**: Interpreted the same way by all stakeholders
+Outcome statement must be: **Solution-free** (no specific technology) | **Measurable** (ratable on importance/satisfaction 1-5) | **Controllable** (customer can assess improvement) | **Unambiguous** (same interpretation by all stakeholders)
 
 ### Deriving Outcome Statements
 
-Walk the 8-step job map (see `jtbd-core` skill) and generate 2-3 outcome statements per step. This produces 16-24 outcome statements per job -- a comprehensive view of customer needs.
+Walk the 8-step job map (see `jtbd-core` skill) and generate 2-3 per step. Produces 16-24 outcome statements per job -- comprehensive view of customer needs.
 
 | Job Map Step | Outcome Statement Pattern |
 |-------------|--------------------------|
@@ -56,47 +52,42 @@ Opportunity Score = Importance + max(0, Importance - Satisfaction)
 ```
 
 Where:
-- **Importance** = percentage of respondents rating the outcome 4 or 5 on a 1-5 importance scale
-- **Satisfaction** = percentage of respondents rating their current satisfaction 4 or 5 on a 1-5 scale
+- **Importance** = % of respondents rating outcome 4 or 5 on 1-5 scale
+- **Satisfaction** = % of respondents rating current satisfaction 4 or 5 on 1-5 scale
 - **Score range**: 0-20 (higher = greater opportunity)
 
 ### How It Works
 
-The formula rewards outcomes that are both important and unsatisfied. If satisfaction equals or exceeds importance, the second term is zero and the score equals the importance rating alone (appropriately served). If satisfaction falls below importance, the gap amplifies the score (underserved).
+Rewards outcomes both important and unsatisfied. If satisfaction >= importance, second term is zero (appropriately served). If satisfaction < importance, gap amplifies score (underserved).
 
 ### Score Interpretation
 
 | Score Range | Category | Action |
 |-------------|----------|--------|
-| 15-20 | Extremely underserved | High-priority opportunity; invest heavily |
+| 15-20 | Extremely underserved | High-priority; invest heavily |
 | 12-15 | Underserved | Strong opportunity; plan for next iteration |
-| 10-12 | Appropriately served | Maintain current level; incremental improvement |
+| 10-12 | Appropriately served | Maintain; incremental improvement |
 | < 10 | Overserved | Simplification candidate; may be over-engineered |
 
 ## Applying to Feature Prioritization
 
 ### Step 1: Generate Outcome Statements
-
-From job mapping and interview findings, compile a list of outcome statements. Aim for 15-30 per major job.
+From job mapping and interview findings, compile 15-30 per major job.
 
 ### Step 2: Rate Importance and Satisfaction
-
-For each outcome, gather ratings from users/stakeholders. In small-team contexts where large surveys are impractical:
+Gather ratings from users/stakeholders. For small teams:
 - Interview 5-10 users directly
-- Use internal team ratings as a proxy (mark as "team estimate" vs "user data")
-- Leverage existing support tickets, feature requests, and bug reports as signals of importance and dissatisfaction
+- Use internal team ratings as proxy (mark as "team estimate" vs "user data")
+- Leverage support tickets, feature requests, bug reports as signals
 
 ### Step 3: Calculate and Rank
-
-Compute opportunity scores and sort descending. The top scores are your highest-priority features.
+Compute scores, sort descending. Top scores = highest-priority features.
 
 ### Step 4: Map to Stories
-
-Each high-scoring outcome maps to one or more user stories. An outcome with score 15+ should produce at least one story in the current iteration.
+Each high-scoring outcome maps to one or more stories. Score 15+ should produce at least one story in current iteration.
 
 ### Step 5: Identify Overserved Areas
-
-Outcomes scoring below 10 are simplification candidates. Consider whether the current solution over-invests in these areas. Resources spent on overserved outcomes are better redirected to underserved ones.
+Scores below 10 are simplification candidates. Resources on overserved outcomes are better redirected to underserved ones.
 
 ## Opportunity Scoring Matrix Template
 
@@ -131,7 +122,7 @@ Outcomes scoring below 10 are simplification candidates. Consider whether the cu
 
 ## Worked Example
 
-Context: A CLI tool for deploying applications. 8 users surveyed.
+Context: CLI tool for deploying applications. 8 users surveyed.
 
 | # | Outcome Statement | Imp. | Sat. | Score | Priority |
 |---|-------------------|------|------|-------|----------|
@@ -152,20 +143,18 @@ Context: A CLI tool for deploying applications. 8 users surveyed.
 
 Ulwick's methodology assumes large-scale surveys (100+ respondents). For small agile teams:
 
-- **5-10 interviews are sufficient** for directional signals. Treat scores as relative rankings, not absolute measurements.
-- **Use support tickets as proxy data**: High-frequency complaints indicate high importance + low satisfaction.
-- **Team consensus estimation**: When user access is limited, have the team rate outcomes collectively. Document this as "team estimate" to distinguish from user data.
-- **Iterate**: Re-score after each release as satisfaction shifts. A feature that was underserved may become appropriately served after delivery.
+- **5-10 interviews sufficient** for directional signals. Treat scores as relative rankings, not absolute.
+- **Support tickets as proxy data**: High-frequency complaints = high importance + low satisfaction.
+- **Team consensus estimation**: When user access limited, rate collectively. Document as "team estimate."
+- **Iterate**: Re-score after each release as satisfaction shifts.
 
 ## Integration with Other Prioritization Methods
-
-Opportunity scoring complements (not replaces) other methods:
 
 | Method | Best For | Combine With Opportunity Scoring |
 |--------|----------|--------------------------------|
 | MoSCoW | Sprint-level scope decisions | Use opportunity scores to inform Must/Should/Could |
-| Value/Effort matrix | Quick relative ranking | Use opportunity scores as the "value" axis |
-| RICE | Feature-level prioritization | Use opportunity score as the "Impact" component |
+| Value/Effort matrix | Quick relative ranking | Use opportunity scores as "value" axis |
+| RICE | Feature-level prioritization | Use opportunity score as "Impact" component |
 | Story mapping | Release planning | Use opportunity scores to prioritize rows (MVP vs later) |
 
 ## Cross-References

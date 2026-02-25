@@ -1,11 +1,11 @@
 # FP in Clojure -- Functional Software Crafter Skill
 
-Cross-references: [fp-principles](./fp-principles.md), [fp-domain-modeling](./fp-domain-modeling.md)
+Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md)
 
 ## When to Choose Clojure
 
-- Best for: data-centric domains, REPL-driven exploration, rapid prototyping, systems where data shapes evolve frequently
-- Not ideal for: teams wanting compile-time type safety, Android, teams unfamiliar with Lisp syntax
+- Best for: data-centric domains | REPL-driven exploration | rapid prototyping | frequently evolving data shapes
+- Not ideal for: teams wanting compile-time type safety | Android | teams unfamiliar with Lisp syntax
 
 ## [STARTER] Quick Setup
 
@@ -93,7 +93,7 @@ Define specs, get generators and function tests for free.
       (bind-result confirm-order)))
 ```
 
-No stdlib Result/Either -- this is by convention using `{:ok v}` / `{:error r}` maps.
+No stdlib Result/Either -- by convention using `{:ok v}` / `{:error r}` maps.
 
 ## [INTERMEDIATE] Effect Management
 
@@ -145,7 +145,7 @@ For lifecycle management, use Component, Integrant, or Mount:
 
 ## [INTERMEDIATE] Testing
 
-**Frameworks**: clojure.test (built-in), test.check (PBT), Kaocha (test runner).
+**Frameworks**: clojure.test (built-in) | test.check (PBT) | Kaocha (test runner).
 
 ### Property Test with test.check
 
@@ -203,14 +203,14 @@ For lifecycle management, use Component, Integrant, or Mount:
 
 ## Maturity and Adoption
 
-- **Dynamic typing trade-offs**: No compile-time type checking means typos in keywords are silent until runtime. Spec instrumentation helps but is opt-in.
-- **Spec limitations**: Spec is powerful for data validation but lacks the expressiveness of static type systems for complex domain invariants. Spec 2 has been in development for years.
-- **Discipline needed for test coverage**: Without a compiler catching type errors, comprehensive tests are essential. Teams must invest more in testing infrastructure.
-- **Smaller ecosystem**: Fewer libraries than Java/Kotlin. Good JVM interop compensates, but Java interop code is verbose.
+- **Dynamic typing trade-offs**: No compile-time type checking; typos in keywords are silent until runtime. Spec instrumentation helps but is opt-in.
+- **Spec limitations**: Powerful for data validation but lacks expressiveness of static type systems for complex invariants. Spec 2 in development for years.
+- **Discipline needed for test coverage**: Without compiler catching type errors, comprehensive tests are essential.
+- **Smaller ecosystem**: Fewer libraries than Java/Kotlin. Good JVM interop compensates but Java interop code is verbose.
 
 ## Common Pitfalls
 
-1. **Silent nil propagation**: A missing key returns `nil`, which propagates silently. Use `some->` and explicit nil checks at boundaries.
+1. **Silent nil propagation**: Missing key returns `nil`, propagates silently. Use `some->` and explicit nil checks at boundaries.
 2. **Learning curve for non-Lispers**: Parenthesis-heavy syntax is a barrier. Invest in Paredit/Parinfer and REPL workflow first.
 3. **Spec verbosity**: Large spec definitions become unwieldy. Extract into focused namespaces and use `s/merge`.
 4. **Convention-based error handling**: Without stdlib Result, teams use inconsistent patterns. Standardize on `{:ok v}` / `{:error r}` early.

@@ -5,19 +5,17 @@ argument-hint: "[diagram-type] - Optional: --format=[mermaid|plantuml|c4] --leve
 
 # NW-DIAGRAM: Architecture Diagram Generation
 
-**Wave**: CROSS_WAVE
-**Agent**: Morgan (nw-solution-architect)
-**Command**: `*create-diagrams`
+**Wave**: CROSS_WAVE | **Agent**: Morgan (nw-solution-architect) | **Command**: `*create-diagrams`
 
 ## Overview
 
-Generate architecture diagrams from design documents. Supports C4 model levels (context, container, component) in Mermaid, PlantUML, or C4 format. Produces audience-appropriate visualizations: high-level context for stakeholders, component details for developers, deployment topology for operations.
+Generate architecture diagrams from design documents. Supports C4 model levels (context|container|component) in Mermaid|PlantUML|C4 format. Audience-appropriate: high-level context for stakeholders|component details for developers|deployment topology for operations.
 
 ## Context Files Required
 
-- docs/architecture/architecture-design.md - Architecture definition
-- docs/architecture/component-boundaries.md - Component structure
-- docs/architecture/technology-stack.md - Technology choices
+- docs/architecture/architecture-design.md
+- docs/architecture/component-boundaries.md
+- docs/architecture/technology-stack.md
 
 ## Agent Invocation
 
@@ -25,17 +23,12 @@ Generate architecture diagrams from design documents. Supports C4 model levels (
 
 Execute \*create-diagrams for {architecture-component}.
 
-**Context Files:**
-
-- docs/architecture/architecture-design.md
-- docs/architecture/component-boundaries.md
-- docs/architecture/technology-stack.md
+**Context Files:** docs/architecture/architecture-design.md | component-boundaries.md | technology-stack.md
 
 **Configuration:**
-
-- diagram_type: component # component/deployment/sequence/data/context
-- format: mermaid # mermaid/plantuml/c4
-- level: container # context/container/component
+- diagram_type: component (component|deployment|sequence|data|context)
+- format: mermaid (mermaid|plantuml|c4)
+- level: container (context|container|component)
 - output_directory: docs/architecture/diagrams/
 
 ## Success Criteria

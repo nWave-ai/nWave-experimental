@@ -7,14 +7,7 @@ description: Best practices for command definition files - size targets, declara
 
 ## The Forge Model (Gold Standard)
 
-`forge.md` at 40 lines is the reference implementation for dispatcher commands. It contains:
-- Header (wave, agent, overview)
-- Agent invocation (agent name + command + configuration)
-- Success criteria (checklist)
-- Next wave handoff
-- Expected outputs
-
-Every dispatcher command should aspire to this pattern.
+`forge.md` at 40 lines is the reference dispatcher. Contains: header (wave, agent, overview) | Agent invocation (name + command + config) | Success criteria (checklist) | Next wave handoff | Expected outputs. Every dispatcher should aspire to this pattern.
 
 ## Command Categories
 
@@ -70,55 +63,40 @@ Execute \*{command} for {parameters}.
 
 ## Size Targets and Evidence
 
-Research evidence (Chroma Research, Anthropic context engineering) shows:
-- Focused prompts (~300 tokens) outperform full prompts (~113k tokens)
-- Claude exhibits the most pronounced performance gap between focused and full prompts
-- Information buried in the middle of long prompts gets deprioritized ("Lost in the Middle")
-- Claude 4.6 is more proactive and self-directing; verbose instructions cause overtriggering
+Research (Chroma Research, Anthropic context engineering): focused prompts (~300 tokens) outperform full prompts (~113k tokens) | Claude shows most pronounced performance gap | Information buried mid-prompt gets deprioritized ("Lost in the Middle") | Opus 4.6 is proactive/self-directing; verbose instructions cause overtriggering
 
-Targets:
-- Dispatchers: 40-150 lines (pass context, let agent work)
-- Orchestrators: 100-300 lines (coordinate phases, not replicate agent knowledge)
-- Current average is 437 lines; target average is under 150
+Targets: Dispatchers 40-150 lines | Orchestrators 100-300 lines | Current average 437 lines; target under 150
 
 ## The Duplication Triangle
 
-Commands duplicate content in three directions. All three waste tokens:
+Commands duplicate content in three directions, all waste tokens:
 
-1. **Command-to-Command**: Orchestrator briefings, agent registries, parameter parsing repeated in 5-12 files (~620 lines total waste)
-2. **Command-to-Agent**: Domain knowledge that belongs in agent definitions (~1,300 lines total waste). Examples: TDD phases in execute.md, DIVIO templates in document.md, refactoring hierarchies in refactor.md
+1. **Command-to-Command**: Orchestrator briefings, agent registries, parameter parsing repeated in 5-12 files (~620 lines waste)
+2. **Command-to-Agent**: Domain knowledge belonging in agents (~1,300 lines waste). Examples: TDD phases in execute.md, DIVIO templates in document.md, refactoring hierarchies in refactor.md
 3. **Command-to-Self**: develop.md embeds other commands inline (~1,000 lines)
 
-Fix: Extract shared content to a preamble skill. Move domain knowledge to agents. Have orchestrators reference sub-commands rather than embedding them.
+Fix: Extract shared content to preamble skill. Move domain knowledge to agents. Have orchestrators reference sub-commands.
 
 ## Anti-Patterns
 
 | Anti-pattern | Impact | Fix |
 |---|---|---|
-| Procedural overload | Step-by-step for capable agents wastes tokens, risks "lost in the middle" | Declare goal + constraints, let agent apply methodology |
+| Procedural overload | Step-by-step for capable agents wastes tokens, "lost in the middle" | Declare goal + constraints, let agent apply methodology |
 | Duplicated briefings | Same orchestrator constraints in every command (30-80 lines each) | Extract to shared preamble, reference once |
-| Embedded domain knowledge | Refactoring hierarchies, review criteria, TDD cycles in commands | Move to agent definitions or agent skills |
-| Aggressive language | "CRITICAL/MANDATORY/MUST" causes overtriggering in Claude 4.6 | Use direct statements without emphasis markers |
-| Example overload | 50+ lines of JSON examples showing state formats | 2-3 canonical examples suffice |
+| Embedded domain knowledge | Refactoring hierarchies, review criteria, TDD cycles in commands | Move to agent definitions or skills |
+| Aggressive language | "CRITICAL/MANDATORY/MUST" causes overtriggering in Opus 4.6 | Direct statements without emphasis markers |
+| Example overload | 50+ lines of JSON examples | 2-3 canonical examples suffice |
 | Inline validation logic | Prompt template validation in command text | Platform/hook responsibility |
 | Dead code | Deprecated formats, aspirational metrics, old signatures | Remove; version control preserves history |
-| Verbose JSON state examples | 200+ lines of JSON never used by append-only format | Show the actual format used (pipe-delimited), 3 examples max |
+| Verbose JSON state examples | 200+ lines of unused JSON | Show actual format (pipe-delimited), 3 examples max |
 
 ## When Commands Should Contain Logic vs Delegate
 
-**Contain in command** (declarative):
-- Which agent to invoke
-- What context files to read and pass
-- Success criteria and quality gates
-- Next wave handoff
+**Contain in command** (declarative): Which agent to invoke | What context files to read/pass | Success criteria and quality gates | Next wave handoff
 
-**Delegate to agent** (agent's knowledge):
-- How to perform the methodology (TDD phases, review criteria, refactoring levels)
-- Domain-specific templates and schemas
-- Tool-specific configuration (cosmic-ray, pytest, etc.)
-- Quality assessment rubrics
+**Delegate to agent**: Methodology (TDD phases, review criteria, refactoring levels) | Domain-specific templates/schemas | Tool-specific config (cosmic-ray, pytest) | Quality assessment rubrics
 
-Rule of thumb: if the content describes HOW the agent should do its work, it belongs in the agent definition or an agent skill, not the command.
+Rule: if content describes HOW the agent does its work, it belongs in agent definition or skill, not command.
 
 ## Canonical Examples
 
@@ -156,8 +134,6 @@ Execute \*forge to create {agent-name} agent.
 ```
 
 ### Example 2: Medium Dispatcher with Context (~80 lines)
-
-A command like `research.md` that needs to pass context files to the agent:
 
 ```markdown
 # DW-RESEARCH: Evidence-Driven Research
@@ -200,7 +176,7 @@ Execute \*research on {topic} [--embed-for={agent-name}].
 
 ### Example 3: Orchestrator (~200 lines)
 
-An orchestrator coordinates multiple phases but still does not embed agent knowledge:
+Coordinates multiple phases without embedding agent knowledge:
 
 ```markdown
 # DW-DOCUMENT: Documentation Creation
@@ -238,3 +214,15 @@ Create DIVIO-compliant documentation through research and writing phases.
 ```
 
 The orchestrator describes WHAT each phase does and WHO does it. The agents know HOW.
+
+## Compression Guidelines
+
+When optimizing command files for token efficiency:
+
+**Safe to compress**: Prose descriptions → pipe-delimited | Verbose explanations → imperative voice | Filler words ("in order to", "it is important to") → remove | Related bullet items → single line with `|` separators
+
+**Never compress**: `### Example N:` section headers — keep verbatim (eval tools and agents depend on these) | AskUserQuestion decision tree options — these are runtime menu items, not documentation | `**Question**:` lines in decision points — runtime behavior | Code blocks and YAML — preserve verbatim | YAML frontmatter — preserve exactly
+
+**Compression evidence**: Pipe-delimited compression achieves 15-30% token reduction on prose-heavy files. Code-heavy files (PBT skills, code examples) yield <5%. Average across framework: ~7.4% overall.
+
+**Orchestrator skill loading section**: Commands dispatching sub-agents must include `SKILL_LOADING` in the Task prompt reminding the agent to read its skills at `~/.claude/skills/nw/{agent-name}/`. Without this, sub-agents operate without domain knowledge (the `skills:` frontmatter is decorative).

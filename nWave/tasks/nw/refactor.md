@@ -11,12 +11,12 @@ argument-hint: "[target-class-or-module] - Optional: --level=[1-6] --method=[ext
 
 ## Overview
 
-Applies the Refactoring Priority Premise (RPP) — a cascading 6-level hierarchy where lower levels must be completed before higher. The six levels: L1 Readability, L2 Complexity, L3 Responsibilities, L4 Abstractions, L5 Design Patterns, L6 SOLID++. Each level builds on the previous. For complex refactorings spanning multiple classes, the agent applies Mikado Method planning internally.
+Applies the Refactoring Priority Premise (RPP) — cascading 6-level hierarchy where lower levels complete before higher. Levels: L1 Readability|L2 Complexity|L3 Responsibilities|L4 Abstractions|L5 Design Patterns|L6 SOLID++. Each builds on previous. For complex multi-class refactorings, agent applies Mikado Method internally.
 
 ## Context Files Required
 
-- src/\* - Production codebase to refactor
-- tests/\* - Test codebase to refactor
+- src/\* - Production codebase
+- tests/\* - Test codebase
 
 ## Agent Invocation
 
@@ -25,12 +25,10 @@ Applies the Refactoring Priority Premise (RPP) — a cascading 6-level hierarchy
 Execute \*refactor for {target-class-or-module}.
 
 **Context Files:**
-
 - src/\*
 - tests/\*
 
 **Configuration:**
-
 - level: 3 # Shorthand: --from=1 --to=3 (RPP range)
 - from: 1 # Start RPP level (default: 1)
 - to: 3 # End RPP level (default: same as level)
@@ -56,25 +54,25 @@ Execute \*refactor for {target-class-or-module}.
 ```
 /nw:refactor src/auth/token_manager.py --level=2 --scope=module
 ```
-Crafty applies RPP L1-L2: rename ambiguous variables, extract magic numbers into named constants, remove dead code (L1), then simplify conditionals and extract long methods (L2).
+Crafty applies RPP L1-L2: rename ambiguous variables|extract magic numbers into constants|remove dead code (L1), then simplify conditionals|extract long methods (L2).
 
 ### Example 2: SOLID-level design refactor
 ```
 /nw:refactor src/billing/ --level=6 --scope=module --mikado_planning=true
 ```
-Crafty uses Mikado Method to plan a multi-class refactoring, applies dependency inversion and interface segregation across the billing module.
+Crafty uses Mikado Method for multi-class refactoring, applies dependency inversion|interface segregation across billing module.
 
 ### Example 3: RPP range sweep (L1-L3)
 ```
 /nw:refactor src/des/domain/ --from=1 --to=3 --scope=module
 ```
-Crafty sweeps L1 readability, L2 complexity, and L3 responsibility smells. Cascade rule applies: L2 only after L1 clean, L3 only after L2 clean.
+Sweeps L1 readability|L2 complexity|L3 responsibility smells. Cascade rule: L2 only after L1 clean, L3 only after L2 clean.
 
 ### Example 4: Targeted single-level refactor
 ```
 /nw:refactor src/des/cli/verify.py --level=3 --scope=file
 ```
-Crafty targets L3 responsibility smells only (Large Class, Feature Envy, Shotgun Surgery). Assumes L1-L2 already clean.
+Targets L3 responsibility smells only (Large Class, Feature Envy, Shotgun Surgery). Assumes L1-L2 already clean.
 
 ## Expected Outputs
 

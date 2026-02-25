@@ -11,12 +11,12 @@ description: Evidence collection methods, problem categorization, analysis techn
 
 | Category | Sub-Category | Common Symptoms |
 |----------|-------------|-----------------|
-| System Failures | Application crashes, memory leaks, deadlocks, data corruption | Service unavailability, resource exhaustion, integrity errors |
+| System Failures | App crashes, memory leaks, deadlocks, data corruption | Service unavailability, resource exhaustion, integrity errors |
 | System Failures | Hardware, network, database, security | Connectivity loss, capacity limits, access failures |
-| Performance | Response time: slow queries, network latency, algorithmic inefficiency | High p95/p99 latency, user-reported slowness |
-| Performance | Throughput: thread pool exhaustion, connection pool limits, queue backlog | Reduced request capacity, growing queues |
-| Integration | Internal: component communication, data format, version conflicts | Interface errors, serialization failures |
-| Integration | External: third-party availability, API changes, auth failures | Timeout errors, contract violations |
+| Performance | Response time: slow queries, latency, algorithmic inefficiency | High p95/p99, user-reported slowness |
+| Performance | Throughput: thread pool exhaustion, connection limits, queue backlog | Reduced capacity, growing queues |
+| Integration | Internal: component comms, data format, version conflicts | Interface errors, serialization failures |
+| Integration | External: third-party availability, API changes, auth failures | Timeouts, contract violations |
 
 ### Operational Problems
 
@@ -30,58 +30,46 @@ description: Evidence collection methods, problem categorization, analysis techn
 
 ### Technical Evidence Sources
 
-**Logs**: application logs (with timestamp correlation), system/infrastructure logs, database logs, network traces
+**Logs**: application (timestamp correlation) | system/infrastructure | database | network traces
 
-**Metrics**: performance and resource utilization, error rates and response time trends, user behavior and transaction patterns, infrastructure health and capacity
+**Metrics**: performance/resource utilization | error rates/response time trends | user behavior/transaction patterns | infrastructure health/capacity
 
-**Configuration**: system and deployment settings, code changes and version control history (git log, git blame), environment variables and dependencies, security settings and access controls
+**Configuration**: system/deployment settings | code changes/VCS history (git log, blame) | env vars/dependencies | security/access controls
 
 ### Evidence Validation
-
-1. **Cross-reference**: verify data from multiple independent sources
+1. **Cross-reference**: verify from multiple independent sources
 2. **Timestamp validation**: confirm event sequence accuracy
-3. **Completeness check**: identify potential data gaps or corruption
-4. **Correlation vs causation**: distinguish patterns that co-occur from patterns that cause each other
+3. **Completeness check**: identify data gaps/corruption
+4. **Correlation vs causation**: distinguish co-occurrence from causation
 
 ## Analysis Techniques
 
 ### Quantitative
-
-- **Trend analysis**: time series of performance metrics, frequency of error patterns
-- **Distribution analysis**: response time percentiles, error rate distribution across components
-- **Pattern recognition**: log anomaly detection, user behavior patterns, error clustering
+- **Trend**: time series of metrics, error pattern frequency
+- **Distribution**: response time percentiles, error rate across components
+- **Pattern recognition**: log anomalies, behavior patterns, error clustering
 
 ### Qualitative
-
-- **Timeline reconstruction**: build detailed incident timeline, correlate changes with symptoms
-- **Process analysis**: examine workflow disruptions, communication flow, decision chains
-- **Environmental analysis**: recent changes, system load, external factors, related incidents
+- **Timeline reconstruction**: detailed incident timeline, correlate changes with symptoms
+- **Process analysis**: workflow disruptions, communication flow, decision chains
+- **Environmental**: recent changes, system load, external factors, related incidents
 
 ## Solution Design Patterns
 
 ### Immediate Mitigations (restore service)
-- Quick fixes to restore functionality
-- Workarounds to minimize user impact
-- Emergency procedures to prevent escalation
-- Monitoring enhancements for early warning
+Quick fixes | workarounds to minimize impact | emergency procedures | monitoring enhancements
 
 ### Permanent Fixes (prevent recurrence)
-- Architecture modifications to eliminate failure modes
-- Code quality improvements and defensive programming
-- Configuration management and environment consistency
-- Testing and validation process improvements
+Architecture modifications | code quality/defensive programming | config management/environment consistency | testing/validation improvements
 
-### Early Detection (catch it faster next time)
-- Leading indicator identification and monitoring
-- Anomaly detection and predictive alerting
-- Automated quality gates at deployment boundaries
-- Threshold tuning based on incident learnings
+### Early Detection (catch faster)
+Leading indicators | anomaly detection/predictive alerting | automated quality gates | threshold tuning from learnings
 
 ### Solution Prioritization Matrix
 
 | Priority | Criteria | Action |
 |----------|----------|--------|
-| P0 | Active incident, users impacted | Immediate mitigation within hours |
-| P1 | Root cause fix for recurring issue | Permanent fix within current sprint |
-| P2 | Prevention for potential issues | Schedule in next sprint |
-| P3 | Systemic improvement | Add to backlog with evidence |
+| P0 | Active incident, users impacted | Immediate mitigation, hours |
+| P1 | Root cause fix for recurring issue | Permanent fix, current sprint |
+| P2 | Prevention for potential issues | Next sprint |
+| P3 | Systemic improvement | Backlog with evidence |

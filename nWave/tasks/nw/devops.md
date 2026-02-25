@@ -5,19 +5,17 @@ argument-hint: "[deployment-target] - Optional: --environment=[staging|productio
 
 # NW-DEVOPS: Platform Readiness and Infrastructure Design
 
-**Wave**: DEVOP (wave 4 of 6)
-**Agent**: Apex (nw-platform-architect)
-**Command**: `/nw:devops`
+**Wave**: DEVOP (wave 4 of 6) | **Agent**: Apex (nw-platform-architect) | **Command**: `/nw:devops`
 
 ## Overview
 
-Execute DEVOP wave through platform readiness, CI/CD pipeline setup, observability design, and infrastructure preparation. Positioned between DESIGN and DISTILL (DISCOVER > DISCUSS > DESIGN > DEVOP > DISTILL > DELIVER), this wave ensures infrastructure is ready before acceptance tests and code are written.
+Execute DEVOP wave: platform readiness|CI/CD pipeline setup|observability design|infrastructure preparation. Positioned between DESIGN and DISTILL (DISCOVER > DISCUSS > DESIGN > DEVOP > DISTILL > DELIVER), ensures infrastructure is ready before acceptance tests and code.
 
-Apex (nw-platform-architect) translates architecture decisions from DESIGN into operational infrastructure: CI/CD pipelines, logging, monitoring, alerting, and observability.
+Apex translates DESIGN architecture decisions into operational infrastructure: CI/CD pipelines|logging|monitoring|alerting|observability.
 
 ## Interactive Decision Points
 
-Before proceeding, the orchestrator asks the user:
+Before proceeding, the orchestrator asks:
 
 ### Decision 1: Deployment Target
 **Question**: What is the deployment target?
@@ -96,7 +94,7 @@ If Yes to Decision 7:
 4. Release Branching -- long-lived release branches, cherry-pick fixes between branches. Requires per-branch pipelines and cross-branch validation.
 5. Other -- user provides custom strategy
 
-This decision directly influences CI/CD pipeline design: trigger rules, branch protection, environment promotion, and release automation.
+This directly influences CI/CD pipeline design: trigger rules|branch protection|environment promotion|release automation.
 
 ### Decision 9: Mutation Testing Strategy
 **Question**: When should mutation testing run?
@@ -106,50 +104,27 @@ This decision directly influences CI/CD pipeline design: trigger rules, branch p
 3. **pre-release** -- Runs before each release on the entire solution. Best for projects with long release cycles where comprehensive mutation coverage matters most at release boundaries. Slowest feedback but most thorough.
 4. **disabled** -- No mutation testing. Only appropriate for prototypes, spikes, or projects where test quality is validated through other means.
 
-Apex presents all 4 options with trade-offs. User selects one. After selection:
-- Apex asks user permission to write the choice to the project's CLAUDE.md (at project root) under a `## Mutation Testing Strategy` section
-- If approved, Apex appends the section to CLAUDE.md
-- This enables all downstream commands (especially `/nw:deliver`) to auto-detect the strategy without re-asking
+After selection, Apex asks permission to write to project CLAUDE.md under `## Mutation Testing Strategy`:
 
-**CLAUDE.md section format** (per-feature):
-```markdown
-## Mutation Testing Strategy
+**per-feature**: `This project uses **per-feature** mutation testing. Runs after refactoring during each delivery, scoped to modified files. Kill rate gate: >= 80%.`
 
-This project uses **per-feature** mutation testing. Mutation testing runs after refactoring during each feature delivery, scoped to modified files. Kill rate gate: >= 80%.
-```
+**nightly-delta**: `This project uses **nightly-delta** mutation testing. CI runs on files modified each day. NOT run during feature delivery.`
 
-**CLAUDE.md section format** (nightly-delta):
-```markdown
-## Mutation Testing Strategy
+**pre-release**: `This project uses **pre-release** mutation testing. Runs on entire solution before each release. Delivery not blocked.`
 
-This project uses **nightly-delta** mutation testing. CI runs mutation testing on files modified each day. Mutation testing is NOT run during feature delivery.
-```
+**disabled**: `Mutation testing is **disabled**. Test quality validated through code review and CI coverage.`
 
-**CLAUDE.md section format** (pre-release):
-```markdown
-## Mutation Testing Strategy
-
-This project uses **pre-release** mutation testing. Mutation testing runs on the entire solution before each release. Delivery is not blocked by mutation testing.
-```
-
-**CLAUDE.md section format** (disabled):
-```markdown
-## Mutation Testing Strategy
-
-Mutation testing is **disabled** for this project. Test quality is validated through code review and CI test coverage.
-```
-
-Default if user does not choose: **per-feature** (preserves current behavior).
+Default if not chosen: **per-feature**.
 
 ## Context Files Required
 
-- docs/feature/{feature-name}/design/architecture-design.md - From DESIGN wave
-- docs/feature/{feature-name}/design/technology-stack.md - From DESIGN wave
-- docs/feature/{feature-name}/design/component-boundaries.md - From DESIGN wave
+- docs/feature/{feature-name}/design/architecture-design.md
+- docs/feature/{feature-name}/design/technology-stack.md
+- docs/feature/{feature-name}/design/component-boundaries.md
 
 ## Previous Artifacts (Wave Handoff)
 
-- docs/feature/{feature-name}/design/* - Complete architecture (from DESIGN)
+- docs/feature/{feature-name}/design/* — Complete architecture from DESIGN
 
 ## Agent Invocation
 
@@ -160,28 +135,23 @@ Execute platform readiness and infrastructure design for {feature-name}.
 Context files: see Context Files Required above.
 
 **Configuration:**
-
-- deployment_target: {from Decision 1}
-- container_orchestration: {from Decision 2}
-- cicd_platform: {from Decision 3}
-- existing_infrastructure: {from Decision 4}
-- observability_and_logging: {from Decision 5}
-- deployment_strategy: {from Decision 6}
-- continuous_learning: {from Decision 7}
-- git_branching_strategy: {from Decision 8}
-- mutation_testing_strategy: {from Decision 9}
+- deployment_target: {Decision 1} | container_orchestration: {Decision 2}
+- cicd_platform: {Decision 3} | existing_infrastructure: {Decision 4}
+- observability_and_logging: {Decision 5} | deployment_strategy: {Decision 6}
+- continuous_learning: {Decision 7} | git_branching_strategy: {Decision 8}
+- mutation_testing_strategy: {Decision 9}
 
 ## Success Criteria
 
 - [ ] CI/CD pipeline design finalized and documented
-- [ ] Logging infrastructure design complete (structured logging, aggregation)
-- [ ] Monitoring and alerting design complete (metrics, dashboards, SLOs/SLIs)
-- [ ] Observability design complete (distributed tracing, health checks)
+- [ ] Logging infrastructure design complete (structured logging|aggregation)
+- [ ] Monitoring and alerting design complete (metrics|dashboards|SLOs/SLIs)
+- [ ] Observability design complete (distributed tracing|health checks)
 - [ ] Infrastructure integration assessed (if existing infra)
 - [ ] Continuous learning capabilities designed (if applicable)
-- [ ] Git branching strategy selected and CI/CD pipeline triggers aligned to it
+- [ ] Git branching strategy selected and CI/CD triggers aligned
 - [ ] Mutation testing strategy selected and persisted to project CLAUDE.md
-- [ ] Handoff accepted by acceptance-designer (DISTILL wave)
+- [ ] Handoff accepted by nw-acceptance-designer (DISTILL wave)
 
 ## Next Wave
 

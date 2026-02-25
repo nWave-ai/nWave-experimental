@@ -8,82 +8,51 @@ description: Mom Test questioning toolkit, JTBD analysis, interview conduct, ass
 ## Questioning Toolkit by Purpose
 
 ### Problem Discovery
-**Purpose**: Understand if problem is real and worth solving.
-
+Understand if problem is real and worth solving.
 - "Tell me about the last time you [encountered this problem]."
 - "What was the hardest part about that?"
-- "What did you do about it?"
-- "What don't you love about that solution?"
-- "What else have you tried?"
+- "What did you do about it?" | "What don't you love about that solution?" | "What else have you tried?"
 
 ### Understanding the Job
-**Purpose**: Map the job-to-be-done and desired outcomes.
-
+Map the job-to-be-done and desired outcomes.
 - "What are you ultimately trying to accomplish?"
 - "Walk me through your process step by step."
 - "At each step, how do you know if you've succeeded?"
-- "What slows you down or frustrates you most?"
-- "What workarounds have you created?"
+- "What slows you down or frustrates you most?" | "What workarounds have you created?"
 
 ### Probing Assumptions
-**Purpose**: Challenge beliefs and uncover truth.
-
-- "What makes you believe that?"
-- "What would need to be true for this to work?"
-- "What could we assume instead?"
-- "What would change your mind?"
+Challenge beliefs and uncover truth.
+- "What makes you believe that?" | "What would need to be true for this to work?"
+- "What could we assume instead?" | "What would change your mind?"
 
 ### Testing Commitment
-**Purpose**: Distinguish interest from commitment.
-
-- "Would you be willing to [specific action]?"
-- "What would you pay for this?"
-- "Can you introduce me to someone else with this problem?"
-- "When can we schedule a follow-up?"
+Distinguish interest from commitment.
+- "Would you be willing to [specific action]?" | "What would you pay for this?"
+- "Can you introduce me to someone else with this problem?" | "When can we schedule a follow-up?"
 
 ### Exploring Implications
-**Purpose**: Understand impact and urgency.
-
-- "If this were solved, what would change?"
-- "What would that enable you to do?"
+Understand impact and urgency.
+- "If this were solved, what would change?" | "What would that enable you to do?"
 - "What would happen if we didn't solve this?"
 
 ## Interview Conduct Rules
 
-### Do
-- Ask about past specifics ("Tell me about the last time...")
-- Use open, non-directive questions
-- Seek commitment, not praise
-- Keep conversations informal
-- 80% listening, 20% talking
-- Talk about their life first
+**Do**: Ask about past specifics | Open, non-directive questions | Seek commitment not praise | Keep informal | 80% listening | Talk about their life first
 
-### Avoid
-- Asking about future behavior ("Would you use...")
-- Leading questions that suggest desired answers
-- Accepting compliments as validation
-- Talking more than 20% of the time
-- Mentioning your idea before understanding their problem
-- Using formal interview settings
+**Avoid**: Future behavior questions | Leading questions | Accepting compliments as validation | Talking >20% | Mentioning idea before understanding problem | Formal settings
 
 ## Assumption Challenging
 
 ### Triggers
-Challenge user assumptions when:
-- User states belief without evidence
-- User makes prediction about future behavior
-- User dismisses negative feedback
-- User skips to solution before validating problem
-- User relies on a single data point
+Challenge when: belief without evidence | prediction about future | negative feedback dismissed | skipping to solution | single data point relied on
 
 ### Challenge Format
-Present structured options:
-1. "What evidence supports this?" -- Request specific past examples
-2. "What would disprove this?" -- Identify falsification criteria
-3. "What's the opposite assumption?" -- Explore alternatives
-4. "Who would disagree and why?" -- Seek disconfirming perspectives
+1. "What evidence supports this?" -- specific past examples
+2. "What would disprove this?" -- falsification criteria
+3. "What's the opposite assumption?" -- explore alternatives
+4. "Who would disagree and why?" -- disconfirming perspectives
 
-**Tone**: Curious and supportive, not confrontational -- goal is truth-seeking.
+Tone: curious and supportive, not confrontational -- goal is truth-seeking.
 
 ## Assumption Testing Framework
 
@@ -107,8 +76,8 @@ Present structured options:
 
 | Priority | Score | Action |
 |----------|-------|--------|
-| Test first | > 12 | Immediate testing |
-| Test soon | 8-12 | Schedule testing |
+| Test first | > 12 | Immediate |
+| Test soon | 8-12 | Schedule |
 | Test later | < 8 | Backlog |
 
 ### Hypothesis Template
@@ -132,6 +101,6 @@ We will know this is FALSE when we see [counter-signal or absence of signal].
 
 | Result | Criteria | Action |
 |--------|----------|--------|
-| Proven | >80% meet success criteria | Proceed with confidence |
+| Proven | >80% meet success criteria | Proceed |
 | Disproven | <20% meet criteria | Pivot or kill |
-| Inconclusive | 20-80% | Increase sample, try different method, segment results |
+| Inconclusive | 20-80% | Increase sample, try different method, segment |

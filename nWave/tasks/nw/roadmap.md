@@ -11,7 +11,7 @@ argument-hint: '[agent] [goal-description] - Example: @solution-architect "Migra
 
 ## Overview
 
-Dispatches an expert agent to fill in a pre-scaffolded YAML roadmap skeleton. The CLI tools handle structure; the agent handles content.
+Dispatches expert agent to fill a pre-scaffolded YAML roadmap skeleton. CLI tools handle structure; agent handles content.
 
 Output: `docs/feature/{project-id}/roadmap.yaml`
 
@@ -25,16 +25,15 @@ Output: `docs/feature/{project-id}/roadmap.yaml`
 
 ## Execution Steps
 
-You MUST execute these 3 steps in order. Do NOT skip any step.
+You MUST execute these steps in order. Do NOT skip any.
 
 **Step 1 — Parse parameters:**
 1. Agent name (after @, validated against agent registry)
 2. Goal description (quoted string)
-3. Derive project-id from goal (kebab-case, e.g., "Migrate to OAuth2" → "migrate-to-oauth2")
+3. Derive project-id from goal (kebab-case, e.g., "Migrate to OAuth2" -> "migrate-to-oauth2")
 
-**Step 2 — Scaffold skeleton via CLI (mandatory, do this BEFORE invoking the agent):**
+**Step 2 — Scaffold skeleton via CLI (mandatory, BEFORE invoking agent):**
 
-Run this Bash command now:
 ```bash
 PYTHONPATH=~/.claude/lib/python python3 -m des.cli.roadmap init \
   --project-id {project-id} \
@@ -43,11 +42,11 @@ PYTHONPATH=~/.claude/lib/python python3 -m des.cli.roadmap init \
 ```
 For complex projects add: `--phases 3 --steps "01:3,02:2,03:1"`
 
-If exit code is non-zero, stop and report the error. Do NOT write the file manually.
+If exit code non-zero, stop and report error. Do NOT write file manually.
 
-**Step 3 — Invoke agent to fill the skeleton:**
+**Step 3 — Invoke agent to fill skeleton:**
 
-The skeleton file now exists with TODO placeholders. Invoke the agent via Task tool:
+Skeleton exists with TODO placeholders. Invoke via Task tool:
 ```
 @{agent-name}
 
@@ -59,26 +58,25 @@ time estimates, dependencies, and implementation_scope paths.
 Goal: {goal-description}
 ```
 
-Context to pass (if available): measurement baseline, mikado-graph.md, existing docs.
+Context to pass (if available): measurement baseline|mikado-graph.md|existing docs.
 
 **Step 4 — Validate via CLI (hard gate, mandatory):**
 
-Run this Bash command now:
 ```bash
 PYTHONPATH=~/.claude/lib/python python3 -m des.cli.roadmap validate docs/feature/{project-id}/roadmap.yaml
 ```
-- Exit 0 → report success, roadmap is ready
-- Exit 1 → print errors, STOP, do NOT proceed to execution
-- Exit 2 → usage error, STOP
+- Exit 0 -> success, roadmap ready
+- Exit 1 -> print errors, STOP, do NOT proceed
+- Exit 2 -> usage error, STOP
 
 ## Invocation Principles
 
-Keep the agent prompt minimal. The agent knows roadmap structure and planning methodology.
+Keep agent prompt minimal. Agent knows roadmap structure and planning methodology.
 
 Pass: skeleton file path + goal description + measurement context (if available).
-Do not pass: YAML templates, phase guidance, step decomposition rules.
+Do not pass: YAML templates|phase guidance|step decomposition rules.
 
-For performance roadmaps, include measurement context inline so the agent can validate targets against baselines.
+For performance roadmaps, include measurement context inline so agent can validate targets against baselines.
 
 ## Success Criteria
 
@@ -100,7 +98,7 @@ For performance roadmaps, include measurement context inline so the agent can va
 - Invalid agent: report valid agents and stop
 - Missing goal: show usage syntax and stop
 - Scaffold failure (exit 2): report CLI error and stop
-- Validation failure (exit 1): print errors, do not proceed to execution
+- Validation failure (exit 1): print errors, do not proceed
 
 ## Examples
 
@@ -108,13 +106,13 @@ For performance roadmaps, include measurement context inline so the agent can va
 ```
 /nw:roadmap @nw-solution-architect "Migrate authentication to OAuth2"
 ```
-Dispatcher derives project-id="migrate-auth-to-oauth2", scaffolds skeleton, invokes agent to fill TODOs, validates output. Agent produces docs/feature/migrate-auth-to-oauth2/roadmap.yaml.
+Derives project-id="migrate-auth-to-oauth2", scaffolds skeleton, invokes agent to fill TODOs, validates. Produces docs/feature/migrate-auth-to-oauth2/roadmap.yaml.
 
 ### Example 2: Performance roadmap with measurement context
 ```
 /nw:roadmap @nw-solution-architect "Optimize test suite execution"
 ```
-Orchestrator passes measurement data inline. Agent fills skeleton, validates targets against baseline, prioritizes largest bottleneck first.
+Passes measurement data inline. Agent fills skeleton, validates targets against baseline, prioritizes largest bottleneck first.
 
 ### Example 3: Mikado refactoring
 ```
@@ -125,7 +123,7 @@ Agent fills skeleton with methodology: mikado, references mikado-graph.md, maps 
 ## Workflow Context
 
 ```bash
-/nw:roadmap @agent "goal"           # 1. Plan (init → agent fills → validate)
+/nw:roadmap @agent "goal"           # 1. Plan (init -> agent fills -> validate)
 /nw:execute @agent "project" "01-01" # 2. Execute steps
 /nw:finalize @agent "project"        # 3. Finalize
 ```

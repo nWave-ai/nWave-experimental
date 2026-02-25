@@ -7,58 +7,32 @@ description: Roadmap concision rules, step decomposition efficiency, AC abstract
 
 ## Canonical Format
 
-Use ONLY the compact nested format. See `nWave/templates/roadmap-schema.yaml` for required fields and validation rules. Structure: `roadmap` metadata at top, `phases` list with nested `steps`, `implementation_scope`, and `validation` sections. Phase IDs: two digits (`"01"`). Step IDs: `"NN-MM"` where NN matches parent phase.
+Use ONLY compact nested format. See `nWave/templates/roadmap-schema.yaml` for fields/validation. Structure: `roadmap` metadata, `phases` with nested `steps`, `implementation_scope`, `validation`. Phase IDs: two digits (`"01"`). Step IDs: `"NN-MM"`.
 
 ## Concision Requirements
 
-Token efficiency at two levels:
-1. Roadmap tokens: fewer tokens = faster review/maintenance
-2. Implementation tokens: crafter reads roadmap ~35 times (7 phases x 5 steps)
-
-Example: 5000-token roadmap x 35 reads = 175,000 tokens. 1000-token roadmap x 35 reads = 35,000 tokens (80% savings).
+Token efficiency: crafter reads roadmap ~35 times (7 phases x 5 steps). 5000-token x 35 = 175k tokens. 1000-token x 35 = 35k (80% savings).
 
 ### Quantitative Limits
-- Step description: max 50 words
-- Acceptance criteria per step: max 5
-- Each AC: max 30 words
+- Step description: max 50 words | AC per step: max 5 | Each AC: max 30 words
 - Step notes: max 100 words
-- Target tokens: small feature (1-3 steps) = 500, medium (4-8) = 1500, large (9-15) = 3000
+- Target: small (1-3 steps) = 500, medium (4-8) = 1500, large (9-15) = 3000 tokens
 
 ### Include
-- WHAT to build (one sentence)
-- WHY it matters (brief business value)
-- Observable outcomes (testable AC)
-- Architectural constraints (ports, tech)
-- Integration points (which systems)
+WHAT to build (one sentence) | WHY (brief business value) | Observable outcomes (testable AC) | Architectural constraints | Integration points
 
 ### Exclude
-- HOW to implement (crafter decides)
-- Code snippets or class names
-- Algorithm descriptions
-- Step-by-step instructions
-- Technology tutorials
-- Testing strategy (TDD is standard)
-- Motivational language
-- Redundancy across steps
-- Examples when description is clear
+HOW to implement | code snippets/class names | algorithm descriptions | step-by-step instructions | tech tutorials | testing strategy (TDD standard) | motivational language | redundancy | examples when description clear
 
 ### Compression Techniques
-- Bullets over prose
-- Eliminate qualifiers (very, robust, comprehensive)
-- Assume expertise (crafter knows TDD, hexagonal)
-- Active voice ("Implement X" not "The system should")
-- Omit obvious (do not say "write tests")
+Bullets over prose | eliminate qualifiers | assume expertise | active voice | omit obvious
 
 ## Acceptance Criteria Abstraction
 
 AC describe observable outcomes, never internal implementation.
 
 ### Rules
-- Describe WHAT the system does (behavior), not HOW (implementation)
-- Never reference private methods (underscore prefix)
-- Never reference internal class decomposition
-- Never prescribe method signatures, parameter names, return types
-- The software-crafter decides internal structure during GREEN + REFACTOR
+Describe WHAT (behavior) not HOW (implementation) | Never reference private methods (underscore prefix) | Never reference internal class decomposition | Never prescribe signatures/params/return types | Crafter decides structure during GREEN + REFACTOR
 
 ### Good AC Examples
 - "DES module importable from installation target after install"
@@ -74,47 +48,37 @@ AC describe observable outcomes, never internal implementation.
 
 ### Step Ratio Check
 Rule: `steps_count / estimated_production_files <= 2.5`
-Violation: too many steps for production file count = scenario-driven over-decomposition
-Action: merge steps targeting the same production file
+Violation = over-decomposition. Action: merge steps targeting same file.
 
 ### Identical Pattern Detection
-Rule: if N steps differ only by a substitution variable (e.g., plugin name), batch into 1 step
-Threshold: 3+ identical-pattern steps must be batched
+Rule: if N steps differ only by substitution variable, batch into 1 step. Threshold: 3+ identical-pattern steps must batch.
 Bad: 4 separate steps for AgentsPlugin, CommandsPlugin, TemplatesPlugin, UtilitiesPlugin
-Good: 1 step creating all 4 wrapper plugins
+Good: 1 step creating all 4
 
 ### No-Op Prevention
-Rule: each step must add production code. Validation-only steps are not steps.
-Bad: "Step 02-05: Validate extraction with integration tests" (no new production code)
-Good: validation is part of the preceding step's REVIEW phase
+Each step must add production code. Validation-only steps are not steps.
+Bad: "Step 02-05: Validate extraction with integration tests"
+Good: validation is part of preceding step's REVIEW phase
 
 ## Step-to-Scenario Mapping
 
-For roadmaps feeding into implementation (DELIVER wave):
+For roadmaps feeding DELIVER wave:
 1. Read acceptance tests (tests/acceptance/test_*.py) before creating roadmap
-2. Count acceptance test scenarios (def test_*)
-3. Create approximately 1 step per scenario (flexibility for infrastructure steps)
-4. Mark infrastructure steps clearly: "type: infrastructure"
-5. Principle: 1 Scenario = 1 Step = 1 TDD Cycle
+2. Count scenarios (def test_*) | 3. ~1 step per scenario (flexibility for infra steps)
+4. Mark infra steps: "type: infrastructure" | 5. Principle: 1 Scenario = 1 Step = 1 TDD Cycle
 
 ## Measure Before Plan Gate
 
-Before creating any roadmap, verify:
-1. Timing data shows WHERE time is spent
-2. Impact ranking shows which component contributes MOST
-3. Target validation provides evidence the proposed target is achievable
+Before any roadmap, verify: 1. Timing data shows WHERE time spent | 2. Impact ranking shows MOST contributing component | 3. Target validation provides evidence
 
-If any data is missing: halt roadmap creation, request measurement data, offer to help gather metrics. This gate is blocking.
+Missing data: halt, request measurement, offer to help. Gate is blocking.
 
 ## Simplest Solution Gate
 
-Before proposing multi-phase implementations (>3 steps), document rejected alternatives:
+Before multi-phase (>3 steps), document rejected alternatives:
 
 ### Alternatives to Consider
-1. Configuration-only change (no code)
-2. Single-file change (minimal code)
-3. Existing tool/library/framework solution
-4. Partial implementation (solve 80% simply)
+1. Configuration-only (no code) | 2. Single-file change | 3. Existing tool/library | 4. Partial (solve 80% simply)
 
 ### Documentation Format
 ```markdown
@@ -130,4 +94,4 @@ Before proposing multi-phase implementations (>3 steps), document rejected alter
 2. Complexity justified by: {benefit simple solutions cannot achieve}
 ```
 
-Minimum 2 alternatives documented. Each requires specific description, expected impact, and evidence-based rejection.
+Min 2 alternatives. Each: specific description, expected impact, evidence-based rejection.

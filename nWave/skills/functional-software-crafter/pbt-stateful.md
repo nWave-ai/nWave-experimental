@@ -14,19 +14,19 @@ Is the system under test a pure function?
     No  -> Use stateless PBT
 ```
 
-Use stateful PBT for: databases, APIs, caches, queues, state machines, protocols, connection pools, file systems.
+Use stateful PBT for: databases | APIs | caches | queues | state machines | protocols | connection pools | file systems.
 
 ## Core Concepts
 
 ### The Model
 
-A simplified representation of the system's expected state. The model drives test generation and verification.
+Simplified representation of system's expected state. Drives test generation and verification.
 
 Rules for model design:
-- Simpler than the system under test (a key-value store model is just a dict)
+- Simpler than system under test (key-value store model is just a dict)
 - Captures observable behavior, not implementation details
 - Pure -- no side effects in model code
-- The source of authority during both generation and shrinking
+- Source of authority during both generation and shrinking
 
 ### Commands
 
@@ -35,8 +35,8 @@ Each command defines four things:
 | Component | Purpose | When It Runs |
 |-----------|---------|-------------|
 | Precondition | Is this command valid in current state? | Generation + shrinking |
-| Execution | Run the operation on the real system | Execution phase only |
-| State transition | Update the model | Both phases |
+| Execution | Run operation on real system | Execution phase only |
+| State transition | Update model | Both phases |
 | Postcondition | Does real result match model? | Execution phase only |
 
 ### Two-Phase Execution
@@ -47,9 +47,9 @@ Each command defines four things:
 
 ### Symbolic References
 
-During generation, commands that return values (e.g., "create user, get back ID") produce symbolic placeholders. These are resolved to real values during execution.
+During generation, commands returning values produce symbolic placeholders, resolved to real values during execution.
 
-Rule: Treat all values from the real system as opaque in model code. Store them, pass them, but never inspect their contents during generation.
+Rule: Treat all values from real system as opaque in model code. Store and pass them, never inspect during generation.
 
 ## Command Design Patterns
 
@@ -102,25 +102,24 @@ Tests that concurrent execution is equivalent to some valid sequential execution
 4. Execute branches concurrently
 5. Check if results match any valid sequential interleaving
 
-Supported by: PropEr (`parallel_commands`), CsCheck (`SampleConcurrent`), Hedgehog, fast-check (`scheduler`), ScalaCheck.
-
+Supported by: PropEr (`parallel_commands`) | CsCheck (`SampleConcurrent`) | Hedgehog | fast-check (`scheduler`) | ScalaCheck.
 NOT supported by: Hypothesis.
 
-Use linearizability testing only when concurrent correctness is a primary risk. For most systems, sequential stateful testing catches most bugs at lower cost.
+Use linearizability testing only when concurrent correctness is primary risk. Sequential stateful testing catches most bugs at lower cost.
 
 ## Anti-Patterns (8 Documented)
 
 ### 1. Model Too Complex
-Making the model as complex as the system. If bugs in the model mirror system bugs, the test is worthless.
+Making model as complex as system. If model bugs mirror system bugs, test is worthless.
 **Fix**: Model the what (interface contract), not the how (implementation).
 
 ### 2. Insufficient Action Coverage
-Not monitoring which commands actually execute. Tests "pass" while never exercising critical paths.
+Not monitoring which commands execute. Tests "pass" while never exercising critical paths.
 **Fix**: Collect distribution statistics. Weight commands to ensure coverage.
 
 ### 3. Weak Preconditions
-Missing preconditions that allow invalid commands, producing spurious failures.
-**Fix**: Preconditions should precisely capture the system's documented contract.
+Missing preconditions allowing invalid commands, producing spurious failures.
+**Fix**: Preconditions should precisely capture system's documented contract.
 
 ### 4. State Explosion
 Too many state variables creating combinatorial explosion (N booleans = 2^N states).
@@ -128,30 +127,30 @@ Too many state variables creating combinatorial explosion (N booleans = 2^N stat
 
 ### 5. Side Effects in Model Code
 I/O or external mutations in preconditions or state transitions.
-**Fix**: Model code must be pure. Only command execution touches the real system.
+**Fix**: Model code must be pure. Only command execution touches real system.
 
 ### 6. Inspecting Opaque Values During Generation
-Pattern-matching symbolic placeholders that don't have real values yet.
-**Fix**: Never inspect values from the real system in `next_state`. Store and pass, but don't transform.
+Pattern-matching symbolic placeholders without real values yet.
+**Fix**: Never inspect values from real system in `next_state`. Store and pass, don't transform.
 
 ### 7. Not Shrinking-Aware
-Commands that work during generation but break during shrinking because preconditions are incomplete.
-**Fix**: Every command using a resource must have a precondition verifying that resource exists in the model.
+Commands that work during generation but break during shrinking due to incomplete preconditions.
+**Fix**: Every command using a resource must have precondition verifying resource exists in model.
 
 ### 8. Testing Implementation Details
 Modeling internal structure (e.g., tree rotations) instead of observable behavior.
-**Fix**: Model the interface contract. For a sorted set, the model is a sorted list.
+**Fix**: Model the interface contract. For sorted set, model is sorted list.
 
 ## Debugging Failed Stateful Tests
 
 ### Reading a Failing Command Sequence
 
-When a stateful test fails, the framework reports a sequence of commands and the postcondition that failed. Read it as a story:
+When a stateful test fails, framework reports command sequence and failing postcondition. Read as a story:
 
-1. **Identify the failing command**: The last command in the sequence is where the postcondition failed
-2. **Trace the model state**: Walk through each command mentally, tracking what the model expects
-3. **Find the divergence**: Where does the real system's behavior diverge from the model?
-4. **Check if it is a test bug or system bug**: Is the model wrong, or is the system wrong?
+1. **Identify failing command**: Last command is where postcondition failed
+2. **Trace model state**: Walk through each command, tracking model expectations
+3. **Find divergence**: Where does real system diverge from model?
+4. **Check if test bug or system bug**: Is model wrong, or system wrong?
 
 ### Common Failure Patterns
 
@@ -160,38 +159,37 @@ When a stateful test fails, the framework reports a sequence of commands and the
 | Failure only with 3+ commands | State-dependent bug triggered by specific sequence |
 | Failure involves create-then-use | Resource lifecycle bug or symbolic reference issue |
 | Non-deterministic failures | Race condition or external dependency |
-| Failure disappears after shrinking removes commands | Missing precondition (shrinking removes a dependency) |
+| Failure disappears after shrinking removes commands | Missing precondition |
 | Model and system disagree on count/size | Off-by-one or missing cleanup |
 
 ### Shrinking Interpretation
 
-The shrunk sequence is the minimal reproduction. If shrinking removes a command and the test still fails, that command was irrelevant. The remaining commands are all necessary to trigger the bug.
+Shrunk sequence is minimal reproduction. If shrinking removes a command and test still fails, that command was irrelevant. Remaining commands are all necessary.
 
-If shrinking produces an unexpectedly long sequence, check for missing preconditions -- the shrinker cannot remove commands when their removal would violate later preconditions.
+If shrinking produces unexpectedly long sequence, check for missing preconditions -- shrinker can't remove commands when removal would violate later preconditions.
 
-If your minimal failing sequence needs 6+ commands, shrinking removed many dependencies -- check for missing preconditions.
+If minimal failing sequence needs 6+ commands, shrinking removed many dependencies -- check for missing preconditions.
 
 ## Oracle Design
 
 ### Building a Model
 
-1. Start with the simplest possible data structure (usually a dict or list)
-2. Add only the state needed to express postconditions
+1. Start with simplest possible data structure (usually dict or list)
+2. Add only state needed to express postconditions
 3. Keep model transitions obvious and trivial
-4. If the model gets complex, you may be modeling too much
+4. If model gets complex, you may be modeling too much
 
 ### Handling Non-Determinism
 
-When the real system has non-deterministic behavior:
-- **Acceptable non-determinism** (e.g., UUID generation): Track generated values in model, compare by stored reference
-- **Timing-dependent behavior**: Model the set of acceptable outcomes, assert the real result is in that set
-- **Random internal choices**: Use a seeded system under test, or assert invariants rather than exact values
+- **Acceptable non-determinism** (UUID generation): Track generated values in model, compare by stored reference
+- **Timing-dependent behavior**: Model set of acceptable outcomes, assert real result is in that set
+- **Random internal choices**: Use seeded system, or assert invariants rather than exact values
 
 ### Model Completeness
 
-The model does not need to capture every system behavior. Focus on:
-- The operations you want to test
-- The state those operations depend on
-- The postconditions that verify correctness
+Model doesn't need to capture every system behavior. Focus on:
+- Operations you want to test
+- State those operations depend on
+- Postconditions that verify correctness
 
-A partial model that tests 5 operations well is better than a complete model that tests 20 operations poorly.
+A partial model testing 5 operations well beats a complete model testing 20 operations poorly.

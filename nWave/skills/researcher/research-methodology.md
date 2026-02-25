@@ -7,7 +7,7 @@ description: Research output templates, distillation workflow, and quality stand
 
 ## Research Output Template
 
-Use this template for all research documents written to `docs/research/`.
+Use for all research documents in `docs/research/`.
 
 ```markdown
 # Research: {Topic}
@@ -25,7 +25,7 @@ Use this template for all research documents written to `docs/research/`.
 
 ## Research Methodology
 
-**Search Strategy**: {description of how sources were found}
+**Search Strategy**: {how sources were found}
 
 **Source Selection Criteria**:
 - Source types: {academic, official, industry, technical_docs}
@@ -128,43 +128,35 @@ Use this template for all research documents written to `docs/research/`.
 
 ## Skill Distillation Workflow
 
-When creating a skill for a specific agent (via `*create-skill` or when `skill_for` is specified):
+When creating a skill (via `*create-skill` or `skill_for` specified):
 
 ### Phase 1: Research
-1. Execute comprehensive research as normal
-2. Create full research document in `docs/research/{category}/{topic}-comprehensive-research.md`
-3. Complete all quality gates
+Execute comprehensive research, create full doc in `docs/research/{category}/{topic}-comprehensive-research.md`, complete quality gates.
 
 ### Phase 2: Distillation
-1. Read the comprehensive research
-2. Transform content from academic to practitioner-focused
-3. Preserve 100% of essential concepts (no lossy compression)
-4. Remove: verbose explanations, extensive examples, redundant cross-references
+1. Read comprehensive research
+2. Transform: academic -> practitioner-focused
+3. Preserve 100% essential concepts (no lossy compression)
+4. Remove: verbose explanations, extensive examples, redundant cross-refs
 5. Keep: core concepts, practical tools, methodologies, decision heuristics
-6. Make self-contained (no external file references)
-7. Target under 1000 tokens per skill file
-8. Write to `nWave/skills/{agent-name}/{topic}-methodology.md`
+6. Make self-contained (no external refs) | Target <1000 tokens/file
+7. Write to `nWave/skills/{agent-name}/{topic}-methodology.md`
 
 ### Phase 3: Validation
-1. Verify all essential concepts from research appear in skill
-2. Confirm practitioner focus (actionable, not academic)
-3. Check self-containment (no dangling references)
+Verify all essential concepts present | Confirm practitioner focus | Check self-containment
 
 ## Quality Standards
 
 ### Per-Claim Requirements
-- Minimum 3 independent sources for major claims
-- Each source validated against `nWave/data/config/trusted-source-domains.yaml`
+- Min 3 independent sources for major claims
+- Each validated against `nWave/data/config/trusted-source-domains.yaml`
 - Cross-reference status documented per finding
 
 ### Confidence Ratings
 - **High**: 3+ high-reputation sources agree, no contradictions
-- **Medium**: 2+ sources agree, minor contradictions or some medium-trust sources
-- **Low**: Single source or significant contradictions among sources
+- **Medium**: 2+ agree, minor contradictions or some medium-trust
+- **Low**: single source or significant contradictions
 
 ### Quality Gates (before finalizing)
-1. Every major claim has 3+ source citations
-2. All sources from trusted domains
-3. All findings are evidence-backed
-4. Knowledge gaps are documented
-5. Output path is within allowed directories
+1. Every major claim has 3+ citations | 2. All sources from trusted domains
+3. All findings evidence-backed | 4. Knowledge gaps documented | 5. Output in allowed directories

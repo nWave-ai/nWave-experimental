@@ -8,8 +8,7 @@
 | CsCheck | C# | PCG-based | Yes | Yes (linearizability) | C# projects needing concurrent testing |
 | fsharp-hedgehog | F# | Integrated | No | No | F# projects wanting modern integrated shrinking |
 
-**C# default**: CsCheck (better shrinking, stateful + parallel support).
-**F# default**: FsCheck or fsharp-hedgehog depending on needs.
+**C# default**: CsCheck (better shrinking, stateful + parallel). **F# default**: FsCheck or fsharp-hedgehog.
 
 ## Quick Start (FsCheck)
 
@@ -103,7 +102,6 @@ Gen.Int.Where(x => x > 0)             // filter
 ## Stateful Testing
 
 FsCheck: No stateful testing support. Use CsCheck for stateful and parallel testing.
-
 fsharp-hedgehog: No stateful testing support.
 
 ### CsCheck Stateful Testing
@@ -175,7 +173,7 @@ Gen.option (Gen.int (Range.linear 0 100))
 
 ### FsCheck
 - **F# + C# + VB.NET**: Works across all .NET languages
-- **Arb<T> type class**: Type-based generation and shrinking, automatic derivation
+- **Arb<T> type class**: Type-based generation/shrinking, automatic derivation
 - **v3 stable**: Major rewrite with improved API and performance
 - **Conditional properties**: `Prop.When` for preconditions with automatic discard tracking
 - **Model-based testing**: `Prop.ForAll` with `Command` for lightweight model checking

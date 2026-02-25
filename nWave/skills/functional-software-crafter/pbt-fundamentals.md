@@ -4,7 +4,7 @@ Core property-based testing knowledge, language-agnostic. Load language-specific
 
 ## What PBT Is
 
-Instead of specifying individual test cases, define properties (rules that hold for all valid inputs) and let the framework generate hundreds of random inputs to attempt falsification. When a failure is found, the framework automatically shrinks the input to a minimal reproducing case.
+Instead of specifying individual test cases, define properties (rules for all valid inputs) and let the framework generate hundreds of random inputs to attempt falsification. On failure, framework automatically shrinks input to minimal reproducing case.
 
 PBT complements example-based tests. Use both.
 
@@ -15,13 +15,13 @@ PBT complements example-based tests. Use both.
 | Property Type | Use When | Example Domain |
 |--------------|----------|----------------|
 | Invariant | Output has structural guarantees regardless of input | sort preserves length, tree stays balanced |
-| Idempotency | Applying operation twice should equal applying once | formatting, deduplication, HTTP PUT |
+| Idempotency | Applying operation twice equals applying once | formatting, deduplication, HTTP PUT |
 | Round-trip | Two operations are inverses | encode/decode, serialize/deserialize, compress/decompress |
-| Oracle | A simpler reference implementation exists | optimized algo vs naive, new parser vs stdlib |
-| Metamorphic | Cannot verify single output but can relate multiple outputs | ML classifiers, search engines, numeric computation |
-| Commutativity | Operation order should not matter | set operations, independent migrations |
+| Oracle | Simpler reference implementation exists | optimized algo vs naive, new parser vs stdlib |
+| Metamorphic | Can't verify single output but can relate multiple outputs | ML classifiers, search engines, numeric computation |
+| Commutativity | Operation order shouldn't matter | set operations, independent migrations |
 | Inductive | Property holds for base case and each incremental step | recursive data structures, incremental builds |
-| Hard-to-find, easy-to-verify | Solution is expensive to compute but cheap to check | pathfinding, factorization, compilation |
+| Hard-to-find, easy-to-verify | Solution expensive to compute but cheap to check | pathfinding, factorization, compilation |
 
 ### Decision Tree: Given a Function, Which Properties Apply?
 
@@ -53,23 +53,23 @@ Start: What does the function do?
         -> Hard-to-find/easy-to-verify: verify(solve(x)) == true
 ```
 
-Most functions have 2-4 applicable property types. Start with the easiest to express, then add more.
+Most functions have 2-4 applicable property types. Start with easiest to express, then add more.
 
 ### Property Type Details
 
-**Invariant**: `len(sort(xs)) == len(xs)`. The most common starting point. Look for what the output guarantees structurally.
+**Invariant**: `len(sort(xs)) == len(xs)`. Most common starting point. Look for structural guarantees of output.
 
 **Idempotency**: `f(f(x)) == f(x)`. Applies to normalization, formatting, caching, PUT requests.
 
-**Round-trip**: `decode(encode(x)) == x`. The highest-value property when applicable -- tests two functions simultaneously.
+**Round-trip**: `decode(encode(x)) == x`. Highest-value property when applicable -- tests two functions simultaneously.
 
-**Oracle**: `my_sort(xs) == sorted(xs)`. Use when a trusted reference exists. The oracle should be "so simple it is obviously correct."
+**Oracle**: `my_sort(xs) == sorted(xs)`. Use when trusted reference exists. Oracle should be "so simple it's obviously correct."
 
-**Metamorphic**: Define relations between executions. Example: `sin(pi - x) == sin(x)`. Valuable when single-output verification is impossible (ML models, search algorithms).
+**Metamorphic**: Define relations between executions. Example: `sin(pi - x) == sin(x)`. Valuable when single-output verification is impossible.
 
 **Commutativity**: `f(g(x)) == g(f(x))`. Applies when operations should be order-independent.
 
-**Inductive**: Verify base case + step preservation. Natural for recursive structures (trees, lists, graphs).
+**Inductive**: Verify base case + step preservation. Natural for recursive structures.
 
 **Hard-to-find, easy-to-verify**: `product(factorize(n)) == n`. Generate input, run algorithm, verify output cheaply.
 
@@ -80,9 +80,9 @@ Most functions have 2-4 applicable property types. Start with the easiest to exp
 1. **Built-in primitives**: integers, strings, booleans, lists, dicts
 2. **Map**: Transform generated values: `integers().map(x => x * 2)` for even numbers
 3. **Filter**: Reject invalid values (use sparingly -- prefer constraining generators)
-4. **FlatMap/Chain**: When one value determines the shape of the next (dependent generation)
+4. **FlatMap/Chain**: When one value determines shape of next (dependent generation)
 5. **Recursive**: For tree-like structures -- requires base case + recursive case with size control
-6. **Frequency/Weighted**: Control distribution to ensure edge cases get coverage
+6. **Frequency/Weighted**: Control distribution to ensure edge case coverage
 
 ### Generator Design Rules
 
@@ -97,16 +97,16 @@ Most functions have 2-4 applicable property types. Start with the easiest to exp
 | Strategy | How It Works | Used By | Trade-off |
 |----------|-------------|---------|-----------|
 | Type-based | Separate shrink function per type; returns list of simpler candidates | QuickCheck, PropEr, FsCheck | Explicit control but manual composition |
-| Integrated | Generators produce shrink trees (rose trees); composition is automatic | Hedgehog, fast-check, jqwik | Automatic but poor with dependent generators |
+| Integrated | Generators produce shrink trees (rose trees); composition automatic | Hedgehog, fast-check, jqwik | Automatic but poor with dependent generators |
 | Internal | Shrinks underlying byte stream, replays strategies | Hypothesis, rapid | Fully automatic, works with monadic bind |
 
-Shrinking transforms `[847, -23, 0, 445, 12]` into `[0, -1]` -- the minimal failing case. Without shrinking, PBT finds bugs but makes them hard to understand.
+Shrinking transforms `[847, -23, 0, 445, 12]` into `[0, -1]` -- minimal failing case. Without shrinking, PBT finds bugs but makes them hard to understand.
 
 ## When NOT to Use PBT
 
-- **Highly specified I/O**: Functions with a single correct output for each input (use example-based tests)
-- **UI/visual testing**: Properties of visual output are hard to express mathematically
-- **Integration tests with external services**: Non-determinism from external systems confuses shrinking
+- **Highly specified I/O**: Functions with single correct output per input (use example-based tests)
+- **UI/visual testing**: Properties of visual output hard to express mathematically
+- **Integration tests with external services**: Non-determinism confuses shrinking
 - **Simple CRUD with no business logic**: Overhead exceeds benefit
 - **Performance testing**: PBT tests correctness, not speed
 
@@ -121,10 +121,10 @@ Shrinking transforms `[847, -23, 0, 445, 12]` into `[0, -1]` -- the minimal fail
 
 ## Adoption Guidance
 
-1. Start with round-trip properties -- they are easiest to write and highest-value
+1. Start with round-trip properties -- easiest to write and highest-value
 2. Add invariant checks for data structure operations
 3. Introduce oracle properties when reference implementations exist
-4. Move to stateful PBT for systems with mutable state (load pbt-stateful skill)
+4. Move to stateful PBT for mutable state systems (load pbt-stateful skill)
 5. Monitor generator distributions -- tests that never exercise edge cases provide false confidence
 
 ### Round-trip Property Example

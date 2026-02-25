@@ -5,107 +5,67 @@ description: Review dimensions and scoring for root cause analysis quality asses
 
 # Troubleshooter Review Criteria
 
-Detailed review dimensions and scoring for root cause analysis quality assessment.
+Review dimensions and scoring for root cause analysis quality assessment.
 
 ## Dimension 1: Causality Logic
 
-Check each WHY-to-WHY link in the causal chain.
+Check each WHY-to-WHY link.
 
-**Pass criteria**:
-- Each causal link has a logical mechanism (not just correlation)
-- No steps are skipped in the chain
-- Alternative explanations are considered and eliminated with reasoning
-- The chain reads coherently in both directions (forward and backward)
+Pass: logical mechanism (not just correlation) | no skipped steps | alternatives considered/eliminated | chain reads coherently both directions
 
-**Common failures**:
-- Correlation assumed as causation ("X happened before Y, so X caused Y")
-- Causal chain gaps (WHY 2 does not logically follow from WHY 1)
-- Single-path tunnel vision (first plausible cause accepted without alternatives)
+Failures: correlation assumed as causation | causal chain gaps | single-path tunnel vision (first plausible cause accepted)
 
-**Severity**: Critical -- wrong root cause leads to ineffective fixes.
+Severity: Critical -- wrong root cause = ineffective fixes.
 
 ## Dimension 2: Evidence Quality
 
-Verify that findings are grounded in observable data, not assumptions.
+Verify findings grounded in observable data.
 
-**Pass criteria**:
-- Each WHY level cites specific evidence (log entries, metrics, config state, reproduction steps)
-- Evidence is verifiable by a third party
-- Timeline of events supports the claimed causality
-- Hypotheses are explicitly marked as unverified
+Pass: each WHY cites specific evidence (logs, metrics, config, repro steps) | evidence verifiable by third party | timeline supports causality | hypotheses marked unverified
 
-**Common failures**:
-- "Probably because..." without supporting data
-- Vague references ("the logs show issues" without specifics)
-- Mixing verified facts with speculation without labeling
+Failures: "Probably because..." without data | vague references ("logs show issues") | mixing facts with speculation unlabeled
 
-**Severity**: High -- unreliable analysis undermines trust in conclusions.
+Severity: High -- unreliable analysis undermines trust.
 
 ## Dimension 3: Alternative Hypotheses
 
-Verify the analysis explored competing explanations before concluding.
+Verify competing explanations explored.
 
-**Pass criteria**:
-- At least 2 alternative causes considered at WHY levels 1-3
-- Each alternative either pursued as a parallel branch or eliminated with evidence
-- "Why not" reasoning documented for rejected alternatives
+Pass: 2+ alternatives at WHY 1-3 | each pursued or eliminated with evidence | "why not" reasoning documented
 
-**Common failures**:
-- Analysis stops at first plausible cause
-- Alternatives mentioned but not evaluated
-- Confirmation bias (evidence selectively supports a predetermined conclusion)
+Failures: stops at first plausible cause | alternatives mentioned but unevaluated | confirmation bias
 
-**Severity**: High -- may miss the actual root cause.
+Severity: High -- may miss actual root cause.
 
 ## Dimension 4: Five-WHY Depth
 
-Verify the analysis reaches fundamental causes, not intermediate symptoms.
+Verify analysis reaches fundamental causes.
 
-**Pass criteria**:
-- Each branch reaches WHY level 5 (or explicitly justifies stopping earlier with evidence that a true root cause was found)
-- Final root causes are actionable (a fix can be designed)
-- Root causes explain the symptoms when traced forward
+Pass: each branch reaches WHY 5 (or justifies stopping with evidence) | final causes are actionable | causes explain symptoms when traced forward
 
-**Common failures**:
-- Stopping at WHY 2-3 (intermediate cause, not root)
-- WHY 5 is vague or philosophical rather than specific and actionable
-- Branches abandoned partway through
+Failures: stopping at WHY 2-3 | WHY 5 vague/philosophical not actionable | branches abandoned
 
-**Severity**: High -- shallow analysis leads to band-aid fixes that recur.
+Severity: High -- shallow analysis = band-aid fixes that recur.
 
 ## Dimension 5: Completeness and Coverage
 
-Verify all observed symptoms are accounted for.
+Verify all symptoms accounted for.
 
-**Pass criteria**:
-- All reported symptoms have at least one causal branch
-- Root causes collectively explain all symptoms
-- No orphan symptoms (observed but unanalyzed)
-- Cross-cause validation: multiple root causes do not contradict each other
+Pass: all symptoms have causal branch | root causes collectively explain all | no orphan symptoms | cross-cause validation (no contradictions)
 
-**Common failures**:
-- Some symptoms ignored or hand-waved
-- Root causes explain primary symptom but not secondary ones
-- Contradictory root causes proposed without reconciliation
+Failures: symptoms ignored | root causes explain primary but not secondary | contradictory causes without reconciliation
 
-**Severity**: Medium -- incomplete analysis leaves unaddressed failure modes.
+Severity: Medium -- incomplete analysis leaves unaddressed failures.
 
 ## Dimension 6: Solution Traceability
 
-Verify proposed solutions map to identified root causes.
+Verify solutions map to root causes.
 
-**Pass criteria**:
-- Every root cause has at least one corresponding solution
-- Solutions distinguish immediate mitigations from permanent fixes
-- No "orphan solutions" (proposed fix without a traced root cause)
-- Prevention strategies address systemic factors, not just the specific instance
+Pass: every root cause has solution | immediate mitigations vs permanent fixes distinguished | no orphan solutions | prevention addresses systemic factors
 
-**Common failures**:
-- Solutions address symptoms rather than root causes
-- Root cause identified but no corresponding fix proposed
-- Generic recommendations not tied to specific findings
+Failures: solutions address symptoms not causes | root cause without fix | generic recommendations untied to findings
 
-**Severity**: Medium -- untraceable solutions are guesses.
+Severity: Medium -- untraceable solutions are guesses.
 
 ## Review Output Format
 
@@ -140,10 +100,10 @@ summary: "1-2 sentence assessment"
 
 ## Scoring Guide
 
-- **9-10**: Exemplary. No issues or only minor style suggestions.
-- **7-8**: Good. Minor issues that do not affect conclusions.
-- **5-6**: Adequate. Issues that weaken but do not invalidate the analysis.
-- **3-4**: Poor. Issues that may lead to incorrect conclusions.
-- **1-2**: Failing. Fundamental flaws that invalidate the analysis.
+- **9-10**: Exemplary. No issues or minor style only.
+- **7-8**: Good. Minor issues not affecting conclusions.
+- **5-6**: Adequate. Issues weaken but don't invalidate.
+- **3-4**: Poor. Issues may lead to incorrect conclusions.
+- **1-2**: Failing. Fundamental flaws invalidate analysis.
 
-**Approval threshold**: overall score >= 7 and no dimension scores below 5.
+**Approval threshold**: overall >= 7 and no dimension below 5.

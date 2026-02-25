@@ -10,7 +10,7 @@ argument-hint: "[project-id] - Optional: --threshold=[75|80|85] --language=[auto
 
 ## Overview
 
-Run mutation testing against implementation files from the current feature. Extracts targets from execution-log.yaml, generates feature-scoped configs, and delegates execution to the software-crafter agent. Uses cosmic-ray (Python), PIT (Java), or Stryker (JS/TS/C#).
+Run mutation testing against implementation files from the current feature. Extracts targets from execution-log.yaml|generates feature-scoped configs|delegates to software-crafter. Uses cosmic-ray (Python)|PIT (Java)|Stryker (JS/TS/C#).
 
 ## Context Files Required
 
@@ -19,9 +19,9 @@ Run mutation testing against implementation files from the current feature. Extr
 
 ## Pre-Invocation
 
-The orchestrator performs these steps before delegating:
+Orchestrator performs before delegating:
 
-1. Read `execution-log.yaml` and extract implementation files from `completed_steps[].files_modified.implementation`
+1. Read `execution-log.yaml`, extract implementation files from `completed_steps[].files_modified.implementation`
 2. Verify all extracted files exist on disk
 3. Detect project language from config files (pyproject.toml, pom.xml, package.json, etc.)
 4. Confirm test suite passes: run `pytest -x {test_scope}` (or equivalent)
@@ -33,16 +33,14 @@ The orchestrator performs these steps before delegating:
 
 Execute mutation testing for project {project-id}.
 
-**Context to pass inline (the agent has no Skill access):**
-
+**Context to pass inline (agent has no Skill access):**
 - Project ID
-- Implementation file list (extracted from execution-log.yaml)
+- Implementation file list (from execution-log.yaml)
 - Test scope path (e.g., `tests/des/`)
 - Kill rate threshold (default: 80%)
 - Language and tool selection
 
 **Configuration:**
-
 - threshold: 80 (percentage, minimum kill rate)
 - approach: feature-scoped (one config per component, scoped test commands)
 - config_generator: `scripts/mutation/generate_scoped_configs.py` (preferred over manual)
@@ -52,28 +50,22 @@ Execute mutation testing for project {project-id}.
 ## Examples
 
 ### Example 1: Python project with config generator
-
 ```bash
 /nw:mutation-test des-hook-enforcement tests/des/
 ```
-
-Orchestrator reads execution-log.yaml, runs `generate_scoped_configs.py des-hook-enforcement`, delegates to software-crafter with per-component configs. Agent runs cosmic-ray, produces mutation-report.md.
+Reads execution-log.yaml, runs `generate_scoped_configs.py des-hook-enforcement`, delegates to software-crafter with per-component configs. Agent runs cosmic-ray, produces mutation-report.md.
 
 ### Example 2: Python project without config generator
-
 ```bash
 /nw:mutation-test auth-upgrade tests/auth/
 ```
-
-Orchestrator extracts files manually from execution-log.yaml, creates a single cosmic-ray config with `module-path = [file1, file2, ...]` and `test-command = "pytest -x tests/auth/"`, delegates to agent.
+Extracts files manually from execution-log.yaml, creates single cosmic-ray config with `module-path = [file1, file2, ...]` and `test-command = "pytest -x tests/auth/"`, delegates to agent.
 
 ### Example 3: Non-Python project
-
 ```bash
 /nw:mutation-test payment-gateway tests/payment/
 ```
-
-Orchestrator detects `package.json`, selects Stryker, delegates with Stryker-specific instructions.
+Detects `package.json`, selects Stryker, delegates with Stryker-specific instructions.
 
 ## Success Criteria
 
@@ -86,19 +78,17 @@ Orchestrator detects `package.json`, selects Stryker, delegates with Stryker-spe
 
 ## Post-Mutation Safety (mandatory)
 
-After EVERY mutation testing run (success, failure, or interruption), restore source files:
+After EVERY mutation run (success, failure, or interruption), restore source files:
 
     git checkout -- src/ tests/
 
-Mutation tools apply mutations directly to source files. An interrupted run can
-leave corrupted code (e.g. `is not None` → `is  None`) in the working tree.
-The agent MUST restore source files even if the mutation run errors out.
+Mutation tools apply mutations directly to source files. An interrupted run can leave corrupted code (e.g. `is not None` -> `is  None`). Agent MUST restore source files even if the run errors out.
 
 ## Quality Gate
 
-Kill rate thresholds: >= 80% PASS (proceed), 70-80% WARN (review surviving mutants), < 70% FAIL (add tests first).
+Kill rate thresholds: >= 80% PASS (proceed)|70-80% WARN (review surviving mutants)|< 70% FAIL (add tests first).
 
-Skip conditions: no mutation tool for the language, project opts out via `.mutation-config.yaml`, or test suite is broken. Python projects require mutation testing; all skips need documented justification.
+Skip conditions: no mutation tool for language|project opts out via `.mutation-config.yaml`|test suite broken. Python projects require mutation testing; all skips need documented justification.
 
 ## Next Wave
 

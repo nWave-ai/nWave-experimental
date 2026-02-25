@@ -1,8 +1,8 @@
 # FP Hexagonal Architecture
 
-Ports and adapters in functional programming. How to structure applications with a pure core and side-effect shell.
+Ports and adapters in functional programming. Structure applications with a pure core and side-effect shell.
 
-Cross-references: [fp-principles](./fp-principles.md), [fp-domain-modeling](./fp-domain-modeling.md), [fp-usable-design](./fp-usable-design.md)
+Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md) | [fp-usable-design](./fp-usable-design.md)
 
 ---
 
@@ -10,14 +10,14 @@ Cross-references: [fp-principles](./fp-principles.md), [fp-domain-modeling](./fp
 
 [STARTER]
 
-Functional architecture naturally implements ports and adapters without deliberate effort. The paradigm's separation of pure functions from side effects IS the hexagonal boundary.
+Functional architecture naturally implements ports and adapters. The paradigm's separation of pure functions from side effects IS the hexagonal boundary.
 
 | OOP Concept | FP Equivalent | Why |
 |---|---|---|
-| Port (interface) | Function type signature / type alias | A port defines a contract; a function signature IS that contract |
-| Adapter (class) | Concrete function implementation | An adapter fulfills the contract; a matching function does the same |
+| Port (interface) | Function type signature / type alias | Port defines contract; function signature IS that contract |
+| Adapter (class) | Concrete function implementation | Adapter fulfills contract; matching function does same |
 | DI container | Function parameters / partial application | Dependencies passed as arguments, no container needed |
-| Domain service class | Module of pure functions | Related pure functions replace a stateful service object |
+| Domain service class | Module of pure functions | Related pure functions replace stateful service object |
 | Entity with behavior | Immutable data + functions operating on it | Data and behavior separated; functions transform immutable values |
 
 ---
@@ -26,7 +26,7 @@ Functional architecture naturally implements ports and adapters without delibera
 
 [STARTER]
 
-The dominant architectural pattern. All business logic is pure; all side effects live at the system's edges.
+All business logic is pure; all side effects live at the system's edges.
 
 **The Sandwich Pattern**: Read (impure) -> Decide (pure) -> Write (impure)
 
@@ -47,9 +47,9 @@ The dominant architectural pattern. All business logic is pure; all side effects
 +--------------------------------------------------+
 ```
 
-**The Dependency Rule**: The shell may call the core. The core never calls the shell. The core is unaware of the shell's existence.
+**Dependency Rule**: Shell may call core. Core never calls shell. Core is unaware of shell's existence.
 
-**Why it matters**: The pure core is trivially testable (no mocks, no setup, no teardown). The shell is thin and needs few integration tests.
+**Why**: Pure core is trivially testable (no mocks, no setup, no teardown). Shell is thin and needs few integration tests.
 
 ---
 
@@ -57,7 +57,7 @@ The dominant architectural pattern. All business logic is pure; all side effects
 
 [STARTER]
 
-A port is a function type signature that describes a capability the domain needs:
+A port is a function type signature describing a capability the domain needs:
 
 ```
 FindOrder    : OrderId -> AsyncResult<Order option>
@@ -67,9 +67,9 @@ GetPrice     : ProductCode -> Price
 CheckExists  : ProductCode -> bool
 ```
 
-**When to define a port**: When the domain needs a capability that involves I/O or external systems. The domain declares WHAT it needs; the adapter provides HOW.
+**When to define**: Domain needs a capability involving I/O or external systems. Domain declares WHAT; adapter provides HOW.
 
-**Naming**: Use verb-noun. The name describes the capability, not the technology.
+**Naming**: Verb-noun. Name describes capability, not technology.
 
 ---
 
@@ -77,14 +77,14 @@ CheckExists  : ProductCode -> bool
 
 [STARTER]
 
-An adapter is a concrete function that matches a port's type signature:
+An adapter is a concrete function matching a port's type signature:
 
 ```
 PostgresOrderRepo.findOrder  : OrderId -> AsyncResult<Order option>
 InMemoryOrderRepo.findOrder  : OrderId -> AsyncResult<Order option>
 ```
 
-Both match the `FindOrder` port. The domain does not know which is used.
+Both match the `FindOrder` port. Domain doesn't know which is used.
 
 ---
 
@@ -104,7 +104,7 @@ How many dependencies does the function need?
 
 ### [STARTER] Functions as Parameters
 
-Pass dependencies as function parameters. Partially apply at the composition root.
+Pass dependencies as function parameters. Partially apply at composition root.
 
 ```
 placeOrder (findCustomer) (saveOrder) (rawOrder) = ...
@@ -113,7 +113,7 @@ placeOrderHandler = placeOrder Database.findCustomer Database.saveOrder
 
 ### [INTERMEDIATE] Environment Pattern (Reader)
 
-Dependencies in a record, provided once at the top level. Use when parameter threading becomes painful (4+ deps).
+Dependencies in a record, provided once at top level. Use when parameter threading becomes painful (4+ deps).
 
 ```
 placeOrder (rawOrder) = reader { env = ask(); env.findCustomer(rawOrder.customerId) ... }
@@ -138,7 +138,7 @@ Abstract over effect types (tagless final) or use fine-grained effect tracking (
 
 [INTERMEDIATE]
 
-Workflows flow through the architecture as pipelines:
+Workflows flow through architecture as pipelines:
 
 ```
 HTTP Request
@@ -149,11 +149,11 @@ HTTP Request
   -> Respond (shell: impure)
 ```
 
-Each pure step is a function in the pipeline. The shell handles I/O at the start and end.
+Each pure step is a function in the pipeline. Shell handles I/O at start and end.
 
-**Error-track pipelines**: Each step returns a Result type. The pipeline short-circuits on first failure. See [fp-domain-modeling](./fp-domain-modeling.md) for error-track details.
+**Error-track pipelines**: Each step returns Result type; pipeline short-circuits on first failure. See [fp-domain-modeling](./fp-domain-modeling.md).
 
-**Collect-all-errors**: When you need ALL validation errors (not just the first), use Combinable Containers (Applicative) style. See [fp-principles](./fp-principles.md) section 5.
+**Collect-all-errors**: When you need ALL validation errors, use Applicative style. See [fp-principles](./fp-principles.md) section 5.
 
 ---
 
@@ -168,9 +168,9 @@ Each pure step is a function in the pipeline. The shell handles I/O at the start
 | Adapters | Integration | Few per adapter | Slow | None (real deps) |
 | End-to-end | System tests | Very few | Slowest | None |
 
-**The key insight**: Pure functions need no mocking. Input in, output out. This is the strongest practical argument for maximizing the pure core.
+**Key insight**: Pure functions need no mocking. Input in, output out. Strongest practical argument for maximizing the pure core.
 
-**Property-based testing** is the natural companion to this architecture. Define rules that hold for all valid inputs. See [fp-algebra-driven-design](./fp-algebra-driven-design.md) for rule-based testing.
+**Property-based testing** is the natural companion. Define rules that hold for all valid inputs. See [fp-algebra-driven-design](./fp-algebra-driven-design.md).
 
 ---
 
@@ -185,15 +185,13 @@ Each pure step is a function in the pipeline. The shell handles I/O at the start
 | Effect Systems (ZIO, Koka) | Compile-time | Per-effect | Large systems |
 | Pure Core / Shell | Architectural | Module-level | Any language, pragmatic |
 
-**IO actions as values**: Side effects are descriptions of actions, not actions themselves. They can be stored, composed, and only execute when the runtime reaches them.
+**IO actions as values**: Side effects are descriptions of actions, not actions themselves. Can be stored, composed, and only execute when runtime reaches them.
 
 **Type-level effect tracking**: Mark impure functions clearly -- through return types, naming conventions, or annotations. Even without compiler enforcement, the discipline applies.
 
 ---
 
 ## 9. Combining Patterns
-
-These patterns form a layered system:
 
 ```
 Domain Wrappers + Smart Constructors (fp-domain-modeling)

@@ -11,7 +11,7 @@ argument-hint: '[agent] [project-id] - Example: @platform-architect "auth-upgrad
 
 ## Overview
 
-Finalize a completed feature: verify all steps done, create evolution document in docs/evolution/, clean up workflow files in docs/feature/{project-id}/, and optionally generate reference documentation. The agent knows how to gather project data, analyze execution history, write summaries, archive, and clean up.
+Finalize a completed feature: verify all steps done|create evolution document in docs/evolution/|clean up workflow files in docs/feature/{project-id}/|optionally generate reference docs. Agent gathers project data|analyzes execution history|writes summaries|archives|cleans up.
 
 ## Usage
 
@@ -26,9 +26,9 @@ Finalize a completed feature: verify all steps done, create evolution document i
 
 ## Pre-Dispatch Gate: All Steps Complete
 
-Before dispatching to agent, verify all steps are done. This prevents archiving incomplete features.
+Before dispatching, verify all steps are done — prevents archiving incomplete features.
 
-Parse execution-log.yaml and verify every step has status DONE. If any step is not DONE, block finalization and list the incomplete steps with their current status. Do not dispatch to the agent until all steps are complete.
+Parse execution-log.yaml, verify every step has status DONE. If any step is not DONE, block finalization and list incomplete steps with current status. Do not dispatch until all steps complete.
 
 ## Agent Invocation
 
@@ -36,17 +36,17 @@ Parse execution-log.yaml and verify every step has status DONE. If any step is n
 
 Finalize: {project-id}
 
-**Key constraints to reinforce:**
+**Key constraints:**
 - Create evolution document in docs/evolution/YYYY-MM-DD-{project-id}.md
 - Archive workflow files, do not delete before user approval
 - Verify all steps DONE before proceeding
 - Update architecture doc statuses from "FUTURE DESIGN" to "IMPLEMENTED"
-- Optionally invoke /nw:document for reference documentation (skip with --skip-docs)
+- Optionally invoke /nw:document for reference docs (skip with --skip-docs)
 - Commit and push evolution document after approval
 
 ## Phases
 
-Agent handles: gather project data, analyze completion stats, write evolution document, archive to docs/evolution/, clean up workflow files (after user approval), update architecture docs, and commit.
+Agent handles: gather project data|analyze completion stats|write evolution document|archive to docs/evolution/|clean up workflow files (after user approval)|update architecture docs|commit.
 
 ## Success Criteria
 
@@ -72,7 +72,7 @@ Agent handles: gather project data, analyze completion stats, write evolution do
 ```
 /nw:finalize @nw-platform-architect "auth-upgrade"
 ```
-Dispatcher verifies all steps done, invokes nw-platform-architect with "Finalize: auth-upgrade". Agent reads project files, creates docs/evolution/2026-02-08-auth-upgrade.md, requests cleanup approval, commits.
+Verifies all steps done, invokes nw-platform-architect with "Finalize: auth-upgrade". Agent reads project files, creates docs/evolution/2026-02-08-auth-upgrade.md, requests cleanup approval, commits.
 
 ### Example 2: Architect summary
 ```

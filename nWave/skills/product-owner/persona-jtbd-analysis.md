@@ -5,16 +5,16 @@ description: Structured persona creation and JTBD analysis methodology - persona
 
 # Persona and JTBD Analysis
 
-Use this skill during Phase 1 (GATHER) when the user does not yet have clear personas or when the "Who" section of stories needs rigorous definition. Provides a structured alternative to ad-hoc persona descriptions.
+Use during Phase 1 (GATHER) when the user lacks clear personas or the "Who" section needs rigorous definition. Provides structured alternative to ad-hoc persona descriptions.
 
 ## Persona Template
 
-For each user type, build a complete persona using this structure:
+For each user type, build a complete persona:
 
 ```markdown
 ## Persona: {Name}
 
-**Who**: {Role description -- one sentence capturing their relationship to the product}
+**Who**: {Role description -- one sentence capturing relationship to product}
 **Demographics**:
 - {Characteristic 1: e.g., technical proficiency level}
 - {Characteristic 2: e.g., frequency of interaction}
@@ -34,7 +34,7 @@ For each user type, build a complete persona using this structure:
 
 ## Job Step Table
 
-Each persona has a table of job steps describing what they are trying to accomplish. Job steps follow ODI format.
+Each persona has job steps describing what they accomplish. Steps follow ODI format.
 
 | Job Step | Goal | Desired Outcome |
 |----------|------|-----------------|
@@ -45,7 +45,7 @@ Each persona has a table of job steps describing what they are trying to accompl
 - Job Steps are always **verbs**: Discover, Validate, Install, Configure, Monitor, Recover
 - Goals describe what the user **wants**, not what the system does
 - Desired Outcomes use ODI format: "Minimize [time/effort/risk/likelihood] of [undesirable state]"
-- Each step maps to a point in the user's workflow where value is created or destroyed
+- Each step maps to a workflow point where value is created or destroyed
 
 ### Example Job Step Table
 
@@ -59,7 +59,7 @@ Each persona has a table of job steps describing what they are trying to accompl
 
 ## Pain Point Mapping
 
-Every pain point maps back to a specific job step. Pain points without a corresponding job step indicate either a missing step or an irrelevant pain point.
+Every pain point maps to a specific job step. Pain points without a corresponding step indicate either a missing step or irrelevant pain point.
 
 ```
 Pain Point: "I don't know if the tool supports my OS"
@@ -71,7 +71,7 @@ Pain Point: "Installation fails silently with no error message"
   -> Desired Outcome: Minimize time to diagnose installation failures
 ```
 
-Use this mapping to prioritize: pain points on high-frequency job steps deserve attention first.
+Prioritize: pain points on high-frequency job steps deserve attention first.
 
 ## Success Metric Quantification
 
@@ -86,32 +86,28 @@ Every success metric needs a number or threshold. Qualitative metrics ("easy to 
 
 ## Multi-Persona Segmentation
 
-Different users have fundamentally different jobs even when using the same product. Segment personas by their **relationship** to the product.
+Different users have fundamentally different jobs even when using the same product. Segment by **relationship** to the product.
 
-Common segmentation axes:
-- **Frequency**: First-time vs. returning vs. power user
-- **Role**: End user vs. administrator vs. developer
-- **Context**: Individual use vs. team deployment vs. CI/CD automation
-- **Motivation**: Exploration vs. production use vs. evaluation
+Common axes: **Frequency** (first-time vs returning vs power user) | **Role** (end user vs admin vs developer) | **Context** (individual vs team vs CI/CD) | **Motivation** (exploration vs production vs evaluation)
 
 ### Example: Same Product, Different Jobs
 
 | Persona | Primary Job | Key Difference |
 |---------|-------------|----------------|
 | Explorer | Evaluate the tool quickly | Needs fast time-to-value, minimal commitment |
-| Returner | Resume work after an absence | Needs state preservation, quick re-orientation |
+| Returner | Resume work after absence | Needs state preservation, quick re-orientation |
 | Deployer | Install for a team | Needs configuration management, multi-user setup |
 | Automator | Integrate into CI/CD pipeline | Needs scriptability, headless operation, exit codes |
 
-Each persona gets their own Job Step table because their workflows differ. Do not merge personas -- the value of JTBD analysis comes from surfacing these differences.
+Each persona gets their own Job Step table because workflows differ. Do not merge personas -- JTBD analysis value comes from surfacing differences.
 
 ## Integration with Story Crafting
 
-After completing persona analysis, feed results into the LeanUX user story template:
+After completing persona analysis, feed results into LeanUX user story template:
 
-1. Persona **Who** section -> populated from the persona template
-2. Persona **Pain Points** -> inform the story Problem section
-3. Job Step **Desired Outcomes** -> inform Acceptance Criteria (ODI outcomes translate to testable criteria)
+1. Persona **Who** -> populated from persona template
+2. Persona **Pain Points** -> inform story Problem section
+3. Job Step **Desired Outcomes** -> inform AC (ODI outcomes translate to testable criteria)
 4. **Success Metrics** -> inform NFR requirements in handoff package
 
-Cross-reference: use the `bdd-requirements` skill for Example Mapping once personas are established. Use the `jtbd-workflow-selection` skill to determine which workflow the resulting stories enter.
+Cross-reference: use `bdd-requirements` skill for Example Mapping once personas established. Use `jtbd-workflow-selection` skill to determine workflow for resulting stories.

@@ -5,7 +5,7 @@ description: Terminal UI and CLI design patterns for product owners. Load when d
 
 # TUI and CLI Patterns
 
-Actionable terminal interface patterns for requirements gathering and design review. Use these when the target is a CLI tool or interactive terminal application.
+Actionable terminal interface patterns for requirements gathering and design review. Use when target is CLI tool or interactive terminal application.
 
 ## CLI Argument Design
 
@@ -13,23 +13,20 @@ Actionable terminal interface patterns for requirements gathering and design rev
 Follow `program subcommand [flags] [arguments]` (e.g., `git commit -m "message"`).
 
 ### Flags and Options
-- Provide both short (`-h`) and long (`--help`) for common flags
+- Both short (`-h`) and long (`--help`) for common flags
 - Reserve single-letter flags for frequently used options
-- Standard flags to always support: `--help`, `--version`, `--verbose`/`--quiet`, `--no-color`
-- Never accept secrets via flags (use files, stdin, or environment variables)
+- Standard flags always: `--help`, `--version`, `--verbose`/`--quiet`, `--no-color`
+- Never accept secrets via flags (use files, stdin, or env vars)
 - Make flag order independent
 
 ### Subcommands
-- Use verbs for actions: `create`, `delete`, `list`, `show`, `update`
-- Use nouns for resource targets: `user`, `project`, `config`
-- Pick one pattern (`tool resource action` or `tool action resource`) and be consistent
+- Verbs for actions: `create`, `delete`, `list`, `show`, `update`
+- Nouns for targets: `user`, `project`, `config`
+- Pick one pattern (`tool resource action` or `tool action resource`) consistently
 - Provide shell completion scripts for discoverability
 
 ### Argument Design Principles
-- Required arguments are positional; optional ones use flags
-- Accept stdin when it makes sense (piping support)
-- Support glob patterns where file arguments are expected
-- Provide `--dry-run` for destructive or complex operations
+Required arguments are positional; optional use flags. Accept stdin for piping. Support glob patterns for file arguments. Provide `--dry-run` for destructive/complex operations.
 
 ## Interactive TUI Patterns
 
@@ -48,44 +45,32 @@ Follow `program subcommand [flags] [arguments]` (e.g., `git commit -m "message"`
 - **Update**: Pure function taking model + message, returns new model
 - **View**: Pure function rendering model to string
 
-This unidirectional data flow makes TUI state predictable and testable.
+Unidirectional data flow makes TUI state predictable and testable.
 
 ### Interactive Selection Patterns
-- Arrow keys to navigate, Enter to select
-- Type-ahead filtering for long lists
-- Multi-select with space bar, confirm with Enter
-- Show selected count and clear visual indicator for selected items
-- Support Esc to cancel without selecting
+Arrow keys to navigate, Enter to select. Type-ahead filtering for long lists. Multi-select with space bar, confirm with Enter. Show selected count with clear visual indicator. Support Esc to cancel.
 
 ## Color and Formatting
 
 ### Color Conventions
-- **Red**: errors, failures, deletions
-- **Yellow/amber**: warnings, things needing attention
-- **Green**: success, confirmations, additions
-- **Blue/cyan**: information, links, highlights
-- **Dim/gray**: secondary information, metadata
+**Red**: errors, failures, deletions | **Yellow/amber**: warnings, attention | **Green**: success, confirmations, additions | **Blue/cyan**: information, links, highlights | **Dim/gray**: secondary info, metadata
 
 ### Color Rules
-- Never use color as the only way to convey information (accessibility)
+- Never use color as only way to convey information (accessibility)
 - Respect `NO_COLOR` environment variable (no-color.org)
-- Detect TTY: disable color when output is piped or redirected
+- Detect TTY: disable color when piped or redirected
 - Test with color-blindness simulators (protanopia, deuteranopia)
 
 ### Formatting Patterns
-- Bold for emphasis and headings
-- Tables for structured data (aligned columns)
-- Indentation for hierarchy
-- Horizontal rules for section breaks
-- Unicode box-drawing for visual structure (provide ASCII fallback)
+Bold for emphasis and headings | Tables for structured data | Indentation for hierarchy | Horizontal rules for section breaks | Unicode box-drawing for visual structure (provide ASCII fallback)
 
 ## Error Message Design
 
-Every CLI error message answers three questions:
+Every CLI error answers three questions:
 
 1. **What happened?** Clear, jargon-free description
 2. **Why?** The cause or context
-3. **What to do?** A concrete next step
+3. **What to do?** Concrete next step
 
 ### Good Example
 ```
@@ -108,10 +93,10 @@ Error: ECONNREFUSED
 ```
 
 ### Error Guidelines
-- Never blame the user ("You entered invalid..." becomes "The value ... is not valid because...")
-- Suggest the most likely correction (did-you-mean for command typos)
-- Use exit codes consistently: 0=success, 1=general error, 2=usage error
-- Log verbose diagnostics to a file, not to stderr by default
+- Never blame user ("You entered invalid..." becomes "The value ... is not valid because...")
+- Suggest most likely correction (did-you-mean for typos)
+- Exit codes consistent: 0=success, 1=general error, 2=usage error
+- Log verbose diagnostics to file, not stderr by default
 
 ## Help Text Design
 
@@ -145,33 +130,27 @@ LEARN MORE
 ```
 
 ### Help Text Principles
-- Lead with examples (users scan for examples first)
-- Show common commands and flags first
-- One line per command/flag description
-- Link to detailed docs rather than cramming into help text
-- Support both `tool help <cmd>` and `tool <cmd> --help`
+Lead with examples (users scan for examples first). Show common commands/flags first. One line per description. Link to detailed docs. Support both `tool help <cmd>` and `tool <cmd> --help`.
 
 ## Output Design
 
 ### Human-Readable (Default)
-- Detect TTY: terminal gets colors, tables, progress bars
-- Disable animations and spinners in non-TTY mode
-- Use structured formatting (headers, indentation, alignment)
+Detect TTY: terminal gets colors, tables, progress bars. Disable animations/spinners in non-TTY mode. Use structured formatting (headers, indentation, alignment).
 
 ### Machine-Parseable Alternatives
-- `--json` for structured output (the most important machine format)
+- `--json` for structured output (most important machine format)
 - `--plain` or `--tsv` for tabular data compatible with grep, awk, cut
-- `--quiet` for scripts that only need the exit code
+- `--quiet` for scripts needing only exit code
 
 ### Output Contract
-Once you publish a `--json` schema, treat it as an API contract. Breaking changes require a major version bump or `--output-version` flag.
+Once `--json` schema published, treat as API contract. Breaking changes require major version bump or `--output-version` flag.
 
 ## Progress and Responsiveness
 
 - Respond within 100ms: output something immediately, especially before network calls
-- Show a spinner for operations taking 1-5 seconds
-- Show a progress bar with percentage for operations >5 seconds
-- For multi-step operations: `[3/7] Installing dependencies...`
+- Spinner for operations 1-5 seconds
+- Progress bar with percentage for operations >5 seconds
+- Multi-step: `[3/7] Installing dependencies...`
 - Make operations idempotent where possible (safe to re-run after interruption)
 - Handle Ctrl+C cleanly with proper cleanup
 
@@ -198,7 +177,7 @@ Once you publish a `--json` schema, treat it as an API contract. Breaking change
 ### Output
 - [ ] Default output is human-readable with color in TTY
 - [ ] --json flag available for machine consumption
-- [ ] Color never the only way to convey information
+- [ ] Color never only way to convey information
 - [ ] NO_COLOR environment variable respected
 - [ ] Animations disabled in non-TTY mode
 

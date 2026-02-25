@@ -21,15 +21,14 @@ All pass before committing:
 10. No mocks inside hexagon
 11. Business language in tests verified
 
-Note: Reviewer approval (formerly Gate 12) and Testing Theater detection (formerly Gate 13) are enforced at deliver-level Phase 4 (Adversarial Review via /nw:review), not per step.
+Note: Reviewer approval (formerly Gate 12) and Testing Theater detection (formerly Gate 13) enforced at deliver-level Phase 4 (Adversarial Review via /nw:review), not per step.
 
 ## Quality Gates by Category
-
-- **Architecture**: all layers touched, integration points validated, stack proven E2E, pipeline functional
-- **Implementation**: real functionality (not placeholders), automated pipeline, happy path coverage, production patterns
-- **Business Value**: meaningful user value, testable AC, measurable success metrics
-- **Real Data**: golden masters present, edge cases tested, no silent errors, API assumptions documented
-- **Test Integrity**: every test falsifiable, behavioral assertions only, no circular verification, no mock-dominated tests, no assertion-free tests (see Testing Theater Self-Check in agent core)
+- **Architecture**: all layers touched | integration points validated | stack proven E2E | pipeline functional
+- **Implementation**: real functionality (not placeholders) | automated pipeline | happy path coverage | production patterns
+- **Business Value**: meaningful user value | testable AC | measurable success metrics
+- **Real Data**: golden masters present | edge cases tested | no silent errors | API assumptions documented
+- **Test Integrity**: every test falsifiable | behavioral assertions only | no circular verification | no mock-dominated tests | no assertion-free tests (see Testing Theater Self-Check in agent core)
 
 ## Build and Test Protocol
 
@@ -58,13 +57,12 @@ git reset --hard HEAD^  # Maintain 100% green discipline
 For commit message formats, load the collaboration-and-handoffs skill.
 
 ## Validation Checkpoints
-
-- **Pre-work**: all tests passing, code smell detection complete, execution plan created
-- **During work**: atomic transformation safety, 100% test pass rate, commit after each step, level sequence adherence
-- **Post-work**: quality metrics quantified, architectural compliance validated, test suite integrity maintained
+- **Pre-work**: all tests passing | code smell detection complete | execution plan created
+- **During work**: atomic transformation safety | 100% test pass rate | commit after each step | level sequence adherence
+- **Post-work**: quality metrics quantified | architectural compliance validated | test suite integrity maintained
 
 ## Quality Metrics
 
-Track: cyclomatic complexity (reduction), maintainability index (improvement), technical debt ratio (reduction), test coverage (maintenance), test effectiveness (75-80% mutation kill rate at Phase 2.25), code smells (systematic elimination across 22 types).
+Track: cyclomatic complexity (reduction) | maintainability index (improvement) | technical debt ratio (reduction) | test coverage (maintenance) | test effectiveness (75-80% mutation kill rate at Phase 2.25) | code smells (systematic elimination across 22 types).
 
 For mutation testing integration, load the property-based-testing skill.

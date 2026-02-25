@@ -8,7 +8,7 @@ description: Requirements quality critique dimensions for peer review - confirma
 When invoked in review mode, apply these critique dimensions to requirements documents.
 
 Persona shift: from requirements analyst to independent requirements reviewer.
-Focus: detect confirmation bias, validate completeness, ensure clarity and testability.
+Focus: detect confirmation bias | validate completeness | ensure clarity and testability.
 Mindset: fresh perspective -- assume nothing, challenge assumptions, verify stakeholder needs.
 
 Return complete YAML feedback to calling agent for display to user.
@@ -19,19 +19,19 @@ Return complete YAML feedback to calling agent for display to user.
 
 ### Technology Bias
 Pattern: requirements assume specific technology without stakeholder requirement.
-Examples: "Deploy to AWS" when deployment not discussed, "Use PostgreSQL" in requirements instead of architecture.
+Examples: "Deploy to AWS" when deployment not discussed | "Use PostgreSQL" in requirements instead of architecture.
 Detection: check for technology specifics (cloud, database, frameworks). Verify stakeholder interviews mentioned these.
 Severity: HIGH (constrains solution space unnecessarily).
 
 ### Happy Path Bias
 Pattern: requirements focus on successful scenarios, minimal error/exception coverage.
-Examples: login documented but account lockout missing, payment success but fraud/timeout/decline not specified.
+Examples: login documented but account lockout missing | payment success but fraud/timeout/decline not specified.
 Detection: count happy path stories vs error scenarios. Check each story has "sad path" alternatives.
 Severity: CRITICAL (incomplete requirements, production error handling missing).
 
 ### Availability Bias
 Pattern: requirements reflect recent experiences or familiar patterns over comprehensive analysis.
-Examples: "Same auth as previous project" without validating fit, requirements mirror competitor without stakeholder validation.
+Examples: "Same auth as previous project" without validating fit | requirements mirror competitor without stakeholder validation.
 Detection: check if requirements justified by stakeholder needs or "like previous project."
 Severity: MEDIUM (sub-optimal solution, missed opportunities).
 
@@ -40,17 +40,17 @@ Severity: MEDIUM (sub-optimal solution, missed opportunities).
 ## Dimension 2: Completeness Validation
 
 ### Missing Stakeholder Perspectives
-Stakeholder groups to verify: end users (primary, secondary, occasional), business owners/sponsors, operations/support teams, compliance/legal, technical teams.
+Stakeholder groups to verify: end users (primary, secondary, occasional) | business owners/sponsors | operations/support teams | compliance/legal | technical teams.
 Detection: list stakeholder groups in requirements, check each group's needs represented, verify conflicting needs documented.
 Severity: HIGH.
 
 ### Missing Error Scenarios
-Required error scenarios: invalid input validation, authentication/authorization failures, network timeouts, external service unavailability, data integrity violations, concurrent modification conflicts, resource exhaustion.
+Required: invalid input validation | authentication/authorization failures | network timeouts | external service unavailability | data integrity violations | concurrent modification conflicts | resource exhaustion.
 Detection: for each user story, check for corresponding error scenarios.
 Severity: CRITICAL.
 
 ### Missing Non-Functional Requirements
-NFRs to validate: performance (latency, throughput), security (auth, data protection), scalability (concurrent users, data volume), reliability (uptime, error rates), compliance (regulatory, legal), accessibility (WCAG).
+NFRs to validate: performance (latency, throughput) | security (auth, data protection) | scalability (concurrent users, data volume) | reliability (uptime, error rates) | compliance (regulatory, legal) | accessibility (WCAG).
 Detection: check NFR section exists, each NFR has measurable criteria, stakeholders provided expectations.
 Severity: CRITICAL.
 
@@ -60,13 +60,13 @@ Severity: CRITICAL.
 
 ### Vague Performance Requirements
 Pattern: qualitative terms without quantitative thresholds.
-Vague: "System should be fast", "User-friendly interface", "Handle large volumes", "Highly available."
+Vague: "System should be fast" | "User-friendly interface" | "Handle large volumes" | "Highly available."
 Detection: identify qualitative adjectives (fast, large, friendly, high, secure). Check for corresponding quantitative threshold.
 Severity: HIGH.
 
 ### Ambiguous Requirements
-Pattern: requirements interpretable multiple ways by different readers.
-Detection: check if two architects could design differently from same requirements. Look for words with multiple meanings. Verify pronouns have clear antecedents.
+Pattern: requirements interpretable multiple ways.
+Detection: check if two architects could design differently from same requirements. Look for multi-meaning words. Verify pronouns have clear antecedents.
 Severity: HIGH.
 
 ---
@@ -75,9 +75,9 @@ Severity: HIGH.
 
 ### Non-Testable Acceptance Criteria
 Pattern: AC not observable, measurable, or automatable.
-Bad: "System should be easy to use", "Code should be maintainable."
-Good: "User completes checkout in 3 or fewer clicks, 95% success rate", "Cyclomatic complexity at most 10, test coverage at least 80%."
-Detection: for each AC, ask "Can an automated test verify this?" Check if AC specifies observable behavior with measurable pass/fail criteria.
+Bad: "System should be easy to use" | "Code should be maintainable."
+Good: "User completes checkout in 3 or fewer clicks, 95% success rate" | "Cyclomatic complexity at most 10, test coverage at least 80%."
+Detection: for each AC, ask "Can an automated test verify this?" Check if AC specifies observable behavior with measurable pass/fail.
 Severity: CRITICAL.
 
 ---
@@ -86,20 +86,16 @@ Severity: CRITICAL.
 
 ### Questions to Ask
 
-**Q1: Is this the largest bottleneck?**
-Does timing data show this is the primary problem? Is there a larger problem being ignored?
+**Q1: Is this the largest bottleneck?** Does timing data show this is the primary problem? Is there a larger problem being ignored?
 
-**Q2: Were simpler alternatives considered?**
-Does the document include rejected alternatives? Are rejection reasons evidence-based?
+**Q2: Were simpler alternatives considered?** Does the document include rejected alternatives? Are rejection reasons evidence-based?
 
-**Q3: Is constraint prioritization correct?**
-Are user-mentioned constraints quantified by impact? Is a minority constraint dominating the solution?
+**Q3: Is constraint prioritization correct?** Are user-mentioned constraints quantified by impact? Is a minority constraint dominating the solution?
 
-**Q4: Is the approach data-justified?**
-Is the key decision supported by quantitative data? Would different data lead to different approach?
+**Q4: Is the approach data-justified?** Is the key decision supported by quantitative data? Would different data lead to different approach?
 
 ### Failure Conditions
-- FAIL if Q1 = NO (wrong problem being addressed)
+- FAIL if Q1 = NO (wrong problem addressed)
 - FAIL if Q2 = MISSING (no alternatives considered)
 - FAIL if Q3 = INVERTED (minority constraint dominating)
 - FAIL if Q4 = NO_DATA and this is performance optimization
@@ -158,7 +154,7 @@ high_issues_count: {number}
 
 ## Severity Classification
 
-- **Critical**: non-testable AC, missing error scenarios, missing NFRs, wrong problem addressed
-- **High**: technology bias, happy path bias, vague requirements, missing stakeholders
-- **Medium**: availability bias, minor completeness gaps, ambiguous wording
-- **Low**: documentation formatting, terminology consistency
+- **Critical**: non-testable AC | missing error scenarios | missing NFRs | wrong problem addressed
+- **High**: technology bias | happy path bias | vague requirements | missing stakeholders
+- **Medium**: availability bias | minor completeness gaps | ambiguous wording
+- **Low**: documentation formatting | terminology consistency

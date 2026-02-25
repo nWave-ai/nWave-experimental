@@ -69,4 +69,4 @@ conditions_for_approval:
 
 **Conditionally approved**: No blockers. Critical issues have mitigation plan. High issues documented for follow-up.
 
-**Rejected (pending revisions)**: Any blocker present, multiple critical issues without mitigation, or external validity check failed.
+**Rejected (pending revisions)**: Any blocker present | multiple critical issues without mitigation | external validity check failed.

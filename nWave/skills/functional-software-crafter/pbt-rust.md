@@ -8,7 +8,7 @@
 | quickcheck | Type-based | No | Simple properties, one generator per type sufficient |
 | bolero | Engine-dependent | No | Want to switch between PBT and fuzzing engines |
 
-**Default recommendation**: proptest. It supports multiple strategies per type without newtype wrappers and has better shrinking.
+**Default**: proptest. Supports multiple strategies per type without newtype wrappers, better shrinking.
 
 ## Quick Start (proptest)
 

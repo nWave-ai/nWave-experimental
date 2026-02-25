@@ -153,7 +153,7 @@ fc.assert(
 );
 ```
 
-The scheduler controls promise resolution order, enabling deterministic exploration of async interleavings.
+Scheduler controls promise resolution order, enabling deterministic exploration of async interleavings.
 
 ## Test Runner Integration
 

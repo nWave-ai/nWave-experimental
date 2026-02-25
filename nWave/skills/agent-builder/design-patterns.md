@@ -27,85 +27,70 @@ Is the agent doing a single focused task?
 
 ## 1. ReAct (Reason + Act)
 
-Use for general-purpose agents needing tool calling and iterative problem-solving.
+General-purpose agents needing tool calling and iterative problem-solving.
 
-**Loop**: Reason about situation -> Select and execute action -> Observe result -> Repeat until done.
-
-**When to use**: Default pattern. Most specialist agents (software-crafter, researcher, acceptance-designer).
-
-**Example agents**: software-crafter, researcher, troubleshooter.
+**Loop**: Reason -> Select/execute action -> Observe result -> Repeat until done.
+**When**: Default pattern. Most specialist agents.
+**Examples**: software-crafter, researcher, troubleshooter.
 
 ## 2. Reflection
 
-Use when the agent must evaluate and iteratively improve its own output.
+Agent must evaluate and iteratively improve its own output.
 
-**Loop**: Generate output -> Review against criteria -> Identify gaps -> Refine -> Validate quality threshold met.
-
-**When to use**: Quality-critical outputs where first-draft is insufficient (code review, architecture review, agent validation).
-
-**Example agents**: agent-builder-reviewer, solution-architect-reviewer, software-crafter-reviewer.
+**Loop**: Generate -> Review against criteria -> Identify gaps -> Refine -> Validate threshold met.
+**When**: Quality-critical outputs where first-draft insufficient (code review, architecture review, agent validation).
+**Examples**: agent-builder-reviewer, solution-architect-reviewer, software-crafter-reviewer.
 
 ## 3. Router
 
-Use when a request must be classified and delegated to exactly one specialist.
+Request classified and delegated to exactly one specialist.
 
-**Loop**: Analyze request -> Classify task type -> Select appropriate specialist -> Delegate.
-
-**When to use**: Task dispatching where only one path should execute. Low overhead, fast routing.
-
-**Example agents**: workflow-dispatcher, task-router.
+**Loop**: Analyze request -> Classify -> Select specialist -> Delegate.
+**When**: Task dispatching, single path execution. Low overhead, fast routing.
+**Examples**: workflow-dispatcher, task-router.
 
 ## 4. Planning
 
-Use for complex tasks requiring structured decomposition before execution.
+Complex tasks requiring structured decomposition before execution.
 
-**Loop**: Decompose into sub-tasks -> Sequence logically -> Allocate resources -> Execute with validation checkpoints.
-
-**When to use**: Multi-step implementations, migrations, large refactoring.
-
-**Example agents**: project-planner, migration-coordinator.
+**Loop**: Decompose into sub-tasks -> Sequence -> Allocate resources -> Execute with checkpoints.
+**When**: Multi-step implementations, migrations, large refactoring.
+**Examples**: project-planner, migration-coordinator.
 
 ## 5. Sequential Orchestration
 
-Use for linear workflows with clear dependencies between stages.
+Linear workflows with clear dependencies between stages.
 
 **Structure**: Agent1 -> Output1 -> Agent2 -> Output2 -> Agent3 -> Result
-
-**When to use**: Pipeline workflows where each stage transforms the previous output.
-
+**When**: Pipeline workflows where each stage transforms previous output.
 **Example**: nWave waves: DISCUSS -> DESIGN -> DEVOP -> DISTILL -> DELIVER.
 
 ## 6. Parallel Orchestration
 
-Use when multiple independent analyses are needed simultaneously.
+Multiple independent analyses needed simultaneously.
 
 **Structure**: Supervisor -> [Worker1, Worker2, Worker3] (concurrent) -> Aggregate results.
-
-**When to use**: Independent analyses, multi-aspect reviews, parallel risk assessment.
-
+**When**: Independent analyses, multi-aspect reviews, parallel risk assessment.
 **Example**: Multi-reviewer code review, parallel security + performance + correctness analysis.
 
 ## 7. Hierarchical
 
-Use when a supervisor agent coordinates multiple worker agents dynamically.
+Supervisor coordinates multiple worker agents dynamically.
 
-**Structure**: Supervisor manages [Worker1, Worker2, Worker3], routing tasks and aggregating results.
-
-**When to use**: Complex coordination where task routing depends on intermediate results.
-
+**Structure**: Supervisor manages workers, routing tasks and aggregating results.
+**When**: Complex coordination where routing depends on intermediate results.
 **Example**: feature-coordinator supervising frontend/backend/database/testing specialists.
 
 ## Pattern Combinations
 
-Agents can combine patterns:
-- **ReAct + Reflection**: Agent reasons and acts, then self-reviews (most reviewer agents)
+- **ReAct + Reflection**: Reason/act then self-review (most reviewer agents)
 - **Planning + Sequential**: Decompose then execute pipeline (devop)
 - **Router + Hierarchical**: Route to supervisor who coordinates workers
 
 ## Choosing for nWave Agents
 
-| Agent Role | Recommended Pattern | Rationale |
-|-----------|-------------------|-----------|
+| Agent Role | Pattern | Rationale |
+|-----------|---------|-----------|
 | Specialist (single domain) | ReAct | Tool-using, iterative task completion |
 | Reviewer (-reviewer suffix) | Reflection | Must self-evaluate and iterate on critique |
 | Wave orchestrator | Sequential | Clear dependency chain between phases |

@@ -1,11 +1,11 @@
 # FP in F# -- Functional Software Crafter Skill
 
-Cross-references: [fp-principles](./fp-principles.md), [fp-domain-modeling](./fp-domain-modeling.md), [pbt-dotnet](./pbt-dotnet.md)
+Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md) | [pbt-dotnet](./pbt-dotnet.md)
 
 ## When to Choose F#
 
-- Best for: domain modeling on .NET, DDD, railway-oriented programming, pipeline-first design, finance
-- Not ideal for: teams needing higher-kinded types, non-.NET platforms, large existing C# codebases resistant to change
+- Best for: domain modeling on .NET | DDD | railway-oriented programming | pipeline-first design | finance
+- Not ideal for: teams needing higher-kinded types | non-.NET platforms | large existing C# codebases resistant to change
 
 ## [STARTER] Quick Setup
 
@@ -69,7 +69,7 @@ let processOrder rawOrder =
     |> Result.map generateReceipt
 ```
 
-**Data-last convention**: F# functions put the primary input last so they compose with `|>`.
+**Data-last convention**: F# functions put primary input last so they compose with `|>`.
 
 ### Railway-Oriented Programming (Error-Track Pipelines)
 
@@ -94,11 +94,11 @@ let placeOrder rawOrder = result {
 }
 ```
 
-Key builders: `result { }` (error-track), `async { }` (async I/O), `task { }` (.NET Task interop), `validation { }` (accumulate errors, FsToolkit).
+Key builders: `result { }` (error-track) | `async { }` (async I/O) | `task { }` (.NET Task interop) | `validation { }` (accumulate errors, FsToolkit).
 
 ## [INTERMEDIATE] Effect Management
 
-F# is impure by default. Purity is maintained by architectural convention, not the compiler.
+F# is impure by default. Purity maintained by architectural convention, not the compiler.
 
 ### Pure Core / Imperative Shell
 
@@ -136,11 +136,11 @@ let findOrderInDb (connStr: string) (orderId: OrderId) : Async<Order option> =
 let findOrder = findOrderInDb "Server=localhost;Database=orders"
 ```
 
-Dependencies first, primary input last. Partially apply at the composition root.
+Dependencies first, primary input last. Partially apply at composition root.
 
 ## [INTERMEDIATE] Testing
 
-**Frameworks**: FsCheck (QuickCheck port), fsharp-hedgehog (integrated shrinking), Expecto (F#-native), Unquote (assertions). See [pbt-dotnet](./pbt-dotnet.md) for detailed PBT patterns.
+**Frameworks**: FsCheck (QuickCheck port) | fsharp-hedgehog (integrated shrinking) | Expecto (F#-native) | Unquote (assertions). See [pbt-dotnet](./pbt-dotnet.md) for detailed PBT patterns.
 
 ### Property Test Example (FsCheck + xUnit)
 
@@ -178,7 +178,7 @@ type ValidatedOrder = { Name: CustomerName; Email: EmailAddress; Lines: OrderLin
 type PricedOrder = { ValidOrder: ValidatedOrder; Total: Money; Lines: PricedOrderLine list }
 ```
 
-Each stage is a distinct type. The pipeline transforms one into the next.
+Each stage is a distinct type. Pipeline transforms one into the next.
 
 ### Collect-All-Errors Validation
 
@@ -193,18 +193,18 @@ let validateCustomer (raw: RawCustomer) = validation {
 }
 ```
 
-**Project structure**: Domain types and workflows in `OrderService.Domain/`, adapters in `OrderService.Infrastructure/`, composition root in `OrderService.App/`. File ordering in `.fsproj` defines compilation order.
+**Project structure**: Domain types/workflows in `OrderService.Domain/` | adapters in `OrderService.Infrastructure/` | composition root in `OrderService.App/`. File ordering in `.fsproj` defines compilation order.
 
 ## Maturity and Adoption
 
-- **.NET dependency**: F# requires the .NET ecosystem; deployment outside .NET (e.g., native, WASM) is limited. Tooling improvements lag behind C#.
-- **Smaller community**: Fewer libraries, tutorials, and Stack Overflow answers than C#. The community is helpful but small.
-- **File ordering constraint**: The top-to-bottom compilation model prevents circular dependencies (a benefit) but frustrates developers used to free file ordering. Refactoring file order is a real cost.
-- **Second-class .NET citizen**: New .NET features (e.g., Blazor, MAUI) often ship C#-first with delayed or incomplete F# support.
+- **.NET dependency**: Deployment outside .NET (native, WASM) is limited. Tooling improvements lag behind C#.
+- **Smaller community**: Fewer libraries, tutorials, Stack Overflow answers than C#. Community is helpful but small.
+- **File ordering constraint**: Top-to-bottom compilation prevents circular dependencies (benefit) but frustrates developers used to free ordering. Refactoring file order is a real cost.
+- **Second-class .NET citizen**: New .NET features (Blazor, MAUI) often ship C#-first with delayed or incomplete F# support.
 
 ## Common Pitfalls
 
-1. **File order dependency**: Types in `B.fs` cannot reference `A.fs` if `A.fs` is listed after `B.fs`. Reorder files when adding dependencies.
+1. **File order dependency**: Types in `B.fs` cannot reference `A.fs` if `A.fs` listed after `B.fs`. Reorder files when adding dependencies.
 2. **No higher-kinded types**: Cannot abstract over `Result<_,_>` vs `Option<_>` generically. Use concrete types or computation expressions.
 3. **.NET OO pressure**: C# interop pushes toward classes. Resist: use modules, records, and DUs as primary modeling tools.
 4. **Forgetting Result.mapError**: When composing steps with different error types, unify with `Result.mapError` before `Result.bind`.

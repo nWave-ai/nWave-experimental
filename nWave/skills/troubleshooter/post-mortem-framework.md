@@ -7,10 +7,10 @@ description: Blameless post-mortem structure, incident timeline reconstruction, 
 
 ## Principles
 
-- **Blameless**: focus on systems and processes, not individuals. People make reasonable decisions given the information they had at the time.
+- **Blameless**: focus on systems/processes, not individuals. People make reasonable decisions given available info.
 - **Evidence-based**: every finding backed by logs, metrics, or documented actions
-- **Action-oriented**: every finding produces a concrete, assigned action item
-- **Learning-focused**: capture what worked well alongside what failed
+- **Action-oriented**: every finding produces concrete, assigned action item
+- **Learning-focused**: capture what worked alongside what failed
 
 ## Post-Mortem Document Structure
 
@@ -40,16 +40,16 @@ description: Blameless post-mortem structure, incident timeline reconstruction, 
 [5 Whys analysis with evidence at each level]
 
 ## Detection and Response
-- Time to detect: [duration] -- [how it was detected]
-- Time to respond: [duration] -- [first response action]
+- Time to detect: [duration] -- [how detected]
+- Time to respond: [duration] -- [first action]
 - Time to mitigate: [duration] -- [mitigation applied]
-- Time to resolve: [duration] -- [permanent fix applied]
+- Time to resolve: [duration] -- [permanent fix]
 
 ## What Went Well
-- [positive observations about detection, response, or recovery]
+- [positive observations about detection, response, recovery]
 
 ## What Could Be Improved
-- [areas where detection, response, or recovery fell short]
+- [areas where detection, response, recovery fell short]
 
 ## Action Items
 | ID | Action | Owner | Priority | Due Date |
@@ -62,49 +62,31 @@ description: Blameless post-mortem structure, incident timeline reconstruction, 
 
 ## Incident Timeline Reconstruction
 
-### Sources for Timeline Building
-1. Monitoring alerts and dashboards (timestamps)
-2. Deployment logs and CI/CD pipeline records
-3. Communication channels (Slack, email, incident channels)
-4. Version control (commits, merges, deploys)
-5. User reports and support tickets
+### Sources
+1. Monitoring alerts/dashboards (timestamps) | 2. Deployment logs/CI-CD records
+3. Communication channels (Slack, email, incident) | 4. VCS (commits, merges, deploys) | 5. User reports/support tickets
 
-### Timeline Quality Checks
-- Events are in chronological order with verified timestamps
-- Gaps longer than 5 minutes are noted and explained
-- Decision points are identified with available information at that time
-- Causal relationships between events are noted
+### Quality Checks
+Events chronological with verified timestamps | gaps >5 min noted/explained | decision points identified with available info | causal relationships noted
 
 ## Response Effectiveness Evaluation
 
 ### Detection
-- Was the issue detected by monitoring or by users?
-- How long between onset and detection?
-- Were existing alerts relevant? Were any alerts missing?
+Detected by monitoring or users? | Duration onset-to-detection? | Existing alerts relevant? Missing?
 
 ### Escalation
-- Was the right team engaged at the right time?
-- Were escalation procedures followed?
-- Was communication clear to stakeholders?
+Right team at right time? | Procedures followed? | Communication clear to stakeholders?
 
 ### Resolution
-- Was the mitigation approach effective?
-- Was rollback considered and was it viable?
-- How long between mitigation and permanent fix?
+Mitigation effective? | Rollback considered/viable? | Duration mitigation-to-permanent-fix?
 
 ## Organizational Learning
 
 ### Knowledge Capture
-- Document root cause findings as reusable patterns
-- Update runbooks with new failure scenarios
-- Share learnings in team retrospectives
+Document root causes as reusable patterns | update runbooks | share in retrospectives
 
 ### Process Improvements
-- Update monitoring and alerting based on detection gaps
-- Revise deployment procedures based on rollback effectiveness
-- Strengthen testing to cover the failure scenario
+Update monitoring/alerting per detection gaps | revise deployment per rollback effectiveness | strengthen testing for failure scenario
 
 ### Action Item Tracking
-- Every action item has an owner and due date
-- Track completion in team standups or sprint reviews
-- Verify effectiveness of implemented actions after deployment
+Every item has owner + due date | track in standups/sprint reviews | verify effectiveness post-deployment

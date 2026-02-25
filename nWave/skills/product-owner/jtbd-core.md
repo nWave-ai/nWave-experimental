@@ -5,13 +5,13 @@ description: Core JTBD theory and job story format - job dimensions, job story t
 
 # JTBD Core Theory
 
-Jobs-to-be-Done reframes product development around the progress customers seek rather than the products they buy. Customers "hire" products to accomplish specific jobs. The job exists independently of any solution.
+Jobs-to-be-Done reframes product development around the progress customers seek rather than products they buy. Customers "hire" products to accomplish specific jobs. The job exists independently of any solution.
 
 ## The Three Job Dimensions
 
 Every job has three dimensions. Capture all three during discovery -- functional jobs surface first, but emotional and social jobs drive switching decisions.
 
-**Functional**: The practical task to accomplish. Measurable, concrete, what the customer articulates first.
+**Functional**: Practical task to accomplish. Measurable, concrete, articulated first.
 - "Deploy a new feature to production without downtime"
 - "Identify the root cause of a performance regression"
 
@@ -19,7 +19,7 @@ Every job has three dimensions. Capture all three during discovery -- functional
 - "Feel confident that my changes will not break production"
 - "Feel in control of the project timeline despite changing requirements"
 
-**Social**: How the customer wants to be perceived by others. Identity, status, professional reputation.
+**Social**: How the customer wants to be perceived. Identity, status, professional reputation.
 - "Be seen as a technically competent lead who makes sound decisions"
 - "Demonstrate to stakeholders that the team delivers measurable value"
 
@@ -43,11 +43,11 @@ so I can [expected outcome/benefit].
 
 ### Writing Tips
 
-1. **Refine the situation with context**: "When I am nearly done with a document" beats "When I want to save a document"
-2. **Focus on the job, not the task**: The job is the higher-level goal; the task is one possible way to achieve it
+1. **Refine situation with context**: "When I am nearly done with a document" beats "When I want to save a document"
+2. **Focus on job, not task**: Job is the higher-level goal; task is one possible way to achieve it
 3. **Specify motivation, not implementation**: "I want to be confident my work is saved" not "I want a save button"
-4. **Leave the design space open**: Job stories do not prescribe solutions
-5. **Reveal the forces**: The story should hint at push (frustration), pull (desire), anxiety (risk), and habit (comfort)
+4. **Leave design space open**: Job stories do not prescribe solutions
+5. **Reveal the forces**: Story should hint at push (frustration), pull (desire), anxiety (risk), habit (comfort)
 
 ### Worked Example
 
@@ -86,19 +86,11 @@ Be trusted by the team as someone who ships reliably without causing incidents.
 
 ### When to Use Each
 
-**Use job stories when**:
-- Defining product strategy and discovering new opportunities
-- Understanding why customers switch solutions
-- Early-stage requirements where personas are not yet established
-- The same job applies across multiple user roles
+**Use job stories when**: defining product strategy | discovering new opportunities | early-stage requirements without established personas | same job applies across multiple roles
 
-**Use user stories when**:
-- Detailed implementation planning with known personas
-- The development team needs clear scope boundaries
-- Tracking work in a sprint backlog
-- Communication with stakeholders who think in user profiles
+**Use user stories when**: detailed implementation planning with known personas | clear scope boundaries needed | tracking sprint backlog | stakeholders think in user profiles
 
-**Use both together**: Job stories for strategic discovery, then translate into user stories for implementation. The job story reveals the *why*; the user story captures the *what to build*.
+**Use both together**: Job stories for strategic discovery, user stories for implementation. Job story reveals the *why*; user story captures the *what to build*.
 
 ## The Translation Pipeline
 
@@ -133,7 +125,7 @@ BDD Scenario (automatable Given-When-Then)
 
 ## The 8-Step Universal Job Map
 
-All jobs follow this universal structure (Ulwick). Walk through all 8 steps to surface requirements that feature-driven thinking misses.
+All jobs follow this universal structure (Ulwick). Walk all 8 steps to surface requirements that feature-driven thinking misses.
 
 | Step | Description | Discovery Question |
 |------|-------------|-------------------|
@@ -161,7 +153,7 @@ Steps 1-4 (Define through Confirm) are where most missing requirements hide. Tea
 
 ## Outcome Statements
 
-Outcome statements express customer needs as measurable, solution-free metrics. Used in opportunity scoring (see `jtbd-opportunity-scoring` skill).
+Express customer needs as measurable, solution-free metrics. Used in opportunity scoring (see `jtbd-opportunity-scoring` skill).
 
 ```
 [Direction] + the [metric] + [object of control] + [contextual clarifier]
@@ -180,12 +172,12 @@ Direction: "Minimize" or "Maximize". Metric: time, likelihood, number, or freque
 
 - Solution-free: no reference to specific technology
 - Measurable: can be rated on importance and satisfaction scales
-- Controllable: the customer can assess whether the outcome improved
+- Controllable: customer can assess whether the outcome improved
 - Unambiguous: interpreted the same way by all stakeholders
 
 ## The Four Forces of Progress
 
-For a switch to happen, Push + Pull must exceed Anxiety + Habit. Product teams often focus only on Pull (making their product attractive) while ignoring Anxiety and Habit reduction.
+For a switch to happen, Push + Pull must exceed Anxiety + Habit. Teams often focus only on Pull (making product attractive) while ignoring Anxiety and Habit reduction.
 
 ```
         PROGRESS (switching happens)
@@ -203,10 +195,10 @@ of New        |     Present
 Solution      |
 ```
 
-1. **Push** (demand-generating): Frustration with the current solution
+1. **Push** (demand-generating): Frustration with current solution
 2. **Pull** (demand-generating): Attractiveness of the alternative
-3. **Anxiety** (demand-reducing): Fear, risk, learning curve of the new solution
-4. **Habit** (demand-reducing): Familiarity, comfort, sunk costs with the current solution
+3. **Anxiety** (demand-reducing): Fear, risk, learning curve of new solution
+4. **Habit** (demand-reducing): Familiarity, comfort, sunk costs with current solution
 
 ### Forces Template
 

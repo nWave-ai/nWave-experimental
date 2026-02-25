@@ -132,7 +132,7 @@ prop_store() ->
         end).
 ```
 
-StreamData: No stateful testing support. PropCheck: Uses the same proper_statem callbacks with Elixir syntax.
+StreamData: No stateful testing. PropCheck: Same proper_statem callbacks with Elixir syntax.
 
 ### Parallel Testing (Linearizability)
 
@@ -146,7 +146,7 @@ prop_store_parallel() ->
         end).
 ```
 
-Swap `commands` for `parallel_commands`, `run_commands` for `run_parallel_commands`. The framework generates a sequential prefix + parallel branches and checks all linearizations.
+Swap `commands` for `parallel_commands`, `run_commands` for `run_parallel_commands`. Framework generates sequential prefix + parallel branches and checks all linearizations.
 
 ## Test Runner Integration
 

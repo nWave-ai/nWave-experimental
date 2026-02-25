@@ -9,7 +9,7 @@ Patterns for creating interfaces that feel good to use. Use during discovery to 
 
 ## Walter's Hierarchy of User Needs
 
-Four layers that must be satisfied in order (bottom to top):
+Four layers satisfied in order (bottom to top):
 
 ```
         /\
@@ -24,33 +24,27 @@ Four layers that must be satisfied in order (bottom to top):
 ------------------
 ```
 
-**Key insight**: A product can be delightful only if it is usable. Beautiful animations on a buggy, confusing interface make things worse. Invest in the foundation before the polish.
+**Key insight**: Delight only works if product is usable. Beautiful animations on buggy, confusing interface make things worse. Invest in foundation before polish.
 
 ### Applying the Hierarchy in Requirements
-- Phase 1 stories: ensure functionality works correctly
-- Phase 2 stories: add reliability (error handling, edge cases, recovery)
-- Phase 3 stories: improve usability (simplify flows, reduce steps)
-- Phase 4 stories: add delight (only after the above are solid)
+- Phase 1 stories: functionality works correctly
+- Phase 2 stories: reliability (error handling, edge cases, recovery)
+- Phase 3 stories: usability (simplify flows, reduce steps)
+- Phase 4 stories: delight (only after above are solid)
 
 ## Surface Delight vs Deep Delight
 
 ### Surface Delight (momentary, contextual)
-- Playful animations on interaction
-- Witty microcopy in messages
-- Surprising easter eggs
-- Visually pleasing illustrations
+Playful animations | witty microcopy | surprising easter eggs | visually pleasing illustrations
 
 ### Deep Delight (sustained, holistic)
-- The interface anticipates what the user needs next
-- Complex tasks feel effortless
-- Users achieve flow state: immersed productivity without obstruction
-- The tool becomes an extension of the user's thinking
+Interface anticipates user needs | complex tasks feel effortless | users achieve flow state | tool becomes extension of thinking
 
-**Prioritization rule**: Deep delight generates loyalty and return usage. Surface delight creates momentary positive reactions but cannot compensate for usability failures. Invest in deep delight first.
+**Prioritization rule**: Deep delight generates loyalty and return usage. Surface delight creates momentary reactions but cannot compensate for usability failures. Invest in deep delight first.
 
 ### Requirements Implications
-- "The system suggests the most likely next action" (deep delight) is higher priority than "The save button has a satisfying animation" (surface delight)
-- Stories about reducing steps, anticipating needs, and removing friction are delight stories even if they do not feel "fun"
+- "System suggests most likely next action" (deep) is higher priority than "Save button has satisfying animation" (surface)
+- Stories reducing steps, anticipating needs, removing friction are delight stories even if they don't feel "fun"
 
 ## Empty States
 
@@ -58,47 +52,43 @@ Empty states (no data, first use, zero results) are opportunities, not dead ends
 
 ### Good Empty State Design
 - Explain what will appear when there is content
-- Provide a clear call to action to create the first item
-- Use illustration or visual interest to make the state feel intentional
-- Offer guidance or templates for first-time users
+- Clear call to action to create first item
+- Illustration or visual interest making state feel intentional
+- Guidance or templates for first-time users
 
 ### Anti-Pattern
-A blank page with no guidance, or "No results found" with no suggested next step.
+Blank page with no guidance, or "No results found" with no suggested next step.
 
 ### Empty State Checklist for Requirements
 - [ ] First-time empty state has onboarding guidance
 - [ ] Search empty state suggests alternative queries or filters
 - [ ] Error empty state explains what happened and how to recover
-- [ ] Each empty state has a primary call to action
+- [ ] Each empty state has primary call to action
 
 ## Onboarding and First-Run Experience
 
 ### Progressive Onboarding (preferred)
 - Let users start real work immediately
-- Introduce features in context, at the moment they become relevant
-- Use tooltips and inline hints that dismiss after first use
-- Offer a "skip" option for experienced users
-- Celebrate the first successful action
+- Introduce features in context, when relevant
+- Tooltips and inline hints dismissing after first use
+- "Skip" option for experienced users
+- Celebrate first successful action
 
 ### Anti-Pattern
-A mandatory 8-step walkthrough that blocks users from doing anything before completing it.
+Mandatory 8-step walkthrough blocking users from doing anything before completion.
 
 ### Onboarding Patterns by Platform
 
-**Web**: Inline hints, contextual tooltips, sample data to explore, "getting started" checklist widget.
+**Web**: Inline hints | contextual tooltips | sample data to explore | "getting started" checklist widget
 
-**Desktop**: First-run wizard for essential setup only (account, preferences), then contextual hints during use.
+**Desktop**: First-run wizard for essential setup only (account, preferences), then contextual hints during use
 
-**CLI**: First command outputs a welcome message with 2-3 example commands. `--help` is comprehensive. Config file created with sensible defaults and comments.
+**CLI**: First command outputs welcome message with 2-3 example commands. `--help` is comprehensive. Config file created with sensible defaults and comments.
 
 ## Tone of Voice in UI Copy
 
 ### Principles
-- Be clear first, clever second
-- Use active voice and present tense
-- Address the user as "you"
-- Keep instructions to 1-2 sentences
-- A consistent voice builds trust; an inconsistent voice creates unease
+Clear first, clever second | active voice, present tense | address user as "you" | instructions in 1-2 sentences | consistent voice builds trust
 
 ### Matching Tone to Context
 
@@ -111,46 +101,28 @@ A mandatory 8-step walkthrough that blocks users from doing anything before comp
 | Loading/waiting | Reassuring | "Setting things up. This usually takes about 30 seconds." |
 | Neutral action | Straightforward | "Select a template." |
 
-### When Personality Helps vs When It Annoys
+### When Personality Helps vs Annoys
 
-**Personality helps when**:
-- The user is not stressed (onboarding, success states, empty states)
-- The moment is low-stakes
-- The brand voice is well-established and consistent
+**Helps when**: user not stressed (onboarding, success, empty states) | low-stakes moment | brand voice well-established
 
-**Personality annoys when**:
-- The user is frustrated (error states, failures)
-- The user is in a hurry (critical workflows, high-frequency tasks)
-- The humor is forced or inconsistent with the rest of the interface
-- Cleverness obscures the message
+**Annoys when**: user frustrated (errors, failures) | user in a hurry (critical workflows) | humor forced or inconsistent | cleverness obscures message
 
 ## Microinteractions That Create Delight
 
 ### High-Value Microinteractions
-- Pull-to-refresh with a satisfying animation
-- Skeleton screens instead of blank loading states
-- Smooth transitions between states (not abrupt swaps)
-- Smart defaults that reduce typing
-- Autocomplete that learns from usage patterns
-- Undo toast after destructive actions ("Deleted. Undo?")
+Pull-to-refresh with satisfying animation | skeleton screens instead of blank loading | smooth state transitions (not abrupt swaps) | smart defaults reducing typing | autocomplete learning from usage | undo toast after destructive actions ("Deleted. Undo?")
 
 ### Low-Value Microinteractions (skip these)
-- Decorative loading animations that add no information
-- Sound effects for routine actions
-- Excessive bounce or wobble animations
-- Easter eggs that interfere with the workflow
+Decorative loading animations adding no information | sound effects for routine actions | excessive bounce/wobble animations | easter eggs interfering with workflow
 
 ### Requirements Pattern for Microinteractions
-When specifying a microinteraction in acceptance criteria:
-- State the trigger (what the user does)
-- State the feedback (what the user sees/feels)
-- State the purpose (why this interaction matters for the experience)
+Specify: trigger (what user does) | feedback (what user sees/feels) | purpose (why this matters for experience)
 
-Example: "When the user drags a card to a new column, the card smoothly animates to its new position and the column header count updates, confirming the move was successful."
+Example: "When user drags card to new column, card smoothly animates to new position and column header count updates, confirming move was successful."
 
 ## Emotional Arc Integration
 
-When mapping emotional arcs during journey discovery, use these reference points:
+When mapping emotional arcs during journey discovery:
 
 | Journey Phase | Target Emotion | Design Lever |
 |--------------|----------------|--------------|
@@ -161,4 +133,4 @@ When mapping emotional arcs during journey discovery, use these reference points
 | Error/failure | Supported, not blamed | Empathetic copy, clear recovery path |
 | Completion | Satisfied, proud | Summary of accomplishment, next steps |
 
-Use this table when asking emotional arc questions during discovery. Map each journey step to a target emotion and identify the design lever that achieves it.
+Use this table when asking emotional arc questions during discovery. Map each journey step to target emotion and identify design lever that achieves it.

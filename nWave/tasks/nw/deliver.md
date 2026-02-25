@@ -136,6 +136,10 @@ Return control to orchestrator after completion.
 
 Read full DES Prompt Template from ~/.claude/commands/nw/execute.md.
 Fill: step_id={step_id}|project_id={project_id}|agent={agent}|task_context={instructions}
+
+SKILL_LOADING: Read your skill files at ~/.claude/skills/nw/{agent-name}/.
+At PREPARE phase, always load: tdd-methodology.md, quality-framework.md.
+Then follow your Skill Loading Strategy table for phase-specific skills.
 ''',
     description="{phase description}"
 )

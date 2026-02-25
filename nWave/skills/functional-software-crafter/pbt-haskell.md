@@ -72,7 +72,7 @@ instance Arbitrary MyType where
 
 ## Stateful Testing (QuickCheck)
 
-Not supported in open-source QuickCheck. Use Hedgehog for stateful testing, or commercial Quviq QuickCheck (Erlang) for the most complete stateful/parallel implementation.
+Not supported in open-source QuickCheck. Use Hedgehog for stateful testing, or commercial Quviq QuickCheck (Erlang).
 
 ## Quick Start (Hedgehog)
 
@@ -169,7 +169,7 @@ prop_store = property $ do
   executeSequential (ModelState Map.empty) actions
 ```
 
-For parallel testing, replace `Gen.sequential` with `Gen.parallel` and `executeSequential` with `executeParallel`. This checks linearizability of concurrent operations.
+For parallel testing, replace `Gen.sequential` with `Gen.parallel` and `executeSequential` with `executeParallel`. Checks linearizability of concurrent operations.
 
 ## Test Runner Integration
 
@@ -203,6 +203,6 @@ testGroup "sort" [ Hedgehog.testProperty "length" prop_sortLength ]
 
 ### Hedgehog
 - **Integrated shrinking**: Automatic via rose trees, composes through applicative
-- **No orphan instances**: Explicit generators avoid the type class problem
+- **No orphan instances**: Explicit generators avoid type class problem
 - **Range combinators**: Fine control over value scaling with size
 - **Parallel stateful testing**: Built-in linearizability checking

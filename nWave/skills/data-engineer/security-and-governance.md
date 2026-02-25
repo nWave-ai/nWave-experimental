@@ -7,29 +7,19 @@ description: Database security (encryption, access control, injection prevention
 
 ## Defense-in-Depth Security Model
 
-Security is layered. Each layer provides independent protection:
-
+Layered security, each layer provides independent protection:
 1. **Encryption at rest** (TDE) — protects against physical media theft
 2. **Encryption in transit** (TLS/SSL) — protects against network interception
 3. **Access control** (RBAC/ABAC) — enforces least privilege
 4. **SQL injection prevention** — protects against application-layer attacks
-5. **Audit logging** — provides accountability and forensic capability
+5. **Audit logging** — accountability and forensic capability
 
 ## Encryption at Rest (TDE)
 
-Transparent Data Encryption encrypts database files on disk without application changes.
+Encrypts DB files on disk without application changes. Encrypts data pages before writing, decrypts on read into memory. AES 128/256-bit symmetric encryption. Transparent to applications.
 
-### How TDE Works
-- Encrypts data pages before writing to disk
-- Decrypts data pages when reading into memory
-- Uses symmetric encryption (AES 128/256-bit)
-- Transparent to applications — no code changes
-
-### Encryption Key Hierarchy (SQL Server)
-1. Service Master Key (protected by Windows DPAPI)
-2. Database Master Key (protected by Service Master Key)
-3. Certificate (protected by Database Master Key)
-4. Database Encryption Key (DEK, protected by certificate)
+### Key Hierarchy (SQL Server)
+1. Service Master Key (Windows DPAPI) -> 2. Database Master Key -> 3. Certificate -> 4. Database Encryption Key (DEK)
 
 ### Implementation
 ```sql
@@ -47,9 +37,8 @@ ALTER TABLESPACE users ENCRYPTION ONLINE USING 'AES256';
 ```
 
 ### Best Practices
-- Back up certificates and keys immediately after creation — loss means unrecoverable data
-- Store backups in separate secure location
-- Implement key rotation policy
+- Back up certificates/keys immediately — loss means unrecoverable data
+- Store backups in separate secure location | Implement key rotation policy
 - Use customer-managed keys (BYOK) for regulatory compliance
 - Monitor performance impact (typically 3-5% overhead)
 - TDE does not protect data in memory — use column-level encryption for highly sensitive fields
@@ -57,16 +46,16 @@ ALTER TABLESPACE users ENCRYPTION ONLINE USING 'AES256';
 ## Encryption in Transit (TLS)
 
 ### Configuration Checklist
-- [ ] TLS 1.2+ enforced (disable TLS 1.0/1.1)
-- [ ] Valid certificates from trusted CA (not self-signed in production)
+- [ ] TLS 1.2+ enforced (disable 1.0/1.1)
+- [ ] Valid certificates from trusted CA (not self-signed in prod)
 - [ ] Certificate rotation policy established
-- [ ] Client certificate authentication for server-to-server connections
+- [ ] Client cert auth for server-to-server connections
 - [ ] Connection string enforces SSL (`sslmode=require` in PostgreSQL)
 
 ## Access Control
 
-### RBAC (Role-Based Access Control)
-Assign permissions to roles, assign roles to users. Standard in all major databases.
+### RBAC (Role-Based)
+Assign permissions to roles, roles to users. Standard in all major DBs.
 
 ```sql
 -- PostgreSQL RBAC example
@@ -81,13 +70,13 @@ GRANT app_readonly TO reporting_user;
 GRANT app_readwrite TO application_user;
 ```
 
-### ABAC (Attribute-Based Access Control)
-Access decisions based on attributes of user, resource, and environment. More flexible than RBAC for complex scenarios (multi-tenant, data classification).
+### ABAC (Attribute-Based)
+Access decisions based on attributes of user, resource, environment. More flexible than RBAC for complex scenarios (multi-tenant, data classification).
 
-### Least Privilege Principle
-- Application accounts: Only DML (SELECT, INSERT, UPDATE, DELETE)
+### Least Privilege
+- Application accounts: DML only (SELECT/INSERT/UPDATE/DELETE)
 - Migration accounts: DDL + DML, time-limited
-- Admin accounts: Full access, MFA required, audit logged
+- Admin accounts: full access, MFA required, audit logged
 - Reporting accounts: SELECT only on specific schemas/views
 
 ## SQL Injection Prevention (OWASP)
@@ -109,15 +98,10 @@ cursor.execute("SELECT * FROM users WHERE id = %s AND status = %s", (user_id, 'a
 # client.query('SELECT * FROM users WHERE id = $1', [userId])
 ```
 
-### Additional Defenses (OWASP Recommendations)
-- Input validation: Whitelist allowed characters and formats
-- Stored procedures: Encapsulate queries, reduce direct SQL exposure
-- Least privilege: Application DB accounts should not have DDL permissions
-- WAF rules: Web application firewall for additional filtering
-- Error handling: Never expose database error messages to end users
+### Additional Defenses (OWASP)
+Input validation: whitelist allowed chars/formats | Stored procedures: reduce direct SQL exposure | Least privilege: no DDL for app accounts | WAF rules | Never expose DB error messages to end users
 
 ### Detection Patterns
-Look for string concatenation in SQL construction:
 ```python
 # VULNERABLE - string concatenation
 query = f"SELECT * FROM users WHERE name = '{user_input}'"
@@ -132,81 +116,61 @@ cursor.execute(query, (user_input,))
 ### Data Lineage
 Track data from source through transformations to consumption:
 - **Technical lineage**: Column-level mapping through ETL/ELT pipelines
-- **Business lineage**: Business meaning and ownership of data elements
-- **Tools**: Apache Atlas, OpenLineage, Marquez, dbt lineage, cloud-native (AWS Glue, Azure Purview)
+- **Business lineage**: Business meaning and ownership
+- **Tools**: Apache Atlas, OpenLineage, Marquez, dbt lineage, AWS Glue, Azure Purview
 
-Purpose:
-- Regulatory compliance (GDPR Article 30: records of processing activities)
-- Impact analysis (what downstream systems are affected by a schema change?)
-- Root cause analysis (where did bad data originate?)
-- Audit trails (who accessed what data, when?)
+Purpose: Regulatory compliance (GDPR Article 30) | Impact analysis (downstream schema change effects) | Root cause analysis (bad data origin) | Audit trails
 
 ### Data Quality Dimensions
-Measure and monitor these dimensions:
 
 | Dimension | Definition | Example Check |
 |-----------|-----------|---------------|
-| Accuracy | Data correctly represents real-world entities | Email format validation |
-| Completeness | Required fields are populated | NOT NULL checks, completeness % |
+| Accuracy | Correctly represents real-world entities | Email format validation |
+| Completeness | Required fields populated | NOT NULL checks, completeness % |
 | Consistency | Same data across systems agrees | Cross-system reconciliation |
-| Timeliness | Data is current and available when needed | Freshness SLAs |
+| Timeliness | Current and available when needed | Freshness SLAs |
 | Uniqueness | No unintended duplicates | Duplicate detection on business keys |
-| Validity | Data conforms to defined rules and formats | Range checks, enum validation |
+| Validity | Conforms to defined rules/formats | Range checks, enum validation |
 
 ### Master Data Management (MDM)
-- Establish single source of truth for core entities (customer, product, location)
-- Define golden record resolution rules for conflicting data
-- Implement data stewardship roles and processes
-- Use MDM platform or implement reference data services
+Establish single source of truth for core entities (customer, product, location) | Define golden record resolution rules | Implement data stewardship roles | Use MDM platform or reference data services
 
 ## Compliance Frameworks
 
-### GDPR (EU General Data Protection Regulation)
-Key requirements for database design:
-- **Right to erasure** (Article 17): Implement hard-delete capability for personal data, including backups and replicas
-- **Data portability** (Article 20): Export user data in machine-readable format (JSON, CSV)
-- **Consent management**: Track consent per data processing purpose with timestamps
-- **Data minimization**: Collect and retain only necessary personal data
+### GDPR (EU)
+- **Right to erasure** (Art. 17): Hard-delete capability including backups/replicas
+- **Data portability** (Art. 20): Export in machine-readable format (JSON, CSV)
+- **Consent management**: Track per processing purpose with timestamps
+- **Data minimization**: Collect/retain only necessary personal data
 - **Privacy by design**: Pseudonymization, encryption, access controls from initial design
-- **Breach notification**: 72-hour notification requirement — implement detection and alerting
+- **Breach notification**: 72-hour requirement, implement detection/alerting
 
-### CCPA (California Consumer Privacy Act)
-- **Right to know**: Disclose what personal data is collected
-- **Right to delete**: Delete personal data on request
-- **Right to opt-out**: Opt-out of data sale
-- **Non-discrimination**: Equal service regardless of privacy choices
+### CCPA (California)
+Right to know (disclose collected data) | Right to delete | Right to opt-out of data sale | Non-discrimination regardless of privacy choices
 
 ### HIPAA (Health Data)
-- **PHI encryption**: Encrypt Protected Health Information at rest and in transit
-- **Access controls**: Role-based access with minimum necessary standard
-- **Audit trails**: Log all access to PHI
-- **Business associate agreements**: Required for third-party data processors
+PHI encryption at rest and in transit | Role-based access with minimum necessary standard | Audit all PHI access | Business associate agreements for third-party processors
 
 ### Implementation Checklist
-- [ ] Data classification schema defined (public, internal, confidential, restricted)
-- [ ] Retention policies per data classification
+- [ ] Data classification schema (public, internal, confidential, restricted)
+- [ ] Retention policies per classification
 - [ ] Deletion procedures (including backups, replicas, caches)
 - [ ] Consent tracking mechanism
 - [ ] Audit logging for sensitive data access
-- [ ] Data processing records (GDPR Article 30)
+- [ ] Data processing records (GDPR Art. 30)
 - [ ] Breach response procedure documented and tested
-- [ ] Privacy impact assessment for new data processing activities
+- [ ] Privacy impact assessment for new processing activities
 
 ## Backup and Recovery
 
 ### 3-2-1 Rule
-- 3 copies of data
-- 2 different storage types
-- 1 copy offsite
+3 copies of data | 2 different storage types | 1 copy offsite
 
 ### Backup Types
-- **Full**: Complete database copy. Baseline for recovery
-- **Incremental**: Changed blocks since last backup. Fast, small. Recovery requires chain
-- **Differential**: Changes since last full backup. Faster recovery than incremental chain
+- **Full**: Complete DB copy, baseline for recovery
+- **Incremental**: Changed blocks since last backup, fast/small, recovery requires chain
+- **Differential**: Changes since last full, faster recovery than incremental chain
 - **Transaction log**: Enables point-in-time recovery (PITR)
 
 ### Recovery Validation
-- Test recovery regularly (monthly minimum)
-- Document RTO (Recovery Time Objective) and RPO (Recovery Point Objective)
-- Encrypt backup files
-- Store backup encryption keys separately from backups
+Test recovery regularly (monthly minimum) | Document RTO and RPO | Encrypt backup files | Store encryption keys separately from backups

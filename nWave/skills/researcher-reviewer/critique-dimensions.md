@@ -5,68 +5,35 @@ description: Critique dimensions and scoring for research document reviews
 
 # Critique Dimensions for Research Review
 
-Load this skill when reviewing research documents. Apply each dimension systematically.
+Load when reviewing research documents. Apply each dimension systematically.
 
 ## Dimension 1: Source Selection Bias
 
-**What to check**:
-- Are contradictory viewpoints included?
-- Are sources from multiple organizations, authors, and perspectives?
-- Is there geographic and temporal diversity?
-- Are sources truly independent (not citing each other circularly)?
+Check: contradictory viewpoints included? | Multiple organizations/authors/perspectives? | Geographic/temporal diversity? | Sources truly independent (not circular)?
 
-**Flags**:
-- 60%+ sources from single organization or author -> critical
-- All sources supporting same conclusion with no counterpoint -> critical
-- Sources only from one geographic region -> medium
-- Publication dates clustered in narrow window -> medium
+Flags: 60%+ from single org/author -> critical | All supporting same conclusion without counterpoint -> critical | Single geographic region -> medium | Clustered publication dates -> medium
 
 ## Dimension 2: Evidence Quality
 
-**What to check**:
-- Every major claim has a citation
-- Sources are reputable (peer-reviewed, official docs, established practitioners)
-- Primary sources preferred over secondary interpretations
-- Technical sources are recent (within 5 years for fast-moving topics)
-- Confidence ratings match the evidence strength
+Check: every major claim cited | sources reputable (peer-reviewed, official, established) | primary over secondary | technical sources recent (5 years) | confidence matches evidence
 
-**Flags**:
-- Claim without any citation -> high
-- Citation from blog post or forum for a factual claim -> high
-- All sources are secondary (no primary) -> medium
-- Sources older than 5 years for technical topics -> medium
-- High confidence rating with only 1-2 sources -> high
+Flags: uncited claim -> high | blog/forum for factual claim -> high | all secondary sources -> medium | sources >5 years for tech -> medium | high confidence with 1-2 sources -> high
 
 ## Dimension 3: Replicability
 
-**What to check**:
-- Search queries or strategy documented
-- Source selection criteria explicit
-- Methodology transparent enough for another researcher to follow
-- Confidence levels stated with rationale
+Check: search strategy documented | source selection criteria explicit | methodology transparent | confidence levels with rationale
 
-**Flags**:
-- No methodology section -> high
-- Methodology present but vague ("searched the web") -> medium
-- No confidence ratings on findings -> medium
+Flags: no methodology section -> high | vague methodology ("searched the web") -> medium | no confidence ratings -> medium
 
 ## Dimension 4: Priority Validation
 
-Use when reviewing research that drives architectural or strategic decisions.
+For research driving architectural/strategic decisions.
 
-**Questions**:
-1. Is this the largest bottleneck? Does timing/measurement data confirm?
-2. Were simpler alternatives considered and rejected with evidence?
-3. Is constraint prioritization correct? (Flag if >50% of solution targets <30% of problem)
-4. Is the key decision supported by quantitative data?
+Q1: Is this the largest bottleneck? (timing/measurement data?) | Q2: Simpler alternatives considered and rejected with evidence? | Q3: Constraint prioritization correct? (>50% solution for <30% problem = flag) | Q4: Key decision data-justified?
 
-**Flags**:
-- Research addresses secondary concern while larger exists -> critical
-- No measurement data for performance-related research -> high
-- Simple alternatives not documented -> high
-- Constraint prioritization not explicit -> medium
+Flags: secondary concern addressed while larger exists -> critical | no measurement data for performance -> high | alternatives not documented -> high | prioritization not explicit -> medium
 
-**Output template for priority validation**:
+Output template:
 ```yaml
 priority_validation:
   q1_largest_bottleneck:
@@ -84,17 +51,9 @@ priority_validation:
 
 ## Dimension 5: Completeness
 
-**What to check**:
-- Knowledge gaps explicitly documented (what was searched, why insufficient)
-- Conflicting information acknowledged with source credibility analysis
-- All required sections present (executive summary, findings, sources, gaps, citations)
-- Research metadata included (source count, confidence distribution)
+Check: knowledge gaps documented (what searched, why insufficient) | conflicting info acknowledged with credibility analysis | all required sections present (summary, findings, sources, gaps, citations) | research metadata included
 
-**Flags**:
-- Missing knowledge gaps section when gaps clearly exist -> critical
-- Conflicting sources not acknowledged -> high
-- Missing required sections -> high
-- No research metadata -> medium
+Flags: missing gaps section when gaps exist -> critical | conflicting sources unacknowledged -> high | missing required sections -> high | no metadata -> medium
 
 ## Review Output Template
 

@@ -13,38 +13,38 @@ Execute levels in mandatory sequence. Lower levels before higher.
 
 ### Level 1: Foundation (Readability)
 Focus: eliminate clutter, improve naming, remove dead code.
-Smells addressed: Dead Code, Comments (how-comments), Speculative Generality, Lazy Class.
-Transformations: Rename, Extract (variables/constants), Safe Delete.
+Smells: Dead Code | Comments (how-comments) | Speculative Generality | Lazy Class.
+Transformations: Rename | Extract (variables/constants) | Safe Delete.
 Impact: 80% of readability improvement value.
-Test smells: Obscure Test, Hard-Coded Test Data, Assertion Roulette.
+Test smells: Obscure Test | Hard-Coded Test Data | Assertion Roulette.
 
 ### Level 2: Complexity Reduction (Simplification)
 Focus: method extraction, duplication elimination.
-Smells addressed: Long Method, Duplicate Code, Complex Conditionals.
-Transformations: Extract (methods), Move (common code).
+Smells: Long Method | Duplicate Code | Complex Conditionals.
+Transformations: Extract (methods) | Move (common code).
 Impact: 20% additional readability improvement.
-Test smells: Eager Test, Test Code Duplication, Conditional Test Logic.
+Test smells: Eager Test | Test Code Duplication | Conditional Test Logic.
 
 ### Level 3: Responsibility Organization
 Focus: class responsibilities, coupling reduction.
-Smells addressed: Large Class, Feature Envy, Inappropriate Intimacy, Data Class, Divergent Change, Shotgun Surgery.
-Transformations: Move, Extract (classes).
-Test smells: Test Class Bloat, Mystery Guest, General Fixture.
+Smells: Large Class | Feature Envy | Inappropriate Intimacy | Data Class | Divergent Change | Shotgun Surgery.
+Transformations: Move | Extract (classes).
+Test smells: Test Class Bloat | Mystery Guest | General Fixture.
 
 ### Level 4: Abstraction Refinement
 Focus: parameter objects, value objects, abstractions.
-Smells addressed: Long Parameter List, Data Clumps, Primitive Obsession, Middle Man.
-Transformations: Extract (objects), Inline, Move.
+Smells: Long Parameter List | Data Clumps | Primitive Obsession | Middle Man.
+Transformations: Extract (objects) | Inline | Move.
 
 ### Level 5: Design Pattern Application
-Focus: Strategy, State, Command patterns.
-Smells addressed: Switch Statements, complex state-dependent behavior.
-Transformations: Extract (interfaces), Move (to polymorphic structure).
+Focus: Strategy | State | Command patterns.
+Smells: Switch Statements | complex state-dependent behavior.
+Transformations: Extract (interfaces) | Move (to polymorphic structure).
 
 ### Level 6: SOLID++ Principles
 Focus: SOLID principles, architectural patterns.
-Smells addressed: Refused Bequest, Parallel Inheritance Hierarchies.
-Transformations: Extract (interfaces), Move (responsibilities), Safe Delete (violations).
+Smells: Refused Bequest | Parallel Inheritance Hierarchies.
+Transformations: Extract (interfaces) | Move (responsibilities) | Safe Delete (violations).
 
 ### RPP Cascade Rule
 MANDATORY: complete each level fully before moving to the next. Do not skip levels.
@@ -110,23 +110,23 @@ L4-L6 architecture refactoring runs at orchestrator Phase 2.25 (once after all s
 ## 5 Atomic Transformations
 
 ### Rename
-Change name without changing behavior. Applies to: variables, methods, classes, fields, parameters.
+Change name without changing behavior. Applies to: variables | methods | classes | fields | parameters.
 Safety: use IDE refactoring tools, verify all references updated, run tests, commit.
 
 ### Extract
-Take portion of code and create new element. Applies to: methods, classes, variables, constants, interfaces.
+Take portion of code, create new element. Applies to: methods | classes | variables | constants | interfaces.
 Safety: identify code, create element with intention-revealing name, move code, replace original with call, test, commit.
 
 ### Inline
-Replace code element with its implementation. Applies to: methods, variables, classes.
+Replace code element with its implementation. Applies to: methods | variables | classes.
 Safety: verify no side effects, replace all calls, remove original, test, commit.
 
 ### Move
-Relocate code element to different scope or class. Applies to: methods, fields, classes.
+Relocate code element to different scope or class. Applies to: methods | fields | classes.
 Safety: check dependencies, create in target, update references, remove from source, test, commit.
 
 ### Safe Delete
-Remove unused code elements. Applies to: methods, fields, classes, parameters, variables.
+Remove unused code elements. Applies to: methods | fields | classes | parameters | variables.
 Safety: verify truly unused, check for dynamic references, remove, compile and test, commit.
 
 ---

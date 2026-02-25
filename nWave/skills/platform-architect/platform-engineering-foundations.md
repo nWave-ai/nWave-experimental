@@ -7,39 +7,23 @@ description: Foundational platform engineering knowledge from key references -- 
 
 ## Continuous Delivery (Humble and Farley)
 
-Key principles:
-- Build quality in -- quality is everyone's responsibility
-- Work in small batches -- reduce risk through small, frequent changes
-- Automate almost everything -- manual processes are error-prone
-- Pursue continuous improvement -- always seek to improve
-- Everyone is responsible -- shared ownership of delivery
+Key principles: Build quality in | Work in small batches | Automate almost everything | Pursue continuous improvement | Everyone is responsible (shared ownership).
 
-Pipeline pattern progression:
-1. Commit Stage: build, unit tests, code analysis (< 10 min)
-2. Acceptance Stage: automated acceptance tests, component tests
-3. Capacity Stage: performance, load, stress testing
-4. Production Stage: blue-green, canary deployments
+Pipeline progression: 1. Commit Stage (build, unit tests, code analysis, < 10 min) | 2. Acceptance Stage (automated acceptance/component tests) | 3. Capacity Stage (performance, load, stress testing) | 4. Production Stage (blue-green, canary deployments).
 
 ## Site Reliability Engineering (Google -- Beyer et al.)
 
-Key principles:
-- SLOs over SLAs -- internal targets stricter than external promises
-- Error budgets -- balance reliability and velocity
-- Toil elimination -- automate repetitive manual work
-- Embrace risk -- calculate risk, do not eliminate it
+Key principles: SLOs over SLAs (internal targets stricter than external) | Error budgets (balance reliability and velocity) | Toil elimination (automate repetitive manual work) | Embrace risk (calculate risk, do not eliminate it).
 
-Observability patterns:
-- Four Golden Signals: latency, traffic, errors, saturation
-- SLI -> SLO -> Error Budget -> Alerting chain
-- Dashboards for investigation, not monitoring
+Observability: Four Golden Signals (latency, traffic, errors, saturation) | SLI -> SLO -> Error Budget -> Alerting chain | Dashboards for investigation, not monitoring.
 
 ## Accelerate (Forsgren, Humble, Kim)
 
 ### DORA Metrics
-- **Deployment frequency**: How often code is deployed to production
-- **Lead time for changes**: Time from commit to production
-- **Change failure rate**: Percentage of deployments causing failure
-- **Time to restore**: Time to recover from production failure
+- **Deployment frequency**: how often code deploys to production
+- **Lead time for changes**: time from commit to production
+- **Change failure rate**: % of deployments causing failure
+- **Time to restore**: time to recover from production failure
 
 ### Performance Levels
 
@@ -55,60 +39,35 @@ Use DORA metrics as baselines when assessing current state and setting improveme
 ## Team Topologies (Skelton and Pais)
 
 ### Team Types
-- **Stream-aligned**: Delivers value to customer, owns full lifecycle
-- **Platform**: Provides self-service capabilities, reduces cognitive load
-- **Enabling**: Helps teams adopt new practices, temporary engagement
-- **Complicated subsystem**: Owns complex technical domain
+- **Stream-aligned**: delivers value to customer, owns full lifecycle
+- **Platform**: provides self-service capabilities, reduces cognitive load
+- **Enabling**: helps teams adopt new practices, temporary engagement
+- **Complicated subsystem**: owns complex technical domain
 
 ### Platform Principles
-- Platform as a product -- internal developer platform
-- Self-service with guardrails
-- Reduce cognitive load on stream-aligned teams
-- Thinnest viable platform
+Platform as a product (internal developer platform) | Self-service with guardrails | Reduce cognitive load on stream-aligned teams | Thinnest viable platform.
 
 Use when designing platform team structures and determining which capabilities to centralize vs delegate.
 
 ## Chaos Engineering (Rosenthal et al.)
 
-Principles:
-- Build hypothesis about steady state
-- Vary real-world events
-- Run experiments in production
-- Automate experiments continuously
+Principles: Build hypothesis about steady state | Vary real-world events | Run experiments in production | Automate experiments continuously.
 
-Practices:
-- GameDays -- scheduled chaos experiments
-- Fault injection -- network latency, failures
-- Chaos monkey -- random instance termination
+Practices: GameDays (scheduled chaos experiments) | Fault injection (network latency, failures) | Chaos monkey (random instance termination).
 
 ## Secure Delivery (Building Secure and Reliable Systems)
 
-Principles:
-- Least privilege -- minimal permissions
-- Defense in depth -- multiple security layers
-- Zero trust -- verify explicitly, assume breach
+Principles: Least privilege (minimal permissions) | Defense in depth (multiple security layers) | Zero trust (verify explicitly, assume breach).
 
-Pipeline security integration:
-- SAST in CI for static analysis
-- DAST pre-production for dynamic analysis
-- SCA for dependency vulnerabilities
-- Secrets scanning to prevent credential leaks
-- SBOM for supply chain transparency
+Pipeline security: SAST in CI | DAST pre-production | SCA for dependency vulnerabilities | Secrets scanning | SBOM for supply chain transparency.
 
 ## GitOps (GitOps and Kubernetes)
 
-Principles:
-- Declarative desired state in Git
-- Automated reconciliation
-- Drift detection and correction
-- Pull-based deployments
+Principles: Declarative desired state in Git | Automated reconciliation | Drift detection and correction | Pull-based deployments.
 
-Tools: ArgoCD (Kubernetes-native GitOps CD), Flux (GitOps toolkit for Kubernetes).
+Tools: ArgoCD (Kubernetes-native GitOps CD) | Flux (GitOps toolkit for Kubernetes).
 
-Patterns:
-- App of Apps pattern for multi-environment management
-- Helm with GitOps for parameterization
-- Kustomize overlays for environment differences
+Patterns: App of Apps for multi-environment management | Helm with GitOps for parameterization | Kustomize overlays for environment differences.
 
 ## Constraint Impact Analysis Template
 

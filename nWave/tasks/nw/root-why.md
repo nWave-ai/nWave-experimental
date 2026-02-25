@@ -10,7 +10,7 @@ argument-hint: "[problem-description] - Optional: --depth=[3|5|7-whys] --output=
 
 ## Overview
 
-Execute systematic root cause analysis using Toyota's 5 Whys technique with multi-causal investigation and evidence-based validation. Investigates multiple cause branches at each level and validates solutions against all identified root causes.
+Systematic root cause analysis using Toyota's 5 Whys with multi-causal investigation and evidence-based validation. Investigates multiple cause branches at each level|validates solutions against all identified root causes.
 
 ## Agent Invocation
 
@@ -19,7 +19,6 @@ Execute systematic root cause analysis using Toyota's 5 Whys technique with mult
 Execute \*investigate-root-cause for {problem-statement}.
 
 **Configuration:**
-
 - investigation_depth: 5
 - multi_causal: true
 - evidence_required: true
@@ -28,14 +27,14 @@ Execute \*investigate-root-cause for {problem-statement}.
 
 When invoked as part of `/nw:deliver` Phase 3.5, analyze across 4 categories:
 
-1. **What worked well** (and why -- preserve these practices)
-2. **What worked better than before** (and why -- reinforce improvements)
+1. **What worked well** (and why — preserve these practices)
+2. **What worked better than before** (and why — reinforce improvements)
 3. **What worked badly** (5 Whys root cause, actionable fix)
 4. **What worked worse than before** (5 Whys root cause, prevent regression)
 
-**Inputs**: Evolution document, execution-log.yaml, mutation results, git log.
+**Inputs**: Evolution document|execution-log.yaml|mutation results|git log.
 **Output**: Retrospective section appended to evolution document.
-**Skip**: If clean execution (no skips, no failures, no tooling issues), generate brief summary only.
+**Skip**: If clean execution (no skips|no failures|no tooling issues), generate brief summary only.
 
 Tag items requiring nWave framework changes as **meta-improvements**.
 

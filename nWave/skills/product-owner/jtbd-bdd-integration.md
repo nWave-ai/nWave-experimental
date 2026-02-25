@@ -5,7 +5,7 @@ description: Translating JTBD analysis to BDD scenarios - job story to Given-Whe
 
 # JTBD to BDD Integration
 
-Use this skill when translating JTBD discoveries (job stories, forces, job map) into testable BDD scenarios. Job stories map naturally to Given-When-Then because both frameworks emphasize context (situation/given), action (motivation/when), and outcome (result/then).
+Use when translating JTBD discoveries (job stories, forces, job map) into testable BDD scenarios. Job stories map naturally to Given-When-Then because both emphasize context (situation/given), action (motivation/when), and outcome (result/then).
 
 ## Job Story to Given-When-Then Translation
 
@@ -46,21 +46,21 @@ Scenario: Remediation guidance from identified root cause
 
 ### Translation Rules
 
-1. **Given** = the situation described in the job story, made concrete with specific data
-2. **When** = the user action that fulfills the motivation
-3. **Then** = the measurable outcome, including any quality attributes (time, confidence, completeness)
+1. **Given** = situation from job story, made concrete with specific data
+2. **When** = user action fulfilling the motivation
+3. **Then** = measurable outcome, including quality attributes (time, confidence, completeness)
 
 ### Multi-Scenario Expansion
 
 One job story typically produces 3-5 BDD scenarios:
-- **Happy path**: The outcome is achieved as described
-- **Anxiety path**: The user's fear about the new solution is addressed
-- **Habit path**: The user transitioning from the old workflow is supported
+- **Happy path**: Outcome achieved as described
+- **Anxiety path**: User's fear about new solution addressed
+- **Habit path**: User transitioning from old workflow supported
 - **Edge cases**: Derived from job map steps (see below)
 
 ## Forces-Based Test Discovery
 
-For each feature, use the Four Forces to discover test scenarios that feature-driven thinking misses.
+Use Four Forces to discover test scenarios that feature-driven thinking misses.
 
 ### Force-to-Scenario Mapping
 
@@ -117,7 +117,7 @@ Scenario: Manual override available during automated deployment
 
 ## Job-Map-Based Test Discovery
 
-Walk each of the 8 job map steps and generate at least one test scenario per step. This surfaces edge cases that happy-path thinking misses.
+Walk each of the 8 job map steps and generate at least one test scenario per step. Surfaces edge cases that happy-path thinking misses.
 
 | Job Map Step | Missing Scenario Pattern | Example |
 |-------------|------------------------|---------|
@@ -135,18 +135,15 @@ Walk each of the 8 job map steps and generate at least one test scenario per ste
 1. List the 8 job map steps for the feature
 2. For each step, ask: "What could go wrong here that we have not tested?"
 3. Write one scenario per step minimum
-4. Steps 1-4 (Define through Confirm) and 7-8 (Modify, Conclude) produce the most overlooked scenarios
+4. Steps 1-4 (Define through Confirm) and 7-8 (Modify, Conclude) produce most overlooked scenarios
 
 ## The @property Tag for Property-Shaped Criteria
 
-Some acceptance criteria describe system properties rather than discrete scenarios. These are ongoing qualities, not one-time events.
+Some AC describe system properties rather than discrete scenarios -- ongoing qualities, not one-time events.
 
 ### When to Use @property
 
-Use when the criterion:
-- Describes a quality that must hold continuously (not just in one scenario)
-- Cannot be fully captured by a finite set of Given-When-Then examples
-- Relates to performance, consistency, or invariants
+Use when criterion: describes quality holding continuously (not one scenario) | cannot be captured by finite Given-When-Then set | relates to performance, consistency, or invariants
 
 ### Format
 
@@ -166,7 +163,7 @@ Scenario: Data consistency across replicas
 
 ### Property Criteria from JTBD
 
-Outcome statements (from opportunity scoring) often translate to property-shaped criteria because they describe ongoing qualities:
+Outcome statements often translate to property-shaped criteria (ongoing qualities):
 
 | Outcome Statement | Property Scenario |
 |-------------------|-------------------|
@@ -176,7 +173,7 @@ Outcome statements (from opportunity scoring) often translate to property-shaped
 
 ## JTBD-to-BDD Translation Template
 
-Use this template when translating a complete job story into a BDD scenario set:
+Use when translating a complete job story into a BDD scenario set:
 
 ```markdown
 ## JTBD-to-BDD Translation: [Feature Name]
@@ -232,10 +229,10 @@ Scenario: [ongoing quality]
 
 ## Integration Checklist
 
-Before handing scenarios to the acceptance-designer (DISTILL wave), verify:
+Before handing scenarios to acceptance-designer (DISTILL wave), verify:
 
 - [ ] Happy path scenario derived from job story
-- [ ] Anxiety scenario addresses the strongest demand-reducing force
+- [ ] Anxiety scenario addresses strongest demand-reducing force
 - [ ] Habit scenario supports users transitioning from current workflow
 - [ ] At least 4 of 8 job map steps have dedicated edge case scenarios
 - [ ] Property-shaped criteria tagged with @property

@@ -7,16 +7,11 @@ description: SQL and NoSQL query optimization techniques, indexing strategies, e
 
 ## Cost-Based Optimization
 
-Modern relational databases use cost-based optimizers (CBO) that:
-1. Generate multiple execution plan candidates
-2. Estimate cost using statistics (row counts, value distributions, index selectivity)
-3. Select the plan with lowest estimated I/O, CPU, and memory cost
-
-The optimizer relies on accurate statistics. Stale statistics lead to suboptimal plans.
+Modern relational DBs use cost-based optimizers (CBO): generate plan candidates -> estimate cost via statistics (row counts, distributions, selectivity) -> select lowest I/O/CPU/memory plan. Stale statistics lead to suboptimal plans.
 
 ### Execution Plan Analysis
 
-Always validate optimization with EXPLAIN before and after changes.
+Validate optimization with EXPLAIN before and after changes.
 
 ```sql
 -- PostgreSQL
@@ -30,52 +25,41 @@ SET STATISTICS IO ON;
 -- Then examine execution plan in SSMS
 ```
 
-Key indicators in execution plans:
-- **Seq Scan / Table Scan**: Full table scan — often indicates missing index
-- **Index Scan / Index Seek**: Using index — usually efficient
-- **Hash Join**: Building hash table for join — efficient for large datasets with equality joins
-- **Nested Loop**: Row-by-row comparison — efficient for small datasets or when index exists
-- **Merge Join**: Synchronized scan of sorted inputs — efficient when sort order is available
-- **Sort**: In-memory or disk sort — watch for disk spills on large datasets
+Key indicators:
+- **Seq Scan / Table Scan**: Full scan, likely missing index
+- **Index Scan / Index Seek**: Using index, usually efficient
+- **Hash Join**: Hash table for join, efficient for large datasets with equality joins
+- **Nested Loop**: Row-by-row, efficient for small datasets or indexed inner table
+- **Merge Join**: Synchronized sorted scan, efficient when sort order available
+- **Sort**: Watch for disk spills on large datasets
 
 ## Indexing Strategies
 
-### B-Tree Indexes (Default)
-- Support: equality (=), range (<, >, <=, >=, BETWEEN), sorting, prefix pattern matching
-- Structure: Balanced tree, O(log n) lookup
-- Use for: General-purpose indexing, most query patterns
-- All major databases use B-tree as default
+### B-Tree (Default)
+Supports: equality, range, sorting, prefix matching | O(log n) lookup | General-purpose, all major DBs default
 
-### Hash Indexes
-- Support: equality (=) only
-- Structure: Hash table, O(1) lookup for equality
-- Use for: Exact-match lookups on high-cardinality columns
-- Limitations: No range queries, no sorting, no pattern matching
+### Hash
+Equality only | O(1) lookup | High-cardinality exact-match | No range/sorting/pattern support
 
 ### Covering Indexes
-- Include all columns needed by a query in the index itself
-- Eliminates table access entirely (index-only scan)
-- Trade-off: Larger index size, slower writes
+Include all query columns in index -> eliminates table access (index-only scan) | Trade-off: larger index, slower writes
 
 ```sql
 -- Covering index for: SELECT name, email FROM users WHERE status = 'active'
 CREATE INDEX idx_users_status_covering ON users(status) INCLUDE (name, email);
 ```
 
-### PostgreSQL Specialized Indexes
+### PostgreSQL Specialized
 - **GiST**: Geometric data, full-text search, nearest-neighbor
-- **GIN**: Array types, full-text search, JSONB queries
-- **BRIN**: Large tables with physically correlated data (timestamps). Minimal storage overhead
+- **GIN**: Arrays, full-text search, JSONB queries
+- **BRIN**: Large tables with physically correlated data (timestamps), minimal storage
 - **SP-GiST**: Non-balanced structures, point-based geometric queries
 
 ### Compound Index Design
-Order fields by selectivity and query pattern:
-1. Equality conditions first (highest selectivity)
-2. Sort columns second
-3. Range conditions last
+Order by: 1. Equality conditions first (highest selectivity) | 2. Sort columns second | 3. Range conditions last
 
 ### MongoDB ESR Rule
-For compound indexes, follow Equality-Sort-Range ordering:
+Equality-Sort-Range ordering for compound indexes:
 ```javascript
 // Query: status = "A", qty > 20, sorted by item
 // Optimal index:
@@ -94,9 +78,8 @@ SELECT * FROM orders WHERE customer_id = 12345;
 SELECT order_id, order_date, total FROM orders WHERE customer_id = 12345;
 ```
 
-### Use CTEs for Readability (Not Always Performance)
+### CTEs for Readability (Not Always Performance)
 ```sql
--- CTEs improve readability but may not optimize like subqueries in all databases
 WITH active_customers AS (
     SELECT customer_id, name
     FROM customers
@@ -110,7 +93,6 @@ GROUP BY ac.name;
 
 ### Window Functions for Analytics
 ```sql
--- Running total and rank without self-join
 SELECT
     order_date,
     total,
@@ -130,13 +112,11 @@ SELECT * FROM products WHERE id > 1234 ORDER BY id LIMIT 20;
 
 ### Parameterized Queries (Security + Performance)
 ```python
-# Python - prevents SQL injection AND enables plan caching
+# Prevents SQL injection AND enables plan caching
 cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
 ```
 
 ## JOIN Algorithm Selection
-
-The optimizer chooses based on data characteristics:
 
 | Algorithm | Best When | Cost |
 |-----------|-----------|------|
@@ -146,50 +126,32 @@ The optimizer chooses based on data characteristics:
 
 ## Cardinality Estimation
 
-The optimizer predicts row counts using:
-- **Histograms**: Model value distribution in equal-frequency buckets
-- **Density vectors**: Estimate selectivity for non-histogram columns
-- **Statistics objects**: Maintained by ANALYZE (PostgreSQL) / UPDATE STATISTICS (SQL Server)
+Optimizer predicts row counts using: **Histograms** (value distribution) | **Density vectors** (non-histogram columns) | **Statistics objects** via ANALYZE (PostgreSQL) / UPDATE STATISTICS (SQL Server)
 
-When cardinality estimation is wrong (common with correlated columns, skewed data, or multi-table joins), the optimizer picks bad plans. Fix by:
-1. Running ANALYZE / UPDATE STATISTICS
-2. Creating multi-column statistics
-3. Using query hints as last resort
+When estimation is wrong (correlated columns, skewed data, multi-table joins): 1. Run ANALYZE/UPDATE STATISTICS | 2. Create multi-column statistics | 3. Query hints as last resort
 
 ## NoSQL Query Optimization
 
 ### MongoDB
-- Place `$match` and `$project` early in aggregation pipelines to reduce documents processed
-- Use `$lookup` sparingly — it performs left outer joins across collections
-- Create compound indexes following the ESR rule
-- Use `explain("executionStats")` to validate query performance
+Place `$match`/`$project` early in pipelines | Use `$lookup` sparingly (left outer joins) | Compound indexes following ESR | Validate with `explain("executionStats")`
 
 ### Cassandra
-- Always include partition key in queries — scans across partitions are expensive
-- Design tables around query patterns (query-first modeling)
-- Use SAI (Storage Attached Index) over legacy SASI — 43% throughput improvement
-- Avoid ALLOW FILTERING — it forces full cluster scans
-- Materialized views provide denormalized query access but add write overhead
+Always include partition key | Design tables around query patterns (query-first) | Use SAI over SASI (43% throughput gain) | Avoid ALLOW FILTERING (full cluster scan) | Materialized views add write overhead
 
 ### DynamoDB
-- Use Query (not Scan) — Query operates on partition key, Scan reads entire table
-- Design partition keys for even distribution (avoid hot partitions)
-- Use GSIs (Global Secondary Indexes) for alternative access patterns
-- Single-table design: store multiple entity types in one table using composite sort keys
+Use Query not Scan | Design partition keys for even distribution | GSIs for alternative access patterns | Single-table design with composite sort keys
 
 ### Redis
-- Use FT.SEARCH for complex queries (requires RediSearch module)
-- Design key naming conventions for efficient SCAN patterns
-- Use pipelining for batch operations to reduce round trips
+FT.SEARCH for complex queries (RediSearch module) | Design key naming for efficient SCAN | Use pipelining for batch ops
 
 ## Anti-Patterns to Detect
 
 - **SELECT ***: Wastes I/O, prevents covering indexes
-- **Missing indexes on WHERE/JOIN/ORDER BY columns**: Causes full table scans
-- **N+1 queries**: Fetching related data in loops instead of JOINs or batch queries
-- **Implicit type conversions**: Prevents index usage (e.g., WHERE varchar_col = 123)
-- **Functions on indexed columns**: `WHERE UPPER(name) = 'JOHN'` prevents index use. Use function-based indexes instead
-- **Missing pagination**: Returning unbounded result sets
-- **Hot partitions** (NoSQL): Low-cardinality partition keys concentrate load on few nodes
-- **ALLOW FILTERING** (Cassandra): Forces expensive full-cluster scans
-- **Large partition sizes** (Cassandra): Partitions exceeding 100MB degrade performance
+- **Missing indexes** on WHERE/JOIN/ORDER BY columns: full table scans
+- **N+1 queries**: Fetch in loops instead of JOINs/batch
+- **Implicit type conversions**: Prevents index use (WHERE varchar_col = 123)
+- **Functions on indexed columns**: `WHERE UPPER(name) = 'JOHN'` blocks index; use function-based indexes
+- **Missing pagination**: Unbounded result sets
+- **Hot partitions** (NoSQL): Low-cardinality partition keys concentrate load
+- **ALLOW FILTERING** (Cassandra): Expensive full-cluster scans
+- **Large partitions** (Cassandra): >100MB degrades performance

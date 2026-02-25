@@ -1,11 +1,11 @@
 # FP in Scala 3 -- Functional Software Crafter Skill
 
-Cross-references: [fp-principles](./fp-principles.md), [fp-domain-modeling](./fp-domain-modeling.md), [pbt-jvm](./pbt-jvm.md)
+Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md) | [pbt-jvm](./pbt-jvm.md)
 
 ## When to Choose Scala
 
-- Best for: JVM with full FP power, large-scale systems, data engineering, richest effect ecosystem
-- Not ideal for: small teams wanting simplicity, Android (use Kotlin), teams allergic to OO/FP duality
+- Best for: JVM with full FP power | large-scale systems | data engineering | richest effect ecosystem
+- Not ideal for: small teams wanting simplicity | Android (use Kotlin) | teams allergic to OO/FP duality
 
 ## [STARTER] Quick Setup
 
@@ -51,7 +51,7 @@ object OrderDomain:
       else Left(InvalidEmail(raw))
 ```
 
-Inside the defining scope, the alias is transparent. Outside, only exported operations are available.
+Inside defining scope, alias is transparent. Outside, only exported operations available.
 
 ## [INTERMEDIATE] Composition Style
 
@@ -81,7 +81,7 @@ def validateCustomer(raw: RawCustomer): ValidatedNel[ValidationError, Customer] 
 
 ### ZIO vs Cats Effect
 
-ZIO: `ZIO[R, E, A]` with built-in typed errors, dependency injection (ZLayer), batteries-included ecosystem. Cats Effect: `IO[A]`, minimal type-class-based, Typelevel ecosystem (http4s, FS2, Doobie). Pick one and stay consistent.
+ZIO: `ZIO[R, E, A]` with built-in typed errors, DI (ZLayer), batteries-included. Cats Effect: `IO[A]`, minimal type-class-based, Typelevel ecosystem (http4s, FS2, Doobie). Pick one and stay consistent.
 
 ### ZIO Hexagonal Architecture
 
@@ -124,7 +124,7 @@ def placeOrder[F[_]: Monad](repo: OrderRepository[F])(raw: RawOrder): F[Either[O
 
 ## [INTERMEDIATE] Testing
 
-**Frameworks**: ScalaCheck (PBT), ZIO Test (integrated PBT + unit), ScalaTest (BDD), MUnit (lightweight). See [pbt-jvm](./pbt-jvm.md) for detailed PBT patterns.
+**Frameworks**: ScalaCheck (PBT) | ZIO Test (integrated PBT + unit) | ScalaTest (BDD) | MUnit (lightweight). See [pbt-jvm](./pbt-jvm.md) for detailed PBT patterns.
 
 ### Property Test (ScalaCheck)
 
@@ -173,10 +173,10 @@ extension (order: PricedOrder)
 
 ## Maturity and Adoption
 
-- **Ecosystem fragmentation**: ZIO vs Cats Effect creates a split ecosystem. Libraries often target one or the other. Mixing them is painful.
-- **Slow compilation**: Scala 3 is faster than Scala 2 but still significantly slower than Kotlin or Java. Keep modules small; consider Mill over sbt for faster builds.
-- **Complexity reputation**: Scala's power (implicits, type-level programming, macros) creates codebases that vary wildly in style. Establish team conventions early.
-- **Migration burden**: Scala 2 to Scala 3 migration is non-trivial. Many libraries were slow to support Scala 3; the ecosystem has mostly caught up by 2025-2026.
+- **Ecosystem fragmentation**: ZIO vs Cats Effect creates split ecosystem. Libraries often target one or the other. Mixing is painful.
+- **Slow compilation**: Scala 3 faster than 2 but still significantly slower than Kotlin or Java. Keep modules small; consider Mill over sbt.
+- **Complexity reputation**: Scala's power (implicits, type-level programming, macros) creates wildly varying codebases. Establish team conventions early.
+- **Migration burden**: Scala 2 to 3 migration non-trivial. Ecosystem has mostly caught up by 2025-2026.
 
 ## Common Pitfalls
 

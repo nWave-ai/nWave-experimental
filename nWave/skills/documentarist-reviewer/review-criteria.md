@@ -9,155 +9,72 @@ description: Critique dimensions, severity framework, verdict decision matrix, a
 
 ### 1. Classification Accuracy
 
-Verify the documentarist's type assignment against the DIVIO decision tree.
+Verify type assignment against DIVIO decision tree.
 
-Questions to ask:
-- Do cited signals actually support the assigned type?
-- Are there contradicting signals that were ignored?
-- Is confidence level appropriate given the evidence?
-- Would the decision tree lead to the same classification?
+Questions: Do cited signals support assigned type? | Contradicting signals ignored? | Confidence appropriate? | Decision tree leads to same classification?
 
-Verification steps:
-1. Run classification decision tree independently
-2. Check all positive signals for assigned type are present
-3. Check for red flags that contradict classification
-4. Verify confidence matches signal strength
+Verification: 1) Run decision tree independently 2) Check positive signals present 3) Check for red flags 4) Verify confidence matches signal strength
 
-Severity: if wrong classification leads to wrong verdict, treat as blocking.
+Severity: if wrong classification leads to wrong verdict = blocking.
 
 ### 2. Validation Completeness
 
-Verify all type-specific validation criteria were checked.
+Verify all type-specific criteria checked. Questions: All items checked? | Pass/fail correct? | Issues properly located? | Any criteria missed?
 
-Questions to ask:
-- Were all type-specific validation items checked?
-- Are checklist results accurate (pass/fail correctly assigned)?
-- Are issues properly located (line/section references)?
-- Were any validation criteria missed?
+**Tutorial** (required): completable without external refs | steps numbered/sequential | verifiable outcomes | no assumed knowledge | builds confidence
 
-#### Validation Checklists by Type
+**How-to** (required): clear goal | assumes fundamentals | single task | completion indicator | no basics teaching
 
-**Tutorial** (required):
-- New user can complete without external references
-- Steps are numbered and sequential
-- Each step has verifiable outcome
-- No assumed prior knowledge
-- Builds confidence, not just competence
+**Reference** (required): all params documented | return values | error conditions | examples | no narrative
 
-**How-to** (required):
-- Clear, specific goal stated
-- Assumes reader knows fundamentals
-- Focuses on single task
-- Ends with task completion
-- No teaching of basics
-
-**Reference** (required):
-- All parameters documented
-- Return values specified
-- Error conditions listed
-- Examples provided
-- No narrative explanation
-
-**Explanation** (required):
-- Addresses "why" not just "what"
-- Provides context and reasoning
-- Discusses alternatives considered
-- No task-completion steps
-- Builds conceptual model
+**Explanation** (required): addresses "why" | context/reasoning | alternatives considered | no task steps | conceptual model
 
 ### 3. Collapse Detection Correctness
 
-Verify all five anti-patterns were checked and findings are accurate.
+Verify all five anti-patterns checked with accurate findings.
+- Tutorial creep: explanation >20% | How-to bloat: teaching basics | Reference narrative: prose in entries
+- Explanation task drift: steps in explanation | Hybrid horror: 3+ quadrants
 
-Anti-patterns to verify:
-- **Tutorial creep**: Explanation content >20% in tutorial
-- **How-to bloat**: Teaching basics in how-to
-- **Reference narrative**: Prose paragraphs in reference entries
-- **Explanation task drift**: Step-by-step instructions in explanation
-- **Hybrid horror**: Content from 3+ quadrants
-
-Verification steps:
-1. Independently scan document for each anti-pattern
-2. Count lines per quadrant to verify percentages
-3. Compare your findings to documentarist's findings
-4. Flag discrepancies
+Verification: independently scan, count lines per quadrant, compare to documentarist's findings, flag discrepancies.
 
 ### 4. Recommendation Quality
 
-Assess whether recommendations are actionable, specific, and prioritized.
+Criteria: **Specific** (exact what/where) | **Actionable** (author knows next step) | **Prioritized** (important first) | **Justified** (why it matters) | **Root cause** (underlying issue)
 
-Quality criteria:
-- **Specific**: Says exactly what to change, where (line/section reference)
-- **Actionable**: Author knows what to do next without further guidance
-- **Prioritized**: Most important issues first
-- **Justified**: Explains why it matters for documentation quality
-- **Root cause**: Addresses underlying issue, not just symptoms
-
-Bad examples: "Improve the documentation", "Make it clearer", "Consider revising"
-Good examples: "Move explanation in section 3.2 (lines 45-60) to separate doc", "Add return value documentation for login()", "Remove teaching content from how-to; link to tutorial instead"
+Bad: "Improve the documentation", "Make it clearer"
+Good: "Move explanation in section 3.2 (lines 45-60) to separate doc", "Add return value docs for login()"
 
 ### 5. Quality Score Accuracy
 
-Verify scores are justified and properly scoped.
+Verify six characteristics: Accuracy (factual claims verified?) | Completeness (gap analysis thorough?) | Clarity (Flesch 70-80?) | Consistency (style 95%+?) | Correctness (errors counted?) | Usability (structural assessment?)
 
-Six characteristics to verify:
-- **Accuracy**: Factual claims verified or flagged for expert review?
-- **Completeness**: Gap analysis thorough?
-- **Clarity**: Flesch score in 70-80 range or explained why not?
-- **Consistency**: Style compliance 95%+ or issues noted?
-- **Correctness**: Spelling/grammar errors counted accurately?
-- **Usability**: Structural usability assessed?
-
-Note: Documentarist cannot fully measure accuracy (requires expert review) or usability (requires user testing). Verify these limitations are properly scoped rather than claimed with false precision.
+Note: Documentarist cannot fully measure accuracy (needs expert) or usability (needs user testing). Verify limitations properly scoped.
 
 ### 6. Verdict Appropriateness
 
-Verify the verdict matches findings using the decision matrix below.
+Verify verdict matches findings per decision matrix below.
 
 ## Severity Framework
 
-### Levels
-
 | Level | Definition | Action |
 |-------|-----------|--------|
-| Blocking | Wrong classification/verdict, missed collapse making doc unusable | Must fix before proceeding |
-| High | Multiple validation criteria missed, collapse missed but doc usable | Should fix; may block |
-| Medium | Single criterion missed, slightly miscalibrated confidence, false positive | Recommended to fix |
+| Blocking | Wrong classification/verdict, missed collapse making doc unusable | Must fix |
+| High | Multiple criteria missed, collapse missed but usable | Should fix; may block |
+| Medium | Single criterion missed, miscalibrated confidence, false positive | Recommended |
 | Low | Format inconsistency, wording clarity | Optional |
 
-### Blocking Rules
-
-**Reject** when: any blocking issue, 3+ high issues, classification demonstrably wrong, verdict contradicts findings.
-
-**Conditionally approve** when: 1-2 high issues not affecting verdict, multiple medium issues but core assessment correct.
-
-**Approve** when: no blocking or high issues, medium issues noted but not blocking.
+**Reject**: any blocking | 3+ high | classification wrong | verdict contradicts findings
+**Conditionally approve**: 1-2 high not affecting verdict | multiple medium but core correct
+**Approve**: no blocking/high | medium noted but not blocking
 
 ## Verdict Decision Matrix
 
-### Approved
-- All validation checks pass or only low severity failures
-- No collapse detected
-- Quality gates met (Flesch 70-80, type purity 80%+)
-
-### Needs Revision
-- Medium or low severity validation failures only
-- No collapse detected
-- Issues fixable without restructuring
-
-### Restructure Required
-- Collapse detected (any anti-pattern triggered)
-- Type purity below 80%
-- Document serves multiple user needs
-- Cannot be fixed without splitting
+- **Approved**: all checks pass or low-only failures | no collapse | quality gates met (Flesch 70-80, purity 80%+)
+- **Needs Revision**: medium/low failures only | no collapse | fixable without restructuring
+- **Restructure Required**: collapse detected | purity <80% | multiple user needs | requires splitting
 
 ### Verification Algorithm
-1. Count issues by severity
-2. Check collapse_detection.clean
-3. Check quality gates (readability, type_purity)
-4. Apply matrix above
-5. Compare to documentarist's verdict
-6. Flag discrepancy if mismatch
+1. Count issues by severity 2. Check collapse_detection.clean 3. Check quality gates 4. Apply matrix 5. Compare to documentarist verdict 6. Flag discrepancy
 
 ## Review Output Format
 
@@ -215,6 +132,4 @@ documentation_assessment_review:
 
 ## Review Iteration Limits
 
-- Maximum 2 revision cycles
-- After cycle 2: escalate to human review if issues remain
-- Return `approval_status: escalate_to_human` with rationale
+Maximum 2 revision cycles. After cycle 2: escalate to human, return `approval_status: escalate_to_human` with rationale.

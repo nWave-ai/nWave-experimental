@@ -7,51 +7,51 @@ description: Detailed 5-phase workflow for creating agents - from requirements a
 
 ## Overview
 
-Create agents through 5 phases: ANALYZE -> DESIGN -> CREATE -> VALIDATE -> REFINE.
-
-Each phase has clear inputs, outputs, and quality gates. The workflow follows the "start minimal, add based on failure" principle.
+Create agents through 5 phases: ANALYZE -> DESIGN -> CREATE -> VALIDATE -> REFINE. Each phase has clear inputs, outputs, and quality gates. Follow "start minimal, add based on failure."
 
 ## Phase 1: ANALYZE
 
-**Goal**: Understand requirements and determine the right agent architecture.
+**Goal**: Understand requirements and determine agent architecture.
 
 **Inputs**: User requirements, use case description, existing codebase context.
 
 **Steps**:
-1. Identify the agent's single clear responsibility
-2. Determine if this is a new agent or modification of existing
-3. Check for overlap with existing agents (avoid duplication)
+1. Identify single clear responsibility
+2. Determine new agent or modification of existing
+3. Check overlap with existing agents (avoid duplication)
 4. Classify agent type:
    - **Specialist**: Single-domain expert (most common)
-   - **Reviewer**: Validates outputs from another agent (uses Reflection pattern)
+   - **Reviewer**: Validates outputs from another agent (Reflection pattern)
    - **Orchestrator**: Coordinates multiple agents
-5. Identify required tools (start with Read, Glob, Grep — add only what's needed)
-6. Determine if Skills are needed (domain knowledge > 50 lines)
+5. Identify required tools (start with Read, Glob, Grep -- add only what's needed)
+6. Determine if Skills needed (domain knowledge > 50 lines)
 
-**Gate**: Single responsibility identified. Agent type classified. No overlap with existing agents.
+**Gate**: Single responsibility identified. Agent type classified. No overlap.
 
-**Output**: Requirements summary with agent type, tools list, and skill needs.
+**Output**: Requirements summary with agent type, tools list, skill needs.
 
 ## Phase 2: DESIGN
 
-**Goal**: Design the agent's architecture and structure.
+**Goal**: Design agent architecture and structure.
 
 **Inputs**: Requirements summary from Phase 1.
 
 **Steps**:
-1. Select design pattern (load `design-patterns` skill for decision tree)
-2. Define the role and goal (1-2 sentences each)
+1. Select design pattern (load `design-patterns` skill)
+2. Define role and goal (1-2 sentences each)
 3. Identify core principles that DIVERGE from Claude defaults:
-   - What must this agent do differently than Claude would naturally?
+   - What must this agent do differently than Claude naturally would?
    - Domain-specific methodology steps
-   - Non-obvious constraints
-   - Project-specific conventions
-4. Design the workflow (3-7 phases)
-5. Plan Skills extraction:
-   - Domain knowledge -> separate Skill file
-   - Testing/validation details -> separate Skill file
-   - Keep workflow and principles in core agent
-6. Draft frontmatter configuration:
+   - Non-obvious constraints | Project-specific conventions
+4. Design workflow (3-7 phases)
+5. Plan Skills extraction: domain knowledge -> separate Skill | Testing/validation -> separate Skill | Keep workflow and principles in core agent
+6. Design Skill Loading Strategy (required for 3+ skills):
+   - Map each skill to the workflow phase where it's needed
+   - Create a loading table: Phase → Skill → Trigger condition
+   - Add explicit `Load: skill-name` directives in each workflow phase
+   - Document path: `~/.claude/skills/nw/{agent-name}/`
+   - Note: `skills:` in frontmatter is declarative only — Claude Code does NOT auto-load skill files. The agent must use Read tool to load them, triggered by `Load:` directives in workflow text.
+7. Draft frontmatter:
    ```yaml
    ---
    name: {kebab-case-id}
@@ -64,18 +64,18 @@ Each phase has clear inputs, outputs, and quality gates. The workflow follows th
    ---
    ```
 
-**Gate**: Design fits in ~200-300 lines (core) + Skills. Pattern selected. Frontmatter drafted.
+**Gate**: Design fits ~200-300 lines (core) + Skills. Pattern selected. Frontmatter drafted.
 
-**Output**: Agent architecture document (informal, working notes — not a deliverable).
+**Output**: Agent architecture document (working notes, not deliverable).
 
 ## Phase 3: CREATE
 
-**Goal**: Write the agent definition file and any Skills.
+**Goal**: Write agent definition file and Skills.
 
 **Inputs**: Design from Phase 2.
 
 **Steps**:
-1. Create the agent `.md` file following the template:
+1. Create agent `.md` file:
    - YAML frontmatter (name, description, tools, model, maxTurns, skills)
    - Role + Goal paragraph
    - Core Principles (divergences only, 3-8 items)
@@ -83,25 +83,36 @@ Each phase has clear inputs, outputs, and quality gates. The workflow follows th
    - Critical Rules (3-5, where violation causes real harm)
    - Examples (3-5 canonical cases)
    - Subagent mode instructions
-   - Constraints (what the agent does NOT do)
-2. Create Skill files if needed:
-   - Each in `nWave/skills/{agent-name}/`
-   - YAML frontmatter with `name` and `description`
-   - Focused content, 100-250 lines each
-3. Measure: `wc -l` the definition. Target: under 300 lines.
+   - Constraints (what agent does NOT do)
+2. Create Skill files if needed: each in `nWave/skills/{agent-name}/` | YAML frontmatter with `name` and `description` | Focused content, 100-250 lines each
+3. Measure: `wc -l`. Target: under 300 lines.
 
-**Gate**: Agent file created. Line count under 300. Skills created if needed.
+4. Add Skill Loading Strategy section (required for agents with 3+ skills):
+   ```markdown
+   ## Skill Loading Strategy
+
+   Load on-demand by phase, not all at once:
+
+   | Phase | Load | Trigger |
+   |-------|------|---------|
+   | 1 Phase Name | `skill-name` | Always — core methodology |
+   | 2 Phase Name | `other-skill` | When condition is met |
+
+   Skills path: `~/.claude/skills/nw/{agent-name}/`
+   ```
+5. Add `Load:` directives at the start of each workflow phase referencing the applicable skills
+6. Verify: every skill in frontmatter `skills:` has at least one `Load:` directive in the workflow text. Orphan skills (declared but never loaded) are a bug.
+
+**Gate**: Agent file created. Under 300 lines. Skills created if needed. Skill Loading Strategy present for 3+ skills.
 
 **Output**: Agent `.md` file + Skill files.
 
 ## Phase 4: VALIDATE
 
-**Goal**: Verify the agent meets quality standards.
-
-**Inputs**: Agent file from Phase 3.
+**Goal**: Verify agent meets quality standards.
 
 **Steps**:
-1. Run the 11-point validation checklist:
+1. Run 11-point validation checklist:
    - [ ] Uses official YAML frontmatter format
    - [ ] Total definition under 400 lines (domain knowledge in Skills)
    - [ ] Only specifies behaviors diverging from Claude defaults
@@ -113,14 +124,10 @@ Each phase has clear inputs, outputs, and quality gates. The workflow follows th
    - [ ] Instructions phrased affirmatively
    - [ ] Consistent terminology throughout
    - [ ] Description clearly states delegation criteria
-2. Check anti-patterns:
-   - No monolithic sections (>50 lines without structure)
-   - No duplicated Claude default behaviors
-   - No embedded safety frameworks
-   - No aggressive language
+2. Check anti-patterns: no monolithic sections (>50 lines without structure) | No duplicated Claude defaults | No embedded safety frameworks | No aggressive language
 3. Test with representative inputs (Layer 1 testing)
 
-**Gate**: All 11 checklist items pass. No anti-patterns found.
+**Gate**: All 11 items pass. No anti-patterns.
 
 **Output**: Validation report (pass/fail per item).
 
@@ -128,19 +135,14 @@ Each phase has clear inputs, outputs, and quality gates. The workflow follows th
 
 **Goal**: Iteratively improve based on testing feedback.
 
-**Inputs**: Validation results from Phase 4, test observations.
-
 **Steps**:
-1. Address any validation failures
-2. Test the agent with edge cases
-3. Add instructions ONLY for observed failure modes:
-   - Agent made wrong decision? Add a rule or example.
-   - Agent missed a step? Clarify workflow.
-   - Agent over-generated? Add a constraint.
+1. Address validation failures
+2. Test with edge cases
+3. Add instructions ONLY for observed failure modes: wrong decision -> add rule/example | Missed step -> clarify workflow | Over-generated -> add constraint
 4. Re-measure: `wc -l`. If approaching 400 lines, extract to Skills.
-5. Re-validate with the 11-point checklist.
+5. Re-validate with 11-point checklist.
 
-**Gate**: All validation items pass. Line count within target. Agent handles edge cases.
+**Gate**: All validation passes. Line count within target. Edge cases handled.
 
 **Output**: Final agent definition, ready for installation.
 
@@ -152,7 +154,7 @@ Each phase has clear inputs, outputs, and quality gates. The workflow follows th
 | DESIGN | Architecture fits size target | CREATE |
 | CREATE | File created, under 300 lines | VALIDATE |
 | VALIDATE | 11-point checklist passes | REFINE/Deploy |
-| REFINE | Edge cases handled, still within target | Deploy |
+| REFINE | Edge cases handled, within target | Deploy |
 
 ## Naming Conventions
 
@@ -164,9 +166,8 @@ Each phase has clear inputs, outputs, and quality gates. The workflow follows th
 ## Reviewer Agent Creation (Special Case)
 
 Reviewer agents pair with a primary agent and use the Reflection pattern:
-
 1. Set `model: haiku` in frontmatter (cost-efficient review)
-2. Use same tools as the primary agent (no Write/Edit — reviewers don't modify)
+2. Use same tools as primary agent (no Write/Edit -- reviewers don't modify)
 3. Define structured critique output format (YAML)
 4. Include max 2 review iterations
 5. Define clear approval/rejection criteria

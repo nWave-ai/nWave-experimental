@@ -7,29 +7,12 @@ description: Type-specific validation checklists, six quality characteristics, a
 
 ## Six Quality Characteristics
 
-### Accuracy
-- **Definition**: Factually correct, technically sound, current
-- **Validation**: Expert review; automated testing where possible
-
-### Completeness
-- **Definition**: All necessary information present for the document type
-- **Validation**: Checklist validation; gap analysis against type requirements
-
-### Clarity
-- **Definition**: Easy to understand, logical flow, appropriate reading level
-- **Validation**: Readability score 70-80 Flesch
-
-### Consistency
-- **Definition**: Uniform terminology, formatting, structure throughout
-- **Validation**: Style guide compliance check
-
-### Correctness
-- **Definition**: Proper grammar, spelling, punctuation
-- **Validation**: Automated spell/grammar check; zero errors target
-
-### Usability
-- **Definition**: User achieves their goal efficiently using this document
-- **Validation**: Task success assessment; does the doc serve its DIVIO type purpose?
+- **Accuracy**: Factually correct, technically sound, current | Validation: expert review, automated testing
+- **Completeness**: All necessary info present for doc type | Validation: checklist, gap analysis
+- **Clarity**: Easy to understand, logical flow, appropriate level | Validation: Flesch 70-80
+- **Consistency**: Uniform terminology, formatting, structure | Validation: style guide compliance
+- **Correctness**: Proper grammar, spelling, punctuation | Validation: automated check, zero errors
+- **Usability**: User achieves goal efficiently | Validation: task success, DIVIO type purpose served
 
 ## Quality Gate Thresholds
 
@@ -44,35 +27,23 @@ description: Type-specific validation checklists, six quality characteristics, a
 ## Type-Specific Validation Checklists
 
 ### Tutorial Checklist
-- [ ] New user can complete without external references
-- [ ] Steps are numbered and sequential
-- [ ] Each step has verifiable outcome
-- [ ] No assumed prior knowledge
-- [ ] Builds confidence, not just competence
+- [ ] Completable without external references | [ ] Steps numbered and sequential
+- [ ] Each step has verifiable outcome | [ ] No assumed prior knowledge | [ ] Builds confidence
 
 ### How-to Checklist
-- [ ] Clear, specific goal stated upfront
-- [ ] Assumes reader knows fundamentals
-- [ ] Focuses on single task
-- [ ] Ends with task completion indicator
-- [ ] No teaching of basics
+- [ ] Clear goal stated upfront | [ ] Assumes fundamentals known
+- [ ] Single task focus | [ ] Ends with completion indicator | [ ] No basics teaching
 
 ### Reference Checklist
-- [ ] All parameters documented
-- [ ] Return values specified
-- [ ] Error conditions listed
-- [ ] Examples provided for each entry
-- [ ] No narrative explanation in entries
+- [ ] All parameters documented | [ ] Return values specified
+- [ ] Error conditions listed | [ ] Examples per entry | [ ] No narrative
 
 ### Explanation Checklist
-- [ ] Addresses "why" not just "what"
-- [ ] Provides context and reasoning
-- [ ] Discusses alternatives considered
-- [ ] No task-completion steps
-- [ ] Builds a conceptual model the reader can apply
+- [ ] Addresses "why" not "what" | [ ] Provides context and reasoning
+- [ ] Discusses alternatives | [ ] No task steps | [ ] Builds conceptual model
 
 ## Verdict Criteria
 
-- **approved**: Passes all type-specific validation, no collapse violations, meets quality gate thresholds
-- **needs-revision**: Minor issues fixable in place (clarity improvements, missing examples, small gaps)
-- **restructure-required**: Collapse detected requiring document split, or fundamental type mismatch
+- **approved**: Passes all type-specific validation, no collapse violations, meets quality gates
+- **needs-revision**: Minor issues fixable in place (clarity, missing examples, small gaps)
+- **restructure-required**: Collapse detected requiring split, or fundamental type mismatch

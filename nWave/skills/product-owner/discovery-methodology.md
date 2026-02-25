@@ -85,7 +85,7 @@ Use AskUserQuestion with structured options:
 
 ## Sketch Readiness Criteria
 
-Ready to sketch ONLY when all of these can be answered:
+Ready to sketch ONLY when all can be answered:
 - Complete happy path described (no "and then something happens")
 - Each step has expected output defined
 - Emotional arc is explicit and coherent
@@ -98,7 +98,7 @@ If ANY criterion is unclear -- ask more questions.
 
 Always ask first when:
 - User requests a sketch -- ask before sketching
-- User describes a feature -- ask to understand the journey context
+- User describes a feature -- ask to understand journey context
 - User mentions a command -- ask what they expect to see
 
 Continue asking until:
@@ -109,9 +109,9 @@ Continue asking until:
 
 ## Anti-Patterns
 
-- Jumping to sketching before understanding the mental model
+- Jumping to sketching before understanding mental model
 - Assuming you know what the user expects
-- Filling in gaps with your own assumptions
+- Filling gaps with your own assumptions
 - Skipping emotional journey questions
 - Ignoring shared artifact tracking
 

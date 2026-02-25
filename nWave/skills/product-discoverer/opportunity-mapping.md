@@ -7,7 +7,7 @@ description: Opportunity Solution Trees, opportunity scoring, Lean Canvas, JTBD 
 
 ## Opportunity Solution Tree (OST)
 
-An OST connects desired outcomes to opportunities to solution ideas:
+Connects desired outcomes to opportunities to solution ideas:
 
 ```
 Desired Outcome
@@ -26,31 +26,23 @@ Desired Outcome
 
 ### Building the OST
 1. Define desired outcome from customer research
-2. Map opportunities from interview insights (minimum 5 distinct)
-3. Score each opportunity using the Opportunity Algorithm
-4. Generate solution ideas for top 2-3 opportunities
-5. Seek real diversity in solutions (avoid variations of the same idea)
+2. Map opportunities from interview insights (min 5 distinct)
+3. Score each using Opportunity Algorithm
+4. Generate solution ideas for top 2-3
+5. Seek real diversity in solutions (avoid variations of same idea)
 
 ## Opportunity Scoring Algorithm
 
 **Formula**: Score = Importance + Max(0, Importance - Satisfaction)
+Importance: 1-10 | Satisfaction: 1-10 | Max score: 20
 
-- Importance: 1-10 (how important is this to the customer?)
-- Satisfaction: 1-10 (how satisfied are they with current solutions?)
-- Max score: 20
-
-### Interpretation
 | Score | Meaning | Action |
 |-------|---------|--------|
-| >8 | High importance with satisfaction gap -- underserved need | Pursue |
-| 5-8 | Moderate importance or partially served | Evaluate further |
+| >8 | High importance, satisfaction gap -- underserved | Pursue |
+| 5-8 | Moderate importance or partially served | Evaluate |
 | <5 | Low importance or well-served | Deprioritize |
 
-### Scoring Process
-1. Gather importance ratings from 5+ customer interviews
-2. Gather satisfaction ratings for current solutions
-3. Calculate scores per opportunity
-4. Rank and select top 2-3 for solution ideation
+Process: gather importance + satisfaction from 5+ interviews, calculate per opportunity, rank, select top 2-3.
 
 ## Job Mapping (JTBD)
 
@@ -58,68 +50,47 @@ Desired Outcome
 
 | Step | Goal | Outcome Format |
 |------|------|---------------|
-| Define | Determine what needs to be done | Minimize time to identify [object] |
-| Locate | Find inputs and information | Minimize time to gather [resources] |
+| Define | Determine what needs doing | Minimize time to identify [object] |
+| Locate | Find inputs/information | Minimize time to gather [resources] |
 | Prepare | Ready inputs for use | Minimize likelihood of missing [requirements] |
 | Confirm | Verify readiness | Minimize likelihood of incorrect [categorization] |
-| Execute | Perform the core task | Minimize time from [start] to [completion] |
+| Execute | Perform core task | Minimize time from [start] to [completion] |
 | Monitor | Track progress | Minimize uncertainty about [status] |
 | Modify | Adjust if needed | Minimize effort to correct [issues] |
 | Conclude | Complete the job | Minimize time from [completion] to [result] |
 
-### Outcome Statement Format
-**[Direction] + [Metric] + [Object] + [Clarifier]**
-
+Outcome statement format: **[Direction] + [Metric] + [Object] + [Clarifier]**
 Example: "Minimize the time it takes to identify which project budget a new expense should be allocated to"
-
-### Job Map Example: Track Team Project Expenses
-
-| Step | Goal | Desired Outcome |
-|------|------|----------------|
-| Define | Determine which expenses need tracking | Minimize time to identify expense categories for this project |
-| Locate | Find expense data and receipts | Minimize time to gather all expense documentation |
-| Prepare | Ready expenses for submission | Minimize likelihood of missing required fields |
-| Confirm | Verify expense details correct | Minimize likelihood of incorrect categorization |
-| Execute | Submit expenses for approval | Minimize time from submission to approval |
-| Monitor | Track approval status | Minimize uncertainty about expense status |
-| Modify | Adjust if rejected or questioned | Minimize effort to correct and resubmit |
-| Conclude | Complete reimbursement cycle | Minimize time from approval to reimbursement |
 
 ## Lean Canvas
 
-A one-page business model for validating market viability (Phase 4).
+One-page business model for Phase 4 viability validation.
 
-### Canvas Sections
-1. **Problem**: Top 3 problems (validated in Phase 1)
-2. **Customer Segments**: Target users segmented by job-to-be-done
-3. **Unique Value Proposition**: Single clear compelling message
-4. **Solution**: Top 3 features addressing top problems
-5. **Channels**: Path to customers (validated in Phase 4)
-6. **Revenue Streams**: How you make money
-7. **Cost Structure**: Key costs
-8. **Key Metrics**: Activity metrics that matter
-9. **Unfair Advantage**: What cannot be easily copied
+1. **Problem**: Top 3 problems (Phase 1 validated) | 2. **Customer Segments**: by JTBD
+3. **UVP**: single clear message | 4. **Solution**: top 3 features for top problems
+5. **Channels**: path to customers (Phase 4 validated) | 6. **Revenue Streams**: monetization
+7. **Cost Structure**: key costs | 8. **Key Metrics**: activity metrics
+9. **Unfair Advantage**: not easily copied
 
 ### 4 Big Risks
-All must be addressed before proceeding to build:
 
-| Risk | Question | Validation Method |
-|------|----------|------------------|
-| Value | Will customers want this? | Customer interviews, fake doors |
+| Risk | Question | Validation |
+|------|----------|-----------|
+| Value | Will customers want this? | Interviews, fake doors |
 | Usability | Can customers use this? | Prototype testing, task completion |
-| Feasibility | Can we build this? | Technical spikes, expert review |
-| Viability | Does this work for our business? | Lean Canvas, stakeholder review |
+| Feasibility | Can we build this? | Spikes, expert review |
+| Viability | Business model works? | Lean Canvas, stakeholder review |
 
 ## Technique Selection Guide
 
-| Goal | Recommended Techniques |
-|------|----------------------|
-| Validate problem exists | Mom Test, Job Mapping |
-| Understand customer needs | Outcome Statements, Opportunity Mapping |
+| Goal | Techniques |
+|------|-----------|
+| Validate problem | Mom Test, Job Mapping |
+| Understand needs | Outcome Statements, Opportunity Mapping |
 | Prioritize opportunities | OST, Opportunity Algorithm |
 | Generate solutions | Ideation with OST constraints |
 | Validate solution value | Hypothesis Testing, Prototypes |
 | Test usability | Prototype testing, Task completion |
-| Assess feasibility | 4 Risks framework, Spikes |
+| Assess feasibility | 4 Risks, Spikes |
 | Structure business model | Lean Canvas |
 | Continuous learning | Weekly customer touchpoints |

@@ -18,19 +18,11 @@ What data types do you have?
 
 ## Data Warehouse
 
-### Characteristics
-- Schema: Structured, schema-on-write
-- Data types: Primarily structured (tables, rows, columns)
-- Governance: Centralized, strong governance by design
-- Query: SQL-based analytics, BI reporting
-- Architecture: Centralized single source of truth
+Schema: structured, schema-on-write | Data: tables, rows, columns | Governance: centralized | Query: SQL analytics, BI | Architecture: centralized single source of truth
 
 ### Schema Patterns
 
-**Star Schema**:
-- Central fact table (measures/metrics) surrounded by dimension tables (descriptors)
-- Denormalized dimensions for query performance
-- Best for: BI dashboards, standard reporting
+**Star Schema**: Central fact table (measures) surrounded by denormalized dimension tables. Best for BI dashboards, standard reporting.
 
 ```
          dim_date
@@ -40,36 +32,19 @@ dim_customer--fact_sales--dim_product
          dim_store
 ```
 
-**Snowflake Schema**:
-- Normalized dimensions (dimension tables reference other dimension tables)
-- Reduces storage but increases JOIN complexity
-- Best for: Environments where storage cost matters more than query speed
+**Snowflake Schema**: Normalized dimensions (dimensions reference other dimensions). Reduces storage, increases JOIN complexity. Best when storage cost matters more than query speed.
 
-### Kimball vs Inmon Methodology
+### Kimball vs Inmon
 
-**Kimball (Bottom-Up)**:
-- Build data marts first, integrate later
-- Star schema oriented, business-process driven
-- Faster initial delivery, iterative approach
-- Best for: Organizations wanting quick wins, department-level analytics
+**Kimball (Bottom-Up)**: Build data marts first, integrate later | Star schema, business-process driven | Faster initial delivery | Best for quick wins, department-level analytics
 
-**Inmon (Top-Down)**:
-- Build enterprise data warehouse first, derive data marts
-- Normalized (3NF) enterprise model
-- Higher upfront effort, comprehensive architecture
-- Best for: Large enterprises needing single source of truth from day one
+**Inmon (Top-Down)**: Build enterprise DW first, derive data marts | Normalized 3NF enterprise model | Higher upfront effort | Best for large enterprises needing single source of truth
 
-### Technology Examples
-Snowflake, Amazon Redshift, Google BigQuery, Azure Synapse Analytics
+Technology: Snowflake | Amazon Redshift | Google BigQuery | Azure Synapse Analytics
 
 ## Data Lake
 
-### Characteristics
-- Schema: Schema-on-read, flexible structure
-- Data types: All formats (structured, semi-structured, unstructured)
-- Storage: Raw data preserved in native format
-- Query: SQL (Athena, Spark SQL), programmatic (PySpark, Pandas)
-- Risk: "Data swamp" without proper governance and cataloging
+Schema-on-read, flexible | All formats (structured, semi-structured, unstructured) | Raw data in native format | Query via Athena, Spark SQL, PySpark, Pandas | Risk: "data swamp" without governance
 
 ### Organization Pattern
 ```
@@ -81,21 +56,16 @@ data-lake/
 ```
 
 ### Anti-Patterns
-- No metadata catalog -> data becomes undiscoverable
-- No access controls -> security and compliance risk
-- No data quality checks -> garbage in, garbage out
-- Storing everything without retention policy -> cost grows unbounded
+- No metadata catalog -> undiscoverable data
+- No access controls -> security/compliance risk
+- No data quality checks -> garbage in/out
+- No retention policy -> unbounded cost growth
 
-### Technology Examples
-Amazon S3 + Athena/Glue, Azure Data Lake Storage + Synapse, HDFS + Hive
+Technology: S3 + Athena/Glue | Azure Data Lake Storage + Synapse | HDFS + Hive
 
 ## Data Lakehouse
 
-### Characteristics
-- Combines warehouse reliability with lake flexibility
-- Schema enforcement on write with schema evolution support
-- ACID transactions on data lake storage
-- Supports both BI/SQL analytics and ML/data science workloads
+Combines warehouse reliability with lake flexibility | Schema enforcement on write with evolution support | ACID transactions on lake storage | Supports both BI/SQL and ML/data science workloads
 
 ### Medallion Architecture (Bronze / Silver / Gold)
 
@@ -107,46 +77,22 @@ Bronze (Raw)          Silver (Validated)       Gold (Business-Ready)
 - Audit trail         - Standardized formats   - Ready for BI/reporting
 ```
 
-**Bronze Layer**:
-- Raw data as-is from source systems
-- Append-only for auditability
-- Partitioned by ingestion date
-- Minimal transformations (format conversion only)
+**Bronze**: Raw data as-is, append-only for auditability, partitioned by ingestion date, minimal transformations
+**Silver**: Quality rules (null checks, range validation, referential integrity) | Deduplication on business keys | Schema standardization | SCD applied
+**Gold**: Business-level aggregations | Dimensional models | Pre-computed metrics/KPIs | Optimized for query performance
 
-**Silver Layer**:
-- Data quality rules applied (null checks, range validation, referential integrity)
-- Deduplication on business keys
-- Schema standardization (consistent naming, types)
-- Slowly Changing Dimensions (SCD) applied
-
-**Gold Layer**:
-- Business-level aggregations
-- Dimensional models (star/snowflake schema)
-- Pre-computed metrics and KPIs
-- Optimized for query performance (partitioned, indexed)
-
-### Technology Examples
-Databricks (Delta Lake), Apache Iceberg, Apache Hudi
+Technology: Databricks (Delta Lake) | Apache Iceberg | Apache Hudi
 
 ## Data Mesh
 
 ### Core Principles (Martin Fowler)
-1. **Domain-oriented ownership**: Data owned by domain teams, not central data team
+1. **Domain-oriented ownership**: Data owned by domain teams, not central
 2. **Data as a product**: Each domain publishes discoverable, trustworthy, self-describing data products
-3. **Self-serve data platform**: Infrastructure team provides platform for domain teams to build data products
-4. **Federated computational governance**: Global standards (interoperability, security) with domain autonomy
+3. **Self-serve data platform**: Infrastructure team provides platform for domain teams
+4. **Federated computational governance**: Global standards with domain autonomy
 
-### When to Use Data Mesh
-- Large organization with multiple autonomous domain teams
-- Central data team is a bottleneck
-- Domain expertise is needed to model and maintain data correctly
-- Organization has platform engineering maturity
-
-### When to Avoid
-- Small team (< 50 engineers)
-- Simple data architecture needs
-- No platform engineering capability
-- Unclear domain boundaries
+**Use when**: Large org with autonomous domain teams | Central data team is bottleneck | Domain expertise needed | Platform engineering maturity exists
+**Avoid when**: Small team (<50 engineers) | Simple data needs | No platform capability | Unclear domain boundaries
 
 ## ETL vs ELT Pipeline Design
 
@@ -154,97 +100,64 @@ Databricks (Delta Lake), Apache Iceberg, Apache Hudi
 ```
 Source -> [Extract] -> Staging -> [Transform] -> [Load] -> Target
 ```
-- Transform before loading using dedicated engine (Informatica, Talend, SSIS)
-- Best for: Complex transformations, constrained target systems, regulatory requirements (cannot store raw PII)
-- Scaling: Limited by transformation engine capacity
+Transform before loading via dedicated engine (Informatica, Talend, SSIS). Best for complex transforms, constrained targets, regulatory requirements. Scaling limited by transform engine.
 
 ### ELT (Extract-Load-Transform)
 ```
 Source -> [Extract] -> [Load] -> Target -> [Transform in-place]
 ```
-- Load raw data first, transform using target system's compute (dbt, Snowflake SQL, BigQuery SQL)
-- Best for: Cloud data warehouses with elastic compute, preserving raw data, schema evolution
-- Scaling: Scales with target system (cloud elastic compute)
+Load raw first, transform using target compute (dbt, Snowflake SQL, BigQuery SQL). Best for cloud DWs with elastic compute, preserving raw data. Scales with target system.
 
 ### Pipeline Design Principles
-- **Idempotency**: Re-running a pipeline produces the same result (use MERGE/upsert, not INSERT)
-- **Incremental processing**: Process only new/changed data (use watermarks, change data capture)
-- **Schema evolution**: Handle added/removed columns gracefully (use schema registry)
-- **Data quality gates**: Validate data between pipeline stages (null rates, row counts, value ranges)
-- **Observability**: Log pipeline metrics (rows processed, duration, errors, data freshness)
+- **Idempotency**: Re-running produces same result (use MERGE/upsert, not INSERT)
+- **Incremental processing**: Process only new/changed data (watermarks, CDC)
+- **Schema evolution**: Handle added/removed columns gracefully (schema registry)
+- **Data quality gates**: Validate between stages (null rates, row counts, value ranges)
+- **Observability**: Log metrics (rows processed, duration, errors, freshness)
 
 ### Orchestration
-- Apache Airflow: DAG-based workflow orchestration, Python-native, wide adoption
-- Prefect: Modern alternative with dynamic workflows
-- Dagster: Software-defined assets approach
+Apache Airflow: DAG-based, Python-native, wide adoption | Prefect: modern, dynamic workflows | Dagster: software-defined assets
 
 ## Streaming Architecture
 
 ### Apache Kafka
-- Distributed event streaming platform
-- Use as: Event bus, message broker, stream storage
-- Key concepts: Topics, partitions, consumer groups, offsets
-- Guarantees: At-least-once delivery (exactly-once with transactions)
-- Retention: Configurable retention period or compacted topics
+Distributed event streaming platform | Use as event bus, message broker, stream storage | Concepts: topics, partitions, consumer groups, offsets | At-least-once delivery (exactly-once with transactions) | Configurable retention or compacted topics
 
 ### Apache Flink
-- Stateful stream processing engine
-- Use as: Real-time analytics, event processing, CDC processing
-- Key concepts: DataStreams, windows (tumbling, sliding, session), state management
-- Guarantees: Exactly-once processing with checkpointing
+Stateful stream processing engine | Use for real-time analytics, event processing, CDC | Concepts: DataStreams, windows (tumbling, sliding, session), state management | Exactly-once with checkpointing
 
 ### Kafka + Flink Pattern
 ```
 Sources -> Kafka (event storage) -> Flink (stream processing) -> Sinks
 ```
-- Kafka provides durable, scalable event buffer
-- Flink provides stateful computation (aggregations, joins, pattern detection)
-- Combined: end-to-end exactly-once semantics
+Kafka provides durable scalable event buffer | Flink provides stateful computation | Combined: end-to-end exactly-once semantics
 
-### When to Use Streaming vs Batch
-- **Streaming**: Real-time dashboards, fraud detection, IoT processing, event-driven architectures
-- **Batch**: Overnight reporting, historical analysis, large-scale transformations, ML training
-- **Lambda architecture**: Parallel batch + stream paths (complex, consider Kappa instead)
-- **Kappa architecture**: Stream-only, reprocess from Kafka log (simpler, requires Kafka retention)
+### Streaming vs Batch
+- **Streaming**: Real-time dashboards, fraud detection, IoT, event-driven architectures
+- **Batch**: Overnight reporting, historical analysis, large transforms, ML training
+- **Lambda**: Parallel batch + stream (complex, consider Kappa instead)
+- **Kappa**: Stream-only, reprocess from Kafka log (simpler, requires retention)
 
 ## Scaling Strategies
 
-### Vertical Scaling (Scale Up)
-- Add more CPU, RAM, storage to existing server
-- Simpler operations, no application changes
-- Hard limit: largest available hardware
-- Use first: simple, effective for moderate growth
+### Vertical (Scale Up)
+Add CPU/RAM/storage to existing server | Simpler ops, no app changes | Hard limit: largest hardware | Use first for moderate growth
 
-### Horizontal Scaling (Scale Out)
+### Horizontal (Scale Out)
 
-#### Read Replicas
-- Replicate data to read-only copies
-- Route read traffic to replicas, writes to primary
-- Replication lag is the trade-off (eventual consistency for reads)
-- Use for: Read-heavy workloads (reporting, search)
+**Read Replicas**: Replicate to read-only copies | Route reads to replicas, writes to primary | Trade-off: replication lag (eventual consistency) | Use for read-heavy workloads
 
-#### Partitioning (Within Single Server)
-- **Range partitioning**: By value range (date ranges, alphabetical)
-- **List partitioning**: By discrete values (region, category)
-- **Hash partitioning**: By hash of partition key (even distribution)
-- Benefits: Query pruning (only scan relevant partitions), maintenance (drop old partitions)
+**Partitioning (Single Server)**: Range (date, alphabetical) | List (region, category) | Hash (even distribution) | Benefits: query pruning, maintenance (drop old partitions)
 
-#### Sharding (Across Multiple Servers)
-- Distribute data across multiple database instances
-- Each shard holds a subset of data based on shard key
-- Strategies: Range-based, hash-based, directory-based, geographic
+**Sharding (Multiple Servers)**: Distribute data across DB instances by shard key | Strategies: range-based, hash-based, directory-based, geographic
 
-**Shard Key Selection** (the most impactful decision):
-- High cardinality: Many distinct values for even distribution
-- Even access frequency: Avoid hot shards from skewed access patterns
-- Query alignment: Most queries should target a single shard
-- Avoid monotonically increasing keys (e.g., auto-increment) as shard keys — causes hot spots
+**Shard Key Selection** (most impactful decision):
+- High cardinality for even distribution
+- Even access frequency to avoid hot shards
+- Query alignment: most queries target single shard
+- Avoid monotonically increasing keys (hot spots)
 
-**Challenges**:
-- Cross-shard queries require scatter-gather
-- Distributed transactions (2PC) are complex and slow
-- Resharding is operationally expensive
-- Application complexity increases
+**Challenges**: Cross-shard queries need scatter-gather | Distributed transactions (2PC) complex/slow | Resharding expensive | App complexity increases
 
 ### Scaling Decision Guide
 ```
@@ -257,22 +170,9 @@ Current load exceeding single server?
       NO -> Consider write-optimized databases (Cassandra, DynamoDB)
 ```
 
-## Database Normalization vs Denormalization
+## Normalization vs Denormalization
 
-### When to Normalize (3NF)
-- OLTP workloads with frequent writes
-- Data integrity is paramount
-- Storage optimization matters
-- Write performance over read performance
+**Normalize (3NF)**: OLTP with frequent writes | Data integrity paramount | Storage optimization | Write > read performance
+**Denormalize**: OLAP/analytics (star schema) | Read-heavy, predictable queries | Query > write performance | Acceptable redundancy
 
-### When to Denormalize
-- OLAP/analytics workloads (star schema)
-- Read-heavy with predictable query patterns
-- Query performance over write performance
-- Acceptable data redundancy
-
-### Practical Approach
-- Start normalized (3NF) for transactional tables
-- Add denormalized views/materialized views for reporting
-- Denormalize selectively based on measured query performance issues
-- Document denormalization decisions and their rationale
+**Practical approach**: Start normalized for transactional tables | Add denormalized/materialized views for reporting | Denormalize selectively based on measured performance | Document decisions and rationale

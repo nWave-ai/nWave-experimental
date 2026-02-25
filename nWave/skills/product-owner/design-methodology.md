@@ -16,22 +16,22 @@ Journey Mapping      Emotional Design     TUI Prototyping      Integration Check
 ```
 
 ### Phase 1: Journey Mapping (1-2 days)
-- Techniques: User journey mapping, goal-completion flow, step identification
+- Techniques: User journey mapping | goal-completion flow | step identification
 - Question: "What complete journey is the user trying to accomplish?"
 - Output: Journey map with steps, commands, and touchpoints
 
 ### Phase 2: Emotional Design (1 day)
-- Techniques: Emotional arc design, form follows feeling, transition analysis
+- Techniques: Emotional arc design | form follows feeling | transition analysis
 - Question: "How should the user FEEL at each step?"
 - Output: Emotional annotations on journey map
 
 ### Phase 3: TUI Prototyping (1-3 days)
-- Techniques: Progressive fidelity, ASCII mockups, TUI design patterns
+- Techniques: Progressive fidelity | ASCII mockups | TUI design patterns
 - Question: "What does each step look like?"
 - Output: TUI mockups for each journey step
 
 ### Phase 4: Integration Check (1 day)
-- Techniques: Shared artifact tracking, horizontal coherence, CLI vocabulary
+- Techniques: Shared artifact tracking | horizontal coherence | CLI vocabulary
 - Question: "Do all pieces connect properly?"
 - Output: Validated journey with integration checkpoints
 
@@ -89,22 +89,16 @@ integration_validation:
 ## Emotional Arc Patterns
 
 ### Confidence Building
-- Start: Anxious/Uncertain
-- Middle: Focused/Engaged
-- End: Confident/Satisfied
-- Use when: Complex multi-step operations
+Start: Anxious/Uncertain | Middle: Focused/Engaged | End: Confident/Satisfied
+Use when: Complex multi-step operations
 
 ### Discovery Joy
-- Start: Curious
-- Middle: Exploring
-- End: Delighted
-- Use when: Learning new features
+Start: Curious | Middle: Exploring | End: Delighted
+Use when: Learning new features
 
 ### Problem Relief
-- Start: Frustrated
-- Middle: Hopeful
-- End: Relieved
-- Use when: Fixing issues or debugging
+Start: Frustrated | Middle: Hopeful | End: Relieved
+Use when: Fixing issues or debugging
 
 ### Transition Rules
 - Build confidence progressively through small wins
@@ -123,14 +117,11 @@ integration_validation:
 
 ### Command Structure
 - Pattern: `tool [noun] [verb]` or `tool [verb] [noun]`
-- Pick one pattern and use it consistently across the entire journey
+- Pick one pattern consistently across entire journey
 - Example: `crafter agent create` or `crafter create agent`
 
 ### Feedback Principles
-- Responsive: Print something in <100ms
-- Progress: Show progress for long operations
-- Transparent: Show what is happening, do not hide complexity
-- Recoverable: Clear errors with suggested fixes
+Responsive: print something in <100ms | Progress: show for long operations | Transparent: show what is happening | Recoverable: clear errors with suggested fixes
 
 ### Progressive Disclosure
 - Level 1 (default): Basic output for common use
@@ -138,16 +129,14 @@ integration_validation:
 - Level 3 (--debug): Diagnostic output for troubleshooting
 
 ### Help Design
-- Implement --help on every command
-- Make help easy to discover
-- Provide contextual suggestions
+Implement --help on every command | Make help discoverable | Provide contextual suggestions
 
 ## Output Formats
 
-Three artifact types are produced:
+Three artifact types produced:
 
-1. **Visual Journey** (`journey-{name}-visual.md`): ASCII flow diagram showing the complete journey with emotional annotations and TUI mockups per step
-2. **Structured Schema** (`journey-{name}.yaml`): Machine-readable journey definition following the schema above
-3. **Gherkin Scenarios** (`journey-{name}.feature`): Testable acceptance scenarios extracted from each journey step
+1. **Visual Journey** (`journey-{name}-visual.md`): ASCII flow diagram with emotional annotations and TUI mockups per step
+2. **Structured Schema** (`journey-{name}.yaml`): Machine-readable journey definition following schema above
+3. **Gherkin Scenarios** (`journey-{name}.feature`): Testable acceptance scenarios from each journey step
 
 All artifacts go to `docs/ux/{epic}/`.

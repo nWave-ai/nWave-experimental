@@ -5,7 +5,7 @@ description: Web UI design patterns for product owners. Load when designing web 
 
 # Web UI Patterns
 
-Actionable web interface patterns for requirements gathering and design review. Use these when the target platform is web (browser-based applications).
+Actionable web interface patterns for requirements gathering and design review. Use when the target platform is web (browser-based applications).
 
 ## Navigation Patterns
 
@@ -21,11 +21,7 @@ Actionable web interface patterns for requirements gathering and design review. 
 
 **Navigation must answer three questions**: Where am I? Where can I go? How do I get back?
 
-Key principles:
-- Consistent placement across all pages
-- Highlight the current location
-- Limit primary nav to 5-7 items (Hick's Law)
-- Provide search as alternative navigation for content-heavy apps
+Key principles: consistent placement across all pages | highlight current location | limit primary nav to 5-7 items (Hick's Law) | provide search as alternative for content-heavy apps
 
 ## Form Design
 
@@ -37,14 +33,12 @@ Key principles:
 
 ### Validation: Reward Early, Punish Late
 - Validate on blur (when user leaves field), not while typing
-- Remove error messages immediately when the user corrects the field
-- Show success indicators only when they help (e.g., password strength)
-- Provide validation summary at top for longer forms, plus inline errors
+- Remove error messages immediately when user corrects the field
+- Show success indicators only when helpful (e.g., password strength)
+- Validation summary at top for longer forms, plus inline errors
 
 ### Error Messages Must Include
-1. What went wrong (plain language)
-2. Where the error is (highlight the field)
-3. How to fix it (specific guidance, not "invalid input")
+1. What went wrong (plain language) | 2. Where the error is (highlight field) | 3. How to fix it (specific guidance, not "invalid input")
 
 ### Progressive Forms
 - Split long forms across multiple steps (one-thing-per-page pattern)
@@ -62,19 +56,16 @@ Key principles:
 | **Dashboards** | KPI monitoring, status overviews | Important metrics top-left, max 7 widgets, allow customization |
 
 ### Pagination vs Infinite Scroll
-- **Pagination**: Goal-directed tasks (search, admin panels) -- gives sense of position and control
+- **Pagination**: Goal-directed tasks (search, admin panels) -- gives position and control
 - **Infinite scroll**: Discovery browsing (social media, galleries) -- reduces friction
 
 ## Responsive Design
 
 ### Mobile-First Approach
-Design mobile layout first, then enhance for larger screens. This ensures core content and functionality are prioritized.
+Design mobile layout first, then enhance for larger screens. Ensures core content and functionality are prioritized.
 
 ### Breakpoints (starting points)
-- 360-480px: Mobile
-- 768px: Tablet
-- 1024-1280px: Small desktop
-- 1440px+: Large desktop
+360-480px: Mobile | 768px: Tablet | 1024-1280px: Small desktop | 1440px+: Large desktop
 
 ### Key Techniques
 - **Fluid typography**: `clamp()` for smooth scaling; `rem`/`em` over `px` for accessible sizing
@@ -86,27 +77,20 @@ Design mobile layout first, then enhance for larger screens. This ensures core c
 | Component | Use For | Anti-pattern |
 |-----------|---------|-------------|
 | **Modal dialog** | Decisions requiring immediate attention; blocks until resolved | Information not requiring action; stacking modals |
-| **Toast/snackbar** | Non-critical confirmation ("Item saved") | Critical errors or information users must not miss |
+| **Toast/snackbar** | Non-critical confirmation ("Item saved") | Critical errors or info users must not miss |
 | **Drawer/sheet** | Supplementary content or filters alongside main view | Primary content or complex multi-step forms |
-| **Popover/tooltip** | Contextual help or previews on hover/focus | Critical information or complex interactions |
-| **Command palette** | Quick action access via keyboard | Only navigation method (users need visual alternatives) |
+| **Popover/tooltip** | Contextual help or previews on hover/focus | Critical info or complex interactions |
+| **Command palette** | Quick action access via keyboard | Only navigation method (need visual alternatives) |
 
 ## Motion and Micro-interactions
 
 ### When Motion Helps
-- Showing cause and effect (button press ripple)
-- Guiding attention to changes (new item slides in)
-- Providing feedback (loading spinners, progress bars)
-- Explaining spatial relationships (drawer slides from side)
-- Maintaining context during transitions (shared element transitions)
+Showing cause and effect (button press ripple) | Guiding attention to changes (new item slides in) | Providing feedback (spinners, progress bars) | Explaining spatial relationships (drawer slides from side) | Maintaining context during transitions (shared element transitions)
 
 ### When Motion Distracts
-- Decorative animations with no functional purpose
-- Animations that delay task completion
-- Rapid or large-scale motion (respect `prefers-reduced-motion`)
-- Looping animations that cannot be paused
+Decorative animations with no function | Animations delaying task completion | Rapid/large-scale motion (respect `prefers-reduced-motion`) | Looping animations that cannot be paused
 
-**Duration guidelines**: 100-200ms for simple state changes; 200-500ms for complex transitions; never exceed 500ms for functional animations.
+**Duration guidelines**: 100-200ms for simple state changes | 200-500ms for complex transitions | never exceed 500ms for functional animations
 
 ## Design System Guidance
 
@@ -117,9 +101,9 @@ Design mobile layout first, then enhance for larger screens. This ensures core c
 | Internal tools, admin dashboards | Use existing system (Material UI, Ant Design, Radix) |
 | Consumer product with strong brand | Custom system on headless library (Radix, Headless UI) |
 | MVP or prototype | Use existing system; customize later |
-| Platform with strict brand guidelines | Custom system, but adopt token architecture from established systems |
+| Platform with strict brand guidelines | Custom system, adopt token architecture from established systems |
 
-**Established systems to evaluate**: Material Design (Google), Fluent Design (Microsoft), Carbon (IBM), Polaris (Shopify), Primer (GitHub), Lightning (Salesforce).
+**Established systems to evaluate**: Material Design (Google) | Fluent Design (Microsoft) | Carbon (IBM) | Polaris (Shopify) | Primer (GitHub) | Lightning (Salesforce)
 
 ### Design Tokens
 Atomic values defining visual design: colors, spacing, typography, shadows.
@@ -130,7 +114,7 @@ Atomic values defining visual design: colors, spacing, typography, shadows.
 | **Semantic** | `color-primary: {color-blue-500}` | Meaningful names |
 | **Component** | `button-bg: {color-primary}` | Component-specific references |
 
-Use an 8px spacing grid. Use a modular typography scale (1.25 or 1.333 ratio).
+Use 8px spacing grid. Use modular typography scale (1.25 or 1.333 ratio).
 
 ## Web-Specific Anti-Patterns
 
@@ -139,7 +123,7 @@ Use an 8px spacing grid. Use a modular typography scale (1.25 or 1.333 ratio).
 | Autoplay video with sound | Mute by default, user-initiated play |
 | Full-page interstitials on mobile | Inline or bottom-sheet prompts |
 | Captchas for every action | Risk-based authentication, invisible captchas |
-| Horizontal scrolling for content | Responsive layout that fits viewport |
+| Horizontal scrolling for content | Responsive layout fitting viewport |
 | Form validation only on submit | Inline validation with reward-early-punish-late |
 | Mystery meat navigation (icons only) | Label all nav items; icons supplement, not replace |
 | Stacking modals | Inline expansion or navigate to new page |

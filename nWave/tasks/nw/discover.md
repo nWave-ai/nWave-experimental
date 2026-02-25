@@ -5,8 +5,7 @@ argument-hint: "[product-concept] - Optional: --interview-depth=[overview|compre
 
 # NW-DISCOVER: Evidence-Based Product Discovery
 
-**Wave**: DISCOVER
-**Agent**: Scout (nw-product-discoverer)
+**Wave**: DISCOVER | **Agent**: Scout (nw-product-discoverer)
 
 ## Overview
 
@@ -16,8 +15,8 @@ Scout establishes product-market fit through rigorous customer development using
 
 ## Context Files Required
 
-- docs/project-brief.md - Initial product vision (if available)
-- docs/market-context.md - Market research and competitive landscape (if available)
+- docs/project-brief.md — Initial product vision (if available)
+- docs/market-context.md — Market research and competitive landscape (if available)
 
 ## Previous Artifacts
 
@@ -29,17 +28,11 @@ None (DISCOVER is the first wave).
 
 Execute \*discover for {product-concept-name}.
 
-**Context Files:**
-
-- docs/project-brief.md (if available)
-- docs/market-context.md (if available)
+**Context Files:** docs/project-brief.md (if available) | docs/market-context.md (if available)
 
 **Configuration:**
-
-- interactive: high
-- output_format: markdown
-- interview_depth: comprehensive
-- evidence_standard: past_behavior
+- interactive: high | output_format: markdown
+- interview_depth: comprehensive | evidence_standard: past_behavior
 
 ## Success Criteria
 

@@ -5,16 +5,13 @@ argument-hint: "[story-id] - Optional: --test-framework=[cucumber|specflow|pytes
 
 # NW-DISTILL: Acceptance Test Creation and Business Validation
 
-**Wave**: DISTILL (wave 5 of 6)
-**Agent**: Quinn (nw-acceptance-designer)
+**Wave**: DISTILL (wave 5 of 6) | **Agent**: Quinn (nw-acceptance-designer)
 
 ## Overview
 
-Create E2E acceptance tests from requirements, architecture, and infrastructure design using Given-When-Then format. Produces executable specifications that bridge business requirements and technical implementation. Infrastructure design from DEVOP informs test environment setup.
+Create E2E acceptance tests from requirements|architecture|infrastructure design using Given-When-Then format. Produces executable specifications bridging business requirements and technical implementation. Infrastructure design from DEVOP informs test environment setup.
 
 ## Interactive Decision Points
-
-Before proceeding, the orchestrator asks the user:
 
 ### Decision 1: Feature Scope
 **Question**: What is the scope of this feature?
@@ -46,12 +43,9 @@ Before proceeding, the orchestrator asks the user:
 
 ## Context Files Required
 
-- docs/feature/{feature-name}/discuss/requirements.md
-- docs/feature/{feature-name}/discuss/user-stories.md
-- docs/feature/{feature-name}/design/architecture-design.md
-- docs/feature/{feature-name}/design/component-boundaries.md
-- docs/feature/{feature-name}/design/technology-stack.md
-- docs/feature/{feature-name}/deliver/* (infrastructure design from DEVOP wave)
+- docs/feature/{feature-name}/discuss/requirements.md | user-stories.md
+- docs/feature/{feature-name}/design/architecture-design.md | component-boundaries.md | technology-stack.md
+- docs/feature/{feature-name}/deliver/* (infrastructure design from DEVOP)
 
 ## Agent Invocation
 
@@ -59,16 +53,13 @@ Before proceeding, the orchestrator asks the user:
 
 Execute \*create-acceptance-tests for {feature-name}.
 
-Context files: see Context Files Required above.
+Context files: see above.
 
 **Configuration:**
-
-- test_type: {from Decision 1: core | extension | bugfix}
-- test_framework: {from Decision 2: specflow | cucumber | pytest-bdd}
-- integration_approach: {from Decision 3}
-- infrastructure_testing: {from Decision 4}
-- interactive: moderate
-- output_format: gherkin
+- test_type: {Decision 1: core|extension|bugfix}
+- test_framework: {Decision 2: specflow|cucumber|pytest-bdd}
+- integration_approach: {Decision 3} | infrastructure_testing: {Decision 4}
+- interactive: moderate | output_format: gherkin
 
 ## Success Criteria
 
@@ -76,9 +67,9 @@ Context files: see Context Files Required above.
 - [ ] Step methods call real production services (no mocks at acceptance level)
 - [ ] One-at-a-time implementation strategy established (@skip/@pending tags)
 - [ ] Tests exercise driving ports, not internal components (hexagonal boundary)
-- [ ] Walking skeleton created first with user-centric scenarios that deliver observable user value (features only; optional for bugs)
+- [ ] Walking skeleton created first with user-centric scenarios (features only; optional for bugs)
 - [ ] Infrastructure test scenarios included (if Decision 4 = Yes)
-- [ ] Handoff package ready for software-crafter (DELIVER wave)
+- [ ] Handoff package ready for nw-software-crafter (DELIVER wave)
 
 ## Examples
 
@@ -91,7 +82,7 @@ Quinn creates Given-When-Then acceptance tests from requirements and architectur
 ## Next Wave
 
 **Handoff To**: nw-software-crafter (DELIVER wave)
-**Deliverables**: Feature files, step definitions, test-scenarios.md, walking-skeleton.md
+**Deliverables**: Feature files|step definitions|test-scenarios.md|walking-skeleton.md
 
 ## Expected Outputs
 
@@ -110,15 +101,14 @@ docs/feature/{feature-name}/distill/
   acceptance-review.md
 ```
 
-Bug fix regression tests use a separate structure:
-
+Bug fix regression tests:
 ```
 tests/regression/{component-or-module}/
-  bug-{ticket-or-description}.feature     (acceptance: reproduces the defect scenario)
+  bug-{ticket-or-description}.feature
   steps/
     conftest.py
     {domain}_steps.py
 
 tests/unit/{component-or-module}/
-  test_{module}_bug_{ticket-or-description}.py  (unit: isolates the defect)
+  test_{module}_bug_{ticket-or-description}.py
 ```

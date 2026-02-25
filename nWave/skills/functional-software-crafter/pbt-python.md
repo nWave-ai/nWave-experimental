@@ -2,7 +2,7 @@
 
 ## Framework Selection
 
-**Hypothesis** is the only serious choice for Python PBT. No competitive alternatives exist.
+**Hypothesis** is the only serious choice for Python PBT. No competitive alternatives.
 
 - 10+ years mature, very actively maintained
 - Used by PyTorch, NumPy, pandas

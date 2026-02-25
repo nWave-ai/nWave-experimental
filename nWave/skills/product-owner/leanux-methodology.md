@@ -21,19 +21,13 @@ description: LeanUX backlog management methodology - user story template, story 
 ## Story Sizing Criteria
 
 ### Right-Sized
-- Can be completed in 1-3 days
-- Has 3-7 UAT scenarios
-- Delivers demonstrable value
-- Can be explained in 2 minutes
+Completable in 1-3 days | 3-7 UAT scenarios | Delivers demonstrable value | Explainable in 2 minutes
 
 ### Oversized Indicators
-- More than 7 UAT scenarios
-- More than 3 days estimated effort
-- Multiple distinct user outcomes
-- Cannot demonstrate in a single session
+>7 UAT scenarios | >3 days effort | Multiple distinct user outcomes | Cannot demonstrate in single session
 
 ### Splitting Strategy
-Split by user outcome, not by technical layer. Each resulting story delivers independently demonstrable value.
+Split by user outcome, not technical layer. Each resulting story delivers independently demonstrable value.
 
 Example: "User Management" (20 scenarios) splits into:
 - "Quick Login" (5 scenarios) -- returning customer on trusted device
@@ -109,15 +103,12 @@ When DoR fails:
 
 ## Definition of Done (DoD) - Completion Criteria
 
-DoD validation is owned by acceptance-designer during DISTILL->DELIVER transition. Product-owner defines the checklist, acceptance-designer enforces it.
+DoD validation owned by acceptance-designer during DISTILL->DELIVER transition. Product-owner defines checklist, acceptance-designer enforces.
 
 Checklist:
-- All UAT scenarios pass (green)
-- All supporting tests pass (unit, integration, component)
-- Code refactored, no obvious debt
-- Code reviewed and approved
-- Merged to main branch
-- Deployed to staging/production
+- All UAT scenarios pass (green) | All supporting tests pass (unit, integration, component)
+- Code refactored, no obvious debt | Code reviewed and approved
+- Merged to main branch | Deployed to staging/production
 - Story can be demoed to user
 
 ## Anti-Pattern Detection and Remediation
@@ -144,7 +135,7 @@ Checklist:
 - Fix: Focus on observable user outcome, move tech choices to DESIGN
 
 ### Oversized Stories
-- Signal: Story has >7 scenarios or >3 days effort
+- Signal: >7 scenarios or >3 days effort
 - Problem: Too large to track, deliver, or demo meaningfully
 - Bad: "Complete user management (20 scenarios)"
 - Good: "Quick Login (5 scenarios), Password Reset (4 scenarios)"
@@ -164,7 +155,7 @@ Checklist:
 
 ## UAT-First Development Flow
 
-The flow from Ready story to Done story follows double-loop TDD:
+Flow from Ready story to Done story follows double-loop TDD:
 
 1. **Write UAT test from scenario**: Translate first Gherkin scenario to executable test. Run -> RED (correct).
 2. **Build outside-in**: What does UAT need? Integration -> RED -> code -> GREEN. What does integration need? Unit -> RED -> code -> GREEN.
@@ -173,39 +164,35 @@ The flow from Ready story to Done story follows double-loop TDD:
 
 ## Story Prioritization
 
-Use these techniques to order stories in the backlog when multiple stories compete for attention.
-
 ### MoSCoW Classification
 
 | Category | Meaning | Guideline |
 |----------|---------|-----------|
-| Must Have | Required for minimum viable product | Without this, the release has no value |
-| Should Have | Important for full product value | Significant value, but workaround exists |
+| Must Have | Required for MVP | Without this, release has no value |
+| Should Have | Important for full product value | Significant value, workaround exists |
 | Could Have | Nice-to-have for enhanced experience | Desirable if time/budget allows |
 | Won't Have | Deferred to future releases | Acknowledged, explicitly out of scope |
 
-Assign MoSCoW during Phase 2 (CRAFT) when multiple stories emerge from the same requirements conversation.
+Assign MoSCoW during Phase 2 (CRAFT) when multiple stories emerge from same requirements conversation.
 
 ### Value/Effort Matrix
-
-Plot stories on two axes to identify execution order:
 
 | | Low Effort | High Effort |
 |---|---|---|
 | **High Value** | Quick wins -- do first | Strategic investments -- plan carefully |
 | **Low Value** | Fill-ins -- do if time allows | Eliminate or defer |
 
-Quick wins build momentum and stakeholder confidence. Strategic investments need baseline measurement and roadmap planning (see `jtbd-workflow-selection` skill for workflow routing).
+Quick wins build momentum and stakeholder confidence. Strategic investments need baseline measurement and roadmap planning (see `jtbd-workflow-selection` skill).
 
 ## Risk Identification Checklist
 
-During Phase 4 (HANDOFF), include a brief risk assessment in the handoff package. Categorize identified risks:
+During Phase 4 (HANDOFF), include brief risk assessment. Categorize:
 
-**Business Risks**: market changes, regulatory changes, stakeholder availability, budget/timeline constraints
-**Technical Risks**: integration complexity, technology uncertainty, data migration, performance/security unknowns
-**Project Risks**: resource availability, scope creep potential, communication challenges, testing coverage gaps
+**Business Risks**: market changes | regulatory changes | stakeholder availability | budget/timeline constraints
+**Technical Risks**: integration complexity | technology uncertainty | data migration | performance/security unknowns
+**Project Risks**: resource availability | scope creep potential | communication challenges | testing coverage gaps
 
-For each identified risk, note: probability (low/medium/high), impact (low/medium/high), and mitigation approach (avoid, mitigate, transfer, or accept). Detailed risk management belongs to downstream waves -- the product-owner surfaces risks, does not manage them.
+For each risk: probability (low/medium/high) | impact (low/medium/high) | mitigation approach (avoid, mitigate, transfer, accept). Detailed risk management belongs to downstream waves -- product-owner surfaces risks, does not manage them.
 
 ## Wave Handoff Package
 

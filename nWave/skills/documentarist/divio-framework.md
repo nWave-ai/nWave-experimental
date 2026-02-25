@@ -7,51 +7,31 @@ description: DIVIO/Diataxis four-quadrant documentation framework - type definit
 
 ## The Four Quadrants
 
-There are exactly four types of documentation. Each serves one purpose. Never mix them.
+Exactly four documentation types. Each serves one purpose. Never mix.
 
 ### Tutorial
-- **Orientation**: Learning
-- **User need**: "Teach me"
-- **Key question**: Can a newcomer follow this without external context?
-- **Purpose**: Enable newcomers to achieve first success
-- **Assumption**: User knows nothing; you are the instructor
-- **Format**: Step-by-step guided experience
-- **Success**: User gains competence and confidence
-- **Must include**: Safe repeatable steps, immediate feedback, building blocks
-- **Must exclude**: Problem-solving, assumed knowledge, comprehensive coverage
+Orientation: Learning | Need: "Teach me" | Key Q: Can newcomer follow without external context?
+Purpose: enable first success | Assumption: user knows nothing | Format: step-by-step guided experience
+Success: gains competence + confidence | Include: safe repeatable steps, immediate feedback, building blocks
+Exclude: problem-solving, assumed knowledge, comprehensive coverage
 
 ### How-to Guide
-- **Orientation**: Task
-- **User need**: "Help me do X"
-- **Key question**: Does this achieve a specific, measurable outcome?
-- **Purpose**: Help user accomplish specific objective
-- **Assumption**: User has baseline knowledge; needs goal completion
-- **Format**: Focused step-by-step to outcome
-- **Success**: User completes the task
-- **Must include**: Clear goal, actionable steps, completion indicator
-- **Must exclude**: Teaching fundamentals, background context, all possible scenarios
+Orientation: Task | Need: "Help me do X" | Key Q: Achieves specific, measurable outcome?
+Purpose: accomplish specific objective | Assumption: baseline knowledge, needs goal completion
+Format: focused steps to outcome | Success: task completed
+Include: clear goal, actionable steps, completion indicator | Exclude: teaching, background, all scenarios
 
 ### Reference
-- **Orientation**: Information
-- **User need**: "What is X?"
-- **Key question**: Is this factually complete and lookup-ready?
-- **Purpose**: Provide accurate lookup for specific information
-- **Assumption**: User knows what to look for
-- **Format**: Structured, concise, factual entries
-- **Success**: User finds correct information quickly
-- **Must include**: Complete API/function details, parameters, return values, errors
-- **Must exclude**: Narrative explanations, tutorials, opinions
+Orientation: Information | Need: "What is X?" | Key Q: Factually complete and lookup-ready?
+Purpose: accurate lookup | Assumption: user knows what to look for | Format: structured, concise, factual
+Success: finds correct info quickly | Include: complete API/function details, parameters, returns, errors
+Exclude: narrative, tutorials, opinions
 
 ### Explanation
-- **Orientation**: Understanding
-- **User need**: "Why is X?"
-- **Key question**: Does this explain reasoning and context?
-- **Purpose**: Build conceptual understanding and context
-- **Assumption**: User wants to understand "why"
-- **Format**: Discursive, reasoning-focused prose
-- **Success**: User understands design rationale
-- **Must include**: Context, reasoning, alternatives considered, architectural decisions
-- **Must exclude**: Step-by-step instructions, API details, task completion
+Orientation: Understanding | Need: "Why is X?" | Key Q: Explains reasoning and context?
+Purpose: conceptual understanding | Assumption: user wants "why" | Format: discursive, reasoning-focused
+Success: understands design rationale | Include: context, reasoning, alternatives, architectural decisions
+Exclude: step-by-step, API details, task completion
 
 ## Classification Matrix
 
@@ -61,11 +41,7 @@ STUDYING:         Tutorial            Explanation
 WORKING:          How-to Guide        Reference
 ```
 
-Adjacent characteristics:
-- Tutorial / How-to: Both have steps (differ in assumption of knowledge)
-- How-to / Reference: Both serve "at work" needs
-- Reference / Explanation: Both provide knowledge depth
-- Explanation / Tutorial: Both serve "studying" context
+Adjacent: Tutorial/How-to (both have steps, differ in assumed knowledge) | How-to/Reference (both "at work") | Reference/Explanation (both knowledge depth) | Explanation/Tutorial (both "studying")
 
 ## Classification Decision Tree
 

@@ -8,16 +8,13 @@ description: Monitoring, observability, operational procedures, CI/CD lessons le
 ## Monitoring and Observability
 
 ### Application Monitoring
-- **Performance**: response time, throughput, latency percentiles (P50, P95, P99)
-- **Resources**: CPU, memory, database connections, cache hit rates
-- **Errors**: exception tracking, error rate trends, integration failure detection
-- **Business**: KPI tracking, conversion funnels, feature usage, revenue impact
+- **Performance**: response time | throughput | latency percentiles (P50, P95, P99)
+- **Resources**: CPU | memory | database connections | cache hit rates
+- **Errors**: exception tracking | error rate trends | integration failure detection
+- **Business**: KPI tracking | conversion funnels | feature usage | revenue impact
 
 ### Infrastructure Monitoring
-- Server/container health and resource utilization
-- Network performance and connectivity
-- Storage capacity and I/O performance
-- Security event detection
+Server/container health and resource utilization | Network performance and connectivity | Storage capacity and I/O performance | Security event detection.
 
 ### Alerting Tiers
 | Tier | Condition | Response |
@@ -38,21 +35,14 @@ description: Monitoring, observability, operational procedures, CI/CD lessons le
 6. Improve: update runbooks and monitoring based on findings
 
 ### Maintenance Procedures
-- Regular update and patching schedule
-- Backup verification (test restores quarterly)
-- Security vulnerability scanning (automated, weekly)
-- Performance baseline recalibration (after major changes)
+Regular update and patching schedule | Backup verification (test restores quarterly) | Security vulnerability scanning (automated, weekly) | Performance baseline recalibration (after major changes).
 
 ### Knowledge Transfer
-- Operational runbooks for common procedures
-- Architecture documentation with system diagrams
-- Deployment procedures and configuration management
-- Troubleshooting guides for known failure modes
+Operational runbooks for common procedures | Architecture documentation with system diagrams | Deployment procedures and configuration management | Troubleshooting guides for known failure modes.
 
 ## Quality Gates for Production Readiness
 
 Before declaring production-ready, all must pass:
-
 - [ ] All acceptance tests passing
 - [ ] Unit coverage meets project standard (default: >= 80%)
 - [ ] Integration tests validated
@@ -67,13 +57,10 @@ Before declaring production-ready, all must pass:
 ## CI/CD Architecture Lessons
 
 ### Test Architecture and Measurement Coupling
-
 Test execution architecture changes require simultaneous measurement strategy updates.
-
 **Fundamental principle**: treat test execution architecture and measurement strategy as tightly coupled concerns.
 
 ### Common Pitfalls
-
 | Pitfall | Symptom | Prevention |
 |---------|---------|------------|
 | False failure syndrome | Quality gates fail after CI/CD change without code changes | Validate measurement strategy in isolated environment first |
@@ -82,20 +69,11 @@ Test execution architecture changes require simultaneous measurement strategy up
 
 ### CI/CD Change Checklist
 
-**Before**:
-- Analyze impact on test discovery mechanisms
-- Identify affected measurement tools (coverage, mutation testing)
-- Document current baseline metrics
+**Before**: Analyze impact on test discovery | Identify affected measurement tools (coverage, mutation testing) | Document current baseline metrics.
 
-**During**:
-- Adjust coverage thresholds for new execution model
-- Validate measurement strategy compatibility
-- Recalibrate quality gate thresholds
+**During**: Adjust coverage thresholds for new execution model | Validate measurement strategy compatibility | Recalibrate quality gate thresholds.
 
-**After**:
-- Establish new baseline metrics
-- Validate measurement accuracy against known scenarios
-- Update runbooks with measurement strategy changes
+**After**: Establish new baseline metrics | Validate measurement accuracy against known scenarios | Update runbooks with measurement strategy changes.
 
 ### Real-World Example
 Parallelization (pytest-xdist) without measurement update caused false quality gate failures. Coverage calculation changed due to worker-based test distribution. Fix: document coupling, establish new baseline, mandate measurement review for all CI/CD architecture changes.

@@ -5,11 +5,11 @@ description: JTBD workflow classification and routing - ODI two-phase framework,
 
 # JTBD Workflow Selection
 
-Classify incoming work by job type and recommend the appropriate nWave workflow entry point. Use this skill during Phase 1 (GATHER) to triage before crafting stories.
+Classify incoming work by job type and recommend the appropriate nWave workflow entry point. Use during Phase 1 (GATHER) to triage before crafting stories.
 
 ## ODI Two-Phase Framework
 
-Work enters one of two phases. Determine which one applies before proceeding.
+Determine which phase applies before proceeding.
 
 **Phase 1: Discovery** -- when you do not know what to build
 
@@ -31,17 +31,17 @@ evidence      first        completely  into atoms  task       quality
                               <-----------+ (loop per task)
 ```
 
-Key insight: `research` is a cross-wave capability invocable at any point when evidence-based decisions are needed.
+Key insight: `research` is a cross-wave capability invocable at any point for evidence-based decisions.
 
 ### When to Skip Discovery
 
-Skip discovery and enter the execution loop directly when ALL of these hold:
-- The user already understands the problem domain
-- The problem is identified and scoped
-- No stakeholder alignment is needed
-- The user can articulate what "done" looks like
+Skip discovery and enter execution loop directly when ALL hold:
+- User already understands the problem domain
+- Problem is identified and scoped
+- No stakeholder alignment needed
+- User can articulate what "done" looks like
 
-If any of these fail, start with discovery (DISCUSS wave).
+If any fail, start with discovery (DISCUSS wave).
 
 ## Five Job Types
 
@@ -74,7 +74,7 @@ If any of these fail, start with discovery (DISCUSS wave).
 [research] -> baseline -> roadmap -> split -> execute -> review (repeat)
 ```
 
-Skip discovery: you already understand the system and the problem is identified. Baseline is a blocking gate -- measure current state before planning. Prevents "optimizing the wrong thing."
+Skip discovery: system understood and problem identified. Baseline is blocking gate -- measure current state before planning. Prevents "optimizing the wrong thing."
 
 ### Job 3: Complex Refactoring
 
@@ -90,7 +90,7 @@ Complex refactoring with tracking:
 [research] -> baseline -> roadmap (methodology: mikado) -> split -> execute -> review
 ```
 
-Mikado Method explores dependencies before committing to changes. Reversible at every step.
+Mikado Method explores dependencies before committing. Reversible at every step.
 
 ### Job 4: Investigate and Fix Issue
 
@@ -110,7 +110,7 @@ Minimal sequence -- focused intervention only.
 research -> [decision point: which job to pursue next]
 ```
 
-No execution -- pure information gathering that feeds into other jobs.
+No execution -- pure information gathering feeding into other jobs.
 
 ## Quick Reference Matrix
 
@@ -126,23 +126,23 @@ Items in `[brackets]` are optional. Cross-wave commands (usable anytime): resear
 
 ## Baseline Type Selection
 
-When the workflow includes a baseline step, advise the user on which type to create.
+When workflow includes a baseline step, advise on which type to create.
 
 ### Performance Optimization
 Use when improving speed, reducing resource usage, or optimizing throughput.
-Required: timing measurements with breakdown, bottleneck ranking, target metrics with evidence, quick wins identified.
+Required: timing measurements with breakdown | bottleneck ranking | target metrics with evidence | quick wins identified.
 
 ### Process Improvement
 Use when fixing workflow issues, preventing incidents, or improving reliability.
-Required: incident references or failure modes, simplest alternatives considered (with why insufficient).
+Required: incident references or failure modes | simplest alternatives considered (with why insufficient).
 
 ### Feature Development
 Use when building new capabilities (greenfield or brownfield).
-Required: current state analysis, requirements source and validation.
+Required: current state analysis | requirements source and validation.
 
 ## Workflow Anti-Patterns
 
-These operate at project/feature level, distinct from story-level anti-patterns in the `leanux-methodology` skill.
+Operate at project/feature level, distinct from story-level anti-patterns in `leanux-methodology` skill.
 
 | Anti-Pattern | Problem | Solution |
 |--------------|---------|----------|
@@ -175,4 +175,4 @@ These operate at project/feature level, distinct from story-level anti-patterns 
 | Communicating | Share understanding via diagrams and docs |
 | Investigating | Find truth before acting |
 
-For deep opportunity analysis with ODI scoring, defer to the product-discoverer agent. The product-owner applies simpler prioritization (MoSCoW, Value/Effort) for story-level ordering -- see `leanux-methodology` skill.
+For deep opportunity analysis with ODI scoring, defer to product-discoverer agent. Product-owner applies simpler prioritization (MoSCoW, Value/Effort) for story-level ordering -- see `leanux-methodology` skill.

@@ -1,11 +1,11 @@
 # FP in Haskell -- Functional Software Crafter Skill
 
-Cross-references: [fp-principles](./fp-principles.md), [fp-domain-modeling](./fp-domain-modeling.md), [pbt-haskell](./pbt-haskell.md)
+Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md) | [pbt-haskell](./pbt-haskell.md)
 
 ## When to Choose Haskell
 
-- Best for: correctness-critical systems, compiler-enforced purity, maximum type safety, financial systems
-- Not ideal for: teams needing fast onboarding, rapid prototyping, .NET/JVM platform requirements
+- Best for: correctness-critical systems | compiler-enforced purity | maximum type safety | financial systems
+- Not ideal for: teams needing fast onboarding | rapid prototyping | .NET/JVM platform requirements
 
 ## [STARTER] Quick Setup
 
@@ -108,11 +108,11 @@ mkCustomerV rawName rawEmail =
     <*> validateEmail rawEmail  -- all errors collected, not short-circuited
 ```
 
-Unlike `Either` which stops at the first error, `Validation` accumulates all failures via its `Applicative` instance.
+Unlike `Either` which stops at first error, `Validation` accumulates all failures via its `Applicative` instance.
 
 ## [INTERMEDIATE] Effect Management
 
-Haskell enforces purity at the compiler level. `IO` in the return type means side effects.
+Haskell enforces purity at the compiler level. `IO` in return type means side effects.
 
 ```haskell
 calculateTotal :: Order -> Money           -- Pure: compiler guarantees no side effects
@@ -144,11 +144,11 @@ instance OrderRepo IO where
   saveOrder order   = insertDatabase order
 ```
 
-**Effect libraries**: Effectful (recommended starting point, best performance), mtl (existing codebases), Polysemy (algebraic effect semantics).
+**Effect libraries**: Effectful (recommended starting point, best performance) | mtl (existing codebases) | Polysemy (algebraic effect semantics).
 
 ## [INTERMEDIATE] Testing
 
-**Frameworks**: QuickCheck (original PBT), Hedgehog (integrated shrinking), Hspec (BDD), tasty (composable test tree). See [pbt-haskell](./pbt-haskell.md) for detailed PBT patterns.
+**Frameworks**: QuickCheck (original PBT) | Hedgehog (integrated shrinking) | Hspec (BDD) | tasty (composable test tree). See [pbt-haskell](./pbt-haskell.md) for detailed PBT patterns.
 
 ### Property Test Example
 
@@ -210,10 +210,10 @@ eligibleOrders = take 10 . filter isEligible . sortBy orderDate
 
 ## Maturity and Adoption
 
-- **Steep learning curve**: Monads, type classes, and category-theory vocabulary create a significant onboarding barrier. Budget extra ramp-up time for new team members.
-- **GHC extensions confusion**: Over 100 language extensions exist; knowing which to enable (and which to avoid) requires experience. Start with `GHC2021` defaults.
-- **Space leaks from laziness**: Default lazy evaluation causes subtle memory issues. Requires profiling discipline and strict annotations in production code.
-- **Smaller talent pool**: Hiring Haskell developers is harder than mainstream languages. Consider team sustainability before committing.
+- **Steep learning curve**: Monads, type classes, category-theory vocabulary create significant onboarding barrier. Budget extra ramp-up time.
+- **GHC extensions confusion**: Over 100 language extensions; knowing which to enable requires experience. Start with `GHC2021` defaults.
+- **Space leaks from laziness**: Default lazy evaluation causes subtle memory issues. Requires profiling discipline and strict annotations.
+- **Smaller talent pool**: Hiring Haskell developers harder than mainstream languages. Consider team sustainability before committing.
 
 ## Common Pitfalls
 

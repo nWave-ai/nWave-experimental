@@ -2,7 +2,7 @@
 
 Algebraic thinking for API design. Discover the right API before implementing by specifying rules (equations) that operations must satisfy.
 
-Cross-references: [fp-principles](./fp-principles.md), [fp-domain-modeling](./fp-domain-modeling.md), [fp-usable-design](./fp-usable-design.md)
+Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md) | [fp-usable-design](./fp-usable-design.md)
 
 ---
 
@@ -10,12 +10,12 @@ Cross-references: [fp-principles](./fp-principles.md), [fp-domain-modeling](./fp
 
 [STARTER]
 
-Code is the wrong level of abstraction for design work. Starting with data structures inherits unnecessary constraints.
+Code is the wrong abstraction level for design. Starting with data structures inherits unnecessary constraints.
 
-- **Specify rules first, implement second.** The implementation is a solution to a system of equations.
-- **Rules generate tests automatically.** Every rule is directly a property test. One rule generates thousands of test cases.
-- **Rules reveal missing features.** Analysis often exposes operations you need but have not designed yet.
-- **Rules catch contradictions early.** A contradiction during design costs minutes; in production, days.
+- **Specify rules first, implement second.** Implementation is a solution to a system of equations.
+- **Rules generate tests automatically.** Every rule is directly a property test generating thousands of cases.
+- **Rules reveal missing features.** Analysis often exposes operations you need but haven't designed.
+- **Rules catch contradictions early.** Contradiction during design costs minutes; in production, days.
 
 ---
 
@@ -23,11 +23,11 @@ Code is the wrong level of abstraction for design work. Starting with data struc
 
 [STARTER]
 
-1. **Start with scope, not implementation.** Know what problem you are solving. Do not decide on data structures upfront.
-2. **Define observations first.** How do users extract information? Observations define equality: two values are equal if no observation can distinguish them. This gives enormous implementation freedom.
-3. **Add operations incrementally.** For each new operation, immediately write rules connecting it to existing operations. This web of rules IS the design.
-4. **Let messy rules signal problems.** Complex rules mean coarse-grained building blocks. Decompose until each rule is nearly trivial. Simple rules = good decomposition.
-5. **Generalize aggressively.** Remove unnecessary type constraints. If most operations do not inspect contained values, parameterize over them.
+1. **Start with scope, not implementation.** Don't decide data structures upfront.
+2. **Define observations first.** How do users extract information? Observations define equality: two values equal if no observation distinguishes them. Gives enormous implementation freedom.
+3. **Add operations incrementally.** For each new operation, immediately write rules connecting it to existing ones. This web of rules IS the design.
+4. **Let messy rules signal problems.** Complex rules mean coarse building blocks. Decompose until each rule is nearly trivial.
+5. **Generalize aggressively.** Remove unnecessary type constraints. If most operations don't inspect contained values, parameterize over them.
 
 ---
 
@@ -39,40 +39,40 @@ Recurring patterns in software. Recognizing them unlocks known rules and capabil
 
 ### [STARTER] Combinable Values (Semigroup)
 
-**What**: A type with one merge operation where grouping does not matter.
+**What**: Type with one merge operation where grouping doesn't matter.
 **Rule**: `(a merge b) merge c = a merge (b merge c)` (associativity)
-**When to use**: Combining things where parenthesization should not matter.
-**Examples**: String concatenation, config merging, min/max.
+**When**: Combining things where parenthesization shouldn't matter.
+**Examples**: String concatenation | config merging | min/max.
 
 ### [STARTER] Combinable Values with Default (Monoid)
 
-**What**: A Combinable Value that also has a default element inert under combination.
+**What**: Combinable Value with a default element inert under combination.
 **Rules**: Associativity + `default merge x = x` and `x merge default = x`
-**When to use**: Safe defaults, fold operations, "nothing happened yet" values.
-**Examples**: `(+, 0)`, `(*, 1)`, `(concat, [])`, `(and, true)`.
+**When**: Safe defaults | fold operations | "nothing happened yet" values.
+**Examples**: `(+, 0)` | `(*, 1)` | `(concat, [])` | `(and, true)`.
 **Design signal**: If you find an associative operation, look for a default element. Finding one enables fold/reduce over collections.
 
 ### [INTERMEDIATE] Merge-and-Forget Values (Semilattice)
 
-**What**: A Combinable Value where merging is also order-independent and idempotent (merging the same thing twice changes nothing).
-**When to use**: Conflict resolution, eventually-consistent systems, CRDTs.
-**Example**: A status tracker with ordering `seen < failed < completed` uses `max` as the merge operation.
+**What**: Combinable Value where merging is also order-independent and idempotent.
+**When**: Conflict resolution | eventually-consistent systems | CRDTs.
+**Example**: Status tracker with `seen < failed < completed` uses `max` as merge.
 
 ### [INTERMEDIATE] Structure-Preserving Transformations (Functor)
 
-**What**: A container type where you can transform contents without changing structure. Transformation preserves identity and composition.
-**When to use**: Operations that work on data shape rather than values inside.
-**Design signal**: If most operations are agnostic to the contained type, you likely have this.
+**What**: Container type where you can transform contents without changing structure. Preserves identity and composition.
+**When**: Operations that work on data shape rather than values inside.
+**Design signal**: If most operations are agnostic to contained type, you likely have this.
 
 ### [ADVANCED] Combinable Containers (Applicative)
 
-**What**: A container where you can combine contents element-wise and fill with uniform values.
-**When to use**: Combining containers holding different content types.
+**What**: Container where you can combine contents element-wise and fill with uniform values.
+**When**: Combining containers holding different content types.
 
 ### [ADVANCED] Reversible Operations (Group)
 
-**What**: A Combinable Value with Default where every element has an inverse that cancels it.
-**When to use**: Undo operations, spatial transformations.
+**What**: Combinable Value with Default where every element has an inverse that cancels it.
+**When**: Undo operations | spatial transformations.
 **Example**: Clockwise/counter-clockwise rotation are inverses; horizontal flip is its own inverse.
 
 ---
@@ -105,19 +105,19 @@ Three categories, eight properties:
 
 ### Decompose Large Operations
 
-Complex rules mean coarse building blocks. Split operations with many parameters into smaller, orthogonal ones. If a rule ignores some parameters, those parameters should be separate operations.
+Complex rules mean coarse building blocks. Split operations with many parameters into smaller, orthogonal ones. If a rule ignores some parameters, those should be separate operations.
 
 ### Find Contradictions
 
-Algebraic manipulation reveals contradictions before code is written. Requiring order-independence while returning an ordered list is a contradiction. Fix: use an unordered collection. Choose data structures that satisfy your rules.
+Algebraic manipulation reveals contradictions before code is written. Requiring order-independence while returning an ordered list is a contradiction. Fix: use unordered collection.
 
 ### Unify Observations
 
-When multiple observations share traversal logic, find one observation from which all others derive. Simplifies the entire rule set.
+When multiple observations share traversal logic, find one observation from which all others derive. Simplifies entire rule set.
 
 ### Use Symmetry to Discover Missing Features
 
-When you have a "both" operation (parallel composition), look for its symmetric "either" counterpart. Symmetry arguments discover functionality not explicitly requested but inevitably needed.
+When you have a "both" operation (parallel composition), look for its symmetric "either" counterpart. Symmetry discovers functionality not explicitly requested but inevitably needed.
 
 ---
 
@@ -125,11 +125,11 @@ When you have a "both" operation (parallel composition), look for its symmetric 
 
 [INTERMEDIATE]
 
-1. **Build a naive implementation**: Implement each operation as a direct data constructor. Obviously correct because it mirrors the specification exactly.
-2. **Discover all rules**: Feed the naive implementation to a tool that enumerates well-typed expressions and finds observational equalities. Discovers rules you specified AND emergent rules you missed.
-3. **Freeze as regression tests**: Convert rules into executable property tests. These protect any future optimized implementation.
+1. **Build naive implementation**: Implement each operation as direct data constructor. Obviously correct because it mirrors the spec exactly.
+2. **Discover all rules**: Feed naive implementation to a tool that enumerates well-typed expressions and finds observational equalities. Discovers specified AND emergent rules.
+3. **Freeze as regression tests**: Convert rules into executable property tests protecting any future optimized implementation.
 
-**Key insight**: Two values are equal if no observation can distinguish them. Testing through observations allows completely different implementations to pass the same test suite.
+**Key insight**: Two values are equal if no observation distinguishes them. Testing through observations allows completely different implementations to pass the same suite.
 
 ---
 
@@ -152,13 +152,13 @@ Is your domain about COMBINING things?
 
 ## 8. Combining with Other Patterns
 
-**Rules + Property-Based Testing**: Rules ARE property tests. Algebraic constructors become PBT generators. The rules generate properties; generators generate inputs; the framework generates thousands of cases. Example: the rule `empty merge x = x` becomes `forAll(x -> assertEquals(empty.merge(x), x))`.
+**Rules + Property-Based Testing**: Rules ARE property tests. Algebraic constructors become PBT generators. Example: `empty merge x = x` becomes `forAll(x -> assertEquals(empty.merge(x), x))`.
 
-**Rules + Domain Modeling** (see [fp-domain-modeling](./fp-domain-modeling.md)): Domain wrappers with smart constructors are algebraic rules (construction validates, invalid states unrepresentable). State machine transitions are rules about which sequences are valid. Example: `ShoppingCart.addItem` has the rule `items(addItem(cart, item))` contains `item` -- directly a property test.
+**Rules + Domain Modeling** (see [fp-domain-modeling](./fp-domain-modeling.md)): Domain wrappers with smart constructors are algebraic rules. State machine transitions are rules about valid sequences. Example: `items(addItem(cart, item))` contains `item` -- directly a property test.
 
-**Rules + Usable Design** (see [fp-usable-design](./fp-usable-design.md)): Simple algebraic rules map to simple, searchable, nameable operations -- improving navigability and learnability. Example: decomposing `processOrder` into `validate`, `price`, `confirm` gives three nameable, searchable functions instead of one opaque one.
+**Rules + Usable Design** (see [fp-usable-design](./fp-usable-design.md)): Simple algebraic rules map to simple, searchable, nameable operations -- improving navigability and learnability. Example: decomposing `processOrder` into `validate`, `price`, `confirm` gives three nameable functions instead of one opaque one.
 
-**Decomposition + Feature Organization**: When algebraic decomposition splits a monolithic operation into orthogonal pieces, organize by feature domain rather than technical layer. Example: splitting `configureWidget(size, color, border)` into `resize`, `recolor`, `restyle` lets each live in its own feature module.
+**Decomposition + Feature Organization**: When algebraic decomposition splits a monolithic operation into orthogonal pieces, organize by feature domain. Example: splitting `configureWidget(size, color, border)` into `resize`, `recolor`, `restyle` lets each live in its own feature module.
 
 ### Full Cycle: Rules to Tests
 
@@ -183,10 +183,10 @@ forAll(cart, item -> assertEquals(totalPrice(addItem(cart, item)), totalPrice(ca
 
 ## 9. Design Heuristics
 
-1. **Do not start with an implementation.** Rules first, code second.
+1. **Don't start with an implementation.** Rules first, code second.
 2. **Simple rules indicate good decomposition.** Complex rules mean coarse building blocks.
 3. **Every new operation needs rules connecting it to existing ones.** Isolated operations indicate missing relationships.
-4. **Look for algebraic structures.** Associative? Look for a default. Default found? Check for commutativity or inverses. Each upgrade brings new rules and capabilities.
-5. **Generalize by removing type constraints.** If rules do not mention a specific type, parameterize.
-6. **Build naive first, optimize second.** Generate tests from the naive implementation, then build the optimized one against those tests.
-7. **Invariants belong in the types, not in business logic.** When rules require commutativity but your data structure is ordered, change the data structure.
+4. **Look for algebraic structures.** Associative? Look for default. Default found? Check for commutativity or inverses. Each upgrade brings new rules.
+5. **Generalize by removing type constraints.** If rules don't mention a specific type, parameterize.
+6. **Build naive first, optimize second.** Generate tests from naive implementation, then build optimized one against those tests.
+7. **Invariants belong in types, not business logic.** When rules require commutativity but data structure is ordered, change the data structure.

@@ -8,28 +8,16 @@ description: Infrastructure as Code patterns (Terraform, Kubernetes), observabil
 ## Terraform Patterns
 
 ### Module Structure
-- `main.tf` -- Resource definitions
-- `variables.tf` -- Input variable declarations
-- `outputs.tf` -- Output value declarations
-- `versions.tf` -- Provider and terraform version constraints
-- `README.md` -- Module documentation
+`main.tf` (resource definitions) | `variables.tf` (input declarations) | `outputs.tf` (output declarations) | `versions.tf` (provider/terraform version constraints) | `README.md` (module docs).
 
 ### State Management
-- Remote backend: S3/GCS/Azure Blob with state locking
-- State locking: DynamoDB/Cloud Storage/Azure Blob lease
-- Workspace strategy: one workspace per environment (dev/staging/prod)
+Remote backend: S3/GCS/Azure Blob with state locking. State locking: DynamoDB/Cloud Storage/Azure Blob lease. Workspace strategy: one workspace per environment (dev/staging/prod).
 
 ### Security
-- Never commit secrets -- use secret managers
-- Encrypt state at rest
-- Use OIDC for CI/CD authentication
-- Least privilege IAM roles
+Never commit secrets -- use secret managers | Encrypt state at rest | Use OIDC for CI/CD auth | Least privilege IAM roles.
 
 ### IaC Principles (Kief Morris)
-- Reproducibility -- same input, same output
-- Idempotency -- safe to run multiple times
-- Immutability -- replace, do not modify
-- Version control -- track all changes
+Reproducibility (same input, same output) | Idempotency (safe to run multiple times) | Immutability (replace, do not modify) | Version control (track all changes).
 
 ### IaC Patterns
 - **Stack pattern**: Complete infrastructure as single unit
@@ -39,13 +27,10 @@ description: Infrastructure as Code patterns (Terraform, Kubernetes), observabil
 ## Kubernetes Patterns
 
 ### Core Concepts
-Pods, Deployments, Services, Ingress, ConfigMaps, Secrets, PersistentVolumes, RBAC, NetworkPolicies, PodSecurityPolicies, Operators, Custom Resources, Controllers.
+Pods | Deployments | Services | Ingress | ConfigMaps | Secrets | PersistentVolumes | RBAC | NetworkPolicies | PodSecurityPolicies | Operators | Custom Resources | Controllers.
 
 ### Production Patterns
-- Multi-tenancy with namespaces
-- Resource quotas and limits
-- Pod disruption budgets
-- Horizontal and vertical autoscaling
+Multi-tenancy with namespaces | Resource quotas and limits | Pod disruption budgets | Horizontal and vertical autoscaling.
 
 ### Deployment Template
 ```yaml
@@ -119,71 +104,56 @@ spec:
 
 ### SLO Design
 **Availability SLO**: `successful_requests / total_requests * 100`
-- 99.9% = 8.76 hours downtime/year
-- 99.95% = 4.38 hours downtime/year
-- 99.99% = 52.6 minutes downtime/year
+- 99.9% = 8.76h downtime/year | 99.95% = 4.38h | 99.99% = 52.6min
 - Error budget = 100% - SLO target
 
 **Latency SLO**: `requests_under_threshold / total_requests * 100`
-- 99% of requests < 200ms
-- 99.9% of requests < 1000ms
+- 99% of requests < 200ms | 99.9% of requests < 1000ms
 
 ### Metrics Methods
 
-**RED Method** (request-driven services):
-- Rate: requests per second
-- Errors: error rate (percentage)
-- Duration: latency distribution (p50, p90, p99)
+**RED Method** (request-driven services): Rate (requests/sec) | Errors (error rate %) | Duration (latency p50, p90, p99).
 
-**USE Method** (resources -- CPU, memory, disk):
-- Utilization: percentage used
-- Saturation: queue depth, waiting requests
-- Errors: error counts for the resource
+**USE Method** (resources -- CPU, memory, disk): Utilization (% used) | Saturation (queue depth, waiting requests) | Errors (error counts).
 
-**Four Golden Signals** (Google SRE):
-- Latency, Traffic, Errors, Saturation
+**Four Golden Signals** (Google SRE): Latency | Traffic | Errors | Saturation.
 
 ### SLO-Based Alerting
 - Fast burn: >14.4x burn rate for 1 hour -> page
 - Slow burn: >6x burn rate for 6 hours -> ticket
 - Budget nearly exhausted: >50% consumed -> warning
 
-Alert structure: alertname, severity, service, SLO name, current value, threshold, runbook URL, dashboard URL.
+Alert structure: alertname | severity | service | SLO name | current value | threshold | runbook URL | dashboard URL.
 
 ### Dashboard Design (per service)
-- Request rate (RPS)
-- Error rate (%)
-- Latency distribution (p50, p90, p99)
-- SLO status and error budget
-- Resource utilization (CPU, memory)
-- Dependency health
+Request rate (RPS) | Error rate (%) | Latency distribution (p50, p90, p99) | SLO status and error budget | Resource utilization (CPU, memory) | Dependency health.
 
 ### Three Pillars of Observability (Charity Majors)
 - **Logs**: Event records with structured context. Use structured logging with correlation IDs.
 - **Metrics**: Numeric measurements over time. Use RED/USE/Golden Signals.
 - **Traces**: Request flow across services. Use distributed tracing with sampling.
 
-Principles: high cardinality is essential, debug in production, understand unknown unknowns.
+Principles: high cardinality is essential | debug in production | understand unknown unknowns.
 
 ## Pipeline Security
 
 ### Security Stages
 
-**Pre-commit**: Secrets scanning (pre-commit hooks), linting. Tools: pre-commit, gitleaks, detect-secrets.
+**Pre-commit**: Secrets scanning (pre-commit hooks) | linting. Tools: pre-commit | gitleaks | detect-secrets.
 
-**Commit stage**: SAST, dependency scanning (SCA), license compliance, secrets scanning. Tools: Semgrep/CodeQL/Bandit/SonarQube (SAST), Dependabot/Snyk/Trivy (SCA), Gitleaks/TruffleHog (secrets).
+**Commit stage**: SAST | dependency scanning (SCA) | license compliance | secrets scanning. Tools: Semgrep/CodeQL/Bandit/SonarQube (SAST) | Dependabot/Snyk/Trivy (SCA) | Gitleaks/TruffleHog (secrets).
 
-**Build stage**: Container image scanning, SBOM generation, image signing. Tools: Trivy/Grype/Clair (scanning), Syft/CycloneDX (SBOM), Cosign/Notary (signing).
+**Build stage**: Container image scanning | SBOM generation | image signing. Tools: Trivy/Grype/Clair (scanning) | Syft/CycloneDX (SBOM) | Cosign/Notary (signing).
 
-**Pre-production**: DAST, API security testing, infrastructure security scanning. Tools: OWASP ZAP/Nuclei (DAST), Checkov/tfsec/Terrascan (infrastructure).
+**Pre-production**: DAST | API security testing | infrastructure security scanning. Tools: OWASP ZAP/Nuclei (DAST) | Checkov/tfsec/Terrascan (infrastructure).
 
-**Runtime**: Runtime security monitoring, network policy enforcement, admission control. Tools: Falco/Sysdig (runtime), OPA Gatekeeper/Kyverno (admission).
+**Runtime**: Runtime security monitoring | network policy enforcement | admission control. Tools: Falco/Sysdig (runtime) | OPA Gatekeeper/Kyverno (admission).
 
 ### Secrets Management
-Principles: never commit secrets, use short-lived credentials, rotate regularly, audit access.
-- External secrets: fetch from vault at runtime (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager)
+Principles: never commit secrets | use short-lived credentials | rotate regularly | audit access.
+- External secrets: fetch from vault at runtime (HashiCorp Vault | AWS Secrets Manager | GCP Secret Manager)
 - SOPS: encrypt secrets in git with GPG/KMS (for GitOps workflows)
 
 ### Supply Chain Security
 - SBOM: Software Bill of Materials in SPDX or CycloneDX format, generated during build
-- SLSA levels: L1 (documented build), L2 (version control + build service), L3 (isolated builds + signed provenance), L4 (two-party review + hermetic builds)
+- SLSA levels: L1 (documented build) | L2 (version control + build service) | L3 (isolated builds + signed provenance) | L4 (two-party review + hermetic builds)

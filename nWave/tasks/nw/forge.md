@@ -10,7 +10,7 @@ argument-hint: '[agent-name] - Optional: --type=[specialist|reviewer|orchestrato
 
 ## Overview
 
-Create a new agent using the research-validated v2 approach: focused core (200-400 lines) with Skills for domain knowledge. Follows the 5-phase workflow: ANALYZE > DESIGN > CREATE > VALIDATE > REFINE.
+Create a new agent using research-validated v2 approach: focused core (200-400 lines) with Skills for domain knowledge. 5-phase workflow: ANALYZE > DESIGN > CREATE > VALIDATE > REFINE.
 
 ## Agent Invocation
 
@@ -19,7 +19,6 @@ Create a new agent using the research-validated v2 approach: focused core (200-4
 Execute \*forge to create {agent-name} agent.
 
 **Configuration:**
-
 - agent_type: specialist | reviewer | orchestrator
 - design_pattern: react | reflection | router | planning | sequential | parallel | hierarchical
 
