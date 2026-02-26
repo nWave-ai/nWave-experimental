@@ -68,28 +68,27 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_DEFAULT }}
 
-      - name: Install python-semantic-release
-        run: pip install python-semantic-release
+      - name: Install commitizen
+        run: pip install commitizen
 
       - name: Calculate version and create tag
         id: version
         run: |
           if [[ "${{ inputs.dry_run }}" == "true" ]]; then
             echo "Dry run mode - no changes will be pushed"
-            # PSR 10.x: --print outputs the next version without modifying anything
-            VERSION=$(semantic-release version --print 2>/dev/null || echo "none")
+            VERSION=$(cz bump --dry-run 2>&1 | tail -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" || echo "none")
             echo "tag_created=false" >> $GITHUB_OUTPUT
             echo "new_version=$VERSION" >> $GITHUB_OUTPUT
             echo "Would bump to: $VERSION"
           elif [[ -n "${{ inputs.force_bump }}" ]]; then
             echo "Forcing bump: ${{ inputs.force_bump }}"
-            semantic-release version --no-changelog --${{ inputs.force_bump }}
+            cz bump --increment ${{ inputs.force_bump }} --yes
             LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
             VERSION=${LATEST_TAG#v}
             echo "new_version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag_created=true" >> $GITHUB_OUTPUT
           else
-            semantic-release version --no-changelog
+            cz bump --yes
             LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
             VERSION=${LATEST_TAG#v}
             echo "new_version=$VERSION" >> $GITHUB_OUTPUT
@@ -502,7 +501,6 @@ jobs:
             --exclude 'test-des-hooks/' \
             --exclude 'test-des-manual/' \
             --exclude 'CHANGELOG.md' \
-            --exclude '.releaserc' \
             --exclude '.commitlintrc.json' \
             --exclude '.pre-commit-config.yaml' \
             --exclude '.mcp.json' \
@@ -757,9 +755,9 @@ jobs:
 
           # 6. Remove dev-only sections
           #    - [tool.nwave] (contains public_version floor, dev-only)
-          #    - [tool.semantic_release] (dev-only release config)
+          #    - [tool.commitizen] (dev-only release config)
           content = re.sub(r'\[tool\.nwave\].*?(?=\n\[|\Z)', '', content, flags=re.DOTALL)
-          content = re.sub(r'\[tool\.semantic_release\].*?(?=\n\[|\Z)', '', content, flags=re.DOTALL)
+          content = re.sub(r'\[tool\.commitizen\].*?(?=\n\[|\Z)', '', content, flags=re.DOTALL)
 
           # Clean up multiple blank lines
           content = re.sub(r'\n{3,}', '\\n\\n', content)

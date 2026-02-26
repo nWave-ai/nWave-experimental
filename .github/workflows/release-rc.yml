@@ -446,7 +446,6 @@ jobs:
             --exclude 'test-des-hooks/' \
             --exclude 'test-des-manual/' \
             --exclude 'CHANGELOG.md' \
-            --exclude '.releaserc' \
             --exclude '.commitlintrc.json' \
             --exclude '.pre-commit-config.yaml' \
             --exclude '.mcp.json' \

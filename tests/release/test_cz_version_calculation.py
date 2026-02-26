@@ -699,3 +699,64 @@ class TestCZConfigExpansion:
 
         cz_entries = [d for d in dev_deps if "commitizen" in d]
         assert len(cz_entries) >= 1, "commitizen not found in dev dependencies"
+
+
+class TestLegacyWorkflowMigration:
+    """Workflow YAML migration verification: PSR commands replaced by CZ.
+
+    Maps to: US-CZ-05, Scenarios 31-32 (Roadmap Step 07).
+    These are file-content assertions, not subprocess tests.
+    """
+
+    def test_release_yml_uses_cz_bump_instead_of_psr(self):
+        """Given .github/workflows/release.yml at repo root,
+        when reading the file content,
+        then 'cz bump' is present (auto and force modes),
+        'cz bump --dry-run' is present (dry-run mode),
+        'semantic-release version' is absent,
+        and 'python-semantic-release' is absent.
+
+        Maps to: Scenario 31 "Legacy release.yml uses CZ instead of PSR".
+        """
+        workflow_path = REPO_ROOT / ".github" / "workflows" / "release.yml"
+        content = workflow_path.read_text()
+
+        # CZ commands present
+        assert "cz bump" in content, "release.yml missing 'cz bump' command"
+        assert "cz bump --dry-run" in content, (
+            "release.yml missing 'cz bump --dry-run' for dry-run mode"
+        )
+        assert "cz bump --increment" in content, (
+            "release.yml missing 'cz bump --increment' for force-bump mode"
+        )
+
+        # PSR commands absent
+        assert "semantic-release version" not in content, (
+            "release.yml still contains 'semantic-release version' (PSR command)"
+        )
+        assert "python-semantic-release" not in content, (
+            "release.yml still references 'python-semantic-release' package"
+        )
+
+    def test_cz_changelog_generation_configured(self):
+        """Given pyproject.toml has [tool.commitizen] with changelog_file,
+        and .gitignore contains CHANGELOG.md,
+        then CZ changelog generation is properly configured.
+
+        Maps to: Scenario 32 "CZ generates changelog during stable release".
+        """
+        # Verify pyproject.toml changelog_file config
+        pyproject_path = REPO_ROOT / "pyproject.toml"
+        with pyproject_path.open("rb") as f:
+            toml = tomllib.load(f)
+        cz = toml["tool"]["commitizen"]
+        assert cz["changelog_file"] == "CHANGELOG.md", (
+            f"changelog_file is '{cz.get('changelog_file')}', expected 'CHANGELOG.md'"
+        )
+
+        # Verify .gitignore has CHANGELOG.md (auto-generated, not committed)
+        gitignore_path = REPO_ROOT / ".gitignore"
+        gitignore_content = gitignore_path.read_text()
+        assert "CHANGELOG.md" in gitignore_content, (
+            ".gitignore does not contain 'CHANGELOG.md'"
+        )
