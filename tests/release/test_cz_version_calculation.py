@@ -120,3 +120,122 @@ class TestCZBaseVersionOverride:
         assert result.returncode == 2
         output = parse_output(result)
         assert "Invalid base-version" in output["error"]
+
+
+class TestVersionFloorOverride:
+    """--version-floor overrides resolved base when floor > base.
+
+    Maps to: US-CZ-02 (Scenarios 12-15, 19).
+    """
+
+    def test_floor_overrides_cz_base_when_higher(self):
+        """Given --version-floor '1.3.0' > --base-version '1.2.0',
+        when calculating the next dev version,
+        then the floor is used as the base.
+
+        Maps to: Scenario 12 "Floor overrides CZ when floor is higher".
+        """
+        result = run_next_version(
+            "--stage",
+            "dev",
+            "--current-version",
+            "1.1.22",
+            "--base-version",
+            "1.2.0",
+            "--version-floor",
+            "1.3.0",
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        output = parse_output(result)
+        assert output["version"] == "1.3.0.dev1"
+        assert output["base_version"] == "1.3.0"
+
+    def test_floor_ignored_when_lower_than_cz_base(self):
+        """Given --version-floor '1.1.0' < --base-version '1.2.0',
+        when calculating the next dev version,
+        then the CZ base is used (floor is ignored).
+
+        Maps to: Scenario 13 "Floor is ignored when lower than CZ base".
+        """
+        result = run_next_version(
+            "--stage",
+            "dev",
+            "--current-version",
+            "1.1.22",
+            "--base-version",
+            "1.2.0",
+            "--version-floor",
+            "1.1.0",
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        output = parse_output(result)
+        assert output["version"] == "1.2.0.dev1"
+        assert output["base_version"] == "1.2.0"
+
+    def test_floor_overrides_fallback_when_cz_fails(self):
+        """Given --base-version '' (CZ failed) and --version-floor '2.0.0',
+        when calculating the next dev version,
+        then the floor overrides the _bump_patch fallback.
+
+        Maps to: Scenario 14 "Floor overrides fallback when CZ fails".
+        """
+        result = run_next_version(
+            "--stage",
+            "dev",
+            "--current-version",
+            "1.1.22",
+            "--base-version",
+            "",
+            "--version-floor",
+            "2.0.0",
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        output = parse_output(result)
+        assert output["version"] == "2.0.0.dev1"
+        assert output["base_version"] == "2.0.0"
+
+    def test_floor_and_cz_base_with_existing_tags(self):
+        """Given --version-floor '1.3.0' > --base-version '1.2.0'
+        and existing tag v1.3.0.dev1,
+        when calculating the next dev version,
+        then the floor base is used and counter increments to dev2.
+
+        Maps to: Scenario 15 "Floor and CZ base with existing tags".
+        """
+        result = run_next_version(
+            "--stage",
+            "dev",
+            "--current-version",
+            "1.1.22",
+            "--base-version",
+            "1.2.0",
+            "--version-floor",
+            "1.3.0",
+            "--existing-tags",
+            "v1.3.0.dev1",
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        output = parse_output(result)
+        assert output["version"] == "1.3.0.dev2"
+        assert output["base_version"] == "1.3.0"
+
+    def test_invalid_version_floor_rejected_with_exit_code_2(self):
+        """Given --version-floor 'abc' (not PEP 440 compliant),
+        when calculating the next dev version,
+        then exit code is 2 with 'Invalid version-floor' in the error.
+
+        Maps to: Scenario 19 "Invalid version-floor is rejected".
+        """
+        result = run_next_version(
+            "--stage",
+            "dev",
+            "--current-version",
+            "1.1.22",
+            "--base-version",
+            "1.2.0",
+            "--version-floor",
+            "abc",
+        )
+        assert result.returncode == 2
+        output = parse_output(result)
+        assert "Invalid version-floor" in output["error"]
