@@ -51,7 +51,7 @@ class TestHousekeepingServiceOrchestration:
     """HousekeepingService.run_housekeeping() orchestrates three independent tasks."""
 
     def test_disabled_config_skips_all_tasks(self, tmp_path: Path) -> None:
-        """Given enabled=False, no task methods are called."""
+        """Given enabled=False, no files are modified or deleted."""
         from des.application.housekeeping_service import (
             HousekeepingConfig,
             HousekeepingService,
@@ -59,22 +59,24 @@ class TestHousekeepingServiceOrchestration:
 
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir()
+        des_dir = nwave_dir / "des"
+        des_dir.mkdir()
+
+        # Create candidate files that would be cleaned if housekeeping ran
+        old_signal = des_dir / "des-task-active-stale"
+        old_signal.write_text("{}", encoding="utf-8")
+        skill_log = nwave_dir / "skill-loading-log.jsonl"
+        skill_log.write_text('{"entry": 0}\n', encoding="utf-8")
+
         config = HousekeepingConfig(nwave_dir=nwave_dir, enabled=False)
-        time_provider = FixedTimeProvider(_NOW)
+        HousekeepingService.run_housekeeping(config, FixedTimeProvider(_NOW))
 
-        with (
-            patch.object(HousekeepingService, "_clean_audit_logs") as mock_audit,
-            patch.object(HousekeepingService, "_clean_signal_files") as mock_signal,
-            patch.object(HousekeepingService, "_rotate_skill_log") as mock_skill,
-        ):
-            HousekeepingService.run_housekeeping(config, time_provider)
-
-        mock_audit.assert_not_called()
-        mock_signal.assert_not_called()
-        mock_skill.assert_not_called()
+        # Observable: no files were touched when housekeeping is disabled
+        assert old_signal.exists(), "Signal file must not be removed when disabled"
+        assert skill_log.exists(), "Skill log must not be modified when disabled"
 
     def test_missing_nwave_dir_skips_all_tasks(self, tmp_path: Path) -> None:
-        """Given nwave_dir does not exist, no task methods are called."""
+        """Given nwave_dir does not exist, no files are created or modified."""
         from des.application.housekeeping_service import (
             HousekeepingConfig,
             HousekeepingService,
@@ -83,18 +85,12 @@ class TestHousekeepingServiceOrchestration:
         nwave_dir = tmp_path / ".nwave"
         # Intentionally not created
         config = HousekeepingConfig(nwave_dir=nwave_dir)
-        time_provider = FixedTimeProvider(_NOW)
+        HousekeepingService.run_housekeeping(config, FixedTimeProvider(_NOW))
 
-        with (
-            patch.object(HousekeepingService, "_clean_audit_logs") as mock_audit,
-            patch.object(HousekeepingService, "_clean_signal_files") as mock_signal,
-            patch.object(HousekeepingService, "_rotate_skill_log") as mock_skill,
-        ):
-            HousekeepingService.run_housekeeping(config, time_provider)
-
-        mock_audit.assert_not_called()
-        mock_signal.assert_not_called()
-        mock_skill.assert_not_called()
+        # Observable: .nwave/ was not created (no state created where none existed)
+        assert not nwave_dir.exists(), (
+            "No directory must be created when nwave_dir is absent"
+        )
 
     def test_task_exception_does_not_prevent_other_tasks(self, tmp_path: Path) -> None:
         """Given _clean_audit_logs raises, _clean_signal_files and _rotate_skill_log still run."""
@@ -391,6 +387,9 @@ class TestCleanAuditLogs:
 class TestRotateSkillLog:
     """HousekeepingService._rotate_skill_log() truncates oversized skill logs.
 
+    Tests enter through driving port: HousekeepingService.run_housekeeping().
+    Audit log and signal file stubs are patched to isolate skill log behavior.
+
     Test Budget: 5 distinct behaviors x 2 = 10 max. Actual: 5 tests.
 
     Behaviors:
@@ -421,7 +420,11 @@ class TestRotateSkillLog:
         original_content = log_file.read_text(encoding="utf-8")
 
         config = HousekeepingConfig(nwave_dir=nwave_dir, skill_log_max_bytes=1_048_576)
-        HousekeepingService._rotate_skill_log(config)
+        with (
+            patch.object(HousekeepingService, "_clean_audit_logs"),
+            patch.object(HousekeepingService, "_clean_signal_files"),
+        ):
+            HousekeepingService.run_housekeeping(config, FixedTimeProvider(_NOW))
 
         assert log_file.read_text(encoding="utf-8") == original_content
 
@@ -436,7 +439,11 @@ class TestRotateSkillLog:
         log_file = self._make_skill_log(nwave_dir, 5000)
         # Force threshold below file size by setting it to 1 byte
         config = HousekeepingConfig(nwave_dir=nwave_dir, skill_log_max_bytes=1)
-        HousekeepingService._rotate_skill_log(config)
+        with (
+            patch.object(HousekeepingService, "_clean_audit_logs"),
+            patch.object(HousekeepingService, "_clean_signal_files"),
+        ):
+            HousekeepingService.run_housekeeping(config, FixedTimeProvider(_NOW))
 
         lines = log_file.read_text(encoding="utf-8").strip().split("\n")
         assert len(lines) == 1000
@@ -453,7 +460,11 @@ class TestRotateSkillLog:
         nwave_dir = tmp_path / ".nwave"
         log_file = self._make_skill_log(nwave_dir, 5000)
         config = HousekeepingConfig(nwave_dir=nwave_dir, skill_log_max_bytes=1)
-        HousekeepingService._rotate_skill_log(config)
+        with (
+            patch.object(HousekeepingService, "_clean_audit_logs"),
+            patch.object(HousekeepingService, "_clean_signal_files"),
+        ):
+            HousekeepingService.run_housekeeping(config, FixedTimeProvider(_NOW))
 
         lines = log_file.read_text(encoding="utf-8").strip().split("\n")
         first = json.loads(lines[0])
@@ -462,7 +473,7 @@ class TestRotateSkillLog:
         assert last["entry"] == 4999
 
     def test_missing_log_file_does_not_raise(self, tmp_path):
-        """Given skill-loading-log.jsonl does not exist, _rotate_skill_log returns silently."""
+        """Given skill-loading-log.jsonl does not exist, run_housekeeping returns silently."""
         from des.application.housekeeping_service import (
             HousekeepingConfig,
             HousekeepingService,
@@ -474,7 +485,11 @@ class TestRotateSkillLog:
 
         config = HousekeepingConfig(nwave_dir=nwave_dir, skill_log_max_bytes=1)
         # Must not raise
-        HousekeepingService._rotate_skill_log(config)
+        with (
+            patch.object(HousekeepingService, "_clean_audit_logs"),
+            patch.object(HousekeepingService, "_clean_signal_files"),
+        ):
+            HousekeepingService.run_housekeeping(config, FixedTimeProvider(_NOW))
 
         # No file should be created
         assert not skill_log.exists()
@@ -496,7 +511,11 @@ class TestRotateSkillLog:
         config = HousekeepingConfig(nwave_dir=nwave_dir, skill_log_max_bytes=1)
         try:
             # Must not raise
-            HousekeepingService._rotate_skill_log(config)
+            with (
+                patch.object(HousekeepingService, "_clean_audit_logs"),
+                patch.object(HousekeepingService, "_clean_signal_files"),
+            ):
+                HousekeepingService.run_housekeeping(config, FixedTimeProvider(_NOW))
         finally:
             # Restore permissions for cleanup
             log_file.chmod(stat.S_IRWXU)

@@ -340,3 +340,48 @@ class TestSessionStartHandlerHousekeepingIntegration:
             handle_session_start()
 
         assert call_order == ["housekeeping", "update_check"]
+
+    def test_des_config_instance_shared_between_housekeeping_and_update_check(self):
+        """B9: The same DESConfig object is passed to _run_housekeeping and UpdateCheckService.
+
+        Step 03-01 AC: 'DESConfig shared between housekeeping and update check.'
+        A single DESConfig() instance is created in handle_session_start() and
+        passed to both operations — confirmed by identity (is), not equality (==).
+        """
+        from des.adapters.drivers.hooks.session_start_handler import (
+            handle_session_start,
+        )
+
+        captured: dict = {}
+
+        result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
+
+        def capture_housekeeping_config(des_config):
+            captured["housekeeping_config"] = des_config
+
+        def capture_update_check_config(des_config):
+            captured["update_check_config"] = des_config
+            mock_svc = MagicMock()
+            mock_svc.check_for_updates.return_value = result
+            return mock_svc
+
+        with (
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service",
+                side_effect=capture_update_check_config,
+            ),
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._run_housekeeping",
+                side_effect=capture_housekeeping_config,
+            ),
+            patch("sys.stdin", io.StringIO("{}")),
+        ):
+            handle_session_start()
+
+        assert "housekeeping_config" in captured, "_run_housekeeping was not called"
+        assert "update_check_config" in captured, (
+            "_build_update_check_service was not called"
+        )
+        assert captured["housekeeping_config"] is captured["update_check_config"], (
+            "DESConfig must be the same object passed to both housekeeping and update check"
+        )

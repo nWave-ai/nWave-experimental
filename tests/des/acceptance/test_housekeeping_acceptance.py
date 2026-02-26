@@ -655,9 +655,6 @@ class TestSkillLogRotation:
 class TestHousekeepingOrchestration:
     """US-HK-04: Housekeeping runs all cleanup tasks as a coordinated operation."""
 
-    @pytest.mark.skip(
-        reason="Step 3+4+5: Requires real audit/signal/skill implementations"
-    )
     def test_all_tasks_run_with_default_configuration(self, tmp_path):
         """Given no housekeeping configuration in des-config.json
         And the project has old audit logs, a stale signal file, and a small skill log
@@ -709,7 +706,6 @@ class TestHousekeepingOrchestration:
         # Skill log not modified (under threshold)
         assert skill_log.read_text(encoding="utf-8") == original_skill_content
 
-    @pytest.mark.skip(reason="Step 3+4+5: Requires real signal/skill implementations")
     def test_individual_task_failure_does_not_affect_other_tasks(self, tmp_path):
         """Given audit log cleanup will raise a PermissionError
         And signal file cleanup will succeed
@@ -737,10 +733,14 @@ class TestHousekeepingOrchestration:
         # Create a stale signal file that should be cleaned
         _create_signal_file(des_dir, "des-task-active-stale", 20, now)
 
-        # Create an oversized skill log that should be truncated
+        # Create an oversized skill log that should be truncated.
+        # Use skill_log_max_bytes=1 so the 5000-line log always exceeds the threshold,
+        # matching the acceptance criteria regardless of line length.
         _create_skill_log(nwave_dir, 5000)
 
-        config = HousekeepingConfig(nwave_dir=nwave_dir, audit_log_dir=logs_dir)
+        config = HousekeepingConfig(
+            nwave_dir=nwave_dir, audit_log_dir=logs_dir, skill_log_max_bytes=1
+        )
 
         from tests.des.acceptance.conftest_housekeeping import FixedTimeProvider
 
