@@ -116,7 +116,7 @@ jobs:
           python-version: ${{ env.PYTHON_DEFAULT }}
 
       - name: Install dependencies
-        run: pip install packaging
+        run: pip install packaging commitizen
 
       - name: Read current version from pyproject.toml
         id: current
@@ -124,6 +124,19 @@ jobs:
           VERSION=$(python scripts/release/read_toml_field.py \
             --file pyproject.toml --key project.version)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Analyze commits with Commitizen
+        id: cz
+        run: |
+          BASE=$(cz bump --get-next 2>/dev/null) || BASE=""
+          echo "base_version=$BASE" >> $GITHUB_OUTPUT
+
+      - name: Read version floor
+        id: floor
+        run: |
+          FLOOR=$(python scripts/release/read_toml_field.py \
+            --file pyproject.toml --key tool.nwave.public_version 2>/dev/null) || FLOOR=""
+          echo "floor=$FLOOR" >> $GITHUB_OUTPUT
 
       - name: Gather existing dev tags
         id: tags
@@ -137,7 +150,9 @@ jobs:
           OUTPUT=$(python scripts/release/next_version.py \
             --stage dev \
             --current-version "${{ steps.current.outputs.version }}" \
-            --existing-tags "${{ steps.tags.outputs.tags }}")
+            --existing-tags "${{ steps.tags.outputs.tags }}" \
+            --base-version "${{ steps.cz.outputs.base_version }}" \
+            --version-floor "${{ steps.floor.outputs.floor }}")
 
           echo "$OUTPUT"
 
