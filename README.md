@@ -20,7 +20,14 @@ No repository clone needed. This installs nWave from PyPI and sets up agents and
 
 Full setup details: **[Installation Guide](https://github.com/nWave-ai/nWave/blob/main/docs/guides/installation-guide.md)**
 
-**Staying updated** — nWave checks for new versions when you open Claude Code. When an update is available, you'll see a note in Claude's context with the version and what changed. To update, run two commands in your terminal: `pip install --upgrade nwave-ai` (pulls the new package), then `nwave-ai install` (deploys the new framework files). To control check frequency: set `update_check.frequency` in `~/.nwave/des-config.json` (`daily` / `weekly` / `every_session` / `never`).
+**Staying updated** — nWave checks for new versions when you open Claude Code. When an update is available, you'll see a note in Claude's context with the version and what changed. To update, run two commands in your terminal:
+
+```bash
+pipx upgrade nwave-ai   # pull the latest package (use pip install --upgrade nwave-ai if you installed via pip)
+nwave-ai install        # deploy the new framework files to ~/.claude/
+```
+
+To control check frequency: set `update_check.frequency` in `~/.nwave/des-config.json` (`daily` / `weekly` / `every_session` / `never`).
 
 **2. Use** (inside Claude Code, after reopening it):
 
@@ -73,7 +80,7 @@ DES is nWave's quality enforcement layer — it monitors every agent Task invoca
 | **DES_MARKERS_MISSING** | Task prompt mentions a step ID (01-01 pattern) but lacks DES markers. | Either: add DES markers for step execution, OR add `<!-- DES-ENFORCEMENT : exempt -->` comment if it's not actually step work. |
 | **Source write blocked** | You tried to edit a file during active `/nw:deliver` outside a DES task. | Edit requests must go through the active deliver session. If you need to make changes, finalize the current session first. |
 | **TDD phase incomplete** | Sub-agent returned without finishing all required TDD phases. | Re-dispatch the same agent to complete missing phases (typically COMMIT or refactoring steps). |
-| **nWave update available** | SessionStart detected a newer version available. | Optional. Run `nwave-ai install` when ready to upgrade, or dismiss and continue working. |
+| **nWave update available** | SessionStart detected a newer version available. | Optional. Run `pipx upgrade nwave-ai && nwave-ai install` when ready to upgrade, or dismiss and continue working. |
 | **False positive blocks** | Your prompt accidentally matches step-ID pattern (e.g., dates like "2026-02-09"). | Add `<!-- DES-ENFORCEMENT : exempt -->` comment to exempt the Task from step-ID enforcement. |
 
 These messages protect code quality but never prevent your work — they guide you toward the safe path.
