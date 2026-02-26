@@ -1,9 +1,11 @@
-"""SessionStart hook handler for nWave update checks.
+"""SessionStart hook handler for nWave update checks and housekeeping.
 
-Reads hook input JSON from stdin, invokes UpdateCheckService, and writes
-additionalContext JSON to stdout when UPDATE_AVAILABLE.
+Reads hook input JSON from stdin, runs housekeeping, invokes UpdateCheckService,
+and writes additionalContext JSON to stdout when UPDATE_AVAILABLE.
 
 Fail-open: any exception exits 0 so session is never blocked.
+Housekeeping and update check run in independent try/except blocks.
+Housekeeping runs before update check; DESConfig is shared between both.
 
 Output format when UPDATE_AVAILABLE:
     {"additionalContext": "nWave update available: {local} → {latest}. Changes: {changelog_or_empty}"}
@@ -22,12 +24,31 @@ def _get_local_version() -> str:
     return _detect_local_version()
 
 
-def _build_update_check_service():
-    """Build UpdateCheckService with DESConfig for frequency gating."""
-    from des.adapters.driven.config.des_config import DESConfig
+def _run_housekeeping(des_config) -> None:
+    """Run housekeeping using configuration from DESConfig.
+
+    Builds HousekeepingConfig from des_config properties and delegates to
+    HousekeepingService. Fail-open: caller must wrap in try/except.
+    """
+    from des.adapters.driven.time.system_time import SystemTimeProvider
+    from des.application.housekeeping_service import (
+        HousekeepingConfig,
+        HousekeepingService,
+    )
+
+    config = HousekeepingConfig(
+        enabled=des_config.housekeeping_enabled,
+        audit_retention_days=des_config.housekeeping_audit_retention_days,
+        signal_staleness_hours=des_config.housekeeping_signal_staleness_hours,
+        skill_log_max_bytes=des_config.housekeeping_skill_log_max_bytes,
+    )
+    HousekeepingService.run_housekeeping(config, SystemTimeProvider())
+
+
+def _build_update_check_service(des_config):
+    """Build UpdateCheckService with a shared DESConfig for frequency gating."""
     from des.application.update_check_service import UpdateCheckService
 
-    des_config = DESConfig()
     return UpdateCheckService(des_config=des_config)
 
 
@@ -38,19 +59,28 @@ def _build_update_message(local: str, latest: str, changelog: str | None) -> str
 
 
 def handle_session_start() -> int:
-    """Handle session-start hook: check for nWave updates.
+    """Handle session-start hook: run housekeeping then check for nWave updates.
 
-    Reads JSON from stdin (Claude Code hook protocol), calls UpdateCheckService,
-    and writes additionalContext to stdout when an update is available.
+    Reads JSON from stdin (Claude Code hook protocol), runs housekeeping,
+    calls UpdateCheckService, and writes additionalContext to stdout when an
+    update is available. DESConfig is shared between both operations.
 
     Returns:
         0 always (fail-open: session must never be blocked).
     """
-    try:
-        # Read stdin (ignore content — session-start sends session metadata)
-        sys.stdin.read()
+    sys.stdin.read()
 
-        service = _build_update_check_service()
+    from des.adapters.driven.config.des_config import DESConfig
+
+    des_config = DESConfig()
+
+    try:
+        _run_housekeeping(des_config)
+    except Exception:
+        pass
+
+    try:
+        service = _build_update_check_service(des_config)
         result = service.check_for_updates()
 
         from des.application.update_check_service import UpdateStatus
@@ -63,7 +93,7 @@ def handle_session_start() -> int:
             )
             print(json.dumps({"additionalContext": message}))
 
-        return 0
-
     except Exception:
-        return 0
+        pass
+
+    return 0

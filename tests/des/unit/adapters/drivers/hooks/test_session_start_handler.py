@@ -1,7 +1,8 @@
 """Unit tests for SessionStart hook handler.
 
 Tests all behaviors via handle_session_start() driving port.
-Test budget: 5 behaviors x 2 = 10 unit tests max.
+Test budget: 8 behaviors x 2 = 16 unit tests max.
+(3 new behaviors added for housekeeping integration: B6, B7, B8)
 """
 
 import io
@@ -248,3 +249,94 @@ class TestSessionStartHandlerOutputFormat:
         payload = json.loads(out)
         expected = "nWave update available: 1.0.0 \u2192 2.0.0. Changes: "
         assert payload["additionalContext"] == expected
+
+
+class TestSessionStartHandlerHousekeepingIntegration:
+    """B6-B8: Housekeeping is called at session start with independent failure isolation."""
+
+    def test_handle_session_start_calls_run_housekeeping(self):
+        """B6: handle_session_start() invokes _run_housekeeping exactly once."""
+        from des.adapters.drivers.hooks.session_start_handler import (
+            handle_session_start,
+        )
+
+        result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
+
+        with (
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service"
+            ) as mock_factory,
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._run_housekeeping"
+            ) as mock_hk,
+            patch("sys.stdin", io.StringIO("{}")),
+        ):
+            mock_svc = MagicMock()
+            mock_svc.check_for_updates.return_value = result
+            mock_factory.return_value = mock_svc
+
+            exit_code = handle_session_start()
+
+        assert exit_code == 0
+        mock_hk.assert_called_once()
+
+    def test_housekeeping_failure_does_not_prevent_update_check(self):
+        """B7: Exception in _run_housekeeping does not skip update check."""
+        from des.adapters.drivers.hooks.session_start_handler import (
+            handle_session_start,
+        )
+
+        result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
+
+        with (
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service"
+            ) as mock_factory,
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._run_housekeeping",
+                side_effect=RuntimeError("housekeeping failed"),
+            ),
+            patch("sys.stdin", io.StringIO("{}")),
+        ):
+            mock_svc = MagicMock()
+            mock_svc.check_for_updates.return_value = result
+            mock_factory.return_value = mock_svc
+
+            exit_code = handle_session_start()
+
+        assert exit_code == 0
+        mock_svc.check_for_updates.assert_called_once()
+
+    def test_housekeeping_runs_before_update_check(self):
+        """B8: _run_housekeeping is called before update check service is built."""
+        from des.adapters.drivers.hooks.session_start_handler import (
+            handle_session_start,
+        )
+
+        call_order = []
+
+        result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
+
+        def record_housekeeping(*args, **kwargs):
+            call_order.append("housekeeping")
+
+        def record_update_check_build(des_config):
+            call_order.append("update_check")
+            mock_svc = MagicMock()
+            mock_svc.check_for_updates.return_value = result
+            return mock_svc
+
+        with (
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service",
+                side_effect=record_update_check_build,
+            ),
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._run_housekeeping",
+                side_effect=record_housekeeping,
+            ),
+            patch("sys.stdin", io.StringIO("{}")),
+        ):
+            handle_session_start()
+
+        assert call_order == ["housekeeping", "update_check"]

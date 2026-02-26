@@ -857,9 +857,6 @@ class TestHousekeepingOrchestration:
             f"Total housekeeping took {elapsed_ms:.1f}ms (budget: 500ms)"
         )
 
-    @pytest.mark.skip(
-        reason="Step 6: SessionStart handler integration not yet implemented"
-    )
     def test_housekeeping_runs_alongside_update_check_without_interference(
         self, tmp_path, capsys
     ):

@@ -126,6 +126,26 @@ events:
   s: EXECUTED
   sid: 02-03
   t: '2026-02-26T10:15:44Z'
+- d: PASS
+  p: PREPARE
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-26T10:32:44Z'
+- d: PASS
+  p: RED_ACCEPTANCE
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-26T10:33:16Z'
+- d: PASS
+  p: RED_UNIT
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-26T10:34:14Z'
+- d: PASS
+  p: GREEN
+  s: EXECUTED
+  sid: 03-01
+  t: '2026-02-26T10:41:39Z'
 project_id: des-housekeeping
 schema_version: '3.0'
 total_steps: 6
