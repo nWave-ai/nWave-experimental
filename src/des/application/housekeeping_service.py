@@ -24,6 +24,14 @@ if TYPE_CHECKING:
     from des.ports.driven_ports.time_provider_port import TimeProvider
 
 
+# Audit log filename slicing constants (audit-YYYY-MM-DD.log)
+_AUDIT_PREFIX_LEN: int = len("audit-")  # 6
+_AUDIT_SUFFIX_LEN: int = len(".log")  # 4
+
+# Number of tail lines retained after skill log rotation
+_SKILL_LOG_TAIL_LINES: int = 1000
+
+
 @dataclasses.dataclass(frozen=True)
 class HousekeepingConfig:
     """
@@ -86,6 +94,15 @@ class HousekeepingService:
             pass
 
     @staticmethod
+    def _resolve_audit_dir(config: HousekeepingConfig) -> Path:
+        """Return the audit log directory path from config or path resolver."""
+        if config.audit_log_dir is not None:
+            return config.audit_log_dir
+        from des.domain.audit_log_path_resolver import AuditLogPathResolver
+
+        return AuditLogPathResolver(cwd=config.nwave_dir.parent).resolve()
+
+    @staticmethod
     def _clean_audit_logs(
         config: HousekeepingConfig,
         time_provider: TimeProvider,
@@ -99,14 +116,7 @@ class HousekeepingService:
         Cutoff is exclusive: cutoff = today - retention_days.
         Files with file_date < cutoff are deleted; file_date == cutoff is kept.
         """
-        audit_dir: Path
-        if config.audit_log_dir is not None:
-            audit_dir = config.audit_log_dir
-        else:
-            from des.domain.audit_log_path_resolver import AuditLogPathResolver
-
-            audit_dir = AuditLogPathResolver(cwd=config.nwave_dir.parent).resolve()
-
+        audit_dir = HousekeepingService._resolve_audit_dir(config)
         if not audit_dir.exists():
             return
 
@@ -115,22 +125,20 @@ class HousekeepingService:
 
         for log_file in audit_dir.iterdir():
             name = log_file.name
-            # Only process files matching audit-YYYY-MM-DD.log pattern
             if not (name.startswith("audit-") and name.endswith(".log")):
                 continue
-            date_str = name[6:-4]  # strip "audit-" and ".log"
+            date_str = name[_AUDIT_PREFIX_LEN:-_AUDIT_SUFFIX_LEN]
             try:
                 file_date = datetime.date.fromisoformat(date_str)
             except ValueError:
-                continue  # skip files with non-date names
-            # Never delete today's log; delete files strictly before cutoff
+                continue
             if file_date == today:
                 continue
             if file_date < cutoff:
                 try:
                     log_file.unlink()
                 except OSError:
-                    pass  # skip files we can't delete (permission error etc.)
+                    pass
 
     @staticmethod
     def _clean_signal_files(
@@ -170,8 +178,8 @@ class HousekeepingService:
 
         Checks file size as a first gate. If the file is at or below
         skill_log_max_bytes, no action is taken. If over threshold, the file
-        is rewritten with only the last 1000 lines, preserving the most recent
-        entries. Silently skips on any OSError (locked or read-only file).
+        is rewritten with only the last 1000 lines (_SKILL_LOG_TAIL_LINES), preserving
+        the most recent entries. Silently skips on any OSError (locked or read-only file).
         """
         skill_log = config.nwave_dir / "skill-loading-log.jsonl"
         if not skill_log.exists():
@@ -181,10 +189,9 @@ class HousekeepingService:
         if size <= config.skill_log_max_bytes:
             return  # under threshold, no action needed
 
-        # Read last 1000 lines and rewrite file
         try:
             lines = skill_log.read_text(encoding="utf-8").splitlines()
-            tail_lines = lines[-1000:]
+            tail_lines = lines[-_SKILL_LOG_TAIL_LINES:]
             skill_log.write_text("\n".join(tail_lines) + "\n", encoding="utf-8")
         except OSError:
             pass  # silently skip if file is locked or unwritable
