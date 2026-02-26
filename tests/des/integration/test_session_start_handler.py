@@ -83,7 +83,7 @@ def _invoke_handler(
     mock_stdin = MagicMock()
     mock_stdin.read.return_value = "{}"
 
-    def _build_service_for_test():
+    def _build_service_for_test(_des_config=None):
         des_config = DESConfig(config_path=config_file)
         return UpdateCheckService(
             des_config=des_config,
