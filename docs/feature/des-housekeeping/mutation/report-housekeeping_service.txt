@@ -1,0 +1,528 @@
+[job-id] f714d18548c64c33800386f1cf38a60e
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_Sub 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 2b37f1b48cf64b1396eac07a269e2fc0
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_Mul 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] b1f73b05c04e4b37a25ea4bcd9a59a03
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_Div 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 6c9255bfcb9f4c5a8d552a2c467365fd
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_FloorDiv 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] d47770355f2540db9cc582591e4999c7
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_Mod 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] f5ad7b4c2e454bdcb129bb6c2ba41cf8
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_Pow 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] cd45438bc72a48699043a1bc4eebff83
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_RShift 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] c47050f38aa1465ba886e450e697630c
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_LShift 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 1c8ec88e06b149fda114d1969e78b7cb
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_BitOr 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] f23dc261c5d646f2b67878c7c6559f90
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_BitAnd 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] c3edb8120b494086adf7aabd55811fb0
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Add_BitXor 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 7639e0c64a164feabd6e3576a26bda2d
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_Add 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 62d40baa3c144612b2e26b0f6ea60610
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_Add 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 046a6adbf0b74bf6bbd545abc6bb3e32
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_Mul 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 81f56b1691e642e6b922ffe9ce4a3b24
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_Mul 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 37a3666e0faf4898a61d7b876d179ced
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_Div 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] dab380ecfca240d98076a03f8f285408
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_Div 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] cea0597fe1ed4b839ad72740cb7be74a
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_FloorDiv 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 851ebb8baa2442409be16afde86edc1f
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_FloorDiv 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] a956689813e8442ba557ad8b83ef1748
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_Mod 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] f4e7618b355b475f9a7f69575593b246
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_Mod 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 39c21937dc914f38a5934a6a1bd581ba
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_Pow 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] dae99f57b4234d2d90d0eb834c4fd84a
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_Pow 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] c47c736707da4a278058f8fca9291ab9
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_RShift 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] f7f185cd81c64b13b6d251f8dc49694b
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_RShift 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 60e2afba843f47609085960a267c8c4c
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_LShift 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] a21eecb0f493451fa9c6d19d8959e06a
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_LShift 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] f10e1545d8b74b25b75c32f6cbcfa227
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_BitOr 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 2bac845d498a42dba1a7b7299e00bb57
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_BitOr 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 936c2133fd8143ffa78d0b03d706c891
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_BitAnd 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 00db7089f9b047168a31b42974dee2d9
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_BitAnd 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] e707492ffe4f4012864c7c2d35f80822
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_BitXor 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 6984b85206394a8cb9dfdef04f8c9c0c
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Sub_BitXor 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 31a76d2027b4451ebe699030b96a3d61
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_Add 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] ca702058cf954951b15a5789524327ee
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_Sub 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 1cd3a5569e9f4d16bd0f21747211b1dc
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_Div 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] deebbc4803cd4ee2a77a2a7728dc656c
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_FloorDiv 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 3beae087d11e46e6a2725ccdeea01a83
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_Mod 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 8f2e1a83231b401191f4fcbfe1d9ea9e
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_Pow 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 46ff0f4262404aab88b5ccd8a010ad81
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_RShift 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 3c7469c22c684d4e80612ba396c8b905
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_LShift 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] cf6de790e08347fcb170bb8882003578
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_BitOr 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] bfac0fe74eba4ee9a4870bcd217d5f87
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_BitAnd 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] e42ca8bf647f4137bb200fffb2fb80dc
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Mul_BitXor 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 2f268c5d2edb4877afe48d426c71019c
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Add 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 2a9c1e0e3fc749c5ad4fdc4c37a3a540
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Add 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 528ab4993c0044b881a72fe94db9dfb6
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Add 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 4d79379dad6b479784a898e18613e764
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Add 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 1e06bb628e1847c1923bd9623c3a25cf
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Sub 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 525589e855b24bc690404776dc717ecd
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Sub 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 34665c035de5475583cc519a9802e835
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Sub 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] ccf2238943f0456f829139fa8f4e9412
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Sub 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 00c89b0431884356be4809b7c74aeab8
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Mul 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 490699d40f88415a82cdc871befa2386
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Mul 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 57a6c50949f44d5ab668eb742e1659b2
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Mul 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 2528b96b301548aca9f0d074aae1517c
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Mul 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 67de162dde4147ce8a586c56a6d136c2
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_FloorDiv 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 4fb549ff44864a66be5d358446d71be6
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_FloorDiv 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 07b751624fb94e209bb312aae1f7fb2b
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_FloorDiv 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 9074bd0f80694359a2491ea4acb09477
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_FloorDiv 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 8eb5a44119914a988f85c8c352310537
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Mod 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 3d122afd61034b319817a1381e54b728
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Mod 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 48e857512bb243d9b52733db64692d9f
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Mod 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 1ce24b53cbfd492181bfc1b85b38953a
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Mod 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 7d79bfc373234e43ade4f939738fac23
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Pow 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 39e3c145921c47f392618ab138267201
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Pow 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 66c558432b654dd5b0499c84a9feba2b
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Pow 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 972834c5666d4b7096b5bf2cd11c2663
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_Pow 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 09de3b2bef234e6a9413df60a8e6441e
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_RShift 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 1b4f6b9b6fd84f9faf5baa64bad3e8e8
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_RShift 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] d5f32aa45a9045189220bbfbdf474284
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_RShift 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 1e1e36436401458d92331d0b211bb062
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_RShift 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 89283e75fef44369aef3d547de535c9c
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_LShift 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] b0e3b0dcff0b4053ab2cd759809a3dc1
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_LShift 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 952f3018d16b4d9b819cbb5199d98aab
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_LShift 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 0977036e4d0a4d068160c786afed09cb
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_LShift 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 2f1e21e62eeb499a81b8cc697879df3c
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitOr 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 80265cb6b03f4e949cb318ec89840591
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitOr 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] b3280497c44440ffb30b1a482eaa56be
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitOr 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] f21c52c041a8421485243810e42d970a
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitOr 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 7253e931cada49ffa57bad1c4d5f6b1a
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitAnd 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 2ed4bee721ba431191f7e281e445ced4
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitAnd 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 7ad35ba1d51c4ea1ab2af4f9becef583
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitAnd 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 41591c1b714a40649d14fd68fbc757ff
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitAnd 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 00bde4706f70431bbd4cadca176caec9
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitXor 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] d3a135539c9e417397fbac1f72591d59
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitXor 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 50b9d6af57304d55abcac7705c25829a
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitXor 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] d395a0f058154a70b2557d292065de84
+src/des/application/housekeeping_service.py core/ReplaceBinaryOperator_Div_BitXor 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 7720fd2fb6b34404b04733fa577faaf7
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Eq_NotEq 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 3f06ab162f0741e28b05026c590c1abb
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Eq_Lt 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 557b2f40de6d498caec53416a321696f
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Eq_LtE 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 0ba71a49e52349afaaeb810f86ba47ae
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Eq_Gt 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] b91f727603404bd9add222ffdf4b3444
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Eq_GtE 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 69a1505b58784a22a193c2f922b631eb
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Eq_Is 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] c9f50d167a054aec91891220640a7f84
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Eq_IsNot 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] b47439da75024d0d911f79cb7ac3a273
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_Eq 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] ae1263e25ec744f7b750bac5e8fe40a2
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_Eq 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 36c89a85d1c64cbe82b50992463e279d
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_NotEq 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 8ada1f53cbf04cea8f46ce4c2a7d1e6e
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_NotEq 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] a77c4e36be5b4148a6bf5b1e20f04df8
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_LtE 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] ec18c4f6828d4db3bafc39717e160d7a
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_LtE 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] d47af26a215849eda412777190c3b7f7
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_Gt 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 5bf9adc252df47b28a2800918f3ba023
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_Gt 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 45775ba42285495692c764ed63539c00
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_GtE 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] babb36c4760d4253a05b063c8527c952
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_GtE 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 6b3c7a759cbf491da50467d78afd9640
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_Is 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 86ec40369bc64cf88dc1f264825e77d4
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_Is 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 324a9aa659054ce392cf0df722691275
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_IsNot 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 212244eac31f4ab891ec27a12dfe7361
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_Lt_IsNot 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 2a2fc933bc2f49d3899ea07f35d753d9
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_LtE_Eq 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 5ff832e36e3c4715a6f42591474b5e1e
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_LtE_NotEq 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 0242f5cd6689402f8d32c597d4f7a005
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_LtE_Lt 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 942d1991470643feb5541fd370fabfd2
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_LtE_Gt 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 0235b8e9f60647beaa7143cb9ef7dcd0
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_LtE_GtE 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] d8a378c006874b8abaeeed4abddb9fc6
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_LtE_Is 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 9202ff96322e4694aedc3b2ce6701d3d
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_LtE_IsNot 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 3b8d1973295541ccbc03610ae953f3fe
+src/des/application/housekeeping_service.py core/ReplaceComparisonOperator_IsNot_Is 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 24cfc131117041cd87139cf3732e79e9
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_USub_UAdd 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] ff5805401656468b9b85ea24f295dcf4
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_USub_UAdd 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 2127afa3f7134698957c91c76cfe6b18
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_USub_Invert 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 38e2ccc70d4a4a9a835cf927e4155010
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_USub_Invert 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 99bf38cd94064c94baff28cb0f6be385
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_USub_Not 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 93969a61e3a249c5a8049d1866fa80ac
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_USub_Not 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] b80b877ecd73408d9f2bb8c7e9636ee7
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_Delete_USub 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 0ff2dd4039324e12a70f9e7c81edc2c4
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_Delete_USub 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 4425c2aafd29482dbc31a469e77feed8
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_Delete_Not 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 43decd722ba64e749f10748f4268764c
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_Delete_Not 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] adea0c6db83b458ba527ce887c6c6c51
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_Delete_Not 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] b002464df4a44cce9fdca6001e8264f5
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_Delete_Not 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] fc31d521ce25493798e1f48ad8a1ed9e
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_Delete_Not 4
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] b84754f4acc445efa12fce269c1f29d2
+src/des/application/housekeeping_service.py core/ReplaceUnaryOperator_Delete_Not 5
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 7c99bfb4481143948411def55cdf0223
+src/des/application/housekeeping_service.py core/AddNot 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] e71941ebcec040199dff97c654ba7dd0
+src/des/application/housekeeping_service.py core/AddNot 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 6ec05a30e1044f2db9e1582ef1b8dbe0
+src/des/application/housekeeping_service.py core/AddNot 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 4d182c5dffc0440ba06d1a37b308a23a
+src/des/application/housekeeping_service.py core/AddNot 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 5c47bdea237c43b9935e00c4ecf4e10f
+src/des/application/housekeeping_service.py core/AddNot 4
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] dd2308ffefc847e8bfe8564f5d6b5d01
+src/des/application/housekeeping_service.py core/AddNot 5
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] dec745b0cbed4212925054c4280284ba
+src/des/application/housekeeping_service.py core/AddNot 6
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 6794a378f0c54b41aed33072f2e11933
+src/des/application/housekeeping_service.py core/AddNot 7
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 4cd779ee3c6b43e18f755f5d7b14b514
+src/des/application/housekeeping_service.py core/AddNot 8
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] e39d73101e7440b9a88f365049a09953
+src/des/application/housekeeping_service.py core/AddNot 9
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 47b9c8a9c2924f3aa124f8648893896a
+src/des/application/housekeeping_service.py core/AddNot 10
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 1ab251be84234fc6bf09441afc0c62af
+src/des/application/housekeeping_service.py core/AddNot 11
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] ca673ba026fe4be5b1ec8de061e4874f
+src/des/application/housekeeping_service.py core/AddNot 12
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 7a74ba8c28bf45469fa5c2363b9c3d6b
+src/des/application/housekeeping_service.py core/ReplaceTrueWithFalse 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 1898df97f504441f93a3bff563fd5c36
+src/des/application/housekeeping_service.py core/ReplaceTrueWithFalse 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] e32db8834f0c40f89dae857187f3d06d
+src/des/application/housekeeping_service.py core/ReplaceAndWithOr 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] e9f1c0a31f11459084e85a8a091f6f56
+src/des/application/housekeeping_service.py core/ReplaceContinueWithBreak 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 22456c4dd58b411e93410f5991a36bb8
+src/des/application/housekeeping_service.py core/ReplaceContinueWithBreak 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] bb1a49ff21044cc1a35805404b2ccde9
+src/des/application/housekeeping_service.py core/ReplaceContinueWithBreak 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 8a7f96acbf974b1082c790a0448cad94
+src/des/application/housekeeping_service.py core/ExceptionReplacer 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 8f1b56ff429c4cd8858e8ede1f0fce6a
+src/des/application/housekeeping_service.py core/ExceptionReplacer 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 344078a1916d46998b161fa49d7ea6a8
+src/des/application/housekeeping_service.py core/ExceptionReplacer 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] cf37889938a443859b6161aa2d55c090
+src/des/application/housekeeping_service.py core/ExceptionReplacer 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] c490a16ac127427cb7beee1718815829
+src/des/application/housekeeping_service.py core/ExceptionReplacer 4
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 820855f604694bdf8a203285572fd7ad
+src/des/application/housekeeping_service.py core/ExceptionReplacer 5
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 41ddd0b0899f488791c1604051c4a678
+src/des/application/housekeeping_service.py core/ExceptionReplacer 6
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 55d95802fa3d4ac5a8242d0c0bc6ddc8
+src/des/application/housekeeping_service.py core/NumberReplacer 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 3921026eeacc4bf69970257c63418713
+src/des/application/housekeeping_service.py core/NumberReplacer 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 27dfb2b4341042559791957ff90775e4
+src/des/application/housekeeping_service.py core/NumberReplacer 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 86cb3d6355574d24827917cbd8fa4e81
+src/des/application/housekeeping_service.py core/NumberReplacer 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] bc6687a32206481bab5cd908c5e75295
+src/des/application/housekeeping_service.py core/NumberReplacer 4
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 640b30c09c494c53a6a61011a61e69e7
+src/des/application/housekeeping_service.py core/NumberReplacer 5
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 782aa89501e04d928c8ae1eb4a45a360
+src/des/application/housekeeping_service.py core/NumberReplacer 6
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 00b038e947f247e485e903a98890b6c6
+src/des/application/housekeeping_service.py core/NumberReplacer 7
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] d0912c4d323d4e45a99a398c371020ff
+src/des/application/housekeeping_service.py core/NumberReplacer 8
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 4f30e49c905c4d4dba59603ada921574
+src/des/application/housekeeping_service.py core/NumberReplacer 9
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] a98726b5a5464ec383ca82d330749fe4
+src/des/application/housekeeping_service.py core/RemoveDecorator 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] e0d53261fe5b4ea19fedd7504e0a4800
+src/des/application/housekeeping_service.py core/RemoveDecorator 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 6614929f4b2d4a7bb534e89b88c29507
+src/des/application/housekeeping_service.py core/RemoveDecorator 2
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] fcd01bd9bdf543ae8ddade16ac4361bb
+src/des/application/housekeeping_service.py core/RemoveDecorator 3
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] e21618c9b79c4d73bacbf3efb90b568d
+src/des/application/housekeeping_service.py core/RemoveDecorator 4
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] d41980ccbaaf4937b0fc680b81622097
+src/des/application/housekeeping_service.py core/RemoveDecorator 5
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.SURVIVED
+[job-id] 6b06b9363c3d437696802b65a58d6560
+src/des/application/housekeeping_service.py core/ZeroIterationForLoop 0
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+[job-id] 098ff30125e54ccb92c7335c1afafedc
+src/des/application/housekeeping_service.py core/ZeroIterationForLoop 1
+worker outcome: WorkerOutcome.NORMAL, test outcome: TestOutcome.KILLED
+total jobs: 175
+complete: 175 (100.00%)
+surviving mutants: 23 (13.14%)

@@ -1,0 +1,145 @@
+roadmap:
+  project_id: des-housekeeping
+  created_at: '2026-02-26T00:00:00Z'
+  total_steps: 6
+  phases: 3
+phases:
+- id: '01'
+  name: Foundation — config and service shell
+  steps:
+  - id: 01-01
+    name: DESConfig Extension + HousekeepingConfig Value Object
+    description: >
+      Extend DESConfig with _housekeeping() sub-config following the established
+      _rigor() / _update_check() pattern. Define HousekeepingConfig frozen dataclass
+      with all fields and defaults.
+    criteria:
+      - DESConfig.housekeeping_enabled returns True by default.
+      - DESConfig.housekeeping_audit_retention_days returns 7 by default.
+      - DESConfig.housekeeping_signal_staleness_hours returns 4 by default.
+      - DESConfig.housekeeping_skill_log_max_bytes returns 1048576 by default.
+      - DESConfig reads custom values from 'housekeeping' key in des-config.json.
+      - HousekeepingConfig constructible with zero arguments (all defaults).
+      - HousekeepingConfig is a frozen dataclass (immutable).
+    files:
+      - src/des/adapters/driven/config/des_config.py
+    tests:
+      - tests/des/unit/adapters/driven/config/test_des_config.py
+
+  - id: 01-02
+    name: HousekeepingService Orchestration Shell
+    description: >
+      Create HousekeepingService with run_housekeeping() that calls 3 stub task
+      methods with per-task fail-isolation. Each task is a stub (pass / no-op).
+      Orchestration shell validates: disabled config skips all, missing .nwave is
+      no-op, individual task exception does not prevent other tasks.
+    criteria:
+      - HousekeepingService.run_housekeeping() callable with HousekeepingConfig and TimeProvider.
+      - disabled config (enabled=False) skips all file operations.
+      - one task exception does not prevent other tasks from running.
+      - missing .nwave/ directory does not cause errors.
+      - no console output produced.
+    files:
+      - src/des/application/housekeeping_service.py
+    tests:
+      - tests/des/unit/application/test_housekeeping_service.py
+
+- id: '02'
+  name: Housekeeping tasks — audit logs, signal files, skill log
+  steps:
+  - id: 02-01
+    name: Audit Log Retention Task
+    description: >
+      Implement _clean_audit_logs() within HousekeepingService. Uses filename
+      date parsing (audit-YYYY-MM-DD.log), not mtime. Retention cutoff = today -
+      retention_days. Today's log is NEVER deleted. Missing directory is no-op.
+      Individual file deletion failures (PermissionError) are skipped.
+    criteria:
+      - Audit logs older than retention period are removed.
+      - Today's log is preserved regardless of retention period (even retention=0).
+      - Missing .nwave/des/logs/ directory does not cause errors.
+      - Individual file deletion failures are skipped (fail-open per file).
+      - Retention period configurable via HousekeepingConfig.audit_retention_days.
+      - Uses AuditLogPathResolver for log directory resolution.
+    files:
+      - src/des/application/housekeeping_service.py
+    tests:
+      - tests/des/unit/application/test_housekeeping_service.py
+
+  - id: 02-02
+    name: Signal File Cleanup Task
+    description: >
+      Implement _clean_signal_files() task. Glob pattern: des-task-active* (catches
+      namespaced and legacy singleton). Also checks deliver-session.json. Staleness
+      via stat().st_mtime compared to TimeProvider.now_utc(). Files younger than
+      staleness threshold are preserved (concurrent session safety). Missing des/ dir
+      is no-op.
+    criteria:
+      - Signal files (des-task-active*) older than staleness threshold are removed.
+      - Signal files younger than threshold are preserved (concurrent session safety).
+      - deliver-session.json older than threshold is removed.
+      - deliver-session.json younger than threshold is preserved.
+      - Missing .nwave/des/ directory does not cause errors.
+      - Staleness threshold configurable via HousekeepingConfig.signal_staleness_hours.
+    files:
+      - src/des/application/housekeeping_service.py
+    tests:
+      - tests/des/unit/application/test_housekeeping_service.py
+
+  - id: 02-03
+    name: Skill Tracking Log Rotation Task
+    description: >
+      Implement _rotate_skill_log() task. Size check as first gate.
+      If under threshold: no-op. If over: read last 1000 lines, rewrite file.
+      JSONL format: each line is independent. Missing file is no-op. Write failure
+      is silently skipped.
+    criteria:
+      - Skill log exceeding threshold truncated to last 1000 lines.
+      - Most recent entries preserved after truncation.
+      - Skill log below threshold is not modified.
+      - Missing skill-loading-log.jsonl does not cause errors.
+      - Write failure (locked/read-only file) silently skipped.
+      - Threshold configurable via HousekeepingConfig.skill_log_max_bytes.
+    files:
+      - src/des/application/housekeeping_service.py
+    tests:
+      - tests/des/unit/application/test_housekeeping_service.py
+
+- id: '03'
+  name: Handler integration
+  steps:
+  - id: 03-01
+    name: SessionStart Handler Integration
+    description: >
+      Wire HousekeepingService into session_start_handler.py. Add _run_housekeeping()
+      function that builds HousekeepingConfig from DESConfig and calls the service.
+      Runs before update check. DESConfig instance shared. Independent try/except
+      at handler level.
+    criteria:
+      - Housekeeping runs at session start via handle_session_start().
+      - Housekeeping failure does not affect update check (independent try/except).
+      - Update check failure does not affect housekeeping.
+      - Session exit code is always 0.
+      - Housekeeping runs before update check.
+      - DESConfig instance shared between housekeeping and update check.
+    files:
+      - src/des/adapters/drivers/hooks/session_start_handler.py
+    tests:
+      - tests/des/unit/adapters/drivers/hooks/test_session_start_handler.py
+
+implementation_scope:
+  source_directories:
+    - src/des/application/
+    - src/des/adapters/driven/config/
+    - src/des/adapters/drivers/hooks/
+  test_directories:
+    - tests/des/unit/application/
+    - tests/des/unit/adapters/driven/config/
+    - tests/des/unit/adapters/drivers/hooks/
+    - tests/des/acceptance/
+  excluded_patterns:
+    - __init__.py
+    - __pycache__/**
+validation:
+  status: approved
+  notes: "6-step Outside-In TDD build order derived from architecture-design.md"
