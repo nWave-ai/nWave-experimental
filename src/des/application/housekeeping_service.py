@@ -15,6 +15,7 @@ Task stubs are implemented progressively:
 from __future__ import annotations
 
 import dataclasses
+import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -91,9 +92,45 @@ class HousekeepingService:
     ) -> None:
         """Remove audit log files beyond the retention period.
 
-        Stub — implemented in step 02-01.
+        Scans the audit log directory for files matching audit-YYYY-MM-DD.log.
+        Files strictly older than the cutoff date are deleted. Today's log and
+        files at or after the cutoff are always preserved.
+
+        Cutoff is exclusive: cutoff = today - retention_days.
+        Files with file_date < cutoff are deleted; file_date == cutoff is kept.
         """
-        pass
+        audit_dir: Path
+        if config.audit_log_dir is not None:
+            audit_dir = config.audit_log_dir
+        else:
+            from des.domain.audit_log_path_resolver import AuditLogPathResolver
+
+            audit_dir = AuditLogPathResolver(cwd=config.nwave_dir.parent).resolve()
+
+        if not audit_dir.exists():
+            return
+
+        today = time_provider.now_utc().date()
+        cutoff = today - datetime.timedelta(days=config.audit_retention_days)
+
+        for log_file in audit_dir.iterdir():
+            name = log_file.name
+            # Only process files matching audit-YYYY-MM-DD.log pattern
+            if not (name.startswith("audit-") and name.endswith(".log")):
+                continue
+            date_str = name[6:-4]  # strip "audit-" and ".log"
+            try:
+                file_date = datetime.date.fromisoformat(date_str)
+            except ValueError:
+                continue  # skip files with non-date names
+            # Never delete today's log; delete files strictly before cutoff
+            if file_date == today:
+                continue
+            if file_date < cutoff:
+                try:
+                    log_file.unlink()
+                except OSError:
+                    pass  # skip files we can't delete (permission error etc.)
 
     @staticmethod
     def _clean_signal_files(
@@ -102,14 +139,52 @@ class HousekeepingService:
     ) -> None:
         """Remove stale signal files left by crashed sessions.
 
-        Stub — implemented in step 02-02.
+        Scans .nwave/des/ for des-task-active* files and deliver-session.json.
+        Files older than signal_staleness_hours are deleted. Recent files are
+        preserved to protect concurrent active sessions.
         """
-        pass
+        des_dir = config.nwave_dir / "des"
+        if not des_dir.exists():
+            return
+
+        now_ts = time_provider.now_utc().timestamp()
+        threshold_seconds = config.signal_staleness_hours * 3600
+        cutoff_ts = now_ts - threshold_seconds
+
+        candidates: list[Path] = list(des_dir.glob("des-task-active*"))
+        deliver_session = des_dir / "deliver-session.json"
+        if deliver_session.exists():
+            candidates.append(deliver_session)
+
+        for signal_file in candidates:
+            try:
+                mtime = signal_file.stat().st_mtime
+                if mtime < cutoff_ts:
+                    signal_file.unlink()
+            except OSError:
+                pass  # skip files we can't stat or delete
 
     @staticmethod
     def _rotate_skill_log(config: HousekeepingConfig) -> None:
         """Truncate oversized skill tracking log to the most recent entries.
 
-        Stub — implemented in step 02-03.
+        Checks file size as a first gate. If the file is at or below
+        skill_log_max_bytes, no action is taken. If over threshold, the file
+        is rewritten with only the last 1000 lines, preserving the most recent
+        entries. Silently skips on any OSError (locked or read-only file).
         """
-        pass
+        skill_log = config.nwave_dir / "skill-loading-log.jsonl"
+        if not skill_log.exists():
+            return
+
+        size = skill_log.stat().st_size
+        if size <= config.skill_log_max_bytes:
+            return  # under threshold, no action needed
+
+        # Read last 1000 lines and rewrite file
+        try:
+            lines = skill_log.read_text(encoding="utf-8").splitlines()
+            tail_lines = lines[-1000:]
+            skill_log.write_text("\n".join(tail_lines) + "\n", encoding="utf-8")
+        except OSError:
+            pass  # silently skip if file is locked or unwritable

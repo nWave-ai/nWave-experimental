@@ -81,7 +81,6 @@ def _create_des_config(nwave_dir: Path, config: dict) -> Path:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="Step 3: Audit log retention task not yet implemented")
 class TestAuditLogRetention:
     """US-HK-01: Housekeeping removes audit log files beyond the retention period."""
 
@@ -191,11 +190,20 @@ class TestAuditLogRetention:
 
     def test_permission_error_on_individual_log_file(self, tmp_path):
         """Given 15 audit log files older than 7 days
-        And one file has read-only permissions
+        And one file raises OSError when deletion is attempted
         When housekeeping attempts to remove old logs
-        Then the read-only file is skipped
+        Then the protected file is skipped
         And all other eligible files are successfully removed
-        And the session completes with no error."""
+        And the session completes with no error.
+
+        Note: On Linux, file read-only permissions (chmod) do not prevent
+        unlink() — directory write permission is what matters. We simulate
+        OSError via mock to test the error-handling path reliably across
+        all platforms.
+        """
+        from pathlib import Path as _Path
+        from unittest.mock import patch
+
         from des.application.housekeeping_service import (
             HousekeepingConfig,
             HousekeepingService,
@@ -216,27 +224,32 @@ class TestAuditLogRetention:
         # Create today's log (should never be deleted)
         _create_audit_log(logs_dir, today.strftime("%Y-%m-%d"))
 
-        # Make one old file read-only
-        readonly_file = old_files[5]
-        readonly_file.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+        # One old file will raise OSError when unlink is called
+        protected_file = old_files[5]
+        protected_name = protected_file.name
+
+        original_unlink = _Path.unlink
+
+        def selective_unlink(self_path: _Path, missing_ok: bool = False) -> None:
+            if self_path.name == protected_name:
+                raise PermissionError(f"[Errno 13] Permission denied: '{self_path}'")
+            original_unlink(self_path, missing_ok)
 
         config = HousekeepingConfig(nwave_dir=nwave_dir, audit_log_dir=logs_dir)
 
         from tests.des.acceptance.conftest_housekeeping import FixedTimeProvider
 
         # Should not raise despite permission error
-        HousekeepingService.run_housekeeping(config, FixedTimeProvider(today))
+        with patch.object(_Path, "unlink", selective_unlink):
+            HousekeepingService.run_housekeeping(config, FixedTimeProvider(today))
 
         remaining = sorted(f.name for f in logs_dir.iterdir())
-        # The read-only file should still exist (skipped)
-        assert readonly_file.name in remaining
+        # The protected file should still exist (skipped due to OSError)
+        assert protected_name in remaining
         # Today's log should still exist
         assert f"audit-{today.strftime('%Y-%m-%d')}.log" in remaining
         # All other old files should be removed (14 out of 15)
-        assert len(remaining) == 2  # readonly + today
-
-        # Cleanup: restore permissions so tmp_path cleanup works
-        readonly_file.chmod(stat.S_IRWXU)
+        assert len(remaining) == 2  # protected + today
 
     @pytest.mark.slow
     def test_audit_log_cleanup_completes_within_performance_budget(self, tmp_path):
@@ -305,7 +318,6 @@ class TestAuditLogRetention:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="Step 4: Signal file cleanup task not yet implemented")
 class TestSignalFileCleanup:
     """US-HK-02: Housekeeping removes stale signal files left by crashed sessions."""
 
@@ -487,7 +499,6 @@ class TestSignalFileCleanup:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="Step 5: Skill log rotation task not yet implemented")
 class TestSkillLogRotation:
     """US-HK-03: Housekeeping truncates oversized skill tracking logs."""
 
