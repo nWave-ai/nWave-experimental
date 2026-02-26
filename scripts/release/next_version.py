@@ -57,6 +57,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Current public version for nwave-ai stage",
     )
     parser.add_argument(
+        "--base-version",
+        default="",
+        help="Base version from Commitizen (e.g. 1.2.0). Overrides _bump_patch when non-empty.",
+    )
+    parser.add_argument(
         "--no-bump",
         action="store_true",
         help="Signal that no conventional commits require a bump",
@@ -136,12 +141,18 @@ def _highest_counter(tag_versions: list[Version], base: str, suffix_type: str) -
 
 
 def calculate_dev(
-    current_version: Version, existing_tags: list[Version], no_bump: bool
+    current_version: Version,
+    existing_tags: list[Version],
+    no_bump: bool,
+    base_version: str = "",
 ) -> None:
     if no_bump:
         _error_exit("No version bump needed.", code=1)
 
-    base = _bump_patch(current_version)
+    if base_version and base_version.strip():
+        base = base_version.strip()
+    else:
+        base = _bump_patch(current_version)
     highest = _highest_counter(existing_tags, base, "dev")
     next_dev = highest + 1
     version_str = f"{base}.dev{next_dev}"
@@ -200,7 +211,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.stage == "dev":
         current_v = _validate_version(args.current_version, "current-version")
-        calculate_dev(current_v, tag_versions, args.no_bump)
+        base_version = args.base_version.strip() if args.base_version else ""
+        if base_version:
+            _validate_version(base_version, "base-version")
+        calculate_dev(current_v, tag_versions, args.no_bump, base_version)
     elif args.stage == "rc":
         calculate_rc(args.current_version, tag_versions)
     elif args.stage == "stable":

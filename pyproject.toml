@@ -301,3 +301,7 @@ token = { env = "GH_TOKEN" }
 
 [tool.semantic_release.publish]
 upload_to_vcs_release = false
+
+[tool.commitizen]
+version_scheme = "pep440"
+tag_format = "v$version"
