@@ -5,9 +5,10 @@ the hardcoded _bump_patch fallback, enabling Commitizen-driven
 version bumps (minor, major) alongside the existing patch behavior.
 
 BDD scenario mapping:
-  - journey-dev-release.feature: Scenarios 1-5, 16-18
+  - journey-dev-release.feature: Scenarios 1-5, 16-18, 20-27
   - US-CZ-01: CZ-Driven Version Bump (Step 01)
   - US-CZ-03: Graceful Fallback (Step 01)
+  - US-CZ-04: Full Promotion Chain (Step 05)
 """
 
 import pytest
@@ -377,3 +378,236 @@ class TestMidCycleEscalation:
         rc_output = parse_output(rc_result)
         assert rc_output["version"] == "1.2.0rc1"
         assert rc_output["base_version"] == "1.2.0"
+
+
+class TestPromotionChainDevToRC:
+    """Full promotion chain validation: dev -> RC -> stable.
+
+    Tests discover_tag.py and next_version.py behavior through
+    the complete release promotion pipeline, including mid-cycle
+    escalation scenarios where multiple base versions coexist.
+
+    Maps to: US-CZ-04, Scenarios 20-27 (Roadmap Step 05).
+    """
+
+    @pytest.mark.parametrize(
+        "tag_list, expected_tag, expected_version",
+        [
+            pytest.param(
+                ",".join(
+                    [f"v1.1.26.dev{n}" for n in range(1, 9)]
+                    + ["v1.2.0.dev1", "v1.2.0.dev2"]
+                ),
+                "v1.2.0.dev2",
+                "1.2.0.dev2",
+                id="highest-dev-after-escalation",
+            ),
+            pytest.param(
+                ",".join(
+                    [f"v1.1.26.dev{n}" for n in range(1, 9)]
+                    + ["v1.2.0.dev1", "v1.2.0.dev2"]
+                ),
+                "v1.2.0.dev2",
+                "1.2.0.dev2",
+                id="orphaned-tags-ignored",
+            ),
+        ],
+    )
+    def test_discover_tag_picks_highest_dev_after_escalation(
+        self, tag_list, expected_tag, expected_version
+    ):
+        """Given dev tags from pre-escalation (v1.1.26.dev*) and
+        post-escalation (v1.2.0.dev*) bases coexist,
+        when discover_tag sorts by packaging.Version,
+        then the globally highest version wins (v1.2.0.dev2 > v1.1.26.dev8).
+
+        Maps to: Scenarios 20-21 (highest dev after escalation;
+        orphaned dev tags from pre-escalation base are not selected).
+        """
+        result = run_discover_tag("--pattern", "dev", "--tag-list", tag_list)
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        output = parse_discover_output(result)
+        assert output["found"] is True
+        assert output["tag"] == expected_tag
+        assert output["version"] == expected_version
+
+    def test_sequential_rc_counter_increments(self):
+        """Given a dev tag v1.2.0.dev3 is the current version
+        and an existing RC tag v1.2.0rc1 exists,
+        when calculating the next RC version,
+        then the counter increments to rc2.
+
+        Maps to: Scenario 22 "Sequential RC counter increments".
+        """
+        result = run_next_version(
+            "--stage",
+            "rc",
+            "--current-version",
+            "v1.2.0.dev3",
+            "--existing-tags",
+            "v1.2.0rc1",
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        output = parse_output(result)
+        assert output["version"] == "1.2.0rc2"
+        assert output["base_version"] == "1.2.0"
+
+    def test_rc_to_stable_strips_rc_suffix(self):
+        """Given RC tags v1.2.0rc1 and v1.2.0rc2 exist,
+        when discover_tag picks the highest RC tag,
+        then v1.2.0rc2 is selected.
+
+        When stable is calculated from v1.2.0rc2,
+        then the RC suffix is stripped producing 1.2.0.
+
+        Maps to: Scenario 23 "RC to stable promotion strips RC suffix".
+        """
+        # Sub-test A: discover_tag picks highest RC
+        discover_result = run_discover_tag(
+            "--pattern", "rc", "--tag-list", "v1.2.0rc1,v1.2.0rc2"
+        )
+        assert discover_result.returncode == 0, f"stderr: {discover_result.stderr}"
+        discover_output = parse_discover_output(discover_result)
+        assert discover_output["tag"] == "v1.2.0rc2"
+
+        # Sub-test B: stable strips RC suffix
+        stable_result = run_next_version(
+            "--stage",
+            "stable",
+            "--current-version",
+            "v1.2.0rc2",
+        )
+        assert stable_result.returncode == 0, f"stderr: {stable_result.stderr}"
+        stable_output = parse_output(stable_result)
+        assert stable_output["version"] == "1.2.0"
+        assert stable_output["tag"] == "v1.2.0"
+
+    def test_wrong_tag_promotion_self_heals_at_stable(self):
+        """Given RC tags from an accidental promotion (v1.1.26rc1) and
+        the correct promotion (v1.2.0rc1) coexist,
+        when discover_tag sorts by packaging.Version,
+        then v1.2.0rc1 is selected (higher version wins).
+
+        When stable is calculated from v1.2.0rc1,
+        then the version is 1.2.0 (self-healed).
+
+        Maps to: Scenario 24 "Accidental wrong-tag RC promotion self-heals".
+        """
+        # discover_tag picks the highest RC (ignores accidental v1.1.26rc1)
+        discover_result = run_discover_tag(
+            "--pattern", "rc", "--tag-list", "v1.1.26rc1,v1.2.0rc1"
+        )
+        assert discover_result.returncode == 0, f"stderr: {discover_result.stderr}"
+        discover_output = parse_discover_output(discover_result)
+        assert discover_output["tag"] == "v1.2.0rc1"
+
+        # stable from the correct RC
+        stable_result = run_next_version(
+            "--stage",
+            "stable",
+            "--current-version",
+            "v1.2.0rc1",
+        )
+        assert stable_result.returncode == 0, f"stderr: {stable_result.stderr}"
+        stable_output = parse_output(stable_result)
+        assert stable_output["version"] == "1.2.0"
+
+    def test_floor_not_consulted_at_rc_stage(self):
+        """Given a dev tag v1.2.0.dev2 as current version,
+        when calculating the RC version (without --version-floor),
+        then RC derives its base from the dev tag suffix (1.2.0),
+        not from any floor value.
+
+        Maps to: Scenario 25 "Floor override does not affect RC stage".
+        """
+        result = run_next_version(
+            "--stage",
+            "rc",
+            "--current-version",
+            "v1.2.0.dev2",
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        output = parse_output(result)
+        assert output["version"] == "1.2.0rc1"
+        assert output["base_version"] == "1.2.0"
+
+    def test_floor_not_consulted_at_stable_stage(self):
+        """Given an RC tag v1.2.0rc1 as current version,
+        when calculating the stable version,
+        then the RC suffix is stripped producing 1.2.0,
+        independent of any floor configuration.
+
+        Maps to: Scenario 26 "Floor override does not affect stable stage".
+        """
+        result = run_next_version(
+            "--stage",
+            "stable",
+            "--current-version",
+            "v1.2.0rc1",
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        output = parse_output(result)
+        assert output["version"] == "1.2.0"
+
+    def test_full_three_stage_promotion_chain(self):
+        """Walking skeleton: complete dev -> RC -> stable promotion chain.
+
+        Validates that version lineage is preserved across all three stages
+        using the same version family (1.2.0).
+
+        Stage 1: dev with --base-version '1.2.0' and existing v1.2.0.dev1
+                 produces v1.2.0.dev2
+        Stage 2: discover_tag picks v1.2.0.dev2, then RC produces 1.2.0rc1
+        Stage 3: discover_tag picks v1.2.0rc1, then stable produces 1.2.0
+
+        Maps to: Scenario 27 "Full three-stage promotion chain".
+        """
+        # --- Stage 1: Dev release ---
+        dev_result = run_next_version(
+            "--stage",
+            "dev",
+            "--current-version",
+            "1.1.25",
+            "--base-version",
+            "1.2.0",
+            "--existing-tags",
+            "v1.2.0.dev1",
+        )
+        assert dev_result.returncode == 0, f"Stage 1 stderr: {dev_result.stderr}"
+        dev_output = parse_output(dev_result)
+        assert dev_output["version"] == "1.2.0.dev2"
+
+        # --- Stage 2: Discover highest dev tag, then promote to RC ---
+        discover_dev = run_discover_tag(
+            "--pattern", "dev", "--tag-list", "v1.2.0.dev1,v1.2.0.dev2"
+        )
+        assert discover_dev.returncode == 0, f"Stage 2a stderr: {discover_dev.stderr}"
+        discover_dev_output = parse_discover_output(discover_dev)
+        assert discover_dev_output["tag"] == "v1.2.0.dev2"
+
+        rc_result = run_next_version(
+            "--stage",
+            "rc",
+            "--current-version",
+            "v1.2.0.dev2",
+        )
+        assert rc_result.returncode == 0, f"Stage 2b stderr: {rc_result.stderr}"
+        rc_output = parse_output(rc_result)
+        assert rc_output["version"] == "1.2.0rc1"
+
+        # --- Stage 3: Discover highest RC tag, then promote to stable ---
+        discover_rc = run_discover_tag("--pattern", "rc", "--tag-list", "v1.2.0rc1")
+        assert discover_rc.returncode == 0, f"Stage 3a stderr: {discover_rc.stderr}"
+        discover_rc_output = parse_discover_output(discover_rc)
+        assert discover_rc_output["tag"] == "v1.2.0rc1"
+
+        stable_result = run_next_version(
+            "--stage",
+            "stable",
+            "--current-version",
+            "v1.2.0rc1",
+        )
+        assert stable_result.returncode == 0, f"Stage 3b stderr: {stable_result.stderr}"
+        stable_output = parse_output(stable_result)
+        assert stable_output["version"] == "1.2.0"
+        assert stable_output["tag"] == "v1.2.0"
