@@ -259,7 +259,7 @@ jobs:
                   print(f'::error::  {e}')
               print()
               print('pyproject.toml is the single source of truth.')
-              print('python-semantic-release keeps framework-catalog.yaml in sync automatically.')
+              print('commitizen keeps framework-catalog.yaml in sync automatically (via version_files config).')
               print('If you see drift, align framework-catalog.yaml to pyproject.toml.')
               sys.exit(1)
 

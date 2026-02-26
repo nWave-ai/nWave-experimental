@@ -760,3 +760,48 @@ class TestLegacyWorkflowMigration:
         assert "CHANGELOG.md" in gitignore_content, (
             ".gitignore does not contain 'CHANGELOG.md'"
         )
+
+
+class TestCIDocumentationCleanup:
+    """CI and documentation reference cleanup: PSR to CZ.
+
+    Maps to: US-CZ-05, Scenario 33 (Roadmap Step 08).
+    These are file-content assertions verifying that CI workflows
+    and documentation no longer reference python-semantic-release.
+    """
+
+    def test_ci_yml_references_commitizen_not_psr(self):
+        """Given .github/workflows/ci.yml exists,
+        when reading the file content,
+        then 'python-semantic-release' is absent
+        and 'commitizen' is present in the version-drift context.
+
+        Maps to: Scenario 33 "CI and documentation references updated from PSR to CZ".
+        """
+        ci_path = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+        content = ci_path.read_text()
+
+        assert "python-semantic-release" not in content, (
+            "ci.yml still references 'python-semantic-release'"
+        )
+        assert "commitizen" in content, (
+            "ci.yml missing 'commitizen' reference in version-drift context"
+        )
+
+    def test_readme_references_commitizen_not_psr(self):
+        """Given .github/workflows/README.md exists,
+        when reading the file content,
+        then 'python-semantic-release' is absent,
+        'commitizen' is present,
+        and '--dry-run' is used instead of '--print'.
+
+        Maps to: Scenario 33 (README documentation portion).
+        """
+        readme_path = REPO_ROOT / ".github" / "workflows" / "README.md"
+        content = readme_path.read_text()
+
+        assert "python-semantic-release" not in content, (
+            "README.md still references 'python-semantic-release'"
+        )
+        assert "commitizen" in content, "README.md missing 'commitizen' reference"
+        assert "--dry-run" in content, "README.md missing '--dry-run' (CZ flag)"

@@ -170,10 +170,10 @@ Manual workflow. Triggered from the Actions UI or by pushing a `v*` tag.
 
 **version-bump** (dispatch only)
 
-Uses [python-semantic-release](https://python-semantic-release.readthedocs.io/) to calculate the next version from conventional commits, update `pyproject.toml` + `framework-catalog.yaml`, commit, tag, and push.
+Uses [commitizen](https://commitizen-tools.github.io/commitizen/) to calculate the next version from conventional commits, update `pyproject.toml` + `framework-catalog.yaml`, commit, tag, and push.
 
 - If `force_bump` is set: forces that bump level (patch/minor/major)
-- If `dry_run` is true: runs with `--print` to show what would happen, no changes pushed
+- If `dry_run` is true: runs with `--dry-run` to show what would happen, no changes pushed
 
 **build** (after version-bump or on tag push)
 
