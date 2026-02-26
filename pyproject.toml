@@ -77,7 +77,6 @@ dev = [
     "detect-secrets>=1.4.0",
     # Git & release
     "pre-commit>=3.6.0",
-    "python-semantic-release>=9.0.0",
     "commitizen>=3.12.0",
     "gitlint>=0.19.0",
     # Utilities
@@ -269,39 +268,17 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
-[tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
-version_variables = [
+[tool.commitizen]
+version = "1.1.26"
+version_scheme = "pep440"
+version_files = [
+    "nWave/VERSION",
     "nWave/framework-catalog.yaml:version",
 ]
-commit_parser = "conventional"
-tag_format = "v{version}"
-major_on_zero = false
-build_command = ""
-commit_author = "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
-commit_message = "chore(release): v{version} [skip ci]"
-
-[tool.semantic_release.branches.main]
-match = "master"
-prerelease = false
-
-[tool.semantic_release.changelog]
-exclude_commit_patterns = [
-    "^chore",
-    "^ci",
-    "^docs",
-    "^style",
-    "^test",
-    "^build",
-]
-
-[tool.semantic_release.remote]
-type = "github"
-token = { env = "GH_TOKEN" }
-
-[tool.semantic_release.publish]
-upload_to_vcs_release = false
-
-[tool.commitizen]
-version_scheme = "pep440"
 tag_format = "v$version"
+name = "cz_conventional_commits"
+commit_parser = "conventional"
+changelog_file = "CHANGELOG.md"
+major_version_zero = false
+bump_message = "chore(release): v$new_version [skip ci]"
+update_changelog_on_bump = true

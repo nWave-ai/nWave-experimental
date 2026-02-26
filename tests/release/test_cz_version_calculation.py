@@ -11,12 +11,24 @@ BDD scenario mapping:
   - US-CZ-04: Full Promotion Chain (Step 05)
 """
 
+import sys
+from pathlib import Path
+
 import pytest
 from packaging.version import Version
 
 from tests.release.test_discover_tag import parse_output as parse_discover_output
 from tests.release.test_discover_tag import run_discover_tag
 from tests.release.test_next_version import parse_output, run_next_version
+
+
+# tomllib is stdlib in 3.11+; tomli is the backport for 3.10
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestCZBaseVersionOverride:
@@ -611,3 +623,79 @@ class TestPromotionChainDevToRC:
         stable_output = parse_output(stable_result)
         assert stable_output["version"] == "1.2.0"
         assert stable_output["tag"] == "v1.2.0"
+
+
+class TestCZConfigExpansion:
+    """Config verification: CZ expanded, PSR removed, .releaserc deleted.
+
+    Maps to: US-CZ-05, Scenarios 27-30 (Roadmap Step 06).
+    These are file-content assertions, not subprocess tests.
+    """
+
+    def test_cz_config_includes_version_files(self):
+        """Given pyproject.toml at repo root,
+        when parsing [tool.commitizen],
+        then version_files includes nWave/VERSION and framework-catalog.yaml,
+        and changelog_file is set to CHANGELOG.md.
+
+        Maps to: Scenario 27 "CZ config includes version_files".
+        """
+        pyproject_path = REPO_ROOT / "pyproject.toml"
+        with pyproject_path.open("rb") as f:
+            toml = tomllib.load(f)
+        cz = toml["tool"]["commitizen"]
+
+        assert "nWave/VERSION" in cz["version_files"]
+        assert "nWave/framework-catalog.yaml:version" in cz["version_files"]
+        assert cz["changelog_file"] == "CHANGELOG.md"
+
+    def test_releaserc_file_removed(self):
+        """Given the repo root,
+        when checking for .releaserc,
+        then the file does not exist.
+
+        Maps to: Scenario 28 ".releaserc file removed".
+        """
+        releaserc_path = REPO_ROOT / ".releaserc"
+        assert not releaserc_path.exists(), (
+            f".releaserc still exists at {releaserc_path}"
+        )
+
+    def test_psr_config_sections_removed_from_pyproject(self):
+        """Given pyproject.toml at repo root,
+        when parsing [tool],
+        then 'semantic_release' key does not exist,
+        and 'commitizen' key still exists.
+
+        Maps to: Scenario 29 "PSR config sections removed".
+        """
+        pyproject_path = REPO_ROOT / "pyproject.toml"
+        with pyproject_path.open("rb") as f:
+            toml = tomllib.load(f)
+        tool = toml.get("tool", {})
+
+        assert "semantic_release" not in tool, (
+            "[tool.semantic_release] still present in pyproject.toml"
+        )
+        assert "commitizen" in tool, "[tool.commitizen] missing from pyproject.toml"
+
+    def test_psr_removed_from_dev_dependencies(self):
+        """Given pyproject.toml at repo root,
+        when reading [project.optional-dependencies].dev,
+        then no entry contains 'python-semantic-release',
+        and at least one entry contains 'commitizen'.
+
+        Maps to: Scenario 30 "PSR removed from dev dependencies".
+        """
+        pyproject_path = REPO_ROOT / "pyproject.toml"
+        with pyproject_path.open("rb") as f:
+            toml = tomllib.load(f)
+        dev_deps = toml["project"]["optional-dependencies"]["dev"]
+
+        psr_entries = [d for d in dev_deps if "python-semantic-release" in d]
+        assert psr_entries == [], (
+            f"python-semantic-release still in dev deps: {psr_entries}"
+        )
+
+        cz_entries = [d for d in dev_deps if "commitizen" in d]
+        assert len(cz_entries) >= 1, "commitizen not found in dev dependencies"
