@@ -107,6 +107,10 @@ class DESConfig:
         """Return update_check sub-config dict, defaulting to empty dict."""
         return self._config_data.get("update_check", {})
 
+    def _housekeeping(self) -> dict:
+        """Return housekeeping sub-config dict, defaulting to empty dict."""
+        return self._config_data.get("housekeeping", {})
+
     @property
     def rigor_profile(self) -> str:
         """Get rigor profile name. Default: 'standard'."""
@@ -173,6 +177,26 @@ class DESConfig:
     def update_check_skipped_versions(self) -> list[str]:
         """Get list of versions skipped by user. Default: empty list."""
         return self._update_check().get("skipped_versions", [])
+
+    @property
+    def housekeeping_enabled(self) -> bool:
+        """Check if housekeeping is enabled. Default: True."""
+        return self._housekeeping().get("enabled", True)
+
+    @property
+    def housekeeping_audit_retention_days(self) -> int:
+        """Get audit log retention period in days. Default: 7."""
+        return self._housekeeping().get("audit_retention_days", 7)
+
+    @property
+    def housekeeping_signal_staleness_hours(self) -> int:
+        """Get signal file staleness threshold in hours. Default: 4."""
+        return self._housekeeping().get("signal_staleness_hours", 4)
+
+    @property
+    def housekeeping_skill_log_max_bytes(self) -> int:
+        """Get maximum skill log size in bytes before rotation. Default: 1 MiB."""
+        return self._housekeeping().get("skill_log_max_bytes", 1_048_576)
 
     def save_update_check_state(
         self,

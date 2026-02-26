@@ -6,6 +6,22 @@
 # IMPORTANT: Run `pre-commit install --hook-type commit-msg` to enable gitlint
 
 repos:
+  # Python linting and formatting with Ruff — runs FIRST to fail fast on style errors
+  # (saves waiting 4+ min for tests only to discover a formatting issue)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.0
+    hooks:
+      - id: ruff
+        args: [--no-fix, "--exit-non-zero-on-fix", "src/", "scripts/", "tests/"]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: ruff-format
+        args: [--check, --diff, "src/", "scripts/", "tests/"]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
   # Local hooks for nWave framework
   - repo: local
     hooks:
@@ -18,7 +34,7 @@ repos:
         stages: [pre-commit]
         always_run: true
 
-      # Phase 1: Run pytest test suite (pre-commit to block failing tests)
+      # Phase 1: Run pytest test suite (after ruff — fail fast on style before slow tests)
       - id: pytest-validation
         name: Pytest Test Validation
         entry: python3 scripts/hooks/validate_tests.py
@@ -124,21 +140,6 @@ repos:
         name: Detect private keys (all files)
         entry: python3 scripts/hooks/detect_private_keys.py
         language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-
-  # Python linting and formatting with Ruff (replaces black, flake8, isort)
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.0
-    hooks:
-      - id: ruff
-        args: [--no-fix, "--exit-non-zero-on-fix", "src/", "scripts/", "tests/"]
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-      - id: ruff-format
-        args: [--check, --diff, "src/", "scripts/", "tests/"]
         pass_filenames: false
         always_run: true
         stages: [pre-commit]

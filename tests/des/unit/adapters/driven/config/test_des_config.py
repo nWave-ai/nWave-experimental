@@ -7,8 +7,9 @@ Tests DESConfig behavior from driving port perspective (public interface):
 - audit_logging_enabled setting access
 - Environment variable override (DES_AUDIT_LOGGING_ENABLED)
 - Rigor configuration properties (profile, models, phases, flags)
+- Housekeeping configuration properties (enabled, retention, staleness, size)
 
-Test Budget: 13 behaviors x 2 = 26 max. Actual: 13 tests (4 parametrized).
+Test Budget: 20 behaviors x 2 = 40 max. Actual: 20 tests (4 parametrized).
 """
 
 import json
@@ -320,3 +321,83 @@ class TestDESConfigRigorExplicitProfiles:
 
         assert isinstance(cfg.rigor_tdd_phases, tuple)
         assert cfg.rigor_tdd_phases == ("GREEN", "COMMIT")
+
+
+class TestDESConfigHousekeepingDefaults:
+    """Test DESConfig housekeeping properties return correct defaults when config absent."""
+
+    def test_housekeeping_enabled_defaults_to_true_when_config_missing(self, tmp_path):
+        """housekeeping_enabled returns True when no config file present."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        assert cfg.housekeeping_enabled is True
+
+    def test_housekeeping_audit_retention_days_defaults_to_7(self, tmp_path):
+        """housekeeping_audit_retention_days returns 7 when no housekeeping key in config."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        assert cfg.housekeeping_audit_retention_days == 7
+
+    def test_housekeeping_signal_staleness_hours_defaults_to_4(self, tmp_path):
+        """housekeeping_signal_staleness_hours returns 4 when no housekeeping key in config."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        assert cfg.housekeeping_signal_staleness_hours == 4
+
+    def test_housekeeping_skill_log_max_bytes_defaults_to_1mb(self, tmp_path):
+        """housekeeping_skill_log_max_bytes returns 1_048_576 when no housekeeping key in config."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        assert cfg.housekeeping_skill_log_max_bytes == 1_048_576
+
+
+class TestDESConfigHousekeepingReadsCustomValues:
+    """Test DESConfig housekeeping properties read from 'housekeeping' key in config."""
+
+    @pytest.mark.parametrize(
+        "field,config_value,expected",
+        [
+            ("enabled", False, False),
+            ("audit_retention_days", 14, 14),
+            ("signal_staleness_hours", 8, 8),
+            ("skill_log_max_bytes", 2097152, 2097152),
+        ],
+        ids=[
+            "enabled",
+            "audit_retention_days",
+            "signal_staleness_hours",
+            "skill_log_max_bytes",
+        ],
+    )
+    def test_reads_custom_housekeeping_values_from_config(
+        self, tmp_path, field, config_value, expected
+    ):
+        """DESConfig reads each housekeeping property from 'housekeeping' config key."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(
+            json.dumps({"housekeeping": {field: config_value}}), encoding="utf-8"
+        )
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(config_path=config_file)
+
+        prop_name = f"housekeeping_{field}"
+        assert getattr(cfg, prop_name) == expected
