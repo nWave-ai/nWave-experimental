@@ -1,0 +1,88 @@
+roadmap:
+  project_id: tag-auto-discovery
+  created_at: '2026-02-23T17:20:38Z'
+  total_steps: 2
+  phases: 2
+phases:
+- id: '01'
+  name: 'Tag discovery script with unit tests'
+  steps:
+  - id: 01-01
+    name: 'discover_tag.py with packaging.Version sort and CLI interface'
+    description: >
+      Create scripts/release/discover_tag.py. Accepts --pattern dev|rc,
+      --validate TAG, --tag-list. JSON output with tag, version, found,
+      commits_behind: null. Pure functions, no classes. Exit codes 0/1/2.
+    files:
+      create:
+        - scripts/release/discover_tag.py
+      modify:
+        - tests/release/test_discover_tag.py
+    test_file: tests/release/test_discover_tag.py
+    test_scenarios: 1-12
+    tdd_sequence:
+      - 'TestWalkingSkeleton::test_auto_discover_highest_dev_tag'
+      - 'TestDevTagHappyPath::test_mixed_base_versions_returns_globally_highest'
+      - 'TestDevTagDigitTransition::test_digit_transition_dev11_beats_dev9'
+      - 'TestRCTagHappyPath::test_auto_discover_highest_rc_tag'
+      - 'TestRCTagDigitTransition::test_digit_transition_rc11_beats_rc9'
+      - 'TestExplicitTagValidation::test_validate_existing_tag_returns_it_directly'
+      - 'TestExplicitTagValidation::test_validate_missing_tag_returns_not_found'
+      - 'TestNoTagsExist::test_no_dev_tags_returns_stage_1_guidance'
+      - 'TestNoTagsExist::test_no_rc_tags_returns_stage_2_guidance'
+      - 'TestInvalidInput::test_invalid_pattern_returns_exit_code_2'
+      - 'TestInvalidInput::test_invalid_tags_filtered_valid_ones_sorted'
+      - 'TestEdgeCases::test_empty_tag_list_string_treated_as_no_tags'
+    criteria:
+      - '--pattern dev with tag list returns highest semantic dev tag as JSON'
+      - '--pattern rc with tag list returns highest semantic RC tag'
+      - 'dev11 sorts above dev9; rc11 sorts above rc9 (integer sort)'
+      - '--validate returns that tag if found, exit 1 if missing'
+      - 'No matching tags exits 1 with actionable error mentioning stage'
+    architectural_constraints:
+      - 'packaging.Version for all sorting (no string sort, no bash sort -V)'
+      - 'JSON to stdout, exit codes 0=found 1=not-found 2=invalid-input'
+      - 'Functional style: pure functions, no classes, no mutation'
+      - 'Follow next_version.py pattern: argparse + json + subprocess'
+      - 'commits_behind always null in this phase (no git calls yet)'
+    pattern_reference: scripts/release/next_version.py
+- id: '02'
+  name: 'Staleness detection with integration tests'
+  steps:
+  - id: 02-01
+    name: 'commits_behind via git rev-list with tmp_path integration tests'
+    description: >
+      Add commits_behind computation via git rev-list --count TAG..HEAD
+      when --tag-list is not provided. Integration tests use tmp_path
+      git repos. commits_behind remains null when --tag-list is given.
+    files:
+      modify:
+        - scripts/release/discover_tag.py
+        - tests/release/test_discover_tag.py
+    test_file: tests/release/test_discover_tag.py
+    test_scenarios: 13-15
+    tdd_sequence:
+      - 'TestStalenessDetection::test_commits_behind_is_null_with_tag_list'
+      - 'TestStalenessDetection::test_tag_at_head_shows_zero_commits_behind'
+      - 'TestStalenessDetection::test_tag_behind_head_shows_commit_count'
+    criteria:
+      - 'commits_behind is 0 when tag points at HEAD'
+      - 'commits_behind reflects actual commit count when tag is behind'
+      - 'commits_behind is null when --tag-list is provided'
+      - 'Staleness does not affect exit code (still 0 when tag found)'
+    architectural_constraints:
+      - 'git rev-list --count TAG..HEAD for staleness computation'
+      - 'Integration tests create real tmp_path git repos with tags'
+      - 'No changes to existing unit test behavior from phase 01'
+implementation_scope:
+  source_directories:
+  - scripts/release/
+  test_directories:
+  - tests/release/
+  excluded_patterns:
+  - __init__.py
+  - __pycache__/**
+validation:
+  status: pending
+  reviewer: atlas
+  approved_at: null

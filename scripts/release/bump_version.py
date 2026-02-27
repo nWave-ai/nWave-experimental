@@ -54,10 +54,10 @@ def _bump_pyproject(path: str, version: str) -> None:
 
     content = open(path).read()
     updated = re.sub(
-        r'version = "[^"]+"',
+        r'^version = "[^"]+"',
         f'version = "{version}"',
         content,
-        count=1,
+        flags=re.MULTILINE,
     )
     with open(path, "w") as f:
         f.write(updated)

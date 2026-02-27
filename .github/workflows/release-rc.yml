@@ -260,6 +260,8 @@ jobs:
     timeout-minutes: 5
     needs: [validate-source, version-calc, build]
     if: inputs.dry_run != true
+    outputs:
+      changes: ${{ steps.changes.outputs.summary }}
 
     steps:
       - uses: actions/checkout@v4
@@ -295,11 +297,31 @@ jobs:
             --stage rc \
             --version "$VERSION" \
             --source-tag "$SOURCE_TAG" \
-            --repo "${{ github.repository }}" \
+            --repo "nWave-ai/nwave-beta" \
             --output dist/RELEASE_NOTES.md
         env:
           VERSION: ${{ needs.version-calc.outputs.version }}
           SOURCE_TAG: ${{ needs.validate-source.outputs.resolved_tag }}
+
+      - name: Extract change summary for Slack
+        id: changes
+        run: |
+          SUMMARY=$(python3 << 'PYEOF'
+          import re, json
+          with open("dist/RELEASE_NOTES.md") as f:
+              lines = f.readlines()
+          changes = []
+          for line in lines:
+              line = line.strip()
+              if line.startswith("- "):
+                  clean = re.sub(r' \(`[a-f0-9]+`\)$', '', line)
+                  changes.append(clean[2:])
+          summary = "\n".join(changes[:10]) if changes else "Internal improvements"
+          encoded = json.dumps(summary, ensure_ascii=False)
+          print(encoded[1:-1])
+          PYEOF
+          )
+          echo "summary=$SUMMARY" >> $GITHUB_OUTPUT
 
       - name: Create GitHub pre-release
         env:
@@ -621,7 +643,11 @@ jobs:
                 },
                 {
                   "type": "section",
-                  "text": { "type": "mrkdwn", "text": "Promoted from `${{ needs.validate-source.outputs.resolved_tag }}`\n*Install*: `pipx install nwave-ai==${{ needs.version-calc.outputs.version }} --pip-args=\"--pre\"`\nSynced to *nWave-beta* with tag + GitHub pre-release" }
+                  "text": { "type": "mrkdwn", "text": "Promoted from `${{ needs.validate-source.outputs.resolved_tag }}` (${{ inputs.source_dev_tag != '' && 'manually specified' || 'auto-discovered' }})\n*Install*: `pipx install nwave-ai==${{ needs.version-calc.outputs.version }} --pip-args=\"--pre\"`\nSynced to *nWave-beta* with tag + GitHub pre-release" }
+                },
+                {
+                  "type": "section",
+                  "text": { "type": "mrkdwn", "text": "*Changes*:\n${{ needs.tag-release.outputs.changes }}" }
                 },
                 {
                   "type": "actions",
@@ -632,7 +658,7 @@ jobs:
                 },
                 {
                   "type": "context",
-                  "elements": [{ "type": "mrkdwn", "text": "Released at: <!date^${{ steps.ts.outputs.unix }}^{date_short_pretty} at {time}|timestamp>" }]
+                  "elements": [{ "type": "mrkdwn", "text": "Triggered by *${{ github.actor }}* · Released at: <!date^${{ steps.ts.outputs.unix }}^{date_short_pretty} at {time}|timestamp>" }]
                 }
               ]
             }

@@ -304,6 +304,8 @@ jobs:
     timeout-minutes: 5
     needs: [validate-source, version-calc, build, version-bump]
     if: inputs.dry_run != true
+    outputs:
+      changes: ${{ steps.changes.outputs.summary }}
 
     steps:
       - uses: actions/checkout@v4
@@ -334,11 +336,31 @@ jobs:
             --stage stable \
             --version "$VERSION" \
             --source-tag "$SOURCE_RC" \
-            --repo "${{ github.repository }}" \
+            --repo "nWave-ai/nwave" \
             --output dist/RELEASE_NOTES.md
         env:
           VERSION: ${{ needs.version-calc.outputs.stable_version }}
           SOURCE_RC: ${{ needs.validate-source.outputs.resolved_tag }}
+
+      - name: Extract change summary for Slack
+        id: changes
+        run: |
+          SUMMARY=$(python3 << 'PYEOF'
+          import re, json
+          with open("dist/RELEASE_NOTES.md") as f:
+              lines = f.readlines()
+          changes = []
+          for line in lines:
+              line = line.strip()
+              if line.startswith("- "):
+                  clean = re.sub(r' \(`[a-f0-9]+`\)$', '', line)
+                  changes.append(clean[2:])
+          summary = "\n".join(changes[:10]) if changes else "Internal improvements"
+          encoded = json.dumps(summary, ensure_ascii=False)
+          print(encoded[1:-1])
+          PYEOF
+          )
+          echo "summary=$SUMMARY" >> $GITHUB_OUTPUT
 
       - name: Create stable tag
         run: |
@@ -460,18 +482,12 @@ jobs:
         id: nwave-version
         working-directory: source
         run: |
+          STABLE="${{ needs.version-calc.outputs.stable_version }}"
           FLOOR=$(python scripts/release/read_toml_field.py --file pyproject.toml --key tool.nwave.public_version)
-          CURRENT="${{ steps.pre-sync.outputs.current_version }}"
 
-          OUTPUT=$(python scripts/release/next_version.py \
-            --stage nwave-ai \
-            --current-version "0.0.0" \
-            --public-version-floor "$FLOOR" \
-            --current-public-version "$CURRENT")
-
-          VERSION=$(echo "$OUTPUT" | jq -r '.version')
+          VERSION=$(python -c "from packaging.version import Version; print(max(Version('$STABLE'), Version('$FLOOR')))")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "nwave-ai version: $VERSION (floor=$FLOOR, current=$CURRENT)"
+          echo "nwave-ai version: $VERSION (stable=$STABLE, floor=$FLOOR)"
 
       - name: Sync files
         run: |
@@ -739,7 +755,11 @@ jobs:
                 },
                 {
                   "type": "section",
-                  "text": { "type": "mrkdwn", "text": "*nwave-ai*: `v${{ needs.sync-public.outputs.nwave_ai_version }}` published to *PyPI*\n`pipx install nwave-ai`\nSynced to *nwave-ai/nwave* with tag + GitHub Release\nPromoted from `${{ needs.validate-source.outputs.resolved_tag }}`" }
+                  "text": { "type": "mrkdwn", "text": "*nwave-ai*: `v${{ needs.sync-public.outputs.nwave_ai_version }}` published to *PyPI*\n`pipx install nwave-ai`\nSynced to *nwave-ai/nwave* with tag + GitHub Release\nPromoted from `${{ needs.validate-source.outputs.resolved_tag }}` (${{ inputs.source_rc_tag != '' && 'manually specified' || 'auto-discovered' }})" }
+                },
+                {
+                  "type": "section",
+                  "text": { "type": "mrkdwn", "text": "*Changes*:\n${{ needs.tag-release.outputs.changes }}" }
                 },
                 {
                   "type": "actions",
@@ -750,7 +770,7 @@ jobs:
                 },
                 {
                   "type": "context",
-                  "elements": [{ "type": "mrkdwn", "text": "Released at: <!date^${{ steps.ts.outputs.unix }}^{date_short_pretty} at {time}|timestamp>" }]
+                  "elements": [{ "type": "mrkdwn", "text": "Triggered by *${{ github.actor }}* · Released at: <!date^${{ steps.ts.outputs.unix }}^{date_short_pretty} at {time}|timestamp>" }]
                 }
               ]
             }
