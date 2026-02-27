@@ -805,3 +805,219 @@ class TestCIDocumentationCleanup:
         )
         assert "commitizen" in content, "README.md missing 'commitizen' reference"
         assert "--dry-run" in content, "README.md missing '--dry-run' (CZ flag)"
+
+
+class TestMultiCyclePromotion:
+    """Multi-cycle release train: validates anchor reset between cycles.
+
+    Reproduces the 2026-02-27 version maze where tool.commitizen.version
+    stayed at 1.1.26 after stable 1.2.0, causing CZ to recalculate 1.2.0
+    on the next dev cycle instead of 1.3.0.
+    """
+
+    def test_two_cycle_promotion_with_anchor_reset(self, tmp_path):
+        """Given two full release cycles with mixed commit types,
+        when bump_version syncs both version fields after each stable,
+        then the second cycle starts from the correct anchor.
+
+        Cycle 1: anchor=1.1.28, CZ sees feat → base=1.2.0
+          dev: 1.2.0.dev1 → rc: 1.2.0rc1 → stable: 1.2.0
+          bump_version updates BOTH fields to 1.2.0
+
+        Cycle 2: anchor=1.2.0, CZ sees feat → base=1.3.0
+          dev: 1.3.0.dev1 (NOT 1.2.0.devN from stale anchor)
+        """
+        from scripts.release.bump_version import main as bump_main
+
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(
+            '[project]\nname = "nwave"\nversion = "1.1.28"\n\n'
+            "[tool.nwave]\n"
+            'public_version = "1.1.0"\n\n'
+            "[tool.commitizen]\n"
+            'version = "1.1.28"\n'
+            'tag_format = "v$version"\n'
+        )
+
+        # --- Cycle 1: 1.1.28 → 1.2.0 ---
+        # Dev: CZ analyzed feat commits → base=1.2.0
+        dev1 = run_next_version(
+            "--stage",
+            "dev",
+            "--current-version",
+            "1.1.28",
+            "--base-version",
+            "1.2.0",
+        )
+        assert dev1.returncode == 0
+        assert parse_output(dev1)["version"] == "1.2.0.dev1"
+
+        # RC: promote dev tag
+        rc1 = run_next_version(
+            "--stage",
+            "rc",
+            "--current-version",
+            "v1.2.0.dev1",
+        )
+        assert rc1.returncode == 0
+        assert parse_output(rc1)["version"] == "1.2.0rc1"
+
+        # Stable: strip RC suffix
+        stable1 = run_next_version(
+            "--stage",
+            "stable",
+            "--current-version",
+            "v1.2.0rc1",
+        )
+        assert stable1.returncode == 0
+        assert parse_output(stable1)["version"] == "1.2.0"
+
+        # bump_version syncs both fields
+        bump_main(["--version", "1.2.0", "--pyproject", str(pyproject)])
+
+        with pyproject.open("rb") as f:
+            toml = tomllib.load(f)
+        assert toml["project"]["version"] == "1.2.0"
+        assert toml["tool"]["commitizen"]["version"] == "1.2.0"
+        assert toml["tool"]["nwave"]["public_version"] == "1.1.0", (
+            "public_version must NOT be clobbered by bump_version"
+        )
+
+        # --- Cycle 2: 1.2.0 → 1.3.0 ---
+        # Mixed commits: docs (no bump), feat (minor), fix (patch)
+        # CZ highest-wins: feat → 1.3.0
+        dev2 = run_next_version(
+            "--stage",
+            "dev",
+            "--current-version",
+            "1.2.0",
+            "--base-version",
+            "1.3.0",
+        )
+        assert dev2.returncode == 0
+        dev2_out = parse_output(dev2)
+        assert dev2_out["version"] == "1.3.0.dev1", (
+            f"Got {dev2_out['version']} — version maze! "
+            "CZ anchor was likely stale (still 1.1.28 instead of 1.2.0)"
+        )
+
+    def test_docs_only_after_stable_uses_patch_fallback(self):
+        """Given stable v1.2.0 just released and CZ returns nothing (docs-only),
+        when dev version calculated without --base-version,
+        then fallback bumps patch to 1.2.1.dev1,
+        NOT 1.2.0.dev1 (which conflicts with the released stable).
+        """
+        result = run_next_version(
+            "--stage",
+            "dev",
+            "--current-version",
+            "1.2.0",
+        )
+        assert result.returncode == 0
+        output = parse_output(result)
+        assert output["version"] == "1.2.1.dev1", (
+            f"Got {output['version']} — docs-only fallback must bump patch "
+            "to avoid version family conflict with released v1.2.0"
+        )
+
+
+class TestReleaseTrainVersionSync:
+    """Regression guards for release train bugs discovered 2026-02-27.
+
+    Bug 1: bump_version.py used count=1, leaving tool.commitizen.version
+           stale after stable releases (version maze).
+    Bug 2: Stable changelog --repo pointed to private nwave-dev (404 links).
+    Bug 3: RC changelog --repo pointed to private nwave-dev (404 links).
+    """
+
+    def test_bump_version_updates_both_pyproject_version_fields(self, tmp_path):
+        """Given a pyproject.toml with version = "1.2.0" in both [project]
+        and [tool.commitizen] sections,
+        when bump_version bumps to "1.3.0",
+        then both version fields read "1.3.0"
+        and no stale version anchor remains.
+
+        Regression: bump_version.py used count=1 in re.sub, leaving
+        tool.commitizen.version stale after stable releases.
+        """
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(
+            '[project]\nname = "test"\nversion = "1.2.0"\n\n'
+            "[tool.commitizen]\n"
+            'version = "1.2.0"\n'
+            'tag_format = "v$version"\n'
+        )
+
+        from scripts.release.bump_version import main as bump_main
+
+        bump_main(["--version", "1.3.0", "--pyproject", str(pyproject)])
+
+        content = pyproject.read_text()
+        with pyproject.open("rb") as f:
+            toml = tomllib.load(f)
+
+        assert toml["project"]["version"] == "1.3.0", (
+            f"project.version is '{toml['project']['version']}', expected '1.3.0'"
+        )
+        assert toml["tool"]["commitizen"]["version"] == "1.3.0", (
+            f"tool.commitizen.version is '{toml['tool']['commitizen']['version']}', "
+            "expected '1.3.0' (stale CZ anchor causes version maze)"
+        )
+        assert 'version = "1.2.0"' not in content, (
+            "Stale version = '1.2.0' still present in pyproject.toml"
+        )
+
+    def test_stable_changelog_targets_public_repo_not_private(self):
+        """Given the stable release workflow at release-prod.yml,
+        when the changelog generation step invokes generate_changelog.py,
+        then --repo is set to "nWave-ai/nwave" (public stable repo)
+        and does not reference the private nwave-dev repository.
+
+        Regression: release-prod.yml used github.repository (private repo)
+        causing 404 compare links in public release notes.
+        """
+        workflow_path = REPO_ROOT / ".github" / "workflows" / "release-prod.yml"
+        content = workflow_path.read_text()
+
+        assert '--repo "nWave-ai/nwave"' in content, (
+            'release-prod.yml changelog must use --repo "nWave-ai/nwave" '
+            "(public repo for stable releases)"
+        )
+
+        # Extract the generate_changelog block to scope the assertion
+        changelog_start = content.find("generate_changelog.py")
+        assert changelog_start != -1, (
+            "generate_changelog.py not found in release-prod.yml"
+        )
+        changelog_block = content[changelog_start : changelog_start + 300]
+        assert "github.repository" not in changelog_block, (
+            "release-prod.yml changelog still uses ${{ github.repository }} "
+            "(resolves to private nwave-dev repo, causing 404 links)"
+        )
+
+    def test_rc_changelog_targets_beta_repo_not_private(self):
+        """Given the RC release workflow at release-rc.yml,
+        when the changelog generation step invokes generate_changelog.py,
+        then --repo is set to "nWave-ai/nwave-beta" (public RC repo)
+        and does not reference the private nwave-dev repository.
+
+        Regression: release-rc.yml used github.repository (private repo)
+        causing 404 compare links in public RC release notes.
+        """
+        workflow_path = REPO_ROOT / ".github" / "workflows" / "release-rc.yml"
+        content = workflow_path.read_text()
+
+        assert '--repo "nWave-ai/nwave-beta"' in content, (
+            'release-rc.yml changelog must use --repo "nWave-ai/nwave-beta" '
+            "(public repo for RC releases)"
+        )
+
+        changelog_start = content.find("generate_changelog.py")
+        assert changelog_start != -1, (
+            "generate_changelog.py not found in release-rc.yml"
+        )
+        changelog_block = content[changelog_start : changelog_start + 300]
+        assert "github.repository" not in changelog_block, (
+            "release-rc.yml changelog still uses ${{ github.repository }} "
+            "(resolves to private nwave-dev repo, causing 404 links)"
+        )

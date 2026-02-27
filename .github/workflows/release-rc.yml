@@ -295,7 +295,7 @@ jobs:
             --stage rc \
             --version "$VERSION" \
             --source-tag "$SOURCE_TAG" \
-            --repo "${{ github.repository }}" \
+            --repo "nWave-ai/nwave-beta" \
             --output dist/RELEASE_NOTES.md
         env:
           VERSION: ${{ needs.version-calc.outputs.version }}
