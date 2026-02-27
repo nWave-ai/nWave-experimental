@@ -19,8 +19,6 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-import yaml
-
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 
 
@@ -190,7 +188,7 @@ def test_pre_tool_use_blocked_event_carries_hook_id(monkeypatch):
 def _write_complete_execution_log(
     log_path: Path, project_id: str, step_id: str
 ) -> None:
-    """Write a complete execution-log.yaml that passes validation."""
+    """Write a complete execution-log.json that passes validation."""
     events = []
     phases = [
         ("PREPARE", "EXECUTED", "PASS"),
@@ -211,7 +209,7 @@ def _write_complete_execution_log(
         "events": events,
     }
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text(yaml.dump(log_data, default_flow_style=False, sort_keys=False))
+    log_path.write_text(json.dumps(log_data, indent=2))
 
 
 def test_subagent_stop_passed_event_carries_hook_id(monkeypatch, tmp_path):
@@ -232,7 +230,7 @@ def test_subagent_stop_passed_event_carries_hook_id(monkeypatch, tmp_path):
     )
 
     # Write complete execution log
-    log_path = tmp_path / "execution-log.yaml"
+    log_path = tmp_path / "execution-log.json"
     _write_complete_execution_log(log_path, "test-project", "01-01")
 
     events: list[AuditEvent] = []
@@ -285,7 +283,7 @@ def test_subagent_stop_failed_event_carries_hook_id(monkeypatch, tmp_path):
     )
 
     # Write incomplete execution log (only 2 of 7 phases)
-    log_path = tmp_path / "execution-log.yaml"
+    log_path = tmp_path / "execution-log.json"
     event_strings = [
         "01-01|PREPARE|EXECUTED|PASS|2026-02-10T21:00:00Z",
         "01-01|RED_ACCEPTANCE|EXECUTED|FAIL|2026-02-10T21:01:00Z",
@@ -295,7 +293,7 @@ def test_subagent_stop_failed_event_carries_hook_id(monkeypatch, tmp_path):
         "project_id": "test-project",
         "events": event_strings,
     }
-    log_path.write_text(yaml.dump(log_data, default_flow_style=False, sort_keys=False))
+    log_path.write_text(json.dumps(log_data, indent=2))
 
     events: list[AuditEvent] = []
     writer = _make_capturing_writer(events)

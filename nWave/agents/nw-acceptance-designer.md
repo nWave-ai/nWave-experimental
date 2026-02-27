@@ -105,7 +105,7 @@ Hard gate at DISTILL-to-DELIVER transition. Run `*validate-dod` before `*handoff
 
 **Hands off to DELIVER**: acceptance test suite|walking skeleton identification|one-at-a-time implementation sequence|mandate compliance evidence (CM-A/B/C)|peer review approval.
 
-Phase tracking uses execution-log.yaml.
+Phase tracking uses execution-log.json.
 
 ## Critical Rules
 

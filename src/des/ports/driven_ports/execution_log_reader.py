@@ -3,8 +3,8 @@
 Abstract interface defining how the application layer reads step execution
 events from the append-only execution log.
 
-Defined by: Application layer needs (NOT by YAML format).
-Implemented by: YamlExecutionLogReader (infrastructure adapter).
+Defined by: Application layer needs (NOT by storage format).
+Implemented by: JsonExecutionLogReader (infrastructure adapter).
 """
 
 from __future__ import annotations

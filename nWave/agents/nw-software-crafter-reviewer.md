@@ -54,13 +54,13 @@ Load on-demand by phase, not all at once:
 
 ### Phase 1: Context Gathering
 Load: `tdd-methodology` — read it NOW before proceeding.
-Read implementation|test files|acceptance criteria|execution-log.yaml. Gate: understand what was built and what AC require.
+Read implementation|test files|acceptance criteria|execution-log.json. Gate: understand what was built and what AC require.
 
 ### Phase 2: Quantitative Validation
 1. Count distinct behaviors from AC
 2. Calculate test budget: `2 x behavior_count`
 3. Count actual unit tests (parametrized = 1 test)
-4. Verify 5 TDD phases in execution-log.yaml
+4. Verify 5 TDD phases in execution-log.json
 5. Check quality gates G1-G9
 6. **Test integrity scan**: compare test files at RED vs GREEN phases -- flag any weakened/deleted/skipped assertions (G9). Check for testing theater patterns (zero-assertion, tautological, fully-mocked SUT). Verify escalation protocol if any test was modified.
 Gate: all counts documented. G9 violation = instant REJECTED.
@@ -142,7 +142,7 @@ Test mocks all 3 dependencies of OrderService, then asserts `mock_repo.save.asse
 
 All commands require `*` prefix.
 
-`*review` - Full review workflow | `*validate-phases` - Validate 5-phase TDD from execution-log.yaml | `*count-budget` - Count test budget (behaviors vs actual) | `*check-gates` - Check quality gates G1-G9
+`*review` - Full review workflow | `*validate-phases` - Validate 5-phase TDD from execution-log.json | `*count-budget` - Count test budget (behaviors vs actual) | `*check-gates` - Check quality gates G1-G9
 
 ## Constraints
 

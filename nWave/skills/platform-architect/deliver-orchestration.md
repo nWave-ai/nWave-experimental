@@ -20,12 +20,12 @@ Create: `docs/feature/{project-id}/baseline.yaml`. Reviewer: @nw-software-crafte
 Smart skip: yes (if file exists AND `validation.status == "approved"`).
 
 ### Phase 3-4: Roadmap Creation + Dual Review
-Create: `docs/feature/{project-id}/roadmap.yaml`.
+Create: `docs/feature/{project-id}/roadmap.json`.
 Reviewer 1: @nw-product-owner-reviewer (business) | Reviewer 2: @nw-software-crafter-reviewer (technical). Sequential reviews.
 Smart skip: yes (if approved).
 
 ### Phase 5-6: Split + Review Each Step
-Define steps in: `docs/feature/{project-id}/roadmap.yaml`. Reviewer: @nw-software-crafter-reviewer (per roadmap step).
+Define steps in: `docs/feature/{project-id}/roadmap.json`. Reviewer: @nw-software-crafter-reviewer (per roadmap step).
 Smart skip: yes (if all approved).
 
 ### Phase 7: Execute All Steps

@@ -19,7 +19,7 @@ def main():
             for violation in result.violations:
                 print(f"  - {violation.file}: {violation.reason}")
             print("\nResolution:")
-            print("  1. Update roadmap.yaml to include new scope")
+            print("  1. Update roadmap.json to include new scope")
             print("  2. Or unstage files outside scope")
             return 1
 

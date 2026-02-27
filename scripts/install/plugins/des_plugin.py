@@ -29,7 +29,7 @@ class DESPlugin(InstallationPlugin):
     DES_TEMPLATES = [
         ".pre-commit-config-nwave.yaml",
         ".des-audit-README.md",
-        "roadmap-schema.yaml",
+        "roadmap-schema.json",
     ]
 
     # Hook command template - substituted at install time:

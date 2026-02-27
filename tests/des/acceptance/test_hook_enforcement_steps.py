@@ -200,7 +200,7 @@ def validate_step(test_context: dict[str, Any]) -> None:
 
     # Create context
     context = SubagentStopContext(
-        execution_log_path="/fake/path/execution-log.yaml",
+        execution_log_path="/fake/path/execution-log.json",
         project_id=test_context["feature_name"],
         step_id=test_context["step_id"],
     )

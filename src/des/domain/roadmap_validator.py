@@ -1,4 +1,4 @@
-"""Roadmap Validator - Structural and semantic validation for roadmap.yaml.
+"""Roadmap Validator - Structural and semantic validation for roadmap.json.
 
 Pure domain logic. No I/O — takes parsed dict, returns result.
 """

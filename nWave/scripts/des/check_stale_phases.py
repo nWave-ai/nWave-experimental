@@ -20,7 +20,7 @@ def main():
                 print(f"  - {stale.step_file}: {stale.phase_name}")
             print("\nResolution:")
             print("  1. Complete or mark phases as FAILED")
-            print("  2. Or remove execution-log.yaml if workflow abandoned")
+            print("  2. Or remove execution-log.json if workflow abandoned")
             return 1
 
         print("✓ No stale phases detected")

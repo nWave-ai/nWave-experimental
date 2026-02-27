@@ -185,7 +185,7 @@ class TestDualLayerEnforcement:
         service = _build_stop_service(events)
         decision = service.validate(
             SubagentStopContext(
-                execution_log_path="/fake/execution-log.yaml",
+                execution_log_path="/fake/execution-log.json",
                 project_id="test-project",
                 step_id="01-01",
                 stop_hook_active=False,
@@ -218,7 +218,7 @@ class TestDualLayerEnforcement:
         service = _build_stop_service(events, audit_writer=spy)
         decision = service.validate(
             SubagentStopContext(
-                execution_log_path="/fake/execution-log.yaml",
+                execution_log_path="/fake/execution-log.json",
                 project_id="test-project",
                 step_id="01-01",
                 stop_hook_active=True,
@@ -260,7 +260,7 @@ class TestDualLayerEnforcement:
         service = _build_stop_service(events)
         decision = service.validate(
             SubagentStopContext(
-                execution_log_path="/fake/execution-log.yaml",
+                execution_log_path="/fake/execution-log.json",
                 project_id="test-project",
                 step_id="01-01",
                 stop_hook_active=False,
@@ -532,7 +532,7 @@ class TestDualLayerEnforcement:
         service = _build_stop_service(events=[])
         decision = service.validate(
             SubagentStopContext(
-                execution_log_path="/fake/execution-log.yaml",
+                execution_log_path="/fake/execution-log.json",
                 project_id="test-project",
                 step_id="01-01",
                 stop_hook_active=True,

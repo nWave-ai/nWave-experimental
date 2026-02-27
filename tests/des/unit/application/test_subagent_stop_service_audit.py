@@ -177,7 +177,7 @@ class TestAuditEventsUseDirectFields:
             events=_make_complete_phase_events("02-01"),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
         )
@@ -197,7 +197,7 @@ class TestAuditEventsUseDirectFields:
             events=_make_complete_phase_events("02-01"),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
         )
@@ -217,7 +217,7 @@ class TestAuditEventsUseDirectFields:
             events=_make_incomplete_phase_events("03-01"),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="audit-log-refactor",
             step_id="03-01",
         )
@@ -241,7 +241,7 @@ class TestAuditEventsUseDirectFields:
             violations=["src/other/file.py"],
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
         )
@@ -277,7 +277,7 @@ class TestFeatureNameFromProjectId:
             events=_make_complete_phase_events("01-01"),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id=project_id,
             step_id="01-01",
         )
@@ -304,7 +304,7 @@ class TestExistingDataFieldsPreserved:
             events=_make_incomplete_phase_events("01-01"),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="01-01",
         )
@@ -326,7 +326,7 @@ class TestExistingDataFieldsPreserved:
             events=_make_incomplete_phase_events("01-01"),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="01-01",
         )
@@ -347,7 +347,7 @@ class TestExistingDataFieldsPreserved:
             violations=["src/other/file.py"],
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
         )
@@ -368,7 +368,7 @@ class TestExistingDataFieldsPreserved:
             violations=["src/other/file.py"],
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
         )
@@ -388,7 +388,7 @@ class TestExistingDataFieldsPreserved:
             events=_make_complete_phase_events("02-01"),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
         )
@@ -415,7 +415,7 @@ class TestAuditLoggingConditionsPreserved:
             events=_make_complete_phase_events("02-01"),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
         )
@@ -435,7 +435,7 @@ class TestAuditLoggingConditionsPreserved:
             events=_make_incomplete_phase_events("01-01"),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="01-01",
         )
@@ -456,7 +456,7 @@ class TestAuditLoggingConditionsPreserved:
             violations=["src/a.py", "src/b.py"],
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
         )
@@ -503,7 +503,7 @@ class TestIntegrityValidationIntegration:
             integrity_validator=LogIntegrityValidator(schema=schema),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
         )
@@ -547,7 +547,7 @@ class TestIntegrityValidationIntegration:
             ),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
             task_start_time="2026-02-06T21:00:00+00:00",

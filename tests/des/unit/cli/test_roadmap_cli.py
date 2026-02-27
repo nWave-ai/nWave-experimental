@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import yaml
+import json
 
 from des.cli.roadmap import main
 
@@ -15,14 +15,14 @@ class TestInit:
         rc = main(["init", "--project-id", "test-feature", "--goal", "Test goal"])
         assert rc == 0
         output = capsys.readouterr().out
-        data = yaml.safe_load(output)
+        data = json.loads(output)
         assert data["roadmap"]["project_id"] == "test-feature"
         assert data["phases"]
         assert data["roadmap"]["total_steps"] >= 1
 
     def test_init_with_output_file(self, capsys, tmp_path):
         """init with --output writes file."""
-        out_file = tmp_path / "roadmap.yaml"
+        out_file = tmp_path / "roadmap.json"
         rc = main(
             [
                 "init",
@@ -36,7 +36,7 @@ class TestInit:
         )
         assert rc == 0
         assert out_file.exists()
-        data = yaml.safe_load(out_file.read_text())
+        data = json.loads(out_file.read_text())
         assert data["roadmap"]["project_id"] == "test-proj"
 
     def test_init_with_phases_and_steps(self, capsys):
@@ -55,7 +55,7 @@ class TestInit:
             ]
         )
         assert rc == 0
-        data = yaml.safe_load(capsys.readouterr().out)
+        data = json.loads(capsys.readouterr().out)
         assert data["roadmap"]["phases"] == 3
         assert data["roadmap"]["total_steps"] == 6
         assert len(data["phases"]) == 3
@@ -69,7 +69,7 @@ class TestInit:
 
     def test_init_output_passes_validate(self, tmp_path):
         """Round-trip: init output passes validate."""
-        out_file = tmp_path / "roadmap.yaml"
+        out_file = tmp_path / "roadmap.json"
         rc_init = main(
             [
                 "init",
@@ -109,7 +109,7 @@ class TestInit:
             ]
         )
         assert rc == 0
-        data = yaml.safe_load(capsys.readouterr().out)
+        data = json.loads(capsys.readouterr().out)
         assert data["roadmap"]["phases"] == 3
         assert len(data["phases"]) == 3
 
@@ -119,8 +119,8 @@ class TestValidate:
 
     def _write_roadmap(self, tmp_path, data):
         """Helper to write a roadmap YAML file."""
-        path = tmp_path / "roadmap.yaml"
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        path = tmp_path / "roadmap.json"
+        path.write_text(json.dumps(data, indent=2))
         return path
 
     def _valid_roadmap(self):
@@ -222,7 +222,7 @@ class TestValidate:
 
     def test_missing_file_exit_2(self, tmp_path):
         """Non-existent file returns exit 2."""
-        rc = main(["validate", str(tmp_path / "nonexistent.yaml")])
+        rc = main(["validate", str(tmp_path / "nonexistent.json")])
         assert rc == 2
 
     def test_invalid_dep_reference_exit_1(self, tmp_path):

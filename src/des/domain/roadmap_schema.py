@@ -1,6 +1,6 @@
 """Roadmap Schema Loader - Single Source of Truth for Roadmap Structure.
 
-Loads roadmap validation rules from nWave/templates/roadmap-schema.yaml.
+Loads roadmap validation rules from nWave/templates/roadmap-schema.json.
 Provides cached access via frozen dataclass.
 
 Mirrors tdd_schema.py pattern: frozen dataclass, lazy path resolution,
@@ -9,10 +9,9 @@ singleton loader with WSL-safe path handling.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
-
-import yaml
 
 
 @dataclass(frozen=True)
@@ -36,9 +35,9 @@ class RoadmapSchema:
 
 
 class RoadmapSchemaLoader:
-    """Loads schema from roadmap-schema.yaml. WSL-safe path resolution."""
+    """Loads schema from roadmap-schema.json. WSL-safe path resolution."""
 
-    SCHEMA_FILENAME = "roadmap-schema.yaml"
+    SCHEMA_FILENAME = "roadmap-schema.json"
 
     @staticmethod
     def _resolve_default_schema_path() -> Path:
@@ -92,7 +91,7 @@ class RoadmapSchemaLoader:
 
     def _read_schema_file(self) -> dict:
         with open(self._schema_path, encoding="utf-8") as f:
-            return yaml.safe_load(f)
+            return json.load(f)
 
     def _parse_schema(self, raw: dict) -> RoadmapSchema:
         required = raw.get("required_fields", {})

@@ -23,7 +23,7 @@ class SubagentStopContext:
     """Input context for subagent-stop validation.
 
     Attributes:
-        execution_log_path: Absolute path to execution-log.yaml
+        execution_log_path: Absolute path to execution-log.json
         project_id: Project identifier
         step_id: Step identifier
         stop_hook_active: True if SubagentStop already fired once (second attempt).

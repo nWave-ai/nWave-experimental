@@ -101,7 +101,7 @@ def test_audit_log_passed_includes_feature_name_and_step_id():
     )
 
     context = SubagentStopContext(
-        execution_log_path="/fake/path/execution-log.yaml",
+        execution_log_path="/fake/path/execution-log.json",
         project_id="audit-log-refactor",
         step_id="02-02",
     )
@@ -146,7 +146,7 @@ def test_audit_log_failed_includes_feature_name_and_step_id():
     )
 
     context = SubagentStopContext(
-        execution_log_path="/fake/path/execution-log.yaml",
+        execution_log_path="/fake/path/execution-log.json",
         project_id="audit-log-refactor",
         step_id="02-02",
     )
@@ -201,7 +201,7 @@ def test_audit_log_scope_violation_includes_feature_name_and_step_id():
     )
 
     context = SubagentStopContext(
-        execution_log_path="/fake/path/execution-log.yaml",
+        execution_log_path="/fake/path/execution-log.json",
         project_id="audit-log-refactor",
         step_id="02-02",
     )
@@ -244,7 +244,7 @@ def test_audit_log_retains_all_existing_fields():
     )
 
     context = SubagentStopContext(
-        execution_log_path="/fake/path/execution-log.yaml",
+        execution_log_path="/fake/path/execution-log.json",
         project_id="test-feature",
         step_id="01-01",
     )

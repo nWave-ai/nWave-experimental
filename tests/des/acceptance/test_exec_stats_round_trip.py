@@ -1,18 +1,18 @@
 """Acceptance test: execution statistics round-trip through CLI and reader.
 
 Validates that turns_used and tokens_used flow correctly from CLI entry
-through YAML persistence to reader parsing, and that backward compatibility
+through JSON persistence to reader parsing, and that backward compatibility
 with the 5-field format is preserved.
 """
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
-import yaml
 
-from des.adapters.driven.hooks.yaml_execution_log_reader import YamlExecutionLogReader
+from des.adapters.driven.hooks.json_execution_log_reader import JsonExecutionLogReader
 from des.domain.tdd_schema import TDDSchema
 
 
@@ -37,14 +37,14 @@ def mock_schema():
 
 
 def _create_execution_log(tmp_path, events=None):
-    """Helper to create a minimal execution-log.yaml."""
+    """Helper to create a minimal execution-log.json."""
     data = {
         "schema_version": "2.0",
         "project_id": "test-exec-stats",
         "events": events or [],
     }
-    log_path = tmp_path / "execution-log.yaml"
-    log_path.write_text(yaml.dump(data, default_flow_style=False))
+    log_path = tmp_path / "execution-log.json"
+    log_path.write_text(json.dumps(data, indent=2))
     return log_path
 
 
@@ -77,8 +77,8 @@ class TestExecStatsRoundTrip:
         )
         assert result == 0
 
-        reader = YamlExecutionLogReader()
-        events = reader.read_step_events(str(tmp_path / "execution-log.yaml"), "07-01")
+        reader = JsonExecutionLogReader()
+        events = reader.read_step_events(str(tmp_path / "execution-log.json"), "07-01")
 
         assert len(events) == 1
         event = events[0]
@@ -111,8 +111,8 @@ class TestExecStatsRoundTrip:
         )
         assert result == 0
 
-        reader = YamlExecutionLogReader()
-        events = reader.read_step_events(str(tmp_path / "execution-log.yaml"), "07-01")
+        reader = JsonExecutionLogReader()
+        events = reader.read_step_events(str(tmp_path / "execution-log.json"), "07-01")
 
         assert len(events) == 1
         event = events[0]
@@ -131,7 +131,7 @@ class TestExecStatsRoundTrip:
             ],
         )
 
-        reader = YamlExecutionLogReader()
+        reader = JsonExecutionLogReader()
         events = reader.read_step_events(str(log_path), "07-01")
 
         assert len(events) == 2

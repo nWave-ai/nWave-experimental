@@ -11,12 +11,12 @@ Validates that:
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
-import yaml
 
-from des.adapters.driven.hooks.yaml_execution_log_reader import YamlExecutionLogReader
+from des.adapters.driven.hooks.json_execution_log_reader import JsonExecutionLogReader
 from des.domain.tdd_schema import TDDSchema
 
 
@@ -39,14 +39,14 @@ def mock_schema():
 
 
 def _create_execution_log(tmp_path, schema_version="2.0", events=None):
-    """Helper to create a minimal execution-log.yaml."""
+    """Helper to create a minimal execution-log.json."""
     data = {
         "schema_version": schema_version,
         "project_id": "test-structured",
         "events": events or [],
     }
-    log_path = tmp_path / "execution-log.yaml"
-    log_path.write_text(yaml.dump(data, default_flow_style=False))
+    log_path = tmp_path / "execution-log.json"
+    log_path.write_text(json.dumps(data, indent=2))
     return log_path
 
 
@@ -78,7 +78,7 @@ class TestStructuredLogRoundTrip:
         assert result == 0
 
         # Verify the YAML file contains structured dict, not a pipe-delimited string
-        log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
+        log_data = json.loads((tmp_path / "execution-log.json").read_text())
         assert log_data["schema_version"] == "3.0"
         entry = log_data["events"][0]
         assert isinstance(entry, dict), f"Expected dict, got {type(entry).__name__}"
@@ -89,8 +89,8 @@ class TestStructuredLogRoundTrip:
         assert "t" in entry
 
         # Reader parses it correctly
-        reader = YamlExecutionLogReader()
-        events = reader.read_step_events(str(tmp_path / "execution-log.yaml"), "08-01")
+        reader = JsonExecutionLogReader()
+        events = reader.read_step_events(str(tmp_path / "execution-log.json"), "08-01")
         assert len(events) == 1
         event = events[0]
         assert event.step_id == "08-01"
@@ -126,14 +126,14 @@ class TestStructuredLogRoundTrip:
         )
         assert result == 0
 
-        log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
+        log_data = json.loads((tmp_path / "execution-log.json").read_text())
         entry = log_data["events"][0]
         assert isinstance(entry, dict)
         assert entry["tu"] == 25
         assert entry["tk"] == 80000
 
-        reader = YamlExecutionLogReader()
-        events = reader.read_step_events(str(tmp_path / "execution-log.yaml"), "08-01")
+        reader = JsonExecutionLogReader()
+        events = reader.read_step_events(str(tmp_path / "execution-log.json"), "08-01")
         assert len(events) == 1
         assert events[0].turns_used == 25
         assert events[0].tokens_used == 80000
@@ -149,8 +149,8 @@ class TestStructuredLogRoundTrip:
             ],
         )
 
-        reader = YamlExecutionLogReader()
-        events = reader.read_step_events(str(tmp_path / "execution-log.yaml"), "08-01")
+        reader = JsonExecutionLogReader()
+        events = reader.read_step_events(str(tmp_path / "execution-log.json"), "08-01")
         assert len(events) == 2
         assert events[0].phase_name == "PREPARE"
         assert events[1].phase_name == "GREEN"

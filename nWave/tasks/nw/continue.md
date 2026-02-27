@@ -54,7 +54,7 @@ Check before showing progress:
 ### Step 5: DELIVER Progress Detail
 
 If DELIVER in progress, show step-level detail:
-- Read `docs/feature/{id}/execution-log.yaml`: count COMMIT/PASS steps, find first without COMMIT/PASS
+- Read `docs/feature/{id}/execution-log.json`: count COMMIT/PASS steps, find first without COMMIT/PASS
 - Read `.develop-progress.json` if exists: check last failure point
 - Display: "DELIVER in progress: Steps 01-01 through 02-01 complete. Next: 02-02"
 
@@ -86,7 +86,7 @@ Recommend next wave: resume in-progress wave|successor of last complete wave. Sh
 | Empty project directory | Suggest `/nw:new` or re-run from DISCUSS |
 | Corrupted artifact (0 bytes) | Flag file, recommend re-running that wave |
 | Skipped waves | Warn, offer gap-fill or continue options |
-| Cannot parse execution-log.yaml | Show raw file status, suggest manual review |
+| Cannot parse execution-log.json | Show raw file status, suggest manual review |
 
 ## Success Criteria
 

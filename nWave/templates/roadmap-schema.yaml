@@ -1,5 +1,5 @@
 # nWave Roadmap Schema v1.0
-# Defines canonical structure and validation rules for roadmap.yaml files.
+# Defines canonical structure and validation rules for roadmap.json files.
 # Used by: des.cli.roadmap validate, des.domain.roadmap_validator
 schema_version: "1.0"
 

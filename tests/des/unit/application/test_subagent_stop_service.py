@@ -19,9 +19,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-import yaml
+import json
 
-from des.adapters.driven.hooks.yaml_execution_log_reader import YamlExecutionLogReader
+from des.adapters.driven.hooks.json_execution_log_reader import JsonExecutionLogReader
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.log_integrity_validator import LogIntegrityValidator
 from des.domain.step_completion_validator import StepCompletionValidator
@@ -101,18 +101,18 @@ def _write_execution_log(
     project_id: str,
     event_strings: list[str],
 ) -> None:
-    """Write an execution-log.yaml file with the given event strings."""
+    """Write an execution-log.json file with the given event strings."""
     log_data = {
         "schema_version": "2.0",
         "project_id": project_id,
         "events": event_strings,
     }
-    log_path.write_text(yaml.dump(log_data, default_flow_style=False, sort_keys=False))
+    log_path.write_text(json.dumps(log_data, indent=2))
 
 
 def _read_execution_log_events(log_path: Path) -> list[str]:
-    """Read back the raw event strings from an execution-log.yaml."""
-    data = yaml.safe_load(log_path.read_text())
+    """Read back the raw event strings from an execution-log.json."""
+    data = json.loads(log_path.read_text())
     return data.get("events", [])
 
 
@@ -120,10 +120,10 @@ def _build_service_with_integrity(
     audit_spy: SpyAuditWriter,
     time_provider: StubTimeProvider,
 ) -> SubagentStopService:
-    """Build SubagentStopService with real YamlExecutionLogReader and LogIntegrityValidator."""
+    """Build SubagentStopService with real JsonExecutionLogReader and LogIntegrityValidator."""
     schema = get_tdd_schema()
     return SubagentStopService(
-        log_reader=YamlExecutionLogReader(),
+        log_reader=JsonExecutionLogReader(),
         completion_validator=StepCompletionValidator(schema=schema),
         scope_checker=StubScopeChecker(),
         audit_writer=audit_spy,
@@ -163,7 +163,7 @@ class TestTimestampCorrection:
         ]
 
         event_strings = _make_complete_events_strings(step_id, fabricated_ts)
-        log_path = tmp_path / "execution-log.yaml"
+        log_path = tmp_path / "execution-log.json"
         _write_execution_log(log_path, project_id, event_strings)
 
         audit_spy = SpyAuditWriter()
@@ -223,7 +223,7 @@ class TestTimestampCorrection:
         ]
 
         event_strings = _make_complete_events_strings(step_id, timestamps)
-        log_path = tmp_path / "execution-log.yaml"
+        log_path = tmp_path / "execution-log.json"
         _write_execution_log(log_path, project_id, event_strings)
 
         audit_spy = SpyAuditWriter()
@@ -279,7 +279,7 @@ class TestTimestampCorrection:
         ]
 
         event_strings = _make_complete_events_strings(step_id, valid_ts)
-        log_path = tmp_path / "execution-log.yaml"
+        log_path = tmp_path / "execution-log.json"
         _write_execution_log(log_path, project_id, event_strings)
 
         # Capture original content
@@ -328,7 +328,7 @@ class TestTimestampCorrection:
             f"{step_id}|RED_ACCEPTANCE|EXECUTED|FAIL|{fabricated_ts}",
         ]
 
-        log_path = tmp_path / "execution-log.yaml"
+        log_path = tmp_path / "execution-log.json"
         _write_execution_log(log_path, project_id, event_strings)
 
         audit_spy = SpyAuditWriter()

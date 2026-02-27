@@ -14,7 +14,7 @@ BUSINESS VALUE:
 
 SCOPE: Covers US-003 Acceptance Criteria (AC-003.1 through AC-003.6)
 WAVE: DISTILL (Acceptance Test Creation)
-STATUS: Migrated to Schema v2.0 (execution-log.yaml format)
+STATUS: Migrated to Schema v2.0 (execution-log.json format)
 
 TEST BOUNDARY: Port-to-port (driving port → SubagentStopService → driven port stubs).
 Tests invoke SubagentStopService.validate() directly with in-memory adapters,
@@ -99,7 +99,7 @@ def _make_context(
 ) -> SubagentStopContext:
     """Build a SubagentStopContext for testing."""
     return SubagentStopContext(
-        execution_log_path="/fake/execution-log.yaml",
+        execution_log_path="/fake/execution-log.json",
         project_id=project_id,
         step_id=step_id,
         stop_hook_active=stop_hook_active,
@@ -320,7 +320,7 @@ class TestPostExecutionStateValidation:
     def test_abandoned_in_progress_phase_detected(self, tdd_phases):
         """
         GIVEN software-crafter agent crashed during GREEN phase
-        AND execution-log.yaml shows GREEN phase never logged (missing from events)
+        AND execution-log.json shows GREEN phase never logged (missing from events)
         WHEN SubagentStop hook fires after agent process terminates
         THEN hook detects abandoned phase and flags it with specific error
 
@@ -393,7 +393,7 @@ class TestPostExecutionStateValidation:
 
     def test_executed_phase_without_outcome_flagged(self, tdd_phases):
         """
-        GIVEN execution-log.yaml shows GREEN phase with status "EXECUTED"
+        GIVEN execution-log.json shows GREEN phase with status "EXECUTED"
         AND the phase has invalid outcome (empty string instead of PASS/FAIL)
         WHEN SubagentStop hook validates the execution log
         THEN hook flags the phase as incomplete execution
@@ -426,7 +426,7 @@ class TestPostExecutionStateValidation:
 
     def test_skipped_phase_without_blocked_by_reason_flagged(self, tdd_phases):
         """
-        GIVEN execution-log.yaml shows GREEN phase with status "SKIPPED"
+        GIVEN execution-log.json shows GREEN phase with status "SKIPPED"
         AND the phase has invalid skip reason (no valid prefix)
         WHEN SubagentStop hook validates the execution log
         THEN hook flags the skip as invalid (must have valid prefix)
@@ -460,7 +460,7 @@ class TestPostExecutionStateValidation:
 
     def test_validation_errors_trigger_failed_state_with_recovery(self, tdd_phases):
         """
-        GIVEN execution-log.yaml has multiple issues:
+        GIVEN execution-log.json has multiple issues:
           - Missing phases (abandoned)
           - Invalid outcome (incomplete)
           - Invalid skip reason
@@ -478,7 +478,7 @@ class TestPostExecutionStateValidation:
 
         Recovery Suggestions Expected:
         - "Resume execution to complete missing phases"
-        - "Fix invalid phase entries in execution-log.yaml"
+        - "Fix invalid phase entries in execution-log.json"
         - "Ensure EXECUTED phases have PASS/FAIL outcome"
         """
         events = _make_multiple_issues_events(tdd_phases)
@@ -541,7 +541,7 @@ class TestPostExecutionStateValidation:
 
     def test_valid_skip_with_blocked_by_passes_validation(self, tdd_phases):
         """
-        GIVEN execution-log.yaml shows GREEN phase with status "SKIPPED"
+        GIVEN execution-log.json shows GREEN phase with status "SKIPPED"
         AND the phase has valid skip reason with APPROVED_SKIP prefix
         WHEN SubagentStop hook validates the execution log
         THEN validation passes (skip is legitimate)

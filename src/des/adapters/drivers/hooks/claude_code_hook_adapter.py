@@ -41,8 +41,8 @@ if __name__ == "__main__":
         sys.path.insert(0, project_root)
 
 from des.adapters.driven.git.git_commit_verifier import GitCommitVerifier
-from des.adapters.driven.hooks.yaml_execution_log_reader import (
-    YamlExecutionLogReader,
+from des.adapters.driven.hooks.json_execution_log_reader import (
+    JsonExecutionLogReader,
 )
 from des.adapters.driven.logging.jsonl_audit_log_writer import JsonlAuditLogWriter
 from des.adapters.driven.time.system_time import SystemTimeProvider
@@ -111,7 +111,7 @@ def create_subagent_stop_service() -> SubagentStopService:
     schema = get_tdd_schema()
 
     return SubagentStopService(
-        log_reader=YamlExecutionLogReader(),
+        log_reader=JsonExecutionLogReader(),
         completion_validator=StepCompletionValidator(schema=schema),
         scope_checker=GitScopeChecker(),
         audit_writer=audit_writer,
@@ -774,7 +774,7 @@ def _resolve_des_context(
     project_id = des_context["project_id"]
     step_id = des_context["step_id"]
     execution_log_path = os.path.join(
-        cwd, "docs", "feature", project_id, "execution-log.yaml"
+        cwd, "docs", "feature", project_id, "execution-log.json"
     )
     return execution_log_path, project_id, step_id
 
@@ -802,7 +802,7 @@ RECOVERY REQUIRED:
 
 The step validation failed. You MUST fix these issues before proceeding.
 
-IMPORTANT: Only the executing agent may write to execution-log.yaml.
+IMPORTANT: Only the executing agent may write to execution-log.json.
 The orchestrator must RE-DISPATCH the agent to execute missing phases.
 Never write log entries for phases that were not actually executed."""
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Generate feature-scoped mutation testing configurations from execution-log.yaml
+Generate feature-scoped mutation testing configurations from execution-log.json
 
-This script extracts implementation files from execution-log.yaml and creates
+This script extracts implementation files from execution-log.json and creates
 per-component Cosmic Ray configurations with scoped test commands that only run
 tests related to each changed file.
 
@@ -30,7 +30,7 @@ import yaml
 
 
 def extract_implementation_files(execution_status_path: str) -> list[str]:
-    """Extract all implementation files from execution-log.yaml"""
+    """Extract all implementation files from execution-log.json"""
     with open(execution_status_path) as f:
         data = yaml.safe_load(f)
 
@@ -231,7 +231,7 @@ Examples:
     args = parser.parse_args()
 
     project_id = args.project_id
-    execution_status_path = f"docs/feature/{project_id}/execution-log.yaml"
+    execution_status_path = f"docs/feature/{project_id}/execution-log.json"
 
     # Check if execution status file exists
     if not os.path.exists(execution_status_path):
@@ -251,11 +251,11 @@ Examples:
     print()
 
     # Extract implementation files
-    print("STEP 1: Extracting implementation files from execution-log.yaml...")
+    print("STEP 1: Extracting implementation files from execution-log.json...")
     impl_files = extract_implementation_files(execution_status_path)
 
     if not impl_files:
-        print("❌ No implementation files found in execution-log.yaml")
+        print("❌ No implementation files found in execution-log.json")
         sys.exit(1)
 
     print(f"✓ Found {len(impl_files)} implementation files")

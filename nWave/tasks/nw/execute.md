@@ -1,5 +1,5 @@
 ---
-description: "Dispatches a single roadmap step to a specialized agent for TDD execution. Use when implementing a specific step from a roadmap.yaml plan."
+description: "Dispatches a single roadmap step to a specialized agent for TDD execution. Use when implementing a specific step from a roadmap.json plan."
 argument-hint: '[agent] [project-id] [step-id] - Example: @nw-software-crafter "auth-upgrade" "01-01"'
 ---
 
@@ -19,8 +19,8 @@ Dispatch a single roadmap step to an agent. Orchestrator extracts step context f
 
 ## Context Files Required
 
-- `docs/feature/{project-id}/roadmap.yaml` — Orchestrator reads once, extracts step context
-- `docs/feature/{project-id}/execution-log.yaml` — Agent appends only (never reads)
+- `docs/feature/{project-id}/roadmap.json` — Orchestrator reads once, extracts step context
+- `docs/feature/{project-id}/execution-log.json` — Agent appends only (never reads)
 
 ## Rigor Profile Integration
 
@@ -108,15 +108,15 @@ For SKIPPED phases (genuinely not applicable):
       --data "NOT_APPLICABLE: reason"
 
 CLI enforces real UTC timestamps and validates phase names.
-Do NOT manually edit execution-log.yaml.
+Do NOT manually edit execution-log.json.
 
 CRITICAL: Only the executing agent calls the CLI.
 Orchestrator MUST NEVER write phase entries — only the agent that performed the work. A log entry without actual execution is fraud.
 
 # BOUNDARY_RULES
 - Only modify files listed in step's files_to_modify
-- Do not load roadmap.yaml
-- Do not modify execution-log.yaml structure (append only)
+- Do not load roadmap.json
+- Do not modify execution-log.json structure (append only)
 - NEVER write execution-log entries for phases you did not execute
 
 # TIMEOUT_INSTRUCTION
@@ -172,10 +172,10 @@ Resume costs ~50% more tokens/call due to context replay (measured: 3.7K vs 2.5K
 
 - [ ] Agent invoked via Task tool (dispatcher does not execute the work)
 - [ ] Step context extracted from roadmap and passed in prompt
-- [ ] Agent appended phase events to execution-log.yaml
-- [ ] Agent did not load roadmap.yaml
+- [ ] Agent appended phase events to execution-log.json
+- [ ] Agent did not load roadmap.json
 
 ## Next Wave
 
 **Handoff To**: /nw:review for post-execution review
-**Deliverables**: Updated execution-log.yaml|implementation artifacts|git commits
+**Deliverables**: Updated execution-log.json|implementation artifacts|git commits

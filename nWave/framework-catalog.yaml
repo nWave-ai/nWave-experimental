@@ -240,7 +240,7 @@ commands:
     - refactored_code
     - refactoring_log
   roadmap:
-    description: Creates a phased roadmap.yaml for a feature goal with acceptance
+    description: Creates a phased roadmap.json for a feature goal with acceptance
       criteria and TDD steps. Use when planning implementation steps before execution.
     argument_hint: '[agent] [goal-description] - Example: @solution-architect "Migrate
       to microservices"'
@@ -250,12 +250,12 @@ commands:
     description: Dispatches an expert reviewer agent to critique workflow artifacts.
       Use when a roadmap, implementation, or step needs quality review before proceeding.
     argument_hint: '[agent] [artifact-type] [artifact-path] - Example: @software-crafter
-      task "roadmap.yaml"'
+      task "roadmap.json"'
     outputs:
     - review_report
   execute:
     description: Dispatches a single roadmap step to a specialized agent for TDD execution.
-      Use when implementing a specific step from a roadmap.yaml plan.
+      Use when implementing a specific step from a roadmap.json plan.
     argument_hint: '[agent] [project-id] [step-id] - Example: @nw-software-crafter
       "auth-upgrade" "01-01"'
     outputs:

@@ -140,7 +140,7 @@ class StepCompletionValidator:
         if incomplete_phases or invalid_skips or error_messages:
             recovery_suggestions.extend(
                 [
-                    "Fix invalid phase entries in execution-log.yaml",
+                    "Fix invalid phase entries in execution-log.json",
                     "Ensure EXECUTED phases have PASS/FAIL outcome",
                     "Ensure SKIPPED phases have valid reason prefix",
                 ]

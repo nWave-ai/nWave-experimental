@@ -10,18 +10,18 @@ argument-hint: "[project-id] - Optional: --threshold=[75|80|85] --language=[auto
 
 ## Overview
 
-Run mutation testing against implementation files from the current feature. Extracts targets from execution-log.yaml|generates feature-scoped configs|delegates to software-crafter. Uses cosmic-ray (Python)|PIT (Java)|Stryker (JS/TS/C#).
+Run mutation testing against implementation files from the current feature. Extracts targets from execution-log.json|generates feature-scoped configs|delegates to software-crafter. Uses cosmic-ray (Python)|PIT (Java)|Stryker (JS/TS/C#).
 
 ## Context Files Required
 
-- `docs/feature/{project-id}/execution-log.yaml` - Implementation file extraction
+- `docs/feature/{project-id}/execution-log.json` - Implementation file extraction
 - `scripts/mutation/generate_scoped_configs.py` - Automated config generation (if available)
 
 ## Pre-Invocation
 
 Orchestrator performs before delegating:
 
-1. Read `execution-log.yaml`, extract implementation files from `completed_steps[].files_modified.implementation`
+1. Read `execution-log.json`, extract implementation files from `completed_steps[].files_modified.implementation`
 2. Verify all extracted files exist on disk
 3. Detect project language from config files (pyproject.toml, pom.xml, package.json, etc.)
 4. Confirm test suite passes: run `pytest -x {test_scope}` (or equivalent)
@@ -35,7 +35,7 @@ Execute mutation testing for project {project-id}.
 
 **Context to pass inline (agent has no Skill access):**
 - Project ID
-- Implementation file list (from execution-log.yaml)
+- Implementation file list (from execution-log.json)
 - Test scope path (e.g., `tests/des/`)
 - Kill rate threshold (default: 80%)
 - Language and tool selection
@@ -53,13 +53,13 @@ Execute mutation testing for project {project-id}.
 ```bash
 /nw:mutation-test des-hook-enforcement tests/des/
 ```
-Reads execution-log.yaml, runs `generate_scoped_configs.py des-hook-enforcement`, delegates to software-crafter with per-component configs. Agent runs cosmic-ray, produces mutation-report.md.
+Reads execution-log.json, runs `generate_scoped_configs.py des-hook-enforcement`, delegates to software-crafter with per-component configs. Agent runs cosmic-ray, produces mutation-report.md.
 
 ### Example 2: Python project without config generator
 ```bash
 /nw:mutation-test auth-upgrade tests/auth/
 ```
-Extracts files manually from execution-log.yaml, creates single cosmic-ray config with `module-path = [file1, file2, ...]` and `test-command = "pytest -x tests/auth/"`, delegates to agent.
+Extracts files manually from execution-log.json, creates single cosmic-ray config with `module-path = [file1, file2, ...]` and `test-command = "pytest -x tests/auth/"`, delegates to agent.
 
 ### Example 3: Non-Python project
 ```bash
@@ -69,7 +69,7 @@ Detects `package.json`, selects Stryker, delegates with Stryker-specific instruc
 
 ## Success Criteria
 
-- [ ] Implementation files extracted from execution-log.yaml
+- [ ] Implementation files extracted from execution-log.json
 - [ ] All implementation files verified on disk
 - [ ] Mutation testing executed without errors
 - [ ] Per-file breakdown in mutation-report.md

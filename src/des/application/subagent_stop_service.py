@@ -99,14 +99,14 @@ class SubagentStopService(SubagentStopPort):
             return HookDecision.block(
                 reason=f"Execution log not found: {context.execution_log_path}",
                 recovery_suggestions=[
-                    "Create execution-log.yaml file",
+                    "Create execution-log.json file",
                     "Run orchestrator to initialize log",
                 ],
             )
         except LogFileCorrupted as e:
             return HookDecision.block(
-                reason=f"Invalid YAML in execution log: {e}",
-                recovery_suggestions=["Fix YAML syntax errors in execution-log.yaml"],
+                reason=f"Invalid JSON in execution log: {e}",
+                recovery_suggestions=["Fix JSON syntax errors in execution-log.json"],
             )
 
         if log_project_id != context.project_id:
@@ -127,7 +127,7 @@ class SubagentStopService(SubagentStopPort):
         except (LogFileNotFound, LogFileCorrupted) as e:
             return HookDecision.block(
                 reason=f"Failed to read step events: {e}",
-                recovery_suggestions=["Check execution-log.yaml file integrity"],
+                recovery_suggestions=["Check execution-log.json file integrity"],
             )
 
         # Step 2.5: Check and correct log integrity (BEFORE completion check)
@@ -272,9 +272,8 @@ class SubagentStopService(SubagentStopPort):
         Returns:
             Set of entry indices that were actually corrected.
         """
+        import json
         from datetime import datetime, timezone
-
-        import yaml
 
         corrected_indices: set[int] = set()
 
@@ -305,14 +304,14 @@ class SubagentStopService(SubagentStopPort):
             step = (now - start) / (n + 1)
             interpolated = [start + step * (i + 1) for i in range(n)]
 
-        # Read raw YAML
+        # Read raw JSON
         try:
             log_path = Path(context.execution_log_path)
-            raw_yaml = yaml.safe_load(log_path.read_text())
+            raw_data = json.loads(log_path.read_text())
         except Exception:
             return corrected_indices
 
-        raw_events = raw_yaml.get("events", [])
+        raw_events = raw_data.get("events", [])
 
         # Replace timestamps in raw event strings
         for entry, new_ts in zip(correctable, interpolated, strict=False):
@@ -344,12 +343,10 @@ class SubagentStopService(SubagentStopPort):
                         )
                     )
 
-        # Write corrected YAML back
+        # Write corrected JSON back
         try:
-            raw_yaml["events"] = raw_events
-            log_path.write_text(
-                yaml.dump(raw_yaml, default_flow_style=False, sort_keys=False)
-            )
+            raw_data["events"] = raw_events
+            log_path.write_text(json.dumps(raw_data, indent=2))
         except Exception:
             pass  # Correction is best-effort
 
@@ -358,12 +355,12 @@ class SubagentStopService(SubagentStopPort):
     def _check_and_log_scope(self, context: SubagentStopContext) -> None:
         """Check scope violations and log warnings."""
         log_path = Path(context.execution_log_path)
-        # execution-log.yaml is in docs/feature/{project}/
+        # execution-log.json is in docs/feature/{project}/
         project_root = log_path.parent.parent.parent
 
         scope_result = self._scope_checker.check_scope(
             project_root=project_root,
-            # TODO: Extract allowed patterns from roadmap.yaml
+            # TODO: Extract allowed patterns from roadmap.json
             allowed_patterns=["**/*"],
         )
 

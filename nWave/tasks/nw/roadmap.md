@@ -1,5 +1,5 @@
 ---
-description: "Creates a phased roadmap.yaml for a feature goal with acceptance criteria and TDD steps. Use when planning implementation steps before execution."
+description: "Creates a phased roadmap.json for a feature goal with acceptance criteria and TDD steps. Use when planning implementation steps before execution."
 disable-model-invocation: true
 argument-hint: '[agent] [goal-description] - Example: @solution-architect "Migrate to microservices"'
 ---
@@ -13,7 +13,7 @@ argument-hint: '[agent] [goal-description] - Example: @solution-architect "Migra
 
 Dispatches expert agent to fill a pre-scaffolded YAML roadmap skeleton. CLI tools handle structure; agent handles content.
 
-Output: `docs/feature/{project-id}/roadmap.yaml`
+Output: `docs/feature/{project-id}/roadmap.json`
 
 ## Usage
 
@@ -38,7 +38,7 @@ You MUST execute these steps in order. Do NOT skip any.
 PYTHONPATH=~/.claude/lib/python python3 -m des.cli.roadmap init \
   --project-id {project-id} \
   --goal "{goal-description}" \
-  --output docs/feature/{project-id}/roadmap.yaml
+  --output docs/feature/{project-id}/roadmap.json
 ```
 For complex projects add: `--phases 3 --steps "01:3,02:2,03:1"`
 
@@ -50,7 +50,7 @@ Skeleton exists with TODO placeholders. Invoke via Task tool:
 ```
 @{agent-name}
 
-Fill in the roadmap skeleton at docs/feature/{project-id}/roadmap.yaml.
+Fill in the roadmap skeleton at docs/feature/{project-id}/roadmap.json.
 Replace every TODO with real content. Do NOT change the YAML structure
 (phases, steps, keys). Fill in: names, descriptions, acceptance criteria,
 time estimates, dependencies, and implementation_scope paths.
@@ -63,7 +63,7 @@ Context to pass (if available): measurement baseline|mikado-graph.md|existing do
 **Step 4 — Validate via CLI (hard gate, mandatory):**
 
 ```bash
-PYTHONPATH=~/.claude/lib/python python3 -m des.cli.roadmap validate docs/feature/{project-id}/roadmap.yaml
+PYTHONPATH=~/.claude/lib/python python3 -m des.cli.roadmap validate docs/feature/{project-id}/roadmap.json
 ```
 - Exit 0 -> success, roadmap ready
 - Exit 1 -> print errors, STOP, do NOT proceed
@@ -106,7 +106,7 @@ For performance roadmaps, include measurement context inline so agent can valida
 ```
 /nw:roadmap @nw-solution-architect "Migrate authentication to OAuth2"
 ```
-Derives project-id="migrate-auth-to-oauth2", scaffolds skeleton, invokes agent to fill TODOs, validates. Produces docs/feature/migrate-auth-to-oauth2/roadmap.yaml.
+Derives project-id="migrate-auth-to-oauth2", scaffolds skeleton, invokes agent to fill TODOs, validates. Produces docs/feature/migrate-auth-to-oauth2/roadmap.json.
 
 ### Example 2: Performance roadmap with measurement context
 ```

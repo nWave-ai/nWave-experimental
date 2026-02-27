@@ -27,6 +27,6 @@ For a given project (`docs/feature/{id}/`), check each wave's artifacts:
 | DESIGN | `docs/feature/{id}/design/architecture-design.md` exists and is non-empty | `docs/feature/{id}/design/` exists but required file missing or empty |
 | DEVOP | `docs/feature/{id}/deliver/platform-architecture.md` exists and is non-empty | `docs/feature/{id}/deliver/` exists but platform-architecture.md missing or empty |
 | DISTILL | `docs/feature/{id}/distill/test-scenarios.md` exists and is non-empty | `docs/feature/{id}/distill/` exists but required file missing or empty |
-| DELIVER | `docs/feature/{id}/execution-log.yaml` with all roadmap steps at COMMIT/PASS | `execution-log.yaml` exists with some steps incomplete |
+| DELIVER | `docs/feature/{id}/execution-log.json` with all roadmap steps at COMMIT/PASS | `execution-log.json` exists with some steps incomplete |
 
 "Not started" = neither directory nor required artifacts exist for that wave.

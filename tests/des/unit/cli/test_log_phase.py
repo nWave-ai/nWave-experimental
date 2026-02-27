@@ -1,17 +1,17 @@
 """Unit tests for des.cli.log_phase CLI module.
 
-Tests the log_phase CLI tool that appends structured YAML objects (v3.0 format)
-to execution-log.yaml with real UTC timestamps. All tests use tmp_path fixture
+Tests the log_phase CLI tool that appends structured JSON objects (v3.0 format)
+to execution-log.json with real UTC timestamps. All tests use tmp_path fixture
 and mock get_tdd_schema.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
-import yaml
 
 from des.domain.tdd_schema import TDDSchema
 
@@ -39,14 +39,14 @@ def mock_schema():
 def _create_execution_log(
     tmp_path, schema_version="2.0", project_id="test", events=None
 ):
-    """Helper to create a minimal execution-log.yaml in tmp_path."""
+    """Helper to create a minimal execution-log.json in tmp_path."""
     data = {
         "schema_version": schema_version,
         "project_id": project_id,
         "events": events or [],
     }
-    log_path = tmp_path / "execution-log.yaml"
-    log_path.write_text(yaml.dump(data, default_flow_style=False))
+    log_path = tmp_path / "execution-log.json"
+    log_path.write_text(json.dumps(data, indent=2))
     return log_path
 
 
@@ -80,7 +80,7 @@ class TestLogPhaseValidExecutedEntry:
 
         assert result == 0
 
-        log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
+        log_data = json.loads((tmp_path / "execution-log.json").read_text())
         events = log_data["events"]
         assert len(events) == 1
 
@@ -126,7 +126,7 @@ class TestLogPhaseValidSkippedEntry:
 
         assert result == 0
 
-        log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
+        log_data = json.loads((tmp_path / "execution-log.json").read_text())
         events = log_data["events"]
         assert len(events) == 1
         entry = events[0]
@@ -193,12 +193,12 @@ class TestLogPhaseSkippedWithoutValidPrefix:
 
 
 class TestLogPhaseMissingLogFile:
-    """Test that a missing execution-log.yaml is rejected with exit code 1."""
+    """Test that a missing execution-log.json is rejected with exit code 1."""
 
     def test_missing_log_file_rejected(self, tmp_path, mock_schema, capsys):
         from des.cli.log_phase import main
 
-        # Do NOT create execution-log.yaml in tmp_path
+        # Do NOT create execution-log.json in tmp_path
 
         result = main(
             [
@@ -241,7 +241,7 @@ class TestLogPhaseYamlStructurePreserved:
             ]
         )
 
-        log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
+        log_data = json.loads((tmp_path / "execution-log.json").read_text())
         assert log_data["schema_version"] == "3.0"
         assert log_data["project_id"] == "test"
         assert len(log_data["events"]) == 1
@@ -273,7 +273,7 @@ class TestLogPhaseMultipleEntriesSequential:
             )
             assert result == 0
 
-        log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
+        log_data = json.loads((tmp_path / "execution-log.json").read_text())
         events = log_data["events"]
         assert len(events) == 3
 
@@ -311,7 +311,7 @@ class TestLogPhaseExecStats:
 
         assert result == 0
 
-        log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
+        log_data = json.loads((tmp_path / "execution-log.json").read_text())
         entry = log_data["events"][0]
         assert isinstance(entry, dict)
         assert entry["tu"] == 12
@@ -343,7 +343,7 @@ class TestLogPhaseExecStats:
 
         assert result == 0
 
-        log_data = yaml.safe_load((tmp_path / "execution-log.yaml").read_text())
+        log_data = json.loads((tmp_path / "execution-log.json").read_text())
         entry = log_data["events"][0]
         assert isinstance(entry, dict)
         assert "tu" not in entry

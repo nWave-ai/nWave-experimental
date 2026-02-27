@@ -66,7 +66,7 @@ class DeliverIntegrityVerifier:
         """Verify all roadmap steps have valid DES execution-log entries.
 
         Args:
-            roadmap_steps: List of step IDs from roadmap.yaml
+            roadmap_steps: List of step IDs from roadmap.json
             execution_log_entries: Dict mapping step_id -> list of phase names found
         """
         violations = []

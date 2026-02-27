@@ -8,21 +8,21 @@ Test Budget: 2 behaviors x 2 = 4 max tests. Using 2.
 
 from __future__ import annotations
 
-import yaml
+import json
 
-from des.adapters.driven.hooks.yaml_execution_log_reader import YamlExecutionLogReader
+from des.adapters.driven.hooks.json_execution_log_reader import JsonExecutionLogReader
 
 
 def _write_log(tmp_path, events):
-    """Write an execution-log.yaml with given events."""
-    log_path = tmp_path / "execution-log.yaml"
+    """Write an execution-log.json with given events."""
+    log_path = tmp_path / "execution-log.json"
     data = {"project_id": "test", "events": events}
-    log_path.write_text(yaml.dump(data, default_flow_style=False))
+    log_path.write_text(json.dumps(data, indent=2))
     return str(log_path)
 
 
-class TestYamlExecutionLogReaderExecStats:
-    """YamlExecutionLogReader passes through execution statistics from events."""
+class TestJsonExecutionLogReaderExecStats:
+    """JsonExecutionLogReader passes through execution statistics from events."""
 
     def test_read_step_events_returns_stats_from_7_field_entries(self, tmp_path):
         """Reader returns turns_used and tokens_used for 7-field format entries."""
@@ -33,7 +33,7 @@ class TestYamlExecutionLogReaderExecStats:
             ],
         )
 
-        reader = YamlExecutionLogReader()
+        reader = JsonExecutionLogReader()
         events = reader.read_step_events(log_path, "07-01")
 
         assert len(events) == 1
@@ -50,7 +50,7 @@ class TestYamlExecutionLogReaderExecStats:
             ],
         )
 
-        reader = YamlExecutionLogReader()
+        reader = JsonExecutionLogReader()
         events = reader.read_all_events(log_path)
 
         assert len(events) == 2

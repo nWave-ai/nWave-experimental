@@ -257,12 +257,11 @@ def step_file_incomplete(tmp_path):
 
 @pytest.fixture
 def execution_log_complete(tmp_path, tdd_phases):
-    """Create execution-log.yaml with all phases complete (Schema v2.0 append-only format)."""
+    """Create execution-log.json with all phases complete (Schema v2.0 append-only format)."""
+    import json
     from datetime import datetime, timezone
 
-    import yaml
-
-    log_file = tmp_path / "execution-log.yaml"
+    log_file = tmp_path / "execution-log.json"
     timestamp = datetime(2026, 1, 26, 10, 0, 0, tzinfo=timezone.utc).isoformat()
 
     # Build events for all phases from schema
@@ -278,18 +277,17 @@ def execution_log_complete(tmp_path, tdd_phases):
         "events": events,
     }
 
-    log_file.write_text(yaml.dump(log_data, default_flow_style=False))
+    log_file.write_text(json.dumps(log_data, indent=2))
     return log_file
 
 
 @pytest.fixture
 def execution_log_incomplete(tmp_path, tdd_phases):
-    """Create execution-log.yaml with incomplete phases (Schema v2.0 append-only format)."""
+    """Create execution-log.json with incomplete phases (Schema v2.0 append-only format)."""
+    import json
     from datetime import datetime, timezone
 
-    import yaml
-
-    log_file = tmp_path / "execution-log.yaml"
+    log_file = tmp_path / "execution-log.json"
     timestamp = datetime(2026, 1, 26, 10, 0, 0, tzinfo=timezone.utc).isoformat()
 
     # Build events with only first 2 phases (missing remaining phases)
@@ -306,7 +304,7 @@ def execution_log_incomplete(tmp_path, tdd_phases):
         "events": events,
     }
 
-    log_file.write_text(yaml.dump(log_data, default_flow_style=False))
+    log_file.write_text(json.dumps(log_data, indent=2))
     return log_file
 
 
@@ -361,7 +359,7 @@ Acceptance Criteria:
 - Code quality validated
 
 # OUTCOME_RECORDING
-Update execution-log.yaml after each phase.
+Update execution-log.json after each phase.
 Track phase completion in step file.
 
 # RECORDING_INTEGRITY

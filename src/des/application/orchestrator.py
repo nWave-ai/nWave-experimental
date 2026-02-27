@@ -639,7 +639,7 @@ class DESOrchestrator:
         Invoke SubagentStopHook after sub-agent completion.
 
         This is the entry point for post-execution validation (US-003).
-        Delegates to SubagentStopHook to validate step completion from execution-log.yaml.
+        Delegates to SubagentStopHook to validate step completion from execution-log.json.
 
         Schema v2.0: The parameter name is legacy from v1.x. In v2.0, this receives
         a compound path encoding: "{execution_log_path}?project_id={id}&step_id={id}"

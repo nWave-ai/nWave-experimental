@@ -114,7 +114,7 @@ def test_single_scope_violation_logs_feature_name():
     )
 
     context = SubagentStopContext(
-        execution_log_path="/fake/path/execution-log.yaml",
+        execution_log_path="/fake/path/execution-log.json",
         project_id="audit-log-refactor",
         step_id="02-02",
     )
@@ -158,7 +158,7 @@ def test_multiple_scope_violations_each_log_feature_name():
     )
 
     context = SubagentStopContext(
-        execution_log_path="/fake/path/execution-log.yaml",
+        execution_log_path="/fake/path/execution-log.json",
         project_id="test-feature",
         step_id="02-02",
     )
@@ -197,7 +197,7 @@ def test_no_scope_violations_no_events_logged():
     )
 
     context = SubagentStopContext(
-        execution_log_path="/fake/path/execution-log.yaml",
+        execution_log_path="/fake/path/execution-log.json",
         project_id="clean-feature",
         step_id="03-01",
     )

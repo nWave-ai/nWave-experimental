@@ -3,7 +3,7 @@
 Usage:
     python -m des.cli.verify_deliver_integrity docs/feature/{project-id}/
 
-Reads roadmap.yaml and execution-log.yaml from the project directory,
+Reads roadmap.json and execution-log.json from the project directory,
 cross-references step IDs against execution-log entries, and reports
 violations (steps without DES traces or with incomplete TDD phases).
 
@@ -15,10 +15,9 @@ Exit codes:
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
-
-import yaml
 
 from des.domain.deliver_integrity_verifier import DeliverIntegrityVerifier
 from des.domain.roadmap_schema import get_roadmap_schema
@@ -50,7 +49,7 @@ def _extract_step_ids(roadmap: dict) -> list[str]:
 
 
 def _parse_execution_log(exec_log: dict) -> dict[str, list[str]]:
-    """Parse execution-log.yaml events into step_id -> list[phase_name] mapping.
+    """Parse execution-log.json events into step_id -> list[phase_name] mapping.
 
     Supports both v2.0 pipe format ("sid|phase|status|data|ts")
     and v3.0 structured format ({sid, p, s, d, t}).
@@ -78,19 +77,19 @@ def main() -> int:
 
     project_dir = Path(sys.argv[1])
 
-    roadmap_path = project_dir / "roadmap.yaml"
-    exec_log_path = project_dir / "execution-log.yaml"
+    roadmap_path = project_dir / "roadmap.json"
+    exec_log_path = project_dir / "execution-log.json"
 
     if not roadmap_path.exists():
-        print(f"Error: roadmap.yaml not found at {roadmap_path}")
+        print(f"Error: roadmap.json not found at {roadmap_path}")
         return 2
 
     if not exec_log_path.exists():
-        print(f"Error: execution-log.yaml not found at {exec_log_path}")
+        print(f"Error: execution-log.json not found at {exec_log_path}")
         return 2
 
-    roadmap = yaml.safe_load(roadmap_path.read_text())
-    exec_log = yaml.safe_load(exec_log_path.read_text())
+    roadmap = json.loads(roadmap_path.read_text())
+    exec_log = json.loads(exec_log_path.read_text())
 
     # Structural pre-check: validate roadmap format before extracting IDs
     try:

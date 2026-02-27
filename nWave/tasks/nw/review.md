@@ -1,6 +1,6 @@
 ---
 description: "Dispatches an expert reviewer agent to critique workflow artifacts. Use when a roadmap, implementation, or step needs quality review before proceeding."
-argument-hint: '[agent] [artifact-type] [artifact-path] - Example: @software-crafter task "roadmap.yaml"'
+argument-hint: '[agent] [artifact-type] [artifact-path] - Example: @software-crafter task "roadmap.json"'
 ---
 
 # NW-REVIEW: Expert Critique and Quality Assurance
@@ -110,19 +110,19 @@ On validation failure, return specific error and stop.
 
 ### Example 1: Step review
 ```
-/nw:review @nw-software-crafter step "docs/feature/auth-upgrade/execution-log.yaml" step_id=02-01
+/nw:review @nw-software-crafter step "docs/feature/auth-upgrade/execution-log.json" step_id=02-01
 ```
 Invokes `nw-software-crafter-reviewer` with step review of execution log, step 02-01.
 
 ### Example 2: Roadmap review
 ```
-/nw:review @nw-solution-architect roadmap "docs/feature/auth-upgrade/roadmap.yaml"
+/nw:review @nw-solution-architect roadmap "docs/feature/auth-upgrade/roadmap.json"
 ```
 Invokes `nw-solution-architect-reviewer` with roadmap review.
 
 ### Example 3: Implementation review
 ```
-/nw:review @nw-platform-architect implementation "docs/feature/auth-upgrade/execution-log.yaml" step_id=01-01
+/nw:review @nw-platform-architect implementation "docs/feature/auth-upgrade/execution-log.json" step_id=01-01
 ```
 Invokes `nw-platform-architect-reviewer` with implementation review of step 01-01.
 
@@ -147,5 +147,5 @@ Invokes `nw-software-crafter-reviewer` with implementation review + RPP L1-L3 co
 ## Expected Outputs
 
 ```
-Updated artifact file (roadmap.yaml, execution-log.yaml, etc.) with reviews section
+Updated artifact file (roadmap.json, execution-log.json, etc.) with reviews section
 ```

@@ -12,11 +12,10 @@ Exit codes:
 
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-
-import yaml
 
 from des.domain.roadmap_schema import RoadmapSchemaLoader
 from des.domain.roadmap_validator import RoadmapValidator
@@ -133,13 +132,13 @@ def _cmd_init(args: list[str]) -> int:
             num_phases = len(steps_per_phase)
 
     skeleton = _build_skeleton(project_id, goal, num_phases, steps_per_phase)
-    yaml_output = yaml.dump(skeleton, default_flow_style=False, sort_keys=False)
+    json_output = json.dumps(skeleton, indent=2)
 
     if output_path:
-        Path(output_path).write_text(yaml_output, encoding="utf-8")
+        Path(output_path).write_text(json_output, encoding="utf-8")
         print(f"Roadmap skeleton written to {output_path}")
     else:
-        print(yaml_output, end="")
+        print(json_output)
 
     return 0
 
@@ -160,13 +159,13 @@ def _cmd_validate(args: list[str]) -> int:
         return 2
 
     try:
-        roadmap_data = yaml.safe_load(roadmap_path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as e:
-        print(f"Error: invalid YAML: {e}", file=sys.stderr)
+        roadmap_data = json.loads(roadmap_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"Error: invalid JSON: {e}", file=sys.stderr)
         return 2
 
     if not isinstance(roadmap_data, dict):
-        print("Error: roadmap must be a YAML mapping", file=sys.stderr)
+        print("Error: roadmap must be a JSON object", file=sys.stderr)
         return 2
 
     loader = RoadmapSchemaLoader()

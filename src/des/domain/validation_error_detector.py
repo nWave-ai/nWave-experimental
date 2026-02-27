@@ -238,7 +238,7 @@ class ValidationErrorDetector:
     def _get_generic_guidance(self) -> str:
         """Generic guidance when specific error pattern not found."""
         return (
-            "Review step file schema against specification in docs/feature/des-us005/roadmap.yaml. "
+            "Review step file schema against specification in docs/feature/des-us005/roadmap.json. "
             "Ensure all required fields are present and have valid values."
         )
 

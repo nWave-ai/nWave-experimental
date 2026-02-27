@@ -22,15 +22,14 @@ Only the audit writer and scope checker are stubbed.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-import yaml
-
 from des.adapters.driven.git.git_commit_verifier import GitCommitVerifier
-from des.adapters.driven.hooks.yaml_execution_log_reader import (
-    YamlExecutionLogReader,
+from des.adapters.driven.hooks.json_execution_log_reader import (
+    JsonExecutionLogReader,
 )
 from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
 from des.application.subagent_stop_service import SubagentStopService
@@ -68,10 +67,10 @@ class StubScopeChecker(ScopeChecker):
 
 
 def _build_service_with_git(tmp_project_root: Path) -> SubagentStopService:
-    """Build SubagentStopService with real YAML reader and real git verifier."""
+    """Build SubagentStopService with real JSON reader and real git verifier."""
     schema = get_tdd_schema()
     return SubagentStopService(
-        log_reader=YamlExecutionLogReader(),
+        log_reader=JsonExecutionLogReader(),
         completion_validator=StepCompletionValidator(schema=schema),
         scope_checker=StubScopeChecker(),
         audit_writer=NullAuditLogWriter(),
@@ -218,7 +217,7 @@ def _create_commit_without_step_id(
 
 
 def _create_execution_log_all_phases_pass(tdd_phases) -> dict:
-    """Create execution-log.yaml data with all phases EXECUTED and PASS."""
+    """Create execution-log.json data with all phases EXECUTED and PASS."""
     events = []
     for phase in tdd_phases:
         events.append(f"01-01|{phase}|EXECUTED|PASS|2026-02-08T10:00:00+00:00")
@@ -232,7 +231,7 @@ def _create_execution_log_all_phases_pass(tdd_phases) -> dict:
 
 
 def _create_execution_log_missing_phases(tdd_phases, phases_to_include) -> dict:
-    """Create execution-log.yaml with only some phases present."""
+    """Create execution-log.json with only some phases present."""
     events = []
     for phase in tdd_phases:
         if phase in phases_to_include:
@@ -268,7 +267,7 @@ class TestGitCommitVerification:
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
         """
-        GIVEN all phases are complete in execution-log.yaml
+        GIVEN all phases are complete in execution-log.json
         AND a git commit exists with trailer "Step-ID: 01-01"
         WHEN the completion hook fires after agent finishes
         THEN the step is allowed to proceed
@@ -289,10 +288,10 @@ class TestGitCommitVerification:
             tmp_project_root, "01-01", "Implement user authentication"
         )
 
-        # Arrange: Create execution-log.yaml with all phases complete
+        # Arrange: Create execution-log.json with all phases complete
         log_data = _create_execution_log_all_phases_pass(tdd_phases)
-        log_file = tmp_project_root / "execution-log.yaml"
-        log_file.write_text(yaml.dump(log_data, default_flow_style=False))
+        log_file = tmp_project_root / "execution-log.json"
+        log_file.write_text(json.dumps(log_data, indent=2))
 
         # Act: Invoke service directly
         service = _build_service_with_git(tmp_project_root)
@@ -319,7 +318,7 @@ class TestGitCommitVerification:
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
         """
-        GIVEN all phases are complete in execution-log.yaml
+        GIVEN all phases are complete in execution-log.json
         BUT no git commit contains trailer "Step-ID: 01-01"
         WHEN the completion hook fires after agent finishes
         THEN the step is blocked with commit verification failure
@@ -329,7 +328,7 @@ class TestGitCommitVerification:
                        claims step completion without actually committing code.
                        This is the core fraud-prevention scenario.
 
-        Domain Example: Agent writes all phases as PASS in execution-log.yaml
+        Domain Example: Agent writes all phases as PASS in execution-log.json
                        but never ran git commit. Hook catches the discrepancy
                        and blocks the step from being marked complete.
         """
@@ -338,10 +337,10 @@ class TestGitCommitVerification:
         _create_commit_without_step_id(tmp_project_root, "Some unrelated work")
         _create_commit_without_step_id(tmp_project_root, "Another unrelated change")
 
-        # Arrange: Create execution-log.yaml with all phases complete
+        # Arrange: Create execution-log.json with all phases complete
         log_data = _create_execution_log_all_phases_pass(tdd_phases)
-        log_file = tmp_project_root / "execution-log.yaml"
-        log_file.write_text(yaml.dump(log_data, default_flow_style=False))
+        log_file = tmp_project_root / "execution-log.json"
+        log_file.write_text(json.dumps(log_data, indent=2))
 
         # Act: Invoke service directly
         service = _build_service_with_git(tmp_project_root)
@@ -373,7 +372,7 @@ class TestGitCommitVerification:
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
         """
-        GIVEN all phases are complete in execution-log.yaml
+        GIVEN all phases are complete in execution-log.json
         BUT the working directory is not a git repository
         WHEN the completion hook fires after agent finishes
         THEN the step is blocked with a verification error (fail-closed)
@@ -389,10 +388,10 @@ class TestGitCommitVerification:
         """
         # Arrange: Do NOT initialize git repo (tmp_project_root is just a directory)
 
-        # Arrange: Create execution-log.yaml with all phases complete
+        # Arrange: Create execution-log.json with all phases complete
         log_data = _create_execution_log_all_phases_pass(tdd_phases)
-        log_file = tmp_project_root / "execution-log.yaml"
-        log_file.write_text(yaml.dump(log_data, default_flow_style=False))
+        log_file = tmp_project_root / "execution-log.json"
+        log_file.write_text(json.dumps(log_data, indent=2))
 
         # Act: Invoke service directly
         service = _build_service_with_git(tmp_project_root)
@@ -423,7 +422,7 @@ class TestGitCommitVerification:
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
         """
-        GIVEN execution-log.yaml has missing phases (validation fails)
+        GIVEN execution-log.json has missing phases (validation fails)
         AND a git commit exists with trailer "Step-ID: 01-01"
         WHEN the completion hook fires after agent finishes
         THEN the step is blocked for the missing phases reason
@@ -443,11 +442,11 @@ class TestGitCommitVerification:
         _init_git_repo(tmp_project_root)
         _create_commit_with_step_id(tmp_project_root, "01-01", "Previous attempt")
 
-        # Arrange: Create execution-log.yaml with MISSING phases (only first 3)
+        # Arrange: Create execution-log.json with MISSING phases (only first 3)
         first_three = list(tdd_phases[:3])
         log_data = _create_execution_log_missing_phases(tdd_phases, first_three)
-        log_file = tmp_project_root / "execution-log.yaml"
-        log_file.write_text(yaml.dump(log_data, default_flow_style=False))
+        log_file = tmp_project_root / "execution-log.json"
+        log_file.write_text(json.dumps(log_data, indent=2))
 
         # Act: Invoke service directly
         service = _build_service_with_git(tmp_project_root)
@@ -482,7 +481,7 @@ class TestGitCommitVerification:
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
         """
-        GIVEN all phases are complete in execution-log.yaml
+        GIVEN all phases are complete in execution-log.json
         AND multiple git commits exist in the repository
         AND only one commit contains trailer "Step-ID: 01-01"
         WHEN the completion hook fires after agent finishes
@@ -509,10 +508,10 @@ class TestGitCommitVerification:
         )
         _create_commit_without_step_id(tmp_project_root, "Later unrelated work")
 
-        # Arrange: Create execution-log.yaml with all phases complete
+        # Arrange: Create execution-log.json with all phases complete
         log_data = _create_execution_log_all_phases_pass(tdd_phases)
-        log_file = tmp_project_root / "execution-log.yaml"
-        log_file.write_text(yaml.dump(log_data, default_flow_style=False))
+        log_file = tmp_project_root / "execution-log.json"
+        log_file.write_text(json.dumps(log_data, indent=2))
 
         # Act: Invoke service directly
         service = _build_service_with_git(tmp_project_root)
@@ -539,7 +538,7 @@ class TestGitCommitVerification:
         self, tmp_project_root, minimal_step_file, tdd_phases
     ):
         """
-        GIVEN all phases are complete in execution-log.yaml
+        GIVEN all phases are complete in execution-log.json
         AND a git commit has "Step-ID: 01-01" in its message body (not subject)
         WHEN the completion hook fires after agent finishes
         THEN the commit is found and verified
@@ -584,10 +583,10 @@ class TestGitCommitVerification:
             check=True,
         )
 
-        # Arrange: Create execution-log.yaml with all phases complete
+        # Arrange: Create execution-log.json with all phases complete
         log_data = _create_execution_log_all_phases_pass(tdd_phases)
-        log_file = tmp_project_root / "execution-log.yaml"
-        log_file.write_text(yaml.dump(log_data, default_flow_style=False))
+        log_file = tmp_project_root / "execution-log.json"
+        log_file.write_text(json.dumps(log_data, indent=2))
 
         # Act: Invoke service directly
         service = _build_service_with_git(tmp_project_root)

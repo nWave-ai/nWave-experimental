@@ -232,7 +232,7 @@ def test_hook_completed_subagent_stop_includes_task_correlation_id_from_signal(
             "agent_id": "a1",
             "agent_type": "code",
             "cwd": str(tmp_path),
-            "executionLogPath": str(tmp_path / "execution-log.yaml"),
+            "executionLogPath": str(tmp_path / "execution-log.json"),
             "projectId": "test-project",
             "stepId": "01-01",
             "stop_hook_active": True,

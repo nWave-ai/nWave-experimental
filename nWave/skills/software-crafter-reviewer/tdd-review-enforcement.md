@@ -88,7 +88,7 @@ Required: delete internal tests, consolidate via parametrize, re-submit
 
 ## 5-Phase TDD Validation
 
-Verify all 5 phases in execution-log.yaml: PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT.
+Verify all 5 phases in execution-log.json: PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT.
 
 ### Phase Checks
 - Completeness: all 5 present (Blocker if missing) | Outcomes: all PASS (Blocker if FAIL)
@@ -204,7 +204,7 @@ When a crafter gets stuck, the correct action is to escalate -- not to silently 
 
 ### What to Check
 
-1. **ESCALATION_NEEDED markers**: execution-log.yaml should contain `escalation_needed: true` with reason if the crafter hit a wall
+1. **ESCALATION_NEEDED markers**: execution-log.json should contain `escalation_needed: true` with reason if the crafter hit a wall
 2. **Three-attempt rule**: evidence of at least 3 distinct implementation attempts before any test change (check GREEN phase attempts in execution log)
 3. **Product owner approval**: any requirement-driven test change must reference explicit PO approval (e.g., `po_approved: true` or `requirement_change: {ticket}` in execution log)
 

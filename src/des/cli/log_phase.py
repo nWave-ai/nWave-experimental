@@ -1,4 +1,4 @@
-"""CLI: Append a phase entry to execution-log.yaml with a real UTC timestamp.
+"""CLI: Append a phase entry to execution-log.json with a real UTC timestamp.
 
 Usage:
     PYTHONPATH=src python -m des.cli.log_phase \\
@@ -8,8 +8,8 @@ Usage:
       --status EXECUTED \\
       --data PASS
 
-Writes structured YAML objects (schema v3.0):
-    {sid: "02-03", p: GREEN, s: EXECUTED, d: PASS, t: "2026-02-10T20:28:18Z"}
+Writes structured JSON objects (schema v3.0):
+    {"sid": "02-03", "p": "GREEN", "s": "EXECUTED", "d": "PASS", "t": "2026-02-10T20:28:18Z"}
 
 stdout (agent sees structured representation):
     sid=02-03 p=GREEN s=EXECUTED d=PASS t=2026-02-10T20:28:18Z
@@ -23,11 +23,10 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-
-import yaml
 
 from des.domain.tdd_schema import get_tdd_schema
 
@@ -36,12 +35,12 @@ def _build_parser() -> argparse.ArgumentParser:
     """Build the argument parser for log_phase CLI."""
     parser = argparse.ArgumentParser(
         prog="des.cli.log_phase",
-        description="Append a phase entry to execution-log.yaml with a real UTC timestamp.",
+        description="Append a phase entry to execution-log.json with a real UTC timestamp.",
     )
     parser.add_argument(
         "--project-dir",
         required=True,
-        help="Path to the project directory containing execution-log.yaml",
+        help="Path to the project directory containing execution-log.json",
     )
     parser.add_argument(
         "--step-id",
@@ -114,11 +113,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
 
-    # Check execution-log.yaml exists
+    # Check execution-log.json exists
     project_dir = Path(args.project_dir)
-    log_path = project_dir / "execution-log.yaml"
+    log_path = project_dir / "execution-log.json"
     if not log_path.exists():
-        print(f"Error: execution-log.yaml not found at {log_path}")
+        print(f"Error: execution-log.json not found at {log_path}")
         return 1
 
     # Generate real UTC timestamp
@@ -136,15 +135,15 @@ def main(argv: list[str] | None = None) -> int:
         entry["tu"] = args.turns_used
         entry["tk"] = args.tokens_used
 
-    # YAML read-modify-write
-    log_data = yaml.safe_load(log_path.read_text())
+    # JSON read-modify-write
+    log_data = json.loads(log_path.read_text())
     if log_data is None:
         log_data = {}
     if "events" not in log_data:
         log_data["events"] = []
     log_data["events"].append(entry)
     log_data["schema_version"] = "3.0"
-    log_path.write_text(yaml.dump(log_data, default_flow_style=False))
+    log_path.write_text(json.dumps(log_data, indent=2))
 
     # Print entry to stdout (human-readable key=value format)
     parts = [

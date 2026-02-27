@@ -12,16 +12,16 @@ Test Budget: 3 behaviors x 2 = 6 max tests. Using 4.
 
 from __future__ import annotations
 
-import yaml
+import json
 
-from des.adapters.driven.hooks.yaml_execution_log_reader import YamlExecutionLogReader
+from des.adapters.driven.hooks.json_execution_log_reader import JsonExecutionLogReader
 
 
 def _write_log(tmp_path, events, schema_version="3.0"):
-    """Write an execution-log.yaml with given events and schema_version."""
-    log_path = tmp_path / "execution-log.yaml"
+    """Write an execution-log.json with given events and schema_version."""
+    log_path = tmp_path / "execution-log.json"
     data = {"schema_version": schema_version, "project_id": "test", "events": events}
-    log_path.write_text(yaml.dump(data, default_flow_style=False))
+    log_path.write_text(json.dumps(data, indent=2))
     return str(log_path)
 
 
@@ -57,7 +57,7 @@ class TestYamlExecutionLogReaderV3:
             ],
         )
 
-        reader = YamlExecutionLogReader()
+        reader = JsonExecutionLogReader()
         events = reader.read_step_events(log_path, "08-01")
 
         assert len(events) == 2
@@ -82,7 +82,7 @@ class TestYamlExecutionLogReaderV3:
             ],
         )
 
-        reader = YamlExecutionLogReader()
+        reader = JsonExecutionLogReader()
         events = reader.read_step_events(log_path, "08-01")
 
         assert len(events) == 1
@@ -100,7 +100,7 @@ class TestYamlExecutionLogReaderV3:
             schema_version="2.0",
         )
 
-        reader = YamlExecutionLogReader()
+        reader = JsonExecutionLogReader()
         events = reader.read_all_events(log_path)
 
         assert len(events) == 2
@@ -124,7 +124,7 @@ class TestYamlExecutionLogReaderV3:
             schema_version="3.0",
         )
 
-        reader = YamlExecutionLogReader()
+        reader = JsonExecutionLogReader()
         events = reader.read_all_events(log_path)
 
         assert len(events) == 2

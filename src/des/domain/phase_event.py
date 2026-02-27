@@ -1,7 +1,7 @@
 """Phase event domain model and parser.
 
 Pure domain types for representing TDD phase execution events
-parsed from execution-log.yaml in two formats:
+parsed from execution-log.json in two formats:
 
 v2.0 pipe-delimited strings:
   Format (5-field legacy): "step_id|phase_name|status|outcome|timestamp"

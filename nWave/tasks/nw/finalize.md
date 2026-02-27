@@ -21,14 +21,14 @@ Finalize a completed feature: verify all steps done|create evolution document in
 
 ## Context Files Required
 
-- docs/feature/{project-id}/roadmap.yaml - Original project plan
-- docs/feature/{project-id}/execution-log.yaml - Step execution history (Schema v2.0)
+- docs/feature/{project-id}/roadmap.json - Original project plan
+- docs/feature/{project-id}/execution-log.json - Step execution history (Schema v2.0)
 
 ## Pre-Dispatch Gate: All Steps Complete
 
 Before dispatching, verify all steps are done — prevents archiving incomplete features.
 
-Parse execution-log.yaml, verify every step has status DONE. If any step is not DONE, block finalization and list incomplete steps with current status. Do not dispatch until all steps complete.
+Parse execution-log.json, verify every step has status DONE. If any step is not DONE, block finalization and list incomplete steps with current status. Do not dispatch until all steps complete.
 
 ## Agent Invocation
 

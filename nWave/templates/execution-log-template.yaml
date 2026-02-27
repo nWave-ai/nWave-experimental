@@ -32,7 +32,7 @@ events: []
 # 1. DO NOT read this file (orchestrator provides current state in prompt)
 # 2. After EACH phase completion, append ONE event line using Bash:
 #    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-#    echo '  - "01-01|PREPARE|EXECUTED|PASS|'$timestamp'"' >> execution-log.yaml
+#    echo '  - "01-01|PREPARE|EXECUTED|PASS|'$timestamp'"' >> execution-log.json
 # 3. Use Edit tool with careful string escaping if Bash unavailable
 # 4. NEVER re-read this file (append-only, no verification reads)
 # 5. SubagentStop hook validates completion at end
@@ -68,7 +68,7 @@ events: []
 
 # Benefits:
 # 1. Agent never re-reads file (pure append)
-# 2. Immediate visibility: grep "01-01" execution-log.yaml shows all phases
+# 2. Immediate visibility: grep "01-01" execution-log.json shows all phases
 # 3. Easy correction: insert missing event line if phase skipped
 # 4. Hook reads file once (~3KB), filters by step_id, validates
 # 5. Human-readable progress tracking

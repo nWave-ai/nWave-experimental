@@ -185,7 +185,7 @@ Implement minimal code to pass unit tests. Verify acceptance test also passes. D
 **If stuck after 3 attempts**: revert to last green state, document approaches tried, return `{ESCALATION_NEEDED: true, reason: "3 attempts exhausted", test: "<path>", approaches: [...]}`. NEVER weaken the test.
 
 ### Phase 4: COMMIT
-Commit with detailed message. Pre-commit validates all 5 phases in execution-log.yaml. No push until `/nw:finalize`.
+Commit with detailed message. Pre-commit validates all 5 phases in execution-log.json. No push until `/nw:finalize`.
 
 Note: REVIEW and REFACTOR run at deliver level:
 - Phase 3 (deliver): Complete Refactoring L1-L4 via `/nw:refactor`

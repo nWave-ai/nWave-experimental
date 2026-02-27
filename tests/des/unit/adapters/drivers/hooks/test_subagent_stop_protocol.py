@@ -183,17 +183,23 @@ class TestSubagentStopWithClaudeCodeProtocol:
         # Create execution log at the expected path
         feature_dir = tmp_path / "docs" / "feature" / "test-project"
         feature_dir.mkdir(parents=True)
-        exec_log = feature_dir / "execution-log.yaml"
+        exec_log = feature_dir / "execution-log.json"
         exec_log.write_text(
-            'project_id: "test-project"\n'
-            "events:\n"
-            '  - "01-01|PREPARE|EXECUTED|PASS|2026-02-06T10:00:00Z"\n'
-            '  - "01-01|RED_ACCEPTANCE|EXECUTED|PASS|2026-02-06T10:05:00Z"\n'
-            '  - "01-01|RED_UNIT|EXECUTED|PASS|2026-02-06T10:10:00Z"\n'
-            '  - "01-01|GREEN|EXECUTED|PASS|2026-02-06T10:20:00Z"\n'
-            '  - "01-01|REVIEW|EXECUTED|PASS|2026-02-06T10:30:00Z"\n'
-            '  - "01-01|REFACTOR_CONTINUOUS|SKIPPED|CHECKPOINT_PENDING: Minimal|2026-02-06T10:35:00Z"\n'
-            '  - "01-01|COMMIT|EXECUTED|PASS|2026-02-06T11:00:00Z"\n'
+            json.dumps(
+                {
+                    "project_id": "test-project",
+                    "events": [
+                        "01-01|PREPARE|EXECUTED|PASS|2026-02-06T10:00:00Z",
+                        "01-01|RED_ACCEPTANCE|EXECUTED|PASS|2026-02-06T10:05:00Z",
+                        "01-01|RED_UNIT|EXECUTED|PASS|2026-02-06T10:10:00Z",
+                        "01-01|GREEN|EXECUTED|PASS|2026-02-06T10:20:00Z",
+                        "01-01|REVIEW|EXECUTED|PASS|2026-02-06T10:30:00Z",
+                        "01-01|REFACTOR_CONTINUOUS|SKIPPED|CHECKPOINT_PENDING: Minimal|2026-02-06T10:35:00Z",
+                        "01-01|COMMIT|EXECUTED|PASS|2026-02-06T11:00:00Z",
+                    ],
+                },
+                indent=2,
+            )
         )
 
         # Initialize git repo and create a commit with Step-ID trailer
@@ -243,12 +249,18 @@ class TestSubagentStopWithClaudeCodeProtocol:
         # Create execution log with only 2 phases
         feature_dir = tmp_path / "docs" / "feature" / "test-project"
         feature_dir.mkdir(parents=True)
-        exec_log = feature_dir / "execution-log.yaml"
+        exec_log = feature_dir / "execution-log.json"
         exec_log.write_text(
-            'project_id: "test-project"\n'
-            "events:\n"
-            '  - "01-01|PREPARE|EXECUTED|PASS|2026-02-06T10:00:00Z"\n'
-            '  - "01-01|RED_ACCEPTANCE|EXECUTED|PASS|2026-02-06T10:05:00Z"\n'
+            json.dumps(
+                {
+                    "project_id": "test-project",
+                    "events": [
+                        "01-01|PREPARE|EXECUTED|PASS|2026-02-06T10:00:00Z",
+                        "01-01|RED_ACCEPTANCE|EXECUTED|PASS|2026-02-06T10:05:00Z",
+                    ],
+                },
+                indent=2,
+            )
         )
 
         hook_input = self._make_hook_input(transcript, str(tmp_path))
@@ -287,11 +299,17 @@ class TestSubagentStopWithClaudeCodeProtocol:
         # Create execution log with missing phases to trigger block
         feature_dir = tmp_path / "docs" / "feature" / "test-project"
         feature_dir.mkdir(parents=True)
-        exec_log = feature_dir / "execution-log.yaml"
+        exec_log = feature_dir / "execution-log.json"
         exec_log.write_text(
-            'project_id: "test-project"\n'
-            "events:\n"
-            '  - "01-01|PREPARE|EXECUTED|PASS|2026-02-06T10:00:00Z"\n'
+            json.dumps(
+                {
+                    "project_id": "test-project",
+                    "events": [
+                        "01-01|PREPARE|EXECUTED|PASS|2026-02-06T10:00:00Z",
+                    ],
+                },
+                indent=2,
+            )
         )
 
         hook_input = self._make_hook_input(transcript, str(tmp_path))
@@ -315,7 +333,7 @@ class TestSubagentStopWithClaudeCodeProtocol:
         )
 
     def test_des_subagent_missing_execution_log_blocked(self, tmp_path, monkeypatch):
-        """DES agent where execution-log.yaml doesn't exist should be blocked."""
+        """DES agent where execution-log.json doesn't exist should be blocked."""
         prompt = (
             "<!-- DES-VALIDATION: required -->\n"
             "<!-- DES-PROJECT-ID: no-such-project -->\n"

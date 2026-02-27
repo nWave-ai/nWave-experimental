@@ -18,8 +18,8 @@ Sub-agents cannot use Skill tool or `/nw:*` commands. You MUST:
 ## CRITICAL BOUNDARY RULES
 
 1. **NEVER implement steps directly.** ALL implementation MUST be delegated to the selected crafter (@nw-software-crafter or @nw-functional-software-crafter per step 1.5) via Task tool with DES markers. You are ORCHESTRATOR — coordinate, not implement.
-2. **NEVER write phase entries to execution-log.yaml.** Only the crafter subagent that performed TDD work may append entries.
-3. **Extract step context from roadmap.yaml ONLY for Task prompt.** Grep roadmap for step_id ~50 lines context, extract (description|acceptance_criteria|files_to_modify), pass in DES template.
+2. **NEVER write phase entries to execution-log.json.** Only the crafter subagent that performed TDD work may append entries.
+3. **Extract step context from roadmap.json ONLY for Task prompt.** Grep roadmap for step_id ~50 lines context, extract (description|acceptance_criteria|files_to_modify), pass in DES template.
 
 **DES circumvention is fraud.** Without DES monitoring, nWave cannot guarantee code quality. For non-deliver tasks (docs, research, one-off edits): `<!-- DES-ENFORCEMENT : exempt -->`. Faking step IDs, omitting markers, or writing log entries manually is never acceptable.
 
@@ -60,7 +60,7 @@ INPUT: "{feature-description}"
      Store: agent_model|reviewer_model|tdd_phases|review_enabled|double_review|mutation_enabled|refactor_pass
   |
   1. Parse input|derive project-id (kebab-case)|create docs/feature/{project-id}/
-     a. Create execution-log.yaml if missing: schema_version "2.0"|project_id|events: []
+     a. Create execution-log.json if missing: schema_version "2.0"|project_id|events: []
      b. Create deliver session marker: .nwave/des/deliver-session.json
   |
   1.5. Detect development paradigm
@@ -79,21 +79,21 @@ INPUT: "{feature-description}"
      Note: Strategy locks at deliver start. CLAUDE.md edits during delivery take effect next run.
   |
   2. Phase 1 — Roadmap Creation + Review
-     a. Skip if roadmap.yaml exists with validation.status == "approved"
-     b. @nw-solution-architect creates roadmap.yaml (read ~/.claude/commands/nw/roadmap.md)
+     a. Skip if roadmap.json exists with validation.status == "approved"
+     b. @nw-solution-architect creates roadmap.json (read ~/.claude/commands/nw/roadmap.md)
         Step IDs: NN-NN format (01-01, 01-02, 02-01). 01-A or 1-1 = invalid.
      c. Automated quality gate (see below)
      d. @nw-software-crafter-reviewer reviews (read ~/.claude/commands/nw/review.md)
      e. Retry once on rejection → stop for manual intervention
   |
   3. Phase 2 — Execute All Steps
-     a. Extract steps from roadmap.yaml in dependency order
-     b. Check execution-log.yaml for prior completion (resume)
+     a. Extract steps from roadmap.json in dependency order
+     b. Check execution-log.json for prior completion (resume)
      c. {selected-crafter} executes 5-phase TDD cycle (read ~/.claude/commands/nw/execute.md)
         Use crafter from step 1.5|@nw-functional-software-crafter → PBT default|@property tags signal PBT
         IMPORTANT: Use DES Prompt Template from execute.md|Include DES markers (DES-VALIDATION|DES-PROJECT-ID|DES-STEP-ID) + 9 mandatory sections
         OUTCOME_RECORDING: agents use DES CLI (python -m des.cli.log_phase)|CLI bypass → SubagentStop hook corrects timestamps
-     d. Verify COMMIT/PASS in execution-log.yaml per step
+     d. Verify COMMIT/PASS in execution-log.json per step
      e. Missing phase → RE-DISPATCH agent. NEVER write entries yourself.
      f. Stop on first failure
      g. Timeout recovery: GREEN completed → resume (~5 turns)|GREEN partial → resume|Otherwise → restart higher max_turns
@@ -194,7 +194,7 @@ HIGH findings → return to architect for one revision.
 
 - Check `.develop-progress.json` on start for resume
 - Skip if file exists with validation.status == "approved"
-- Skip completed steps via execution-log.yaml COMMIT/PASS
+- Skip completed steps via execution-log.json COMMIT/PASS
 - Max 2 retry per review rejection → stop for manual intervention
 
 ## Input
@@ -206,7 +206,7 @@ HIGH findings → return to architect for one revision.
 
 ```
 docs/feature/{project-id}/
-  roadmap.yaml|execution-log.yaml|.develop-progress.json
+  roadmap.json|execution-log.json|.develop-progress.json
 docs/evolution/
   {project-id}-evolution.md
 ```

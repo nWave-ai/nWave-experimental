@@ -56,7 +56,7 @@ class TestSessionGuardPolicy:
     def test_orchestration_file_allowed(self, policy):
         """Orchestration artifacts (docs/feature/) should always be allowed."""
         result = policy.check(
-            file_path="docs/feature/auth-upgrade/roadmap.yaml",
+            file_path="docs/feature/auth-upgrade/roadmap.json",
             session_active=True,
             des_task_active=False,
         )
@@ -100,9 +100,9 @@ class TestSessionGuardPolicy:
         assert "deliver" in (result.reason or "").lower()
 
     def test_execution_log_allowed(self, policy):
-        """execution-log.yaml in docs/feature/ should be allowed."""
+        """execution-log.json in docs/feature/ should be allowed."""
         result = policy.check(
-            file_path="docs/feature/auth-upgrade/execution-log.yaml",
+            file_path="docs/feature/auth-upgrade/execution-log.json",
             session_active=True,
             des_task_active=False,
         )

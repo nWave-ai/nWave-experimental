@@ -97,7 +97,7 @@ Execute all 5 phases:
 - Code quality validated
 
 # OUTCOME_RECORDING
-Update execution-log.yaml after each phase.
+Update execution-log.json after each phase.
 
 # RECORDING_INTEGRITY
 Valid Skip Prefixes: NOT_APPLICABLE, BLOCKED_BY_DEPENDENCY, APPROVED_SKIP, CHECKPOINT_PENDING
@@ -440,7 +440,7 @@ class TestSessionGuard:
         """
         policy = SessionGuardPolicy()
         result = policy.check(
-            file_path="docs/feature/test/roadmap.yaml",
+            file_path="docs/feature/test/roadmap.json",
             session_active=True,
             des_task_active=False,
         )

@@ -22,7 +22,7 @@ repos:
         files: '.*'
 
       # nWave: Step file validation - DEPRECATED (step JSON files no longer exist)
-      # Replaced by execution-log.yaml append-only event format
+      # Replaced by execution-log.json append-only event format
       # - id: validate-step-file
       #   name: nWave Step File Validation
       #   entry: python ~/.claude/scripts/validate_step_file.py

@@ -23,7 +23,7 @@ BUSINESS VALUE:
 SOURCE:
 - docs/feature/des-us006/steps/02-01.json (Step 02-01)
 
-NOTE: Turn counting not yet implemented in Schema v2.0 (execution-log.yaml format).
+NOTE: Turn counting not yet implemented in Schema v2.0 (execution-log.json format).
 All tests marked as skipped pending implementation.
 """
 

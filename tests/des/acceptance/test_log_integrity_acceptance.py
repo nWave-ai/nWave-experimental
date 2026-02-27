@@ -137,7 +137,7 @@ class TestAT1PhaseNameValidation:
         )
         service, audit_spy = _build_service(events)
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="test-project",
             step_id="01-01",
             task_start_time="2026-02-08T14:00:00+00:00",
@@ -170,7 +170,7 @@ class TestAT2CrossStepContamination:
         )
         service, audit_spy = _build_service(events)
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="test-project",
             step_id="01-03",
             task_start_time="2026-02-08T14:00:00+00:00",
@@ -204,7 +204,7 @@ class TestAT3FutureTimestamp:
         )
         service, audit_spy = _build_service(events)
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="test-project",
             step_id="01-01",
             task_start_time="2026-02-08T14:00:00+00:00",
@@ -237,7 +237,7 @@ class TestAT4PreTaskTimestamp:
         )
         service, audit_spy = _build_service(events)
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="test-project",
             step_id="01-01",
             task_start_time="2026-02-08T14:00:00+00:00",
@@ -264,7 +264,7 @@ class TestAT5EmptyStdinPassthrough:
     def test_empty_context_allows(self) -> None:
         service, _audit_spy = _build_empty_stdin_service()
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="test-project",
             step_id="01-01",
             stop_hook_active=True,
@@ -305,7 +305,7 @@ class TestAT7StopHookActiveEscapeHatch:
             ),
         )
         context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.yaml",
+            execution_log_path="/fake/execution-log.json",
             project_id="test-project",
             step_id="01-01",
             stop_hook_active=True,
