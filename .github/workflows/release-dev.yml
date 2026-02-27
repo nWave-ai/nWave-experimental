@@ -208,6 +208,8 @@ jobs:
     timeout-minutes: 5
     needs: [ci-gate, version-calc, build]
     if: inputs.dry_run != true
+    outputs:
+      changes: ${{ steps.changes.outputs.summary }}
 
     steps:
       - uses: actions/checkout@v4
@@ -240,6 +242,26 @@ jobs:
             --version "${{ needs.version-calc.outputs.version }}" \
             --repo "${{ github.repository }}" \
             --output dist/RELEASE_NOTES.md
+
+      - name: Extract change summary for Slack
+        id: changes
+        run: |
+          SUMMARY=$(python3 << 'PYEOF'
+          import re, json
+          with open("dist/RELEASE_NOTES.md") as f:
+              lines = f.readlines()
+          changes = []
+          for line in lines:
+              line = line.strip()
+              if line.startswith("- "):
+                  clean = re.sub(r' \(`[a-f0-9]+`\)$', '', line)
+                  changes.append(clean[2:])
+          summary = "\n".join(changes[:10]) if changes else "Internal improvements"
+          encoded = json.dumps(summary, ensure_ascii=False)
+          print(encoded[1:-1])
+          PYEOF
+          )
+          echo "summary=$SUMMARY" >> $GITHUB_OUTPUT
 
       - name: Create GitHub pre-release
         env:
@@ -321,6 +343,10 @@ jobs:
                   "text": { "type": "mrkdwn", "text": "Dev snapshot created from `${{ needs.ci-gate.outputs.commit_sha }}`\n*Version*: `${{ needs.version-calc.outputs.version }}`" }
                 },
                 {
+                  "type": "section",
+                  "text": { "type": "mrkdwn", "text": "*Changes*:\n${{ needs.tag-release.outputs.changes }}" }
+                },
+                {
                   "type": "actions",
                   "elements": [
                     { "type": "button", "text": { "type": "plain_text", "text": "View Release" }, "url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.version-calc.outputs.tag }}", "style": "primary" },
@@ -329,7 +355,7 @@ jobs:
                 },
                 {
                   "type": "context",
-                  "elements": [{ "type": "mrkdwn", "text": "Released at: <!date^${{ steps.ts.outputs.unix }}^{date_short_pretty} at {time}|timestamp>" }]
+                  "elements": [{ "type": "mrkdwn", "text": "Triggered by *${{ github.actor }}* on *${{ github.ref_name }}* · Released at: <!date^${{ steps.ts.outputs.unix }}^{date_short_pretty} at {time}|timestamp>" }]
                 }
               ]
             }
