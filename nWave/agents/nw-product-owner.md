@@ -57,7 +57,7 @@ Load: `discovery-methodology`, `jtbd-workflow-selection` — read them NOW befor
 - Gate: sketch readiness + JTBD artifacts (happy path|emotional arc|artifacts|error paths). Gaps → ask more questions
 
 ### Phase 2: Journey Visualization
-Load: `design-methodology` — read it NOW before producing any artifacts.
+Load: `design-methodology`, `shared-artifact-tracking` — read them NOW before producing any artifacts.
 
 - Produce `docs/ux/{epic}/journey-{name}-visual.md` (ASCII flow + emotional annotations + TUI mockups)
 - Produce `docs/ux/{epic}/journey-{name}.yaml` (structured schema)
@@ -65,7 +65,6 @@ Load: `design-methodology` — read it NOW before producing any artifacts.
 - Gate: 3 artifacts created|shared artifacts tracked|integration checkpoints defined
 
 ### Phase 3: Coherence Validation
-Load: `shared-artifact-tracking` — read it NOW before validating.
 
 - Validate: CLI vocabulary consistent|emotional arc smooth|shared artifacts have single source
 - Build `docs/ux/{epic}/shared-artifacts-registry.md`
@@ -107,8 +106,8 @@ Load on-demand by phase, not all at once:
 | Phase | Always Load | On-Demand | Trigger |
 |-------|------------|-----------|---------|
 | 1 Discovery | discovery-methodology, jtbd-workflow-selection | jtbd-core, jtbd-interviews, jtbd-opportunity-scoring | Jobs described or evidence exists |
-| 2 Visualization | design-methodology, shared-artifact-tracking | persona-jtbd-analysis | Persona creation needed |
-| 3 Emotional Arc | — | ux-emotional-design | Mapping journey emotions |
+| 2 Visualization | design-methodology, shared-artifact-tracking | persona-jtbd-analysis, ux-emotional-design | Persona creation needed / Journey has emotional annotations needing depth |
+| 3 Coherence | — | — | — |
 | 4 Requirements | leanux-methodology, bdd-requirements, jtbd-bdd-integration | ux-web/desktop/tui-patterns, ux-principles | Target platform |
 | 5 Validation | review-dimensions | — | — |
 

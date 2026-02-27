@@ -12,118 +12,52 @@ Use for all research documents in `docs/research/`.
 ```markdown
 # Research: {Topic}
 
-**Date**: {ISO-8601-timestamp}
-**Researcher**: nw-researcher (Nova)
-**Overall Confidence**: {High/Medium/Low}
-**Sources Consulted**: {count}
+**Date**: {ISO-8601} | **Researcher**: nw-researcher (Nova) | **Confidence**: {High/Medium/Low} | **Sources**: {count}
 
 ## Executive Summary
-
 {2-3 paragraph overview of key findings, main insights, and overall conclusion}
 
----
-
 ## Research Methodology
-
 **Search Strategy**: {how sources were found}
-
-**Source Selection Criteria**:
-- Source types: {academic, official, industry, technical_docs}
-- Reputation threshold: {high/medium-high minimum}
-- Verification method: {cross-referencing approach}
-
-**Quality Standards**:
-- Minimum sources per claim: 3
-- Cross-reference requirement: All major claims
-- Source reputation: Average score {0.0-1.0}
-
----
+**Source Selection**: Types: {academic/official/industry/technical_docs} | Reputation: {high/medium-high min} | Verification: {cross-referencing approach}
+**Quality Standards**: Min 3 sources/claim | All major claims cross-referenced | Avg reputation: {0.0-1.0}
 
 ## Findings
 
 ### Finding 1: {Descriptive Title}
-
 **Evidence**: "{Direct quote or specific data point}"
-
 **Source**: [{Source Name}]({URL}) - Accessed {YYYY-MM-DD}
-
 **Confidence**: {High/Medium/Low}
-
-**Verification**: Cross-referenced with:
-- [{Source 2}]({URL2})
-- [{Source 3}]({URL3})
-
+**Verification**: [{Source 2}]({URL2}), [{Source 3}]({URL3})
 **Analysis**: {Brief interpretation or context}
-
----
 
 {Repeat Finding structure as needed}
 
----
-
 ## Source Analysis
+| Source | Domain | Reputation | Type | Access Date | Cross-verified |
+|--------|--------|------------|------|-------------|----------------|
+| {name} | {domain} | {High/Medium-High/Medium} | {academic/official/industry/technical} | {YYYY-MM-DD} | {Y/N} |
 
-| Source | Domain | Reputation | Type | Access Date | Verification |
-|--------|--------|------------|------|-------------|--------------|
-| {name} | {domain} | {High/Medium-High/Medium} | {academic/official/industry/technical} | {YYYY-MM-DD} | {Cross-verified Y/N} |
-
-**Reputation Summary**:
-- High reputation sources: {count} ({percentage}%)
-- Medium-high reputation: {count} ({percentage}%)
-- Average reputation score: {0.0-1.0}
-
----
+Reputation: High: {count} ({%}) | Medium-high: {count} ({%}) | Avg: {0.0-1.0}
 
 ## Knowledge Gaps
-
 ### Gap 1: {Description}
-
-**Issue**: {What information is missing or unclear}
-**Attempted Sources**: {What was searched}
-**Recommendation**: {How to address this gap}
-
----
+**Issue**: {missing/unclear info} | **Attempted**: {sources searched} | **Recommendation**: {how to address}
 
 ## Conflicting Information (if applicable)
-
 ### Conflict 1: {Topic}
-
-**Position A**: {Statement}
-- Source: [{Name}]({URL}) - Reputation: {score}
-- Evidence: {quote}
-
-**Position B**: {Contradictory statement}
-- Source: [{Name}]({URL}) - Reputation: {score}
-- Evidence: {quote}
-
-**Assessment**: {Which source appears more authoritative and why}
-
----
+**Position A**: {Statement} — Source: [{Name}]({URL}), Reputation: {score}, Evidence: {quote}
+**Position B**: {Contradictory statement} — Source: [{Name}]({URL}), Reputation: {score}, Evidence: {quote}
+**Assessment**: {Which source more authoritative and why}
 
 ## Recommendations for Further Research
-
 1. {Specific recommendation with rationale}
-2. {Recommendation 2}
-3. {Recommendation 3}
-
----
 
 ## Full Citations
-
-[1] {Author/Organization}. "{Title}". {Publication/Website}. {Date}. {Full URL}. Accessed {YYYY-MM-DD}.
-[2] {Citation 2}
-[3] {Citation 3}
-
----
+[1] {Author}. "{Title}". {Publication}. {Date}. {URL}. Accessed {YYYY-MM-DD}.
 
 ## Research Metadata
-
-- **Research Duration**: {X minutes}
-- **Total Sources Examined**: {count}
-- **Sources Cited**: {count}
-- **Cross-References Performed**: {count}
-- **Confidence Distribution**: High: {%}, Medium: {%}, Low: {%}
-- **Output File**: docs/research/{filename}
+Duration: {X min} | Examined: {count} | Cited: {count} | Cross-refs: {count} | Confidence: High {%}, Medium {%}, Low {%} | Output: docs/research/{filename}
 ```
 
 ## Skill Distillation Workflow

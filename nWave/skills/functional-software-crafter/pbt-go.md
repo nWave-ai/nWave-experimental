@@ -1,3 +1,9 @@
+---
+name: pbt-go
+agent: nw-functional-software-crafter
+description: Go property-based testing with rapid and gopter frameworks
+---
+
 # PBT Go -- rapid, gopter
 
 ## Framework Selection

@@ -1,3 +1,9 @@
+---
+name: fp-usable-design
+agent: nw-functional-software-crafter
+description: Naming conventions, API ergonomics, and usability patterns for functional code
+---
+
 # FP Usable Design
 
 Make functional code usable. The developer is the user of your design. Apply usability thinking to code organization, naming, and architecture.

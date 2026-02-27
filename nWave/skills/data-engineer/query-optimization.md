@@ -14,24 +14,12 @@ Modern relational DBs use cost-based optimizers (CBO): generate plan candidates 
 Validate optimization with EXPLAIN before and after changes.
 
 ```sql
--- PostgreSQL
+-- PostgreSQL (add ANALYZE for actual runtime stats)
 EXPLAIN ANALYZE SELECT order_id, total FROM orders WHERE customer_id = 12345;
-
--- MySQL
-EXPLAIN FORMAT=JSON SELECT order_id, total FROM orders WHERE customer_id = 12345;
-
--- SQL Server
-SET STATISTICS IO ON;
--- Then examine execution plan in SSMS
+-- MySQL: EXPLAIN FORMAT=JSON ... | SQL Server: SET STATISTICS IO ON
 ```
 
-Key indicators:
-- **Seq Scan / Table Scan**: Full scan, likely missing index
-- **Index Scan / Index Seek**: Using index, usually efficient
-- **Hash Join**: Hash table for join, efficient for large datasets with equality joins
-- **Nested Loop**: Row-by-row, efficient for small datasets or indexed inner table
-- **Merge Join**: Synchronized sorted scan, efficient when sort order available
-- **Sort**: Watch for disk spills on large datasets
+Key indicators: **Seq Scan/Table Scan** = missing index | **Index Scan/Seek** = efficient | **Hash Join** = large equality joins | **Nested Loop** = small/indexed inner | **Merge Join** = pre-sorted inputs | **Sort** = watch disk spills
 
 ## Indexing Strategies
 
@@ -71,50 +59,18 @@ db.collection.createIndex({ status: 1, item: 1, qty: 1 })
 
 ### Select Only Needed Columns
 ```sql
--- Bad: SELECT * retrieves unnecessary data
+-- Bad: SELECT * retrieves unnecessary data, prevents covering indexes
 SELECT * FROM orders WHERE customer_id = 12345;
 
 -- Good: Specify columns, enables covering index
 SELECT order_id, order_date, total FROM orders WHERE customer_id = 12345;
 ```
 
-### CTEs for Readability (Not Always Performance)
-```sql
-WITH active_customers AS (
-    SELECT customer_id, name
-    FROM customers
-    WHERE status = 'active'
-)
-SELECT ac.name, COUNT(o.order_id) as order_count
-FROM active_customers ac
-JOIN orders o ON ac.customer_id = o.customer_id
-GROUP BY ac.name;
-```
-
-### Window Functions for Analytics
-```sql
-SELECT
-    order_date,
-    total,
-    SUM(total) OVER (ORDER BY order_date) as running_total,
-    RANK() OVER (PARTITION BY customer_id ORDER BY total DESC) as rank_by_customer
-FROM orders;
-```
-
-### Pagination
-```sql
--- Offset-based (simple but slow for deep pages)
-SELECT * FROM products ORDER BY id LIMIT 20 OFFSET 100;
-
--- Keyset pagination (efficient for deep pages)
-SELECT * FROM products WHERE id > 1234 ORDER BY id LIMIT 20;
-```
-
-### Parameterized Queries (Security + Performance)
-```python
-# Prevents SQL injection AND enables plan caching
-cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
-```
+### Other Key Patterns
+- **CTEs**: Improve readability but not always performance -- PostgreSQL may materialize CTEs (pre-v12), MySQL inlines them
+- **Window functions**: Use `SUM() OVER`, `RANK() OVER (PARTITION BY ...)` for analytics without self-joins
+- **Pagination**: Prefer keyset (`WHERE id > last_seen ORDER BY id LIMIT N`) over OFFSET for deep pages
+- **Parameterized queries**: Prevent SQL injection AND enable plan caching (`cursor.execute("... WHERE id = %s", (id,))`)
 
 ## JOIN Algorithm Selection
 

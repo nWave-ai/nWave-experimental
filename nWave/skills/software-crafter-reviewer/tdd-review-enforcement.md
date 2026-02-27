@@ -106,8 +106,9 @@ Verify all 5 phases in execution-log.yaml: PREPARE, RED_ACCEPTANCE, RED_UNIT, GR
 | G6 | All tests green | GREEN |
 | G7 | 100% passing before commit | COMMIT |
 | G8 | Test count within budget | RED_UNIT |
+| G9 | No test modifications to accommodate implementation | GREEN |
 
-Gates G2, G4, G7, G8 are Blockers if not verified.
+Gates G2, G4, G7, G8, G9 are Blockers if not verified.
 
 Note: Review/refactoring quality verified at deliver-level Phase 4 (Adversarial Review).
 
@@ -143,13 +144,88 @@ Required: update acceptance test to invoke through entry point, wire component.
 
 ---
 
+## Test Modification Detection (ALWAYS BLOCKER)
+
+The single worst TDD violation: modifying a test to make it pass instead of fixing the implementation. This inverts the TDD feedback loop -- the test no longer protects behavior. Instant rejection, no exceptions, no conditional approval.
+
+### Detection Signals
+
+| Signal | How to Detect | Severity |
+|--------|---------------|----------|
+| Test + implementation changed in same commit | Git diff shows test file edits alongside production code edits during GREEN phase | BLOCKER |
+| Assertion weakened | `assertEquals(expected, actual)` changed to `assertNotNull(actual)` or `assertTrue(result)` | BLOCKER |
+| Expectations reduced | Test previously checked 5 fields, now checks 1-2 | BLOCKER |
+| Test deleted or skipped | `@skip`, `@pytest.mark.skip`, `@Disabled`, `xfail`, entire test method removed | BLOCKER |
+| Deferred fix comments | `# TODO: fix later`, `# temporarily relaxed`, `# workaround`, `# adjusted for now` in test files | BLOCKER |
+| Assertion count decreased | Previous commit had N assertions, current has fewer for same test | BLOCKER |
+
+### Review Procedure
+
+1. Compare test files at start of RED phase vs end of GREEN phase
+2. If any test file was modified during GREEN: flag for detailed inspection
+3. Check each modification against the signals table above
+4. If modification is purely additive (new assertions, new test methods): PASS
+5. If modification weakens, removes, or relaxes any existing assertion: BLOCKER -- reject immediately
+
+### Legitimate Test Changes (Not Violations)
+
+- Renaming test methods for clarity (no assertion changes)
+- Adding new assertions to existing tests (strengthening, not weakening)
+- Fixing a genuine test bug identified and approved by product owner (requires `ESCALATION_NEEDED` marker in execution log)
+- Parametrization refactoring that preserves all original assertions
+
+### Example Finding
+
+```
+TEST MODIFICATION DETECTION: BLOCKER
+
+File: tests/unit/test_order_service.py
+Commit: abc123 (GREEN phase)
+
+Before (RED phase):
+  assert result.total == Decimal("150.00")
+  assert result.tax == Decimal("15.00")
+  assert result.items == 3
+  assert result.status == OrderStatus.CONFIRMED
+
+After (GREEN phase):
+  assert result is not None  # <-- weakened from 4 specific assertions to existence check
+
+Verdict: REJECTED. Implementation could not satisfy the original assertions.
+The crafter modified the test instead of fixing the implementation.
+Required: revert test to RED-phase version, fix implementation to satisfy original assertions.
+```
+
+---
+
+## Escalation Verification
+
+When a crafter gets stuck, the correct action is to escalate -- not to silently weaken tests. The reviewer verifies proper escalation protocol was followed.
+
+### What to Check
+
+1. **ESCALATION_NEEDED markers**: execution-log.yaml should contain `escalation_needed: true` with reason if the crafter hit a wall
+2. **Three-attempt rule**: evidence of at least 3 distinct implementation attempts before any test change (check GREEN phase attempts in execution log)
+3. **Product owner approval**: any requirement-driven test change must reference explicit PO approval (e.g., `po_approved: true` or `requirement_change: {ticket}` in execution log)
+
+### Escalation Failures
+
+| Failure | Detection | Severity |
+|---------|-----------|----------|
+| Silent test modification | No escalation marker + test weakened | BLOCKER |
+| Insufficient attempts | Fewer than 3 GREEN attempts before test change | BLOCKER |
+| Missing PO approval | Test changed for "requirement change" without PO reference | BLOCKER |
+| Proper escalation | `ESCALATION_NEEDED` marker present, 3+ attempts logged | PASS (reviewer verifies test change validity) |
+
+---
+
 ## Approval Decision Logic
 
 ### Approved
-All 5 phases present, all PASS, all gates satisfied, zero defects, budget met, no internal class tests.
+All 5 phases present, all PASS, all gates satisfied (G1-G9), zero defects, budget met, no internal class tests, no test modifications, no testing theater.
 
 ### Rejected
-Missing phases | any FAIL | any defect | budget exceeded | internal class tested. Zero tolerance.
+Missing phases | any FAIL | any defect | budget exceeded | internal class tested | test modified to accommodate implementation (G9) | testing theater detected | silent test modification without escalation. Zero tolerance.
 
 ### Escalation
->2 review iterations | persistent gate failures | unresolved architectural violations. Escalate to tech lead.
+>2 review iterations | persistent gate failures | unresolved architectural violations | crafter properly escalated (ESCALATION_NEEDED marker present with 3+ attempts). Escalate to tech lead.

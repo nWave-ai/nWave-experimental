@@ -1,3 +1,9 @@
+---
+name: fp-hexagonal-architecture
+agent: nw-functional-software-crafter
+description: Hexagonal architecture patterns with pure core and side-effect shell for functional codebases
+---
+
 # FP Hexagonal Architecture
 
 Ports and adapters in functional programming. Structure applications with a pure core and side-effect shell.

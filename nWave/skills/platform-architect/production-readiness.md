@@ -54,26 +54,4 @@ Before declaring production-ready, all must pass:
 - [ ] Runbook created for operational procedures
 - [ ] On-call team trained on new feature
 
-## CI/CD Architecture Lessons
-
-### Test Architecture and Measurement Coupling
-Test execution architecture changes require simultaneous measurement strategy updates.
-**Fundamental principle**: treat test execution architecture and measurement strategy as tightly coupled concerns.
-
-### Common Pitfalls
-| Pitfall | Symptom | Prevention |
-|---------|---------|------------|
-| False failure syndrome | Quality gates fail after CI/CD change without code changes | Validate measurement strategy in isolated environment first |
-| Baseline drift | Increasing threshold adjustments without justification | Maintain versioned baseline documentation |
-| Tool assumption violations | Inconsistent metrics across CI/CD runs | Review tool docs for architecture-specific behaviors |
-
-### CI/CD Change Checklist
-
-**Before**: Analyze impact on test discovery | Identify affected measurement tools (coverage, mutation testing) | Document current baseline metrics.
-
-**During**: Adjust coverage thresholds for new execution model | Validate measurement strategy compatibility | Recalibrate quality gate thresholds.
-
-**After**: Establish new baseline metrics | Validate measurement accuracy against known scenarios | Update runbooks with measurement strategy changes.
-
-### Real-World Example
-Parallelization (pytest-xdist) without measurement update caused false quality gate failures. Coverage calculation changed due to worker-based test distribution. Fix: document coupling, establish new baseline, mandate measurement review for all CI/CD architecture changes.
+For CI/CD architecture lessons and measurement coupling pitfalls, see `cicd-and-deployment` skill.

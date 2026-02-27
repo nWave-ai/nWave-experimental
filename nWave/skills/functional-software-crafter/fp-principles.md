@@ -1,3 +1,9 @@
+---
+name: fp-principles
+agent: nw-functional-software-crafter
+description: Core functional programming thinking patterns and type system foundations, language-agnostic
+---
+
 # FP Principles
 
 Core functional programming thinking patterns. Language-agnostic.

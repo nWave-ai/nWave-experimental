@@ -1,3 +1,9 @@
+---
+name: fp-clojure
+agent: nw-functional-software-crafter
+description: Clojure language-specific patterns, data-first modeling, REPL-driven development, and spec
+---
+
 # FP in Clojure -- Functional Software Crafter Skill
 
 Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md)

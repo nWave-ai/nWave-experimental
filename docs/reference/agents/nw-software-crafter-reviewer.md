@@ -16,4 +16,5 @@ Use for review and critique tasks - Code quality and implementation review speci
 
 - [review-dimensions](../../../nWave/skills/product-owner/review-dimensions.md) — Requirements quality critique dimensions for peer review - confirmation bias detection, completeness validation, clarity checks, testability assessment, and priority validation
 - [review-dimensions](../../../nWave/skills/software-crafter/review-dimensions.md) — Reviewer critique dimensions for peer review - implementation bias detection, test quality validation, completeness checks, and priority validation
+- [tdd-methodology](../../../nWave/skills/software-crafter/tdd-methodology.md) — Deep knowledge for Outside-In TDD - double-loop architecture, ATDD integration, port-to-port testing, walking skeletons, and test doubles policy
 - [tdd-review-enforcement](../../../nWave/skills/software-crafter-reviewer/tdd-review-enforcement.md) — Test design mandate enforcement, test budget validation, 5-phase TDD validation, and external validity checks for the software crafter reviewer

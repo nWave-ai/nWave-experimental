@@ -1,3 +1,9 @@
+---
+name: pbt-rust
+agent: nw-functional-software-crafter
+description: Rust property-based testing with proptest, quickcheck, and bolero frameworks
+---
+
 # PBT Rust -- proptest, quickcheck, bolero
 
 ## Framework Selection

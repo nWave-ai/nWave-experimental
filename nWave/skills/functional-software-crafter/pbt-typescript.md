@@ -1,3 +1,9 @@
+---
+name: pbt-typescript
+agent: nw-functional-software-crafter
+description: TypeScript/JavaScript property-based testing with fast-check framework and arbitraries
+---
+
 # PBT TypeScript -- fast-check
 
 ## Framework Selection

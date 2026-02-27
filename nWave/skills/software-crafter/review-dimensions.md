@@ -83,12 +83,15 @@ Pattern: tests creating illusion of safety without verifying real behavior. Sing
 
 | Pattern | Detection | Severity |
 |---------|-----------|----------|
-| Tautological assertion | `assert result is not None`, `assert isinstance(...)`, `assert True` as primary assertion | CRITICAL |
-| Mock-dominated test | Test mocks the SUT or mocks return the expected value directly -- removing production code still passes | CRITICAL |
-| Circular verification | Test recomputes expected value using same formula as production code | CRITICAL |
-| Always-green test | `try/except` wrapping assertions, empty except blocks, no assertion at all | CRITICAL |
+| Zero-assertion test | Test method contains no `assert` statement at all | BLOCKER |
+| Tautological assertion | `assert result is not None`, `assert isinstance(...)`, `assert True`, `assertEqual(x, x)` as primary assertion | BLOCKER |
+| Mock-dominated test | Test mocks the SUT or mocks return the expected value directly -- removing production code still passes | BLOCKER |
+| Circular verification | Test recomputes expected value using same formula as production code | BLOCKER |
+| Always-green test | `try/except` wrapping assertions, empty except blocks, bare `pass` in test body | BLOCKER |
+| Fully-mocked SUT | Every dependency of the SUT is mocked -- test verifies mock wiring, not behavior | BLOCKER |
 | Implementation-mirroring | Assertions only on `assert_called_once_with` / call counts without behavioral outcome check | HIGH |
-| Assertion-free smoke test | Code executes but no assert statement validates outcomes | CRITICAL |
+| Assertion-free smoke test | Code executes but asserts only that no exception was thrown (unless that IS the stated requirement) | BLOCKER |
+| Misleading test name | Test name says "validates X" or "rejects X" but assertion checks unrelated Y | HIGH |
 | Hardcoded magic oracle | Expected values are unexplained magic numbers not traceable to business rules or AC | HIGH |
 
 **Review checklist (apply to every new/modified test):**
@@ -97,7 +100,7 @@ Pattern: tests creating illusion of safety without verifying real behavior. Sing
 3. Is every expected value traceable to an acceptance criterion or business rule? If not: SUSPICIOUS.
 4. Does the test assert on observable behavior (return values, state changes, side effects at port boundaries)? If it only asserts on types, existence, or internal calls: THEATER.
 
-Severity: CRITICAL (blocks approval -- a test suite with Theater is worse than no tests).
+Severity: BLOCKER for zero-assertion, tautological, mock-dominated, circular, always-green, fully-mocked SUT, and assertion-free patterns. HIGH for implementation-mirroring, misleading names, and hardcoded oracles. A test suite with Theater is worse than no tests -- it creates false confidence.
 
 ---
 
@@ -226,11 +229,25 @@ issues_identified:
       recommendation: "{Fix description}"
 
   testing_theater:
-    - issue: "{Specific theater pattern: tautological|mock-dominated|circular|always-green|implementation-mirroring|assertion-free|hardcoded-oracle}"
-      severity: "critical"
+    - issue: "{Specific theater pattern: zero-assertion|tautological|mock-dominated|circular|always-green|fully-mocked-sut|implementation-mirroring|assertion-free|misleading-name|hardcoded-oracle}"
+      severity: "blocker|high"
       location: "{test_file:line}"
       evidence: "{Why this test would still pass if production code were deleted or broken}"
       recommendation: "{Rewrite with behavioral assertion or delete}"
+
+  test_modification:
+    - issue: "{Signal: assertion-weakened|expectations-reduced|test-deleted|test-skipped|deferred-fix-comment|assertion-count-decreased}"
+      severity: "blocker"
+      location: "{test_file:line}"
+      before: "{Original assertion/test from RED phase}"
+      after: "{Modified assertion/test from GREEN phase}"
+      recommendation: "Revert test to RED-phase version, fix implementation"
+
+  escalation_verification:
+    escalation_marker_present: true|false
+    implementation_attempts: {count}
+    po_approval_referenced: true|false|not_applicable
+    status: "PASS|BLOCKER"
 
   completeness:
     - issue: "{Missing coverage}"
@@ -265,7 +282,9 @@ low_issues_count: {number}
 
 ## Severity Classification
 
-**Critical** (must resolve before handoff): Testing Theater patterns (false safety -- blocks approval unconditionally) | Test coupling to implementation (prevents refactoring) | Missing AC test coverage | Port-boundary violations in critical paths.
+**Blocker** (instant rejection, no discussion): Testing Theater patterns (zero-assertion, tautological, mock-dominated, circular, always-green, fully-mocked SUT, assertion-free) | Test modification to accommodate implementation (G9 violation).
+
+**Critical** (must resolve before handoff): Test coupling to implementation (prevents refactoring) | Missing AC test coverage | Port-boundary violations in critical paths.
 
 **High** (strongly recommend resolving): Shared mutable state in tests | Major over-engineering | Inadequate error scenario coverage.
 

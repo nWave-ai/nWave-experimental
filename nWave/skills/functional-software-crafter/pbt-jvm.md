@@ -1,3 +1,9 @@
+---
+name: pbt-jvm
+agent: nw-functional-software-crafter
+description: JVM property-based testing with jqwik, ScalaCheck, and ZIO Test frameworks
+---
+
 # PBT JVM -- jqwik (Java/Kotlin) + ScalaCheck + ZIO Test
 
 ## Framework Selection

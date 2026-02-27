@@ -42,8 +42,9 @@ Load on-demand by phase, not all at once:
 
 | Phase | Load | Trigger |
 |-------|------|---------|
+| 1 Problem Definition | `investigation-techniques` | Always — problem categorization, evidence collection, and solution design patterns |
 | 2 Toyota 5 Whys Analysis | `five-whys-methodology` | Always — core investigation methodology |
-| 4 Solution Development | `investigation-techniques` | Always — solution design patterns |
+| 4 Solution Development | `investigation-techniques` | Already loaded |
 | 5 Prevention Strategy | `post-mortem-framework` | On request — post-mortem document format |
 
 Skills path: `~/.claude/skills/nw/troubleshooter/`
@@ -51,6 +52,8 @@ Skills path: `~/.claude/skills/nw/troubleshooter/`
 ## Workflow
 
 ### Phase 1: Problem Definition and Scoping
+Load: `investigation-techniques` — read it NOW before proceeding.
+
 Clarify symptoms|impact|timeline|environmental context. Define scope (affected systems|time range|user groups). Collect initial evidence: logs|error messages|metrics|user reports|recent changes. Gate: specific scoped problem statement; initial evidence gathered.
 
 ### Phase 2: Toyota 5 Whys Analysis
@@ -62,7 +65,7 @@ WHY 1 (Symptom): document all observable symptoms with evidence | WHY 2 (Context
 Backwards chain validation on each root cause|cross-validate no contradictions|verify root causes collectively explain all symptoms. Gate: all chains validate forward and backward.
 
 ### Phase 4: Solution Development
-Load: `investigation-techniques` — read it NOW before proceeding.
+`investigation-techniques` already loaded from Phase 1.
 
 Design immediate mitigations|permanent fixes per root cause|early detection measures. Prioritize by impact and effort. Gate: every root cause has corresponding solution.
 

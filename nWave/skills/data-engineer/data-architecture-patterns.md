@@ -7,14 +7,7 @@ description: Data architecture patterns (warehouse, lake, lakehouse, mesh), ETL/
 
 ## Architecture Selection Decision Tree
 
-```
-What data types do you have?
-  Structured only -> Data Warehouse
-  Mixed (structured + semi-structured + unstructured) ->
-    Do you need SQL analytics on all data? -> Data Lakehouse
-    Is data science/ML the primary use case? -> Data Lake
-    Is your organization large with autonomous domain teams? -> Data Mesh
-```
+Structured only -> **Data Warehouse** | Mixed + SQL analytics -> **Data Lakehouse** | Mixed + ML-primary -> **Data Lake** | Large org + autonomous domains -> **Data Mesh**
 
 ## Data Warehouse
 
@@ -23,14 +16,6 @@ Schema: structured, schema-on-write | Data: tables, rows, columns | Governance: 
 ### Schema Patterns
 
 **Star Schema**: Central fact table (measures) surrounded by denormalized dimension tables. Best for BI dashboards, standard reporting.
-
-```
-         dim_date
-            |
-dim_customer--fact_sales--dim_product
-            |
-         dim_store
-```
 
 **Snowflake Schema**: Normalized dimensions (dimensions reference other dimensions). Reduces storage, increases JOIN complexity. Best when storage cost matters more than query speed.
 
@@ -46,14 +31,8 @@ Technology: Snowflake | Amazon Redshift | Google BigQuery | Azure Synapse Analyt
 
 Schema-on-read, flexible | All formats (structured, semi-structured, unstructured) | Raw data in native format | Query via Athena, Spark SQL, PySpark, Pandas | Risk: "data swamp" without governance
 
-### Organization Pattern
-```
-data-lake/
-  raw/           # Landing zone - original format
-  curated/       # Cleaned, validated, standardized
-  processed/     # Transformed for specific use cases
-  archive/       # Historical data, cold storage
-```
+### Organization
+Zones: **raw** (landing, original format) -> **curated** (cleaned, validated) -> **processed** (transformed for use cases) -> **archive** (cold storage)
 
 ### Anti-Patterns
 - No metadata catalog -> undiscoverable data
@@ -69,17 +48,9 @@ Combines warehouse reliability with lake flexibility | Schema enforcement on wri
 
 ### Medallion Architecture (Bronze / Silver / Gold)
 
-```
-Bronze (Raw)          Silver (Validated)       Gold (Business-Ready)
-- Raw ingestion       - Cleaned, validated     - Aggregated
-- Schema-on-read      - Deduplicated           - Business logic applied
-- Full history        - Schema enforced        - Star/snowflake schema
-- Audit trail         - Standardized formats   - Ready for BI/reporting
-```
-
-**Bronze**: Raw data as-is, append-only for auditability, partitioned by ingestion date, minimal transformations
-**Silver**: Quality rules (null checks, range validation, referential integrity) | Deduplication on business keys | Schema standardization | SCD applied
-**Gold**: Business-level aggregations | Dimensional models | Pre-computed metrics/KPIs | Optimized for query performance
+**Bronze**: Raw data as-is, append-only for auditability, partitioned by ingestion date, schema-on-read
+**Silver**: Quality rules (null checks, range validation, referential integrity) | Deduplication on business keys | Schema enforced | SCD applied
+**Gold**: Business-level aggregations | Dimensional models (star/snowflake) | Pre-computed metrics/KPIs | Optimized for BI/reporting
 
 Technology: Databricks (Delta Lake) | Apache Iceberg | Apache Hudi
 
@@ -97,15 +68,9 @@ Technology: Databricks (Delta Lake) | Apache Iceberg | Apache Hudi
 ## ETL vs ELT Pipeline Design
 
 ### ETL (Extract-Transform-Load)
-```
-Source -> [Extract] -> Staging -> [Transform] -> [Load] -> Target
-```
 Transform before loading via dedicated engine (Informatica, Talend, SSIS). Best for complex transforms, constrained targets, regulatory requirements. Scaling limited by transform engine.
 
 ### ELT (Extract-Load-Transform)
-```
-Source -> [Extract] -> [Load] -> Target -> [Transform in-place]
-```
 Load raw first, transform using target compute (dbt, Snowflake SQL, BigQuery SQL). Best for cloud DWs with elastic compute, preserving raw data. Scales with target system.
 
 ### Pipeline Design Principles
@@ -121,22 +86,13 @@ Apache Airflow: DAG-based, Python-native, wide adoption | Prefect: modern, dynam
 ## Streaming Architecture
 
 ### Apache Kafka
-Distributed event streaming platform | Use as event bus, message broker, stream storage | Concepts: topics, partitions, consumer groups, offsets | At-least-once delivery (exactly-once with transactions) | Configurable retention or compacted topics
+Distributed event streaming platform. Concepts: topics, partitions, consumer groups, offsets. At-least-once delivery (exactly-once with transactions). Use as event bus, message broker, stream storage.
 
 ### Apache Flink
-Stateful stream processing engine | Use for real-time analytics, event processing, CDC | Concepts: DataStreams, windows (tumbling, sliding, session), state management | Exactly-once with checkpointing
+Stateful stream processing engine. Concepts: DataStreams, windows (tumbling, sliding, session), state management. Exactly-once with checkpointing. Common pattern: Sources -> Kafka (durable event buffer) -> Flink (stateful compute) -> Sinks.
 
-### Kafka + Flink Pattern
-```
-Sources -> Kafka (event storage) -> Flink (stream processing) -> Sinks
-```
-Kafka provides durable scalable event buffer | Flink provides stateful computation | Combined: end-to-end exactly-once semantics
-
-### Streaming vs Batch
-- **Streaming**: Real-time dashboards, fraud detection, IoT, event-driven architectures
-- **Batch**: Overnight reporting, historical analysis, large transforms, ML training
-- **Lambda**: Parallel batch + stream (complex, consider Kappa instead)
-- **Kappa**: Stream-only, reprocess from Kafka log (simpler, requires retention)
+### Architecture Selection
+**Streaming**: real-time dashboards, fraud detection, IoT, event-driven | **Batch**: overnight reporting, historical analysis, ML training | **Lambda**: parallel batch + stream (complex, prefer Kappa) | **Kappa**: stream-only, reprocess from Kafka log (simpler)
 
 ## Scaling Strategies
 
@@ -160,15 +116,7 @@ Add CPU/RAM/storage to existing server | Simpler ops, no app changes | Hard limi
 **Challenges**: Cross-shard queries need scatter-gather | Distributed transactions (2PC) complex/slow | Resharding expensive | App complexity increases
 
 ### Scaling Decision Guide
-```
-Current load exceeding single server?
-  NO -> Optimize queries and indexes first
-  YES -> Is it read-heavy?
-    YES -> Add read replicas
-    NO (write-heavy) -> Is data naturally partitionable?
-      YES -> Partition within server first, then shard if needed
-      NO -> Consider write-optimized databases (Cassandra, DynamoDB)
-```
+Not exceeding single server -> optimize queries/indexes first | Read-heavy -> add read replicas | Write-heavy + partitionable -> partition then shard | Write-heavy + not partitionable -> write-optimized DBs (Cassandra, DynamoDB)
 
 ## Normalization vs Denormalization
 

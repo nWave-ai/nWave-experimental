@@ -1,3 +1,9 @@
+---
+name: fp-algebra-driven-design
+agent: nw-functional-software-crafter
+description: Algebra-driven API design with monoids, semigroups, and interpreters via algebraic equations
+---
+
 # FP Algebra-Driven Design
 
 Algebraic thinking for API design. Discover the right API before implementing by specifying rules (equations) that operations must satisfy.

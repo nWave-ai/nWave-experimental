@@ -1,3 +1,9 @@
+---
+name: fp-kotlin
+agent: nw-functional-software-crafter
+description: Kotlin language-specific patterns with Arrow, Raise DSL, and coroutine-based effects
+---
+
 # FP in Kotlin -- Functional Software Crafter Skill
 
 Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md) | [pbt-jvm](./pbt-jvm.md)

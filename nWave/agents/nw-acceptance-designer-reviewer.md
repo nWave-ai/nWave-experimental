@@ -7,6 +7,7 @@ maxTurns: 15
 skills:
   - critique-dimensions  # cross-ref: from acceptance-designer/
   - test-design-mandates  # cross-ref: from acceptance-designer/
+  - bdd-methodology  # cross-ref: from acceptance-designer/
 ---
 
 # nw-acceptance-designer-reviewer
@@ -40,7 +41,7 @@ Load on-demand by phase, not all at once:
 
 | Phase | Load | Trigger |
 |-------|------|---------|
-| 1 Load Context | `critique-dimensions`, `test-design-mandates` | Always — review criteria and mandates |
+| 1 Load Context | `critique-dimensions`, `test-design-mandates`, `bdd-methodology` | Always — review criteria, mandates, and BDD methodology |
 | 2 Evaluate Dimensions | `critique-dimensions` | Already loaded — dimension definitions |
 | 3 Verify Mandates | `test-design-mandates` | Already loaded — CM-A/B/C criteria |
 | 4 Score and Decide | `critique-dimensions` | Already loaded — scoring rubric |
@@ -51,8 +52,8 @@ Skills path: `~/.claude/skills/nw/acceptance-designer/`
 ## Workflow
 
 ### Phase 1: Load Context
-Load: `critique-dimensions`, `test-design-mandates` — read both NOW before proceeding.
-1. Load `critique-dimensions` skill|Load `test-design-mandates` skill (CM-A, CM-B, CM-C)
+Load: `critique-dimensions`, `test-design-mandates`, `bdd-methodology` — read all three NOW before proceeding.
+1. Load `critique-dimensions` skill|Load `test-design-mandates` skill (CM-A, CM-B, CM-C)|Load `bdd-methodology` skill (BDD patterns and anti-patterns)
 2. Read all `.feature` files and step definitions under review
 3. Read architecture docs if available (to verify driving port identification)
 Gate: all test files read, skills loaded.

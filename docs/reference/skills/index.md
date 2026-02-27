@@ -17,6 +17,7 @@
 
 ## [nw-agent-builder-reviewer](../agents/nw-agent-builder-reviewer.md)
 
+- [critique-dimensions](../../../nWave/skills/agent-builder-reviewer/critique-dimensions.md) — Review dimensions for validating agent quality - template compliance, safety, testing, and priority validation
 - [review-workflow](../../../nWave/skills/agent-builder-reviewer/review-workflow.md) — Detailed review process, v2 validation checklist, and scoring methodology for agent definition reviews
 
 ## [nw-data-engineer](../agents/nw-data-engineer.md)
@@ -42,33 +43,33 @@
 
 ## [nw-functional-software-crafter](../agents/nw-functional-software-crafter.md)
 
-- [fp-algebra-driven-design](../../../nWave/skills/functional-software-crafter/fp-algebra-driven-design.md) — Algebraic thinking for API design. Discover the right API before implementing by specifying rules (equations) that operations must satisfy.
-- [fp-clojure](../../../nWave/skills/functional-software-crafter/fp-clojure.md) — - Best for: data-centric domains | REPL-driven exploration | rapid prototyping | frequently evolving data shapes
-- [fp-domain-modeling](../../../nWave/skills/functional-software-crafter/fp-domain-modeling.md) — Domain modeling with types. Make illegal states unrepresentable, workflows as pipelines, error handling at the type level.
-- [fp-fsharp](../../../nWave/skills/functional-software-crafter/fp-fsharp.md) — - Best for: domain modeling on .NET | DDD | railway-oriented programming | pipeline-first design | finance
-- [fp-haskell](../../../nWave/skills/functional-software-crafter/fp-haskell.md) — - Best for: correctness-critical systems | compiler-enforced purity | maximum type safety | financial systems
-- [fp-hexagonal-architecture](../../../nWave/skills/functional-software-crafter/fp-hexagonal-architecture.md) — Ports and adapters in functional programming. Structure applications with a pure core and side-effect shell.
-- [fp-kotlin](../../../nWave/skills/functional-software-crafter/fp-kotlin.md) — - Best for: gentlest FP onboarding for Java teams | Android | coroutines | pragmatic FP with great IDE support
-- [fp-principles](../../../nWave/skills/functional-software-crafter/fp-principles.md) — Core functional programming thinking patterns. Language-agnostic.
-- [fp-scala](../../../nWave/skills/functional-software-crafter/fp-scala.md) — - Best for: JVM with full FP power | large-scale systems | data engineering | richest effect ecosystem
-- [fp-usable-design](../../../nWave/skills/functional-software-crafter/fp-usable-design.md) — Make functional code usable. The developer is the user of your design. Apply usability thinking to code organization, naming, and architecture.
-- [pbt-dotnet](../../../nWave/skills/functional-software-crafter/pbt-dotnet.md) — | Framework | Language | Shrinking | Stateful | Parallel | Choose When |
-- [pbt-erlang-elixir](../../../nWave/skills/functional-software-crafter/pbt-erlang-elixir.md) — | Framework | Language | Stateful | Parallel | Choose When |
-- [pbt-fundamentals](../../../nWave/skills/functional-software-crafter/pbt-fundamentals.md) — Core property-based testing knowledge, language-agnostic. Load language-specific skills for framework syntax.
-- [pbt-go](../../../nWave/skills/functional-software-crafter/pbt-go.md) — | Framework | Shrinking | Stateful | API Style | Choose When |
-- [pbt-haskell](../../../nWave/skills/functional-software-crafter/pbt-haskell.md) — | Framework | Shrinking | Stateful | Choose When |
-- [pbt-jvm](../../../nWave/skills/functional-software-crafter/pbt-jvm.md) — | Framework | Language | Shrinking | Stateful | Choose When |
-- [pbt-python](../../../nWave/skills/functional-software-crafter/pbt-python.md) — **Hypothesis** is the only serious choice for Python PBT. No competitive alternatives.
-- [pbt-rust](../../../nWave/skills/functional-software-crafter/pbt-rust.md) — | Framework | Shrinking | Stateful | Choose When |
-- [pbt-stateful](../../../nWave/skills/functional-software-crafter/pbt-stateful.md) — Stateful property-based testing for systems with mutable state. Language-agnostic concepts; load language skills for framework syntax.
-- [pbt-typescript](../../../nWave/skills/functional-software-crafter/pbt-typescript.md) — **fast-check** is the dominant PBT framework for TypeScript/JavaScript. No serious competitors.
-- [tlaplus-verification](../../../nWave/skills/functional-software-crafter/tlaplus-verification.md) — When and how to use TLA+ for design verification. Complements PBT (which verifies implementation).
+- [fp-algebra-driven-design](../../../nWave/skills/functional-software-crafter/fp-algebra-driven-design.md) — Algebra-driven API design with monoids, semigroups, and interpreters via algebraic equations
+- [fp-clojure](../../../nWave/skills/functional-software-crafter/fp-clojure.md) — Clojure language-specific patterns, data-first modeling, REPL-driven development, and spec
+- [fp-domain-modeling](../../../nWave/skills/functional-software-crafter/fp-domain-modeling.md) — Domain modeling with algebraic data types, smart constructors, and type-level error handling
+- [fp-fsharp](../../../nWave/skills/functional-software-crafter/fp-fsharp.md) — F# language-specific patterns, Railway-Oriented Programming, and Computation Expressions
+- [fp-haskell](../../../nWave/skills/functional-software-crafter/fp-haskell.md) — Haskell language-specific patterns, GADTs, type classes, and effect systems
+- [fp-hexagonal-architecture](../../../nWave/skills/functional-software-crafter/fp-hexagonal-architecture.md) — Hexagonal architecture patterns with pure core and side-effect shell for functional codebases
+- [fp-kotlin](../../../nWave/skills/functional-software-crafter/fp-kotlin.md) — Kotlin language-specific patterns with Arrow, Raise DSL, and coroutine-based effects
+- [fp-principles](../../../nWave/skills/functional-software-crafter/fp-principles.md) — Core functional programming thinking patterns and type system foundations, language-agnostic
+- [fp-scala](../../../nWave/skills/functional-software-crafter/fp-scala.md) — Scala 3 language-specific patterns with ZIO, Cats Effect, and opaque types
+- [fp-usable-design](../../../nWave/skills/functional-software-crafter/fp-usable-design.md) — Naming conventions, API ergonomics, and usability patterns for functional code
+- [pbt-dotnet](../../../nWave/skills/functional-software-crafter/pbt-dotnet.md) — .NET property-based testing with FsCheck, CsCheck, and fsharp-hedgehog frameworks
+- [pbt-erlang-elixir](../../../nWave/skills/functional-software-crafter/pbt-erlang-elixir.md) — Erlang/Elixir property-based testing with PropEr, PropCheck, and StreamData frameworks
+- [pbt-fundamentals](../../../nWave/skills/functional-software-crafter/pbt-fundamentals.md) — Property-based testing core concepts, property taxonomy, and strategy selection (language-agnostic)
+- [pbt-go](../../../nWave/skills/functional-software-crafter/pbt-go.md) — Go property-based testing with rapid and gopter frameworks
+- [pbt-haskell](../../../nWave/skills/functional-software-crafter/pbt-haskell.md) — Haskell property-based testing with QuickCheck and Hedgehog frameworks
+- [pbt-jvm](../../../nWave/skills/functional-software-crafter/pbt-jvm.md) — JVM property-based testing with jqwik, ScalaCheck, and ZIO Test frameworks
+- [pbt-python](../../../nWave/skills/functional-software-crafter/pbt-python.md) — Python property-based testing with Hypothesis framework, strategies, and pytest integration
+- [pbt-rust](../../../nWave/skills/functional-software-crafter/pbt-rust.md) — Rust property-based testing with proptest, quickcheck, and bolero frameworks
+- [pbt-stateful](../../../nWave/skills/functional-software-crafter/pbt-stateful.md) — Stateful property-based testing patterns, model-based testing, and anti-patterns
+- [pbt-typescript](../../../nWave/skills/functional-software-crafter/pbt-typescript.md) — TypeScript/JavaScript property-based testing with fast-check framework and arbitraries
+- [tlaplus-verification](../../../nWave/skills/functional-software-crafter/tlaplus-verification.md) — TLA+ formal verification for design correctness and PBT pipeline integration
 
 ## [nw-platform-architect](../agents/nw-platform-architect.md)
 
 - [cicd-and-deployment](../../../nWave/skills/platform-architect/cicd-and-deployment.md) — CI/CD pipeline design methodology, deployment strategies, GitHub Actions patterns, and branch/release strategies. Load when designing pipelines or deployment workflows.
 - [deliver-orchestration](../../../nWave/skills/platform-architect/deliver-orchestration.md) — DELIVER wave orchestration workflow -- 9 phases from baseline to finalization. Load when user invokes *deliver command. Covers state tracking, smart skip logic, retry, resume, and quality gate enforcement.
-- [deployment-strategies](../../../nWave/skills/platform-architect/deployment-strategies.md) — Deployment patterns (canary, blue-green, rolling), rollback procedures, risk assessment, and contingency planning. Load when orchestrating deployment or preparing rollback plans.
+- [deployment-strategies](../../../nWave/skills/platform-architect/deployment-strategies.md) — Rollback procedures, risk assessment, pre/post-deployment validation, and contingency planning. Load when orchestrating deployment or preparing rollback plans. For deployment strategy details (canary, blue-green, rolling), see `cicd-and-deployment` skill.
 - [infrastructure-and-observability](../../../nWave/skills/platform-architect/infrastructure-and-observability.md) — Infrastructure as Code patterns (Terraform, Kubernetes), observability design (SLOs, metrics, alerting, dashboards), and pipeline security stages. Load when designing infrastructure, observability, or security scanning.
 - [platform-engineering-foundations](../../../nWave/skills/platform-architect/platform-engineering-foundations.md) — Foundational platform engineering knowledge from key references -- Continuous Delivery, SRE, Accelerate, Team Topologies, Chaos Engineering, and Secure Delivery. Load when contextual grounding in platform engineering theory is needed.
 - [production-readiness](../../../nWave/skills/platform-architect/production-readiness.md) — Monitoring, observability, operational procedures, CI/CD lessons learned, and quality gate definitions. Load when assessing production readiness or validating operational excellence.
@@ -152,6 +153,7 @@
 
 ## [nw-solution-architect-reviewer](../agents/nw-solution-architect-reviewer.md)
 
+- [critique-dimensions](../../../nWave/skills/solution-architect-reviewer/critique-dimensions.md) — Architecture quality critique dimensions for peer review. Load when performing architecture document reviews.
 - [roadmap-review-checks](../../../nWave/skills/solution-architect-reviewer/roadmap-review-checks.md) — Roadmap-specific validation checks for architecture reviews. Load when reviewing roadmaps for implementation readiness.
 
 ## [nw-troubleshooter](../agents/nw-troubleshooter.md)

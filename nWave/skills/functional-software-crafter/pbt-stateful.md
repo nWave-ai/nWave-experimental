@@ -1,3 +1,9 @@
+---
+name: pbt-stateful
+agent: nw-functional-software-crafter
+description: Stateful property-based testing patterns, model-based testing, and anti-patterns
+---
+
 # Stateful PBT
 
 Stateful property-based testing for systems with mutable state. Language-agnostic concepts; load language skills for framework syntax.

@@ -1,3 +1,9 @@
+---
+name: fp-domain-modeling
+agent: nw-functional-software-crafter
+description: Domain modeling with algebraic data types, smart constructors, and type-level error handling
+---
+
 # FP Domain Modeling
 
 Domain modeling with types. Make illegal states unrepresentable, workflows as pipelines, error handling at the type level.

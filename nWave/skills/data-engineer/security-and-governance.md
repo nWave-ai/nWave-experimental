@@ -23,17 +23,11 @@ Encrypts DB files on disk without application changes. Encrypts data pages befor
 
 ### Implementation
 ```sql
--- SQL Server TDE
-CREATE MASTER KEY ENCRYPTION BY PASSWORD = '<strong_password>';
-CREATE CERTIFICATE TDE_Cert WITH SUBJECT = 'TDE Certificate';
+-- SQL Server TDE (key hierarchy: Service Master Key -> DB Master Key -> Certificate -> DEK)
 CREATE DATABASE ENCRYPTION KEY WITH ALGORITHM = AES_256
     ENCRYPTION BY SERVER CERTIFICATE TDE_Cert;
 ALTER DATABASE [YourDB] SET ENCRYPTION ON;
-
--- PostgreSQL (pgcrypto for column-level, full TDE in v17+)
--- Oracle TDE
-ALTER SYSTEM SET ENCRYPTION KEY IDENTIFIED BY "<keystore_password>";
-ALTER TABLESPACE users ENCRYPTION ONLINE USING 'AES256';
+-- PostgreSQL: pgcrypto for column-level, full TDE in v17+ | Oracle: ALTER SYSTEM SET ENCRYPTION KEY
 ```
 
 ### Best Practices
@@ -58,16 +52,10 @@ ALTER TABLESPACE users ENCRYPTION ONLINE USING 'AES256';
 Assign permissions to roles, roles to users. Standard in all major DBs.
 
 ```sql
--- PostgreSQL RBAC example
-CREATE ROLE app_readonly;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_readonly;
-
-CREATE ROLE app_readwrite;
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO app_readwrite;
-
--- Assign to users
-GRANT app_readonly TO reporting_user;
-GRANT app_readwrite TO application_user;
+-- PostgreSQL RBAC: create roles with specific grants, assign to users
+CREATE ROLE app_readonly; GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_readonly;
+CREATE ROLE app_readwrite; GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO app_readwrite;
+GRANT app_readonly TO reporting_user; GRANT app_readwrite TO application_user;
 ```
 
 ### ABAC (Attribute-Based)
@@ -84,32 +72,15 @@ Access decisions based on attributes of user, resource, environment. More flexib
 ### Parameterized Queries (Primary Defense)
 
 ```python
-# Python (psycopg2)
+# VULNERABLE - string concatenation (SQL injection risk)
+query = f"SELECT * FROM users WHERE name = '{user_input}'"
+
+# SAFE - parameterized (all languages: Python %s, Java ?, C# @param, Node.js $1)
 cursor.execute("SELECT * FROM users WHERE id = %s AND status = %s", (user_id, 'active'))
-
-# Java (PreparedStatement)
-# PreparedStatement ps = conn.prepareStatement("SELECT * FROM users WHERE id = ?");
-# ps.setInt(1, userId);
-
-# C# (SqlCommand with parameters)
-# cmd.Parameters.AddWithValue("@id", userId);
-
-# Node.js (pg library)
-# client.query('SELECT * FROM users WHERE id = $1', [userId])
 ```
 
 ### Additional Defenses (OWASP)
 Input validation: whitelist allowed chars/formats | Stored procedures: reduce direct SQL exposure | Least privilege: no DDL for app accounts | WAF rules | Never expose DB error messages to end users
-
-### Detection Patterns
-```python
-# VULNERABLE - string concatenation
-query = f"SELECT * FROM users WHERE name = '{user_input}'"
-
-# SAFE - parameterized
-query = "SELECT * FROM users WHERE name = %s"
-cursor.execute(query, (user_input,))
-```
 
 ## Data Governance
 

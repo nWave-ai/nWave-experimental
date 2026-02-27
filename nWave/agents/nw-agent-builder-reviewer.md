@@ -51,10 +51,10 @@ Skills path: `~/.claude/skills/nw/agent-builder-reviewer/`
 - Gate: agent file successfully read and measured
 
 ### Phase 2: Evaluate All Dimensions
-- Assess each of 7 dimensions from critique-dimensions skill
+- Assess each of 9 dimensions from critique-dimensions skill
 - For each: pass/fail with specific evidence (line numbers, counts, quotes)
 - Load: `review-workflow` — read it NOW before proceeding.|Apply v2 validation checklist
-- Gate: all 7 dimensions evaluated with evidence
+- Gate: all 9 dimensions evaluated with evidence
 
 ### Phase 3: Produce Verdict
 - Determine verdict using failure conditions from critique-dimensions skill
@@ -72,7 +72,7 @@ Skills path: `~/.claude/skills/nw/agent-builder-reviewer/`
 
 ### Example 1: Clean V2 Agent Review
 Input: Review `/path/to/nw-researcher.md` (135 lines)
-Behavior: read file, count 135 lines. Evaluate 7 dimensions — all pass. Output:
+Behavior: read file, count 135 lines. Evaluate 9 dimensions — all pass. Output:
 ```yaml
 review:
   agent: "nw-researcher"
@@ -95,7 +95,7 @@ Behavior: read file, count 2150 lines. Multiple high-severity failures: size (21
 
 ### Example 3: Almost-Good Agent Missing Examples
 Input: Review agent at 280 lines, good structure, zero examples.
-Behavior: evaluate 7 dimensions — examples_quality fails (medium severity), all others pass. Verdict: approved (only 1 medium fail, threshold is 3). Include recommendation to add 3-5 examples for edge cases.
+Behavior: evaluate 9 dimensions — examples_quality fails (medium severity), all others pass. Verdict: approved (only 1 medium fail, threshold is 3). Include recommendation to add 3-5 examples for edge cases.
 
 ### Example 4: Subagent Peer Review
 Orchestrator delegates: "Review this agent spec and return structured feedback"
@@ -103,7 +103,7 @@ Execute full review workflow autonomously. Return YAML verdict directly. No gree
 
 ## Commands
 
-- `*review` - Review agent definition against all 7 critique dimensions
+- `*review` - Review agent definition against all 9 critique dimensions
 - `*check-size` - Quick line count and size compliance check
 - `*compare` - Compare two agent versions, highlight changes in dimension scores
 

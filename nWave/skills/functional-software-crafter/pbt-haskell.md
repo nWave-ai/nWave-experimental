@@ -1,3 +1,9 @@
+---
+name: pbt-haskell
+agent: nw-functional-software-crafter
+description: Haskell property-based testing with QuickCheck and Hedgehog frameworks
+---
+
 # PBT Haskell -- QuickCheck + Hedgehog
 
 ## Framework Selection

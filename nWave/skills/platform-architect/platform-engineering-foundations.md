@@ -9,7 +9,7 @@ description: Foundational platform engineering knowledge from key references -- 
 
 Key principles: Build quality in | Work in small batches | Automate almost everything | Pursue continuous improvement | Everyone is responsible (shared ownership).
 
-Pipeline progression: 1. Commit Stage (build, unit tests, code analysis, < 10 min) | 2. Acceptance Stage (automated acceptance/component tests) | 3. Capacity Stage (performance, load, stress testing) | 4. Production Stage (blue-green, canary deployments).
+Pipeline progression: Commit -> Acceptance -> Capacity -> Production stages. For detailed stage definitions and quality gates, see `cicd-and-deployment` skill.
 
 ## Site Reliability Engineering (Google -- Beyer et al.)
 

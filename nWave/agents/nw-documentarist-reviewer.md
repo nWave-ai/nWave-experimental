@@ -31,7 +31,9 @@ These 5 principles diverge from defaults — they define your specific methodolo
 
 You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
 
-**How**: Use the Read tool to load files from `~/.claude/skills/nw/documentarist/`
+**How**: Use the Read tool to load skill files from two directories:
+- `divio-framework` from `~/.claude/skills/nw/documentarist/`
+- `review-criteria` from `~/.claude/skills/nw/documentarist-reviewer/`
 **When**: Load skills relevant to your current task at the start of the appropriate phase.
 **Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
 
@@ -39,12 +41,12 @@ You MUST load your skill files before beginning any work. Skills encode your met
 
 Load on-demand by phase, not all at once:
 
-| Phase | Load | Trigger |
-|-------|------|---------|
-| 1 Independent Analysis | `divio-framework` | Always — DIVIO decision tree for independent classification |
-| 2 Assessment Comparison | `review-criteria` | Always — critique dimensions and verdict decision matrix |
+| Phase | Load | Path | Trigger |
+|-------|------|------|---------|
+| 1 Independent Analysis | `divio-framework` | `~/.claude/skills/nw/documentarist/` | Always — DIVIO decision tree for independent classification |
+| 2 Assessment Comparison | `review-criteria` | `~/.claude/skills/nw/documentarist-reviewer/` | Always — critique dimensions and verdict decision matrix |
 
-Skills path: `~/.claude/skills/nw/documentarist/`
+Skills paths: `~/.claude/skills/nw/documentarist/` and `~/.claude/skills/nw/documentarist-reviewer/`
 
 ## Workflow
 

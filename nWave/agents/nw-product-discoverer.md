@@ -40,7 +40,7 @@ You MUST load your skill files before beginning any work. Skills encode your met
 
 ## Skill Loading Strategy
 
-Load on-demand by phase, not all at once:
+Load eagerly at Phase 1:
 
 | Phase | Load | Trigger |
 |-------|------|---------|

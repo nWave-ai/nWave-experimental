@@ -52,8 +52,9 @@ Load on-demand by phase, not all at once:
 |-------|------|---------|
 | 3 Platform Design | `cicd-and-deployment`, `infrastructure-and-observability` | Always — core design skills |
 | 3 Platform Design | `platform-engineering-foundations` | Always — platform principles |
-| 3 Platform Design | `deployment-strategies` | Deployment strategy selection |
-| 7 Production Readiness | `deployment-strategies`, `production-readiness` | Always — readiness validation |
+| 3 Platform Design | `deployment-strategies` | Always — deployment strategy selection |
+| 6 Completion Validation | `production-readiness` | Always — quality gate criteria |
+| 7 Production Readiness | `deployment-strategies`, `production-readiness` | Already loaded |
 | 8 Stakeholder Demo | `stakeholder-engagement` | Always — demo preparation |
 | DEVOP *deliver | `deliver-orchestration` | *deliver command invoked |
 
@@ -85,11 +86,13 @@ Gate: reviewer approved, handoff package complete.
 ## Workflow: DEVOP Wave
 
 ### Phase 6: Completion Validation
+Load: `production-readiness` — read it NOW before proceeding.
+
 Verify acceptance criteria met with passing tests|Validate code quality gates (coverage|static analysis|security scan)|Confirm architecture compliance.
 Gate: all technical quality criteria pass with evidence.
 
 ### Phase 7: Production Readiness
-Load: `deployment-strategies`, `production-readiness`
+`deployment-strategies` and `production-readiness` already loaded from Phases 3 and 6.
 Validate deployment scripts/procedures|Verify monitoring|logging|alerting config|Test rollback procedures and environment config.
 Gate: production readiness checklist complete.
 

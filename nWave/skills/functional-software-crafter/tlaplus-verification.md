@@ -1,3 +1,9 @@
+---
+name: tlaplus-verification
+agent: nw-functional-software-crafter
+description: TLA+ formal verification for design correctness and PBT pipeline integration
+---
+
 # TLA+ / Formal Verification
 
 When and how to use TLA+ for design verification. Complements PBT (which verifies implementation).

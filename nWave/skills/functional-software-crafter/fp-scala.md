@@ -1,3 +1,9 @@
+---
+name: fp-scala
+agent: nw-functional-software-crafter
+description: Scala 3 language-specific patterns with ZIO, Cats Effect, and opaque types
+---
+
 # FP in Scala 3 -- Functional Software Crafter Skill
 
 Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md) | [pbt-jvm](./pbt-jvm.md)

@@ -1,3 +1,9 @@
+---
+name: pbt-python
+agent: nw-functional-software-crafter
+description: Python property-based testing with Hypothesis framework, strategies, and pytest integration
+---
+
 # PBT Python -- Hypothesis
 
 ## Framework Selection

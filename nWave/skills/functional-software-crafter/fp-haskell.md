@@ -1,3 +1,9 @@
+---
+name: fp-haskell
+agent: nw-functional-software-crafter
+description: Haskell language-specific patterns, GADTs, type classes, and effect systems
+---
+
 # FP in Haskell -- Functional Software Crafter Skill
 
 Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md) | [pbt-haskell](./pbt-haskell.md)

@@ -112,7 +112,7 @@ Create agents through 5 phases: ANALYZE -> DESIGN -> CREATE -> VALIDATE -> REFIN
 **Goal**: Verify agent meets quality standards.
 
 **Steps**:
-1. Run 11-point validation checklist:
+1. Run 14-point validation checklist:
    - [ ] Uses official YAML frontmatter format
    - [ ] Total definition under 400 lines (domain knowledge in Skills)
    - [ ] Only specifies behaviors diverging from Claude defaults
@@ -127,7 +127,7 @@ Create agents through 5 phases: ANALYZE -> DESIGN -> CREATE -> VALIDATE -> REFIN
 2. Check anti-patterns: no monolithic sections (>50 lines without structure) | No duplicated Claude defaults | No embedded safety frameworks | No aggressive language
 3. Test with representative inputs (Layer 1 testing)
 
-**Gate**: All 11 items pass. No anti-patterns.
+**Gate**: All 14 items pass. No anti-patterns.
 
 **Output**: Validation report (pass/fail per item).
 
@@ -140,7 +140,7 @@ Create agents through 5 phases: ANALYZE -> DESIGN -> CREATE -> VALIDATE -> REFIN
 2. Test with edge cases
 3. Add instructions ONLY for observed failure modes: wrong decision -> add rule/example | Missed step -> clarify workflow | Over-generated -> add constraint
 4. Re-measure: `wc -l`. If approaching 400 lines, extract to Skills.
-5. Re-validate with 11-point checklist.
+5. Re-validate with 14-point checklist.
 
 **Gate**: All validation passes. Line count within target. Edge cases handled.
 
@@ -153,7 +153,7 @@ Create agents through 5 phases: ANALYZE -> DESIGN -> CREATE -> VALIDATE -> REFIN
 | ANALYZE | Single responsibility, no overlap | DESIGN |
 | DESIGN | Architecture fits size target | CREATE |
 | CREATE | File created, under 300 lines | VALIDATE |
-| VALIDATE | 11-point checklist passes | REFINE/Deploy |
+| VALIDATE | 14-point checklist passes | REFINE/Deploy |
 | REFINE | Edge cases handled, within target | Deploy |
 
 ## Naming Conventions

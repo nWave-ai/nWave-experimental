@@ -135,6 +135,24 @@ Require PR reviews (2+ approvers) | Require status checks to pass | Require sign
 ### Release Workflow
 Semantic versioning (MAJOR.MINOR.PATCH): Create release branch -> Bump version -> Update CHANGELOG -> Run full test suite -> Create release tag -> Deploy to production -> Merge back to main.
 
+## CI/CD Architecture Lessons
+
+### Test Architecture and Measurement Coupling
+Test execution architecture changes require simultaneous measurement strategy updates.
+**Fundamental principle**: treat test execution architecture and measurement strategy as tightly coupled concerns.
+
+### Common Pitfalls
+| Pitfall | Symptom | Prevention |
+|---------|---------|------------|
+| False failure syndrome | Quality gates fail after CI/CD change without code changes | Validate measurement strategy in isolated environment first |
+| Baseline drift | Increasing threshold adjustments without justification | Maintain versioned baseline documentation |
+| Tool assumption violations | Inconsistent metrics across CI/CD runs | Review tool docs for architecture-specific behaviors |
+
+### CI/CD Change Checklist
+**Before**: Analyze impact on test discovery | Identify affected measurement tools (coverage, mutation testing) | Document current baseline metrics.
+**During**: Adjust coverage thresholds for new execution model | Validate measurement strategy compatibility | Recalibrate quality gate thresholds.
+**After**: Establish new baseline metrics | Validate measurement accuracy against known scenarios | Update runbooks with measurement strategy changes.
+
 ## Simplest Solution Check for Infrastructure
 
 Before proposing multi-service infrastructure (>3 components), document rejected simple alternatives:

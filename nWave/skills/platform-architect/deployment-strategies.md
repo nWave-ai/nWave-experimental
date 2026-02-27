@@ -1,9 +1,11 @@
 ---
 name: deployment-strategies
-description: Deployment patterns (canary, blue-green, rolling), rollback procedures, risk assessment, and contingency planning. Load when orchestrating deployment or preparing rollback plans.
+description: Rollback procedures, risk assessment, pre/post-deployment validation, and contingency planning. Load when orchestrating deployment or preparing rollback plans. For deployment strategy details (canary, blue-green, rolling), see `cicd-and-deployment` skill.
 ---
 
-# Deployment Strategies
+# Deployment Strategies — Rollback, Risk, and Validation
+
+For deployment strategy patterns (canary, blue-green, rolling, progressive delivery), see `cicd-and-deployment` skill. This skill focuses on operational concerns: validation, rollback, risk, and post-deployment.
 
 ## Pre-Deployment Validation
 
@@ -11,20 +13,6 @@ Before any deployment, validate:
 - Deployment scripts tested in staging | Database migrations tested with rollback scripts
 - Configuration management consistent across environments | Health checks and service discovery configured
 - Monitoring and alerting systems prepared | Backup and disaster recovery procedures validated
-
-## Staged Deployment Patterns
-
-### Canary Deployment
-Route 5-10% of traffic to new version. Monitor: error rates | latency | business metrics. Duration: minimum 30 min per stage. Expansion: 5% -> 25% -> 50% -> 100%. Rollback: immediate traffic reroute to stable version.
-Best for: high-risk changes | API modifications | performance-sensitive features.
-
-### Blue-Green Deployment
-Two identical environments (blue = current, green = new). Deploy to green, validate, switch traffic. Rollback: switch back to blue. Requires: full environment duplication | data synchronization strategy.
-Best for: zero-downtime requirements | major version upgrades.
-
-### Rolling Deployment
-Replace instances one at a time. Health monitoring per instance after replacement. Automatic rollback on health check failure.
-Best for: stateless services | horizontal scaling architectures.
 
 ## Rollback Procedures
 

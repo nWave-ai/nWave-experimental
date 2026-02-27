@@ -1,3 +1,9 @@
+---
+name: fp-fsharp
+agent: nw-functional-software-crafter
+description: F# language-specific patterns, Railway-Oriented Programming, and Computation Expressions
+---
+
 # FP in F# -- Functional Software Crafter Skill
 
 Cross-references: [fp-principles](./fp-principles.md) | [fp-domain-modeling](./fp-domain-modeling.md) | [pbt-dotnet](./pbt-dotnet.md)

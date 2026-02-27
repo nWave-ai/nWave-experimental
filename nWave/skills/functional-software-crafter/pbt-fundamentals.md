@@ -1,3 +1,9 @@
+---
+name: pbt-fundamentals
+agent: nw-functional-software-crafter
+description: Property-based testing core concepts, property taxonomy, and strategy selection (language-agnostic)
+---
+
 # PBT Fundamentals
 
 Core property-based testing knowledge, language-agnostic. Load language-specific skills for framework syntax.
