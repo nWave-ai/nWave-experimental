@@ -961,12 +961,26 @@ jobs:
           print(f'Generated marketplace.json for nwave v${NWAVE_VERSION}')
           "
 
+      - name: Extract release commit author
+        id: author
+        run: |
+          AUTHOR_NAME=$(git log -1 --format='%an' HEAD)
+          AUTHOR_EMAIL=$(git log -1 --format='%ae' HEAD)
+          if [[ -z "$AUTHOR_NAME" || -z "$AUTHOR_EMAIL" ]]; then
+            echo "::warning::Could not extract commit author, falling back to bot identity"
+            AUTHOR_NAME="nWave Release Train"
+            AUTHOR_EMAIL="noreply@nwave.ai"
+          fi
+          echo "name=$AUTHOR_NAME" >> $GITHUB_OUTPUT
+          echo "email=$AUTHOR_EMAIL" >> $GITHUB_OUTPUT
+          echo "Release attributed to: $AUTHOR_NAME <$AUTHOR_EMAIL>"
+
       - name: Commit and push to nwave-ai/nwave
         working-directory: nwave-target
         run: |
           NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
-          git config user.name "nWave Release Train"
-          git config user.email "noreply@nwave.ai"
+          git config user.name "${{ steps.author.outputs.name }}"
+          git config user.email "${{ steps.author.outputs.email }}"
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to publish"
@@ -982,6 +996,8 @@ jobs:
         run: |
           NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
           TAG="v${NWAVE_VERSION}"
+          git config user.name "${{ steps.author.outputs.name }}"
+          git config user.email "${{ steps.author.outputs.email }}"
 
           # Create and push tag (skip if it already exists)
           if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -1007,8 +1023,8 @@ jobs:
           NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
           TAG="nWave_v${NWAVE_VERSION}"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          git config user.name "nWave Release Train"
-          git config user.email "noreply@nwave.ai"
+          git config user.name "${{ steps.author.outputs.name }}"
+          git config user.email "${{ steps.author.outputs.email }}"
           git tag -a "$TAG" -m "Published as nwave-ai v${NWAVE_VERSION}"
           git push origin "$TAG"
           echo "Tagged nwave-dev as $TAG"
