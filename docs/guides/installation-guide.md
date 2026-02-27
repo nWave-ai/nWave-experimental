@@ -329,7 +329,7 @@ For workflow guidance, see [Jobs To Be Done Guide](jobs-to-be-done-guide.md).
 
 ## Support
 
-- **Discord Community**: [Join the nWave Discord](https://discord.gg/DeYdSNk6) for help with installation issues
+- **Discord Community**: [Join the nWave Discord](https://discord.gg/Cywj3uFdpd) for help with installation issues
 - **Documentation**: Complete framework documentation is available in the repository
 - **Logs**: Check `~/.claude/nwave-install.log` for installation details
 - **Version**: Run `nwave-ai version` to see your installed version

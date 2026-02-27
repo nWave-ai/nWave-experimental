@@ -154,7 +154,7 @@ nwave-ai install --restore
 1. Run the quick diagnostic at the top of this page
 2. Try reinstalling (`nwave-ai install`)
 3. If the issue persists:
-   - **Discord**: [nWave Community](https://discord.gg/DeYdSNk6)
+   - **Discord**: [nWave Community](https://discord.gg/Cywj3uFdpd)
    - **GitHub Issues**: [github.com/nWave-ai/nWave/issues](https://github.com/nWave-ai/nWave/issues)
 
 Include in your report: diagnostic output, error messages, OS, and Python version.

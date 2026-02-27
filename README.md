@@ -128,7 +128,7 @@ The full workflow has six waves. Use all six for greenfield projects, or jump st
 
 ## Community
 
-- **[Discord](https://discord.gg/DeYdSNk6)** — Questions, feedback, success stories
+- **[Discord](https://discord.gg/Cywj3uFdpd)** — Questions, feedback, success stories
 - **[GitHub Issues](https://github.com/nWave-ai/nWave/issues)** — Bug reports and feature requests
 - **[Contributing](CONTRIBUTING.md)** — Development setup and guidelines
 
