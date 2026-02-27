@@ -649,6 +649,10 @@ def build(config: BuildConfig) -> BuildResult:
     metadata_result = write_metadata(plugin_dir, metadata)
     steps.append(metadata_result)
 
+    # Step 10: Generate marketplace catalog
+    marketplace_result = write_marketplace_json(plugin_dir, config.plugin_name, version)
+    steps.append(marketplace_result)
+
     return BuildResult(
         output_dir=plugin_dir,
         success=True,
