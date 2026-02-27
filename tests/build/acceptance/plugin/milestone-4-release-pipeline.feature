@@ -2,7 +2,7 @@
 # Based on: architecture-design.md - Roadmap Step 02-01
 # Acceptance Criteria:
 #   - Plugin builds automatically on release tag
-#   - Plugin directory committed to nwave-plugin repository
+#   - Plugin zip attached as GitHub Release asset on nwave-ai/nwave
 #   - Marketplace manifest generated for self-hosted marketplace
 # Date: 2026-02-27
 

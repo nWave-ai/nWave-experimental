@@ -6,7 +6,28 @@ nWave runs inside [Claude Code](https://claude.com/product/claude-code). You des
 
 ## Quick Start
 
-**1. Install** (in your terminal — not inside Claude Code):
+Choose your installation method below. Both work equally well; the plugin method has zero dependencies and is recommended for most users.
+
+### Plugin (Recommended — 1 command, zero dependencies)
+
+From Claude Code, run:
+
+```
+/plugin marketplace add nwave-ai/nwave
+/plugin install nwave@nwave-marketplace
+```
+
+That's it. Restart Claude Code and type `/nw:` to see all available commands.
+
+> **Coming soon**: We're working to be hosted on Anthropic's official plugin marketplace.
+> Once available, installation will be even simpler:
+> ```
+> /plugin install nwave@claude-plugins-official
+> ```
+
+### CLI Installer (Python 3.10+ required)
+
+For users who prefer pip-based installation or need advanced configuration:
 
 ```bash
 pipx install nwave-ai
@@ -20,16 +41,16 @@ No repository clone needed. This installs nWave from PyPI and sets up agents and
 
 Full setup details: **[Installation Guide](https://github.com/nWave-ai/nWave/blob/main/docs/guides/installation-guide.md)**
 
-**Staying updated** — nWave checks for new versions when you open Claude Code. When an update is available, you'll see a note in Claude's context with the version and what changed. To update, run two commands in your terminal:
+### Which method should I use?
 
-```bash
-pipx upgrade nwave-ai   # pull the latest package (use pip install --upgrade nwave-ai if you installed via pip)
-nwave-ai install        # deploy the new framework files to ~/.claude/
-```
+| I am... | Use | Why |
+|---------|-----|-----|
+| Trying nWave for the first time | Plugin | Zero dependencies, instant setup |
+| Rolling out to my team | Plugin | Same command on every machine |
+| Already using the CLI installer | Either | Both coexist safely, migrate at your pace |
+| Contributing to nWave development | CLI | Access to dev scripts and DES internals |
 
-To control check frequency: set `update_check.frequency` in `~/.nwave/des-config.json` (`daily` / `weekly` / `every_session` / `never`).
-
-**2. Use** (inside Claude Code, after reopening it):
+### Use (inside Claude Code, after reopening it)
 
 ```
 /nw:discuss "user login with email and password"   # Requirements
@@ -41,6 +62,25 @@ To control check frequency: set `update_check.frequency` in `~/.nwave/des-config
 Four commands. Four human checkpoints. One working feature.
 
 Full walkthrough: **[Your First Feature](docs/guides/tutorial-first-feature.md)**
+
+## Staying Updated
+
+nWave checks for new versions when you open Claude Code. When an update is available, you'll see a note in Claude's context with the version and what changed.
+
+**If you used the plugin method:**
+```
+/plugin marketplace update nwave-marketplace
+```
+
+Or enable auto-updates in your Claude Code plugin settings.
+
+**If you used the CLI installer:**
+```bash
+pipx upgrade nwave-ai   # pull the latest package (use pip install --upgrade nwave-ai if you installed via pip)
+nwave-ai install        # deploy the new framework files to ~/.claude/
+```
+
+To control check frequency: set `update_check.frequency` in `~/.nwave/des-config.json` (`daily` / `weekly` / `every_session` / `never`).
 
 ## Control Your Token Spend — Without Sacrificing Quality
 

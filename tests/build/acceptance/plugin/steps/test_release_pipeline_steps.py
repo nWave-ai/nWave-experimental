@@ -211,7 +211,9 @@ def manifest_has_download(build_result: dict[str, Any]):
     from scripts.build_plugin import generate_marketplace_manifest
 
     plugin_dir = build_result["plugin_dir"]
-    test_download_url = "https://github.com/nwave-ai/nwave-plugin/releases/tag/v1.0.0"
+    test_download_url = (
+        "https://github.com/nwave-ai/nwave/releases/download/v1.0.0/nwave-plugin.zip"
+    )
 
     # Regenerate with a download URL to verify the field is present
     manifest_result = generate_marketplace_manifest(
@@ -264,6 +266,95 @@ def builds_are_identical(build_result: dict[str, Any]):
     # Compare directory structures
     comparison = filecmp.dircmp(first_output, second_output)
     _assert_dirs_identical(comparison)
+
+
+# ---------------------------------------------------------------------------
+# Standalone Marketplace Tests (not BDD-driven)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateMarketplaceCatalog:
+    """Tests for generate_marketplace_catalog pure function."""
+
+    def test_catalog_has_required_marketplace_fields(self):
+        """Catalog contains all fields required by Claude Code marketplace spec."""
+        from scripts.build_plugin import (
+            MARKETPLACE_NAME,
+            generate_marketplace_catalog,
+        )
+
+        catalog = generate_marketplace_catalog("nwave", "1.2.3")
+
+        assert catalog["name"] == MARKETPLACE_NAME
+        assert catalog["owner"]["name"], "Owner name must not be empty"
+        assert catalog["owner"]["email"], "Owner email must not be empty"
+        assert "@" in catalog["owner"]["email"], "Owner email must be valid"
+        assert len(catalog["plugins"]) == 1, "Single-plugin marketplace"
+
+    def test_plugin_entry_matches_source_convention(self):
+        """Plugin entry source follows ./plugins/{name} convention."""
+        from scripts.build_plugin import (
+            PLUGIN_SOURCE_TEMPLATE,
+            generate_marketplace_catalog,
+        )
+
+        catalog = generate_marketplace_catalog("nwave", "1.2.3")
+        plugin_entry = catalog["plugins"][0]
+
+        expected_source = PLUGIN_SOURCE_TEMPLATE.format(name="nwave")
+        assert plugin_entry["source"] == expected_source
+        assert plugin_entry["name"] == "nwave"
+        assert plugin_entry["version"] == "1.2.3"
+        assert plugin_entry["description"], "Plugin description must not be empty"
+
+    def test_catalog_metadata_propagates_version(self):
+        """Version passed to catalog appears in both metadata and plugin entry."""
+        from scripts.build_plugin import generate_marketplace_catalog
+
+        catalog = generate_marketplace_catalog("nwave", "2.0.0")
+
+        assert catalog["metadata"]["version"] == "2.0.0"
+        assert catalog["plugins"][0]["version"] == "2.0.0"
+        assert catalog["metadata"]["description"], (
+            "Metadata description must not be empty"
+        )
+
+
+class TestWriteMarketplaceJson:
+    """Tests for write_marketplace_json IO boundary function."""
+
+    def test_creates_marketplace_json_at_target(self, tmp_path: Path):
+        """write_marketplace_json creates .claude-plugin/marketplace.json."""
+        from scripts.build_plugin import write_marketplace_json
+
+        result = write_marketplace_json(tmp_path, "nwave", "1.2.3")
+
+        assert result.success
+        marketplace_path = tmp_path / ".claude-plugin" / "marketplace.json"
+        assert marketplace_path.exists()
+
+    def test_generated_json_is_valid_with_expected_schema(self, tmp_path: Path):
+        """Generated marketplace.json is valid JSON with required fields."""
+        from scripts.build_plugin import write_marketplace_json
+
+        write_marketplace_json(tmp_path, "nwave", "1.2.3")
+
+        marketplace_path = tmp_path / ".claude-plugin" / "marketplace.json"
+        catalog = json.loads(marketplace_path.read_text(encoding="utf-8"))
+
+        assert catalog["name"] == "nwave-marketplace"
+        assert "owner" in catalog
+        assert "plugins" in catalog
+        assert isinstance(catalog["plugins"], list)
+        assert len(catalog["plugins"]) >= 1
+        assert catalog["plugins"][0]["name"] == "nwave"
+        assert catalog["plugins"][0]["version"] == "1.2.3"
+        assert catalog["plugins"][0]["source"] == "./plugins/nwave"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _assert_dirs_identical(comparison: filecmp.dircmp) -> None:

@@ -207,9 +207,65 @@ def generate_plugin_metadata(plugin_name: str, version: str) -> dict:
     return {
         "name": plugin_name,
         "version": version,
-        "description": "nWave: AI-powered workflow framework with TDD enforcement",
-        "keywords": ["tdd", "workflow", "agents", "software-craft"],
-        "source": ".",
+        "description": (
+            "nWave: AI-powered workflow framework — 23 agents, 98+ skills, "
+            "TDD enforcement, and wave-based development methodology for Claude Code"
+        ),
+        "author": {
+            "name": "nWave AI",
+            "email": "hello@nwave.ai",
+        },
+        "homepage": "https://nwave.ai",
+        "repository": "https://github.com/nwave-ai/nwave",
+        "license": "MIT",
+        "source": f"./plugins/{plugin_name}",
+        "keywords": [
+            "tdd",
+            "workflow",
+            "agents",
+            "software-craft",
+            "bdd",
+            "outside-in-tdd",
+            "code-quality",
+        ],
+    }
+
+
+def generate_marketplace_catalog(plugin_name: str, version: str) -> dict:
+    """Generate marketplace.json catalog for self-hosted distribution."""
+    return {
+        "name": MARKETPLACE_NAME,
+        "owner": {
+            "name": "nWave AI",
+            "email": "hello@nwave.ai",
+        },
+        "metadata": {
+            "description": (
+                "nWave plugin marketplace — structured AI development "
+                "with TDD enforcement for Claude Code"
+            ),
+            "version": version,
+        },
+        "plugins": [
+            {
+                "name": plugin_name,
+                "source": PLUGIN_SOURCE_TEMPLATE.format(name=plugin_name),
+                "description": (
+                    "nWave: AI-powered workflow framework — 23 agents, 98+ skills, "
+                    "TDD enforcement, and wave-based development methodology"
+                ),
+                "version": version,
+                "category": PLUGIN_CATEGORY,
+                "tags": [
+                    "tdd",
+                    "workflow",
+                    "agents",
+                    "software-craft",
+                    "bdd",
+                    "code-quality",
+                ],
+            }
+        ],
     }
 
 
@@ -480,6 +536,29 @@ def write_metadata(plugin_dir: Path, metadata: dict) -> StepResult:
     return StepResult.ok("metadata", 1)
 
 
+def write_marketplace_json(
+    marketplace_dir: Path,
+    plugin_name: str,
+    version: str,
+) -> StepResult:
+    """Write marketplace.json for self-hosted distribution.
+
+    Creates the directory structure expected by Claude Code:
+      marketplace_dir/
+        .claude-plugin/marketplace.json
+        plugins/nwave/  -> symlink or copy of plugin artifacts
+    """
+    catalog = generate_marketplace_catalog(plugin_name, version)
+
+    mp_meta_dir = marketplace_dir / ".claude-plugin"
+    mp_meta_dir.mkdir(parents=True, exist_ok=True)
+
+    mp_path = mp_meta_dir / "marketplace.json"
+    mp_path.write_text(json.dumps(catalog, indent=2) + "\n", encoding="utf-8")
+
+    return StepResult.ok("marketplace", 1)
+
+
 # ---------------------------------------------------------------------------
 # Pipeline Composition
 # ---------------------------------------------------------------------------
@@ -692,7 +771,7 @@ def generate_marketplace_manifest(
         "version": metadata.get("version", ""),
         "description": metadata.get("description", ""),
         "download": download_url,
-        "homepage": "https://github.com/nwave-ai/nwave",
+        "homepage": "https://nwave.ai",
     }
 
     manifest_path = plugin_dir / "marketplace-manifest.json"
@@ -764,6 +843,11 @@ def validate(plugin_dir: Path) -> ValidationResult:
 
 # Plugin installation paths (relative to ~/.claude/)
 PLUGIN_INSTALL_PREFIX = "plugins/cache/nwave"
+
+# Marketplace configuration
+MARKETPLACE_NAME = "nwave-marketplace"
+PLUGIN_SOURCE_TEMPLATE = "./plugins/{name}"
+PLUGIN_CATEGORY = "development-workflows"
 
 
 def get_plugin_paths() -> set[str]:

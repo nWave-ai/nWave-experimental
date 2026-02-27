@@ -9,8 +9,10 @@
 # Jobs:
 #   - version-bump: Calculate next semver, update files, create tag, push
 #   - build: Extract version, validate, create packages from nWave/ source
-#   - github-release: Create GitHub Release with changelog and assets
+#   - build-plugin: Build Claude Code plugin package
+#   - github-release: Create GitHub Release with changelog, assets + plugin zip
 #   - publish-to-nwave: Sync to nwave-ai/nwave public repo
+#   - publish-to-pypi: Build and publish nwave-ai to PyPI
 #   - notify-slack: Release success/failure notification
 #
 # =============================================================================
@@ -263,7 +265,7 @@ jobs:
           version = os.environ['PLUGIN_VERSION']
           result = generate_marketplace_manifest(
               Path('plugin'),
-              download_url=f'https://github.com/nwave-ai/nwave-plugin/releases/tag/v{version}',
+              download_url=f'https://github.com/nwave-ai/nwave/releases/download/v{version}/nwave-plugin.zip',
           )
           if not result.success:
               print(f'::error::{result.error}')
@@ -279,36 +281,7 @@ jobs:
           retention-days: 90
 
   # ===========================================================================
-  # PUBLISH PLUGIN TO REPO - Push plugin directory to nwave-plugin repository
-  # ===========================================================================
-
-  publish-to-plugin-repo:
-    name: "Publish Plugin to Repo"
-    needs: [build-plugin]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    if: github.event.inputs.dry_run != 'true'
-
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: nwave-plugin
-          path: plugin/
-
-      - name: Push to nwave-plugin repository
-        uses: cpina/github-action-push-to-another-repository@main
-        env:
-          API_TOKEN_GITHUB: ${{ secrets.GH_TOKEN }}
-        with:
-          source-directory: 'plugin'
-          destination-github-username: 'nwave-ai'
-          destination-repository-name: 'nwave-plugin'
-          user-email: 'ci@nwave.dev'
-          target-branch: 'main'
-          commit-message: 'chore(release): update plugin to v${{ needs.build-plugin.outputs.version || github.ref_name }}'
-
-  # ===========================================================================
-  # GITHUB RELEASE - Create release with changelog
+  # GITHUB RELEASE - Create release with changelog + plugin asset
   # ===========================================================================
 
   github-release:
@@ -330,6 +303,21 @@ jobs:
         with:
           name: release-packages
           path: dist/releases
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: nwave-plugin
+          path: plugin/
+
+      - name: Package plugin as zip
+        run: |
+          cd plugin
+          zip -r ../dist/releases/nwave-plugin.zip .
+          cd ..
+          # Add plugin zip to SHA256SUMS
+          cd dist/releases
+          sha256sum nwave-plugin.zip >> SHA256SUMS.txt
+          cd ../..
 
       - name: Extract version
         id: get_version
@@ -464,6 +452,14 @@ jobs:
               sections.append("No conventional commits found in this release.\n")
 
           sections.append("## Installation\n")
+          sections.append("### Plugin (recommended)\n")
+          sections.append(
+              f"```\n"
+              f"/plugin marketplace add nwave-ai/nwave\n"
+              f"/plugin install nwave@nwave-marketplace\n"
+              f"```\n"
+          )
+          sections.append("### CLI Installer\n")
           sections.append(
               f"```bash\n"
               f"pipx install nwave-ai\n"
@@ -492,6 +488,7 @@ jobs:
           prerelease: false
           files: |
             dist/releases/*.tar.gz
+            dist/releases/nwave-plugin.zip
             dist/releases/SHA256SUMS.txt
           fail_on_unmatched_files: true
         env:
@@ -503,7 +500,7 @@ jobs:
 
   publish-to-nwave:
     name: "Publish to nwave-ai/nwave"
-    needs: [version-bump, github-release]
+    needs: [version-bump, build-plugin, github-release]
     if: |
       always() &&
       needs.github-release.result == 'success' &&
@@ -739,6 +736,9 @@ jobs:
 
           # Append install block
           sections.append("## Install\n")
+          sections.append("### Plugin (recommended)\n")
+          sections.append("```\n/plugin marketplace add nwave-ai/nwave\n/plugin install nwave@nwave-marketplace\n```\n")
+          sections.append("### CLI Installer\n")
           sections.append("```bash\npipx install nwave-ai\nnwave-ai install\n```\n")
 
           notes = "\n".join(sections)
@@ -889,6 +889,53 @@ jobs:
 
           echo "Patched pyproject.toml: nwave -> nwave-ai v$NWAVE_VERSION"
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: nwave-plugin
+          path: nwave-plugin-artifact/
+
+      - name: Validate plugin artifact version
+        run: |
+          NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
+          PLUGIN_VERSION=$(python3 -c "
+          import json
+          meta = json.load(open('nwave-plugin-artifact/.claude-plugin/plugin.json'))
+          print(meta.get('version', ''))
+          ")
+          if [[ "$PLUGIN_VERSION" != "$NWAVE_VERSION" ]]; then
+            echo "::error::Plugin artifact version ($PLUGIN_VERSION) != expected ($NWAVE_VERSION)"
+            exit 1
+          fi
+          echo "Plugin version validated: $PLUGIN_VERSION"
+
+      - name: Add plugin marketplace structure
+        run: |
+          NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
+
+          # Create marketplace structure in nwave-target
+          # .claude-plugin/marketplace.json  (marketplace catalog)
+          # plugins/nwave/                   (plugin content)
+          mkdir -p nwave-target/.claude-plugin
+          mkdir -p nwave-target/plugins/nwave
+
+          # Copy plugin artifact into marketplace plugin directory
+          cp -r nwave-plugin-artifact/* nwave-target/plugins/nwave/
+
+          # Generate marketplace.json
+          python3 -c "
+          from scripts.build_plugin import generate_marketplace_catalog
+          import json
+          from pathlib import Path
+
+          catalog = generate_marketplace_catalog('nwave', '${NWAVE_VERSION}')
+          mp_dir = Path('nwave-target/.claude-plugin')
+          mp_dir.mkdir(parents=True, exist_ok=True)
+          (mp_dir / 'marketplace.json').write_text(
+              json.dumps(catalog, indent=2) + '\n', encoding='utf-8'
+          )
+          print(f'Generated marketplace.json for nwave v${NWAVE_VERSION}')
+          "
+
       - name: Commit and push to nwave-ai/nwave
         working-directory: nwave-target
         run: |
@@ -1033,7 +1080,7 @@ jobs:
     if: |
       always() &&
       !cancelled()
-    needs: [version-bump, build, build-plugin, publish-to-plugin-repo, github-release, publish-to-nwave, publish-to-pypi]
+    needs: [version-bump, build, build-plugin, github-release, publish-to-nwave, publish-to-pypi]
 
     steps:
       - name: Determine release status
