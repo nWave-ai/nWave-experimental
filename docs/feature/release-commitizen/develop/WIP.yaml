@@ -1,0 +1,50 @@
+meta:
+  generated_at: "2026-02-26T15:45:00Z"
+  project: "nwave-dev"
+  phase: "DELIVER"
+
+step:
+  id: "08"
+  name: "CI and documentation reference cleanup (PSR to CZ)"
+  agent: "software-crafter"
+  dependencies_satisfied: true
+
+input:
+  source_files:
+    - ".github/workflows/ci.yml"
+    - ".github/workflows/README.md"
+  test_file: "tests/release/test_cz_version_calculation.py"
+  acceptance_specs: "docs/release/develop/acceptance-tests.md"
+
+  requirements:
+    ci_yml:
+      - "Line 262: change 'python-semantic-release keeps framework-catalog.yaml in sync automatically.' to 'commitizen keeps framework-catalog.yaml in sync automatically (via version_files config).'"
+    readme_md:
+      - "Line 173: change 'Uses [python-semantic-release](https://python-semantic-release.readthedocs.io/) to calculate the next version from conventional commits' to 'Uses [commitizen](https://commitizen-tools.github.io/commitizen/) to calculate the next version from conventional commits'"
+      - "Line 176: change 'runs with --print to show what would happen' to 'runs with --dry-run to show what would happen'"
+    test_class:
+      - "Add NEW class: TestCIDocumentationCleanup to tests/release/test_cz_version_calculation.py"
+      - "Test 34: test_ci_yml_references_commitizen_not_psr -- read ci.yml, verify 'commitizen' present in version-drift context, 'python-semantic-release' absent"
+
+  test_requirements:
+    - "Test 34 reads ci.yml file content and asserts strings"
+    - "Follow TDD: write test FIRST, then make changes, then verify"
+    - "Run full release test suite for zero regressions"
+
+constraints:
+  max_tool_calls: 20
+  must_run_tests: true
+  forbidden_actions:
+    - "DO NOT read roadmap.yaml or execution-status.yaml"
+    - "DO NOT modify next_version.py, discover_tag.py, or release workflow files"
+    - "DO NOT modify pyproject.toml"
+    - "DO NOT modify existing test classes"
+
+output:
+  status: "GREEN"
+  artifacts_created:
+    - "tests/release/test_cz_version_calculation.py (added TestCIDocumentationCleanup class with 2 tests)"
+    - ".github/workflows/ci.yml (line 262: PSR -> CZ reference)"
+    - ".github/workflows/README.md (line 173: PSR -> CZ link; line 176: --print -> --dry-run)"
+  test_result: "160 passed, 0 failed, 0 skipped"
+  commit_hash: null
