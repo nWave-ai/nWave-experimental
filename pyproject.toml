@@ -269,7 +269,7 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.commitizen]
-version = "1.1.26"
+version = "1.2.0"
 version_scheme = "pep440"
 version_files = [
     "nWave/VERSION",
