@@ -215,9 +215,7 @@ DES hooks execute inside the plugin sandbox with the following constraints:
 
 **Process model**: Hooks run as child processes of Claude Code with the same user permissions. PYTHONPATH is set to `${CLAUDE_PLUGIN_ROOT}/lib/des/` — isolated from system Python packages and from the custom installer's `~/.claude/lib/python`.
 
-**Dependency ownership**: DES requires `pyyaml` for YAML parsing (execution logs, roadmap schemas). Two mitigation strategies:
-1. **Primary**: Migrate execution-log and roadmap from YAML to JSON (already implemented on `feat/claude-code-plugin` branch — see Prior Art). This eliminates the pyyaml dependency entirely.
-2. **Fallback**: If YAML files remain, hooks fail with exit code 1 and stderr message "DES error: pyyaml not installed. Run: pip install pyyaml". Claude Code surfaces this to the user.
+**Dependency ownership**: DES runtime is stdlib-only Python. The YAML-to-JSON migration (imported from `feat/claude-code-plugin` in commit 9265c2cb) eliminated the pyyaml dependency entirely. Execution logs and roadmap schemas now use JSON. No external packages required at plugin runtime.
 
 **Silent failure prevention**: All hook scripts check dependencies at startup and emit diagnostic errors to stderr before failing. Claude Code displays stderr content to the user on hook failure.
 
@@ -232,7 +230,7 @@ A previous implementation exists on `feat/claude-code-plugin` (11 commits, 67 fi
 | Component | File | Status | Reuse? |
 |-----------|------|--------|--------|
 | **sync_to_plugin.py** (409 lines) | `scripts/sync_to_plugin.py` | Working | **YES** — rename to `build_plugin.py`, refactor to FP style |
-| **YAML→JSON migration** | Multiple DES files | Merged to branch | **YES** — eliminates pyyaml dependency |
+| **YAML→JSON migration** | Multiple DES files | **COMPLETED** (imported 9265c2cb) | **DONE** — pyyaml dependency eliminated, DES runtime is stdlib-only |
 | **E2E validation** | `tests/e2e/plugin-install/validate.py` | Working | **YES** — structural validation for plugin |
 | **E2E Dockerfile** | `tests/e2e/plugin-install/Dockerfile` | Working | **YES** — containerized install test |
 | **Hook JSON generation** | Inside sync_to_plugin.py | Working | **YES** — hooks.json template with `${CLAUDE_PLUGIN_ROOT}` |

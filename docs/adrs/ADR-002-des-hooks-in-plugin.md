@@ -42,7 +42,7 @@ lib/des/
 
 The DES module is identical to the one installed by the custom installer, with `from src.des` rewritten to `from des` (same transform already implemented in `des_plugin.py`).
 
-**Python interpreter**: Uses `python3` from PATH (not a resolved absolute path). Plugin environments cannot control which Python is used, so we rely on the system Python. DES dependencies (pyyaml, pydantic) must be available in the system Python.
+**Python interpreter**: Uses `python3` from PATH (not a resolved absolute path). Plugin environments cannot control which Python is used, so we rely on the system Python. **UPDATE (2026-02-27)**: With the YAML-to-JSON migration complete (commit 9265c2cb), DES runtime is stdlib-only Python. No external dependencies (pyyaml, pydantic) required at plugin runtime.
 
 ## Alternatives Considered
 
@@ -74,7 +74,7 @@ The DES module is identical to the one installed by the custom installer, with `
 
 ### Negative
 - DES module is duplicated between plugin and custom installer installations (if both active)
-- Relies on `python3` in PATH. Dependency mitigation: prior art on `feat/claude-code-plugin` migrates execution-log and roadmap from YAML to JSON, eliminating pyyaml dependency. If JSON migration is complete, DES needs only stdlib.
+- Relies on `python3` in PATH. ~~Dependency mitigation: prior art on `feat/claude-code-plugin` migrates execution-log and roadmap from YAML to JSON, eliminating pyyaml dependency.~~ **UPDATE (2026-02-27)**: JSON migration is COMPLETE (imported in commit 9265c2cb). DES runtime is now stdlib-only Python -- no pyyaml or any other external dependency required. This consequence is effectively resolved.
 - DES runtime templates (step-tdd-cycle-schema.json, roadmap-schema.json) must also be bundled in the plugin
 
 ### Security Considerations

@@ -118,25 +118,18 @@ Based on the branch's known content, the 11 commits likely decompose as follows.
 
 ## 4. Recommended Import Strategy
 
-### Phase A: Cherry-pick YAML-to-JSON migration (Priority 1)
+### Phase A: Cherry-pick YAML-to-JSON migration (Priority 1) -- DONE
 
-**Why first**: This is a prerequisite for zero-dependency plugin (eliminates pyyaml). It is also the largest body of work on the branch and the most self-contained.
+**Status**: COMPLETED. Cherry-picked from `feat/claude-code-plugin` (edc82ff7) with manual conflict resolution in commit 9265c2cb.
 
-```bash
-# Step 1: Identify the YAML-to-JSON commits
-git log --oneline feat/claude-code-plugin --not master | grep -i "yaml\|json\|migration"
+**What was imported** (64 files, all 1762 tests passing):
+- New `JsonExecutionLogReader` (126 lines) replaces `YamlExecutionLogReader`
+- Backward compat alias: `YamlExecutionLogReader` -> `JsonExecutionLogReader`
+- New JSON templates: `execution-log-template.json` + `roadmap-schema.json`
+- CLI updated: `log_phase.py`, `roadmap.py`, `verify_deliver_integrity.py` -- all use `json` now
+- DES runtime is now stdlib-only Python (no PyYAML dependency)
 
-# Step 2: Cherry-pick in chronological order
-git cherry-pick <hash1> <hash2> ...
-
-# Step 3: Run tests to verify
-pipenv run pytest tests/des/ -x
-```
-
-**Conflicts to watch**:
-- `subagent_stop_service.py` -- this file is large (361+ lines) and may have diverged since the branch was created
-- `claude_code_hook_adapter.py` -- imports `YamlExecutionLogReader`; migration commit should swap to JSON reader
-- `conftest.py` or test fixtures that create YAML execution logs
+**Conflicts resolved**: Manual conflict resolution was required during cherry-pick (as predicted for `subagent_stop_service.py` and related files).
 
 ### Phase B: Selective file copy for build script (Priority 2)
 
@@ -269,7 +262,7 @@ After importing from `feat/claude-code-plugin`, the following work remains for t
 
 ### Already done (from branch import)
 
-- [x] YAML-to-JSON migration for DES runtime (execution log reader, roadmap schema)
+- [x] **YAML-to-JSON migration for DES runtime** -- IMPORTED (commit 9265c2cb, 64 files, 1762 tests passing). `JsonExecutionLogReader` replaces YAML reader. Execution logs, roadmap schemas, CLI tools all use JSON. DES runtime is stdlib-only.
 - [x] E2E validation test structure
 - [x] E2E containerized test infrastructure
 - [x] hooks.json template with `${CLAUDE_PLUGIN_ROOT}`
@@ -292,6 +285,7 @@ After importing from `feat/claude-code-plugin`, the following work remains for t
 - **Without branch import**: ~5 full roadmap steps, estimated 3-4 days
 - **With branch import**: ~3 effective steps (01-01 reduced to adaptation, 01-02 and 01-03 partially done)
 - **Estimated savings**: ~40% effort reduction, consistent with architecture-design.md projection
+- **Phase A actual results**: 64 files imported via cherry-pick (9265c2cb) with manual conflict resolution. All 1762 tests passing (1115 DES + 647 installer/plugin/build). YAML-to-JSON migration is fully complete -- the largest prerequisite for the zero-dependency plugin is satisfied.
 
 ---
 
