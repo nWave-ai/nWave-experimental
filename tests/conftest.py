@@ -90,6 +90,10 @@ TIER_MAP = {
     "tests/plugins/plugin-architecture/e2e/": "e2e",
     "tests/plugins/install/": "unit",
     "tests/plugins/": "unit",  # frontmatter tests default to unit
+    # Build tiers
+    "tests/build/acceptance/": "acceptance",
+    "tests/build/unit/": "unit",
+    "tests/build/": "unit",
     # Release train tests
     "tests/release/": "unit",
     # Bug regression tests
@@ -121,6 +125,9 @@ DOMAIN_MAP = {
     "tests/plugins/plugin-architecture/e2e/": ("Plugins", "E2E Tests"),
     "tests/plugins/install/": ("Plugins", "Install Scripts"),
     "tests/plugins/": ("Plugins", "nWave Plugins"),
+    "tests/build/acceptance/": ("Build", "Plugin Acceptance"),
+    "tests/build/unit/": ("Build", "Unit Tests"),
+    "tests/build/": ("Build", "Build Tests"),
     "tests/bugs/": ("Bugs", "Regression"),
     "tests/release/": ("Release Train", "Unit Tests"),
 }

@@ -64,6 +64,8 @@ reports/
 # Build artifacts
 dist/
 plugin/
+!tests/**/plugin/
+!tests/**/plugin/
 build/
 !tests/build/
 target/
