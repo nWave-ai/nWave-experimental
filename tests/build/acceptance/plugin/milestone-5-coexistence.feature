@@ -19,7 +19,6 @@ Feature: Coexistence Verification and Migration
 
   # --- Happy Path: Independent Operation ---
 
-  @skip
   Scenario: Plugin installs to a different location than custom installer
     When the plugin assembler builds the plugin
     Then the plugin target directory differs from the custom installer target directory
@@ -65,14 +64,12 @@ Feature: Coexistence Verification and Migration
     When a version consistency check runs
     Then a warning is raised about version mismatch between installation methods
 
-  @skip
   Scenario: Removing custom installer does not corrupt plugin installation
     Given both plugin and custom installer are active
     When the custom installer is uninstalled
     Then the plugin continues to operate normally
     And no plugin files are affected by the uninstall
 
-  @skip
   Scenario: Removing plugin does not corrupt custom installer
     Given both plugin and custom installer are active
     When the plugin is removed
@@ -81,7 +78,7 @@ Feature: Coexistence Verification and Migration
 
   # --- Edge Cases ---
 
-  @skip @property
+  @property
   Scenario: Plugin and custom installer paths never overlap
     Given any valid installation of both plugin and custom installer
     Then the set of files owned by the plugin is disjoint from the set owned by the custom installer

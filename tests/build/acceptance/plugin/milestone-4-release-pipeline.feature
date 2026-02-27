@@ -18,14 +18,12 @@ Feature: Release Pipeline Extension
 
   # --- Happy Path: Automated Build ---
 
-  @skip
   Scenario: Plugin build integrates into existing release workflow
     Given a release tag "v2.18.0" is created
     When the release pipeline runs the plugin build step
     Then the plugin directory is generated with version "2.18.0"
     And the plugin build step runs after the existing distribution build
 
-  @skip
   Scenario: Plugin version matches the release version
     Given a release tag "v2.18.1" is created
     When the release pipeline runs the plugin build step
@@ -33,13 +31,11 @@ Feature: Release Pipeline Extension
 
   # --- Happy Path: Distribution ---
 
-  @skip
   Scenario: Plugin directory is ready for repository publication
     When the plugin assembler builds the plugin
     Then the plugin directory can be committed as a standalone repository
     And the plugin directory does not contain development-only files
 
-  @skip
   Scenario: Marketplace manifest is generated for self-hosted distribution
     When the plugin assembler builds the plugin
     Then the marketplace manifest contains the plugin name and version
@@ -47,7 +43,6 @@ Feature: Release Pipeline Extension
 
   # --- Error Paths ---
 
-  @skip
   Scenario: Release pipeline fails gracefully when plugin build fails
     Given the source tree is missing the agents directory
     When the release pipeline runs the plugin build step
@@ -63,7 +58,6 @@ Feature: Release Pipeline Extension
 
   # --- Edge Cases ---
 
-  @skip
   Scenario: Plugin build is idempotent across repeated runs
     When the plugin assembler builds the plugin twice with the same configuration
     Then both builds produce identical plugin directories

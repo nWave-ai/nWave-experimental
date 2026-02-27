@@ -7,14 +7,23 @@ Driving port: PluginAssembler (build pipeline entry point)
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from pytest_bdd import given, parsers, scenarios, then, when
+from pytest_bdd import given, parsers, scenarios, then
 
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _read_plugin_metadata(build_result: dict[str, Any]) -> dict:
+    """Read plugin.json metadata from the build result's plugin directory."""
+    plugin_dir = build_result["plugin_dir"]
+    return json.loads(
+        (plugin_dir / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
 
 
 # Register feature files for this step module
@@ -25,56 +34,13 @@ scenarios("../milestone-1-plugin-assembler.feature")
 # ---------------------------------------------------------------------------
 # Given Steps: Source Tree Context
 # ---------------------------------------------------------------------------
+# Background Given steps (nwave_source_available, clean_output_dir,
+# default_config, any_valid_source) are defined in conftest.py for
+# cross-module sharing.
 
 
-@given("the nWave source tree is available")
-def nwave_source_available(nwave_source_tree: Path):
-    """Verify the nWave source tree exists and contains expected content."""
-    assert nwave_source_tree.exists()
-    assert (nwave_source_tree / "agents").exists()
-
-
-@given("a clean output directory for the plugin build")
-def clean_output_dir(plugin_output_dir: Path):
-    """Verify the output directory is clean and writable."""
-    assert plugin_output_dir.exists()
-    assert len(list(plugin_output_dir.iterdir())) == 0
-
-
-@given("default build configuration for the nWave source tree")
-def default_config(build_config: dict[str, Any]):
-    """Verify default build configuration is available."""
-    assert build_config["plugin_name"] == "nw"
-    assert build_config["nwave_dir"].exists()
-
-
-@given(parsers.parse('the project version is "{version}"'))
-def project_version_set(build_config: dict[str, Any], tmp_path: Path, version: str):
-    """Override the project version for testing."""
-    # Create a temporary pyproject.toml with the specified version
-    pyproject = tmp_path / "pyproject_override.toml"
-    pyproject.write_text(
-        f'[project]\nname = "nwave"\nversion = "{version}"\n',
-        encoding="utf-8",
-    )
-    build_config["pyproject_path"] = pyproject
-    build_config["expected_version"] = version
-
-
-# ---------------------------------------------------------------------------
-# Given Steps: Error Path Setup
-# ---------------------------------------------------------------------------
-
-
-@given("the source tree is missing the agents directory")
-def source_missing_agents(build_config: dict[str, Any], tmp_path: Path):
-    """Create a source tree without agents."""
-    broken_source = tmp_path / "broken_source" / "nWave"
-    broken_source.mkdir(parents=True)
-    # Create skills and commands but NOT agents
-    (broken_source / "skills").mkdir()
-    (broken_source / "tasks" / "nw").mkdir(parents=True)
-    build_config["nwave_dir"] = broken_source
+# "the project version is" and "the source tree is missing the agents directory"
+# are defined in conftest.py for cross-module sharing.
 
 
 @given("the source tree is missing the skills directory")
@@ -124,27 +90,9 @@ def agent_file_exists(filename: str, nwave_source_tree: Path):
     assert agent_path.exists(), f"Agent file not found: {agent_path}"
 
 
-@given("the plugin assembler has produced a plugin directory")
-def plugin_already_built(build_config: dict[str, Any], build_result: dict[str, Any]):
-    """
-    Pre-condition: a plugin directory has been built.
-
-    This step invokes the PluginAssembler driving port, providing
-    a pre-built plugin for validation scenarios.
-    """
-    # TODO: Replace with actual PluginAssembler invocation
-    # from scripts.build_plugin import PluginAssembler, BuildConfig
-    # config = BuildConfig(**build_config)
-    # result = PluginAssembler.build(config)
-    # build_result["plugin_dir"] = result.output_dir
-    # build_result["success"] = result.is_success()
-    pytest.skip("PluginAssembler not yet implemented")
-
-
-@given("any valid nWave source tree")
-def any_valid_source(nwave_source_tree: Path):
-    """Use the real nWave source tree for property-based checks."""
-    assert nwave_source_tree.exists()
+# Given step "the plugin assembler has produced a plugin directory" is defined
+# in conftest.py for cross-module sharing (used by both walking-skeleton and
+# milestone-3-plugin-validation scenarios).
 
 
 @given("any valid project version string")
@@ -156,57 +104,16 @@ def any_valid_version():
 # ---------------------------------------------------------------------------
 # When Steps: Build Execution
 # ---------------------------------------------------------------------------
+# Shared When steps (build_plugin, attempt_build_plugin) are defined in
+# conftest.py for cross-module sharing.
 
 
-@when("the plugin assembler builds the plugin")
-def build_plugin(build_config: dict[str, Any], build_result: dict[str, Any]):
-    """
-    Execute the plugin build pipeline.
-
-    This step invokes the PluginAssembler driving port.
-    Implementation will be provided by the software crafter.
-    """
-    # TODO: Replace with actual PluginAssembler invocation
-    # from scripts.build_plugin import PluginAssembler, BuildConfig
-    # config = BuildConfig(**build_config)
-    # result = PluginAssembler.build(config)
-    # build_result["plugin_dir"] = result.output_dir
-    # build_result["success"] = result.is_success()
-    pytest.skip("PluginAssembler not yet implemented")
-
-
-@when("the plugin assembler attempts to build the plugin")
-def attempt_build_plugin(build_config: dict[str, Any], build_result: dict[str, Any]):
-    """
-    Execute the plugin build pipeline expecting failure.
-
-    Captures the error rather than raising it.
-    """
-    # TODO: Replace with actual PluginAssembler invocation
-    # from scripts.build_plugin import PluginAssembler, BuildConfig
-    # try:
-    #     config = BuildConfig(**build_config)
-    #     result = PluginAssembler.build(config)
-    #     build_result["success"] = result.is_success()
-    #     build_result["error"] = result.error if not result.is_success() else None
-    # except Exception as e:
-    #     build_result["success"] = False
-    #     build_result["error"] = str(e)
-    pytest.skip("PluginAssembler not yet implemented")
-
-
-@when("the plugin validator checks the output")
-def validate_plugin(build_result: dict[str, Any]):
-    """
-    Run the plugin validator on the build output.
-
-    Driving port: PluginValidator
-    """
-    # TODO: Replace with actual PluginValidator invocation
-    # from scripts.build_plugin import PluginValidator
-    # validation = PluginValidator.validate(build_result["plugin_dir"])
-    # build_result["validation_result"] = validation
-    pytest.skip("PluginValidator not yet implemented")
+# ---------------------------------------------------------------------------
+# When Steps: Validation
+# ---------------------------------------------------------------------------
+# Shared When step "the plugin validator checks the output" is defined in
+# conftest.py for cross-module sharing (used by both walking-skeleton and
+# milestone-3-plugin-validation scenarios).
 
 
 # ---------------------------------------------------------------------------
@@ -221,9 +128,7 @@ def plugin_has_metadata_with_version(build_result: dict[str, Any]):
     metadata_path = plugin_dir / ".claude-plugin" / "plugin.json"
     assert metadata_path.exists(), f"Metadata file not found: {metadata_path}"
 
-    import json
-
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata = _read_plugin_metadata(build_result)
     assert "version" in metadata
     assert metadata["version"], "Version must not be empty"
 
@@ -233,14 +138,8 @@ def metadata_version_matches_project(
     build_result: dict[str, Any], build_config: dict[str, Any]
 ):
     """Verify metadata version matches pyproject.toml version."""
-    import json
+    metadata = _read_plugin_metadata(build_result)
 
-    plugin_dir = build_result["plugin_dir"]
-    metadata = json.loads(
-        (plugin_dir / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
-    )
-
-    # Read expected version from pyproject.toml
     import tomllib
 
     with open(build_config["pyproject_path"], "rb") as f:
@@ -253,24 +152,14 @@ def metadata_version_matches_project(
 @then(parsers.parse('the plugin metadata name is "{name}"'))
 def metadata_name_is(name: str, build_result: dict[str, Any]):
     """Verify plugin name in metadata."""
-    import json
-
-    plugin_dir = build_result["plugin_dir"]
-    metadata = json.loads(
-        (plugin_dir / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
-    )
+    metadata = _read_plugin_metadata(build_result)
     assert metadata["name"] == name
 
 
 @then("the plugin metadata contains a description")
 def metadata_has_description(build_result: dict[str, Any]):
     """Verify metadata includes a description field."""
-    import json
-
-    plugin_dir = build_result["plugin_dir"]
-    metadata = json.loads(
-        (plugin_dir / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
-    )
+    metadata = _read_plugin_metadata(build_result)
     assert "description" in metadata
     assert len(metadata["description"]) > 0
 
@@ -278,12 +167,7 @@ def metadata_has_description(build_result: dict[str, Any]):
 @then("the plugin metadata contains keywords for discoverability")
 def metadata_has_keywords(build_result: dict[str, Any]):
     """Verify metadata includes keywords."""
-    import json
-
-    plugin_dir = build_result["plugin_dir"]
-    metadata = json.loads(
-        (plugin_dir / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
-    )
+    metadata = _read_plugin_metadata(build_result)
     assert "keywords" in metadata
     assert len(metadata["keywords"]) > 0
 
@@ -291,26 +175,12 @@ def metadata_has_keywords(build_result: dict[str, Any]):
 @then("the plugin metadata identifies the source directory")
 def metadata_identifies_source(build_result: dict[str, Any]):
     """Verify plugin metadata contains a source directory reference."""
-    import json
-
-    plugin_dir = build_result["plugin_dir"]
-    metadata = json.loads(
-        (plugin_dir / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
-    )
-    if "source" in metadata:
-        assert len(metadata["source"]) > 0, "Source directory must not be empty"
+    metadata = _read_plugin_metadata(build_result)
+    assert "source" in metadata, "Metadata missing 'source' field"
+    assert len(metadata["source"]) > 0, "Source directory must not be empty"
 
 
-@then(parsers.parse('the plugin metadata version is "{version}"'))
-def metadata_version_is(version: str, build_result: dict[str, Any]):
-    """Verify specific version in metadata."""
-    import json
-
-    plugin_dir = build_result["plugin_dir"]
-    metadata = json.loads(
-        (plugin_dir / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
-    )
-    assert metadata["version"] == version
+# "the plugin metadata version is" is defined in conftest.py for cross-module sharing.
 
 
 # ---------------------------------------------------------------------------
@@ -529,12 +399,7 @@ def plugin_dir_created(build_result: dict[str, Any]):
 @then("the plugin metadata is valid")
 def plugin_metadata_valid(build_result: dict[str, Any]):
     """Verify metadata is parseable JSON with required fields."""
-    import json
-
-    plugin_dir = build_result["plugin_dir"]
-    metadata_path = plugin_dir / ".claude-plugin" / "plugin.json"
-    assert metadata_path.exists()
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata = _read_plugin_metadata(build_result)
     assert "name" in metadata
     assert "version" in metadata
 

@@ -28,7 +28,7 @@ Feature: Plugin Build Walking Skeleton
     Then the plugin passes structural validation
     And the validation report confirms all required sections are present
 
-  @walking_skeleton @skip
+  @walking_skeleton
   Scenario: Built plugin includes DES enforcement hooks
     Given default build configuration for the nWave source tree
     When the plugin assembler builds the plugin

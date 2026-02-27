@@ -199,12 +199,121 @@ jobs:
           retention-days: 90
 
   # ===========================================================================
+  # BUILD PLUGIN - Build Claude Code plugin directory
+  # ===========================================================================
+
+  build-plugin:
+    name: "Build Plugin"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.version-bump.outputs.new_version && format('v{0}', needs.version-bump.outputs.new_version) || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Extract version
+        id: get_version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ needs.version-bump.outputs.new_version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid version format: $VERSION (expected semver)"
+            exit 1
+          fi
+
+      - name: Build plugin
+        run: python3 scripts/build_plugin.py --output-dir plugin/
+
+      - name: Validate plugin
+        run: |
+          python3 -c "
+          from scripts.build_plugin import validate
+          from pathlib import Path
+          result = validate(Path('plugin'))
+          if not result.success:
+              for err in result.errors:
+                  print(f'::error::{err}')
+              exit(1)
+          print('Plugin validation passed')
+          "
+
+      - name: Generate marketplace manifest
+        env:
+          PLUGIN_VERSION: ${{ steps.get_version.outputs.VERSION }}
+        run: |
+          python3 -c "
+          import os
+          from scripts.build_plugin import generate_marketplace_manifest
+          from pathlib import Path
+          version = os.environ['PLUGIN_VERSION']
+          result = generate_marketplace_manifest(
+              Path('plugin'),
+              download_url=f'https://github.com/nwave-ai/nwave-plugin/releases/tag/v{version}',
+          )
+          if not result.success:
+              print(f'::error::{result.error}')
+              exit(1)
+          print('Marketplace manifest generated')
+          "
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nwave-plugin
+          path: plugin/
+          retention-days: 90
+
+  # ===========================================================================
+  # PUBLISH PLUGIN TO REPO - Push plugin directory to nwave-plugin repository
+  # ===========================================================================
+
+  publish-to-plugin-repo:
+    name: "Publish Plugin to Repo"
+    needs: [build-plugin]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event.inputs.dry_run != 'true'
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nwave-plugin
+          path: plugin/
+
+      - name: Push to nwave-plugin repository
+        uses: cpina/github-action-push-to-another-repository@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.GH_TOKEN }}
+        with:
+          source-directory: 'plugin'
+          destination-github-username: 'nwave-ai'
+          destination-repository-name: 'nwave-plugin'
+          user-email: 'ci@nwave.dev'
+          target-branch: 'main'
+          commit-message: 'chore(release): update plugin to v${{ needs.build-plugin.outputs.version || github.ref_name }}'
+
+  # ===========================================================================
   # GITHUB RELEASE - Create release with changelog
   # ===========================================================================
 
   github-release:
     name: "GitHub Release"
-    needs: [build]
+    needs: [build, build-plugin]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -924,7 +1033,7 @@ jobs:
     if: |
       always() &&
       !cancelled()
-    needs: [version-bump, build, github-release, publish-to-nwave, publish-to-pypi]
+    needs: [version-bump, build, build-plugin, publish-to-plugin-repo, github-release, publish-to-nwave, publish-to-pypi]
 
     steps:
       - name: Determine release status

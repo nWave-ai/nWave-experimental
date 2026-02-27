@@ -18,14 +18,14 @@ Feature: Plugin Validation and Build Verification
 
   # --- Happy Path: Structural Validation ---
 
-  @skip
+  @milestone_3
   Scenario: Valid plugin passes all structural checks
     Given the plugin assembler has produced a plugin directory
     When the plugin validator checks the output
     Then the validation result is success
     And no validation errors are reported
 
-  @skip
+  @milestone_3
   Scenario: Validation confirms all required plugin sections exist
     Given the plugin assembler has produced a plugin directory
     When the plugin validator checks the output
@@ -35,7 +35,7 @@ Feature: Plugin Validation and Build Verification
     And the validation report confirms hooks section is present
     And the validation report confirms metadata section is present
 
-  @skip
+  @milestone_3
   Scenario: Validation confirms hook configuration is well-formed
     Given the plugin assembler has produced a plugin directory
     When the plugin validator checks the output
@@ -44,7 +44,7 @@ Feature: Plugin Validation and Build Verification
 
   # --- Happy Path: Completeness Verification ---
 
-  @skip
+  @milestone_3
   Scenario: Validation counts match expected component totals
     Given the plugin assembler has produced a plugin directory
     When the plugin validator checks the output
@@ -54,35 +54,35 @@ Feature: Plugin Validation and Build Verification
 
   # --- Error Paths ---
 
-  @skip
+  @milestone_3
   Scenario: Validation fails when metadata file is missing
     Given a plugin directory without a metadata file
     When the plugin validator checks the output
     Then the validation result is failure
     And the validation error mentions missing metadata
 
-  @skip
+  @milestone_3
   Scenario: Validation fails when agents directory is empty
     Given a plugin directory with an empty agents section
     When the plugin validator checks the output
     Then the validation result is failure
     And the validation error mentions missing agents
 
-  @skip
+  @milestone_3
   Scenario: Validation fails when hooks configuration is missing
     Given a plugin directory without hook registrations
     When the plugin validator checks the output
     Then the validation result is failure
     And the validation error mentions missing hooks
 
-  @skip
+  @milestone_3
   Scenario: Validation fails when DES module is absent
     Given a plugin directory without the DES enforcement module
     When the plugin validator checks the output
     Then the validation result is failure
     And the validation error mentions missing DES module
 
-  @skip
+  @milestone_3
   Scenario: Validation reports all errors at once rather than stopping at first
     Given a plugin directory missing metadata, agents, and hooks
     When the plugin validator checks the output
@@ -91,7 +91,7 @@ Feature: Plugin Validation and Build Verification
 
   # --- Edge Cases ---
 
-  @skip
+  @milestone_3
   Scenario: Validation succeeds with minimum viable plugin
     Given a plugin directory with exactly 1 agent, 1 skill, 1 command, and valid hooks
     When the plugin validator checks the output

@@ -1,0 +1,108 @@
+{
+  "schema_version": "2.0",
+  "project_id": "nwave-plugin-marketplace",
+  "paradigm": "functional",
+  "estimated_steps": 5,
+  "estimated_files": 6,
+  "phases": {
+    "01": {
+      "title": "Plugin Build Pipeline",
+      "steps": {
+        "01-01": {
+          "title": "Plugin assembler with metadata generation",
+          "description": "Build pipeline that reads nWave source tree and generates plugin directory with plugin.json, copying agents/skills/commands.",
+          "acceptance_criteria": [
+            "Plugin directory contains .claude-plugin/plugin.json with version from pyproject.toml",
+            "All 23 agent files present in plugin/agents/",
+            "All 98+ skill files present in plugin/skills/ preserving directory structure",
+            "All 22 command files present in plugin/commands/nw/"
+          ],
+          "files_to_modify": [
+            "scripts/build_plugin.py"
+          ],
+          "architectural_constraints": [
+            "Pure function pipeline: config -> source tree -> plugin directory",
+            "Version derived from pyproject.toml (single source of truth)",
+            "No new dependencies beyond stdlib"
+          ]
+        },
+        "01-02": {
+          "title": "DES bundle with hooks generation",
+          "description": "Bundle DES module into plugin with import rewriting. Generate hooks.json and shell wrapper using CLAUDE_PLUGIN_ROOT.",
+          "acceptance_criteria": [
+            "DES module importable from plugin/scripts/des/",
+            "hooks.json registers PreToolUse, PostToolUse, SubagentStop, SessionStart, SubagentStart",
+            "DES enforcement returns allow/block decisions with error messages on phase violations",
+            "DES runtime templates (TDD schema, roadmap schema) bundled in plugin"
+          ],
+          "files_to_modify": [
+            "scripts/build_plugin.py"
+          ],
+          "architectural_constraints": [
+            "Import rewriting: from src.des -> from des (reuse existing regex patterns)",
+            "Hook commands use ${CLAUDE_PLUGIN_ROOT}, never $HOME",
+            "Shell wrapper is thin (< 10 lines)"
+          ]
+        },
+        "01-03": {
+          "title": "Plugin validation and build verification",
+          "description": "Validate generated plugin structure against expected manifest. Verify all components present and hooks.json syntactically valid.",
+          "acceptance_criteria": [
+            "Build fails if any expected component is missing",
+            "hooks.json validates against expected schema",
+            "Plugin structure matches Claude Code plugin spec"
+          ],
+          "files_to_modify": [
+            "scripts/build_plugin.py"
+          ],
+          "architectural_constraints": [
+            "Validation is a pure function: plugin directory -> Result<Valid, Errors>"
+          ]
+        }
+      }
+    },
+    "02": {
+      "title": "CI/CD and Distribution",
+      "steps": {
+        "02-01": {
+          "title": "Release pipeline extension",
+          "description": "Extend release.yml to build plugin on release tag, publish to nwave-plugin repo, generate marketplace manifest.",
+          "acceptance_criteria": [
+            "Plugin builds automatically on release tag",
+            "Plugin directory committed to nwave-plugin repository",
+            "Marketplace manifest generated for self-hosted marketplace"
+          ],
+          "files_to_modify": [
+            ".github/workflows/release.yml"
+          ],
+          "architectural_constraints": [
+            "Plugin build step runs after existing dist build",
+            "Version in plugin.json matches release version"
+          ]
+        },
+        "02-02": {
+          "title": "Coexistence verification and migration guide",
+          "description": "Verify plugin and custom installer coexist without conflicts. Document migration path from custom installer to plugin.",
+          "acceptance_criteria": [
+            "Install plugin + custom installer simultaneously, run /nw:deliver, verify both discovered correctly",
+            "No duplicate hook registrations (single PreToolUse/PostToolUse/SubagentStop per event)",
+            "Disable plugin -> custom installer still works; disable installer -> plugin still works",
+            "Migration guide documents switchover procedure with verification steps"
+          ],
+          "files_to_modify": [
+            "docs/guides/plugin-migration-guide.md"
+          ],
+          "architectural_constraints": [
+            "Plugin and installer use different directory paths",
+            "No modifications to existing custom installer"
+          ]
+        }
+      }
+    }
+  },
+  "validation": {
+    "status": "approved",
+    "step_ratio": "5 steps / 6 files = 0.83",
+    "approved_by": "architecture-review"
+  }
+}

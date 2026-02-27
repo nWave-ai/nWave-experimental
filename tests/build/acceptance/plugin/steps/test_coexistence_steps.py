@@ -2,19 +2,67 @@
 Step definitions for coexistence verification scenarios.
 
 Covers: milestone-5-coexistence.feature
-Driving port: PluginAssembler, path resolution utilities
+Driving port: PluginAssembler, path resolution utilities, verify_path_disjointness
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 
 scenarios("../milestone-5-coexistence.feature")
+
+
+# ---------------------------------------------------------------------------
+# Standalone Tests: Migration Guide & Coexistence Functions
+# ---------------------------------------------------------------------------
+
+
+def test_migration_guide_exists(project_root: Path):
+    """Verify the migration guide exists and has required sections."""
+    guide = project_root / "docs" / "guides" / "plugin-migration-guide.md"
+    assert guide.exists(), f"Migration guide not found: {guide}"
+    content = guide.read_text(encoding="utf-8")
+    assert "Prerequisites" in content, "Migration guide missing Prerequisites section"
+    assert "Verify" in content, "Migration guide missing Verify section"
+    assert "Rollback" in content, "Migration guide missing Rollback section"
+    assert "Coexistence" in content, "Migration guide missing Coexistence section"
+
+
+def test_verify_path_disjointness_returns_true():
+    """Pure function test: plugin and installer paths are disjoint."""
+    from scripts.build_plugin import verify_path_disjointness
+
+    is_disjoint, overlaps = verify_path_disjointness()
+    assert is_disjoint, f"Expected disjoint paths but found overlaps: {overlaps}"
+    assert overlaps == []
+
+
+def test_get_plugin_paths_all_under_plugin_prefix():
+    """Pure function test: all plugin paths start with the plugin prefix."""
+    from scripts.build_plugin import PLUGIN_INSTALL_PREFIX, get_plugin_paths
+
+    for path in get_plugin_paths():
+        assert path.startswith(PLUGIN_INSTALL_PREFIX), (
+            f"Plugin path {path} does not start with {PLUGIN_INSTALL_PREFIX}"
+        )
+
+
+def test_get_installer_paths_none_under_plugin_prefix():
+    """Pure function test: no installer path starts with the plugin prefix."""
+    from scripts.build_plugin import PLUGIN_INSTALL_PREFIX, get_installer_paths
+
+    for path in get_installer_paths():
+        assert not path.startswith(PLUGIN_INSTALL_PREFIX), (
+            f"Installer path {path} starts with plugin prefix {PLUGIN_INSTALL_PREFIX}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -109,8 +157,12 @@ def both_active(tmp_path: Path, build_result: dict[str, Any]):
 
 @given("any valid installation of both plugin and custom installer")
 def any_valid_dual_install():
-    """Placeholder for property-based path disjointness test."""
-    pytest.skip("Implement with Hypothesis in DELIVER wave")
+    """Setup for property-based path disjointness test.
+
+    No filesystem setup needed -- the property test uses the pure function
+    verify_path_disjointness() which operates on path strings, not real files.
+    """
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +187,6 @@ def both_simultaneous(build_result: dict[str, Any]):
 @when("a version consistency check runs")
 def run_version_check(build_result: dict[str, Any]):
     """Run version consistency between plugin and installer."""
-    # TODO: Implement version consistency check
     pytest.skip("Version consistency check not yet implemented")
 
 
@@ -170,25 +221,22 @@ def remove_plugin(build_result: dict[str, Any]):
 @then("the plugin target directory differs from the custom installer target directory")
 def different_install_paths(build_result: dict[str, Any]):
     """Verify plugin and installer use different paths."""
-    # Plugin: ~/.claude/plugins/cache/nwave/
-    # Installer: ~/.claude/agents/nw/, ~/.claude/commands/nw/, etc.
-    plugin_path = Path("~/.claude/plugins/cache/nwave").expanduser()
-    installer_agents = Path("~/.claude/agents/nw").expanduser()
-    assert plugin_path != installer_agents
-    assert not str(plugin_path).startswith(str(installer_agents))
-    assert not str(installer_agents).startswith(str(plugin_path))
+    from scripts.build_plugin import get_installer_paths, get_plugin_paths
+
+    plugin_paths = get_plugin_paths()
+    installer_paths = get_installer_paths()
+    assert plugin_paths.isdisjoint(installer_paths), (
+        f"Overlapping paths: {plugin_paths & installer_paths}"
+    )
 
 
 @then("no files overlap between plugin and custom installer paths")
 def no_file_overlap():
-    """Verify disjoint file sets."""
-    # Plugin is in plugins/cache/nwave/, installer is in agents/nw/ etc.
-    # These are structurally different paths
-    plugin_base = "plugins/cache/nwave"
-    installer_bases = ["agents/nw", "commands/nw", "skills/nw"]
-    for base in installer_bases:
-        assert not plugin_base.startswith(base)
-        assert not base.startswith(plugin_base)
+    """Verify disjoint file sets using the production path verification."""
+    from scripts.build_plugin import verify_path_disjointness
+
+    is_disjoint, overlaps = verify_path_disjointness()
+    assert is_disjoint, f"Path overlap detected: {overlaps}"
 
 
 @then("the command is discovered from the plugin directory")
@@ -276,10 +324,12 @@ def installer_files_intact(build_result: dict[str, Any]):
     "the set of files owned by the plugin is disjoint from the set owned by the custom installer"
 )
 def disjoint_file_ownership():
-    """Property: plugin and installer file sets never overlap."""
-    # This is structurally guaranteed by different base paths
-    plugin_prefix = "plugins/cache/nwave"
-    installer_prefixes = ["agents/nw", "commands/nw", "skills/nw", "lib/python"]
-    for prefix in installer_prefixes:
-        assert not plugin_prefix.startswith(prefix)
-        assert not prefix.startswith(plugin_prefix)
+    """Property: plugin and installer file sets never overlap.
+
+    Uses the verify_path_disjointness() pure function from build_plugin
+    to verify that all plugin paths and all installer paths are disjoint.
+    """
+    from scripts.build_plugin import verify_path_disjointness
+
+    is_disjoint, overlaps = verify_path_disjointness()
+    assert is_disjoint, f"Path overlap detected: {overlaps}"

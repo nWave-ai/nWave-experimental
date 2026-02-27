@@ -19,25 +19,21 @@ Feature: DES Bundle with Hooks Generation
 
   # --- Happy Path: DES Module Bundling ---
 
-  @skip
   Scenario: DES module is importable from the plugin directory
     When the plugin assembler builds the plugin
     Then the DES module exists in the plugin scripts directory
     And the DES module can be imported as a standalone package
 
-  @skip
   Scenario: DES imports are rewritten for standalone operation
     When the plugin assembler builds the plugin
     Then the DES module runs without depending on the original source layout
 
-  @skip
   Scenario: DES module works without external packages
     When the plugin assembler builds the plugin
     Then the DES module has no external package dependencies
 
   # --- Happy Path: Hooks Generation ---
 
-  @skip
   Scenario: Hook registrations cover all DES enforcement events
     When the plugin assembler builds the plugin
     Then the hook configuration registers a handler for tool validation
@@ -45,7 +41,6 @@ Feature: DES Bundle with Hooks Generation
     And the hook configuration registers a handler for subagent lifecycle
     And the hook configuration registers a handler for session startup
 
-  @skip
   Scenario: Hook commands use plugin-relative paths
     When the plugin assembler builds the plugin
     Then every hook command references the plugin root variable
@@ -53,7 +48,6 @@ Feature: DES Bundle with Hooks Generation
 
   # --- Happy Path: DES Templates ---
 
-  @skip
   Scenario: DES runtime templates are bundled in the plugin
     When the plugin assembler builds the plugin
     Then the TDD cycle schema template exists in the plugin
@@ -61,20 +55,17 @@ Feature: DES Bundle with Hooks Generation
 
   # --- Error Paths ---
 
-  @skip
   Scenario: Build fails when DES source directory is missing
     Given the source tree is missing the DES source directory
     When the plugin assembler attempts to build the plugin
     Then the build fails with a missing DES source error
 
-  @skip
   Scenario: Build fails when import rewriting produces invalid syntax
     Given a DES source file with an unrewritable import pattern
     When the plugin assembler attempts to build the plugin
     Then the build fails with an import rewriting error
     And the error message identifies the problematic file
 
-  @skip
   Scenario: Build fails when hook template references are invalid
     Given a hook configuration template with a missing command path
     When the plugin assembler attempts to build the plugin
@@ -89,7 +80,6 @@ Feature: DES Bundle with Hooks Generation
 
   # --- Edge Cases ---
 
-  @skip
   Scenario: Plugin does not ship compiled Python files
     When the plugin assembler builds the plugin
     Then the plugin does not ship compiled Python files

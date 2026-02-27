@@ -7,6 +7,10 @@ Driving port: PluginAssembler (release integration)
 
 from __future__ import annotations
 
+import filecmp
+import json
+import shutil
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -36,26 +40,83 @@ def release_tag_created(tag: str, build_config: dict[str, Any]):
 
 
 @when("the release pipeline runs the plugin build step")
-def release_pipeline_builds(build_config: dict[str, Any], build_result: dict[str, Any]):
+def release_pipeline_builds(
+    build_config: dict[str, Any], build_result: dict[str, Any], tmp_path: Path
+):
     """
     Execute the plugin build as part of the release pipeline.
 
-    This simulates what the CI/CD release.yml would do.
+    This simulates what the CI/CD release.yml would do:
+    1. Build the plugin from source
+    2. If a release_version is set, create a temporary pyproject.toml with that version
     """
-    # TODO: Replace with actual pipeline invocation
-    # from scripts.build_plugin import PluginAssembler, BuildConfig
-    # config = BuildConfig(**build_config)
-    # result = PluginAssembler.build(config)
-    # build_result["plugin_dir"] = result.output_dir
-    # build_result["success"] = result.is_success()
-    pytest.skip("Release pipeline integration not yet implemented")
+    from scripts.build_plugin import BuildConfig, build
+
+    # If release_version is set, create a temp source tree with that version
+    if "release_version" in build_config:
+        release_version = build_config["release_version"]
+        temp_root = tmp_path / "release_source"
+
+        # Copy source tree to temp location
+        nwave_dir = build_config["nwave_dir"]
+        des_dir = build_config["des_dir"]
+
+        # Only copy nWave dir and des dir (lighter than full tree)
+        temp_nwave = temp_root / "nWave"
+        if nwave_dir.exists():
+            shutil.copytree(nwave_dir, temp_nwave, dirs_exist_ok=True)
+
+        temp_des = temp_root / "src" / "des"
+        if des_dir.exists():
+            shutil.copytree(des_dir, temp_des, dirs_exist_ok=True)
+
+        # Create pyproject.toml with release version
+        temp_pyproject = temp_root / "pyproject.toml"
+        temp_pyproject.write_text(
+            f'[project]\nname = "nwave"\nversion = "{release_version}"\n',
+            encoding="utf-8",
+        )
+
+        config = BuildConfig(
+            source_root=temp_root,
+            nwave_dir=temp_nwave,
+            des_dir=temp_des,
+            pyproject_path=temp_pyproject,
+            output_dir=build_config["output_dir"],
+        )
+    else:
+        config = BuildConfig.from_dict(build_config)
+
+    result = build(config)
+    build_result["plugin_dir"] = result.output_dir
+    build_result["success"] = result.is_success()
+    build_result["error"] = result.error if not result.is_success() else None
+    build_result["build_result"] = result
 
 
 @when("the plugin assembler builds the plugin twice with the same configuration")
-def build_twice(build_config: dict[str, Any], build_result: dict[str, Any]):
+def build_twice(
+    build_config: dict[str, Any], build_result: dict[str, Any], tmp_path: Path
+):
     """Build the plugin twice to verify idempotency."""
-    # TODO: Replace with actual double-build and comparison
-    pytest.skip("PluginAssembler not yet implemented")
+    from scripts.build_plugin import BuildConfig, build
+
+    # First build
+    first_output = tmp_path / "build_1"
+    first_config = BuildConfig.from_dict({**build_config, "output_dir": first_output})
+    first_result = build(first_config)
+
+    # Second build (clean output dir)
+    second_output = tmp_path / "build_2"
+    second_config = BuildConfig.from_dict({**build_config, "output_dir": second_output})
+    second_result = build(second_config)
+
+    build_result["first_output"] = first_output
+    build_result["second_output"] = second_output
+    build_result["first_success"] = first_result.is_success()
+    build_result["second_success"] = second_result.is_success()
+    build_result["plugin_dir"] = first_output
+    build_result["success"] = first_result.is_success() and second_result.is_success()
 
 
 # ---------------------------------------------------------------------------
@@ -66,8 +127,6 @@ def build_twice(build_config: dict[str, Any], build_result: dict[str, Any]):
 @then(parsers.parse('the plugin directory is generated with version "{version}"'))
 def plugin_generated_with_version(version: str, build_result: dict[str, Any]):
     """Verify plugin was generated with the release version."""
-    import json
-
     plugin_dir = build_result["plugin_dir"]
     metadata = json.loads(
         (plugin_dir / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
@@ -77,8 +136,24 @@ def plugin_generated_with_version(version: str, build_result: dict[str, Any]):
 
 @then("the plugin build step runs after the existing distribution build")
 def plugin_after_dist_build():
-    """Verify ordering in the release pipeline."""
-    pytest.skip("CI/CD ordering validated by inspecting release.yml structure")
+    """Verify ordering in the release pipeline.
+
+    This is validated by inspecting the release.yml structure:
+    build-plugin has `needs: [build]`, ensuring it runs after the distribution build.
+    """
+    import yaml
+
+    release_yml = (
+        Path(__file__).resolve().parents[5] / ".github" / "workflows" / "release.yml"
+    )
+    with open(release_yml) as f:
+        workflow = yaml.safe_load(f)
+
+    jobs = workflow.get("jobs", {})
+    assert "build-plugin" in jobs, "build-plugin job not found in release.yml"
+
+    build_plugin_needs = jobs["build-plugin"].get("needs", [])
+    assert "build" in build_plugin_needs, "build-plugin must depend on build job"
 
 
 @then("the plugin directory can be committed as a standalone repository")
@@ -112,13 +187,42 @@ def no_dev_files_in_plugin(build_result: dict[str, Any]):
 @then("the marketplace manifest contains the plugin name and version")
 def manifest_has_name_version(build_result: dict[str, Any]):
     """Verify marketplace manifest has required fields."""
-    pytest.skip("Manifest generation not yet implemented")
+    from scripts.build_plugin import generate_marketplace_manifest
+
+    plugin_dir = build_result["plugin_dir"]
+
+    # Generate manifest (simulating what the pipeline does)
+    manifest_result = generate_marketplace_manifest(plugin_dir, download_url="")
+    assert manifest_result.success, (
+        f"Manifest generation failed: {manifest_result.error}"
+    )
+
+    manifest_path = plugin_dir / "marketplace-manifest.json"
+    assert manifest_path.exists(), "marketplace-manifest.json not found"
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["name"], "Manifest missing plugin name"
+    assert manifest["version"], "Manifest missing plugin version"
 
 
 @then("the marketplace manifest contains a download reference")
 def manifest_has_download(build_result: dict[str, Any]):
-    """Verify marketplace manifest has download URL."""
-    pytest.skip("Manifest generation not yet implemented")
+    """Verify marketplace manifest has download URL field."""
+    from scripts.build_plugin import generate_marketplace_manifest
+
+    plugin_dir = build_result["plugin_dir"]
+    test_download_url = "https://github.com/nwave-ai/nwave-plugin/releases/tag/v1.0.0"
+
+    # Regenerate with a download URL to verify the field is present
+    manifest_result = generate_marketplace_manifest(
+        plugin_dir, download_url=test_download_url
+    )
+    assert manifest_result.success
+
+    manifest_path = plugin_dir / "marketplace-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert "download" in manifest, "Manifest missing download field"
+    assert manifest["download"] == test_download_url
 
 
 @then("the plugin build step reports failure")
@@ -128,9 +232,18 @@ def build_step_reports_failure(build_result: dict[str, Any]):
 
 
 @then("the existing release artifacts are not affected")
-def existing_artifacts_safe():
-    """Verify plugin build failure does not corrupt other release artifacts."""
-    pytest.skip("Validated by CI/CD job isolation")
+def existing_artifacts_safe(build_result: dict[str, Any]):
+    """Verify a failed plugin build does not leave partial output.
+
+    Locally: verify no partial plugin directory was created on failure.
+    In CI: additionally guaranteed by job isolation (separate runners).
+    """
+    assert build_result["success"] is False, "Expected build failure"
+    plugin_dir = build_result.get("plugin_dir")
+    if plugin_dir is not None:
+        assert not plugin_dir.exists() or len(list(plugin_dir.iterdir())) == 0, (
+            f"Failed build left partial output in {plugin_dir}"
+        )
 
 
 @then("the pipeline warns about version mismatch")
@@ -140,6 +253,30 @@ def pipeline_warns_version_mismatch(build_result: dict[str, Any]):
 
 
 @then("both builds produce identical plugin directories")
-def builds_are_identical():
+def builds_are_identical(build_result: dict[str, Any]):
     """Verify idempotency of the build."""
-    pytest.skip("Idempotency comparison not yet implemented")
+    first_output = build_result["first_output"]
+    second_output = build_result["second_output"]
+
+    assert build_result["first_success"], "First build failed"
+    assert build_result["second_success"], "Second build failed"
+
+    # Compare directory structures
+    comparison = filecmp.dircmp(first_output, second_output)
+    _assert_dirs_identical(comparison)
+
+
+def _assert_dirs_identical(comparison: filecmp.dircmp) -> None:
+    """Recursively verify two directory trees are identical."""
+    assert comparison.left_only == [], (
+        f"Files only in first build: {comparison.left_only}"
+    )
+    assert comparison.right_only == [], (
+        f"Files only in second build: {comparison.right_only}"
+    )
+    assert comparison.diff_files == [], (
+        f"Files differ between builds: {comparison.diff_files}"
+    )
+
+    for subdirname, sub_comparison in comparison.subdirs.items():
+        _assert_dirs_identical(sub_comparison)
