@@ -97,7 +97,7 @@ Feature: Plugin Validation and Build Verification
     When the plugin validator checks the output
     Then the validation result is success
 
-  @skip @property
+  @property
   Scenario: Validation is a pure function with no side effects
     Given any plugin directory state
     When the plugin validator checks the output twice

@@ -310,13 +310,35 @@ def no_compiled_python_in_plugin(build_result: dict[str, Any]):
 @then("every rewritten DES file is syntactically valid Python")
 def rewritten_file_valid_python(build_result: dict[str, Any]):
     """Property: rewritten files parse as valid Python."""
-    pytest.skip("Implement with Hypothesis in DELIVER wave")
+    import ast
+
+    plugin_dir = build_result["plugin_dir"]
+    des_dir = plugin_dir / "scripts" / "des"
+    py_files = list(des_dir.rglob("*.py"))
+    assert len(py_files) > 0, "No Python files found in DES bundle"
+    for py_file in py_files:
+        content = py_file.read_text(encoding="utf-8")
+        try:
+            ast.parse(content, filename=str(py_file))
+        except SyntaxError as exc:
+            pytest.fail(f"Syntax error in rewritten DES file {py_file.name}: {exc}")
 
 
 @then("the configuration contains handlers for all five DES event types")
 def hooks_have_all_five_events(build_result: dict[str, Any]):
     """Property: all event types present in hook config."""
-    pytest.skip("Implement with Hypothesis in DELIVER wave")
+    registered_events = set(_get_registered_events(build_result))
+    expected_events = {
+        "PreToolUse",
+        "PostToolUse",
+        "SubagentStop",
+        "SessionStart",
+        "SubagentStart",
+    }
+    assert registered_events == expected_events, (
+        f"Missing events: {expected_events - registered_events}, "
+        f"Extra events: {registered_events - expected_events}"
+    )
 
 
 # ---------------------------------------------------------------------------

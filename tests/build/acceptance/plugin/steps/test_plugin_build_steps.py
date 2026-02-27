@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-import pytest
 from pytest_bdd import given, parsers, scenarios, then
 
 
@@ -442,9 +441,17 @@ def no_extra_agents(build_result: dict[str, Any], build_config: dict[str, Any]):
 
 
 @then("the plugin metadata version is identical to the source version")
-def version_identity(build_result: dict[str, Any]):
+def version_identity(build_result: dict[str, Any], build_config: dict[str, Any]):
     """Property: version is always preserved exactly."""
-    pytest.skip("Implement with Hypothesis in DELIVER wave")
+    import tomllib
+
+    metadata = _read_plugin_metadata(build_result)
+    with open(build_config["pyproject_path"], "rb") as f:
+        pyproject = tomllib.load(f)
+    expected_version = pyproject["project"]["version"]
+    assert metadata["version"] == expected_version, (
+        f"Version mismatch: metadata={metadata['version']!r}, source={expected_version!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

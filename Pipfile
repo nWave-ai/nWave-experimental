@@ -8,6 +8,7 @@ nwave = {editable = true, path = "."}
 
 [dev-packages]
 nwave = {editable = true, extras = ["dev"], path = "."}
+hypothesis = "*"
 
 [scripts]
 # Core CI/CD commands

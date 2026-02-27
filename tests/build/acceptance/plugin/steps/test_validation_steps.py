@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import pytest
-from pytest_bdd import given, parsers, scenarios, then
+from pytest_bdd import given, parsers, scenarios, then, when
 
 
 if TYPE_CHECKING:
@@ -144,9 +143,51 @@ def minimal_valid_plugin(plugin_output_dir: Path, build_result: dict[str, Any]):
 
 
 @given("any plugin directory state")
-def any_plugin_state():
-    """Placeholder for property-based validation purity test."""
-    pytest.skip("Implement with Hypothesis in DELIVER wave")
+def any_plugin_state(
+    plugin_output_dir: Path, build_config: dict[str, Any], build_result: dict[str, Any]
+):
+    """Build a real plugin directory for property-based validation purity test."""
+    from scripts.build_plugin import BuildConfig, build
+
+    config = BuildConfig.from_dict(build_config)
+    result = build(config)
+    build_result["plugin_dir"] = result.output_dir
+    build_result["success"] = result.is_success()
+
+
+# ---------------------------------------------------------------------------
+# When Steps: Validation Purity
+# ---------------------------------------------------------------------------
+
+
+@when("the plugin validator checks the output twice")
+def validate_plugin_twice(build_result: dict[str, Any]):
+    """Run validation twice and store both results for determinism check."""
+    from scripts.build_plugin import validate
+
+    plugin_dir = build_result["plugin_dir"]
+
+    # Snapshot directory state before validation
+    all_files = sorted(plugin_dir.rglob("*"))
+    build_result["pre_validation_snapshot"] = {
+        str(f.relative_to(plugin_dir)): f.read_bytes() if f.is_file() else None
+        for f in all_files
+    }
+
+    result_1 = validate(plugin_dir)
+    result_2 = validate(plugin_dir)
+    build_result["validation_result"] = {
+        "success": result_1.success,
+        "errors": list(result_1.errors),
+        "sections": result_1.sections,
+        "counts": result_1.counts,
+    }
+    build_result["validation_result_2"] = {
+        "success": result_2.success,
+        "errors": list(result_2.errors),
+        "sections": result_2.sections,
+        "counts": result_2.counts,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -322,12 +363,45 @@ def multiple_validation_errors(count: int, build_result: dict[str, Any]):
 
 
 @then("both validation results are identical")
-def validation_deterministic():
-    """Property: validation is deterministic (placeholder)."""
-    pass
+def validation_deterministic(build_result: dict[str, Any]):
+    """Property: validation is deterministic -- same input produces same output."""
+    result_1 = build_result["validation_result"]
+    result_2 = build_result["validation_result_2"]
+    assert result_1["success"] == result_2["success"], (
+        f"Determinism violation: first={result_1['success']}, second={result_2['success']}"
+    )
+    assert result_1["errors"] == result_2["errors"], (
+        f"Determinism violation in errors: {result_1['errors']} != {result_2['errors']}"
+    )
+    assert result_1["sections"] == result_2["sections"], (
+        f"Determinism violation in sections: {result_1['sections']} != {result_2['sections']}"
+    )
+    assert result_1["counts"] == result_2["counts"], (
+        f"Determinism violation in counts: {result_1['counts']} != {result_2['counts']}"
+    )
 
 
 @then("the plugin directory is unchanged after validation")
-def validation_no_side_effects():
-    """Property: validation has no side effects (placeholder)."""
-    pass
+def validation_no_side_effects(build_result: dict[str, Any]):
+    """Property: validation has no side effects on the plugin directory."""
+    plugin_dir = build_result["plugin_dir"]
+    pre_snapshot = build_result["pre_validation_snapshot"]
+
+    # Compare current state with pre-validation snapshot
+    current_files = sorted(plugin_dir.rglob("*"))
+    current_snapshot = {
+        str(f.relative_to(plugin_dir)): f.read_bytes() if f.is_file() else None
+        for f in current_files
+    }
+
+    assert set(pre_snapshot.keys()) == set(current_snapshot.keys()), (
+        f"Files changed after validation. "
+        f"Added: {set(current_snapshot.keys()) - set(pre_snapshot.keys())}, "
+        f"Removed: {set(pre_snapshot.keys()) - set(current_snapshot.keys())}"
+    )
+
+    for path, content in pre_snapshot.items():
+        if content is not None:
+            assert current_snapshot[path] == content, (
+                f"File content changed after validation: {path}"
+            )

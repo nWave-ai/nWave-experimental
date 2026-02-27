@@ -84,14 +84,14 @@ Feature: DES Bundle with Hooks Generation
     When the plugin assembler builds the plugin
     Then the plugin does not ship compiled Python files
 
-  @skip @property
+  @property
   Scenario: DES import rewriting is complete for any source tree
     Given any valid nWave source tree
     When the plugin assembler builds the plugin
     Then the DES module runs without depending on the original source layout
     And every rewritten DES file is syntactically valid Python
 
-  @skip @property
+  @property
   Scenario: Hook configuration always contains all required event types
     Given any valid nWave source tree
     When the plugin assembler builds the plugin

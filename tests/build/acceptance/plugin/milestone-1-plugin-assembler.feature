@@ -108,14 +108,14 @@ Feature: Plugin Assembler with Metadata Generation
     When the plugin assembler builds the plugin
     Then the agent file appears in the plugin with its original name
 
-  @skip @property
+  @property
   Scenario: Every source agent appears exactly once in the plugin
     Given any valid nWave source tree
     When the plugin assembler builds the plugin
     Then every agent in the source has exactly one corresponding file in the plugin
     And no extra agent files are introduced
 
-  @skip @property
+  @property
   Scenario: Plugin version always matches source version
     Given any valid project version string
     When the plugin assembler builds the plugin

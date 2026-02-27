@@ -790,6 +790,22 @@ def get_installer_paths() -> set[str]:
     }
 
 
+def check_version_consistency(
+    plugin_version: str, installer_version: str
+) -> str | None:
+    """Check if plugin and installer versions match.
+
+    Returns None if versions match, warning message if they differ.
+    """
+    if plugin_version != installer_version:
+        return (
+            f"Version mismatch: plugin is {plugin_version}, "
+            f"custom installer is {installer_version}. "
+            f"Consider upgrading the older installation."
+        )
+    return None
+
+
 def verify_path_disjointness() -> tuple[bool, list[str]]:
     """Verify plugin and installer paths never overlap.
 
