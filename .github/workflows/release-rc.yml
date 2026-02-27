@@ -609,6 +609,12 @@ jobs:
           name: rc-release-notes
           path: release-notes
 
+      - name: Download plugin artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rc-nwave-plugin
+          path: release-assets
+
       - name: Tag and release on beta repo
         working-directory: beta-target
         env:
@@ -625,7 +631,8 @@ jobs:
             gh release create "$TAG" \
               --title "nwave-ai $TAG (RC)" \
               --notes-file ../release-notes/RELEASE_NOTES.md \
-              --prerelease
+              --prerelease \
+              ../release-assets/nwave-plugin-v*.zip
           fi
 
   # ===========================================================================
