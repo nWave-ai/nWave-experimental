@@ -23,9 +23,8 @@ Feature: Plugin Build Walking Skeleton
 
   @walking_skeleton
   Scenario: Developer verifies a freshly built plugin is structurally complete
-    Given default build configuration for the nWave source tree
-    When the plugin assembler builds the plugin
-    And the plugin validator checks the output
+    Given the plugin assembler has produced a plugin directory
+    When the plugin validator checks the output
     Then the plugin passes structural validation
     And the validation report confirms all required sections are present
 

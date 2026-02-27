@@ -122,7 +122,7 @@ Error path ratio: 49% (exceeds 40% target)
 | 01-02 DES Bundle | 4 | 14 | Full |
 | 01-03 Plugin Validation | 3 | 12 | Full |
 | 02-01 Release Pipeline | 3 | 7 | Full |
-| 02-02 Coexistence | 4 | 10 | Full |
+| 02-02 Coexistence | 4 | 10 | Partial (3/4 ACs) — AC-4 "Migration guide" is documentation-only, validated by review not automation |
 
 ### Property-Shaped Scenarios (@property tag)
 
@@ -163,8 +163,5 @@ All scenarios invoke through these driving ports only:
 
 | Port | Module | Responsibility |
 |------|--------|---------------|
-| `PluginAssembler.build(config)` | `scripts/build_plugin.py` | Main build pipeline |
+| `PluginAssembler.build(config)` | `scripts/build_plugin.py` | Main build pipeline (orchestrates all transformers internally) |
 | `PluginValidator.validate(dir)` | `scripts/build_plugin.py` | Structural validation |
-| `ContentTransformer.rewrite_imports(content)` | `scripts/build_plugin.py` | DES import rewriting |
-| `HooksGenerator.generate(config)` | `scripts/build_plugin.py` | hooks.json generation |
-| `MetadataGenerator.generate(version, config)` | `scripts/build_plugin.py` | plugin.json generation |

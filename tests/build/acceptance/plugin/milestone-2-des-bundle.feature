@@ -28,14 +28,12 @@ Feature: DES Bundle with Hooks Generation
   @skip
   Scenario: DES imports are rewritten for standalone operation
     When the plugin assembler builds the plugin
-    Then no DES source file contains "from src.des" imports
-    And all DES imports reference the standalone "des" package
+    Then the DES module runs without depending on the original source layout
 
   @skip
-  Scenario: DES module requires only standard library
+  Scenario: DES module works without external packages
     When the plugin assembler builds the plugin
     Then the DES module has no external package dependencies
-    And the DES module uses only Python standard library imports
 
   # --- Happy Path: Hooks Generation ---
 
@@ -82,22 +80,29 @@ Feature: DES Bundle with Hooks Generation
     When the plugin assembler attempts to build the plugin
     Then the build fails with a hook configuration error
 
+  @skip
+  Scenario: DES hook enforcement blocks tool use in wrong phase
+    Given a project with an active DES session in the RED_ACCEPTANCE phase
+    When a tool that is not allowed in RED_ACCEPTANCE is invoked
+    Then the hook returns a block decision
+    And the block message explains which phase is active
+
   # --- Edge Cases ---
 
   @skip
-  Scenario: DES bytecode cache is cleared in the plugin output
+  Scenario: Plugin does not ship compiled Python files
     When the plugin assembler builds the plugin
-    Then no Python bytecode cache directories exist in the DES bundle
+    Then the plugin does not ship compiled Python files
 
   @skip @property
-  Scenario: Every DES source file has its imports rewritten correctly
-    Given any DES Python source file containing "from src.des" imports
-    When the import rewriter processes the file
-    Then every "from src.des" import is replaced with "from des"
-    And the rewritten file is syntactically valid Python
+  Scenario: DES import rewriting is complete for any source tree
+    Given any valid nWave source tree
+    When the plugin assembler builds the plugin
+    Then the DES module runs without depending on the original source layout
+    And every rewritten DES file is syntactically valid Python
 
   @skip @property
   Scenario: Hook configuration always contains all required event types
-    Given any valid build configuration
-    When the hooks generator creates the configuration
+    Given any valid nWave source tree
+    When the plugin assembler builds the plugin
     Then the configuration contains handlers for all five DES event types

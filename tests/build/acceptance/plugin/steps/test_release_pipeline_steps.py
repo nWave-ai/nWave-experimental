@@ -78,9 +78,7 @@ def plugin_generated_with_version(version: str, build_result: dict[str, Any]):
 @then("the plugin build step runs after the existing distribution build")
 def plugin_after_dist_build():
     """Verify ordering in the release pipeline."""
-    # This is a CI/CD configuration check, not a runtime assertion
-    # Validated by inspecting release.yml structure
-    pass
+    pytest.skip("CI/CD ordering validated by inspecting release.yml structure")
 
 
 @then("the plugin directory can be committed as a standalone repository")
@@ -114,15 +112,13 @@ def no_dev_files_in_plugin(build_result: dict[str, Any]):
 @then("the marketplace manifest contains the plugin name and version")
 def manifest_has_name_version(build_result: dict[str, Any]):
     """Verify marketplace manifest has required fields."""
-    # TODO: Check manifest generation
-    pass
+    pytest.skip("Manifest generation not yet implemented")
 
 
 @then("the marketplace manifest contains a download reference")
 def manifest_has_download(build_result: dict[str, Any]):
     """Verify marketplace manifest has download URL."""
-    # TODO: Check manifest generation
-    pass
+    pytest.skip("Manifest generation not yet implemented")
 
 
 @then("the plugin build step reports failure")
@@ -134,19 +130,16 @@ def build_step_reports_failure(build_result: dict[str, Any]):
 @then("the existing release artifacts are not affected")
 def existing_artifacts_safe():
     """Verify plugin build failure does not corrupt other release artifacts."""
-    # This is validated by CI/CD job isolation
-    pass
+    pytest.skip("Validated by CI/CD job isolation")
 
 
 @then("the pipeline warns about version mismatch")
 def pipeline_warns_version_mismatch(build_result: dict[str, Any]):
     """Verify mismatch warning is produced."""
-    # TODO: Check for warning in build output
-    pass
+    pytest.skip("Version mismatch detection not yet implemented")
 
 
 @then("both builds produce identical plugin directories")
 def builds_are_identical():
     """Verify idempotency of the build."""
-    # TODO: Compare two build outputs
-    pass
+    pytest.skip("Idempotency comparison not yet implemented")

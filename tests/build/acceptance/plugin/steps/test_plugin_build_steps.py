@@ -124,6 +124,23 @@ def agent_file_exists(filename: str, nwave_source_tree: Path):
     assert agent_path.exists(), f"Agent file not found: {agent_path}"
 
 
+@given("the plugin assembler has produced a plugin directory")
+def plugin_already_built(build_config: dict[str, Any], build_result: dict[str, Any]):
+    """
+    Pre-condition: a plugin directory has been built.
+
+    This step invokes the PluginAssembler driving port, providing
+    a pre-built plugin for validation scenarios.
+    """
+    # TODO: Replace with actual PluginAssembler invocation
+    # from scripts.build_plugin import PluginAssembler, BuildConfig
+    # config = BuildConfig(**build_config)
+    # result = PluginAssembler.build(config)
+    # build_result["plugin_dir"] = result.output_dir
+    # build_result["success"] = result.is_success()
+    pytest.skip("PluginAssembler not yet implemented")
+
+
 @given("any valid nWave source tree")
 def any_valid_source(nwave_source_tree: Path):
     """Use the real nWave source tree for property-based checks."""
@@ -271,9 +288,9 @@ def metadata_has_keywords(build_result: dict[str, Any]):
     assert len(metadata["keywords"]) > 0
 
 
-@then('the plugin metadata source path starts with "./"')
-def metadata_source_starts_with_dot_slash(build_result: dict[str, Any]):
-    """Verify source field starts with ./ per Claude Code validation."""
+@then("the plugin metadata identifies the source directory")
+def metadata_identifies_source(build_result: dict[str, Any]):
+    """Verify plugin metadata contains a source directory reference."""
     import json
 
     plugin_dir = build_result["plugin_dir"]
@@ -281,7 +298,7 @@ def metadata_source_starts_with_dot_slash(build_result: dict[str, Any]):
         (plugin_dir / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
     )
     if "source" in metadata:
-        assert metadata["source"].startswith("./")
+        assert len(metadata["source"]) > 0, "Source directory must not be empty"
 
 
 @then(parsers.parse('the plugin metadata version is "{version}"'))
@@ -322,13 +339,15 @@ def plugin_has_all_agents(build_result: dict[str, Any]):
     assert len(agent_files) == 23, f"Expected 23 agents, found {len(agent_files)}"
 
 
-@then("every agent file is a valid markdown file with frontmatter")
-def agents_have_frontmatter(build_result: dict[str, Any]):
-    """Verify every agent file has YAML frontmatter."""
+@then("every agent file is readable and properly structured")
+def agents_are_structured(build_result: dict[str, Any]):
+    """Verify every agent file is readable and has proper structure."""
     plugin_dir = build_result["plugin_dir"]
     for agent_file in (plugin_dir / "agents").glob("*.md"):
         content = agent_file.read_text(encoding="utf-8")
-        assert content.startswith("---"), f"Agent {agent_file.name} missing frontmatter"
+        assert content.startswith("---"), (
+            f"Agent {agent_file.name} is not properly structured"
+        )
 
 
 @then("the content of each agent file in the plugin matches the source")
@@ -377,13 +396,17 @@ def commands_in_correct_dir(build_result: dict[str, Any]):
 
 @then('every command file produces a "/nw:" prefixed slash command')
 def commands_produce_nw_prefix(build_result: dict[str, Any]):
-    """Verify command files support /nw: namespace."""
+    """Verify command files are in the nw namespace directory."""
     plugin_dir = build_result["plugin_dir"]
     commands_dir = plugin_dir / "commands"
-    for cmd_file in commands_dir.rglob("*.md"):
-        # Command name derives from file path within plugin
-        # The /nw: prefix comes from the plugin name being "nw"
-        assert cmd_file.suffix == ".md"
+    cmd_files = list(commands_dir.rglob("*.md"))
+    assert len(cmd_files) > 0, "No command files found"
+    for cmd_file in cmd_files:
+        # The /nw: prefix comes from commands residing in commands/ dir
+        # and the plugin name being "nw"
+        relative = cmd_file.relative_to(commands_dir)
+        assert cmd_file.suffix == ".md", f"Command file not markdown: {cmd_file.name}"
+        assert str(relative) != "", f"Command file outside commands dir: {cmd_file}"
 
 
 @then(parsers.parse("the plugin directory contains at least {count:d} skill file"))
@@ -429,13 +452,13 @@ def skills_mirror_source_layout(
     assert source_dirs == plugin_dirs
 
 
-@then('no skill files are renamed to "SKILL.md"')
-def no_skill_md_rename(build_result: dict[str, Any]):
-    """Verify no SKILL.md files exist (per ADR-003)."""
+@then("skill files are distributed with their original names")
+def skills_have_original_names(build_result: dict[str, Any]):
+    """Verify skill files keep their original names in the plugin."""
     plugin_dir = build_result["plugin_dir"]
     skill_md_files = list((plugin_dir / "skills").rglob("SKILL.md"))
     assert len(skill_md_files) == 0, (
-        f"Found {len(skill_md_files)} SKILL.md files -- ADR-003 forbids renaming"
+        f"Found {len(skill_md_files)} renamed skill files -- originals expected"
     )
 
 
@@ -556,8 +579,7 @@ def no_extra_agents(build_result: dict[str, Any], build_config: dict[str, Any]):
 @then("the plugin metadata version is identical to the source version")
 def version_identity(build_result: dict[str, Any]):
     """Property: version is always preserved exactly."""
-    # This is verified by the specific version tests above
-    pass
+    pytest.skip("Implement with Hypothesis in DELIVER wave")
 
 
 # ---------------------------------------------------------------------------

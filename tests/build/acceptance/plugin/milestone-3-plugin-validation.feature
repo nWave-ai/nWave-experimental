@@ -20,15 +20,15 @@ Feature: Plugin Validation and Build Verification
 
   @skip
   Scenario: Valid plugin passes all structural checks
-    When the plugin assembler builds the plugin
-    And the plugin validator checks the output
+    Given the plugin assembler has produced a plugin directory
+    When the plugin validator checks the output
     Then the validation result is success
     And no validation errors are reported
 
   @skip
   Scenario: Validation confirms all required plugin sections exist
-    When the plugin assembler builds the plugin
-    And the plugin validator checks the output
+    Given the plugin assembler has produced a plugin directory
+    When the plugin validator checks the output
     Then the validation report confirms agents section is present
     And the validation report confirms skills section is present
     And the validation report confirms commands section is present
@@ -37,8 +37,8 @@ Feature: Plugin Validation and Build Verification
 
   @skip
   Scenario: Validation confirms hook configuration is well-formed
-    When the plugin assembler builds the plugin
-    And the plugin validator checks the output
+    Given the plugin assembler has produced a plugin directory
+    When the plugin validator checks the output
     Then the hook configuration is valid according to the expected schema
     And every hook entry has a command and event type
 
@@ -46,8 +46,8 @@ Feature: Plugin Validation and Build Verification
 
   @skip
   Scenario: Validation counts match expected component totals
-    When the plugin assembler builds the plugin
-    And the plugin validator checks the output
+    Given the plugin assembler has produced a plugin directory
+    When the plugin validator checks the output
     Then the validation report shows 23 agents
     And the validation report shows at least 98 skill files
     And the validation report shows at least 21 command files

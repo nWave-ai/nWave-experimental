@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from pytest_bdd import given, parsers, scenarios, then
 
 
@@ -145,7 +146,7 @@ def minimal_valid_plugin(plugin_output_dir: Path, build_result: dict[str, Any]):
 @given("any plugin directory state")
 def any_plugin_state():
     """Placeholder for property-based validation purity test."""
-    pass
+    pytest.skip("Implement with Hypothesis in DELIVER wave")
 
 
 # ---------------------------------------------------------------------------

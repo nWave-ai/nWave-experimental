@@ -2,7 +2,7 @@
 Step definitions for DES bundle and hooks generation scenarios.
 
 Covers: milestone-2-des-bundle.feature
-Driving port: PluginAssembler (DES bundling), HooksGenerator, ContentTransformer
+Driving port: PluginAssembler (DES bundling)
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from pytest_bdd import given, scenarios, then
+from pytest_bdd import given, scenarios, then, when
 
 
 if TYPE_CHECKING:
@@ -61,16 +61,27 @@ def broken_hook_template(build_config: dict[str, Any]):
     }
 
 
-@given('any DES Python source file containing "from src.des" imports')
-def any_des_source_with_imports():
-    """Placeholder for property-based import rewriting test."""
-    pass
+@given("a project with an active DES session in the RED_ACCEPTANCE phase")
+def active_des_session_red_acceptance(build_config: dict[str, Any]):
+    """Set up a project context with DES in the RED_ACCEPTANCE phase."""
+    build_config["des_phase"] = "RED_ACCEPTANCE"
 
 
-@given("any valid build configuration")
-def any_valid_config():
-    """Placeholder for property-based hook generation test."""
-    pass
+# ---------------------------------------------------------------------------
+# When Steps: DES Enforcement
+# ---------------------------------------------------------------------------
+
+
+@when("a tool that is not allowed in RED_ACCEPTANCE is invoked")
+def tool_not_allowed_in_phase(
+    build_config: dict[str, Any], build_result: dict[str, Any]
+):
+    """Simulate invoking a tool that is blocked in the current DES phase."""
+    # TODO: Replace with actual DES hook invocation
+    # from scripts.build_plugin import PluginAssembler
+    # result = PluginAssembler.invoke_hook(phase="RED_ACCEPTANCE", tool="Write")
+    # build_result["hook_decision"] = result
+    pytest.skip("DES hook enforcement not yet implemented")
 
 
 # ---------------------------------------------------------------------------
@@ -107,28 +118,19 @@ def des_module_importable(build_result: dict[str, Any]):
         sys.path = original_path
 
 
-@then('no DES source file contains "from src.des" imports')
-def no_src_des_imports(build_result: dict[str, Any]):
-    """Verify all imports are rewritten."""
+@then("the DES module runs without depending on the original source layout")
+def des_runs_standalone(build_result: dict[str, Any]):
+    """Verify all DES files are self-contained without source-tree references."""
     plugin_dir = build_result["plugin_dir"]
     des_dir = plugin_dir / "scripts" / "des"
     for py_file in des_dir.rglob("*.py"):
         content = py_file.read_text(encoding="utf-8")
-        assert "from src.des" not in content, f"Unrewritten import in {py_file.name}"
-        assert "import src.des" not in content, f"Unrewritten import in {py_file.name}"
-
-
-@then('all DES imports reference the standalone "des" package')
-def des_imports_use_standalone(build_result: dict[str, Any]):
-    """Verify DES imports use 'from des.' pattern."""
-    plugin_dir = build_result["plugin_dir"]
-    des_dir = plugin_dir / "scripts" / "des"
-    for py_file in des_dir.rglob("*.py"):
-        content = py_file.read_text(encoding="utf-8")
-        # Lines with des imports should use 'from des.' not 'from src.des.'
-        for line in content.splitlines():
-            if "from src.des" in line:
-                pytest.fail(f"Found unrewritten import in {py_file.name}: {line}")
+        assert "from src.des" not in content, (
+            f"Source-layout dependency in {py_file.name}"
+        )
+        assert "import src.des" not in content, (
+            f"Source-layout dependency in {py_file.name}"
+        )
 
 
 @then("the DES module has no external package dependencies")
@@ -150,13 +152,6 @@ def des_no_external_deps(build_result: dict[str, Any]):
                         pytest.fail(
                             f"External dependency '{pkg}' found in {py_file.name}: {stripped}"
                         )
-
-
-@then("the DES module uses only Python standard library imports")
-def des_stdlib_only(build_result: dict[str, Any]):
-    """Alias for stdlib-only check."""
-    # Delegated to the external dependency check above
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -347,30 +342,44 @@ def build_fails_hook_config(build_result: dict[str, Any]):
 # ---------------------------------------------------------------------------
 
 
-@then("no Python bytecode cache directories exist in the DES bundle")
-def no_pycache_in_des(build_result: dict[str, Any]):
-    """Verify __pycache__ is cleaned from DES bundle."""
+@then("the plugin does not ship compiled Python files")
+def no_compiled_python_in_plugin(build_result: dict[str, Any]):
+    """Verify no bytecode cache directories exist in the plugin."""
     plugin_dir = build_result["plugin_dir"]
     des_dir = plugin_dir / "scripts" / "des"
     pycache_dirs = list(des_dir.rglob("__pycache__"))
     assert len(pycache_dirs) == 0, (
-        f"Found {len(pycache_dirs)} __pycache__ directories in DES bundle"
+        f"Found {len(pycache_dirs)} compiled Python directories in DES bundle"
     )
 
 
-@then('every "from src.des" import is replaced with "from des"')
-def all_imports_rewritten():
-    """Property: all imports are rewritten (placeholder)."""
-    pass
-
-
-@then("the rewritten file is syntactically valid Python")
-def rewritten_file_valid_python():
+@then("every rewritten DES file is syntactically valid Python")
+def rewritten_file_valid_python(build_result: dict[str, Any]):
     """Property: rewritten files parse as valid Python."""
-    pass
+    pytest.skip("Implement with Hypothesis in DELIVER wave")
 
 
 @then("the configuration contains handlers for all five DES event types")
-def hooks_have_all_five_events():
+def hooks_have_all_five_events(build_result: dict[str, Any]):
     """Property: all event types present in hook config."""
-    pass
+    pytest.skip("Implement with Hypothesis in DELIVER wave")
+
+
+# ---------------------------------------------------------------------------
+# Then Steps: DES Enforcement
+# ---------------------------------------------------------------------------
+
+
+@then("the hook returns a block decision")
+def hook_returns_block(build_result: dict[str, Any]):
+    """Verify the hook blocked the tool invocation."""
+    hook_decision = build_result.get("hook_decision", {})
+    assert hook_decision.get("decision") == "block"
+
+
+@then("the block message explains which phase is active")
+def block_message_has_phase(build_result: dict[str, Any]):
+    """Verify the block message includes phase information."""
+    hook_decision = build_result.get("hook_decision", {})
+    message = hook_decision.get("message", "")
+    assert "RED_ACCEPTANCE" in message or "phase" in message.lower()

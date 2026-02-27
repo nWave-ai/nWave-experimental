@@ -74,10 +74,7 @@ def plugin_hooks_in_plugin_dir(build_result: dict[str, Any]):
 @given("the custom installer hook registrations are in the settings file")
 def installer_hooks_in_settings(build_result: dict[str, Any]):
     """Verify installer hooks are in settings.json."""
-    # Custom installer writes to ~/.claude/settings.json
-    # Plugin writes to plugin/hooks/hooks.json
-    # These are separate locations
-    pass
+    pytest.skip("Hook registration location check not yet implemented")
 
 
 @given(parsers.parse('the plugin is version "{version}"'))
@@ -113,7 +110,7 @@ def both_active(tmp_path: Path, build_result: dict[str, Any]):
 @given("any valid installation of both plugin and custom installer")
 def any_valid_dual_install():
     """Placeholder for property-based path disjointness test."""
-    pass
+    pytest.skip("Implement with Hypothesis in DELIVER wave")
 
 
 # ---------------------------------------------------------------------------
@@ -197,51 +194,49 @@ def no_file_overlap():
 @then("the command is discovered from the plugin directory")
 def command_from_plugin():
     """Verify command discovery from plugin."""
-    pass  # Runtime behavior
+    pytest.skip("Command discovery requires Claude Code runtime")
 
 
 @then("no errors reference missing custom installer files")
 def no_installer_errors():
     """Verify no errors about missing installer files."""
-    pass  # Runtime behavior
+    pytest.skip("Error reference check requires Claude Code runtime")
 
 
 @then("the command is discovered from the custom installer directory")
 def command_from_installer():
     """Verify command discovery from installer."""
-    pass  # Runtime behavior
+    pytest.skip("Command discovery requires Claude Code runtime")
 
 
 @then("no errors reference missing plugin files")
 def no_plugin_errors():
     """Verify no errors about missing plugin files."""
-    pass  # Runtime behavior
+    pytest.skip("Error reference check requires Claude Code runtime")
 
 
 @then("the command executes successfully from one of the two sources")
 def command_executes_from_either():
     """Verify command works with both installations."""
-    pass  # Runtime behavior
+    pytest.skip("Command execution requires Claude Code runtime")
 
 
 @then("each DES enforcement event is handled by exactly one source")
 def single_event_handler():
     """Verify no duplicate hook handling."""
-    # Plugin hooks in hooks/hooks.json, installer hooks in settings.json
-    # Claude Code merges these, but plugin hooks take precedence
-    pass
+    pytest.skip("Hook deduplication check not yet implemented")
 
 
 @then("no event triggers duplicate enforcement")
 def no_duplicate_enforcement():
     """Verify no double-enforcement."""
-    pass
+    pytest.skip("Duplicate enforcement check not yet implemented")
 
 
 @then("a warning is raised about version mismatch between installation methods")
 def version_mismatch_warning():
     """Verify version mismatch detection."""
-    pass
+    pytest.skip("Version mismatch warning not yet implemented")
 
 
 @then("the plugin continues to operate normally")
