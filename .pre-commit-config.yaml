@@ -25,7 +25,7 @@ repos:
   # Local hooks for nWave framework
   - repo: local
     hooks:
-      # Phase 0: Prevent shell scripts (cross-platform policy)
+      # Fast checks first (before slow tests)
       - id: prevent-shell-scripts
         name: Prevent Shell/PowerShell/Batch Scripts
         entry: python3 scripts/hooks/prevent_shell_scripts.py
@@ -34,16 +34,6 @@ repos:
         stages: [pre-commit]
         always_run: true
 
-      # Phase 1: Run pytest test suite (after ruff — fail fast on style before slow tests)
-      - id: pytest-validation
-        name: Pytest Test Validation
-        entry: python3 scripts/hooks/validate_tests.py
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-
-      # Phase 2: Documentation version validation
       - id: docs-version-validation
         name: Documentation Version Validation
         entry: python3 scripts/hooks/validate_docs.py
@@ -52,25 +42,6 @@ repos:
         stages: [pre-commit]
         always_run: true
 
-      # Phase 3a: Integration & e2e tests (enforced at push, not commit)
-      - id: pytest-slow-validation
-        name: Pytest Integration & E2E Validation
-        entry: python3 scripts/hooks/validate_tests_slow.py
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
-        always_run: true
-
-      # Phase 3b: Documentation freshness check (enforced at push, not commit)
-      - id: docs-freshness-check
-        name: Documentation Freshness Check
-        entry: python3 scripts/hooks/check_documentation_freshness.py
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
-        always_run: true
-
-      # Phase 4: Conflict detection between related files
       - id: conflict-detection
         name: Conflict Detection - Related Files
         entry: python3 scripts/hooks/detect_conflicts.py
@@ -79,7 +50,6 @@ repos:
         always_run: true
         stages: [pre-commit]
 
-      # Phase 4: Code formatter availability check
       - id: formatter-availability
         name: Code Formatter Availability Check
         entry: python3 scripts/hooks/check_formatter_available.py
@@ -89,7 +59,6 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
-      # Phase 5: YAML validation (mirrors CI/CD validation)
       - id: yaml-validation
         name: YAML File Validation
         entry: python3 scripts/validation/validate_yaml_files.py
@@ -97,6 +66,23 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+
+      # Pre-push hooks (not run on commit)
+      - id: pytest-slow-validation
+        name: Pytest Integration & E2E Validation
+        entry: python3 scripts/hooks/validate_tests_slow.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        always_run: true
+
+      - id: docs-freshness-check
+        name: Documentation Freshness Check
+        entry: python3 scripts/hooks/check_documentation_freshness.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        always_run: true
 
   # File quality hooks - scan ALL tracked files (matches CI file-quality job)
   - repo: local
@@ -139,6 +125,17 @@ repos:
       - id: detect-private-key
         name: Detect private keys (all files)
         entry: python3 scripts/hooks/detect_private_keys.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+  # LAST: Pytest test suite — slowest pre-commit hook, runs after all fast checks pass
+  - repo: local
+    hooks:
+      - id: pytest-validation
+        name: Pytest Test Validation
+        entry: python3 scripts/hooks/validate_tests.py
         language: system
         pass_filenames: false
         always_run: true
