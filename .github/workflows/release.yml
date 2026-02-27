@@ -265,7 +265,7 @@ jobs:
           version = os.environ['PLUGIN_VERSION']
           result = generate_marketplace_manifest(
               Path('plugin'),
-              download_url=f'https://github.com/nwave-ai/nwave/releases/download/v{version}/nwave-plugin.zip',
+              download_url=f'https://github.com/nwave-ai/nwave/releases/download/v{version}/nwave-plugin-v{version}.zip',
           )
           if not result.success:
               print(f'::error::{result.error}')
@@ -310,14 +310,39 @@ jobs:
           path: plugin/
 
       - name: Package plugin as zip
+        id: plugin_zip
         run: |
+          # Version will be extracted in the next step; use pyproject.toml as source
+          PLUGIN_VERSION=$(python3 -c "
+          import json
+          meta = json.load(open('plugin/.claude-plugin/plugin.json'))
+          print(meta.get('version', ''))
+          ")
+          ZIP_NAME="nwave-plugin-v${PLUGIN_VERSION}.zip"
           cd plugin
-          zip -r ../dist/releases/nwave-plugin.zip .
+          zip -r ../dist/releases/${ZIP_NAME} .
           cd ..
+          echo "zip_name=${ZIP_NAME}" >> $GITHUB_OUTPUT
           # Add plugin zip to SHA256SUMS
           cd dist/releases
-          sha256sum nwave-plugin.zip >> SHA256SUMS.txt
+          sha256sum ${ZIP_NAME} >> SHA256SUMS.txt
           cd ../..
+
+      - name: Validate ZIP integrity
+        run: |
+          ZIP_NAME="${{ steps.plugin_zip.outputs.zip_name }}"
+          mkdir -p /tmp/plugin-verify
+          unzip -q dist/releases/${ZIP_NAME} -d /tmp/plugin-verify
+          python3 -c "
+          from scripts.build_plugin import validate
+          from pathlib import Path
+          result = validate(Path('/tmp/plugin-verify'))
+          if not result.success:
+              for err in result.errors:
+                  print(f'::error::ZIP verification: {err}')
+              exit(1)
+          print('ZIP integrity verified')
+          "
 
       - name: Extract version
         id: get_version
@@ -488,7 +513,7 @@ jobs:
           prerelease: false
           files: |
             dist/releases/*.tar.gz
-            dist/releases/nwave-plugin.zip
+            dist/releases/nwave-plugin-v*.zip
             dist/releases/SHA256SUMS.txt
           fail_on_unmatched_files: true
         env:

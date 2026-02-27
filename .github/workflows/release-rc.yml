@@ -5,8 +5,8 @@
 # Promotes a tested dev release to RC status.
 # Triggered manually via workflow_dispatch with a source dev tag.
 #
-# Pipeline: validate source → CI gate → version calc → build → tag + pre-release
-#           → PyPI publish (pre-release) → sync beta repo → Slack
+# Pipeline: validate source → CI gate → version calc → build + build-plugin
+#           → tag + pre-release → PyPI publish (pre-release) → sync beta repo → Slack
 #
 # =============================================================================
 
@@ -252,13 +252,91 @@ jobs:
           retention-days: 30
 
   # ===========================================================================
+  # BUILD PLUGIN — Claude Code plugin directory
+  # ===========================================================================
+  build-plugin:
+    name: "Build Plugin"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [validate-source, version-calc]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-source.outputs.commit_sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ needs.version-calc.outputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Invalid version format: $VERSION"
+            exit 1
+          fi
+
+      - name: Build plugin
+        run: python3 scripts/build_plugin.py --output-dir plugin/
+
+      - name: Validate plugin
+        run: |
+          python3 -c "
+          from scripts.build_plugin import validate
+          from pathlib import Path
+          result = validate(Path('plugin'))
+          if not result.success:
+              for err in result.errors:
+                  print(f'::error::{err}')
+              exit(1)
+          print('Plugin validation passed')
+          for section, ok in result.sections.items():
+              print(f'  {section}: {\"OK\" if ok else \"FAIL\"}')
+          "
+
+      - name: Package plugin as ZIP
+        env:
+          VERSION: ${{ needs.version-calc.outputs.version }}
+        run: |
+          cd plugin
+          zip -r ../nwave-plugin-v${VERSION}.zip .
+          cd ..
+          echo "Created nwave-plugin-v${VERSION}.zip"
+          ls -lh nwave-plugin-v${VERSION}.zip
+
+      - name: Validate ZIP integrity
+        env:
+          VERSION: ${{ needs.version-calc.outputs.version }}
+        run: |
+          mkdir -p /tmp/plugin-verify
+          unzip -q nwave-plugin-v${VERSION}.zip -d /tmp/plugin-verify
+          python3 -c "
+          from scripts.build_plugin import validate
+          from pathlib import Path
+          result = validate(Path('/tmp/plugin-verify'))
+          if not result.success:
+              for err in result.errors:
+                  print(f'::error::ZIP verification: {err}')
+              exit(1)
+          print('ZIP integrity verified')
+          "
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-nwave-plugin
+          path: nwave-plugin-v${{ needs.version-calc.outputs.version }}.zip
+          retention-days: 30
+
+  # ===========================================================================
   # TAG + GITHUB PRE-RELEASE
   # ===========================================================================
   tag-release:
     name: "Tag & GitHub Pre-Release"
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [validate-source, version-calc, build]
+    needs: [validate-source, version-calc, build, build-plugin]
     if: inputs.dry_run != true
     outputs:
       changes: ${{ steps.changes.outputs.summary }}
@@ -272,6 +350,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: rc-dist-packages
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: rc-nwave-plugin
           path: dist
 
       - name: Create RC tag on source commit
@@ -333,7 +416,7 @@ jobs:
             --title "RC Release $TAG" \
             --notes-file dist/RELEASE_NOTES.md \
             --prerelease \
-            dist/*.tar.gz dist/*.whl dist/SHA256SUMS.txt
+            dist/*.tar.gz dist/*.whl dist/SHA256SUMS.txt dist/nwave-plugin-v*.zip
 
       - name: Upload release notes
         uses: actions/upload-artifact@v4
@@ -396,7 +479,7 @@ jobs:
     name: "Sync to nWave-beta"
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [validate-source, version-calc, build, tag-release]
+    needs: [validate-source, version-calc, build, build-plugin, tag-release]
     if: inputs.dry_run != true
 
     steps:
@@ -552,7 +635,7 @@ jobs:
     name: "Dry Run Summary"
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    needs: [validate-source, ci-gate, version-calc, build]
+    needs: [validate-source, ci-gate, version-calc, build, build-plugin]
     if: inputs.dry_run == true
 
     steps:
@@ -591,6 +674,7 @@ jobs:
           | CI status gate | CHECKED | ${{ needs.ci-gate.outputs.status }} |
           | Version calculation | COMPUTED | ${{ needs.version-calc.outputs.version }} |
           | Build dist | BUILT | wheel + sdist |
+          | Build plugin | BUILT | nwave-plugin-v${{ needs.version-calc.outputs.version }}.zip |
           | Create RC tag | SKIPPED (dry run) | Would create: ${{ needs.version-calc.outputs.tag }} |
           | PyPI publish | SKIPPED (dry run) | Would publish RC to PyPI |
           | Sync beta repo | SKIPPED (dry run) | Would sync to nWave-beta |
@@ -612,7 +696,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     if: always() && !cancelled() && inputs.dry_run != true
-    needs: [validate-source, version-calc, build, tag-release, sync-beta]
+    needs: [validate-source, version-calc, build, build-plugin, tag-release, sync-beta]
 
     steps:
       - name: Determine status
