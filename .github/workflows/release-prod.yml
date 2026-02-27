@@ -334,7 +334,7 @@ jobs:
             --stage stable \
             --version "$VERSION" \
             --source-tag "$SOURCE_RC" \
-            --repo "${{ github.repository }}" \
+            --repo "nWave-ai/nwave" \
             --output dist/RELEASE_NOTES.md
         env:
           VERSION: ${{ needs.version-calc.outputs.stable_version }}
@@ -460,18 +460,12 @@ jobs:
         id: nwave-version
         working-directory: source
         run: |
+          STABLE="${{ needs.version-calc.outputs.stable_version }}"
           FLOOR=$(python scripts/release/read_toml_field.py --file pyproject.toml --key tool.nwave.public_version)
-          CURRENT="${{ steps.pre-sync.outputs.current_version }}"
 
-          OUTPUT=$(python scripts/release/next_version.py \
-            --stage nwave-ai \
-            --current-version "0.0.0" \
-            --public-version-floor "$FLOOR" \
-            --current-public-version "$CURRENT")
-
-          VERSION=$(echo "$OUTPUT" | jq -r '.version')
+          VERSION=$(python -c "from packaging.version import Version; print(max(Version('$STABLE'), Version('$FLOOR')))")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "nwave-ai version: $VERSION (floor=$FLOOR, current=$CURRENT)"
+          echo "nwave-ai version: $VERSION (stable=$STABLE, floor=$FLOOR)"
 
       - name: Sync files
         run: |
