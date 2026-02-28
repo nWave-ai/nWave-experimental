@@ -219,16 +219,58 @@ def agents_are_structured(build_result: dict[str, Any]):
         )
 
 
-@then("the content of each agent file in the plugin matches the source")
-def agents_match_source(build_result: dict[str, Any], build_config: dict[str, Any]):
-    """Verify agent files are copied without modification."""
+@then("every agent body is identical to the source")
+def agents_body_matches_source(
+    build_result: dict[str, Any], build_config: dict[str, Any]
+):
+    """Verify agent body content is preserved (frontmatter may differ for skill refs)."""
     plugin_dir = build_result["plugin_dir"]
     source_dir = build_config["nwave_dir"] / "agents"
+
+    def _body(text: str) -> str:
+        """Extract body after YAML frontmatter."""
+        if text.startswith("---"):
+            parts = text.split("---", 2)
+            return parts[2] if len(parts) >= 3 else ""
+        return text
+
     for agent_file in (plugin_dir / "agents").glob("*.md"):
         source_file = source_dir / agent_file.name
         assert source_file.exists()
-        assert agent_file.read_text(encoding="utf-8") == source_file.read_text(
-            encoding="utf-8"
+        plugin_body = _body(agent_file.read_text(encoding="utf-8"))
+        source_body = _body(source_file.read_text(encoding="utf-8"))
+        assert plugin_body == source_body, (
+            f"Agent body content differs: {agent_file.name}"
+        )
+
+
+@then("agents with skills have their frontmatter rewritten to bundle refs")
+def agents_skill_refs_rewritten(
+    build_result: dict[str, Any], build_config: dict[str, Any]
+):
+    """Verify agents with skill bundles have rewritten frontmatter."""
+    plugin_dir = build_result["plugin_dir"]
+    skills_dir = plugin_dir / "skills"
+    available_bundles = (
+        {d.name for d in skills_dir.iterdir() if d.is_dir()}
+        if skills_dir.exists()
+        else set()
+    )
+
+    for agent_file in (plugin_dir / "agents").glob("nw-*.md"):
+        agent_name = agent_file.stem.removeprefix("nw-")
+        if agent_name not in available_bundles:
+            continue
+        content = agent_file.read_text(encoding="utf-8")
+        if not content.startswith("---"):
+            continue
+        parts = content.split("---", 2)
+        if len(parts) < 3:
+            continue
+        frontmatter = parts[1]
+        # Should reference the bundle name, not individual skill files
+        assert f"  - {agent_name}" in frontmatter, (
+            f"Agent {agent_file.name} frontmatter not rewritten to bundle ref"
         )
 
 
@@ -321,24 +363,29 @@ def skills_mirror_source_layout(
     assert source_dirs == plugin_dirs
 
 
-@then("skill files are distributed with their original names")
-def skills_have_original_names(build_result: dict[str, Any]):
-    """Verify skill files keep their original names in the plugin."""
-    plugin_dir = build_result["plugin_dir"]
-    skill_md_files = list((plugin_dir / "skills").rglob("SKILL.md"))
-    assert len(skill_md_files) == 0, (
-        f"Found {len(skill_md_files)} renamed skill files -- originals expected"
-    )
-
-
-@then("each skill file retains its original filename")
-def skills_retain_filenames(build_result: dict[str, Any], build_config: dict[str, Any]):
-    """Verify skill filenames are preserved."""
+@then("every source skill file is present in the plugin")
+def source_skills_present(build_result: dict[str, Any], build_config: dict[str, Any]):
+    """Verify all source skill files exist in the plugin (SKILL.md is additive)."""
     plugin_dir = build_result["plugin_dir"]
     source_dir = build_config["nwave_dir"] / "skills"
     source_names = {f.name for f in source_dir.rglob("*.md")}
     plugin_names = {f.name for f in (plugin_dir / "skills").rglob("*.md")}
-    assert source_names == plugin_names
+    missing = source_names - plugin_names
+    assert len(missing) == 0, f"Source skills missing from plugin: {missing}"
+
+
+@then("each skill directory has a SKILL.md entry point")
+def skill_dirs_have_entry_points(build_result: dict[str, Any]):
+    """Verify every skill subdirectory has a generated SKILL.md."""
+    plugin_dir = build_result["plugin_dir"]
+    skills_dir = plugin_dir / "skills"
+    subdirs = [d for d in skills_dir.iterdir() if d.is_dir()]
+    assert len(subdirs) > 0, "Expected at least one skill subdirectory"
+    for subdir in subdirs:
+        skill_md = subdir / "SKILL.md"
+        assert skill_md.exists(), (
+            f"Missing SKILL.md entry point in skills/{subdir.name}/"
+        )
 
 
 # ---------------------------------------------------------------------------

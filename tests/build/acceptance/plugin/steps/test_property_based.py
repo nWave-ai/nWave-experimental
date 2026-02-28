@@ -18,7 +18,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from scripts.build_plugin import (
-    generate_hook_entries,
+    generate_hook_config,
     generate_plugin_metadata,
     rewrite_des_imports,
 )
@@ -80,21 +80,23 @@ def test_property_rewrite_preserves_non_des_imports(content: str):
 # ---------------------------------------------------------------------------
 
 
-def test_property_hook_entries_always_five_events():
-    """generate_hook_entries always produces exactly 5 entries with expected events."""
-    entries = generate_hook_entries()
-    assert len(entries) == 5
-    events = {entry["event"] for entry in entries}
-    assert events == {
+def test_property_hook_config_always_five_events():
+    """generate_hook_config always produces exactly 5 event keys with expected names."""
+    config = generate_hook_config()
+    assert len(config) == 5
+    assert set(config.keys()) == {
         "PreToolUse",
         "PostToolUse",
         "SubagentStop",
         "SessionStart",
         "SubagentStart",
     }
-    # Every entry must have a non-empty command
-    for entry in entries:
-        assert entry["command"].strip(), f"Empty command for event {entry['event']}"
+    # Every event must have at least one entry with a non-empty command
+    for event, entries in config.items():
+        assert len(entries) > 0, f"No entries for event {event}"
+        for entry in entries:
+            for hook in entry["hooks"]:
+                assert hook["command"].strip(), f"Empty command for event {event}"
 
 
 # ---------------------------------------------------------------------------

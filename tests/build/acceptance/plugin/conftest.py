@@ -321,11 +321,13 @@ def hooks_use_plugin_root(build_result: dict[str, Any]):
     hooks = json.loads(
         (plugin_dir / "hooks" / "hooks.json").read_text(encoding="utf-8")
     )
-    for hook in hooks.get("hooks", []):
-        cmd = hook.get("command", "")
-        assert "${CLAUDE_PLUGIN_ROOT}" in cmd or "CLAUDE_PLUGIN_ROOT" in cmd, (
-            f"Hook command does not reference plugin root: {cmd}"
-        )
+    for event, entries in hooks.get("hooks", {}).items():
+        for entry in entries:
+            for hook in entry.get("hooks", []):
+                cmd = hook.get("command", "")
+                assert "${CLAUDE_PLUGIN_ROOT}" in cmd or "CLAUDE_PLUGIN_ROOT" in cmd, (
+                    f"Hook command for {event} does not reference plugin root: {cmd}"
+                )
 
 
 @then(parsers.parse('the plugin metadata version is "{version}"'))
