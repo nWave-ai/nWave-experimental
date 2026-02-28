@@ -115,7 +115,7 @@ Display: review YAML (complete)|revisions made (issue-by-issue)|re-review result
 **business-analyst** (DISCUSS wave): Structured requirements|user stories|AC|business rules|quality attributes.
 
 ### Hands Off To
-**acceptance-designer** (DISTILL wave): Architecture document|component boundaries|technology stack|ADRs|quality attribute scenarios|integration patterns|development paradigm (OOP or functional).
+**platform-architect** (DEVOPS wave): Architecture document|component boundaries|technology stack|ADRs|quality attribute scenarios|integration patterns|development paradigm (OOP or functional).
 
 ### Collaborates With
 **solution-architect-reviewer**: Peer review for bias reduction and quality validation.

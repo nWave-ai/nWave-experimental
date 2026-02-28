@@ -8,7 +8,7 @@
 
 The book is structured in three parts: (1) Understanding the foundations (Cynefin, complexity, strategic/tactical DDD patterns), (2) Refactoring the monolith (code, architecture, database, CI/CD), and (3) Moving to microservices (transition strategies, event evolution, sagas). It draws heavily from Evans, Vernon, Brandolini, Fowler, and Richards/Ford, synthesizing their work into a practical refactoring methodology rather than introducing fundamentally new theory. The book's strongest sections are its treatment of database refactoring with DDD alignment (Chapter 8), the fitness function approach to measuring refactoring progress (Chapter 6), and the event versioning strategies (Chapter 11).
 
-Key insight for nWave: The book validates our wave-based methodology by demonstrating that DDD refactoring follows a discovery-to-delivery pipeline -- from understanding complexity (Cynefin/EventStorming) through strategic design (bounded contexts, context mapping) to tactical implementation (aggregates, events) to infrastructure evolution (database splitting, microservice extraction). This maps directly to nWave's DISCOVER > DISCUSS > DESIGN > DISTILL > DELIVER > DEVOP sequence.
+Key insight for nWave: The book validates our wave-based methodology by demonstrating that DDD refactoring follows a discovery-to-delivery pipeline -- from understanding complexity (Cynefin/EventStorming) through strategic design (bounded contexts, context mapping) to tactical implementation (aggregates, events) to infrastructure evolution (database splitting, microservice extraction). This maps directly to nWave's DISCOVER > DISCUSS > DESIGN > DEVOPS > DISTILL > DELIVER sequence.
 
 ---
 
@@ -680,7 +680,7 @@ The book validates the nWave wave sequence:
 3. **DESIGN** maps to: Context mapping, aggregate design, CQRS decisions, fitness functions
 4. **DISTILL** maps to: Acceptance criteria including fitness functions, BDD scenarios for integration
 5. **DELIVER** maps to: Tactical refactoring patterns (value objects, domain events, CQRS), test-first implementation
-6. **DEVOP** maps to: Database refactoring, CI/CD pipeline, microservice extraction, event versioning
+6. **DEVOPS** maps to: Database refactoring, CI/CD pipeline, microservice extraction, event versioning
 
 The book's "start simple, grow big" principle aligns with nWave's incremental delivery philosophy and TDD-based approach.
 
