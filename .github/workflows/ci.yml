@@ -275,6 +275,9 @@ jobs:
       - name: Detect file conflicts
         run: python3 scripts/hooks/detect_conflicts.py
 
+      - name: Validate framework templates (agents, skills, commands)
+        run: python3 scripts/validation/validate_framework_templates.py
+
   # ===========================================================================
   # STAGE 3: CROSS-PLATFORM TESTS - Depends on Framework Validation
   # ===========================================================================

@@ -69,6 +69,14 @@ repos:
         always_run: true
         stages: [pre-commit]
 
+      - id: framework-template-validation
+        name: Framework Template Validation (Agents/Skills/Commands)
+        entry: python3 scripts/validation/validate_framework_templates.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
       # Pre-push hooks (not run on commit)
       - id: pytest-slow-validation
         name: Pytest Integration & E2E Validation
