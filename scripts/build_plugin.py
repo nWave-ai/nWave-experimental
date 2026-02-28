@@ -218,6 +218,7 @@ def generate_plugin_metadata(plugin_name: str, version: str) -> dict:
         "homepage": "https://nwave.ai",
         "repository": "https://github.com/nwave-ai/nwave",
         "license": "MIT",
+        "privacy_policy": "https://github.com/nwave-ai/nwave/blob/main/PRIVACY.md",
         "keywords": [
             "tdd",
             "workflow",

@@ -5,6 +5,7 @@
 - [bdd-methodology](../../../nWave/skills/acceptance-designer/bdd-methodology.md) — BDD patterns for acceptance test design - Given-When-Then structure, scenario writing rules, pytest-bdd implementation, anti-patterns, and living documentation
 - [critique-dimensions](../../../nWave/skills/acceptance-designer/critique-dimensions.md) — Review dimensions for acceptance test quality - happy path bias, GWT compliance, business language purity, coverage completeness, walking skeleton user-centricity, and priority validation
 - [test-design-mandates](../../../nWave/skills/acceptance-designer/test-design-mandates.md) — Three design mandates for acceptance tests - hexagonal boundary enforcement, business language abstraction, user journey completeness, and walking skeleton strategy
+- [test-organization-conventions](../../../nWave/skills/acceptance-designer/test-organization-conventions.md) — Test directory structure patterns by architecture style, language conventions, naming rules, and fixture placement. Decision tree for selecting test organization strategy.
 
 ## [nw-agent-builder](../agents/nw-agent-builder.md)
 
@@ -146,9 +147,12 @@
 
 ## [nw-solution-architect](../agents/nw-solution-architect.md)
 
+- [architectural-styles-tradeoffs](../../../nWave/skills/solution-architect/architectural-styles-tradeoffs.md) — Architectural style selection decision matrices, trade-off analysis, structural enforcement rules, and combination patterns. Load when choosing or evaluating architecture styles.
 - [architecture-patterns](../../../nWave/skills/solution-architect/architecture-patterns.md) — Comprehensive architecture patterns, methodologies, quality frameworks, and evaluation methods for solution architects. Load when designing system architecture or selecting patterns.
 - [critique-dimensions](../../../nWave/skills/solution-architect/critique-dimensions.md) — Architecture quality critique dimensions for peer review. Load when invoking solution-architect-reviewer or performing self-review of architecture documents.
+- [domain-driven-design](../../../nWave/skills/solution-architect/domain-driven-design.md) — Strategic and tactical DDD patterns, bounded context discovery, context mapping, aggregate design rules, and decision frameworks for when to apply DDD
 - [roadmap-design](../../../nWave/skills/solution-architect/roadmap-design.md) — Roadmap concision rules, step decomposition efficiency, AC abstraction guidelines, and step-to-scenario mapping. Load when creating implementation roadmaps.
+- [security-by-design](../../../nWave/skills/solution-architect/security-by-design.md) — Security design principles, STRIDE threat modeling, OWASP Top 10 architectural mitigations, and secure patterns. Load when designing systems or reviewing architecture for security.
 - [stress-analysis](../../../nWave/skills/solution-architect/stress-analysis.md) — Advanced architecture stress analysis methodology for designing systems that survive unknown stresses. Load when --residuality flag is used or when designing high-uncertainty, mission-critical systems.
 
 ## [nw-solution-architect-reviewer](../agents/nw-solution-architect-reviewer.md)
