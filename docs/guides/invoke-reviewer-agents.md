@@ -21,7 +21,7 @@ Copy-paste this to request a review:
 ```
 Use the Task tool to invoke the product-owner-reviewer agent.
 Read the specification from ~/.claude/agents/nw/nw-product-owner-reviewer.md
-Review the artifact at docs/feature/{feature-name}/discuss/requirements.md
+Review the artifact at docs/feature/{feature-id}/discuss/requirements.md
 Provide YAML feedback with strengths, issues, recommendations, and approval_status.
 ```
 
@@ -227,7 +227,7 @@ I need peer review on my requirements document.
 
     Read: ~/.claude/agents/nw/nw-product-owner-reviewer.md
 
-    Review: docs/feature/{feature-name}/discuss/checkout-requirements.md
+    Review: docs/feature/{feature-id}/discuss/checkout-requirements.md
 
     Focus on:
     1. Confirmation bias (technology assumptions)
@@ -277,7 +277,7 @@ Review my architecture design for feasibility.
 
     Read: ~/.claude/agents/nw/nw-solution-architect-reviewer.md
 
-    Review: docs/feature/{feature-name}/design/architecture-design.md
+    Review: docs/feature/{feature-id}/design/architecture-design.md
 
     Focus on:
     1. Architectural bias (premature technology choices)

@@ -260,7 +260,7 @@ agent-activation:
 
 # DW-{WAVE}: {Task Title}
 
-**Wave**: {DISCUSS|DESIGN|DEVOP|DISTILL|DELIVER|CROSS_WAVE}
+**Wave**: {DISCUSS|DESIGN|DEVOPS|DISTILL|DELIVER|CROSS_WAVE}
 **Agent**: {agent-name} ({agent-id})
 **Command**: `*{command}`
 
@@ -515,7 +515,7 @@ Execute DISCUSS wave of nWave methodology through comprehensive requirements gat
 
 - None (DISCUSS is the second wave in nWave - DISCOVER is the first wave as of v1.5.2)
 
-**Note**: This document reflects the wave structure as of the research date. Current nWave includes DISCOVER as the first wave: DISCOVER → DISCUSS → DESIGN → DEVOP → DISTILL → DELIVER
+**Note**: This document reflects the wave structure as of the research date. Current nWave includes DISCOVER as the first wave: DISCOVER → DISCUSS → DESIGN → DEVOPS → DISTILL → DELIVER
 
 ## Agent Invocation
 
