@@ -62,7 +62,7 @@ Agent handles: gather project data|analyze completion stats|write evolution docu
 | Error | Response |
 |-------|----------|
 | Invalid agent name | "Invalid agent. Available: nw-researcher, nw-software-crafter, nw-solution-architect, nw-product-owner, nw-acceptance-designer, nw-platform-architect" |
-| Missing project ID | "Usage: /nw:finalize @agent 'project-id'" |
+| Missing feature ID | "Usage: /nw:finalize @agent 'feature-id'" |
 | Project directory not found | "Project not found: docs/feature/{feature-id}/" |
 | Incomplete steps | Block finalization, list incomplete steps |
 
