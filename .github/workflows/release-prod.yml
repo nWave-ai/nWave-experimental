@@ -515,9 +515,6 @@ jobs:
             --exclude 'nwave-ai.egg-info/' \
             --exclude '.execute-command-updated' \
             --exclude '.dependency-map.yaml' \
-            # Docs whitelist: only guides/ and reference/ sync to public repo.
-            # Order matters: --include whitelists first, then explicit --exclude
-            # blocks sensitive dirs, then catch-all --exclude blocks the rest.
             --include 'docs/' \
             --include 'docs/guides/' \
             --include 'docs/guides/**' \
