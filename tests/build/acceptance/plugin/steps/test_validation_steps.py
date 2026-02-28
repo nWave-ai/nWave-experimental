@@ -40,7 +40,8 @@ def plugin_empty_agents(plugin_output_dir: Path, build_result: dict[str, Any]):
     """Create a plugin directory with empty agents/."""
     (plugin_output_dir / ".claude-plugin").mkdir(parents=True)
     (plugin_output_dir / ".claude-plugin" / "plugin.json").write_text(
-        '{"name": "nw", "version": "1.0.0"}', encoding="utf-8"
+        '{"name": "nw", "version": "1.0.0", "privacy_policy": "https://example.com/privacy"}',
+        encoding="utf-8",
     )
     (plugin_output_dir / "agents").mkdir()  # Empty
     (plugin_output_dir / "hooks").mkdir()
@@ -52,7 +53,8 @@ def plugin_without_hooks(plugin_output_dir: Path, build_result: dict[str, Any]):
     """Create a plugin directory missing hooks/hooks.json."""
     (plugin_output_dir / ".claude-plugin").mkdir(parents=True)
     (plugin_output_dir / ".claude-plugin" / "plugin.json").write_text(
-        '{"name": "nw", "version": "1.0.0"}', encoding="utf-8"
+        '{"name": "nw", "version": "1.0.0", "privacy_policy": "https://example.com/privacy"}',
+        encoding="utf-8",
     )
     agents = plugin_output_dir / "agents"
     agents.mkdir()
@@ -65,7 +67,8 @@ def plugin_without_des(plugin_output_dir: Path, build_result: dict[str, Any]):
     """Create a plugin directory missing scripts/des/."""
     (plugin_output_dir / ".claude-plugin").mkdir(parents=True)
     (plugin_output_dir / ".claude-plugin" / "plugin.json").write_text(
-        '{"name": "nw", "version": "1.0.0"}', encoding="utf-8"
+        '{"name": "nw", "version": "1.0.0", "privacy_policy": "https://example.com/privacy"}',
+        encoding="utf-8",
     )
     agents = plugin_output_dir / "agents"
     agents.mkdir()
@@ -92,7 +95,13 @@ def minimal_valid_plugin(plugin_output_dir: Path, build_result: dict[str, Any]):
     meta_dir = plugin_output_dir / ".claude-plugin"
     meta_dir.mkdir(parents=True)
     (meta_dir / "plugin.json").write_text(
-        json.dumps({"name": "nw", "version": "0.0.1"}),
+        json.dumps(
+            {
+                "name": "nw",
+                "version": "0.0.1",
+                "privacy_policy": "https://example.com/privacy",
+            }
+        ),
         encoding="utf-8",
     )
 

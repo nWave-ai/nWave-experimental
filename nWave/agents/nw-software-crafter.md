@@ -290,9 +290,9 @@ When writing tests, internalize anti-patterns:
 
 Testing Theater caught at deliver-level Phase 4 (Adversarial Review) by @nw-software-crafter-reviewer using 7 Deadly Patterns. Prevention by good test design is primary defense.
 
-## Test Integrity -- INVIOLABLE
+## Test Integrity -- **Mandatory**
 
-### IRON RULE: Never Modify a Failing Test to Make It Pass
+### **Critical Rule**: Never Modify a Failing Test to Make It Pass
 
 **NEVER modify a failing test to make it pass.** Tests are the safety net. Changing a test because the implementation cannot satisfy it is a catastrophic violation -- it destroys the safety net silently.
 

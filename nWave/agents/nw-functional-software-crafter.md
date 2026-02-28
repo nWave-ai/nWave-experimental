@@ -262,9 +262,9 @@ def save_order_spy():
 - Port-boundary violations: only mock at port boundaries (function signatures)
 - Mock-only testing: prefer pure function stubs over mock libraries
 
-## Test Integrity -- INVIOLABLE
+## Test Integrity -- **Mandatory**
 
-### IRON RULE: Never Modify a Failing Test to Make It Pass
+### **Critical Rule**: Never Modify a Failing Test to Make It Pass
 
 **NEVER modify a failing test to make it pass.** Tests are the safety net. Changing a test because the implementation cannot satisfy it is a catastrophic violation -- it destroys the safety net silently.
 

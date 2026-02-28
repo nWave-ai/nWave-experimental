@@ -21,9 +21,7 @@ Sub-agents cannot use Skill tool or `/nw:*` commands. You MUST:
 2. **NEVER write phase entries to execution-log.json.** Only the crafter subagent that performed TDD work may append entries.
 3. **Extract step context from roadmap.json ONLY for Task prompt.** Grep roadmap for step_id ~50 lines context, extract (description|acceptance_criteria|files_to_modify), pass in DES template.
 
-**DES circumvention is fraud.** Without DES monitoring, nWave cannot guarantee code quality. For non-deliver tasks (docs, research, one-off edits): `<!-- DES-ENFORCEMENT : exempt -->`. Faking step IDs, omitting markers, or writing log entries manually is never acceptable.
-
-Finalize verification checks every completed step has valid DES-format entries (5 TDD phases + timestamps). Steps without DES monitoring → flagged, finalize blocks until re-executed via Task.
+**DES monitoring is non-negotiable.** Circumventing DES — faking step IDs, omitting markers, or writing log entries manually — is a **violation that invalidates the delivery**. DES detects unmonitored steps and flags them; finalize **blocks** until every flagged step is re-executed through a properly instrumented Task. There is no workaround: unverified steps cannot pass integrity verification, and the delivery cannot be finalized. Without DES monitoring, nWave cannot **verify** TDD phase compliance. For non-deliver tasks (docs, research, one-off edits): `<!-- DES-ENFORCEMENT : exempt -->`.
 
 ## Rigor Profile Integration
 

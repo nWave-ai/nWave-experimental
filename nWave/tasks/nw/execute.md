@@ -111,7 +111,7 @@ CLI enforces real UTC timestamps and validates phase names.
 Do NOT manually edit execution-log.json.
 
 CRITICAL: Only the executing agent calls the CLI.
-Orchestrator MUST NEVER write phase entries — only the agent that performed the work. A log entry without actual execution is fraud.
+Orchestrator MUST NEVER write phase entries — only the agent that performed the work. A log entry without actual execution is a **violation that DES detects and that will cause integrity verification to fail**, blocking finalize.
 
 # BOUNDARY_RULES
 - Only modify files listed in step's files_to_modify

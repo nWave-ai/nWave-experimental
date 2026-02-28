@@ -134,7 +134,15 @@ def _create_plugin_structure(plugin_dir: Path) -> None:
     metadata_dir = plugin_dir / ".claude-plugin"
     metadata_dir.mkdir(parents=True, exist_ok=True)
     (metadata_dir / "plugin.json").write_text(
-        json.dumps({"name": "nw", "version": "2.18.0"}, indent=2) + "\n",
+        json.dumps(
+            {
+                "name": "nw",
+                "version": "2.18.0",
+                "privacy_policy": "https://example.com/privacy",
+            },
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
 

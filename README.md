@@ -172,6 +172,10 @@ The full workflow has six waves. Use all six for greenfield projects, or jump st
 - **[GitHub Issues](https://github.com/nWave-ai/nWave/issues)** — Bug reports and feature requests
 - **[Contributing](CONTRIBUTING.md)** — Development setup and guidelines
 
+## Privacy
+
+nWave does not collect user data. See [Privacy Policy](PRIVACY.md) for details.
+
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.

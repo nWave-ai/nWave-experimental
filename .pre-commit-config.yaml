@@ -5,6 +5,8 @@
 #
 # IMPORTANT: Run `pre-commit install --hook-type commit-msg` to enable gitlint
 
+fail_fast: true
+
 repos:
   # Python linting and formatting with Ruff — runs FIRST to fail fast on style errors
   # (saves waiting 4+ min for tests only to discover a formatting issue)

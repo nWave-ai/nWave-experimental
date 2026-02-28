@@ -218,6 +218,7 @@ def generate_plugin_metadata(plugin_name: str, version: str) -> dict:
         "homepage": "https://nwave.ai",
         "repository": "https://github.com/nwave-ai/nwave",
         "license": "MIT",
+        "privacy_policy": "https://github.com/nwave-ai/nwave/blob/main/PRIVACY.md",
         "source": f"./plugins/{plugin_name}",
         "keywords": [
             "tdd",
@@ -574,13 +575,20 @@ def _cleanup_on_failure(plugin_dir: Path, *, created_by_build: bool) -> None:
         shutil.rmtree(plugin_dir)
 
 
-def build(config: BuildConfig) -> BuildResult:
+def build(config: BuildConfig, *, version_override: str | None = None) -> BuildResult:
     """Execute the plugin assembly pipeline.
 
     Pipeline: validate -> read_version -> copy_agents -> copy_commands
               -> copy_skills -> copy_des_module -> copy_templates
               -> generate_hooks_json -> generate_hook_wrapper
               -> generate_metadata -> write_metadata
+
+    Args:
+        config: Build configuration.
+        version_override: If provided, use this version instead of reading
+            from pyproject.toml. Used by CI to inject the release version
+            (e.g. RC or stable) so the plugin.json version matches the
+            GitHub release tag exactly.
     """
     # Step 1: Validate source tree
     source_error = validate_source_tree(config)
@@ -592,13 +600,16 @@ def build(config: BuildConfig) -> BuildResult:
         )
 
     # Step 2: Read and validate version
-    version, read_error = read_version(config.pyproject_path)
-    if read_error is not None:
-        return BuildResult(
-            output_dir=config.output_dir,
-            success=False,
-            error=read_error,
-        )
+    if version_override:
+        version = version_override
+    else:
+        version, read_error = read_version(config.pyproject_path)
+        if read_error is not None:
+            return BuildResult(
+                output_dir=config.output_dir,
+                success=False,
+                error=read_error,
+            )
 
     # Step 3: Prepare plugin directory
     plugin_dir = config.output_dir
@@ -681,10 +692,11 @@ def _validate_metadata(plugin_dir: Path) -> tuple[bool, list[str]]:
         errors.append(f"Invalid metadata: plugin.json is not valid JSON ({exc})")
         return False, errors
 
-    if "name" not in data:
-        errors.append("Invalid metadata: plugin.json missing required field 'name'")
-    if "version" not in data:
-        errors.append("Invalid metadata: plugin.json missing required field 'version'")
+    for required_field in ("name", "version", "privacy_policy"):
+        if required_field not in data:
+            errors.append(
+                f"Invalid metadata: plugin.json missing required field '{required_field}'"
+            )
 
     return len(errors) == 0, errors
 
@@ -931,6 +943,12 @@ def main() -> None:
         help="Output directory for plugin (default: plugin/)",
     )
     parser.add_argument(
+        "--version",
+        type=str,
+        default="",
+        help="Override version (default: read from pyproject.toml)",
+    )
+    parser.add_argument(
         "--download-url",
         type=str,
         default="",
@@ -946,7 +964,7 @@ def main() -> None:
     print(f"[INFO] Building plugin from {config.nwave_dir}")
     print(f"[INFO] Output: {config.output_dir}")
 
-    result = build(config)
+    result = build(config, version_override=args.version or None)
 
     for step in result.steps:
         status = "OK" if step.success else "FAIL"

@@ -278,7 +278,7 @@ jobs:
           fi
 
       - name: Build plugin
-        run: python3 scripts/build_plugin.py --output-dir plugin/
+        run: python3 scripts/build_plugin.py --output-dir plugin/ --version "${{ needs.version-calc.outputs.version }}"
 
       - name: Validate plugin
         run: |
@@ -544,11 +544,16 @@ jobs:
             --exclude 'nwave-ai.egg-info/' \
             --exclude '.execute-command-updated' \
             --exclude '.dependency-map.yaml' \
+            # Docs whitelist: only guides/ and reference/ sync to beta repo.
+            # Order matters: --include whitelists first, then explicit --exclude
+            # blocks sensitive dirs, then catch-all --exclude blocks the rest.
             --include 'docs/' \
             --include 'docs/guides/' \
             --include 'docs/guides/**' \
             --include 'docs/reference/' \
             --include 'docs/reference/**' \
+            --exclude 'docs/analysis/' \
+            --exclude 'docs/internal/' \
             --exclude 'docs/*' \
             --exclude 'nWave/checklists/' \
             --exclude '__pycache__/' \
