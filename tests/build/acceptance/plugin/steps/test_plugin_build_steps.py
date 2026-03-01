@@ -122,22 +122,30 @@ def any_valid_version():
 
 @then("the plugin directory contains a metadata file with the project version")
 def plugin_has_metadata_with_version(build_result: dict[str, Any]):
-    """Verify plugin.json exists and contains the project version."""
+    """Verify plugin.json exists and contains required fields.
+
+    Version is tracked in BuildResult.metadata (not in plugin.json on disk),
+    because plugin.json only contains fields used by Claude Code runtime.
+    """
     plugin_dir = build_result["plugin_dir"]
     metadata_path = plugin_dir / ".claude-plugin" / "plugin.json"
     assert metadata_path.exists(), f"Metadata file not found: {metadata_path}"
 
     metadata = _read_plugin_metadata(build_result)
-    assert "version" in metadata
-    assert metadata["version"], "Version must not be empty"
+    assert "name" in metadata
+    assert metadata["name"], "Name must not be empty"
 
 
 @then("the plugin metadata version matches the project version")
 def metadata_version_matches_project(
     build_result: dict[str, Any], build_config: dict[str, Any]
 ):
-    """Verify metadata version matches pyproject.toml version."""
-    metadata = _read_plugin_metadata(build_result)
+    """Verify build result version matches pyproject.toml version.
+
+    Version is in BuildResult.metadata (not in plugin.json on disk),
+    because plugin.json only contains fields used by Claude Code runtime.
+    """
+    result = build_result["build_result"]
 
     import tomllib
 
@@ -145,7 +153,7 @@ def metadata_version_matches_project(
         pyproject = tomllib.load(f)
     expected = pyproject["project"]["version"]
 
-    assert metadata["version"] == expected
+    assert result.metadata["version"] == expected
 
 
 @then(parsers.parse('the plugin metadata name is "{name}"'))
@@ -165,18 +173,29 @@ def metadata_has_description(build_result: dict[str, Any]):
 
 @then("the plugin metadata contains keywords for discoverability")
 def metadata_has_keywords(build_result: dict[str, Any]):
-    """Verify metadata includes keywords."""
+    """Verify metadata includes description (keywords removed from plugin.json).
+
+    Extra fields like keywords, homepage, license caused Claude Code to
+    silently fail plugin command discovery, so plugin.json now only contains
+    name, description, and author. Description serves as the discoverability
+    mechanism via the Claude Code plugin registry.
+    """
     metadata = _read_plugin_metadata(build_result)
-    assert "keywords" in metadata
-    assert len(metadata["keywords"]) > 0
+    assert "description" in metadata
+    assert len(metadata["description"]) > 0
 
 
 @then("the plugin metadata identifies the source directory")
 def metadata_identifies_source(build_result: dict[str, Any]):
-    """Verify plugin metadata contains a source directory reference."""
+    """Verify plugin metadata contains author info (source field removed).
+
+    Extra fields like source, homepage, repository caused Claude Code to
+    silently fail plugin command discovery. Author info is the closest
+    remaining field that identifies the plugin origin.
+    """
     metadata = _read_plugin_metadata(build_result)
-    assert "source" in metadata, "Metadata missing 'source' field"
-    assert len(metadata["source"]) > 0, "Source directory must not be empty"
+    assert "author" in metadata, "Metadata missing 'author' field"
+    assert metadata["author"].get("name"), "Author name must not be empty"
 
 
 # "the plugin metadata version is" is defined in conftest.py for cross-module sharing.
@@ -447,7 +466,7 @@ def plugin_metadata_valid(build_result: dict[str, Any]):
     """Verify metadata is parseable JSON with required fields."""
     metadata = _read_plugin_metadata(build_result)
     assert "name" in metadata
-    assert "version" in metadata
+    assert "description" in metadata
 
 
 @then(parsers.parse("the agent file appears in the plugin with its original name"))
@@ -489,15 +508,19 @@ def no_extra_agents(build_result: dict[str, Any], build_config: dict[str, Any]):
 
 @then("the plugin metadata version is identical to the source version")
 def version_identity(build_result: dict[str, Any], build_config: dict[str, Any]):
-    """Property: version is always preserved exactly."""
+    """Property: version is always preserved exactly in BuildResult.metadata.
+
+    Version is in BuildResult.metadata (not in plugin.json on disk),
+    because plugin.json only contains fields used by Claude Code runtime.
+    """
     import tomllib
 
-    metadata = _read_plugin_metadata(build_result)
+    result = build_result["build_result"]
     with open(build_config["pyproject_path"], "rb") as f:
         pyproject = tomllib.load(f)
     expected_version = pyproject["project"]["version"]
-    assert metadata["version"] == expected_version, (
-        f"Version mismatch: metadata={metadata['version']!r}, source={expected_version!r}"
+    assert result.metadata["version"] == expected_version, (
+        f"Version mismatch: metadata={result.metadata['version']!r}, source={expected_version!r}"
     )
 
 

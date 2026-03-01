@@ -40,7 +40,7 @@ def plugin_empty_agents(plugin_output_dir: Path, build_result: dict[str, Any]):
     """Create a plugin directory with empty agents/."""
     (plugin_output_dir / ".claude-plugin").mkdir(parents=True)
     (plugin_output_dir / ".claude-plugin" / "plugin.json").write_text(
-        '{"name": "nw", "version": "1.0.0"}',
+        '{"name": "nw"}',
         encoding="utf-8",
     )
     (plugin_output_dir / "agents").mkdir()  # Empty
@@ -53,7 +53,7 @@ def plugin_without_hooks(plugin_output_dir: Path, build_result: dict[str, Any]):
     """Create a plugin directory missing hooks/hooks.json."""
     (plugin_output_dir / ".claude-plugin").mkdir(parents=True)
     (plugin_output_dir / ".claude-plugin" / "plugin.json").write_text(
-        '{"name": "nw", "version": "1.0.0"}',
+        '{"name": "nw"}',
         encoding="utf-8",
     )
     agents = plugin_output_dir / "agents"
@@ -67,7 +67,7 @@ def plugin_without_des(plugin_output_dir: Path, build_result: dict[str, Any]):
     """Create a plugin directory missing scripts/des/."""
     (plugin_output_dir / ".claude-plugin").mkdir(parents=True)
     (plugin_output_dir / ".claude-plugin" / "plugin.json").write_text(
-        '{"name": "nw", "version": "1.0.0"}',
+        '{"name": "nw"}',
         encoding="utf-8",
     )
     agents = plugin_output_dir / "agents"
@@ -98,7 +98,6 @@ def minimal_valid_plugin(plugin_output_dir: Path, build_result: dict[str, Any]):
         json.dumps(
             {
                 "name": "nw",
-                "version": "0.0.1",
             }
         ),
         encoding="utf-8",

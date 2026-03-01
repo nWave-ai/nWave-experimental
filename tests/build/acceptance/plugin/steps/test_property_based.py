@@ -5,7 +5,7 @@ independently of the BDD scenarios. These complement the @property-tagged BDD
 scenarios by testing properties with generated inputs.
 
 Properties tested:
-  1. Version string round-trip through metadata generation
+  1. Plugin name preserved in metadata generation
   2. DES import rewriting is idempotent
   3. Import rewriting preserves non-DES content
   4. Hook entries always produce exactly 5 events with correct names
@@ -25,17 +25,16 @@ from scripts.build_plugin import (
 
 
 # ---------------------------------------------------------------------------
-# Property 1: Version string round-trip
+# Property 1: Plugin name preserved in metadata
 # ---------------------------------------------------------------------------
 
 
-@given(version=st.from_regex(r"[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}", fullmatch=True))
-@settings(max_examples=30)
-def test_property_version_preserved_in_metadata(version: str):
-    """generate_plugin_metadata always preserves the exact version string."""
-    metadata = generate_plugin_metadata("nw", version)
-    assert metadata["version"] == version
+def test_property_plugin_name_preserved_in_metadata():
+    """generate_plugin_metadata always preserves the exact plugin name."""
+    metadata = generate_plugin_metadata("nw")
     assert metadata["name"] == "nw"
+    assert "description" in metadata
+    assert "author" in metadata
 
 
 # ---------------------------------------------------------------------------

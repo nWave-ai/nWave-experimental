@@ -312,10 +312,10 @@ jobs:
       - name: Package plugin as zip
         id: plugin_zip
         run: |
-          # Version will be extracted in the next step; use pyproject.toml as source
+          # Version from marketplace-manifest.json (plugin.json is minimal per Claude Code spec)
           PLUGIN_VERSION=$(python3 -c "
           import json
-          meta = json.load(open('plugin/.claude-plugin/plugin.json'))
+          meta = json.load(open('plugin/marketplace-manifest.json'))
           print(meta.get('version', ''))
           ")
           ZIP_NAME="nwave-plugin-v${PLUGIN_VERSION}.zip"
@@ -926,7 +926,7 @@ jobs:
           NWAVE_VERSION="${{ steps.nwave_version.outputs.version }}"
           PLUGIN_VERSION=$(python3 -c "
           import json
-          meta = json.load(open('nwave-plugin-artifact/.claude-plugin/plugin.json'))
+          meta = json.load(open('nwave-plugin-artifact/marketplace-manifest.json'))
           print(meta.get('version', ''))
           ")
           if [[ "$PLUGIN_VERSION" != "$NWAVE_VERSION" ]]; then

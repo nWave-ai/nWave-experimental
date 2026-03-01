@@ -202,11 +202,15 @@ def read_version(pyproject_path: Path) -> tuple[str | None, str | None]:
 # ---------------------------------------------------------------------------
 
 
-def generate_plugin_metadata(plugin_name: str, version: str) -> dict:
-    """Generate plugin.json metadata content."""
+def generate_plugin_metadata(plugin_name: str) -> dict:
+    """Generate plugin.json metadata content.
+
+    Only includes fields used by official Anthropic plugins (name, description,
+    author). Extra fields (version, homepage, keywords, etc.) cause Claude Code
+    to silently fail plugin command discovery.
+    """
     return {
         "name": plugin_name,
-        "version": version,
         "description": (
             "nWave: AI-powered workflow framework — 23 agents, 98+ skills, "
             "TDD enforcement, and wave-based development methodology for Claude Code"
@@ -215,19 +219,6 @@ def generate_plugin_metadata(plugin_name: str, version: str) -> dict:
             "name": "nWave AI",
             "email": "hello@nwave.ai",
         },
-        "homepage": "https://nwave.ai",
-        "repository": "https://github.com/nwave-ai/nwave",
-        "license": "MIT",
-        "privacy_policy": "https://github.com/nwave-ai/nwave/blob/main/PRIVACY.md",
-        "keywords": [
-            "tdd",
-            "workflow",
-            "agents",
-            "software-craft",
-            "bdd",
-            "outside-in-tdd",
-            "code-quality",
-        ],
     }
 
 
@@ -811,14 +802,14 @@ def build(config: BuildConfig, *, version_override: str | None = None) -> BuildR
     steps.append(wrapper_result)
 
     # Step 9: Generate and write metadata
-    metadata = generate_plugin_metadata(config.plugin_name, version)
+    metadata = generate_plugin_metadata(config.plugin_name)
     metadata_result = write_metadata(plugin_dir, metadata)
     steps.append(metadata_result)
 
     return BuildResult(
         output_dir=plugin_dir,
         success=True,
-        metadata=metadata,
+        metadata={**metadata, "version": version},
         steps=tuple(steps),
     )
 
@@ -843,7 +834,7 @@ def _validate_metadata(plugin_dir: Path) -> tuple[bool, list[str]]:
         errors.append(f"Invalid metadata: plugin.json is not valid JSON ({exc})")
         return False, errors
 
-    for required_field in ("name", "version"):
+    for required_field in ("name",):
         if required_field not in data:
             errors.append(
                 f"Invalid metadata: plugin.json missing required field '{required_field}'"

@@ -140,7 +140,6 @@ def _create_plugin_structure(plugin_dir: Path) -> None:
         json.dumps(
             {
                 "name": "nw",
-                "version": "2.18.0",
             },
             indent=2,
         )
