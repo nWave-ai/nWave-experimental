@@ -38,7 +38,7 @@ Present via AskUserQuestion: project name|last modified date|most recent first. 
 
 ### Step 3: Wave Progress Detection
 
-Check each wave's artifacts using Wave Detection Rules in `~/.claude/nWave/data/wizard-shared-rules.md`.
+Check each wave's artifacts using Wave Detection Rules in `~/.claude/nWave/skills/common/wizard-shared-rules.md`.
 
 ### Step 4: Anomaly Detection
 

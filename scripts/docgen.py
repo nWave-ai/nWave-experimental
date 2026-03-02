@@ -301,7 +301,11 @@ def enrich(data: dict[str, list]) -> dict[str, list]:
                 )
 
     # Validate skill→agent refs (parent dir must match an agent)
+    # Shared skill directories (e.g., "common") are not agent-specific
+    shared_skill_dirs = {"common"}
     for skill in data["skills"]:
+        if skill["agent_dir"] in shared_skill_dirs:
+            continue
         if skill["agent_dir"] not in agent_dirs:
             raise DocgenError(
                 f"Skill '{skill['name']}' in dir '{skill['agent_dir']}' has no matching agent"
@@ -456,8 +460,11 @@ def render_skills_index(skills: list[Skill]) -> str:
     for s in skills:
         by_agent.setdefault(s["agent_dir"], []).append(s)
     for agent_dir in sorted(by_agent):
-        agent_link = f"[nw-{agent_dir}](../agents/nw-{agent_dir}.md)"
-        lines.append(f"## {agent_link}")
+        if agent_dir == "common":
+            lines.append("## Shared Skills")
+        else:
+            agent_link = f"[nw-{agent_dir}](../agents/nw-{agent_dir}.md)"
+            lines.append(f"## {agent_link}")
         lines.append("")
         for s in sorted(by_agent[agent_dir], key=lambda x: x["name"]):
             skill_path = f"../../../nWave/skills/{s['agent_dir']}/{s['name']}.md"

@@ -24,13 +24,13 @@ Accept: feature description (new project)|`--from` flag with optional feature ID
 
 ### Step 2: Project Resolution
 
-**New project (description provided):** Derive feature ID per `~/.claude/nWave/data/wizard-shared-rules.md` (Feature ID Derivation). Show derived ID, allow override via AskUserQuestion. Create `docs/feature/{feature-id}/`.
+**New project (description provided):** Derive feature ID per `~/.claude/nWave/skills/common/wizard-shared-rules.md` (Feature ID Derivation). Show derived ID, allow override via AskUserQuestion. Create `docs/feature/{feature-id}/`.
 
 **Existing project (no description):** Scan `docs/feature/` (same as `/nw:continue` Step 1-2). If multiple, ask user to select.
 
 ### Step 3: Detect Current Progress
 
-Check wave artifacts using Wave Detection Rules in `~/.claude/nWave/data/wizard-shared-rules.md`.
+Check wave artifacts using Wave Detection Rules in `~/.claude/nWave/skills/common/wizard-shared-rules.md`.
 
 ### Step 4: Determine Wave Sequence
 

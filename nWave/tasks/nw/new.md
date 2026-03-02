@@ -32,7 +32,7 @@ Do NOT proceed until you have a clear, actionable description.
 
 ### Step 2: Feature ID Derivation
 
-Derive feature ID per rules in `~/.claude/nWave/data/wizard-shared-rules.md` (section: Feature ID Derivation).
+Derive feature ID per rules in `~/.claude/nWave/skills/common/wizard-shared-rules.md` (section: Feature ID Derivation).
 
 Examples: "Add rate limiting to the API gateway" -> `rate-limiting-api-gateway` | "OAuth2 upgrade" -> `oauth2-upgrade` | "Implement a real-time notification system with WebSocket support for mobile and desktop clients" -> `real-time-notification-system-websocket`
 
