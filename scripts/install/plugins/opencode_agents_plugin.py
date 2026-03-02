@@ -13,12 +13,14 @@ user-created ones.
 import json
 from pathlib import Path
 
-import yaml
-
 from scripts.install.plugins.base import (
     InstallationPlugin,
     InstallContext,
     PluginResult,
+)
+from scripts.install.plugins.opencode_common import (
+    parse_frontmatter,
+    render_frontmatter,
 )
 
 
@@ -54,33 +56,6 @@ def _find_agents_source(context: InstallContext) -> Path | None:
         return project_agents
 
     return None
-
-
-def _parse_frontmatter(content: str) -> tuple[dict, str]:
-    """Split YAML frontmatter from body content.
-
-    Expects content in the form:
-        ---
-        key: value
-        ---
-
-        Body content here.
-
-    Args:
-        content: Full file content with YAML frontmatter
-
-    Returns:
-        Tuple of (parsed frontmatter dict, body string including leading newline)
-    """
-    if not content.startswith("---"):
-        return {}, content
-
-    end_index = content.index("---", 3)
-    frontmatter_text = content[3:end_index].strip()
-    body = content[end_index + 3 :]
-
-    frontmatter = yaml.safe_load(frontmatter_text) or {}
-    return frontmatter, body
 
 
 def _parse_tools(tools_value: str | list) -> dict[str, bool]:
@@ -136,27 +111,6 @@ def _transform_frontmatter(frontmatter: dict) -> dict:
     return result
 
 
-def _render_frontmatter(frontmatter: dict) -> str:
-    """Serialize a frontmatter dict back to YAML frontmatter string.
-
-    Uses block style for the tools mapping (not flow style) because
-    OpenCode's Zod parser expects a record format.
-
-    Args:
-        frontmatter: Transformed frontmatter dict
-
-    Returns:
-        String in "---\\nkey: value\\n---" format
-    """
-    yaml_text = yaml.dump(
-        frontmatter,
-        default_flow_style=False,
-        sort_keys=False,
-        allow_unicode=True,
-    )
-    return f"---\n{yaml_text}---"
-
-
 def _transform_agent(content: str) -> str:
     """Full transformation pipeline: parse, transform, render with body.
 
@@ -166,9 +120,9 @@ def _transform_agent(content: str) -> str:
     Returns:
         Transformed agent file content (OpenCode format)
     """
-    frontmatter, body = _parse_frontmatter(content)
+    frontmatter, body = parse_frontmatter(content)
     transformed = _transform_frontmatter(frontmatter)
-    rendered = _render_frontmatter(transformed)
+    rendered = render_frontmatter(transformed)
     return rendered + body
 
 

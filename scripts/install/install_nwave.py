@@ -229,9 +229,14 @@ class NWaveInstaller:
         registry.register(DESPlugin())
         # OpenCode plugins (registered when opencode detected)
         if target_platforms and "opencode" in target_platforms:
-            registry.register(OpenCodeSkillsPlugin())
-            registry.register(OpenCodeAgentsPlugin())
-            registry.register(OpenCodeCommandsPlugin())
+            opencode_skills = OpenCodeSkillsPlugin()
+            opencode_agents = OpenCodeAgentsPlugin()
+            opencode_commands = OpenCodeCommandsPlugin()
+            registry.register(opencode_skills)
+            registry.register(opencode_agents)
+            registry.register(opencode_commands)
+            opencode_agents.set_dependencies(["opencode-skills"])
+            opencode_commands.set_dependencies(["opencode-skills"])
         return registry
 
     def install_framework(self) -> bool:

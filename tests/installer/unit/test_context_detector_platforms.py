@@ -6,7 +6,11 @@ based on filesystem markers, environment variables, and binary availability.
 
 from pathlib import Path
 
-from scripts.install.context_detector import TargetPlatform, detect_target_platforms
+from scripts.install.context_detector import (
+    TargetPlatform,
+    _detect_claude_code,
+    detect_target_platforms,
+)
 
 
 class TestDetectClaudeCodeViaDirctory:
@@ -34,6 +38,25 @@ class TestDetectClaudeCodeViaDirctory:
         platforms = detect_target_platforms()
 
         assert TargetPlatform.CLAUDE_CODE in platforms
+
+
+class TestDetectClaudeCodeEmptyEnvVar:
+    """Verify CLAUDE_CODE="" does NOT trigger Claude Code detection."""
+
+    def test_detect_claude_code_empty_env_var_does_not_trigger(
+        self, monkeypatch, tmp_path
+    ):
+        """_detect_claude_code() returns False when CLAUDE_CODE="" (empty string).
+
+        The bool() check on empty string correctly returns False, meaning
+        an empty CLAUDE_CODE env var is not treated as a positive signal.
+        """
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("CLAUDE_CODE", "")
+
+        result = _detect_claude_code()
+
+        assert result is False
 
 
 class TestDetectOpenCodeViaBinary:

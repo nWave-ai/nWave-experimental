@@ -18,10 +18,10 @@ from unittest.mock import MagicMock
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.opencode_commands_plugin import (
     OpenCodeCommandsPlugin,
-    _parse_frontmatter,
     _transform_command,
     _transform_frontmatter,
 )
+from scripts.install.plugins.opencode_common import parse_frontmatter
 
 
 def _make_context(tmp_path):
@@ -214,10 +214,10 @@ class TestInstallPreservesBody:
         content = command_file.read_text()
 
         # Parse source to get original body
-        _, source_body = _parse_frontmatter(_COMMAND_WITH_ARGUMENT_HINT)
+        _, source_body = parse_frontmatter(_COMMAND_WITH_ARGUMENT_HINT)
 
         # Parse output to get transformed body
-        _, output_body = _parse_frontmatter(content)
+        _, output_body = parse_frontmatter(content)
 
         assert output_body == source_body
 
@@ -309,7 +309,7 @@ class TestTransformCommandFullPipeline:
         """
         result = _transform_command(_COMMAND_WITH_DISABLE_MODEL)
 
-        frontmatter, body = _parse_frontmatter(result)
+        frontmatter, body = parse_frontmatter(result)
 
         assert (
             frontmatter["description"]
@@ -329,7 +329,7 @@ class TestTransformCommandFullPipeline:
         """
         result = _transform_command(_COMMAND_DESCRIPTION_ONLY)
 
-        frontmatter, body = _parse_frontmatter(result)
+        frontmatter, body = parse_frontmatter(result)
 
         assert frontmatter["description"] == "Simple command with only description."
         assert len(frontmatter) == 1  # only description remains

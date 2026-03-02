@@ -19,11 +19,11 @@ from unittest.mock import MagicMock
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.opencode_agents_plugin import (
     OpenCodeAgentsPlugin,
-    _parse_frontmatter,
     _parse_tools,
     _transform_agent,
     _transform_frontmatter,
 )
+from scripts.install.plugins.opencode_common import parse_frontmatter
 
 
 def _make_context(tmp_path):
@@ -281,10 +281,10 @@ class TestInstallPreservesBody:
         content = agent_file.read_text()
 
         # Parse source to get original body
-        _, source_body = _parse_frontmatter(_CSV_TOOLS_AGENT)
+        _, source_body = parse_frontmatter(_CSV_TOOLS_AGENT)
 
         # Parse output to get transformed body
-        _, output_body = _parse_frontmatter(content)
+        _, output_body = parse_frontmatter(content)
 
         assert output_body == source_body
 
@@ -377,7 +377,7 @@ class TestTransformAgentFullPipeline:
         """
         result = _transform_agent(_CSV_TOOLS_AGENT)
 
-        frontmatter, body = _parse_frontmatter(result)
+        frontmatter, body = parse_frontmatter(result)
 
         assert frontmatter["mode"] == "subagent"
         assert frontmatter["steps"] == 50
@@ -407,7 +407,7 @@ class TestTransformAgentFullPipeline:
         """
         result = _transform_agent(_ARRAY_TOOLS_AGENT)
 
-        frontmatter, body = _parse_frontmatter(result)
+        frontmatter, body = parse_frontmatter(result)
 
         assert frontmatter["tools"] == {
             "read": True,
