@@ -6,34 +6,29 @@ nWave runs inside [Claude Code](https://claude.com/product/claude-code). You des
 
 ## Quick Start
 
-Choose your installation method. Both work equally well; the plugin method is recommended for most users.
+Choose your installation method. Both work equally well.
 
-### Plugin (Recommended)
+### Plugin (Beta Preview)
 
 From Claude Code, run:
 
 ```
 /plugin marketplace add nwave-ai/nwave
-/plugin install nwave@nwave-marketplace
+/plugin install nw@nwave-marketplace
 ```
 
 Restart Claude Code and type `/nw:` to see all available commands.
 
-> **Coming soon**: Official Anthropic plugin marketplace integration:
-> ```
-> /plugin install nwave@claude-plugins-official
-> ```
+### CLI Installer (Recommended)
 
-### CLI Installer
-
-For developers or users who need advanced configuration:
+Install from PyPI with no repository clone needed:
 
 ```bash
 pipx install nwave-ai
 nwave-ai install
 ```
 
-Installs from PyPI with no repository clone needed. Agents and commands go to `~/.claude/`.
+Agents and commands go to `~/.claude/`.
 
 > **Don't have pipx?** Install with: `pip install pipx && pipx ensurepath`, then restart your terminal.
 > **Windows users**: Use WSL (Windows Subsystem for Linux). Install with: `wsl --install`
@@ -44,8 +39,9 @@ Full setup details: **[Installation Guide](https://github.com/nWave-ai/nWave/blo
 
 | Scenario | Use | Why |
 |----------|-----|-----|
-| First time | Plugin | Zero dependencies, instant |
-| Team rollout | Plugin | Same command everywhere |
+| First time | CLI | Stable, full-featured |
+| Team rollout | CLI | Same command everywhere |
+| Early adopter | Plugin | Zero dependencies, instant (beta) |
 | Contributing | CLI | Dev scripts, internals access |
 | Already on CLI | Either | Both coexist safely |
 
@@ -80,6 +76,21 @@ nwave-ai install
 ```
 
 Control check frequency via `update_check.frequency` in `~/.nwave/des-config.json`: `daily`, `weekly`, `every_session`, or `never`.
+
+## Uninstalling
+
+**Plugin method:**
+```
+/plugin uninstall nw
+```
+
+**CLI method:**
+```bash
+nwave-ai uninstall              # Remove agents, commands, config, DES hooks
+pipx uninstall nwave-ai        # Remove the Python package
+```
+
+Both methods remove agents, commands, and configuration from `~/.claude/`. Your project files are unaffected.
 
 ## Token Efficiency — Scale Quality to Stakes
 
@@ -148,7 +159,7 @@ The full workflow has six waves. Use all six for greenfield projects, or jump st
 | DISTILL | `/nw:distill` | acceptance-designer | Given-When-Then tests |
 | DELIVER | `/nw:deliver` | software-crafter | Working implementation |
 
-22 agents total: 6 wave agents, 5 cross-wave specialists, 11 peer reviewers. Full list: **[Commands Reference](docs/reference/commands/index.md)**
+23 agents total: 6 wave agents, 6 cross-wave specialists, 11 peer reviewers. Full list: **[Commands Reference](docs/reference/commands/index.md)**
 
 ## Documentation
 

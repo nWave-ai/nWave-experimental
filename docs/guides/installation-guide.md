@@ -1,8 +1,20 @@
 # Installation Guide
 
-Install nWave to your global Claude Code configuration. This adds 22 specialized agents (11 primary + 11 reviewers) and 18 slash commands across all your projects.
+Install nWave to your global Claude Code configuration. This adds 23 specialized agents (12 primary + 11 reviewers) and 22 slash commands across all your projects.
 
-## Prerequisites
+## Choose Your Method
+
+| Scenario | Use | Why |
+|----------|-----|-----|
+| First time | CLI | Stable, full-featured |
+| Team rollout | CLI | Same command everywhere |
+| Early adopter | Plugin | Zero dependencies, instant (beta) |
+| Contributing | CLI | Dev scripts, internals access |
+| Already on CLI | Either | Both coexist safely |
+
+## CLI Installer (Recommended)
+
+### Prerequisites
 
 - **Python 3.10+**
 - **Claude Code** installed
@@ -13,8 +25,6 @@ If you need pipx:
 pip install pipx
 pipx ensurepath
 ```
-
-## Installation
 
 ### Using pipx (Recommended)
 
@@ -32,7 +42,9 @@ nwave-ai install
 
 Then close and reopen Claude Code. The nWave agents and slash commands will appear in your command palette.
 
-## Advanced Options
+> **Windows users**: Use WSL (Windows Subsystem for Linux). Install with: `wsl --install`
+
+### Advanced Options
 
 | Command | Purpose |
 |---------|---------|
@@ -41,14 +53,29 @@ Then close and reopen Claude Code. The nWave agents and slash commands will appe
 | `nwave-ai install --restore` | Restore from recent backup |
 | `nwave-ai version` | Show installed version |
 
+## Plugin (Beta Preview)
+
+The plugin method installs nWave directly from the Claude Code marketplace. No Python or pipx required.
+
+From Claude Code, run:
+
+```
+/plugin marketplace add nwave-ai/nwave
+/plugin install nw@nwave-marketplace
+```
+
+Restart Claude Code and type `/nw:` to see all available commands.
+
+> The plugin method is in beta preview. It provides the same agents and commands as the CLI installer. If you encounter issues, switch to the CLI method above.
+
 ## What Gets Installed
 
-The installer sets up components in your `~/.claude/` directory:
+Both methods install the same components to your `~/.claude/` directory:
 
 ```
 ~/.claude/
-├── agents/nw/                 # 22 agents (11 primary + 11 reviewers)
-├── commands/nw/               # 18 slash commands
+├── agents/nw/                 # 23 agents (12 primary + 11 reviewers)
+├── commands/nw/               # 22 slash commands
 ├── templates/                 # Wave and DES templates
 ├── skills/                    # Agent knowledge files
 ├── scripts/                   # DES utilities
@@ -59,7 +86,7 @@ All agents and commands become available globally across all Claude Code project
 
 ## DES Hooks
 
-The installer registers DES (Deterministic Execution System) hooks in your Claude Code settings:
+Both methods register DES (Deterministic Execution System) hooks in your Claude Code settings:
 
 - Pre-task validation
 - Post-tool-use monitoring
@@ -83,10 +110,20 @@ To customize DES behavior for a specific project, create `.nwave/des-config.json
 }
 ```
 
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `audit_log_enabled` | `true` | Enable DES execution audit trail for debugging |
+| `audit_log_path` | `".nwave/audit.log"` | Where to write audit records |
+| `validation_enabled` | `true` | Enforce TDD phase sequence; set `false` to disable DES checks |
+| `tool_monitoring_enabled` | `true` | Monitor Task invocations for unbounded loops |
+| `max_execution_time` | `3600` | Kill subagent after this many seconds (default: 1 hour) |
+| `subagent_timeout` | `300` | Kill unresponsive subagent after this many seconds (default: 5 min) |
+
 Settings here override global defaults for that project only.
 
 ## Updating
 
+**CLI method:**
 ```bash
 pipx upgrade nwave-ai
 nwave-ai install
@@ -94,24 +131,52 @@ nwave-ai install
 
 The installer automatically backs up your configuration before updating, allowing rollback if needed.
 
-## Uninstalling
-
-```bash
-nwave-ai uninstall
-pipx uninstall nwave-ai
+**Plugin method:**
+```
+/plugin marketplace update nwave-marketplace
 ```
 
-This removes agents, commands, templates, and DES hooks. Your project files are unaffected.
+Or enable auto-updates in Claude Code plugin settings.
+
+nWave checks for new versions when you open Claude Code. Control check frequency via `update_check.frequency` in `~/.nwave/des-config.json`:
+
+| Value | Behavior |
+|-------|----------|
+| `daily` | Check once per day |
+| `weekly` | Check once per week |
+| `every_session` | Check on every session start (default) |
+| `never` | Disable update checks |
+
+## Uninstalling
+
+**CLI method:**
+```bash
+nwave-ai uninstall              # Removes agents, commands, config, DES hooks from ~/.claude/
+pipx uninstall nwave-ai        # Removes the nwave-ai Python package itself
+```
+
+**Plugin method:**
+```
+/plugin uninstall nw
+```
+
+Both methods remove agents, commands, and configuration from `~/.claude/`. Your project files (`.nwave/`, source code) are never touched.
 
 ## Verification
 
-After installation:
+### CLI method
 
 ```bash
 nwave-ai version
 ```
 
-In Claude Code, type `@` to see agents or `/nw:` to see commands. You should see all 22 agents and 18 commands available.
+Then in Claude Code, type `@` to see agents or `/nw:` to see commands.
+
+### Plugin method
+
+Restart Claude Code after installation. Type `/nw:` in the command palette — you should see all 22 commands. Type `@nw` to see agents.
+
+> If commands don't appear after plugin install, quit Claude Code completely and reopen it.
 
 ## Troubleshooting
 
@@ -221,7 +286,7 @@ This restores your previous configuration from the most recent backup.
 
 After installation, navigate to any project and start your first workflow:
 
-```bash
+```
 # For fresh features (greenfield)
 /nw:discover "feature market research"
 /nw:discuss "feature requirements"
