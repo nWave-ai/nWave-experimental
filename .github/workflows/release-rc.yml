@@ -617,8 +617,8 @@ jobs:
           mkdir -p beta-target/.claude-plugin
           mkdir -p beta-target/plugins/nwave
 
-          # Copy plugin content into marketplace plugin directory
-          cp -r /tmp/plugin-content/* beta-target/plugins/nwave/
+          # Copy plugin content into marketplace plugin directory (use /. to include dotfiles like .claude-plugin/)
+          cp -r /tmp/plugin-content/. beta-target/plugins/nwave/
 
           # Generate marketplace.json
           PYTHONPATH=source python3 -c "
