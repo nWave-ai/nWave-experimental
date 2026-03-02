@@ -39,6 +39,7 @@ Usage:
 """
 
 import os
+import shutil
 import sys
 from enum import Enum
 from pathlib import Path
@@ -205,3 +206,69 @@ def is_container_environment() -> bool:
     kubernetes_host = bool(os.environ.get("KUBERNETES_SERVICE_HOST", ""))
 
     return dockerenv_exists or kubernetes_host
+
+
+class TargetPlatform(Enum):
+    """Target AI coding platforms for nWave installation.
+
+    CLAUDE_CODE: Anthropic's Claude Code CLI
+    OPENCODE: OpenCode AI coding assistant
+    """
+
+    CLAUDE_CODE = "claude_code"
+    OPENCODE = "opencode"
+
+
+def _detect_claude_code() -> bool:
+    """Detect if Claude Code is available for installation.
+
+    Checks two signals:
+    - ~/.claude/ directory exists
+    - CLAUDE_CODE environment variable is set
+
+    Returns:
+        True if any Claude Code signal is detected.
+    """
+    claude_dir_exists = (Path.home() / ".claude").is_dir()
+    claude_env_set = bool(os.environ.get("CLAUDE_CODE", ""))
+    return claude_dir_exists or claude_env_set
+
+
+def _detect_opencode() -> bool:
+    """Detect if OpenCode is available for installation.
+
+    Checks two signals:
+    - `opencode` binary in PATH (via shutil.which)
+    - ~/.config/opencode/ directory exists
+
+    Returns:
+        True if any OpenCode signal is detected.
+    """
+    opencode_binary = shutil.which("opencode") is not None
+    opencode_config_exists = (Path.home() / ".config" / "opencode").is_dir()
+    return opencode_binary or opencode_config_exists
+
+
+def detect_target_platforms() -> set[TargetPlatform]:
+    """Auto-detect which AI coding platforms are available for installation.
+
+    Detection signals:
+    - Claude Code: ~/.claude/ directory exists OR CLAUDE_CODE env var set
+    - OpenCode: `opencode` binary in PATH (shutil.which) OR ~/.config/opencode/ exists
+
+    Returns:
+        Set of detected platforms. Defaults to {CLAUDE_CODE} if nothing detected.
+    """
+    platforms: set[TargetPlatform] = set()
+
+    if _detect_claude_code():
+        platforms.add(TargetPlatform.CLAUDE_CODE)
+
+    if _detect_opencode():
+        platforms.add(TargetPlatform.OPENCODE)
+
+    # Default to Claude Code if nothing detected
+    if not platforms:
+        platforms.add(TargetPlatform.CLAUDE_CODE)
+
+    return platforms

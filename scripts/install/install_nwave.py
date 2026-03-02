@@ -23,6 +23,7 @@ if str(_project_root) not in sys.path:
 
 # Support both standalone execution and package import
 try:
+    from scripts.install.context_detector import detect_target_platforms
     from scripts.install.install_utils import (
         BackupManager,
         Logger,
@@ -35,6 +36,7 @@ try:
     from scripts.install.plugins.base import InstallContext
     from scripts.install.plugins.commands_plugin import CommandsPlugin
     from scripts.install.plugins.des_plugin import DESPlugin
+    from scripts.install.plugins.opencode_skills_plugin import OpenCodeSkillsPlugin
     from scripts.install.plugins.registry import PluginRegistry
     from scripts.install.plugins.skills_plugin import SkillsPlugin
     from scripts.install.plugins.templates_plugin import TemplatesPlugin
@@ -42,6 +44,7 @@ try:
     from scripts.install.preflight_checker import PreflightChecker
 except ImportError:
     # Fallback for standalone execution from scripts/install directory
+    from context_detector import detect_target_platforms
     from install_utils import (
         BackupManager,
         Logger,
@@ -54,6 +57,7 @@ except ImportError:
     from plugins.base import InstallContext
     from plugins.commands_plugin import CommandsPlugin
     from plugins.des_plugin import DESPlugin
+    from plugins.opencode_skills_plugin import OpenCodeSkillsPlugin
     from plugins.registry import PluginRegistry
     from plugins.skills_plugin import SkillsPlugin
     from plugins.templates_plugin import TemplatesPlugin
@@ -115,9 +119,17 @@ _TAGLINES = [
 class NWaveInstaller:
     """nWave framework installer."""
 
-    def __init__(self, dry_run: bool = False):
-        """Initialize installer."""
+    def __init__(
+        self, dry_run: bool = False, platform_override: set[str] | None = None
+    ):
+        """Initialize installer.
+
+        Args:
+            dry_run: When True, show what would be done without making changes.
+            platform_override: Override auto-detected platforms. None means auto-detect.
+        """
         self.dry_run = dry_run
+        self._platform_override = platform_override
         self.script_dir = Path(__file__).parent
         self.project_root = PathUtils.get_project_root(self.script_dir)
         self.claude_config_dir = PathUtils.get_claude_config_dir()
@@ -189,22 +201,31 @@ class NWaveInstaller:
         self.logger.info(f"  🍾 Restoration complete from {latest_backup}")
         return True
 
-    def _create_plugin_registry(self, silent: bool = False) -> PluginRegistry:
+    def _create_plugin_registry(
+        self, silent: bool = False, target_platforms: set[str] | None = None
+    ) -> PluginRegistry:
         """Create and configure the plugin registry with all installation plugins.
 
         Args:
             silent: When True, pass logger=None to suppress registration log messages.
+            target_platforms: Set of platform strings to install for.
+                When None or contains "claude_code", registers Claude Code plugins.
+                When contains "opencode", also registers OpenCode plugins.
 
         Returns:
-            PluginRegistry configured with agents, commands, templates, utilities, and DES plugins.
+            PluginRegistry configured with plugins for the target platforms.
         """
         registry = PluginRegistry(logger=None if silent else self.logger)
+        # Claude Code plugins (always registered -- default platform)
         registry.register(AgentsPlugin())
         registry.register(CommandsPlugin())
         registry.register(TemplatesPlugin())
         registry.register(SkillsPlugin())
         registry.register(UtilitiesPlugin())
         registry.register(DESPlugin())
+        # OpenCode plugins (registered when opencode detected)
+        if target_platforms and "opencode" in target_platforms:
+            registry.register(OpenCodeSkillsPlugin())
         return registry
 
     def install_framework(self) -> bool:
@@ -252,8 +273,13 @@ class NWaveInstaller:
         # Create target directories
         self.claude_config_dir.mkdir(parents=True, exist_ok=True)
 
+        # Detect target platforms
+        detected_platforms = {p.value for p in detect_target_platforms()}
+        if self._platform_override is not None:
+            detected_platforms = self._platform_override
+
         # Create plugin registry and install all components
-        registry = self._create_plugin_registry()
+        registry = self._create_plugin_registry(target_platforms=detected_platforms)
 
         # Create installation context with all required utilities
         context = InstallContext(
@@ -264,6 +290,7 @@ class NWaveInstaller:
             project_root=self.project_root,
             framework_source=self.framework_source,
             dry_run=self.dry_run,
+            target_platforms=detected_platforms,
         )
 
         self.logger.info("  📑 Installing Context...")
@@ -616,6 +643,24 @@ For more information: https://github.com/nWave-ai/nWave
     print(help_text)
 
 
+def _resolve_platform_override(platform_flag: str) -> set[str] | None:
+    """Resolve CLI --platform flag to a platform override set.
+
+    Args:
+        platform_flag: One of "auto", "claude-code", "opencode", "all".
+
+    Returns:
+        None for auto-detect, or a set of platform string values.
+    """
+    platform_map = {
+        "auto": None,
+        "claude-code": {"claude_code"},
+        "opencode": {"opencode"},
+        "all": {"claude_code", "opencode"},
+    }
+    return platform_map[platform_flag]
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -627,6 +672,12 @@ def main():
         "--dry-run", action="store_true", help="Show what would be done"
     )
     parser.add_argument("--help", "-h", action="store_true", help="Show help")
+    parser.add_argument(
+        "--platform",
+        choices=["auto", "claude-code", "opencode", "all"],
+        default="auto",
+        help="Target platform (default: auto-detect)",
+    )
 
     args = parser.parse_args()
 
@@ -634,7 +685,12 @@ def main():
         show_help()
         return 0
 
-    installer = NWaveInstaller(dry_run=args.dry_run)
+    # Resolve platform override from CLI flag
+    platform_override = _resolve_platform_override(args.platform)
+
+    installer = NWaveInstaller(
+        dry_run=args.dry_run, platform_override=platform_override
+    )
 
     # Show title panel at startup
     show_title_panel(installer.logger, dry_run=args.dry_run)
