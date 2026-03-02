@@ -78,7 +78,7 @@ Stories pass ALL 8 items before proceeding to DESIGN wave.
 ```markdown
 ## Definition of Ready Validation
 
-**Story**: {story-id}
+### Story: {story-id}
 
 | DoR Item | Status | Evidence/Issue |
 |----------|--------|----------------|
@@ -91,7 +91,7 @@ Stories pass ALL 8 items before proceeding to DESIGN wave.
 | Technical notes | PASS/FAIL | {evidence or issue} |
 | Dependencies tracked | PASS/FAIL | {evidence or issue} |
 
-**DoR Status**: PASSED / BLOCKED
+### DoR Status: PASSED / BLOCKED
 ```
 
 ### Failure Recovery

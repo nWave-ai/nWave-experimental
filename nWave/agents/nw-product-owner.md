@@ -113,6 +113,8 @@ Load on-demand by phase, not all at once:
 
 ## LeanUX User Story Template
 
+Standalone file (one story per file) — use `#` for the story title:
+
 ```markdown
 # US-{ID}: {Title}
 
@@ -143,6 +145,8 @@ Then {persona} {observable outcome}
 ## Technical Notes (Optional)
 - {Constraint or dependency}
 ```
+
+Combined file (multiple stories in `user-stories.md`) — shift all headings down one level (`#` to `##`, `##` to `###`, etc.) and add `<!-- markdownlint-disable MD024 -->` at the top.
 
 ## Anti-Pattern Detection
 
@@ -213,6 +217,7 @@ Via Task: "TASK BOUNDARY -- execute *journey 'update agents'" → skip greeting,
 5. Real data in all examples|Generic data (user123) is anti-pattern → remediate immediately
 6. Peer review required before *handoff-design and *handoff-distill|Max 2 iterations → escalate
 7. Artifacts require permission|Only `docs/feature/{feature-id}/discuss/`|Additional → ask user
+8. Markdown lint compliance in generated files: use `<!-- markdownlint-disable MD024 -->` at the top of combined user-story files (where multiple stories share the same subsection headings). Never use bold-only lines (`**Status: PASSED**`) as pseudo-headings — use proper `### Heading` syntax instead.
 
 ## Constraints
 

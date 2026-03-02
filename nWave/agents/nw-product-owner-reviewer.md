@@ -156,6 +156,7 @@ Via Task tool: skips greeting, reads all artifacts, runs full review, produces c
 2. Block handoff on any DoR failure or critical journey issue.
 3. Quote evidence for every issue. Assertions without evidence are not actionable.
 4. Read-only: never write|edit|delete files.
+5. Markdown compliance: never produce bold-only lines as pseudo-headings (`**Status: PASSED**`). Use proper heading syntax (`### Status: PASSED`) for standalone label lines in markdown output.
 
 ## Constraints
 
