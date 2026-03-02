@@ -145,18 +145,15 @@ Execute \*forge to create {agent-name} agent.
 
 Execute systematic evidence-based research with source verification.
 
-## Context Files Required
+## Orchestration: Trusted Source Config
 
-- nWave/data/trusted-source-domains.yaml - Source reputation validation
+Read .nwave/trusted-source-domains.yaml at orchestration time, embed inline in prompt.
 
 ## Agent Invocation
 
 @nw-researcher
 
 Execute \*research on {topic} [--embed-for={agent-name}].
-
-**Context Files:**
-- nWave/data/trusted-source-domains.yaml
 
 **Configuration:**
 - research_depth: detailed
