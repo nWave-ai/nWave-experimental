@@ -613,12 +613,12 @@ jobs:
 
           # Create marketplace structure in beta-target
           # .claude-plugin/marketplace.json  (marketplace catalog)
-          # plugins/nwave/                   (plugin content)
+          # plugins/nw/                      (plugin content — matches plugin.json name)
           mkdir -p beta-target/.claude-plugin
-          mkdir -p beta-target/plugins/nwave
+          mkdir -p beta-target/plugins/nw
 
           # Copy plugin content into marketplace plugin directory (use /. to include dotfiles like .claude-plugin/)
-          cp -r /tmp/plugin-content/. beta-target/plugins/nwave/
+          cp -r /tmp/plugin-content/. beta-target/plugins/nw/
 
           # Generate marketplace.json
           PYTHONPATH=source python3 -c "
@@ -628,7 +628,7 @@ jobs:
               import json
               from pathlib import Path
 
-              catalog = generate_marketplace_catalog('nwave', '${VERSION}')
+              catalog = generate_marketplace_catalog('nw', '${VERSION}')
               mp_dir = Path('beta-target/.claude-plugin')
               mp_dir.mkdir(parents=True, exist_ok=True)
               (mp_dir / 'marketplace.json').write_text(
@@ -666,8 +666,8 @@ jobs:
           "
 
           # Verify plugin content was copied
-          if [ ! -f beta-target/plugins/nwave/.claude-plugin/plugin.json ]; then
-            echo "::error::Plugin content missing: plugins/nwave/.claude-plugin/plugin.json not found"
+          if [ ! -f beta-target/plugins/nw/.claude-plugin/plugin.json ]; then
+            echo "::error::Plugin content missing: plugins/nw/.claude-plugin/plugin.json not found"
             exit 1
           fi
           echo "Marketplace structure validated successfully"
