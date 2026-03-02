@@ -4,7 +4,7 @@
 Assembles agents, commands, skills, DES module, hooks, and metadata into
 a plugin layout:
   nWave/agents/nw-*.md  -> plugin/agents/nw-*.md
-  nWave/tasks/nw/*.md   -> plugin/commands/nw/*.md     (nw/ prefix = /nw: namespace)
+  nWave/tasks/nw/*.md   -> plugin/commands/*.md         (flat — plugin name provides /nw: prefix)
   nWave/skills/*/       -> plugin/skills/*/           (preserving structure)
   src/des/              -> plugin/scripts/des/         (imports rewritten)
   nWave/templates/*.json-> plugin/scripts/templates/   (DES runtime templates)
@@ -348,13 +348,15 @@ def rewrite_agent_skill_refs(plugin_dir: Path, skills_dir: Path) -> StepResult:
 
 
 def copy_commands(config: BuildConfig, plugin_dir: Path) -> StepResult:
-    """Copy command definitions from tasks/nw/ to commands/nw/.
+    """Copy command definitions from tasks/nw/ to commands/.
 
-    The nw/ subdirectory creates the '/nw:' namespace prefix for slash commands
-    (e.g., commands/nw/deliver.md -> /nw:deliver).
+    Commands go flat into commands/ because the plugin name in plugin.json
+    ("nw") automatically provides the namespace prefix. Claude Code generates
+    slash commands as /{plugin-name}:{command-name}, so commands/deliver.md
+    becomes /nw:deliver.
     """
     source_dir = config.nwave_dir / "tasks" / "nw"
-    dest_dir = plugin_dir / "commands" / "nw"
+    dest_dir = plugin_dir / "commands"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     count = 0
