@@ -14,7 +14,7 @@ description: Tool safety protocols, adversarial output validation, error recover
 - Read-only, low-risk. Primary concern: wasted tokens from broad searches.
 
 ### Write and Edit Tools
-- **Write**: only in allowed dirs (`docs/research/`, `nWave/skills/{agent}/`). Confirm path before writing.
+- **Write**: only in allowed dirs (`docs/research/`, `~/.claude/skills/nw/{agent}/`). Confirm path before writing.
 - **Edit**: only existing research docs. Read first. Verify edit target uniqueness.
 - Confirm output path in allowed directory before every write.
 

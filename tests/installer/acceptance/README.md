@@ -201,8 +201,6 @@ All Deterministic Execution System tests have been relocated to:
 
 ### Outside-In TDD Resources
 - **BDD Methodology**: `nWave/skills/acceptance-designer/bdd-methodology.md`
-- **ATDD Patterns**: `nWave/data/methodologies/atdd-patterns.md`
-- **Outside-In TDD Reference**: `nWave/data/methodologies/outside-in-tdd-reference.md`
 
 ---
 

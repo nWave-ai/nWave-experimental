@@ -74,7 +74,7 @@ Execute comprehensive research, create full doc in `docs/research/{category}/{to
 4. Remove: verbose explanations, extensive examples, redundant cross-refs
 5. Keep: core concepts, practical tools, methodologies, decision heuristics
 6. Make self-contained (no external refs) | Target <1000 tokens/file
-7. Write to `nWave/skills/{agent-name}/{topic}-methodology.md`
+7. Write to `~/.claude/skills/nw/{agent-name}/{topic}-methodology.md`
 
 ### Phase 3: Validation
 Verify all essential concepts present | Confirm practitioner focus | Check self-containment

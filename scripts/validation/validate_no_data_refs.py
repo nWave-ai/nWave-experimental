@@ -34,17 +34,6 @@ _SCAN_DIRS: list[str] = [
     "nWave/tasks",
 ]
 
-# Lines matching a bad pattern are allowed if they also match an allowance
-# context — e.g. docs/research/ used as an output path.
-_ALLOW_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"docs/research/"),
-]
-
-
-def _is_allowed(line: str) -> bool:
-    """Return True if the line's match is an allowed output-path context."""
-    return any(p.search(line) for p in _ALLOW_PATTERNS)
-
 
 def scan_file(filepath: Path) -> list[tuple[int, str, str]]:
     """Scan a single file for bad patterns.
@@ -58,8 +47,6 @@ def scan_file(filepath: Path) -> list[tuple[int, str, str]]:
         return violations
 
     for line_no, line in enumerate(text.splitlines(), start=1):
-        if _is_allowed(line):
-            continue
         for pattern in _BAD_PATTERNS:
             if pattern.search(line):
                 violations.append((line_no, pattern.pattern, line.strip()))

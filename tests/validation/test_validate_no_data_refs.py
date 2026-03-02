@@ -3,8 +3,7 @@
 Validates that:
 - Script exits 0 when no nWave/data/ references found
 - Script exits 1 and reports file:line details when violations found
-- docs/research/ output path mentions are NOT flagged
-- data/config/ references ARE flagged
+- Clean files without any bad patterns exit 0
 """
 
 from __future__ import annotations
@@ -82,11 +81,11 @@ class TestDetectsViolations:
         assert "b.md:1" in result.stdout
 
 
-class TestAllowedPatterns:
-    """docs/research/ output path mentions are NOT flagged."""
+class TestCleanFiles:
+    """Files without bad patterns exit 0."""
 
     def test_docs_research_output_not_flagged(self, tmp_path):
-        """docs/research/ used as output path should not be a violation."""
+        """docs/research/ used as output path is not a bad pattern."""
         _create_scan_dirs(tmp_path)
         ok_file = tmp_path / "nWave" / "agents" / "researcher.md"
         ok_file.write_text("Write research document to docs/research/topic.md\n")
@@ -96,22 +95,18 @@ class TestAllowedPatterns:
             f"False positive on docs/research/ output path:\n{result.stdout}"
         )
 
-    def test_data_research_output_not_flagged(self, tmp_path):
-        """data/research/ used as output context should not be a violation."""
-        _create_scan_dirs(tmp_path)
-        ok_file = tmp_path / "nWave" / "tasks" / "nw" / "research.md"
-        ok_file.write_text("- output_directory: docs/research/\n")
-
-        result = _run_script(tmp_path)
-        assert result.returncode == 0, (
-            f"False positive on docs/research/ output:\n{result.stdout}"
-        )
-
     def test_clean_files_exit_0(self, tmp_path):
         """Files without any data references exit 0."""
         _create_scan_dirs(tmp_path)
         clean_file = tmp_path / "nWave" / "agents" / "clean.md"
         clean_file.write_text("This agent uses nWave/skills/common/rules.md\n")
+
+        result = _run_script(tmp_path)
+        assert result.returncode == 0
+
+    def test_empty_scan_dirs_exit_0(self, tmp_path):
+        """Empty scan directories exit 0."""
+        _create_scan_dirs(tmp_path)
 
         result = _run_script(tmp_path)
         assert result.returncode == 0

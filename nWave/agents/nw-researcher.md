@@ -70,7 +70,7 @@ Organize findings with evidence|citations|confidence ratings. Document gaps and 
 
 ## Critical Rules
 
-- Write only to `docs/research/` or `nWave/skills/{agent}/`. Other paths require explicit permission.
+- Write only to `docs/research/` or `~/.claude/skills/nw/{agent}/`. Other paths require explicit permission.
 - Every major claim requires 3+ independent source citations. Fewer sources = lower confidence rating.
 - Document knowledge gaps with what was searched and why insufficient. Gaps are deliverable.
 - Distinguish facts (sourced) from interpretations (analysis). Label interpretations clearly.
