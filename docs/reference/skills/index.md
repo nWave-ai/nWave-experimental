@@ -21,6 +21,10 @@
 - [critique-dimensions](../../../nWave/skills/agent-builder-reviewer/critique-dimensions.md) — Review dimensions for validating agent quality - template compliance, safety, testing, and priority validation
 - [review-workflow](../../../nWave/skills/agent-builder-reviewer/review-workflow.md) — Detailed review process, v2 validation checklist, and scoring methodology for agent definition reviews
 
+## Shared Skills
+
+- [wizard-shared-rules](../../../nWave/skills/common/wizard-shared-rules.md) — Shared rules for feature ID derivation and wave detection used by /nw:new, /nw:continue, and /nw:fast-forward wizards
+
 ## [nw-data-engineer](../agents/nw-data-engineer.md)
 
 - [data-architecture-patterns](../../../nWave/skills/data-engineer/data-architecture-patterns.md) — Data architecture patterns (warehouse, lake, lakehouse, mesh), ETL/ELT pipelines, streaming architectures, scaling strategies, and schema design patterns
