@@ -647,6 +647,85 @@ jobs:
           sed -i.bak 's|](docs/|](https://github.com/nwave-ai/nwave/tree/main/docs/|g' nwave-target/README.md
           rm -f nwave-target/README.md.bak
 
+      - name: Download plugin artifact for marketplace
+        uses: actions/download-artifact@v4
+        with:
+          name: stable-nwave-plugin
+          path: plugin-artifact/
+
+      - name: Add plugin marketplace structure
+        run: |
+          VERSION="${{ needs.version-calc.outputs.stable_version }}"
+
+          # Unzip plugin artifact
+          mkdir -p /tmp/plugin-content
+          unzip -q plugin-artifact/nwave-plugin-v${VERSION}.zip -d /tmp/plugin-content
+
+          # Clean stale marketplace files from previous releases
+          rm -rf nwave-target/.claude-plugin/
+          rm -rf nwave-target/plugins/
+
+          # Create marketplace structure in nwave-target
+          # .claude-plugin/marketplace.json  (marketplace catalog)
+          # plugins/nwave/                   (plugin content)
+          mkdir -p nwave-target/.claude-plugin
+          mkdir -p nwave-target/plugins/nwave
+
+          # Copy plugin content into marketplace plugin directory
+          cp -r /tmp/plugin-content/* nwave-target/plugins/nwave/
+
+          # Generate marketplace.json
+          PYTHONPATH=source python3 -c "
+          import sys
+          try:
+              from scripts.build_plugin import generate_marketplace_catalog
+              import json
+              from pathlib import Path
+
+              catalog = generate_marketplace_catalog('nwave', '${VERSION}')
+              mp_dir = Path('nwave-target/.claude-plugin')
+              mp_dir.mkdir(parents=True, exist_ok=True)
+              (mp_dir / 'marketplace.json').write_text(
+                  json.dumps(catalog, indent=2) + '\n', encoding='utf-8'
+              )
+              print(f'Generated marketplace.json for nwave v${VERSION}')
+          except Exception as e:
+              print(f'::error::Failed to generate marketplace.json: {e}', file=sys.stderr)
+              sys.exit(1)
+          " || exit 1
+
+      - name: Validate marketplace structure
+        run: |
+          # Verify marketplace.json exists and is valid
+          if [ ! -f nwave-target/.claude-plugin/marketplace.json ]; then
+            echo "::error::marketplace.json not found after generation"
+            exit 1
+          fi
+
+          python3 -c "
+          import json, sys
+          try:
+              with open('nwave-target/.claude-plugin/marketplace.json') as f:
+                  data = json.load(f)
+              if not isinstance(data.get('plugins'), list):
+                  print('::error::marketplace.json missing or invalid plugins array')
+                  sys.exit(1)
+              if len(data['plugins']) == 0:
+                  print('::error::marketplace.json has empty plugins array')
+                  sys.exit(1)
+              print(f'marketplace.json valid: {len(data[\"plugins\"])} plugin(s)')
+          except (json.JSONDecodeError, OSError) as e:
+              print(f'::error::marketplace.json is not valid JSON: {e}')
+              sys.exit(1)
+          "
+
+          # Verify plugin content was copied
+          if [ ! -f nwave-target/plugins/nwave/.claude-plugin/plugin.json ]; then
+            echo "::error::Plugin content missing: plugins/nwave/.claude-plugin/plugin.json not found"
+            exit 1
+          fi
+          echo "Marketplace structure validated successfully"
+
       - name: Compose traceability commit message
         id: trace
         working-directory: source
