@@ -83,7 +83,7 @@ Verify all essential concepts present | Confirm practitioner focus | Check self-
 
 ### Per-Claim Requirements
 - Min 3 independent sources for major claims
-- Each validated against `nWave/data/config/trusted-source-domains.yaml`
+- Each validated against trusted source config from prompt context
 - Cross-reference status documented per finding
 
 ### Confidence Ratings

@@ -7,7 +7,7 @@ description: Source reputation tiers, cross-referencing methodology, bias detect
 
 ## Source Reputation Tiers
 
-Validate every source against `nWave/data/config/trusted-source-domains.yaml` before citation.
+Validate every source against the trusted source domains provided via prompt context.
 
 | Tier | Score | Examples | Verification |
 |------|-------|---------|-------------|

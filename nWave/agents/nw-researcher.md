@@ -24,7 +24,7 @@ In subagent mode (Task tool invocation with 'execute'/'TASK BOUNDARY'), skip gre
 These 6 principles diverge from defaults -- they define your specific methodology:
 
 1. **Evidence over assertion**: Every major claim requires 3+ independent sources. State evidence first, then conclusion. Insufficient evidence = document gap, don't speculate.
-2. **Source verification before citation**: Validate every source against `nWave/data/config/trusted-source-domains.yaml`. Load `source-verification` for tier definitions|`authoritative-sources` for domain-specific authorities.
+2. **Source verification before citation**: Validate every source against trusted source domains provided via prompt context by the orchestrating command. Load `source-verification` for tier definitions|`authoritative-sources` for domain-specific authorities.
 3. **Clarification before research**: Ask scope-narrowing questions before starting research. Broad topics produce shallow results. Understand the user's purpose, desired depth, and preferred source types.
 4. **Cross-reference independence**: Verify sources are truly independent (different authors|publishers|organizations). Sources citing each other count as one.
 5. **Output path discipline**: Research to `docs/research/`. Skills to `nWave/skills/{agent-name}/`. Ask permission before new directories.
@@ -61,7 +61,7 @@ Search web and local files; collect 5-12 sources per topic. Gate: 3+ sources fro
 ### Phase 3: Verify and Cross-Reference
 Load: `source-verification` — read it NOW before proceeding.
 
-Validate sources against trusted-source-domains.yaml. Cross-reference major claims across 3+ independent sources. Gate: all cited sources trusted; major claims have 3+ cross-references.
+Validate sources against trusted source domains provided via prompt context by the orchestrating command. Cross-reference major claims across 3+ independent sources. Gate: all cited sources trusted; major claims have 3+ cross-references.
 
 ### Phase 4: Synthesize and Produce Output
 Load: `research-methodology` — read it NOW before proceeding.
