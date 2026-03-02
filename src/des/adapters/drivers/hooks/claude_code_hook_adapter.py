@@ -1212,6 +1212,32 @@ def handle_pre_write() -> int:
             tool_input = hook_input.get("tool_input", {})
             file_path = tool_input.get("file_path", "")
 
+            # --- Execution log guard: always block direct writes ---
+            if file_path and file_path.endswith("execution-log.json"):
+                project_dir = (
+                    str(Path(file_path).parent) if file_path else "{project-dir}"
+                )
+                block_reason = (
+                    "Direct modification of execution-log.json is blocked.\n\n"
+                    "Use the CLI to record phase outcomes after executing the step:\n\n"
+                    f"  python -m des.cli.log_phase \\\n"
+                    f"    --project-dir {project_dir} \\\n"
+                    "    --step-id {step-id} \\\n"
+                    "    --phase {phase} \\\n"
+                    "    --status EXECUTED \\\n"
+                    "    --data PASS\n\n"
+                    "IMPORTANT: The step must be executed and completed successfully BEFORE\n"
+                    "logging. The execution log records outcomes — it does not drive execution."
+                )
+                _log_pre_write_decision(
+                    hook_id=hook_id,
+                    event_type="HOOK_PRE_WRITE_BLOCKED",
+                    file_path=file_path,
+                    reason="execution_log_direct_write",
+                )
+                print(json.dumps({"decision": "block", "reason": block_reason}))
+                return 2
+
             # Check session and signal state
             session_active = DES_DELIVER_SESSION_FILE.exists()
             des_task_active = DES_TASK_ACTIVE_FILE.exists()
