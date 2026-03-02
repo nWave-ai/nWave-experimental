@@ -109,7 +109,6 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         "\n"
         "[tool.hatch.build.targets.wheel.force-include]\n"
         '"nWave/agents" = "nWave/agents"\n'
-        '"nWave/data" = "nWave/data"\n'
         '"nWave/hooks" = "nWave/hooks"\n'
         '"nWave/scripts" = "nWave/scripts"\n'
         '"nWave/skills" = "nWave/skills"\n'
