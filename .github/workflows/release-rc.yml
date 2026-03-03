@@ -235,6 +235,14 @@ jobs:
       - name: Install build tools
         run: pip install build
 
+      - name: Stamp build version
+        run: |
+          python scripts/release/bump_version.py \
+            --version "$VERSION" \
+            --pyproject pyproject.toml
+        env:
+          VERSION: ${{ needs.version-calc.outputs.version }}
+
       - name: Build wheel and sdist
         run: python -m build
 
