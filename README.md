@@ -1,3 +1,246 @@
+# nWave Experimental
+
+> **This is an experimental testing repo.** It contains pre-release features from `nWave-dev` that need validation before merging to master. Do not use this in production.
+
+---
+
+## What's Being Tested: OpenCode DES Plugin
+
+The DES (Deterministic Execution System) is nWave's TDD discipline enforcement layer. It currently works only on Claude Code via Python hooks. This build adds **native OpenCode support** through a TypeScript plugin that uses OpenCode's hook system.
+
+### What DES Does
+
+During a `/nw:deliver` session, DES enforces which files you can modify in each TDD phase:
+
+| Phase | Test Files | Production Files | Bash | Read |
+|-------|-----------|-----------------|------|------|
+| PREPARE | write/edit | write/edit | run | read |
+| RED_ACCEPTANCE | write/edit | **blocked** | run | read |
+| RED_UNIT | write/edit | **blocked** | run | read |
+| GREEN | **blocked** | write/edit | run | read |
+| COMMIT | **blocked** | edit only | run | read |
+
+If you try to write a production file during RED phase, DES blocks the tool call and tells you why.
+
+---
+
+## Testing Instructions
+
+### Prerequisites
+
+- [OpenCode](https://github.com/opencode-ai/opencode) v1.2.15+ installed
+- The OpenCode plugins directory exists: `~/.config/opencode/plugins/`
+- `jq` installed for reading session state in Gate 3 (`apt install jq` or `brew install jq`)
+
+> **Windows**: Use WSL. Paths like `~/.config/opencode/` expand to your WSL home directory.
+
+### Step 1: Install the Plugin
+
+Copy the TypeScript plugin to OpenCode's plugins directory:
+
+```bash
+cp src/des/opencode-plugin.ts ~/.config/opencode/plugins/nwave-des.ts
+```
+
+Restart OpenCode entirely (close and reopen, not just a new chat) to load the plugin.
+
+### Step 2: Verify Plugin Loaded
+
+In OpenCode, you should see two new tools available:
+- `des_create_session` — Creates a DES enforcement session
+- `des_advance_phase` — Advances the TDD phase
+
+If these tools are not visible, the plugin did not load. Check OpenCode logs for errors.
+
+### Step 3: Create a Test Session
+
+Ask the agent (or call directly):
+
+```
+Call des_create_session with featureId="test-feature" and stepId="01-01"
+```
+
+Expected response:
+```
+DES session created: feature=test-feature, step=01-01, phase=NOT_STARTED.
+Call des_advance_phase("PREPARE", "reason") to begin.
+```
+
+### Step 4: Advance Through Phases
+
+Make **three separate calls**, one at a time (the plugin validates each transition):
+
+```
+Call des_advance_phase with nextPhase="PREPARE" and evidence="Setting up test environment"
+```
+
+```
+Call des_advance_phase with nextPhase="RED_ACCEPTANCE" and evidence="Acceptance test ready"
+```
+
+```
+Call des_advance_phase with nextPhase="RED_UNIT" and evidence="Unit tests written"
+```
+
+> RED_ACCEPTANCE and RED_UNIT share identical enforcement rules (test files only). We advance through RED_ACCEPTANCE to test the full transition chain, but enforcement testing focuses on RED_UNIT.
+
+### Step 5: Test Phase Enforcement (Critical)
+
+While in **RED_UNIT** phase, try to write or edit a production file:
+
+```
+Write the file src/hello.ts with content: console.log("hello")
+```
+
+**Expected behavior**: The tool call should be **blocked** with an error message like:
+```
+DES: Phase RED_UNIT does not allow writeProd — cannot write/create production file src/hello.ts. Only test files may be modified in RED phases.
+```
+
+Then try writing a test file (should be **allowed**):
+```
+Write the file tests/hello.test.ts with content: test("hello", () => {})
+```
+
+### Step 6: Test GREEN Phase (Reverse Enforcement)
+
+```
+Call des_advance_phase with nextPhase="GREEN" and evidence="All tests pass"
+```
+
+Now try writing a test file (should be **blocked**):
+```
+Write the file tests/another.test.ts with content: test("another", () => {})
+```
+
+And a production file (should be **allowed**):
+```
+Write the file src/hello.ts with content: console.log("hello world")
+```
+
+---
+
+## What to Validate (PoC Gates)
+
+These are the three critical validation points from [ADR-004](docs/adrs/ADR-004-opencode-des-native-typescript.md):
+
+### Gate 1: Tool Blocking Works
+
+`throw Error` in `tool.execute.before` actually prevents the tool from executing.
+
+**How to test**: In RED_UNIT phase, attempt to write a production file (Step 5 above).
+
+**Verify**:
+1. An error message appears in the OpenCode chat (see Gate 2 for expected format)
+2. The file was **not created** on disk — confirm with: `ls src/hello.ts` (should say "No such file")
+3. The tool execution was blocked **before** writing, not rolled back after
+
+- [ ] Pass: Error shown AND file does not exist on disk
+- [ ] Fail: File was created despite the error (blocking did not work)
+
+### Gate 2: Error Message Visible
+
+The error message from DES is surfaced to the agent and/or user in the TUI.
+
+**How to test**: When a tool is blocked (Step 5 above), check the error message in OpenCode chat.
+
+**Expected error message** (exact format from the plugin):
+```
+DES: Phase RED_UNIT does not allow writeProd — cannot write/create production file src/hello.ts.
+Only test files may be written or edited in RED phases.
+```
+
+The message must contain:
+- The `DES:` prefix
+- The current phase name (`RED_UNIT`)
+- The blocked operation (`writeProd`)
+- The file path that triggered the block
+- An explanation of what IS allowed in the current phase
+
+- [ ] Pass: Error message visible in chat with all fields above
+- [ ] Fail: Tool silently fails, shows generic error, or message is missing fields
+
+### Gate 3: After Hook Receives Correct Data
+
+`tool.execute.after` receives the correct tool name and file path arguments.
+
+**How to test**: After a **successful** write (e.g., writing a test file in RED_UNIT phase, or a production file in GREEN phase), check the session state:
+
+```bash
+cat .nwave/des/deliver-session.json | jq '{filesModified, currentPhase, turnCount}'
+```
+
+**Expected output** (after writing `tests/hello.test.ts` in RED_UNIT and `src/hello.ts` in GREEN):
+```json
+{
+  "filesModified": [
+    "tests/hello.test.ts",
+    "src/hello.ts"
+  ],
+  "currentPhase": "GREEN",
+  "turnCount": 8
+}
+```
+
+- [ ] Pass: Written files appear in `filesModified` array with correct paths
+- [ ] Fail: Array is empty, files are missing, or paths are wrong
+
+---
+
+## Audit Trail
+
+All DES actions are logged to `.nwave/des/logs/des-audit.jsonl`. Each line is a JSON object:
+
+```bash
+cat .nwave/des/logs/des-audit.jsonl | jq .
+```
+
+Look for events like:
+- `session_created` — New session started
+- `phase_advanced` — Phase transition
+- `tool_blocked` — Tool call was blocked by phase policy
+- `tool_executed` — Tool call was allowed and completed
+
+---
+
+## Known Limitations
+
+1. **Bash tool bypass**: DES cannot restrict what happens inside bash commands. An agent could theoretically use `echo > file.ts` to bypass file write restrictions. This is by design (same as Claude Code DES).
+
+2. **No subagent enforcement**: If OpenCode spawns a subagent, the subagent may not inherit the DES session. This needs validation.
+
+3. **Stale session detection**: Sessions older than 4 hours trigger a warning; older than 24 hours trigger an error-level audit entry. Neither blocks execution.
+
+---
+
+## Reporting Feedback
+
+Please report your findings as issues on this repo or via Discord. Include:
+
+1. **OpenCode version** (`opencode --version`)
+2. **What you tested** (which gate, which phase)
+3. **Expected vs actual behavior**
+4. **Audit log excerpt** (relevant lines from `.nwave/des/logs/des-audit.jsonl`)
+5. **Session state** (contents of `.nwave/des/deliver-session.json` if relevant)
+
+---
+
+## File Structure
+
+| File | Purpose |
+|------|---------|
+| `src/des/opencode-plugin.ts` | The TypeScript DES plugin (855 LOC) |
+| `tests/des/unit/opencode-plugin.test.ts` | Bun unit + integration tests (46 tests) |
+| `scripts/install/plugins/opencode_des_plugin.py` | Python installer plugin |
+| `docs/adrs/ADR-004-opencode-des-native-typescript.md` | Architecture decision record |
+| `docs/feature/opencode-des/design/` | Architecture and component design docs |
+
+---
+
+*Below is the standard nWave README for reference.*
+
+---
+
 # nWave
 
 AI agents that guide you from idea to working code — with you in control at every step.
@@ -32,166 +275,3 @@ Agents and commands go to `~/.claude/`.
 > **Windows users**: Use WSL (Windows Subsystem for Linux). Install with: `wsl --install`
 
 Full setup details: **[Installation Guide](https://github.com/nWave-ai/nWave/blob/main/docs/guides/installation-guide.md)**
-
-### Which method?
-
-| Scenario | Use | Why |
-|----------|-----|-----|
-| First time | Plugin | Zero dependencies, instant setup |
-| Team rollout | Either | Plugin for simplicity, CLI for automation |
-| Contributing | CLI | Dev scripts, internals access |
-| Already on CLI | Either | Both coexist safely |
-
-### Use (inside Claude Code, after reopening it)
-
-```
-/nw:discuss "user login with email and password"   # Requirements
-/nw:design --architecture=hexagonal                 # Architecture
-/nw:distill "user-login"                            # Acceptance tests
-/nw:deliver                                         # TDD implementation
-```
-
-Four commands. Four human checkpoints. One working feature.
-
-Full walkthrough: **[Your First Feature](docs/guides/tutorial-first-feature.md)**
-
-## Staying Updated
-
-nWave checks for new versions when you open Claude Code. When available, you'll see a note in Claude's context with version details and changes.
-
-**Plugin (self-hosted marketplace):**
-```
-/plugin marketplace update nwave-marketplace
-```
-
-Updates are available immediately after each release — no review delay.
-
-**Plugin (official Anthropic directory):**
-
-The official directory pins plugins to reviewed versions. Updates go through Anthropic's review process before reaching users. If you installed from the official directory and want the latest version sooner, add the self-hosted marketplace:
-
-```
-/plugin marketplace add nwave-ai/nwave
-/plugin install nw@nwave-marketplace
-```
-
-**CLI method:**
-```bash
-pipx upgrade nwave-ai
-nwave-ai install
-```
-
-Control check frequency via `update_check.frequency` in `~/.nwave/des-config.json`: `daily`, `weekly`, `every_session`, or `never`.
-
-## Uninstalling
-
-**Plugin method:**
-```
-/plugin uninstall nw
-```
-
-**CLI method:**
-```bash
-nwave-ai uninstall              # Remove agents, commands, config, DES hooks
-pipx uninstall nwave-ai        # Remove the Python package
-```
-
-Both methods remove agents, commands, and configuration from `~/.claude/`. Your project files are unaffected.
-
-## Token Efficiency — Scale Quality to Stakes
-
-nWave enforces proven engineering practices (TDD, peer review, mutation testing) at every step. Use `/nw:rigor` to adjust the depth of quality practices to match your task's risk level. A config tweak needs less rigor than a security-critical feature.
-
-```
-/nw:rigor                    # Interactive: compare profiles
-/nw:rigor lean               # Quick switch to lean mode
-/nw:rigor custom             # Build your own combination
-```
-
-| Profile | Agent | Reviewer | TDD | Mutation | Cost | Use When |
-|---------|-------|----------|-----|----------|------|----------|
-| **lean** | haiku | none | RED→GREEN | no | lowest | Spikes, config, docs |
-| **standard** ⭐ | sonnet | haiku | full 5-phase | no | moderate | Most features |
-| **thorough** | opus | sonnet | full 5-phase | no | higher | Critical features |
-| **exhaustive** | opus | opus | full 5-phase | ≥80% kill | highest | Production core |
-| **custom** | *you choose* | *you choose* | *you choose* | *you choose* | varies | Exact combo needed |
-
-Picked once, persists across sessions. Every `/nw:deliver`, `/nw:design`, `/nw:review` respects your choice. Need to mix profiles? `/nw:rigor custom` walks through each setting.
-
-```
-/nw:rigor lean        # prototype fast
-/nw:deliver           # haiku crafter, no review, RED→GREEN only
-/nw:rigor standard    # ready to ship — bump up
-/nw:deliver           # sonnet crafter, haiku reviewer, full TDD
-```
-
-## Understanding DES Messages
-
-DES is nWave's quality enforcement layer — it monitors every agent Task invocation during feature delivery to prevent unbounded execution, enforce TDD discipline, and protect accidental edits. Most DES messages are normal enforcement, not errors. They appear when agents skip required safety checks or when your code contains patterns that look like step execution.
-
-DES also runs automatic housekeeping at every session start: it removes audit logs beyond the retention window, cleans up signal files left by crashed sessions, and rotates the skill-loading log when it grows too large. This happens silently in the background and never blocks your session.
-
-| Message | What It Means | What To Do |
-|---------|---------------|-----------|
-| **MISSING_MAX_TURNS** | Task invocation forgot to set `max_turns` parameter. | Add `max_turns=30` (or appropriate value) to the Task call. Recommended: 15 (quick), 25 (background), 30 (standard), 35 (research). |
-| **DES_MARKERS_MISSING** | Task prompt mentions a step ID (01-01 pattern) but lacks DES markers. | Either: add DES markers for step execution, OR add `<!-- DES-ENFORCEMENT : exempt -->` comment if it's not actually step work. |
-| **Source write blocked** | You tried to edit a file during active `/nw:deliver` outside a DES task. | Edit requests must go through the active deliver session. If you need to make changes, finalize the current session first. |
-| **TDD phase incomplete** | Sub-agent returned without finishing all required TDD phases. | Re-dispatch the same agent to complete missing phases (typically COMMIT or refactoring steps). |
-| **nWave update available** | SessionStart detected a newer version available. | Optional. Run `pipx upgrade nwave-ai && nwave-ai install` when ready to upgrade, or dismiss and continue working. |
-| **False positive blocks** | Your prompt accidentally matches step-ID pattern (e.g., dates like "2026-02-09"). | Add `<!-- DES-ENFORCEMENT : exempt -->` comment to exempt the Task from step-ID enforcement. |
-
-These messages protect code quality but never prevent your work — they guide you toward the safe path.
-
-## How It Works
-
-```text
-  machine        human         machine        human         machine
-    │              │              │              │              │
-    ▼              ▼              ▼              ▼              ▼
-  Agent ──→ Documentation ──→ Review ──→ Decision ──→ Agent ──→ ...
- generates    artifacts      validates   approves    continues
-```
-
-Each wave produces artifacts that you review before the next wave begins. The machine never runs unsupervised end-to-end.
-
-The full workflow has six waves. Use all six for greenfield projects, or jump straight to `/nw:deliver` for brownfield work.
-
-| Wave | Command | Agent | Produces |
-|------|---------|-------|----------|
-| DISCOVER | `/nw:discover` | product-discoverer | Market validation |
-| DISCUSS | `/nw:discuss` | product-owner | Requirements |
-| DESIGN | `/nw:design` | solution-architect | Architecture + ADRs |
-| DEVOPS | `/nw:devops` | platform-architect | Infrastructure readiness |
-| DISTILL | `/nw:distill` | acceptance-designer | Given-When-Then tests |
-| DELIVER | `/nw:deliver` | software-crafter | Working implementation |
-
-23 agents total: 6 wave agents, 6 cross-wave specialists, 11 peer reviewers. Full list: **[Commands Reference](docs/reference/commands/index.md)**
-
-## Documentation
-
-### Getting Started
-
-- **[Installation Guide](https://github.com/nWave-ai/nWave/blob/main/docs/guides/installation-guide.md)** — Setup instructions
-- **[Your First Feature](docs/guides/tutorial-first-feature.md)** — Build a feature end-to-end (tutorial)
-- **[Jobs To Be Done](docs/guides/jobs-to-be-done-guide.md)** — Which workflow fits your task
-
-### Guides & Reference
-
-- **[Agents & Commands Reference](docs/reference/index.md)** — All agents, commands, skills, templates
-- **[Wave Directory Structure](docs/guides/wave-directory-structure.md)** — How wave outputs are organized per feature
-- **[Invoke Reviewers](docs/guides/invoke-reviewer-agents.md)** — Peer review workflow
-- **[Troubleshooting](docs/guides/troubleshooting-guide.md)** — Common issues and fixes
-
-## Community
-
-- **[Discord](https://discord.gg/Cywj3uFdpd)** — Questions, feedback, success stories
-- **[GitHub Issues](https://github.com/nWave-ai/nWave/issues)** — Bug reports and feature requests
-- **[Contributing](CONTRIBUTING.md)** — Development setup and guidelines
-
-## Privacy
-
-nWave does not collect user data. See [Privacy Policy](PRIVACY.md) for details.
-
-## License
-
-MIT — see [LICENSE](LICENSE) for details.
