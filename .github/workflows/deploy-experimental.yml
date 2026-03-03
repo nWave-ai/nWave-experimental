@@ -1,0 +1,98 @@
+# =============================================================================
+# Deploy to nWave-experimental
+# =============================================================================
+#
+# Pushes any branch from nWave-dev to main of nWave-ai/nWave-experimental.
+# Allows testing features without merging to master or affecting releases.
+#
+# Triggered manually from Actions UI. Select the source branch to deploy.
+#
+# =============================================================================
+
+name: Deploy to Experimental
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Source branch to deploy (leave empty for current branch)'
+        required: false
+        type: string
+        default: ''
+      deploy_message:
+        description: 'Deployment note (what is being tested)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: Deploy to nWave-experimental
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Determine source branch
+        id: branch
+        run: |
+          if [ -n "${{ inputs.source_branch }}" ]; then
+            echo "ref=${{ inputs.source_branch }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Write deployment metadata
+        run: |
+          cat > .nwave-experimental-deploy.json <<DEPLOY_EOF
+          {
+            "source_repo": "nWave-ai/nWave-dev",
+            "source_branch": "${{ steps.branch.outputs.ref }}",
+            "source_sha": "${{ github.sha }}",
+            "deployed_by": "${{ github.actor }}",
+            "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "deploy_note": "${{ inputs.deploy_message }}",
+            "workflow_run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          DEPLOY_EOF
+
+      - name: Push to nWave-experimental main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .nwave-experimental-deploy.json
+          git commit -m "deploy: ${{ inputs.deploy_message }}
+
+          Source: ${{ steps.branch.outputs.ref }}@$(git rev-parse --short HEAD)
+          Deployed by: ${{ github.actor }}
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Try GITHUB_TOKEN first (works if org allows cross-repo access).
+          # If this fails with 403, create a fine-grained PAT with push access
+          # to nWave-experimental and save it as EXPERIMENTAL_DEPLOY_TOKEN secret.
+          TOKEN="${DEPLOY_TOKEN:-$GITHUB_TOKEN}"
+          git remote add experimental "https://x-access-token:${TOKEN}@github.com/nWave-ai/nWave-experimental.git"
+          git push experimental HEAD:main --force
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DEPLOY_TOKEN: ${{ secrets.EXPERIMENTAL_DEPLOY_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Deployed to nWave-experimental" >> "$GITHUB_SUMMARY"
+          echo "" >> "$GITHUB_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_SUMMARY"
+          echo "| Source branch | \`${{ steps.branch.outputs.ref }}\` |" >> "$GITHUB_SUMMARY"
+          echo "| Source SHA | \`$(git rev-parse --short HEAD)\` |" >> "$GITHUB_SUMMARY"
+          echo "| Deployed by | @${{ github.actor }} |" >> "$GITHUB_SUMMARY"
+          echo "| Note | ${{ inputs.deploy_message }} |" >> "$GITHUB_SUMMARY"
+          echo "" >> "$GITHUB_SUMMARY"
+          echo "[View experimental repo](https://github.com/nWave-ai/nWave-experimental)" >> "$GITHUB_SUMMARY"
