@@ -53,7 +53,7 @@ def _find_des_source(context: InstallContext) -> Path | None:
     if dist_source.exists():
         return dist_source
 
-    project_source = context.project_root / "nWave" / "des" / "opencode-plugin.ts"
+    project_source = context.project_root / "src" / "des" / "opencode-plugin.ts"
     if project_source.exists():
         return project_source
 
@@ -95,6 +95,7 @@ class OpenCodeDESPlugin(InstallationPlugin):
 
     def __init__(self):
         """Initialize OpenCode DES plugin with name and priority."""
+        # After opencode-commands (38), before des (50)
         super().__init__(name="opencode-des", priority=39)
 
     def install(self, context: InstallContext) -> PluginResult:

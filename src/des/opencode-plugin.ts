@@ -93,13 +93,22 @@ const SESSION_TMP_FILENAME = "deliver-session.json.tmp"
 const AUDIT_FILENAME = "des-audit.jsonl"
 const DES_DIR_SEGMENTS = [".nwave", "des"] as const
 const AUDIT_DIR_SEGMENTS = [".nwave", "des", "logs"] as const
-const READ_RETRY_DELAY_MS = 50
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000
 
+const READ_ONLY_TOOLS: ReadonlyArray<string> = ["read", "glob", "grep"] as const
+
+const VALID_PHASES: ReadonlySet<string> = new Set([
+  "NOT_STARTED", "PREPARE", "RED_ACCEPTANCE",
+  "RED_UNIT", "GREEN", "COMMIT", "COMPLETED",
+])
+
 // =============================================================================
 // 4. File Classifier (Pure)
+// DUAL-MAINTENANCE: Keep in sync with Python DES file classifier
+// See: src/des/application/pre_tool_use_service.py
+// Parity test: tests/opencode/test_classification_parity.json (TODO)
 // =============================================================================
 
 const TEST_DIR_PATTERNS: ReadonlyArray<string> = ["/tests/", "/test/", "/__tests__/"]
@@ -138,9 +147,6 @@ export const classifyFile = (filePath: string): FileKind => {
 const isTestFile = (filePath: string): boolean =>
   classifyFile(filePath) === "test"
 
-const isProductionFile = (filePath: string): boolean =>
-  classifyFile(filePath) === "production"
-
 // =============================================================================
 // 7. Stale Session Detector (Pure)
 // =============================================================================
@@ -174,6 +180,9 @@ export const detectStaleness = (startedAt: string, now: Date): StalenessResult =
 
 // =============================================================================
 // Phase Policy Matrix (Data, not logic)
+// DUAL-MAINTENANCE: Phase names and transition map shared with Python DES
+// TypeScript-only features: per-phase file restrictions (RED=test-only, GREEN=prod-only)
+// See: src/des/domain/phase_events.py
 // =============================================================================
 
 // Policy: true = allowed, false = blocked
@@ -222,7 +231,7 @@ const PHASE_POLICY: Record<Phase, Record<ToolCategory, boolean>> = {
   COMMIT: {
     writeTest: false,
     writeProd: false,
-    editTest: true,
+    editTest: false,
     editProd: true,
     bash: true,
     readOnly: true,
@@ -259,8 +268,7 @@ export const classifyToolCall = (
   toolName: string,
   filePath: string | undefined
 ): ToolCategory => {
-  const readOnlyTools = ["read", "glob", "grep"]
-  if (readOnlyTools.includes(toolName)) return "readOnly"
+  if (READ_ONLY_TOOLS.includes(toolName)) return "readOnly"
   if (toolName === "bash") return "bash"
 
   if (toolName === "write" && filePath) {
@@ -326,7 +334,15 @@ export const enforcePhasePolicy = (
         allowed: false,
         reason:
           `Cannot create new files during COMMIT phase. ` +
-          `Only edits to existing files are allowed.`,
+          `Only edits to existing production files are allowed.`,
+      }
+    }
+    if (toolCategory === "editTest") {
+      return {
+        allowed: false,
+        reason:
+          `Cannot modify test file${fileDescription} during COMMIT phase. ` +
+          `Only production file edits (refactoring) are allowed.`,
       }
     }
   }
@@ -451,23 +467,9 @@ const parseSessionJson = (raw: string): DESSession | null => {
 const loadSession = (directory: string): DESSession | null => {
   const filePath = sessionFilePath(directory)
   if (!existsSync(filePath)) return null
-
   try {
     const raw = readFileSync(filePath, "utf-8")
-    const session = parseSessionJson(raw)
-    if (session) return session
-
-    // Retry once after delay (race condition recovery for mid-rename reads)
-    const sleepSync = (ms: number) => {
-      const end = Date.now() + ms
-      while (Date.now() < end) {
-        // busy-wait for sync retry
-      }
-    }
-    sleepSync(READ_RETRY_DELAY_MS)
-
-    const rawRetry = readFileSync(filePath, "utf-8")
-    return parseSessionJson(rawRetry)
+    return parseSessionJson(raw)
   } catch {
     return null
   }
@@ -598,20 +600,15 @@ const plugin: Plugin = async ({ directory }) => {
         }
       }
 
-      // Increment turn count
-      const updatedSession = incrementTurnCount(session)
-      saveSession(directory, updatedSession)
-
-      // Extract file path from tool arguments
+      // In tool.execute.before: OpenCode passes tool args in the second parameter (output)
       const filePath =
         (output.args as Record<string, unknown>)?.filePath as
           | string
           | undefined
 
-      // Classify the tool call
+      // Classify the tool call and enforce phase policy BEFORE mutating state
       const toolCategory = classifyToolCall(input.tool, filePath)
 
-      // Enforce phase policy
       const enforcement = enforcePhasePolicy(
         session.currentPhase,
         toolCategory,
@@ -632,6 +629,10 @@ const plugin: Plugin = async ({ directory }) => {
         )
         throw new Error(`DES: ${enforcement.reason}`)
       }
+
+      // Increment turn count only for allowed calls, then persist
+      const updatedSession = incrementTurnCount(session)
+      saveSession(directory, updatedSession)
     },
 
     // -----------------------------------------------------------------
@@ -643,7 +644,7 @@ const plugin: Plugin = async ({ directory }) => {
 
       let updatedSession = session
 
-      // Track file modifications from write/edit tools
+      // In tool.execute.after: OpenCode passes tool args in the single parameter (input)
       const filePath =
         ((input as Record<string, unknown>).args as Record<string, unknown>)
           ?.filePath as string | undefined
@@ -809,6 +810,9 @@ const plugin: Plugin = async ({ directory }) => {
             return "Error: No active DES session. Call des_create_session first."
           }
 
+          if (!VALID_PHASES.has(args.nextPhase)) {
+            return `Error: Unknown phase '${args.nextPhase}'. Valid: ${[...VALID_PHASES].join(", ")}`
+          }
           const nextPhase = args.nextPhase as Phase
           const transitionResult = validateTransition(
             session.currentPhase,

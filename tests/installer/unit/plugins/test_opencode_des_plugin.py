@@ -35,7 +35,7 @@ def _make_context(tmp_path):
     project_root = tmp_path / "project"
     framework_source = tmp_path / "framework"
 
-    des_source = project_root / "nWave" / "des"
+    des_source = project_root / "src" / "des"
     des_source.mkdir(parents=True)
 
     claude_dir = tmp_path / ".claude"
@@ -78,12 +78,12 @@ export default plugin
 """
 
 
-class TestInstallCopiesFileAndWritesManifest:
+class TestInstall:
     """Test that install() copies TS file and writes manifest."""
 
     def test_install_copies_file_and_writes_manifest(self, tmp_path, monkeypatch):
         """
-        GIVEN: nWave/des/opencode-plugin.ts exists in the source tree
+        GIVEN: src/des/opencode-plugin.ts exists in the source tree
         WHEN: install() runs
         THEN: the file is copied to ~/.config/opencode/plugins/nwave-des.ts
               and a .nwave-des-manifest.json is written tracking the installed file
@@ -191,6 +191,42 @@ class TestVerifyFailsWhenFileMissing:
         target.mkdir(parents=True, exist_ok=True)
 
         plugin = OpenCodeDESPlugin()
+        result = plugin.verify(context)
+
+        assert result.success is False
+
+
+class TestVerifyDetectsMissingPluginFile:
+    """Test that verify() fails when manifest exists but plugin file was deleted."""
+
+    def test_verify_fails_when_manifest_present_but_file_deleted(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        GIVEN: plugin installed (file + manifest exist)
+        AND: plugin file manually deleted
+        WHEN: verify() runs
+        THEN: reports failure
+        """
+        context, des_source, target = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
+            lambda: target,
+        )
+
+        # Create source TS file
+        (des_source / "opencode-plugin.ts").write_text(_SAMPLE_TS_CONTENT)
+
+        plugin = OpenCodeDESPlugin()
+        plugin.install(context)
+
+        # Verify install succeeded
+        assert (target / "nwave-des.ts").exists()
+
+        # Manually delete the plugin file (simulating corruption/manual removal)
+        (target / "nwave-des.ts").unlink()
+
+        # Verify should now fail
         result = plugin.verify(context)
 
         assert result.success is False
@@ -323,7 +359,7 @@ class TestInstallVerifyUninstallCycle:
 
     def test_full_cycle(self, tmp_path, monkeypatch):
         """
-        GIVEN: nWave/des/opencode-plugin.ts exists in the source tree
+        GIVEN: src/des/opencode-plugin.ts exists in the source tree
         WHEN: install() -> verify() -> uninstall() are called in sequence
         THEN: install copies the file and writes manifest,
               verify confirms everything is correct,

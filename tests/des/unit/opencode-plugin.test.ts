@@ -1,5 +1,5 @@
 /**
- * Unit tests for the pure functions in the nWave DES OpenCode plugin.
+ * Unit tests for the nWave DES OpenCode plugin.
  *
  * Tests cover the five pure function groups:
  *   1. classifyFile    -- file path -> test | production
@@ -8,18 +8,22 @@
  *   4. validateTransition -- current phase + next phase -> success | failure
  *   5. classifyToolCall   -- tool name + file path -> tool category
  *
- * No OpenCode runtime required -- these are pure functions with no IO.
+ * Plus hook router integration tests (plugin wiring with real filesystem).
  */
 
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import {
   classifyFile,
   classifyToolCall,
   detectStaleness,
   enforcePhasePolicy,
   validateTransition,
-} from "./opencode-plugin"
-import type { Phase, ToolCategory } from "./opencode-plugin"
+} from "../../../src/des/opencode-plugin"
+import type { Phase, ToolCategory } from "../../../src/des/opencode-plugin"
+import plugin from "../../../src/des/opencode-plugin"
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync } from "fs"
+import { join } from "path"
+import { tmpdir } from "os"
 
 // =============================================================================
 // classifyFile
@@ -150,29 +154,20 @@ describe("detectStaleness", () => {
 // =============================================================================
 
 describe("enforcePhasePolicy", () => {
-  test("RED phases block production file writes", () => {
-    const result = enforcePhasePolicy(
-      "RED_UNIT",
-      "writeProd",
-      "write",
-      "/src/app.ts"
-    )
+  test("RED phases block production file writes and edits", () => {
+    for (const op of ["write", "edit"] as const) {
+      const category = op === "write" ? "writeProd" : "editProd"
+      const phase = op === "write" ? "RED_UNIT" : "RED_ACCEPTANCE"
+      const result = enforcePhasePolicy(
+        phase,
+        category as ToolCategory,
+        op,
+        "/src/app.ts"
+      )
 
-    expect(result.allowed).toBe(false)
-    expect(result.reason).toContain("production file")
-    expect(result.reason).toContain("RED_UNIT")
-  })
-
-  test("RED phases block production file edits", () => {
-    const result = enforcePhasePolicy(
-      "RED_ACCEPTANCE",
-      "editProd",
-      "edit",
-      "/src/app.ts"
-    )
-
-    expect(result.allowed).toBe(false)
-    expect(result.reason).toContain("production file")
+      expect(result.allowed).toBe(false)
+      expect(result.reason).toContain("production file")
+    }
   })
 
   test("RED phases allow test file writes", () => {
@@ -186,29 +181,19 @@ describe("enforcePhasePolicy", () => {
     expect(result.allowed).toBe(true)
   })
 
-  test("GREEN phase blocks test file writes", () => {
-    const result = enforcePhasePolicy(
-      "GREEN",
-      "writeTest",
-      "write",
-      "/tests/test_app.py"
-    )
+  test("GREEN phase blocks test file writes and edits", () => {
+    for (const op of ["write", "edit"] as const) {
+      const category = op === "write" ? "writeTest" : "editTest"
+      const result = enforcePhasePolicy(
+        "GREEN",
+        category as ToolCategory,
+        op,
+        "/tests/test_app.py"
+      )
 
-    expect(result.allowed).toBe(false)
-    expect(result.reason).toContain("test file")
-    expect(result.reason).toContain("GREEN")
-  })
-
-  test("GREEN phase blocks test file edits", () => {
-    const result = enforcePhasePolicy(
-      "GREEN",
-      "editTest",
-      "edit",
-      "/tests/test_app.py"
-    )
-
-    expect(result.allowed).toBe(false)
-    expect(result.reason).toContain("test file")
+      expect(result.allowed).toBe(false)
+      expect(result.reason).toContain("test file")
+    }
   })
 
   test("GREEN phase allows production file writes", () => {
@@ -241,13 +226,7 @@ describe("enforcePhasePolicy", () => {
     expect(writeProdResult.allowed).toBe(false)
   })
 
-  test("COMMIT phase allows edits to existing files", () => {
-    const editTestResult = enforcePhasePolicy(
-      "COMMIT",
-      "editTest",
-      "edit",
-      "/tests/test_app.py"
-    )
+  test("COMMIT phase allows edits to existing production files only", () => {
     const editProdResult = enforcePhasePolicy(
       "COMMIT",
       "editProd",
@@ -255,8 +234,19 @@ describe("enforcePhasePolicy", () => {
       "/src/app.ts"
     )
 
-    expect(editTestResult.allowed).toBe(true)
     expect(editProdResult.allowed).toBe(true)
+  })
+
+  test("COMMIT phase blocks edits to test files", () => {
+    const editTestResult = enforcePhasePolicy(
+      "COMMIT",
+      "editTest",
+      "edit",
+      "/tests/test_app.py"
+    )
+
+    expect(editTestResult.allowed).toBe(false)
+    expect(editTestResult.reason).toContain("test file")
   })
 
   test("all phases allow bash and readOnly tools", () => {
@@ -416,5 +406,93 @@ describe("classifyToolCall", () => {
 
   test("classifies edit without filePath as readOnly", () => {
     expect(classifyToolCall("edit", undefined)).toBe("readOnly")
+  })
+})
+
+// =============================================================================
+// Hook Router Integration
+// =============================================================================
+
+describe("Hook Router Integration", () => {
+  let tempDir: string
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "des-integration-"))
+  })
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  const createSessionFile = (phase: Phase): void => {
+    const desDir = join(tempDir, ".nwave", "des")
+    mkdirSync(desDir, { recursive: true })
+    const session = {
+      featureId: "test-feature",
+      stepId: "01-01",
+      currentPhase: phase,
+      turnCount: 0,
+      startedAt: new Date().toISOString(),
+      phaseHistory: [],
+      filesModified: [],
+      testsRan: false,
+    }
+    writeFileSync(
+      join(desDir, "deliver-session.json"),
+      JSON.stringify(session, null, 2) + "\n"
+    )
+  }
+
+  test("blocks writing production file during RED_UNIT phase", async () => {
+    createSessionFile("RED_UNIT")
+
+    const hooks = await plugin({ directory: tempDir })
+    const beforeHook = hooks["tool.execute.before"]!
+
+    const input = { tool: "write" } as any
+    const output = { args: { filePath: "/src/app.ts" } } as any
+
+    expect(async () => {
+      await beforeHook(input, output)
+    }).toThrow(/DES:/)
+  })
+
+  test("allows writing test file during RED_UNIT phase", async () => {
+    createSessionFile("RED_UNIT")
+
+    const hooks = await plugin({ directory: tempDir })
+    const beforeHook = hooks["tool.execute.before"]!
+
+    const input = { tool: "write" } as any
+    const output = { args: { filePath: "/tests/test_app.py" } } as any
+
+    // Should not throw
+    await beforeHook(input, output)
+  })
+
+  test("reading is always allowed regardless of phase", async () => {
+    createSessionFile("RED_UNIT")
+
+    const hooks = await plugin({ directory: tempDir })
+    const beforeHook = hooks["tool.execute.before"]!
+
+    const input = { tool: "read" } as any
+    const output = { args: { filePath: "/src/app.ts" } } as any
+
+    // Should not throw -- reading is always allowed
+    await beforeHook(input, output)
+  })
+
+  test("with no session, everything is allowed (fail-open)", async () => {
+    // No session file created -- tempDir has no .nwave/des/deliver-session.json
+
+    const hooks = await plugin({ directory: tempDir })
+    const beforeHook = hooks["tool.execute.before"]!
+
+    const input = { tool: "write" } as any
+    const output = { args: { filePath: "/src/app.ts" } } as any
+
+    // Should not throw -- fail-open when no session exists
+    await beforeHook(input, output)
   })
 })

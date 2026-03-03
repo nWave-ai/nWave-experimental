@@ -1,0 +1,118 @@
+{
+  "roadmap": {
+    "project_id": "opencode-des",
+    "created_at": "2026-03-03T16:40:23Z",
+    "total_steps": 4,
+    "phases": 2
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "TypeScript DES Plugin",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Core enforcement engine",
+          "description": "Hook Router + State Manager + Phase Enforcer + File Classifier + Audit Writer + Phase Transition Manager + Stale Session Detector in single TypeScript plugin file.",
+          "files_to_modify": [
+            "src/des/opencode-plugin.ts"
+          ],
+          "depends_on": [],
+          "criteria": [
+            "Given a write tool call targeting a production file during RED_ACCEPTANCE phase and an active DES session, when the plugin intercepts tool.execute.before, then the tool call is blocked with a descriptive error message and an audit event is logged to des-audit.jsonl.",
+            "Given no deliver-session.json exists in .nwave/des/, when any tool call fires tool.execute.before, then the plugin allows the call without error (fail-open behavior).",
+            "Given a session with startedAt older than 24 hours, when any tool.execute.before fires, then an audit event with severity error is logged and the agent receives a suggestion to reset the session."
+          ],
+          "architectural_constraints": [
+            "Single file at src/des/opencode-plugin.ts -- zero external dependencies, only fs and path from Bun/Node built-ins",
+            "Phase policy encoded as a data structure (policy matrix), not conditional branching",
+            "State writes use atomic rename (write to .tmp then fs.renameSync) to prevent corruption",
+            "All I/O errors caught and logged -- plugin must never crash OpenCode"
+          ]
+        },
+        {
+          "id": "01-02",
+          "name": "Custom tools and compaction handler",
+          "description": "Add des_create_session and des_advance_phase custom tools plus the experimental.session.compacting handler to preserve DES state across context resets.",
+          "files_to_modify": [
+            "src/des/opencode-plugin.ts"
+          ],
+          "depends_on": ["01-01"],
+          "criteria": [
+            "Given an orchestrator calls des_create_session with featureId and stepId, when the tool executes, then a new deliver-session.json is created with phase NOT_STARTED, a startedAt timestamp, and an audit event is logged.",
+            "Given a session in RED_UNIT phase and the agent calls des_advance_phase with next_phase GREEN and a non-empty evidence string, when the tool executes, then the session phase updates to GREEN, evidence is appended to phaseHistory, and an audit event is logged.",
+            "Given OpenCode triggers experimental.session.compacting with an active DES session, when the compaction handler runs, then a des-state block containing featureId, stepId, currentPhase, and filesModified is injected into the compaction context."
+          ],
+          "architectural_constraints": [
+            "Custom tools registered through OpenCode's plugin tool registration mechanism",
+            "Phase transitions validated against the v4.0 schema transition map (NOT_STARTED->PREPARE->RED_ACCEPTANCE->RED_UNIT->GREEN->COMMIT->COMPLETED)",
+            "des_advance_phase rejects transitions not in the valid transition map with a clear error message"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Python Installer and Registration",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Python installer plugin",
+          "description": "InstallationPlugin subclass that copies the TypeScript DES plugin to OpenCode's plugins directory with manifest-based install/verify/uninstall.",
+          "files_to_modify": [
+            "scripts/install/plugins/opencode_des_plugin.py",
+            "tests/installer/unit/plugins/test_opencode_des_plugin.py"
+          ],
+          "depends_on": ["01-01"],
+          "criteria": [
+            "Given src/des/opencode-plugin.ts exists in the source tree, when install() runs, then the file is copied to ~/.config/opencode/plugins/nwave-des.ts and a .nwave-des-manifest.json is written tracking the installed file.",
+            "Given a successful installation, when verify() runs, then it confirms nwave-des.ts exists in the plugins directory and contains the string 'tool.execute.before'.",
+            "Given .nwave-des-manifest.json exists, when uninstall() runs, then only files listed in the manifest are removed and the manifest itself is deleted."
+          ],
+          "architectural_constraints": [
+            "Follows exact pattern of OpenCodeAgentsPlugin: module-level helper functions, manifest-based tracking, try/except with PluginResult",
+            "Priority 39 (after opencode-commands at 38, before DES at 50)",
+            "Dependencies: ['opencode-commands'] -- requires OpenCode config directory to exist"
+          ]
+        },
+        {
+          "id": "02-02",
+          "name": "Registry registration and integration test",
+          "description": "Register OpenCodeDESPlugin in _create_plugin_registry when opencode platform detected. Integration test verifying plugin loads in the registry.",
+          "files_to_modify": [
+            "scripts/install/install_nwave.py",
+            "tests/installer/unit/plugins/test_opencode_des_plugin.py"
+          ],
+          "depends_on": ["02-01"],
+          "criteria": [
+            "Given target_platforms contains 'opencode', when _create_plugin_registry executes, then OpenCodeDESPlugin is registered with dependency on opencode-commands and appears in the resolved plugin order after opencode-commands.",
+            "Given target_platforms does not contain 'opencode', when _create_plugin_registry executes, then OpenCodeDESPlugin is not registered.",
+            "Given the full plugin registry with opencode platform, when topological sort resolves execution order, then opencode-des runs after opencode-commands (priority 39 > 38) and before des (priority 39 < 50)."
+          ],
+          "architectural_constraints": [
+            "Registration follows existing pattern: instantiate, register, set_dependencies in the opencode conditional block",
+            "Import added alongside existing opencode plugin imports at module top"
+          ]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "src/des/",
+      "scripts/install/plugins/"
+    ],
+    "test_directories": [
+      "tests/installer/unit/plugins/"
+    ],
+    "excluded_patterns": [
+      "__init__.py",
+      "__pycache__/**"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-solution-architect-reviewer",
+    "approved_at": "2026-03-03T16:45:00Z"
+  }
+}
