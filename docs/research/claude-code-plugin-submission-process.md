@@ -1,6 +1,6 @@
 # Research: Claude Code Plugin Submission to Anthropic's Official Plugin Directory
 
-**Date**: 2026-02-28 | **Researcher**: nw-researcher (Nova) | **Confidence**: High | **Sources**: 10
+**Date**: 2026-03-03 (updated) | **Original**: 2026-02-28 | **Researcher**: nw-researcher (Nova) | **Confidence**: High | **Sources**: 12
 
 ## Executive Summary
 
@@ -12,7 +12,7 @@ Anthropic enforces specific policies through their **Software Directory Policy**
 
 ## Research Methodology
 
-**Search Strategy**: Official Anthropic documentation (code.claude.com), Anthropic GitHub repositories (anthropics/claude-plugins-official, anthropics/claude-code), Anthropic Help Center (support.claude.com), plugin submission form (Google Forms), official blog posts, and web search for community context.
+**Search Strategy**: Official Anthropic documentation (code.claude.com), Anthropic GitHub repositories (anthropics/claude-plugins-official, anthropics/claude-code), Anthropic Help Center (support.claude.com), plugin submission form (Google Forms), official blog posts, and web search for community context. Updated 2026-03-03 with detailed technical specifications from plugins-reference, marketplace schema, and expanded plugin.json manifest documentation.
 **Source Selection**: Types: official docs, official repositories, official policy documents | Reputation: high (1.0) minimum for all primary claims | Verification: cross-referencing across official sources.
 **Quality Standards**: Min 3 sources/claim | All major claims cross-referenced | Avg reputation: 0.97
 
@@ -156,6 +156,147 @@ The central `marketplace.json` in `.claude-plugin/` serves as the authoritative 
 **Verification**: [Discover Plugins Docs](https://code.claude.com/docs/en/discover-plugins), [Claude Code Plugins Blog Post](https://claude.com/blog/claude-code-plugins)
 **Analysis**: Self-hosted marketplaces are a first-class distribution mechanism. The blog post notes community members are already leading marketplace development. For nWave, a self-hosted marketplace is a viable parallel path that provides immediate distribution without waiting for Anthropic review. Many community plugins already distribute this way.
 
+### Finding 9: Complete Plugin Manifest Schema (plugin.json)
+
+**Evidence**: The official plugins reference documents the complete `.claude-plugin/plugin.json` schema. The manifest is optional -- if omitted, Claude Code auto-discovers components from default locations and derives the plugin name from the directory name. If included, `name` is the only required field (kebab-case, no spaces, unique across installed plugins).
+
+Complete schema fields:
+```json
+{
+  "name": "plugin-name",           // REQUIRED. kebab-case, unique identifier + namespace prefix
+  "version": "1.2.0",              // Semantic version (MAJOR.MINOR.PATCH)
+  "description": "Brief plugin description",
+  "author": {
+    "name": "Author Name",
+    "email": "author@example.com",
+    "url": "https://github.com/author"
+  },
+  "homepage": "https://docs.example.com/plugin",
+  "repository": "https://github.com/author/plugin",
+  "license": "MIT",
+  "keywords": ["keyword1", "keyword2"],
+  "commands": ["./custom/commands/special.md"],
+  "agents": "./custom/agents/",
+  "skills": "./custom/skills/",
+  "hooks": "./config/hooks.json",
+  "mcpServers": "./mcp-config.json",
+  "outputStyles": "./styles/",
+  "lspServers": "./.lsp.json"
+}
+```
+
+Key rules:
+- Custom component paths supplement default directories; they do not replace them
+- All paths must be relative to plugin root and start with `./`
+- Multiple paths can be specified as arrays
+- `${CLAUDE_PLUGIN_ROOT}` environment variable resolves to absolute plugin path at runtime
+- Do NOT place commands/, agents/, skills/, or hooks/ inside `.claude-plugin/` -- only plugin.json goes there
+
+**Source**: [Plugins Reference - Claude Code Docs](https://code.claude.com/docs/en/plugins-reference) - Accessed 2026-03-03
+**Confidence**: High
+**Verification**: [Create Plugins - Claude Code Docs](https://code.claude.com/docs/en/plugins), [Plugin Marketplaces Docs](https://code.claude.com/docs/en/plugin-marketplaces)
+**Analysis**: The manifest is lightweight by design. The only strictly required field is `name`. For marketplace submission, however, the submission form requires additional metadata (description, examples) that go beyond the manifest.
+
+### Finding 10: Complete Marketplace.json Schema
+
+**Evidence**: The marketplace catalog file (`.claude-plugin/marketplace.json`) has the following schema:
+
+**Required top-level fields:**
+- `name` (string): Marketplace identifier (kebab-case). Reserved names blocked: `claude-code-marketplace`, `claude-code-plugins`, `claude-plugins-official`, `anthropic-marketplace`, `anthropic-plugins`, `agent-skills`, `life-sciences`. Names impersonating official marketplaces are also blocked.
+- `owner` (object): `name` (required string), `email` (optional string)
+- `plugins` (array): List of plugin entries
+
+**Optional metadata:**
+- `metadata.description` (string): Brief marketplace description
+- `metadata.version` (string): Marketplace version
+- `metadata.pluginRoot` (string): Base directory for relative plugin source paths
+
+**Per-plugin entry required fields:**
+- `name` (string): Plugin identifier (kebab-case)
+- `source` (string|object): Where to fetch the plugin. Types: relative path (`"./plugins/name"`), GitHub (`{"source": "github", "repo": "owner/repo", "ref": "v1.0", "sha": "..."}`) , git URL (`{"source": "url", "url": "https://...git", "ref": "...", "sha": "..."}`), npm (`{"source": "npm", "package": "@scope/name", "version": "^2.0.0", "registry": "..."}`), pip (`{"source": "pip", "package": "name", "version": "...", "registry": "..."}`)
+
+**Per-plugin optional fields:**
+- `description`, `version`, `author`, `homepage`, `repository`, `license`, `keywords`
+- `category` (string): For organization (known values from official directory: `development`, `productivity`, `learning`, `design`, `testing`, `database`, `deployment`, `monitoring`, `security`)
+- `tags` (array): For searchability (e.g., `["community-managed"]`)
+- `strict` (boolean, default: true): When true, plugin.json is the authority for components; when false, marketplace entry is the entire definition
+- Component overrides: `commands`, `agents`, `hooks`, `mcpServers`, `lspServers`
+
+Example from the official directory:
+```json
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-plugins-official",
+  "description": "Directory of popular Claude Code extensions...",
+  "owner": {
+    "name": "Anthropic",
+    "email": "support@anthropic.com"
+  },
+  "plugins": [
+    {
+      "name": "typescript-lsp",
+      "description": "TypeScript/JavaScript language server for enhanced code intelligence",
+      "version": "1.0.0",
+      "author": { "name": "Anthropic", "email": "support@anthropic.com" },
+      "source": "./plugins/typescript-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": { ... }
+    }
+  ]
+}
+```
+
+**Source**: [Plugin Marketplaces - Claude Code Docs](https://code.claude.com/docs/en/plugin-marketplaces) - Accessed 2026-03-03
+**Confidence**: High
+**Verification**: [claude-plugins-official marketplace.json](https://github.com/anthropics/claude-plugins-official/blob/main/.claude-plugin/marketplace.json), [Plugins Reference](https://code.claude.com/docs/en/plugins-reference)
+**Analysis**: The marketplace.json schema is comprehensive and well-documented. The `strict` mode distinction is important: most third-party plugins should use `strict: true` (default) to keep plugin.json as the authority. The nine known categories provide a clear taxonomy for plugin classification.
+
+### Finding 11: Plugin Directory Structure and Component Types
+
+**Evidence**: A complete plugin supports six component types:
+
+| Component | Default Location | Format |
+|-----------|-----------------|--------|
+| Manifest | `.claude-plugin/plugin.json` | JSON metadata |
+| Skills | `skills/` | Directories with `SKILL.md` files |
+| Commands | `commands/` | Markdown files (legacy; use skills for new) |
+| Agents | `agents/` | Markdown with YAML frontmatter (name, description) |
+| Hooks | `hooks/hooks.json` | JSON config with event matchers |
+| MCP Servers | `.mcp.json` | Standard MCP config |
+| LSP Servers | `.lsp.json` | Language server config |
+| Settings | `settings.json` | Default settings (only `agent` key supported) |
+
+Available hook events: PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, UserPromptSubmit, Notification, Stop, SubagentStart, SubagentStop, SessionStart, SessionEnd, TeammateIdle, TaskCompleted, PreCompact.
+
+Hook types: `command` (shell), `prompt` (LLM evaluation), `agent` (agentic verifier with tools).
+
+Plugin caching: Marketplace plugins are copied to `~/.claude/plugins/cache`. Plugins cannot reference files outside their directory (path traversal blocked). Symlinks are followed during copy and can be used for shared dependencies.
+
+**Source**: [Plugins Reference - Claude Code Docs](https://code.claude.com/docs/en/plugins-reference) - Accessed 2026-03-03
+**Confidence**: High
+**Verification**: [Create Plugins](https://code.claude.com/docs/en/plugins), [Plugin Marketplaces](https://code.claude.com/docs/en/plugin-marketplaces)
+
+### Finding 12: Plugin Marketplace Categories from Official Directory
+
+**Evidence**: The official `claude-plugins-official` marketplace organizes 40+ plugins across these categories:
+
+**Code intelligence (LSP)**: typescript-lsp, pyright-lsp, gopls-lsp, rust-analyzer-lsp, clangd-lsp, php-lsp, swift-lsp, kotlin-lsp, csharp-lsp, jdtls-lsp, lua-lsp
+
+**External integrations (MCP)**: github, gitlab, atlassian, asana, linear, notion, figma, vercel, firebase, supabase, slack, sentry, stripe
+
+**Development workflows**: commit-commands, pr-review-toolkit, agent-sdk-dev, plugin-dev, feature-dev, code-review, code-simplifier, skill-creator, playground, hookify, frontend-design, ralph-loop
+
+**Output styles**: explanatory-output-style, learning-output-style
+
+**Community/external**: qodo-skills (with SHA pinning), greptile, serena, laravel-boost, playwright, semgrep, sonatype-guide, coderabbit, posthog, context7
+
+Some plugins carry an "Anthropic Verified" badge: Frontend Design, Code Review, Feature Dev, Code Simplifier, Ralph Loop, TypeScript LSP, among others.
+
+**Source**: [claude-plugins-official marketplace.json](https://github.com/anthropics/claude-plugins-official/blob/main/.claude-plugin/marketplace.json) - Accessed 2026-03-03
+**Confidence**: High
+**Verification**: [Plugins for Claude Code and Cowork](https://claude.com/plugins), [Discover Plugins](https://code.claude.com/docs/en/discover-plugins)
+
 ## Source Analysis
 
 | Source | Domain | Reputation | Type | Access Date | Cross-verified |
@@ -171,7 +312,10 @@ The central `marketplace.json` in `.claude-plugin/` serves as the authoritative 
 | Claude Code Plugins Blog Post | claude.com/blog | High (1.0) | Official announcement | 2026-02-28 | Y |
 | DeepWiki analysis of claude-plugins-official | deepwiki.com | Medium (0.6) | Third-party analysis | 2026-02-28 | Y |
 
-Reputation: High: 9 (90%) | Medium: 1 (10%) | Avg: 0.97
+| Plugins Reference - Claude Code Docs | code.claude.com | High (1.0) | Official documentation | 2026-03-03 | Y |
+| Create Plugins - Claude Code Docs | code.claude.com | High (1.0) | Official documentation | 2026-03-03 | Y |
+
+Reputation: High: 11 (92%) | Medium: 1 (8%) | Avg: 0.97
 
 ## Knowledge Gaps
 
@@ -249,7 +393,9 @@ This provides immediate distribution while the official directory submission is 
 [8] Anthropic. "Claude Plugin Submission Form". Google Forms. 2026. https://docs.google.com/forms/d/e/1FAIpQLSc31jdYDs_1z649BmFfX85mSSdyTXi0GOLsHD7tWKj0F_k9Dg/viewform. Accessed 2026-02-28.
 [9] Anthropic. "Customize Claude Code with plugins". Claude Blog. 2025. https://claude.com/blog/claude-code-plugins. Accessed 2026-02-28.
 [10] DeepWiki. "anthropics/claude-plugins-official". deepwiki.com. 2026. https://deepwiki.com/anthropics/claude-plugins-official. Accessed 2026-02-28.
+[11] Anthropic. "Plugins reference". Claude Code Docs. 2026. https://code.claude.com/docs/en/plugins-reference. Accessed 2026-03-03.
+[12] Anthropic. "Create plugins". Claude Code Docs. 2026. https://code.claude.com/docs/en/plugins. Accessed 2026-03-03.
 
 ## Research Metadata
 
-Duration: ~15 min | Examined: 14 | Cited: 10 | Cross-refs: 8 | Confidence: High 100% | Output: docs/research/claude-code-plugin-submission-process.md
+Duration: ~25 min (total, including 2026-03-03 update) | Examined: 16 | Cited: 12 | Cross-refs: 10 | Confidence: High 100% | Output: docs/research/claude-code-plugin-submission-process.md

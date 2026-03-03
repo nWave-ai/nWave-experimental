@@ -6,9 +6,7 @@ nWave runs inside [Claude Code](https://claude.com/product/claude-code). You des
 
 ## Quick Start
 
-Choose your installation method. Both work equally well.
-
-### Plugin (Beta Preview)
+### Plugin (Recommended)
 
 From Claude Code, run:
 
@@ -19,9 +17,9 @@ From Claude Code, run:
 
 Restart Claude Code and type `/nw:` to see all available commands.
 
-### CLI Installer (Recommended)
+### CLI Installer (Alternative)
 
-Install from PyPI with no repository clone needed:
+Install from PyPI — useful for contributing or environments without plugin support:
 
 ```bash
 pipx install nwave-ai
@@ -39,9 +37,8 @@ Full setup details: **[Installation Guide](https://github.com/nWave-ai/nWave/blo
 
 | Scenario | Use | Why |
 |----------|-----|-----|
-| First time | CLI | Stable, full-featured |
-| Team rollout | CLI | Same command everywhere |
-| Early adopter | Plugin | Zero dependencies, instant (beta) |
+| First time | Plugin | Zero dependencies, instant setup |
+| Team rollout | Either | Plugin for simplicity, CLI for automation |
 | Contributing | CLI | Dev scripts, internals access |
 | Already on CLI | Either | Both coexist safely |
 
@@ -62,12 +59,21 @@ Full walkthrough: **[Your First Feature](docs/guides/tutorial-first-feature.md)*
 
 nWave checks for new versions when you open Claude Code. When available, you'll see a note in Claude's context with version details and changes.
 
-**Plugin method:**
+**Plugin (self-hosted marketplace):**
 ```
 /plugin marketplace update nwave-marketplace
 ```
 
-Or enable auto-updates in Claude Code plugin settings.
+Updates are available immediately after each release — no review delay.
+
+**Plugin (official Anthropic directory):**
+
+The official directory pins plugins to reviewed versions. Updates go through Anthropic's review process before reaching users. If you installed from the official directory and want the latest version sooner, add the self-hosted marketplace:
+
+```
+/plugin marketplace add nwave-ai/nwave
+/plugin install nw@nwave-marketplace
+```
 
 **CLI method:**
 ```bash
