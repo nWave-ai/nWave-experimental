@@ -2,6 +2,12 @@
 """Pytest Test Validation Hook
 
 Ensures all tests pass before commit.
+
+Optimizations (v2):
+  - Fail-fast (-x): stops at first failure
+  - Changed-file targeting: maps staged files to relevant test directories
+  - Build acceptance tests moved to pre-push (slow plugin assembly)
+  - Parallel execution via pytest-xdist (-n auto)
 """
 
 import os
@@ -17,6 +23,32 @@ GREEN = "\033[0;32m"
 YELLOW = "\033[1;33m"
 BLUE = "\033[0;34m"
 NC = "\033[0m"
+
+# Source prefix → test directories mapping
+_SOURCE_TO_TESTS: dict[str, list[str]] = {
+    "src/des/": ["tests/des/", "tests/bugs/des/"],
+    "scripts/install/plugins/": ["tests/plugins/", "tests/bugs/plugins/"],
+    "scripts/install/": ["tests/installer/", "tests/bugs/installer/"],
+    "scripts/validation/": ["tests/validation/"],
+    "scripts/framework/": ["tests/build/"],
+    "scripts/build_dist.py": ["tests/build/"],
+    "scripts/hooks/": [],
+    "scripts/docgen.py": [],
+    "nWave/": ["tests/build/"],
+    "nwave_ai/": ["tests/installer/"],
+    "docs/": [],
+    ".github/": [],
+}
+
+# Files that force a full test run (config changes can affect anything)
+_RUN_ALL_TRIGGERS = {
+    "pyproject.toml",
+    "setup.cfg",
+    "conftest.py",
+    "tests/conftest.py",
+    "Pipfile",
+    "Pipfile.lock",
+}
 
 
 def clear_git_environment():
@@ -34,6 +66,76 @@ def clear_git_environment():
     ]
     for var in git_vars:
         os.environ.pop(var, None)
+
+
+def get_targeted_test_dirs() -> list[str] | None:
+    """Map staged files to relevant test directories.
+
+    Returns a sorted list of test directories to run, or None to run everything.
+    Falls back to None (all tests) when:
+      - git diff fails
+      - a config file changed (pyproject.toml, conftest.py, etc.)
+      - a staged file doesn't match any known mapping
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+    staged = [f for f in result.stdout.strip().split("\n") if f]
+    if not staged:
+        return None
+
+    test_dirs: set[str] = set()
+
+    for filepath in staged:
+        # Config files → run everything
+        if filepath in _RUN_ALL_TRIGGERS:
+            return None
+
+        # Changed test files → include their top-level test directory
+        if filepath.startswith("tests/"):
+            parts = filepath.split("/")
+            if len(parts) >= 2:
+                test_dirs.add(f"tests/{parts[1]}/")
+            continue
+
+        # Match against source prefix map (longest prefix first)
+        matched = False
+        for prefix, dirs in sorted(
+            _SOURCE_TO_TESTS.items(), key=lambda x: len(x[0]), reverse=True
+        ):
+            if filepath.startswith(prefix) or filepath == prefix:
+                test_dirs.update(dirs)
+                matched = True
+                break
+
+        # Unknown file → run everything (safe fallback)
+        if not matched:
+            return None
+
+    if not test_dirs:
+        # Only non-testable files changed (docs, CI, etc.) — still run all for safety
+        return None
+
+    # Keep only directories that actually exist
+    existing = sorted(d for d in test_dirs if Path(d).is_dir())
+    return existing if existing else None
+
+
+def has_xdist() -> bool:
+    """Check if pytest-xdist is available."""
+    try:
+        import importlib.util
+
+        return importlib.util.find_spec("xdist") is not None
+    except Exception:
+        return False
 
 
 def main():
@@ -78,6 +180,18 @@ def main():
         print(f"{YELLOW}No tests directory found, skipping tests{NC}")
         return 0
 
+    # Determine test scope: targeted dirs or full suite
+    targeted = get_targeted_test_dirs()
+    if targeted:
+        test_targets = targeted
+        print(
+            f"{BLUE}Targeted mode: {len(targeted)} directories "
+            f"({', '.join(t.rstrip('/').split('/')[-1] for t in targeted)}){NC}"
+        )
+    else:
+        test_targets = ["tests/"]
+        print(f"{BLUE}Full suite mode{NC}")
+
     # Run tests and capture output
     try:
         # Configure environment for subprocess - ensure Python can find project modules
@@ -85,14 +199,24 @@ def main():
         env["PYTHONPATH"] = os.getcwd() + ":" + env.get("PYTHONPATH", "")
 
         # Pre-commit runs unit/acceptance tests only.
-        # Integration and e2e tests run at pre-push (validate_tests_slow.py).
+        # Integration, e2e, and build acceptance tests run at pre-push.
         base_args = [
-            "tests/",
-            "-v",
+            *test_targets,
+            "-x",
             "--tb=short",
             "--ignore-glob=**/integration/**",
             "--ignore-glob=**/e2e/**",
+            "--ignore-glob=**/build/acceptance/**",
         ]
+
+        # Parallel execution with pytest-xdist (if available)
+        # --dist loadfile keeps tests from the same file on one worker
+        # (prevents shared-fixture conflicts between BDD scenarios)
+        if has_xdist():
+            base_args.extend(["-n", "auto", "--dist", "loadfile"])
+        else:
+            base_args.append("-v")
+
         cmd = (
             ["pipenv", "run", "python3", "-m", "pytest", *base_args]
             if use_pipenv

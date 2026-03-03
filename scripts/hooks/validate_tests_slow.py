@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Pre-push Test Validation Hook: Integration & E2E Tests
+"""Pre-push Test Validation Hook: Integration, E2E & Build Acceptance Tests
 
-Runs integration and e2e tests that are excluded from the pre-commit hook.
-These are slower tests that exercise cross-component and end-to-end paths.
+Runs tests that are excluded from the pre-commit hook:
+  - integration/ and e2e/ directories (cross-component paths)
+  - build/acceptance/ (slow plugin assembly tests)
 """
 
 import os
@@ -34,7 +35,7 @@ def clear_git_environment():
 
 
 def collect_test_dirs():
-    """Find all integration/ and e2e/ directories under tests/."""
+    """Find all integration/, e2e/, and build/acceptance/ directories under tests/."""
     tests_root = Path("tests")
     if not tests_root.is_dir():
         return []
@@ -44,21 +45,35 @@ def collect_test_dirs():
         for d in sorted(tests_root.glob(pattern)):
             if d.is_dir():
                 dirs.append(str(d))
+
+    # Build acceptance tests (slow plugin assembly, moved from pre-commit)
+    build_acceptance = tests_root / "build" / "acceptance"
+    if build_acceptance.is_dir():
+        dirs.append(str(build_acceptance))
+
     return dirs
 
 
+def has_xdist() -> bool:
+    """Check if pytest-xdist is available."""
+    try:
+        import importlib.util
+
+        return importlib.util.find_spec("xdist") is not None
+    except Exception:
+        return False
+
+
 def main():
-    """Run integration and e2e test validation."""
+    """Run integration, e2e, and build acceptance test validation."""
     clear_git_environment()
 
     test_dirs = collect_test_dirs()
     if not test_dirs:
-        print(f"{YELLOW}No integration/e2e test directories found, skipping{NC}")
+        print(f"{YELLOW}No slow test directories found, skipping{NC}")
         return 0
 
-    print(
-        f"{BLUE}Running integration & e2e tests ({len(test_dirs)} directories)...{NC}"
-    )
+    print(f"{BLUE}Running pre-push tests ({len(test_dirs)} directories)...{NC}")
 
     # Determine pytest command
     use_pipenv = False
@@ -85,7 +100,15 @@ def main():
     env = os.environ.copy()
     env["PYTHONPATH"] = os.getcwd() + ":" + env.get("PYTHONPATH", "")
 
-    base_args = [*test_dirs, "-v", "--tb=short"]
+    base_args = [*test_dirs, "-x", "--tb=short"]
+
+    # Parallel execution with pytest-xdist (if available)
+    # --dist loadfile keeps tests from the same file on one worker
+    if has_xdist():
+        base_args.extend(["-n", "auto", "--dist", "loadfile"])
+    else:
+        base_args.append("-v")
+
     cmd = (
         ["pipenv", "run", "python3", "-m", "pytest", *base_args]
         if use_pipenv
@@ -103,7 +126,7 @@ def main():
         test_output = result.stdout + result.stderr
         test_exit_code = result.returncode
     except Exception as e:
-        print(f"{RED}Error running integration/e2e tests: {e}{NC}")
+        print(f"{RED}Error running pre-push tests: {e}{NC}")
         return 1
 
     passed_match = re.search(r"(\d+) passed", test_output)
@@ -113,16 +136,14 @@ def main():
     failed_tests = int(failed_match.group(1)) if failed_match else 0
 
     if test_exit_code == 0:
-        print(
-            f"{GREEN}Integration & e2e tests passing ({total_tests}/{total_tests}){NC}"
-        )
+        print(f"{GREEN}Pre-push tests passing ({total_tests}/{total_tests}){NC}")
         return 0
     elif test_exit_code == 5:
-        print(f"{YELLOW}No integration/e2e tests collected, skipping{NC}")
+        print(f"{YELLOW}No pre-push tests collected, skipping{NC}")
         return 0
     else:
         print()
-        print(f"{RED}PUSH BLOCKED: Integration/e2e tests failed{NC}")
+        print(f"{RED}PUSH BLOCKED: Pre-push tests failed{NC}")
         print()
         print(f"{RED}Full pytest output:{NC}")
         print(test_output)
@@ -141,7 +162,7 @@ def main():
                 f" ({failed_tests} failed){NC}"
             )
         print()
-        print(f"{YELLOW}Fix failing integration/e2e tests before pushing.{NC}")
+        print(f"{YELLOW}Fix failing tests before pushing.{NC}")
         return 1
 
 
