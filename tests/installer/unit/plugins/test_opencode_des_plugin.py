@@ -10,12 +10,16 @@ Tests validate that:
 - uninstall() removes only manifest-tracked files
 - uninstall() handles missing manifest with fallback to known path
 - _find_des_source() prefers dist over project layout
+- _create_plugin_registry includes opencode-des when opencode platform detected
+- _create_plugin_registry excludes opencode-des when opencode platform not detected
+- Topological order: opencode-des after opencode-commands, before des
 
 CRITICAL: Tests follow hexagonal architecture - mocks only at port boundaries.
 """
 
 import json
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.opencode_des_plugin import (
@@ -435,3 +439,121 @@ class TestInstallVerifyUninstallCycle:
         assert uninstall_result.success is True
         assert not (target / "nwave-des.ts").exists()
         assert not (target / ".nwave-des-manifest.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Registry integration tests
+# ---------------------------------------------------------------------------
+
+
+def _build_installer():
+    """Build an NWaveInstaller with mocked filesystem paths.
+
+    Returns:
+        NWaveInstaller configured for testing (dry_run=True).
+    """
+    with (
+        patch(
+            "scripts.install.install_nwave.PathUtils.get_claude_config_dir"
+        ) as mock_config,
+        patch("scripts.install.install_nwave.PathUtils.get_project_root") as mock_root,
+    ):
+        mock_config.return_value = Path("/fake/.claude")
+        mock_root.return_value = Path("/fake/project")
+        from scripts.install.install_nwave import NWaveInstaller
+
+        installer = NWaveInstaller(dry_run=True)
+    return installer
+
+
+class TestRegistryIncludesOpencodeDes:
+    """Test that _create_plugin_registry registers opencode-des for opencode platform."""
+
+    def test_registry_includes_opencode_des_when_opencode_platform_detected(self):
+        """
+        GIVEN: target_platforms contains 'opencode'
+        WHEN: _create_plugin_registry() executes
+        THEN: OpenCodeDESPlugin is registered with name 'opencode-des'
+              and depends on 'opencode-commands'
+        """
+        installer = _build_installer()
+
+        registry = installer._create_plugin_registry(
+            silent=True, target_platforms={"opencode"}
+        )
+
+        assert "opencode-des" in registry.plugins, (
+            "opencode-des should be registered when opencode platform detected"
+        )
+        plugin = registry.plugins["opencode-des"]
+        assert "opencode-commands" in plugin.get_dependencies(), (
+            "opencode-des should depend on opencode-commands"
+        )
+
+
+class TestRegistryExcludesOpencodeDesWithoutPlatform:
+    """Test that _create_plugin_registry excludes opencode-des without opencode platform."""
+
+    def test_registry_excludes_opencode_des_without_opencode_platform(self):
+        """
+        GIVEN: target_platforms does NOT contain 'opencode'
+        WHEN: _create_plugin_registry() executes
+        THEN: OpenCodeDESPlugin is NOT registered
+        """
+        installer = _build_installer()
+
+        registry = installer._create_plugin_registry(
+            silent=True, target_platforms={"claude_code"}
+        )
+
+        assert "opencode-des" not in registry.plugins, (
+            "opencode-des should NOT be registered without opencode platform"
+        )
+
+    def test_registry_excludes_opencode_des_with_no_platforms(self):
+        """
+        GIVEN: target_platforms is None
+        WHEN: _create_plugin_registry() executes
+        THEN: OpenCodeDESPlugin is NOT registered
+        """
+        installer = _build_installer()
+
+        registry = installer._create_plugin_registry(silent=True, target_platforms=None)
+
+        assert "opencode-des" not in registry.plugins, (
+            "opencode-des should NOT be registered with no target platforms"
+        )
+
+
+class TestRegistryTopologicalOrder:
+    """Test that topological sort places opencode-des correctly in execution order."""
+
+    def test_opencode_des_after_opencode_commands_before_des(self):
+        """
+        GIVEN: Full plugin registry with opencode platform
+        WHEN: Topological sort resolves execution order
+        THEN: opencode-des runs after opencode-commands (dependency)
+              and before des (priority 39 < 50)
+        """
+        installer = _build_installer()
+
+        registry = installer._create_plugin_registry(
+            silent=True, target_platforms={"opencode"}
+        )
+        execution_order = registry.get_execution_order()
+
+        assert "opencode-des" in execution_order, (
+            "opencode-des should be in execution order"
+        )
+        opencode_des_idx = execution_order.index("opencode-des")
+        opencode_commands_idx = execution_order.index("opencode-commands")
+        des_idx = execution_order.index("des")
+
+        assert opencode_des_idx > opencode_commands_idx, (
+            f"opencode-des (idx={opencode_des_idx}) should run after "
+            f"opencode-commands (idx={opencode_commands_idx})"
+        )
+        assert opencode_des_idx < des_idx, (
+            f"opencode-des (idx={opencode_des_idx}) should run before "
+            f"des (idx={des_idx})"
+        )
