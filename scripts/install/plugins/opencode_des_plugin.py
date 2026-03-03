@@ -21,8 +21,11 @@ from scripts.install.plugins.base import (
 
 _MANIFEST_FILENAME = ".nwave-des-manifest.json"
 
+_MANIFEST_VERSION = "1.0"
+
 _TARGET_FILENAME = "nwave-des.ts"
 
+# Hook event name -- proves the file is a valid DES plugin
 _CONTENT_CHECK_STRING = "tool.execute.before"
 
 
@@ -66,7 +69,7 @@ def _write_manifest(target_dir: Path, installed_filename: str) -> None:
     """
     manifest = {
         "installed_files": [installed_filename],
-        "version": "1.0",
+        "version": _MANIFEST_VERSION,
     }
     manifest_path = target_dir / _MANIFEST_FILENAME
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")

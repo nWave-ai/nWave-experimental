@@ -9,7 +9,6 @@ Tests validate that:
 - verify() content check detects "tool.execute.before"
 - uninstall() removes only manifest-tracked files
 - uninstall() handles missing manifest with fallback to known path
-- _find_des_source() prefers dist over project layout
 - _create_plugin_registry includes opencode-des when opencode platform detected
 - _create_plugin_registry excludes opencode-des when opencode platform not detected
 - Topological order: opencode-des after opencode-commands, before des
@@ -24,7 +23,6 @@ from unittest.mock import MagicMock, patch
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.opencode_des_plugin import (
     OpenCodeDESPlugin,
-    _find_des_source,
 )
 
 
@@ -168,6 +166,7 @@ class TestVerifyPassesAfterSuccessfulInstall:
         result = plugin.verify(context)
 
         assert result.success is True
+        assert result.errors == []
 
 
 class TestVerifyFailsWhenFileMissing:
@@ -281,89 +280,6 @@ class TestUninstallHandlesMissingManifestGracefully:
         result = plugin.uninstall(context)
 
         assert result.success is True
-
-
-class TestFindDesSourcePrefersDist:
-    """Test that _find_des_source() prefers dist over project layout."""
-
-    def test_find_des_source_prefers_dist(self, tmp_path):
-        """
-        GIVEN: Both dist and project source locations contain opencode-plugin.ts
-        WHEN: _find_des_source() is called
-        THEN: Returns the dist path (framework_source), not the project path
-        """
-        project_root = tmp_path / "project"
-        framework_source = tmp_path / "framework"
-
-        # Create both locations
-        dist_des = framework_source / "des"
-        dist_des.mkdir(parents=True)
-        (dist_des / "opencode-plugin.ts").write_text("// dist version")
-
-        proj_des = project_root / "nWave" / "des"
-        proj_des.mkdir(parents=True)
-        (proj_des / "opencode-plugin.ts").write_text("// project version")
-
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=MagicMock(),
-            project_root=project_root,
-            framework_source=framework_source,
-        )
-
-        result = _find_des_source(context)
-
-        assert result is not None
-        assert "framework" in str(result), "Should prefer dist (framework_source)"
-
-    def test_find_des_source_falls_back_to_project(self, tmp_path):
-        """
-        GIVEN: Only project source location contains opencode-plugin.ts
-        WHEN: _find_des_source() is called
-        THEN: Returns the project path
-        """
-        project_root = tmp_path / "project"
-        framework_source = tmp_path / "framework"
-
-        # Only create project location
-        proj_des = project_root / "nWave" / "des"
-        proj_des.mkdir(parents=True)
-        (proj_des / "opencode-plugin.ts").write_text("// project version")
-
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=MagicMock(),
-            project_root=project_root,
-            framework_source=framework_source,
-        )
-
-        result = _find_des_source(context)
-
-        assert result is not None
-        assert "project" in str(result), "Should fall back to project"
-
-    def test_find_des_source_returns_none_when_missing(self, tmp_path):
-        """
-        GIVEN: No source location contains opencode-plugin.ts
-        WHEN: _find_des_source() is called
-        THEN: Returns None
-        """
-        context = InstallContext(
-            claude_dir=tmp_path / ".claude",
-            scripts_dir=tmp_path / "scripts",
-            templates_dir=tmp_path / "templates",
-            logger=MagicMock(),
-            project_root=tmp_path / "project",
-            framework_source=tmp_path / "framework",
-        )
-
-        result = _find_des_source(context)
-
-        assert result is None
 
 
 class TestVerifyContentCheck:

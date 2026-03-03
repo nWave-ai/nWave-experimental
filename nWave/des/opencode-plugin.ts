@@ -29,7 +29,7 @@ import { join, basename } from "path"
 // Domain Types
 // =============================================================================
 
-type Phase =
+export type Phase =
   | "NOT_STARTED"
   | "PREPARE"
   | "RED_ACCEPTANCE"
@@ -38,11 +38,11 @@ type Phase =
   | "COMMIT"
   | "COMPLETED"
 
-type ToolCategory = "writeTest" | "writeProd" | "editTest" | "editProd" | "bash" | "readOnly"
+export type ToolCategory = "writeTest" | "writeProd" | "editTest" | "editProd" | "bash" | "readOnly"
 
-type FileKind = "test" | "production"
+export type FileKind = "test" | "production"
 
-type StaleSeverity = "none" | "warning" | "error"
+export type StaleSeverity = "none" | "warning" | "error"
 
 interface StalenessResult {
   readonly stale: boolean
@@ -113,7 +113,7 @@ const TEST_FILE_PATTERNS: ReadonlyArray<RegExp> = [
 
 const TEST_INFRA_PATTERNS: ReadonlyArray<string> = ["conftest"]
 
-const classifyFile = (filePath: string): FileKind => {
+export const classifyFile = (filePath: string): FileKind => {
   const normalizedPath = filePath.replace(/\\/g, "/")
   const fileName = basename(normalizedPath)
 
@@ -145,7 +145,7 @@ const isProductionFile = (filePath: string): boolean =>
 // 7. Stale Session Detector (Pure)
 // =============================================================================
 
-const detectStaleness = (startedAt: string, now: Date): StalenessResult => {
+export const detectStaleness = (startedAt: string, now: Date): StalenessResult => {
   const startTime = new Date(startedAt).getTime()
   const elapsed = now.getTime() - startTime
 
@@ -255,7 +255,7 @@ const VALID_TRANSITIONS: Record<Phase, ReadonlyArray<Phase>> = {
 // Tool Category Classification (Pure)
 // =============================================================================
 
-const classifyToolCall = (
+export const classifyToolCall = (
   toolName: string,
   filePath: string | undefined
 ): ToolCategory => {
@@ -279,7 +279,7 @@ const classifyToolCall = (
 // 3. Phase Enforcer (Pure)
 // =============================================================================
 
-const enforcePhasePolicy = (
+export const enforcePhasePolicy = (
   phase: Phase,
   toolCategory: ToolCategory,
   toolName: string,
@@ -341,7 +341,7 @@ const enforcePhasePolicy = (
 // 6. Phase Transition Manager (Pure logic, impure wiring)
 // =============================================================================
 
-const validateTransition = (
+export const validateTransition = (
   currentPhase: Phase,
   nextPhase: Phase,
   evidence: string
@@ -419,8 +419,8 @@ const writeAuditEntry = (directory: string, entry: AuditEntry): void => {
     const logFile = join(logDir, AUDIT_FILENAME)
     const line = JSON.stringify(entry) + "\n"
     writeFileSync(logFile, line, { flag: "a" })
-  } catch {
-    // Audit logging must never block enforcement -- swallow all errors
+  } catch (e) {
+    console.error("nWave DES: Audit write failed:", e)
   }
 }
 
@@ -487,8 +487,8 @@ const saveSession = (directory: string, session: DESSession): void => {
     // Atomic write: write to temp, then rename
     writeFileSync(tmpPath, content, "utf-8")
     renameSync(tmpPath, targetPath)
-  } catch {
-    // State write failure is logged but does not crash the plugin
+  } catch (e) {
+    console.error("nWave DES: State write failed:", e)
   }
 }
 
@@ -645,7 +645,8 @@ const plugin: Plugin = async ({ directory }) => {
 
       // Track file modifications from write/edit tools
       const filePath =
-        (input as Record<string, unknown>).filePath as string | undefined
+        ((input as Record<string, unknown>).args as Record<string, unknown>)
+          ?.filePath as string | undefined
       if (filePath && (input.tool === "write" || input.tool === "edit")) {
         updatedSession = addModifiedFile(updatedSession, filePath)
       }
