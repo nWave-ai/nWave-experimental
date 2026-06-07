@@ -147,7 +147,10 @@ def metadata_version_matches_project(
     """
     result = build_result["build_result"]
 
-    import tomllib
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        import tomli as tomllib  # type: ignore[no-redef]
 
     with open(build_config["pyproject_path"], "rb") as f:
         pyproject = tomllib.load(f)
@@ -218,13 +221,27 @@ def plugin_has_agents(count: int, build_result: dict[str, Any]):
     assert len(agent_files) >= count
 
 
-@then("the plugin contains all 23 agent definitions")
-def plugin_has_all_agents(build_result: dict[str, Any]):
-    """Verify all 23 agents are present."""
+@then("the plugin contains only public agent definitions")
+def plugin_has_only_public_agents(
+    build_result: dict[str, Any], nwave_source_tree: Path
+):
+    """Verify only public agents are present (private agents excluded)."""
+    from scripts.shared.agent_catalog import load_public_agents
+
     plugin_dir = build_result["plugin_dir"]
     agents_dir = plugin_dir / "agents"
     agent_files = list(agents_dir.glob("*.md"))
-    assert len(agent_files) == 23, f"Expected 23 agents, found {len(agent_files)}"
+    public_agents = load_public_agents(nwave_source_tree)
+    # Each public agent may have a reviewer variant — count expected files
+    expected_files = [
+        f
+        for f in (nwave_source_tree / "agents").glob("*.md")
+        if f.stem.removeprefix("nw-").removesuffix("-reviewer") in public_agents
+        or f.stem.removeprefix("nw-") in public_agents
+    ]
+    assert len(agent_files) == len(expected_files), (
+        f"Expected {len(expected_files)} public agents, found {len(agent_files)}"
+    )
 
 
 @then("every agent file is readable and properly structured")
@@ -350,14 +367,27 @@ def plugin_has_skills(count: int, build_result: dict[str, Any]):
 
 
 @then("the plugin contains all skill files from the source tree")
-def plugin_has_all_skills(build_result: dict[str, Any], build_config: dict[str, Any]):
-    """Verify all skills are present."""
+def plugin_has_all_skills(
+    build_result: dict[str, Any],
+    build_config: dict[str, Any],
+    nwave_source_tree: Path,
+):
+    """Verify all public skills are present (private skills excluded)."""
+    from scripts.shared.agent_catalog import is_public_skill, load_public_agents
+
     plugin_dir = build_result["plugin_dir"]
     source_dir = build_config["nwave_dir"] / "skills"
-    source_skills = list(source_dir.rglob("*.md"))
+    public_agents = load_public_agents(nwave_source_tree)
+    # Count only source skills belonging to public agents
+    public_source_skills = [
+        f
+        for f in source_dir.rglob("*.md")
+        if is_public_skill(f.parent.name, public_agents)
+    ]
     plugin_skills = list((plugin_dir / "skills").rglob("*.md"))
-    assert len(plugin_skills) >= len(source_skills), (
-        f"Expected >= {len(source_skills)} skills, found {len(plugin_skills)}"
+    assert len(plugin_skills) >= len(public_source_skills), (
+        f"Expected >= {len(public_source_skills)} public skills, "
+        f"found {len(plugin_skills)}"
     )
 
 
@@ -372,25 +402,50 @@ def skills_organized_by_agent(build_result: dict[str, Any]):
 
 @then("the directory structure mirrors the source layout")
 def skills_mirror_source_layout(
-    build_result: dict[str, Any], build_config: dict[str, Any]
+    build_result: dict[str, Any],
+    build_config: dict[str, Any],
+    nwave_source_tree: Path,
 ):
-    """Verify skill directory structure matches source."""
+    """Verify skill directory structure matches public source."""
+    from scripts.shared.agent_catalog import (
+        build_ownership_map,
+        is_public_skill,
+        load_public_agents,
+    )
+
     plugin_dir = build_result["plugin_dir"]
     source_dir = build_config["nwave_dir"] / "skills"
-    source_dirs = {d.name for d in source_dir.iterdir() if d.is_dir()}
+    public_agents = load_public_agents(nwave_source_tree)
+    ownership_map = build_ownership_map(nwave_source_tree / "agents")
+    source_dirs = {
+        d.name
+        for d in source_dir.iterdir()
+        if d.is_dir() and is_public_skill(d.name, public_agents, ownership_map)
+    }
     plugin_dirs = {d.name for d in (plugin_dir / "skills").iterdir() if d.is_dir()}
     assert source_dirs == plugin_dirs
 
 
 @then("every source skill file is present in the plugin")
-def source_skills_present(build_result: dict[str, Any], build_config: dict[str, Any]):
-    """Verify all source skill files exist in the plugin (SKILL.md is additive)."""
+def source_skills_present(
+    build_result: dict[str, Any],
+    build_config: dict[str, Any],
+    nwave_source_tree: Path,
+):
+    """Verify all public source skill files exist in the plugin."""
+    from scripts.shared.agent_catalog import is_public_skill, load_public_agents
+
     plugin_dir = build_result["plugin_dir"]
     source_dir = build_config["nwave_dir"] / "skills"
-    source_names = {f.name for f in source_dir.rglob("*.md")}
+    public_agents = load_public_agents(nwave_source_tree)
+    source_names = {
+        f.name
+        for f in source_dir.rglob("*.md")
+        if is_public_skill(f.parent.name, public_agents)
+    }
     plugin_names = {f.name for f in (plugin_dir / "skills").rglob("*.md")}
     missing = source_names - plugin_names
-    assert len(missing) == 0, f"Source skills missing from plugin: {missing}"
+    assert len(missing) == 0, f"Public source skills missing from plugin: {missing}"
 
 
 @then("each skill directory has a SKILL.md entry point")
@@ -481,11 +536,18 @@ def agent_file_preserved_name(build_result: dict[str, Any]):
 
 @then("every agent in the source has exactly one corresponding file in the plugin")
 def one_to_one_agent_mapping(
-    build_result: dict[str, Any], build_config: dict[str, Any]
+    build_result: dict[str, Any],
+    build_config: dict[str, Any],
+    nwave_source_tree: Path,
 ):
-    """Property: bijective mapping between source and plugin agents."""
+    """Property: bijective mapping between public source and plugin agents."""
+    from scripts.shared.agent_catalog import is_public_agent, load_public_agents
+
+    public_agents = load_public_agents(nwave_source_tree)
     source_agents = {
-        f.name for f in (build_config["nwave_dir"] / "agents").glob("*.md")
+        f.name
+        for f in (build_config["nwave_dir"] / "agents").glob("*.md")
+        if is_public_agent(f.name, public_agents)
     }
     plugin_agents = {
         f.name for f in (build_result["plugin_dir"] / "agents").glob("*.md")
@@ -494,10 +556,19 @@ def one_to_one_agent_mapping(
 
 
 @then("no extra agent files are introduced")
-def no_extra_agents(build_result: dict[str, Any], build_config: dict[str, Any]):
-    """Property: no files added that are not in source."""
+def no_extra_agents(
+    build_result: dict[str, Any],
+    build_config: dict[str, Any],
+    nwave_source_tree: Path,
+):
+    """Property: no files added that are not in public source."""
+    from scripts.shared.agent_catalog import is_public_agent, load_public_agents
+
+    public_agents = load_public_agents(nwave_source_tree)
     source_agents = {
-        f.name for f in (build_config["nwave_dir"] / "agents").glob("*.md")
+        f.name
+        for f in (build_config["nwave_dir"] / "agents").glob("*.md")
+        if is_public_agent(f.name, public_agents)
     }
     plugin_agents = {
         f.name for f in (build_result["plugin_dir"] / "agents").glob("*.md")
@@ -513,7 +584,10 @@ def version_identity(build_result: dict[str, Any], build_config: dict[str, Any])
     Version is in BuildResult.metadata (not in plugin.json on disk),
     because plugin.json only contains fields used by Claude Code runtime.
     """
-    import tomllib
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        import tomli as tomllib  # type: ignore[no-redef]
 
     result = build_result["build_result"]
     with open(build_config["pyproject_path"], "rb") as f:

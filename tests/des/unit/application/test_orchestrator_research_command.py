@@ -1,7 +1,7 @@
 """
 Unit tests for research command handling in DESOrchestrator.
 
-Validates that /nw:research commands:
+Validates that /nw-research commands:
 - Are NOT in VALIDATION_COMMANDS constant
 - Do NOT receive TIMEOUT_INSTRUCTION section
 - Return minimal prompt without DES validation overhead
@@ -13,19 +13,19 @@ from des.application.orchestrator import DESOrchestrator
 
 
 class TestResearchCommandValidation:
-    """Unit tests for /nw:research command prompt rendering."""
+    """Unit tests for /nw-research command prompt rendering."""
 
     # Test constants (L1: Extract magic strings to named constants)
-    RESEARCH_COMMAND = "/nw:research"
-    EXECUTE_COMMAND = "/nw:execute"
-    DEVELOP_COMMAND = "/nw:develop"
+    RESEARCH_COMMAND = "/nw-research"
+    EXECUTE_COMMAND = "/nw-execute"
+    DEVELOP_COMMAND = "/nw-develop"
     TIMEOUT_INSTRUCTION_SECTION = "TIMEOUT_INSTRUCTION"
 
     def test_research_command_not_in_validation_commands(self):
         """
         GIVEN DESOrchestrator VALIDATION_COMMANDS constant
-        WHEN checking for /nw:research
-        THEN /nw:research is NOT present in the list
+        WHEN checking for /nw-research
+        THEN /nw-research is NOT present in the list
 
         Business Context:
         Research commands are exploratory, not production workflows.
@@ -50,7 +50,7 @@ class TestResearchCommandValidation:
         self, des_orchestrator, tmp_project_root
     ):
         """
-        GIVEN /nw:research command
+        GIVEN /nw-research command
         WHEN render_prompt() is called
         THEN prompt does NOT contain TIMEOUT_INSTRUCTION section
 
@@ -82,7 +82,7 @@ class TestResearchCommandValidation:
         self, des_orchestrator, tmp_project_root
     ):
         """
-        GIVEN /nw:research command
+        GIVEN /nw-research command
         WHEN render_prompt() is called
         THEN prompt structure excludes all timeout-related content
 
@@ -129,7 +129,7 @@ class TestResearchCommandValidation:
         self, des_orchestrator, tmp_project_root
     ):
         """
-        GIVEN /nw:research command
+        GIVEN /nw-research command
         WHEN render_prompt() is called
         THEN prompt is minimal (empty or minimal DES-free content)
 
@@ -164,7 +164,7 @@ class TestResearchCommandValidation:
         self, des_orchestrator, tmp_project_root
     ):
         """
-        GIVEN /nw:research command
+        GIVEN /nw-research command
         WHEN render_full_prompt() is called
         THEN ValueError is raised (research not supported by full prompt)
 

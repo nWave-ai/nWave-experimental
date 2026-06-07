@@ -1,6 +1,6 @@
-"""PreToolUseService - application service for Task tool invocation validation.
+"""PreToolUseService - application service for Agent tool invocation validation.
 
-Orchestrates domain logic (MaxTurnsPolicy, DesMarkerParser) and driven ports
+Orchestrates domain logic (DesMarkerParser, MarkerCompletenessPolicy) and driven ports
 (ValidatorPort, AuditLogWriter, TimeProvider) to produce allow/block decisions.
 
 This service implements the PreToolUsePort driver port interface.
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from des.domain.des_marker_parser import classify_atdd_pure_dispatch
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driver_ports.pre_tool_use_port import (
     HookDecision,
@@ -22,47 +23,44 @@ if TYPE_CHECKING:
     from des.domain.des_enforcement_policy import DesEnforcementPolicy
     from des.domain.des_marker_parser import DesMarkerParser
     from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
-    from des.domain.max_turns_policy import MaxTurnsPolicy
     from des.ports.driven_ports.time_provider_port import TimeProvider
     from des.ports.driver_ports.validator_port import ValidatorPort
 
 
 class PreToolUseService(PreToolUsePort):
-    """Validates Task tool invocations before execution.
+    """Validates Agent tool invocations before execution.
 
     Flow:
       1. Parse DES markers via DesMarkerParser
       2. Block step-id tasks without DES markers via DesEnforcementPolicy
          - If enforced: log HOOK_PRE_TOOL_USE_BLOCKED, return block
       3. If not DES task: log HOOK_PRE_TOOL_USE_ALLOWED, return allow immediately
-         (no max_turns check, no prompt validation — non-DES tasks pass through)
-      4. Validate max_turns via MaxTurnsPolicy (DES tasks only)
-         - If invalid: log HOOK_PRE_TOOL_USE_BLOCKED, return block
-      5. Validate marker completeness via MarkerCompletenessPolicy
+         (no prompt validation — non-DES tasks pass through)
+      4. Validate marker completeness via MarkerCompletenessPolicy
          - If invalid: log HOOK_PRE_TOOL_USE_BLOCKED, return block
          - If orchestrator mode: log HOOK_PRE_TOOL_USE_ALLOWED, return allow
-      6. Validate prompt structure via ValidatorPort
+      5. Validate prompt structure via ValidatorPort
          - If invalid: log HOOK_PRE_TOOL_USE_BLOCKED, return block
          - If valid: log HOOK_PRE_TOOL_USE_ALLOWED, return allow
     """
 
     def __init__(
         self,
-        max_turns_policy: MaxTurnsPolicy,
         marker_parser: DesMarkerParser,
         prompt_validator: ValidatorPort,
         audit_writer: AuditLogWriter,
         time_provider: TimeProvider,
         enforcement_policy: DesEnforcementPolicy | None = None,
         completeness_policy: MarkerCompletenessPolicy | None = None,
+        atdd_pure_validator: ValidatorPort | None = None,
     ) -> None:
-        self._max_turns_policy = max_turns_policy
         self._marker_parser = marker_parser
         self._prompt_validator = prompt_validator
         self._audit_writer = audit_writer
         self._time_provider = time_provider
         self._enforcement_policy = enforcement_policy
         self._completeness_policy = completeness_policy
+        self._atdd_pure_validator = atdd_pure_validator
 
     def validate(
         self,
@@ -100,17 +98,7 @@ class PreToolUseService(PreToolUsePort):
             self._log_allowed(context="non_des_task", hook_id=hook_id)
             return HookDecision.allow()
 
-        # Step 3: Validate max_turns (DES tasks only)
-        policy_result = self._max_turns_policy.validate(input_data.max_turns)
-        if not policy_result.is_valid:
-            self._log_blocked(
-                policy_result.reason or "MISSING_MAX_TURNS", hook_id=hook_id
-            )
-            return HookDecision.block(
-                reason=policy_result.reason or "MISSING_MAX_TURNS"
-            )
-
-        # Step 4: Validate marker completeness
+        # Step 3: Validate marker completeness
         if self._completeness_policy:
             completeness = self._completeness_policy.validate(markers)
             if not completeness.is_valid:
@@ -127,7 +115,18 @@ class PreToolUseService(PreToolUsePort):
             self._log_allowed(context="orchestrator_mode", hook_id=hook_id)
             return HookDecision.allow()
 
-        # Step 5: Validate DES prompt structure
+        # Step 4b: Mode-aware dispatch-prompt routing (T-B / F-08 G-2).
+        # An atdd_pure dispatch carries the A→G phase block + AT-completion
+        # ledger sections, NOT the classic execution-log schema. Route it to
+        # the atdd_pure validator so the classic mandatory-section schema is
+        # not wrongly imposed. A classic dispatch ("absent") is unchanged.
+        classification = classify_atdd_pure_dispatch(markers)
+        if classification != "absent":
+            return self._validate_atdd_pure_dispatch(
+                input_data.prompt, classification, hook_id=hook_id
+            )
+
+        # Step 5: Validate DES prompt structure (classic schema)
         validation_result = self._prompt_validator.validate_prompt(input_data.prompt)
 
         if validation_result.task_invocation_allowed:
@@ -137,6 +136,37 @@ class PreToolUseService(PreToolUsePort):
             reason = "; ".join(validation_result.errors)
             self._log_blocked(reason, hook_id=hook_id)
             return HookDecision.block(reason=reason)
+
+    def _validate_atdd_pure_dispatch(
+        self,
+        prompt: str,
+        classification: str,
+        hook_id: str | None = None,
+    ) -> HookDecision:
+        """Validate an atdd_pure carpaccio-slice dispatch prompt (T-B).
+
+        A 'defective' marker set is blocked outright. A 'valid' marker set is
+        validated against the atdd_pure section schema via the atdd_pure
+        validator; if no atdd_pure validator is wired, the dispatch is allowed
+        (marker set already proven valid by classify_atdd_pure_dispatch).
+        """
+        if classification == "defective":
+            reason = "ATDD_PURE_DISPATCH_DEFECTIVE: incomplete atdd_pure marker set"
+            self._log_blocked(reason, hook_id=hook_id)
+            return HookDecision.block(reason=reason)
+
+        if self._atdd_pure_validator is None:
+            self._log_allowed(context="atdd_pure_validated", hook_id=hook_id)
+            return HookDecision.allow()
+
+        validation_result = self._atdd_pure_validator.validate_prompt(prompt)
+        if validation_result.task_invocation_allowed:
+            self._log_allowed(context="atdd_pure_validated", hook_id=hook_id)
+            return HookDecision.allow()
+
+        reason = "; ".join(validation_result.errors)
+        self._log_blocked(reason, hook_id=hook_id)
+        return HookDecision.block(reason=reason)
 
     def _log_allowed(self, context: str, hook_id: str | None = None) -> None:
         """Log an allowed invocation to the audit trail."""

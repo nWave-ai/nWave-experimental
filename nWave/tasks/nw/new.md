@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 **Wave**: CROSS_WAVE (entry point)
 **Agent**: Main Instance (self — wizard)
-**Command**: `/nw:new`
+**Command**: `/nw-new`
 
 ## Overview
 
@@ -41,7 +41,7 @@ Show derived ID via AskUserQuestion. Allow override with custom value.
 ### Step 3: Name Conflict Check
 
 Check if `docs/feature/{feature-id}/` exists. If so, offer via AskUserQuestion:
-1. **Continue that project** — switch to `/nw:continue`
+1. **Continue that project** — switch to `/nw-continue`
 2. **Start fresh with different name** — ask for distinguishing name
 3. **Archive and restart** — move to `docs/feature/{feature-id}-archived-{date}/`
 
@@ -83,21 +83,21 @@ No source code and no prior features -> **greenfield** | Otherwise -> **brownfie
 Decision tree:
 ```
 IF "fixing a bug":
-    -> /nw:root-why ("Investigate the root cause first")
+    -> /nw-root-why ("Investigate the root cause first")
 IF "haven't validated the problem":
-    -> /nw:discover ("Validate the problem space before building")
+    -> /nw-discover ("Validate the problem space before building")
 IF "rough idea, need to explore":
-    -> /nw:discuss ("Define requirements and acceptance criteria")
+    -> /nw-discuss ("Define requirements and acceptance criteria")
 IF "clear requirements, nothing written":
-    -> /nw:discuss ("Formalize requirements into user stories")
+    -> /nw-discuss ("Formalize requirements into user stories")
 IF existing DISCUSS artifacts found:
-    -> /nw:design ("Requirements exist, design the architecture")
+    -> /nw-design ("Requirements exist, design the architecture")
 IF existing DESIGN artifacts found:
-    -> /nw:distill ("Architecture exists, create acceptance tests")
+    -> /nw-distill ("Architecture exists, create acceptance tests")
 IF all prior waves complete:
-    -> /nw:deliver ("Ready for implementation")
+    -> /nw-deliver ("Ready for implementation")
 DEFAULT:
-    -> /nw:discuss ("Start by defining what to build")
+    -> /nw-discuss ("Start by defining what to build")
 ```
 
 Show recommendation with rationale via AskUserQuestion: recommended wave command|why this wave (one sentence)|what it produces.
@@ -120,6 +120,10 @@ Invoke recommended wave command by reading its task file and following instructi
 | User cannot classify feature type | Default to "cross-cutting", note uncertainty |
 | No clear wave recommendation | Default to DISCUSS with explanation |
 
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
+
 ## Success Criteria
 
 - [ ] User described feature in plain language
@@ -134,18 +138,18 @@ Invoke recommended wave command by reading its task file and following instructi
 
 ### Example 1: Greenfield backend feature
 ```
-/nw:new "Add rate limiting to the API gateway"
+/nw-new "Add rate limiting to the API gateway"
 ```
-Derives `rate-limiting-api-gateway`, detects no prior artifacts (greenfield), asks clarifying questions. User says "new functionality, clear requirements." Recommends DISCUSS, launches `/nw:discuss "rate-limiting-api-gateway"`.
+Derives `rate-limiting-api-gateway`, detects no prior artifacts (greenfield), asks clarifying questions. User says "new functionality, clear requirements." Recommends DISCUSS, launches `/nw-discuss "rate-limiting-api-gateway"`.
 
 ### Example 2: Bug fix
 ```
-/nw:new "Fix authentication timeout errors"
+/nw-new "Fix authentication timeout errors"
 ```
-Detects "fix" in description. User confirms bug. Recommends `/nw:root-why "authentication timeout errors"`.
+Detects "fix" in description. User confirms bug. Recommends `/nw-root-why "authentication timeout errors"`.
 
 ### Example 3: Unclear problem
 ```
-/nw:new "Build a customer feedback system"
+/nw-new "Build a customer feedback system"
 ```
-User says they haven't validated whether customers want this. Recommends DISCOVER, launches `/nw:discover "customer-feedback-system"`.
+User says they haven't validated whether customers want this. Recommends DISCOVER, launches `/nw-discover "customer-feedback-system"`.

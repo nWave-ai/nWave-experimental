@@ -9,7 +9,7 @@ from pathlib import Path
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.phase_event import PhaseEvent
 from des.domain.step_completion_validator import StepCompletionValidator
-from des.domain.tdd_schema import get_tdd_schema
+from des.domain.tdd_schema import TDDSchemaLoader
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driven_ports.execution_log_reader import ExecutionLogReader
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
@@ -107,7 +107,7 @@ def test_single_scope_violation_logs_feature_name():
 
     service = SubagentStopService(
         log_reader=log_reader,
-        completion_validator=StepCompletionValidator(schema=get_tdd_schema()),
+        completion_validator=StepCompletionValidator(schema=TDDSchemaLoader().load()),
         scope_checker=scope_checker,
         audit_writer=audit_writer,
         time_provider=time_provider,
@@ -151,7 +151,7 @@ def test_multiple_scope_violations_each_log_feature_name():
 
     service = SubagentStopService(
         log_reader=log_reader,
-        completion_validator=StepCompletionValidator(schema=get_tdd_schema()),
+        completion_validator=StepCompletionValidator(schema=TDDSchemaLoader().load()),
         scope_checker=scope_checker,
         audit_writer=audit_writer,
         time_provider=time_provider,
@@ -190,7 +190,7 @@ def test_no_scope_violations_no_events_logged():
 
     service = SubagentStopService(
         log_reader=log_reader,
-        completion_validator=StepCompletionValidator(schema=get_tdd_schema()),
+        completion_validator=StepCompletionValidator(schema=TDDSchemaLoader().load()),
         scope_checker=scope_checker,
         audit_writer=audit_writer,
         time_provider=time_provider,

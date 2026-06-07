@@ -4,8 +4,10 @@ Pre-Invocation Template Validator
 Validates that DES prompts contain all mandatory sections and TDD phases
 before Task invocation, preventing incomplete instructions from reaching sub-agents.
 
-Uses canonical 5-phase TDD cycle from step-tdd-cycle-schema.json v4.0 (single source of truth).
-All phase names, skip prefixes, and validation rules loaded from schema.
+Uses canonical 3-phase TDD cycle per ADR-025 (RED, GREEN, COMMIT) as the
+default. Per-log dispatch via the ``schema_version`` field routes pre-2026-05-07
+audit logs (``schema_version="4.0"``) through the legacy 5-phase contract to
+preserve replay correctness.
 
 MANDATORY SECTIONS (9):
 1. DES_METADATA
@@ -18,16 +20,27 @@ MANDATORY SECTIONS (9):
 8. BOUNDARY_RULES
 9. TIMEOUT_INSTRUCTION
 
-MANDATORY TDD PHASES (5 from schema):
-1. PREPARE, 2. RED_ACCEPTANCE, 3. RED_UNIT, 4. GREEN (merged GREEN_UNIT + GREEN_ACCEPTANCE)
-5. COMMIT (absorbs FINAL_VALIDATE)
-Note: REVIEW moved to deliver-level Phase 4 (Adversarial Review via /nw:review)
-Note: REFACTOR moved to deliver-level Phase 3 (Complete Refactoring L1-L4 via /nw:refactor)
+MANDATORY TDD PHASES (3 canonical per ADR-025):
+1. RED (absorbs PREPARE + RED_ACCEPTANCE + RED_UNIT via fail-for-right-reason gate)
+2. GREEN
+3. COMMIT
+Legacy 5-phase (schema_version='4.0'): PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT
+Note: REVIEW moved to deliver-level Phase 4 (Adversarial Review via /nw-review)
+Note: REFACTOR moved to deliver-level Phase 3 (Complete Refactoring L1-L4 via /nw-refactor)
 """
+
+from __future__ import annotations
 
 import re
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from des.domain.value_objects import PhaseStatus
+
+
+if TYPE_CHECKING:
+    from des.domain.tdd_schema import TDDSchema
 
 
 @dataclass
@@ -74,7 +87,7 @@ class MandatorySectionChecker:
         "RECORDING_INTEGRITY": (
             "Add RECORDING_INTEGRITY section with valid skip prefixes "
             "(NOT_APPLICABLE, BLOCKED_BY_DEPENDENCY, APPROVED_SKIP, CHECKPOINT_PENDING) "
-            "and anti-fraud rules. See ~/.claude/commands/nw/execute.md"
+            "and anti-fraud rules. See ~/.claude/skills/nw-execute/SKILL.md"
         ),
         "BOUNDARY_RULES": "Add BOUNDARY_RULES section specifying which files can be modified",
         "TIMEOUT_INSTRUCTION": "Add TIMEOUT_INSTRUCTION section with turn budget guidance",
@@ -141,11 +154,15 @@ class TDDPhaseValidator:
     Note: REFACTOR moved to deliver-level Phase 3 (Complete Refactoring L1-L4)
     """
 
-    def __init__(self):
-        """Initialize validator with schema loader."""
-        from des.domain.tdd_schema import get_tdd_schema
+    def __init__(self, schema: TDDSchema | None = None):
+        """Initialize validator with TDD schema.
 
-        self._schema = get_tdd_schema()
+        Args:
+            schema: TDDSchema instance. If None, loads from default path.
+        """
+        from des.domain.tdd_schema import resolve_schema_or_default
+
+        self._schema = resolve_schema_or_default(schema)
         self.MANDATORY_PHASES = self._schema.tdd_phases
 
     def validate(self, prompt: str) -> list[str]:
@@ -260,11 +277,54 @@ class ExecutionLogValidator:
     to ensure phase execution logs are complete and consistent.
     """
 
-    def __init__(self):
-        """Initialize validator with schema loader."""
-        from des.domain.tdd_schema import get_tdd_schema
+    def __init__(self, schema: TDDSchema | None = None):
+        """Initialize validator with TDD schema.
 
-        self._schema = get_tdd_schema()
+        Args:
+            schema: TDDSchema instance. If None, loads from default path.
+        """
+        if schema is None:
+            from des.domain.tdd_schema import TDDSchemaLoader
+
+            schema = TDDSchemaLoader().load()
+        self._schema = schema
+
+    _LEGACY_ONLY_PHASES: frozenset[str] = frozenset(
+        {"PREPARE", "RED_ACCEPTANCE", "RED_UNIT"}
+    )
+
+    def _resolve_active_phases(
+        self,
+        schema_version: str,
+        phase_log: list[dict] | None = None,
+    ) -> tuple[str, ...]:
+        """Return the active phase list for a given log's schema_version.
+
+        ADR-025 per-log dispatch (2026-05-18):
+        - ``schema_version="4.0"`` → legacy 5-phase (audit-log replay path)
+        - ``schema_version="5.0"`` → canonical 3-phase (ADR-025)
+        - Any other / absent value: auto-detect from the log itself. If any
+          phase name in ``phase_log`` belongs to the legacy-only set
+          (PREPARE / RED_ACCEPTANCE / RED_UNIT), treat the log as v4 and
+          return ``legacy_phases``. Otherwise fall back to
+          ``self._schema.tdd_phases`` (canonical post-flip default).
+
+        Empty string / None schema_version is treated as absent. Auto-detect
+        preserves backward-compat for callers that record v4 logs but never
+        set the explicit version field.
+        """
+        if schema_version == "4.0":
+            return self._schema.legacy_phases
+        if schema_version == "5.0":
+            return self._schema.canonical_phases
+        if phase_log:
+            recorded = {p.get("phase_name") for p in phase_log if p.get("phase_name")}
+            # Require the COMPLETE legacy-only set to switch — a single
+            # stray legacy phase name is an anomaly, not a canon switch
+            # (otherwise integrity-test fixtures contaminate dispatch).
+            if self._LEGACY_ONLY_PHASES.issubset(recorded):
+                return self._schema.legacy_phases
+        return self._schema.tdd_phases
 
     def validate(
         self,
@@ -304,20 +364,17 @@ class ExecutionLogValidator:
         if not phase_log:
             return errors
 
-        # Skip schema-level validation if requested (for unit testing individual rules)
         if not skip_schema_validation:
-            # Get expected phases and count from schema (single source of truth)
-            expected_phases = len(self._schema.tdd_phases)
-            required_phases = set(self._schema.tdd_phases)
+            active_phases = self._resolve_active_phases(schema_version, phase_log)
+            expected_phases = len(active_phases)
+            required_phases = set(active_phases)
 
-            # Check phase count
             if len(phase_log) != expected_phases:
                 errors.append(
                     f"INVALID: Phase log has {len(phase_log)} phases, "
                     f"expected {expected_phases} phases from schema"
                 )
 
-            # Check for required phases
             present_phases = {
                 phase.get("phase_name")
                 for phase in phase_log
@@ -333,31 +390,27 @@ class ExecutionLogValidator:
             phase_name = phase.get("phase_name", "unknown")
             status = phase.get("status")
 
-            # Check 1: Detect IN_PROGRESS (abandoned state)
-            if status == "IN_PROGRESS":
+            if status == PhaseStatus.IN_PROGRESS:
                 errors.append(
                     f"INCOMPLETE: Phase {phase_name} left in IN_PROGRESS state - "
                     f"task may have been abandoned"
                 )
 
-            # Check 2: EXECUTED must have outcome
-            elif status == "EXECUTED":
+            elif status == PhaseStatus.EXECUTED:
                 if "outcome" not in phase or phase.get("outcome") is None:
                     errors.append(
                         f"ERROR: Phase {phase_name} EXECUTED but missing outcome field. "
                         f"Must specify outcome (PASS or FAIL)"
                     )
 
-            # Check 3: SKIPPED must have blocked_by
-            elif status == "SKIPPED":
+            elif status == PhaseStatus.SKIPPED:
                 if "blocked_by" not in phase or not phase.get("blocked_by"):
                     errors.append(
                         f"ERROR: Phase {phase_name} SKIPPED but missing blocked_by reason. "
                         f"Must explain why phase was skipped"
                     )
 
-            # Check 4: Reject NOT_EXECUTED
-            elif status == "NOT_EXECUTED":
+            elif status == PhaseStatus.NOT_EXECUTED:
                 errors.append(
                     f"ERROR: Phase {phase_name} NOT_EXECUTED. "
                     f"Cannot mark task complete with unexecuted phases"
@@ -468,13 +521,11 @@ class TemplateValidator:
             execution_log_data, schema_version="4.0"
         )
 
-        # Combine all errors (marker first, then sections, then phases, then execution log)
         all_errors = (
             marker_errors + section_errors + phase_errors + execution_log_errors
         )
 
-        # Generate recovery guidance for errors
-        recovery_guidance = []
+        recovery_guidance: list[str] = []
         if section_errors:
             section_guidance = self.section_checker.get_recovery_guidance(
                 section_errors
@@ -488,14 +539,8 @@ class TemplateValidator:
             if log_guidance:
                 recovery_guidance.extend(log_guidance)
 
-        # Return None if no guidance was generated
-        if not recovery_guidance:
-            recovery_guidance = None
-
-        # Calculate duration
         duration_ms = (time.perf_counter() - start_time) * 1000
 
-        # Determine if invocation is allowed
         status = "PASSED" if not all_errors else "FAILED"
         task_invocation_allowed = not all_errors
 

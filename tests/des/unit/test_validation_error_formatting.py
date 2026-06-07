@@ -23,7 +23,7 @@ class TestValidationErrorWithRecoveryGuidance:
         prompt_missing_boundary_rules = """
 # DES_METADATA
 Step: 01-01.json
-Command: /nw:develop
+Command: /nw-develop
 
 # AGENT_IDENTITY
 Agent: software-crafter
@@ -212,7 +212,7 @@ Step: 01-01.json
 
 # DES_METADATA
 Step: 01-01.json
-Command: /nw:develop
+Command: /nw-develop
 
 # AGENT_IDENTITY
 Agent: software-crafter

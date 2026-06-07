@@ -1,0 +1,73 @@
+# Workflow flavor: classic (D4 Phase 2 slice-02)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.2.
+# Schema: `nWave/flavors/_schema.yaml`.
+#
+# Captures classic spine behavior (ADR-025 3-phase TDD canon, roadmap-
+# driven). DEPRECATED per ADR-028 D6 (atdd_pure is default flavor) but
+# kept as fallback for: (a) audit-log replay of pre-2026-05-07 commits,
+# (b) per-instance authorization escape per
+# `feedback_all_delivery_atdd_pure_classic_needs_authorization_2026_05_22`.
+#
+# Differentiation from atdd_pure (INV-11): same primitive set (gates from
+# catalog), different composition. classic uses roadmap.json + execution-
+# log.json artifacts; atdd_pure uses .feature + AT-completion ledger.
+
+flavor_id: classic
+
+description: |
+  Roadmap-based DELIVER spine (ADR-025 3-phase TDD canon, ADR-024 era).
+  Each step in roadmap.json triggers RED → GREEN → COMMIT cycle with
+  phase events appended to execution-log.json via log-phase gate.
+  Per ADR-028 D6: DEPRECATED — atdd_pure is default flavor for new
+  features; classic is fallback under explicit per-instance authorization.
+  Each dispatch emits a loud ClassicSpineDeprecated advisory.
+
+required_artifacts:
+  - docs/feature/{feature_id}/deliver/roadmap.json
+  - docs/feature/{feature_id}/deliver/execution-log.json
+
+lifecycle_events:
+
+  # PreToolUse:Agent dispatch. Classic mode validates roadmap.json shape
+  # but does NOT enforce carpaccio gate (atdd_pure-specific).
+  dispatch.pre:
+    - gate_id: roadmap
+      args:
+        project_dir: "docs/feature/{feature_id}/deliver"
+        validate_only: true
+      on_failure: block
+
+  # SubagentStop: append phase event to execution-log.json via log-phase.
+  # Classic-mode specific; atdd_pure uses AT-completion ledger instead.
+  subagent.stop:
+    - gate_id: log-phase
+      args:
+        project_dir: "docs/feature/{feature_id}/deliver"
+        step_id: "{step_id}"
+        phase: "{phase}"
+        status: EXECUTED
+        data: PASS
+      on_failure: warn
+
+  # Commit lifecycle (git-hook prepare-commit-msg) — verify Step-Id trailer.
+  commit.pre:
+    - gate_id: verify-commit-trailers
+      args:
+        commit: HEAD
+        require_reviewed_by: false  # classic doesn't require HMAC
+      on_failure: warn
+
+  # Session init: health-check (analogous to atdd_pure session.init).
+  session.init:
+    - gate_id: health-check
+      on_failure: log
+
+  # Feature-end integrity check unique to classic (atdd_pure uses
+  # different verify-integrity composition).
+  feature.end:
+    - gate_id: verify-integrity
+      args:
+        project_dir: "docs/feature/{feature_id}/deliver"
+        mode: classic
+      on_failure: block

@@ -20,82 +20,96 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from des.domain.value_objects import PhaseName, PhaseOutcome, PhaseStatus
+
 
 logger = logging.getLogger(__name__)
 
 # V1.0 Schema: 14-phase TDD cycle
 PHASES_V1_FULL = [
-    "PREPARE",
-    "RED_ACCEPTANCE",
-    "RED_UNIT",
-    "GREEN_UNIT",
-    "CHECK_ACCEPTANCE",
-    "GREEN_ACCEPTANCE",
-    "REVIEW",
-    "REFACTOR_L1",
-    "REFACTOR_L2",
-    "REFACTOR_L3",
-    "REFACTOR_L4",
-    "POST_REFACTOR_REVIEW",
-    "FINAL_VALIDATE",
-    "COMMIT",
+    PhaseName.PREPARE,
+    PhaseName.RED_ACCEPTANCE,
+    PhaseName.RED_UNIT,
+    PhaseName.GREEN_UNIT,
+    PhaseName.CHECK_ACCEPTANCE,
+    PhaseName.GREEN_ACCEPTANCE,
+    PhaseName.REVIEW,
+    PhaseName.REFACTOR_L1,
+    PhaseName.REFACTOR_L2,
+    PhaseName.REFACTOR_L3,
+    PhaseName.REFACTOR_L4,
+    PhaseName.POST_REFACTOR_REVIEW,
+    PhaseName.FINAL_VALIDATE,
+    PhaseName.COMMIT,
 ]
 
 # V2.0 Schema: 8-phase optimized TDD cycle
 PHASES_V2_OPTIMIZED = [
-    "PREPARE",
-    "RED_ACCEPTANCE",
-    "RED_UNIT",
-    "GREEN",
-    "REVIEW",
-    "REFACTOR_CONTINUOUS",
-    "REFACTOR_L4",
-    "COMMIT",
+    PhaseName.PREPARE,
+    PhaseName.RED_ACCEPTANCE,
+    PhaseName.RED_UNIT,
+    PhaseName.GREEN,
+    PhaseName.REVIEW,
+    PhaseName.REFACTOR_CONTINUOUS,
+    PhaseName.REFACTOR_L4,
+    PhaseName.COMMIT,
 ]
 
 # V3.0 Schema: 7-phase TDD cycle (removed REFACTOR_L4 to orchestrator)
 PHASES_V3_CONSOLIDATED = [
-    "PREPARE",
-    "RED_ACCEPTANCE",
-    "RED_UNIT",
-    "GREEN",
-    "REVIEW",
-    "REFACTOR_CONTINUOUS",
-    "COMMIT",
+    PhaseName.PREPARE,
+    PhaseName.RED_ACCEPTANCE,
+    PhaseName.RED_UNIT,
+    PhaseName.GREEN,
+    PhaseName.REVIEW,
+    PhaseName.REFACTOR_CONTINUOUS,
+    PhaseName.COMMIT,
 ]
 
 # V4.0 Schema: 5-phase streamlined TDD cycle
-# REVIEW moved to deliver-level Phase 4 (Adversarial Review via /nw:review)
+# REVIEW moved to deliver-level Phase 4 (Adversarial Review via /nw-review)
 # REFACTOR_CONTINUOUS moved to deliver-level Phase 3 (Complete Refactoring L1-L4)
 PHASES_V4_STREAMLINED = [
-    "PREPARE",
-    "RED_ACCEPTANCE",
-    "RED_UNIT",
-    "GREEN",
-    "COMMIT",
+    PhaseName.PREPARE,
+    PhaseName.RED_ACCEPTANCE,
+    PhaseName.RED_UNIT,
+    PhaseName.GREEN,
+    PhaseName.COMMIT,
 ]
 
 # Mapping from v3.0 phases to v4.0 (contraction: REVIEW and REFACTOR_CONTINUOUS dropped)
 PHASE_CONTRACTION_V3_TO_V4 = {
-    "PREPARE": "PREPARE",
-    "RED_ACCEPTANCE": "RED_ACCEPTANCE",
-    "RED_UNIT": "RED_UNIT",
-    "GREEN": "GREEN",
-    "REVIEW": None,  # Dropped — moved to deliver-level Phase 4
-    "REFACTOR_CONTINUOUS": None,  # Dropped — moved to deliver-level Phase 3
-    "COMMIT": "COMMIT",
+    PhaseName.PREPARE: PhaseName.PREPARE,
+    PhaseName.RED_ACCEPTANCE: PhaseName.RED_ACCEPTANCE,
+    PhaseName.RED_UNIT: PhaseName.RED_UNIT,
+    PhaseName.GREEN: PhaseName.GREEN,
+    PhaseName.REVIEW: None,  # Dropped — moved to deliver-level Phase 4
+    PhaseName.REFACTOR_CONTINUOUS: None,  # Dropped — moved to deliver-level Phase 3
+    PhaseName.COMMIT: PhaseName.COMMIT,
 }
 
 # Mapping from v2.0 phases back to v1.0 phases for rollback
 PHASE_EXPANSION_MAP = {
-    "PREPARE": ["PREPARE"],
-    "RED_ACCEPTANCE": ["RED_ACCEPTANCE"],
-    "RED_UNIT": ["RED_UNIT"],
-    "GREEN": ["GREEN_UNIT", "CHECK_ACCEPTANCE", "GREEN_ACCEPTANCE"],
-    "REVIEW": ["REVIEW"],
-    "REFACTOR_CONTINUOUS": ["REFACTOR_L1", "REFACTOR_L2", "REFACTOR_L3"],
-    "REFACTOR_L4": ["REFACTOR_L4"],
-    "COMMIT": ["POST_REFACTOR_REVIEW", "FINAL_VALIDATE", "COMMIT"],
+    PhaseName.PREPARE: [PhaseName.PREPARE],
+    PhaseName.RED_ACCEPTANCE: [PhaseName.RED_ACCEPTANCE],
+    PhaseName.RED_UNIT: [PhaseName.RED_UNIT],
+    PhaseName.GREEN: [
+        PhaseName.GREEN_UNIT,
+        PhaseName.CHECK_ACCEPTANCE,
+        PhaseName.GREEN_ACCEPTANCE,
+    ],
+    PhaseName.REVIEW: [PhaseName.REVIEW],
+    PhaseName.REFACTOR_CONTINUOUS: [
+        PhaseName.REFACTOR_L1,
+        PhaseName.REFACTOR_L2,
+        PhaseName.REFACTOR_L3,
+    ],
+    PhaseName.REFACTOR_L4: [PhaseName.REFACTOR_L4],
+    PhaseName.COMMIT: [
+        PhaseName.POST_REFACTOR_REVIEW,
+        PhaseName.FINAL_VALIDATE,
+        PhaseName.COMMIT,
+    ],
 }
 
 # Rollback threshold: number of failures before triggering rollback
@@ -114,7 +128,9 @@ class SchemaRollbackHandler:
             Count of phases with outcome == "FAIL"
         """
         phase_log = step_data.get("tdd_cycle", {}).get("phase_execution_log", [])
-        failed_count = sum(1 for phase in phase_log if phase.get("outcome") == "FAIL")
+        failed_count = sum(
+            1 for phase in phase_log if phase.get("outcome") == PhaseOutcome.FAIL
+        )
         return failed_count
 
     @staticmethod
@@ -163,7 +179,7 @@ class SchemaRollbackHandler:
 
         for v2_phase in v2_phases:
             phase_name = v2_phase.get("phase_name", "UNKNOWN")
-            status = v2_phase.get("status", "NOT_EXECUTED")
+            status = v2_phase.get("status", PhaseStatus.NOT_EXECUTED)
             outcome = v2_phase.get("outcome")
 
             # Get expanded phase names from mapping

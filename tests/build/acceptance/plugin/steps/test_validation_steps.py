@@ -297,11 +297,23 @@ def hooks_have_required_fields(build_result: dict[str, Any]):
 # ---------------------------------------------------------------------------
 
 
-@then(parsers.parse("the validation report shows {count:d} agents"))
-def validation_agent_count(count: int, build_result: dict[str, Any]):
-    """Verify agent count in validation report."""
+@then("the validation report shows only public agents")
+def validation_agent_count(build_result: dict[str, Any], nwave_source_tree: Path):
+    """Verify agent count matches public agents only."""
+    from scripts.shared.agent_catalog import load_public_agents
+
     validation = build_result["validation_result"]
-    assert validation["counts"]["agents"] == count
+    public_agents = load_public_agents(nwave_source_tree)
+    expected_files = [
+        f
+        for f in (nwave_source_tree / "agents").glob("*.md")
+        if f.stem.removeprefix("nw-").removesuffix("-reviewer") in public_agents
+        or f.stem.removeprefix("nw-") in public_agents
+    ]
+    assert validation["counts"]["agents"] == len(expected_files), (
+        f"Expected {len(expected_files)} public agents, "
+        f"got {validation['counts']['agents']}"
+    )
 
 
 @then(parsers.parse("the validation report shows at least {count:d} skill files"))

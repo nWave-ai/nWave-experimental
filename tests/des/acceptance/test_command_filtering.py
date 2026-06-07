@@ -2,12 +2,12 @@
 E2E Acceptance Test: US-001 Command-Origin Task Filtering
 
 PERSONA: Marcus (Senior Developer)
-STORY: As a senior developer, I want only /nw:execute and /nw:develop commands
+STORY: As a senior developer, I want only /nw-execute and /nw-develop commands
        to trigger DES validation so that I don't get validation overhead on
        research/review tasks.
 
 ACCEPTANCE CRITERIA: AC-001.1
-  GIVEN I invoke /nw:execute with a step file
+  GIVEN I invoke /nw-execute with a step file
   WHEN the orchestrator prepares the Task prompt
   THEN the prompt MUST include <!-- DES-VALIDATION: required --> marker
   AND the prompt MUST include <!-- DES-STEP-FILE: [path] --> marker
@@ -36,24 +36,24 @@ class TestCommandOriginFiltering:
         self, in_memory_filesystem, des_orchestrator
     ):
         """
-        GIVEN /nw:execute command invoked with step file path
+        GIVEN /nw-execute command invoked with step file path
         WHEN orchestrator renders Task prompt for sub-agent
         THEN prompt contains DES-VALIDATION marker
 
         Business Context:
-        Marcus runs `/nw:execute @software-crafter steps/01-01.json` to implement
+        Marcus runs `/nw-execute @software-crafter steps/01-01.json` to implement
         a feature. The orchestrator must tag this as requiring DES validation
         so that Gate 1 validates all 14 TDD phases are in the prompt.
 
         Expected Markers:
         - <!-- DES-VALIDATION: required -->
         - <!-- DES-STEP-FILE: steps/01-01.json -->
-        - <!-- DES-ORIGIN: command:/nw:execute -->
+        - <!-- DES-ORIGIN: command:/nw-execute -->
         """
         from pathlib import Path
 
-        # GIVEN: /nw:execute command invoked with step file (no real filesystem access)
-        command = "/nw:execute"
+        # GIVEN: /nw-execute command invoked with step file (no real filesystem access)
+        command = "/nw-execute"
         agent = "@software-crafter"
         step_file = "steps/01-01.json"
         project_root = Path("/project")
@@ -76,7 +76,7 @@ class TestCommandOriginFiltering:
             "Step file marker missing - SubagentStop hook cannot locate step file"
         )
 
-        assert "<!-- DES-ORIGIN: command:/nw:execute -->" in prompt, (
+        assert "<!-- DES-ORIGIN: command:/nw-execute -->" in prompt, (
             "Origin marker missing - audit trail cannot track command source"
         )
 
@@ -119,12 +119,12 @@ class TestCommandOriginFiltering:
 
     def test_research_command_skips_full_validation(self, des_orchestrator):
         """
-        GIVEN Marcus invokes /nw:research for exploration
+        GIVEN Marcus invokes /nw-research for exploration
         WHEN orchestrator prepares Task prompt
         THEN prompt does NOT include full DES validation requirements
 
         Business Context:
-        Marcus runs `/nw:research "authentication patterns"` to explore approaches.
+        Marcus runs `/nw-research "authentication patterns"` to explore approaches.
         Research commands are exploratory, not production work.
         Should not enforce TDD phases or quality gates.
 
@@ -133,8 +133,8 @@ class TestCommandOriginFiltering:
         - Task executes without 14-phase validation
         - Lightweight execution for fast exploration
         """
-        # GIVEN: /nw:research command invoked
-        command = "/nw:research"
+        # GIVEN: /nw-research command invoked
+        command = "/nw-research"
         research_topic = "authentication patterns"
 
         # WHEN: Orchestrator renders research prompt (no filesystem access)
@@ -158,24 +158,24 @@ class TestCommandOriginFiltering:
         self, in_memory_filesystem, des_orchestrator
     ):
         """
-        GIVEN /nw:develop command invoked with step file
+        GIVEN /nw-develop command invoked with step file
         WHEN orchestrator renders Task prompt
         THEN prompt contains DES validation markers (same as execute)
 
         Business Context:
-        Marcus runs `/nw:develop "implement UserRepository.save()"`.
+        Marcus runs `/nw-develop "implement UserRepository.save()"`.
         Develop command is production work requiring full TDD enforcement.
-        Should have same validation requirements as /nw:execute.
+        Should have same validation requirements as /nw-execute.
 
         Expected Markers:
         - <!-- DES-VALIDATION: required -->
         - <!-- DES-STEP-FILE: steps/01-01.json -->
-        - <!-- DES-ORIGIN: command:/nw:develop -->
+        - <!-- DES-ORIGIN: command:/nw-develop -->
         """
         from pathlib import Path
 
-        # GIVEN: /nw:develop command invoked with step file (no real filesystem access)
-        command = "/nw:develop"
+        # GIVEN: /nw-develop command invoked with step file (no real filesystem access)
+        command = "/nw-develop"
         agent = "@software-crafter"
         step_file = "steps/01-01.json"
         project_root = Path("/project")
@@ -198,6 +198,6 @@ class TestCommandOriginFiltering:
             "Develop command must reference step file for state tracking"
         )
 
-        assert "<!-- DES-ORIGIN: command:/nw:develop -->" in prompt, (
+        assert "<!-- DES-ORIGIN: command:/nw-develop -->" in prompt, (
             "Origin must be tracked for audit trail"
         )

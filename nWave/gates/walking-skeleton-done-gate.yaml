@@ -1,0 +1,37 @@
+# Gate-contract: walking-skeleton-done-gate (D4 Phase 1 slice-02)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=walking-skeleton-done-gate.
+
+gate_id: walking-skeleton-done-gate
+responsibility: |
+  Verify the walking-skeleton scenario is GREEN against the installed tree (feature-end leg).
+module: des.cli.walking_skeleton_done_gate
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-dir
+    required: true
+    type: path
+    help: "Feature dir to verify done state."
+
+log_events:
+  - WalkingSkeletonTierVerified
+
+failure_modes:
+  - error_class: MalformedInput
+    exit_code: 2
+    remediation: "Provide --feature-dir"
+  - error_class: TierUnverified
+    exit_code: 1
+    remediation: "Run walking-skeleton tests to GREEN first"
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

@@ -1,0 +1,53 @@
+# Gate-contract: log-phase (D4 Phase 1 slice-02)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=log-phase.
+
+gate_id: log-phase
+responsibility: |
+  Append a phase event to the per-feature execution-log (classic-mode only).
+module: des.cli.log_phase
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --project-dir
+    required: true
+    type: path
+    help: "Path to deliver project."
+  - name: --step-id
+    required: true
+    type: string
+    help: "Roadmap step id."
+  - name: --phase
+    required: true
+    type: choice
+    help: "Phase name."
+  - name: --status
+    required: true
+    type: choice
+    help: "EXECUTED or SKIPPED."
+  - name: --data
+    required: false
+    type: string
+    help: "Phase payload or skip reason."
+
+log_events:
+  - PhaseEventAppended
+
+failure_modes:
+  - error_class: MalformedInput
+    exit_code: 2
+    remediation: "Validate step-id + phase + status against schema"
+  - error_class: ExecutionLogNotFound
+    exit_code: 1
+    remediation: "Run init-log first"
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

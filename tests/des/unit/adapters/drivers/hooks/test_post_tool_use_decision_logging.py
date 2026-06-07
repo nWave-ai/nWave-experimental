@@ -22,18 +22,7 @@ import io
 import json
 from unittest.mock import patch
 
-from des.ports.driven_ports.audit_log_writer import AuditEvent
-
-
-def _make_capturing_writer(events: list[AuditEvent]):
-    """Create a mock AuditLogWriter that appends events to the given list."""
-    from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-
-    class CapturingWriter(NullAuditLogWriter):
-        def log_event(self, event: AuditEvent) -> None:
-            events.append(event)
-
-    return CapturingWriter()
+from des.adapters.drivers.hooks import hook_protocol
 
 
 def _build_post_tool_use_stdin(*, des_task: bool = False) -> str:
@@ -65,12 +54,9 @@ def _stub_service_returning(context_value: str | None):
 # --- Test 1: INJECTED emitted with context_type='continuation' for DES task ---
 
 
-def test_injected_event_emitted_for_continuation_context(monkeypatch):
+def test_injected_event_emitted_for_continuation_context(monkeypatch, audit_events):
     """HOOK_POST_TOOL_USE_INJECTED emitted with context_type='continuation' and is_des_task=True."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    events = []
-    writer = _make_capturing_writer(events)
 
     continuation_text = (
         "DES STEP COMPLETED [des-observability/04-01]\n"
@@ -86,21 +72,20 @@ def test_injected_event_emitted_for_continuation_context(monkeypatch):
 
     stub_service = _stub_service_returning(continuation_text)
 
-    with (
-        patch.object(adapter, "_create_audit_writer", return_value=writer),
-        patch(
-            "des.application.post_tool_use_service.PostToolUseService",
-            stub_service,
-        ),
+    with patch(
+        "des.application.post_tool_use_service.PostToolUseService",
+        stub_service,
     ):
         exit_code = adapter.handle_post_tool_use()
 
     assert exit_code == 0
 
-    injected = [e for e in events if e.event_type == "HOOK_POST_TOOL_USE_INJECTED"]
+    injected = [
+        e for e in audit_events if e.event_type == "HOOK_POST_TOOL_USE_INJECTED"
+    ]
     assert len(injected) == 1, (
         f"Expected one HOOK_POST_TOOL_USE_INJECTED event, "
-        f"got {len(injected)}. All events: {[e.event_type for e in events]}"
+        f"got {len(injected)}. All events: {[e.event_type for e in audit_events]}"
     )
 
     event = injected[0]
@@ -111,12 +96,9 @@ def test_injected_event_emitted_for_continuation_context(monkeypatch):
 # --- Test 2: INJECTED emitted with context_type='failure_notification' ---
 
 
-def test_injected_event_emitted_for_failure_notification(monkeypatch):
+def test_injected_event_emitted_for_failure_notification(monkeypatch, audit_events):
     """HOOK_POST_TOOL_USE_INJECTED emitted with context_type='failure_notification'."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    events = []
-    writer = _make_capturing_writer(events)
 
     failure_text = (
         "DES STEP INCOMPLETE [des-observability/04-01]\n"
@@ -133,21 +115,20 @@ def test_injected_event_emitted_for_failure_notification(monkeypatch):
 
     stub_service = _stub_service_returning(failure_text)
 
-    with (
-        patch.object(adapter, "_create_audit_writer", return_value=writer),
-        patch(
-            "des.application.post_tool_use_service.PostToolUseService",
-            stub_service,
-        ),
+    with patch(
+        "des.application.post_tool_use_service.PostToolUseService",
+        stub_service,
     ):
         exit_code = adapter.handle_post_tool_use()
 
     assert exit_code == 0
 
-    injected = [e for e in events if e.event_type == "HOOK_POST_TOOL_USE_INJECTED"]
+    injected = [
+        e for e in audit_events if e.event_type == "HOOK_POST_TOOL_USE_INJECTED"
+    ]
     assert len(injected) == 1, (
         f"Expected one HOOK_POST_TOOL_USE_INJECTED event, "
-        f"got {len(injected)}. All events: {[e.event_type for e in events]}"
+        f"got {len(injected)}. All events: {[e.event_type for e in audit_events]}"
     )
 
     event = injected[0]
@@ -158,12 +139,9 @@ def test_injected_event_emitted_for_failure_notification(monkeypatch):
 # --- Test 3: PASSTHROUGH emitted for non-DES task ---
 
 
-def test_passthrough_event_emitted_for_non_des_task(monkeypatch):
+def test_passthrough_event_emitted_for_non_des_task(monkeypatch, audit_events):
     """HOOK_POST_TOOL_USE_PASSTHROUGH emitted with is_des_task=False when no DES markers."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    events = []
-    writer = _make_capturing_writer(events)
 
     monkeypatch.setattr(
         "sys.stdin", io.StringIO(_build_post_tool_use_stdin(des_task=False))
@@ -172,23 +150,20 @@ def test_passthrough_event_emitted_for_non_des_task(monkeypatch):
 
     stub_service = _stub_service_returning(None)
 
-    with (
-        patch.object(adapter, "_create_audit_writer", return_value=writer),
-        patch(
-            "des.application.post_tool_use_service.PostToolUseService",
-            stub_service,
-        ),
+    with patch(
+        "des.application.post_tool_use_service.PostToolUseService",
+        stub_service,
     ):
         exit_code = adapter.handle_post_tool_use()
 
     assert exit_code == 0
 
     passthrough = [
-        e for e in events if e.event_type == "HOOK_POST_TOOL_USE_PASSTHROUGH"
+        e for e in audit_events if e.event_type == "HOOK_POST_TOOL_USE_PASSTHROUGH"
     ]
     assert len(passthrough) == 1, (
         f"Expected one HOOK_POST_TOOL_USE_PASSTHROUGH event, "
-        f"got {len(passthrough)}. All events: {[e.event_type for e in events]}"
+        f"got {len(passthrough)}. All events: {[e.event_type for e in audit_events]}"
     )
 
     event = passthrough[0]
@@ -200,12 +175,11 @@ def test_passthrough_event_emitted_for_non_des_task(monkeypatch):
 # --- Test 4: PASSTHROUGH emitted for DES task with no context ---
 
 
-def test_passthrough_event_emitted_for_des_task_with_no_context(monkeypatch):
+def test_passthrough_event_emitted_for_des_task_with_no_context(
+    monkeypatch, audit_events
+):
     """HOOK_POST_TOOL_USE_PASSTHROUGH emitted with is_des_task=True and reason when service returns None."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    events = []
-    writer = _make_capturing_writer(events)
 
     monkeypatch.setattr(
         "sys.stdin", io.StringIO(_build_post_tool_use_stdin(des_task=True))
@@ -214,23 +188,20 @@ def test_passthrough_event_emitted_for_des_task_with_no_context(monkeypatch):
 
     stub_service = _stub_service_returning(None)
 
-    with (
-        patch.object(adapter, "_create_audit_writer", return_value=writer),
-        patch(
-            "des.application.post_tool_use_service.PostToolUseService",
-            stub_service,
-        ),
+    with patch(
+        "des.application.post_tool_use_service.PostToolUseService",
+        stub_service,
     ):
         exit_code = adapter.handle_post_tool_use()
 
     assert exit_code == 0
 
     passthrough = [
-        e for e in events if e.event_type == "HOOK_POST_TOOL_USE_PASSTHROUGH"
+        e for e in audit_events if e.event_type == "HOOK_POST_TOOL_USE_PASSTHROUGH"
     ]
     assert len(passthrough) == 1, (
         f"Expected one HOOK_POST_TOOL_USE_PASSTHROUGH event, "
-        f"got {len(passthrough)}. All events: {[e.event_type for e in events]}"
+        f"got {len(passthrough)}. All events: {[e.event_type for e in audit_events]}"
     )
 
     event = passthrough[0]
@@ -262,7 +233,9 @@ def test_logging_failure_does_not_affect_response(monkeypatch):
     stub_service = _stub_service_returning(None)
 
     with (
-        patch.object(adapter, "_create_audit_writer", return_value=ExplodingWriter()),
+        patch.object(
+            hook_protocol, "_audit_writer_factory", return_value=ExplodingWriter()
+        ),
         patch(
             "des.application.post_tool_use_service.PostToolUseService",
             stub_service,

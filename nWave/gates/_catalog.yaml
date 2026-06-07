@@ -1,0 +1,145 @@
+# Gate Atomic Catalog (D4 § 3.1 slice-01)
+#
+# 1:1 mirror of `src/des/cli/__main__.py:_REGISTRY` (verified mechanically
+# by Phase 1 slice-01 AT-2). Adding a new gate = (1) add SubcommandRow to
+# `_REGISTRY`, (2) add corresponding entry here. CI arch test enforces parity.
+#
+# Per INV-1 atomic units, INV-2 composable (via workflow-flavor), INV-13
+# single CLI entry (`des <gate_id>` already implemented).
+#
+# Schema: nWave/gates/_schema.yaml
+
+version: "1.0.0"
+
+gates:
+  - gate_id: log-phase
+    responsibility: "Append a phase event to the per-feature execution-log (classic-mode only)."
+    module: des.cli.log_phase
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: init-log
+    responsibility: "Initialize a per-feature execution-log skeleton at DELIVER start (classic-mode only)."
+    module: des.cli.init_log
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-integrity
+    responsibility: "Verify the deliver execution-log records all required phase events for the feature."
+    module: des.cli.verify_deliver_integrity
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: roadmap
+    responsibility: "Render or validate a classic-mode roadmap.json file."
+    module: des.cli.roadmap
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: health-check
+    responsibility: "Probe DES install health (config presence, hook registration, executable readiness)."
+    module: des.cli.health_check
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-commit-trailers
+    responsibility: "Verify a commit message carries required Slice-Id and optional Reviewed-by HMAC trailers."
+    module: des.cli.verify_commit_trailers
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-slice-commit
+    responsibility: "Verify a slice commit carries the slice's .feature AT files and emit SliceCommitVerified ledger record."
+    module: des.cli.verify_slice_commit_completeness
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: walking-skeleton-gate
+    responsibility: "Verify a walking-skeleton AT exercises an installed-layout subprocess (RCA G1 closure)."
+    module: des.cli.walking_skeleton_gate
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: walking-skeleton-done-gate
+    responsibility: "Verify the walking-skeleton scenario is GREEN against the installed tree (feature-end leg)."
+    module: des.cli.walking_skeleton_done_gate
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: carpaccio-slice-gate
+    responsibility: "ATDD-pure DELIVER entry gate: carpaccio decomposition + AT-review + slice ordering."
+    module: des.cli.carpaccio_slice_gate
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: classify-features
+    responsibility: "Classify each docs/feature/* directory by workflow mode (atdd_pure | classic | unknown)."
+    module: des.cli.classify_features
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: convert-to-atdd-pure
+    responsibility: "Convert a classic-mode feature workspace to atdd_pure carpaccio shape with rollback journal."
+    module: des.cli.convert_to_atdd_pure
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: reverify-slice-commit
+    responsibility: "Re-verify an orphaned slice commit (E1 scoped-wrapper closing W5 cross-feature collision)."
+    module: des.cli.reverify_slice_commit
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-environmental-e2e
+    responsibility: "Run environmental e2e gate against the installed tree + emit ledger heartbeat."
+    module: des.cli.verify_environmental_e2e
+    entry_function: main
+    language_neutral_contract: false
+
+  - gate_id: run-contract-gate
+    responsibility: "Run the contract test suite + emit GateScopeVerified ledger record with digest."
+    module: des.cli.run_contract_gate
+    entry_function: main
+    language_neutral_contract: false
+
+  - gate_id: commit-slice
+    responsibility: "Produce a correct-by-construction slice commit (stage slice files, commit with Slice-Id trailer, compute and amend committed-scope Gate-Scope digest of HEAD, verify) with no manual amend."
+    module: des.cli.commit_slice
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: emit-feature-end
+    responsibility: "Emit one feature-end completion-ledger record (EBatchRefactorCompleted or FeatureEndReviewVerdict bound to a signed verdict hash); a verdict without its signed hash is refused (anti-theater)."
+    module: des.cli.emit_feature_end
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: feature-end
+    responsibility: "Consolidated feature-end command namespace (DDD-7). Verb `sign` HMACs a real reviewer deep-review verdict (agent + APPROVED/REJECTED + findings) into a verifiable verdict_hash that feeds `des emit-feature-end --verdict-hash`; a non-real verdict or a missing signing key is refused (anti-theater, no hash minted)."
+    module: des.cli.feature_end
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: check-slice-at-completeness
+    responsibility: "Verify a slice's .feature ATs satisfy completeness invariants (W5 scope, tag coverage, scenario count)."
+    module: des.cli.check_slice_at_completeness
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: doctor
+    responsibility: "Operator-facing diagnostic command summarising install state, hook registration, ledger health."
+    module: des.cli.doctor
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-readiness-pre-dispatch
+    responsibility: "Verify the 5 cascading first-dispatch invariants (slice plan section, slice tags per scenario, AT-review verdict ledger record, gate output produceable, pre-commit pytest scope) in one invocation; closes friction #57."
+    module: des.cli.verify_readiness_pre_dispatch
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-slice-ledger-evidence
+    responsibility: "Read-only aggregator: scan spine-ledger audit log, emit JSON report of cumulative event counts (slice_commits_verified, carpaccio_gates_cleared, bypasses_detected, bypasses_used) since --since=<date>; closes platform-architect critical-4 (observability aggregator gap, F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2 slice-04 FINAL)."
+    module: des.cli.verify_slice_ledger_evidence
+    entry_function: main
+    language_neutral_contract: true

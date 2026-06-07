@@ -1,12 +1,140 @@
 """DES (Deterministic Execution System) installation plugin."""
 
+import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+from scripts.shared import hook_definitions as shared_hooks
+
 from .base import InstallationPlugin, InstallContext, PluginResult
+
+
+# ---------------------------------------------------------------------------
+# Inlined canonical tree hash (bootstrap-self exemption — slice-01 of
+# fix-installer-self-referential-des-import).
+#
+# This function is a verbatim copy of `des.runtime.tree_hash.canonical_tree_hash`
+# (src/des/runtime/tree_hash.py). It MUST NOT be imported from `des.*` at
+# install time because at PyPI-install time `des` lives under
+# `site-packages/nWave/lib/python/des/` which is NOT on `sys.path` —
+# importing it raises `ModuleNotFoundError` and the installer fails with
+# `DES module install failed: No module named 'des'`.
+#
+# SSOT-drift guard: tests/installer/unit/test_des_plugin_tree_hash_parity.py
+# asserts byte-identical parity between this inlined copy and the canonical
+# `des.runtime.tree_hash.canonical_tree_hash` on 3 fixture trees plus a
+# format-lock. Future drift fails loudly.
+# ---------------------------------------------------------------------------
+
+
+def _canonical_tree_hash(tree_root: Path) -> str:
+    """Return ``"sha256:<hex>"`` for the canonical hash of ``tree_root``.
+
+    Pure function — reads ``*.py`` files under ``tree_root`` once each. The
+    algorithm matches §1.6 of fix-des-self-hosted-gate-sync feature-delta.
+
+    BOOTSTRAP-SELF INLINE COPY of `des.runtime.tree_hash.canonical_tree_hash`.
+    Parity locked by tests/installer/unit/test_des_plugin_tree_hash_parity.py.
+    """
+    sha = hashlib.sha256()
+    py_files = sorted(tree_root.rglob("*.py"), key=lambda p: p.relative_to(tree_root))
+    for py_file in py_files:
+        rel = py_file.relative_to(tree_root).as_posix()
+        digest = hashlib.md5(py_file.read_bytes()).hexdigest()
+        sha.update(f"{rel}\0{digest}\n".encode())
+    return f"sha256:{sha.hexdigest()}"
+
+
+# Config-asset suffixes the SYS-4 / AD-27 envelope hashes (bootstrap-self inline
+# copy — mirrors `des.runtime.tree_hash._CONFIG_ASSET_SUFFIXES`).
+_CONFIG_ASSET_SUFFIXES = (".yaml", ".yml", ".json")
+
+
+def _canonical_config_assets_hash(assets_root: Path) -> str:
+    """Return ``"sha256:<hex>"`` for the canonical hash of the config assets.
+
+    SYS-4 / AD-27 config-asset envelope: same algorithm shape as
+    ``_canonical_tree_hash`` but over the shipped declarative config glob
+    (``*.yaml`` / ``*.yml`` / ``*.json``) under ``assets_root`` instead of
+    ``*.py``. BOOTSTRAP-SELF INLINE COPY of
+    ``des.runtime.tree_hash.canonical_config_assets_hash`` (cannot import ``des``
+    at install time — see the ``_canonical_tree_hash`` note above). Parity locked
+    by tests/installer/unit/test_des_plugin_tree_hash_parity.py.
+    """
+    sha = hashlib.sha256()
+    assets = sorted(
+        (
+            p
+            for p in assets_root.rglob("*")
+            if p.is_file() and p.suffix in _CONFIG_ASSET_SUFFIXES
+        ),
+        key=lambda p: p.relative_to(assets_root).as_posix(),
+    )
+    for asset in assets:
+        rel = asset.relative_to(assets_root).as_posix()
+        digest = hashlib.md5(asset.read_bytes()).hexdigest()
+        sha.update(f"{rel}\0{digest}\n".encode())
+    return f"sha256:{sha.hexdigest()}"
+
+
+# --- Slice-03: CLI shim discovery (feature-delta §2.2 Addition 2 + DDD-4) ---
+#
+# The filesystem under `src/des/cli/` is the SSOT for the canonical CLI
+# module set the spine dispatches. `_discover_shims(source_dir)` globs the
+# directory and emits one shim name per CLI module — newly-added CLIs ship
+# automatically on next install, closing the drift-across-boundary (F1)
+# class the hand-maintained `DESPlugin.DES_SHIMS` list historically hit
+# (verify_environmental_e2e, verify_slice_commit_completeness,
+# run_contract_gate all got added to the CLI dir but missed by the constant).
+#
+# `DES_SHIMS_FLOOR` is the frozen regression-floor set the spine MUST keep:
+# discovery is asserted ≥ floor by `tests/installer/acceptance/
+# fix-des-self-hosted-gate-sync/slice-03-shim-discovery-floor.feature`.
+# A release-time engineer adding a new load-bearing CLI module adds its
+# stem to this constant; the constant never shrinks silently.
+
+DES_SHIMS_FLOOR = frozenset(
+    {
+        "at_review_verdict",
+        "carpaccio_slice_gate",
+        "check_slice_at_completeness",
+        "classify_features",
+        "convert_to_atdd_pure",
+        "health_check",
+        "init_log",
+        "log_phase",
+        "reverify_slice_commit",
+        "roadmap",
+        "run_contract_gate",
+        "verify_commit_trailers",
+        "verify_deliver_integrity",
+        "verify_environmental_e2e",
+        "verify_slice_commit_completeness",
+        "walking_skeleton_done_gate",
+        "walking_skeleton_gate",
+    }
+)
+
+
+def _discover_shims(source_dir: Path) -> frozenset[str]:
+    """Enumerate CLI module stems under `source_dir` (filesystem is SSOT).
+
+    Globs `*.py` files directly under `source_dir`, drops underscore-prefixed
+    files (`__init__.py`, `__main__.py`, any future private module), and
+    returns the set of stems (no `.py` suffix). Pure function — no side
+    effects beyond reading the directory listing.
+
+    Used by the install plugin at install time to enumerate which CLI
+    shims to register, replacing the hand-maintained constant that
+    historically drifted out of sync with the source tree.
+    """
+    return frozenset(
+        path.stem for path in source_dir.glob("*.py") if not path.stem.startswith("_")
+    )
 
 
 class DESPlugin(InstallationPlugin):
@@ -24,6 +152,46 @@ class DESPlugin(InstallationPlugin):
         "check_stale_phases.py",
         "scope_boundary_check.py",
     ]
+
+    # DES spine-ledger hook scripts installed to ~/.claude/scripts/
+    # (slice-04 of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2: propagate the 3
+    # spine-ledger hook scripts shipped under `scripts/hooks/` to the
+    # customer's `~/.claude/scripts/` tree so the installed HOOK_EVENTS
+    # entries that reference `$HOME/.claude/scripts/spine_ledger_*.py` find
+    # the script files on the operator's target machine. Mirrors the
+    # `DES_SCRIPTS` list pattern; sourced from
+    # `<framework_source>/scripts/hooks/` at install time.
+    DES_HOOKS = [
+        "spine_ledger_gate.py",
+        "spine_ledger_pre_commit_hook.py",
+        "spine_ledger_subagent_stop_detector.py",
+        "git_stash_guard.py",
+    ]
+
+    # DES shims installed to ~/.claude/bin/
+    DES_SHIMS = [
+        "des",
+    ]
+
+    # Pre-consolidation shims removed on upgrade (R17 residuality, slice-01 of
+    # fix-des-single-entry-point-consolidation). Any of these found in
+    # ~/.claude/bin/ from a previous install is deleted by _install_des_shims
+    # so the operator's PATH no longer advertises the legacy entry points.
+    LEGACY_DES_SHIMS = (
+        "des-log-phase",
+        "des-init-log",
+        "des-verify-integrity",
+        "des-roadmap",
+        "des-health-check",
+    )
+
+    # Minimal POSIX system directories written as a last-resort fallback when
+    # settings.json has no prior env.PATH AND os.environ has no PATH at install
+    # time (highly unusual). Claude Code REPLACES env.PATH entirely (no merge
+    # with the inherited shell PATH), so on the normal path the installer
+    # seeds env.PATH from os.environ["PATH"] to preserve user-visible
+    # directories (~/.local/bin, ~/.deno/bin, /snap/bin, etc.).
+    SYSTEM_PATH_FALLBACK = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
     # DES templates installed to ~/.claude/templates/
     DES_TEMPLATES = [
@@ -43,14 +211,8 @@ class DESPlugin(InstallationPlugin):
         "des.adapters.drivers.hooks.claude_code_hook_adapter {action}"
     )
 
-    # Hook event types that DES registers
-    HOOK_EVENTS = (
-        "PreToolUse",
-        "SubagentStop",
-        "PostToolUse",
-        "SessionStart",
-        "SubagentStart",
-    )
+    # Hook event types that DES registers (from shared definitions)
+    HOOK_EVENTS = tuple(shared_hooks.HOOK_EVENT_TYPES)
 
     def __init__(self):
         """Initialize DES plugin with name, priority, and dependencies."""
@@ -88,6 +250,33 @@ class DESPlugin(InstallationPlugin):
                 errors.append(
                     f"Missing DES scripts: {', '.join(missing_scripts)}. "
                     f"Required scripts: {', '.join(self.DES_SCRIPTS)}"
+                )
+
+            # Check for required shim files in the same scripts/des/ directory
+            missing_shims = []
+            for shim_name in self.DES_SHIMS:
+                shim_path = scripts_dir / shim_name
+                if not shim_path.exists():
+                    missing_shims.append(shim_name)
+            if missing_shims:
+                errors.append(
+                    f"Missing DES shims: {', '.join(missing_shims)}. "
+                    f"Required shims: {', '.join(self.DES_SHIMS)}"
+                )
+
+        # Check for DES spine-ledger hook scripts (slice-04 of
+        # F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2)
+        hooks_source_dir = self._get_hook_scripts_source_dir(context)
+        if hooks_source_dir.exists():
+            missing_hooks = []
+            for hook_name in self.DES_HOOKS:
+                hook_path = hooks_source_dir / hook_name
+                if not hook_path.exists():
+                    missing_hooks.append(hook_name)
+            if missing_hooks:
+                errors.append(
+                    f"Missing DES spine-ledger hook scripts: {', '.join(missing_hooks)}. "
+                    f"Required hooks: {', '.join(self.DES_HOOKS)}"
                 )
 
         # Check for DES templates (use framework_source for dist/ or nWave/)
@@ -134,6 +323,22 @@ class DESPlugin(InstallationPlugin):
             return context.project_root / "nWave" / "scripts" / "des"
         return Path("nWave/scripts/des")
 
+    def _get_hook_scripts_source_dir(self, context: InstallContext) -> Path:
+        """Get the source directory for DES spine-ledger hook scripts.
+
+        Slice-04 of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2: the
+        `scripts/hooks/` directory under `framework_source` (dist tarball)
+        or under `project_root` (dev checkout) carries the three
+        spine-ledger hook scripts.
+        """
+        if context.framework_source:
+            source_dir = context.framework_source / "scripts" / "hooks"
+            if source_dir.exists():
+                return source_dir
+        if context.project_root:
+            return context.project_root / "scripts" / "hooks"
+        return Path("scripts/hooks")
+
     def install(self, context: InstallContext) -> PluginResult:
         """Install DES module, scripts, and templates.
 
@@ -159,6 +364,12 @@ class DESPlugin(InstallationPlugin):
             if not scripts_result.success:
                 return scripts_result
 
+            # Install DES spine-ledger hook scripts (slice-04 of
+            # F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2)
+            hook_scripts_result = self._install_des_hook_scripts(context)
+            if not hook_scripts_result.success:
+                return hook_scripts_result
+
             # Install DES templates
             templates_result = self._install_des_templates(context)
             if not templates_result.success:
@@ -169,6 +380,11 @@ class DESPlugin(InstallationPlugin):
             if not hooks_result.success:
                 return hooks_result
 
+            # Install DES shims to ~/.claude/bin/ and update PATH
+            shims_result = self._install_des_shims(context)
+            if not shims_result.success:
+                return shims_result
+
             # Bootstrap project-level DES config
             config_result = self._bootstrap_des_config(context)
             if not config_result.success:
@@ -177,7 +393,7 @@ class DESPlugin(InstallationPlugin):
             return PluginResult(
                 success=True,
                 plugin_name="des",
-                message="DES installed successfully (module, scripts, templates, hooks, config)",
+                message="DES installed successfully (module, scripts, templates, hooks, shims, config)",
             )
 
         except Exception as e:
@@ -191,8 +407,14 @@ class DESPlugin(InstallationPlugin):
         """Install DES Python module to ~/.claude/lib/python/des/."""
         try:
             # Check dist/ pre-built DES module first (imports already rewritten)
-            pre_built = context.framework_source / "lib" / "python" / "des"
-            using_prebuilt = pre_built.exists() and (pre_built / "__init__.py").exists()
+            if context.framework_source is not None:
+                pre_built = context.framework_source / "lib" / "python" / "des"
+                using_prebuilt = (
+                    pre_built.exists() and (pre_built / "__init__.py").exists()
+                )
+            else:
+                pre_built = None
+                using_prebuilt = False
 
             if using_prebuilt:
                 source_dir = pre_built
@@ -226,7 +448,14 @@ class DESPlugin(InstallationPlugin):
             else:
                 if target_dir.exists():
                     shutil.rmtree(target_dir)
-                shutil.copytree(source_dir, target_dir)
+                # Skip bytecode caches: source __pycache__ is build artefact,
+                # not module surface. Without ignore we hit Errno 17 when
+                # backup_manager raced on the same nested path.
+                shutil.copytree(
+                    source_dir,
+                    target_dir,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+                )
 
                 # Skip rewriting if pre-built from dist/ (already done by build_dist.py)
                 if not using_prebuilt:
@@ -234,6 +463,39 @@ class DESPlugin(InstallationPlugin):
 
                 # Clear bytecode cache to prevent stale .pyc files
                 self._clear_bytecode_cache(target_dir, context)
+
+                # Ship the nWave runtime assets the installed des package
+                # resolves as siblings of lib/python (Path(__file__).parents[N]
+                # / "nWave" / ...): flavors/ (carpaccio_intercept atdd_pure
+                # dispatch), data/ (log_persistence + doctor), templates/ +
+                # schemas/ (tdd / roadmap loaders), framework-catalog.yaml
+                # (carpaccio_slice_gate). The installer shipped the code but
+                # never these assets, so every atdd_pure dispatch crashed with
+                # a missing lib/nWave/flavors/atdd_pure.yaml
+                # (F-DES-INSTALL-SHIPS-NWAVE-RUNTIME-ASSETS).
+                #
+                # Shipped BEFORE the manifest so the schema-v2 manifest can
+                # snapshot the config-asset tree-hash (SYS-4 / AD-27): the
+                # runtime freshness gate compares the installed `lib/nWave/`
+                # content against this snapshot to catch a drifted shipped
+                # config asset.
+                nwave_assets_root = self._install_nwave_runtime_assets(
+                    context=context,
+                    using_prebuilt=using_prebuilt,
+                )
+
+                # Write the runtime freshness gate's source-of-truth manifest
+                # (fix-des-self-hosted-gate-sync §1.4 + §2.2 Addition 1 +
+                # DDD-3). Colocated with the installed package so a partial
+                # copy cannot desync it from the code it describes. Schema v2
+                # when the config assets were shipped (carries
+                # `config_assets_tree_hash`), v1 otherwise.
+                self._write_install_manifest(
+                    target_dir=target_dir,
+                    source_dir=source_dir,
+                    using_prebuilt=using_prebuilt,
+                    nwave_assets_root=nwave_assets_root,
+                )
 
             return PluginResult(
                 success=True,
@@ -247,6 +509,79 @@ class DESPlugin(InstallationPlugin):
                 plugin_name="des",
                 message=f"DES module install failed: {e}",
             )
+
+    # nWave runtime assets the installed des package resolves as siblings of
+    # lib/python (Path(__file__).parents[N] / "nWave" / ...). Code-only shipping
+    # leaves these absent and breaks every atdd_pure dispatch.
+    _NWAVE_RUNTIME_ASSET_DIRS = ("flavors", "data", "templates", "schemas")
+    _NWAVE_RUNTIME_ASSET_FILES = ("framework-catalog.yaml",)
+
+    def _install_nwave_runtime_assets(
+        self, *, context: InstallContext, using_prebuilt: bool
+    ) -> Path | None:
+        """Ship nWave runtime assets to ``<claude_dir>/lib/nWave/``.
+
+        Returns the shipped ``lib/nWave/`` root when assets were copied (so the
+        caller can snapshot the config-asset tree-hash into the schema-v2
+        manifest), or ``None`` when the source is absent or this is a dry run.
+
+        The installed des package reads config siblings of ``lib/python`` at
+        runtime: ``carpaccio_intercept`` loads ``nWave/flavors/atdd_pure.yaml``,
+        ``log_persistence`` + ``doctor`` read ``nWave/data/``, the tdd / roadmap
+        loaders read ``nWave/templates/`` + ``nWave/schemas/``, and
+        ``carpaccio_slice_gate`` reads ``nWave/framework-catalog.yaml``. The
+        installer shipped only the code, so these resolutions failed on every
+        installed instance (F-DES-INSTALL-SHIPS-NWAVE-RUNTIME-ASSETS).
+
+        Source-install path only. The pre-built (dist) tree does not yet carry
+        these assets beside its des package — that is named residue
+        (build_dist must ship nWave runtime assets for the PyPI path).
+        """
+        if using_prebuilt and context.framework_source is not None:
+            nwave_source = context.framework_source / "nWave"
+        elif context.project_root:
+            nwave_source = context.project_root / "nWave"
+        else:
+            nwave_source = Path("nWave")
+
+        if not nwave_source.exists():
+            context.logger.info(
+                f"  ⚠️  nWave runtime assets not found at {nwave_source} — "
+                "skipping (dist path residue)"
+            )
+            return None
+
+        target_root = context.claude_dir / "lib" / "nWave"
+
+        if context.dry_run:
+            context.logger.info(
+                f"  🚨 [DRY RUN] Would ship nWave runtime assets "
+                f"{nwave_source} → {target_root}"
+            )
+            return None
+
+        target_root.mkdir(parents=True, exist_ok=True)
+
+        for subdir in self._NWAVE_RUNTIME_ASSET_DIRS:
+            src = nwave_source / subdir
+            if not src.exists():
+                continue
+            dst = target_root / subdir
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.copytree(
+                src,
+                dst,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+            )
+
+        for filename in self._NWAVE_RUNTIME_ASSET_FILES:
+            src = nwave_source / filename
+            if src.exists():
+                shutil.copy2(src, target_root / filename)
+
+        context.logger.info(f"  📦 nWave runtime assets shipped to {target_root}")
+        return target_root
 
     def _rewrite_import_paths(self, target_dir: Path, context: InstallContext) -> None:
         """Rewrite import paths in installed DES module.
@@ -338,6 +673,120 @@ class DESPlugin(InstallationPlugin):
                 f"  🧹 Cleared {cleared} __pycache__ directories from {target_dir}"
             )
 
+    def _write_install_manifest(
+        self,
+        *,
+        target_dir: Path,
+        source_dir: Path,
+        using_prebuilt: bool,
+        nwave_assets_root: Path | None = None,
+    ) -> None:
+        """Write `_install_manifest.json` colocated with the installed package.
+
+        Per fix-des-self-hosted-gate-sync §1.4 + DDD-3: the manifest is the
+        runtime freshness gate's source-of-truth pointer back to the source
+        tree the install was produced from. The runtime gate reads it via
+        :class:`des.adapters.driven.freshness.RepoSourceProbe` and discriminates
+        the §1.3 four-state truth table from its fields.
+
+        Eight v1 fields (§1.4 schema_version=1):
+
+        * ``schema_version`` — integer (1 without config assets, 2 with).
+        * ``installed_version`` — what the installer thought it was installing.
+        * ``installed_at_iso`` — UTC ISO-8601 of the install.
+        * ``source_tree`` — absolute path to the source dir that was copied.
+        * ``source_commit`` — git SHA at copy time (empty when not a repo).
+        * ``source_dirty`` — `git status --porcelain` non-empty at copy time.
+        * ``source_kind`` — ``dev-checkout`` / ``pre-built`` / ``wheel``.
+        * ``tree_hash`` — SHA-256 of the canonical tree-hash of the installed
+          tree (post-rewrite content; §1.6 algorithm).
+
+        SYS-4 / AD-27 schema v2 — when ``nwave_assets_root`` is shipped, the
+        manifest bumps to schema_version 2 and adds ``config_assets_tree_hash``:
+        the canonical hash of the shipped ``lib/nWave/`` config assets at install
+        time, so the runtime gate can name a later config-asset drift LOUD. When
+        no config assets were shipped (e.g. the staged source had no ``nWave/``),
+        the manifest stays v1 — no config-asset envelope.
+
+        Side effect: writes one JSON file under ``target_dir``. No exceptions
+        raised on the happy path; ``source_commit`` falls back to empty when
+        the source tree is not a git repo (a wheel's transient staging dir).
+        """
+        from datetime import datetime, timezone
+
+        from scripts.install.install_nwave import _get_version
+
+        source_kind = self._classify_source_kind(source_dir, using_prebuilt)
+        source_commit, source_dirty = self._interrogate_source_git(source_dir)
+        manifest = {
+            "schema_version": 1,
+            "installed_version": _get_version(),
+            "installed_at_iso": datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "source_tree": str(source_dir.resolve()),
+            "source_commit": source_commit,
+            "source_dirty": source_dirty,
+            "source_kind": source_kind,
+            "tree_hash": _canonical_tree_hash(target_dir),
+        }
+        if nwave_assets_root is not None and nwave_assets_root.exists():
+            manifest["schema_version"] = 2
+            manifest["config_assets_tree_hash"] = _canonical_config_assets_hash(
+                nwave_assets_root
+            )
+        manifest_path = target_dir / "_install_manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def _classify_source_kind(source_dir: Path, using_prebuilt: bool) -> str:
+        """Map the install source to one of three §1.4 ``source_kind`` values.
+
+        * ``pre-built`` — ``lib/python/des/`` of a dist tarball (rewrites
+          already applied).
+        * ``wheel`` — site-packages staging path that will not survive past the
+          install (PyPI install topology; detected by the path containing
+          ``site-packages``).
+        * ``dev-checkout`` — the repo's ``src/des/`` (the default).
+        """
+        if using_prebuilt:
+            return "pre-built"
+        if "site-packages" in source_dir.parts:
+            return "wheel"
+        return "dev-checkout"
+
+    @staticmethod
+    def _interrogate_source_git(source_dir: Path) -> tuple[str, bool]:
+        """Return ``(source_commit, source_dirty)`` for ``source_dir``.
+
+        Tolerates ``source_dir`` not being a git repo (returns ``("", False)``)
+        and missing ``git`` on PATH. The returned tuple feeds §1.4 manifest
+        fields ``source_commit`` + ``source_dirty``.
+        """
+        try:
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(source_dir),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (FileNotFoundError, subprocess.SubprocessError):
+            return "", False
+        if head.returncode != 0:
+            return "", False
+        commit = head.stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain", str(source_dir)],
+            cwd=str(source_dir),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        dirty = bool(status.stdout.strip()) if status.returncode == 0 else False
+        return commit, dirty
+
     def _install_des_scripts(self, context: InstallContext) -> PluginResult:
         """Install DES utility scripts."""
         try:
@@ -375,6 +824,60 @@ class DESPlugin(InstallationPlugin):
                 success=False,
                 plugin_name="des",
                 message=f"DES scripts install failed: {e}",
+            )
+
+    def _install_des_hook_scripts(self, context: InstallContext) -> PluginResult:
+        """Install spine-ledger hook scripts to ~/.claude/scripts/.
+
+        Slice-04 of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2: propagates each
+        script in `DES_HOOKS` from `<framework_source>/scripts/hooks/` (or
+        `<project_root>/scripts/hooks/` in dev mode) to the operator's
+        `<claude_dir>/scripts/` tree. Mirrors `_install_des_scripts` 1:1.
+
+        The installed scripts are referenced by the slice-04 HOOK_EVENTS
+        entries via `$HOME/.claude/scripts/spine_ledger_*.py` -- when the
+        scripts are absent from the target tree at install time, the hook
+        commands in settings.json would resolve to missing files; this
+        method closes that gap mechanically by mirroring the propagation
+        contract `DES_SCRIPTS` already honours for non-hook utilities.
+        """
+        try:
+            # Resolve source: framework_source/scripts/hooks or
+            # project_root/scripts/hooks.
+            if context.framework_source:
+                source_dir = context.framework_source / "scripts" / "hooks"
+                if not source_dir.exists() and context.project_root:
+                    source_dir = context.project_root / "scripts" / "hooks"
+            elif context.project_root:
+                source_dir = context.project_root / "scripts" / "hooks"
+            else:
+                source_dir = Path("scripts/hooks")
+
+            target_dir = context.claude_dir / "scripts"
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            installed = []
+            for script_name in self.DES_HOOKS:
+                source = source_dir / script_name
+                target = target_dir / script_name
+
+                if source.exists():
+                    if not context.dry_run:
+                        shutil.copy2(source, target)
+                        target.chmod(0o755)
+                    installed.append(script_name)
+
+            return PluginResult(
+                success=True,
+                plugin_name="des",
+                message=f"Installed {len(installed)} DES spine-ledger hook scripts",
+            )
+
+        except Exception as e:
+            return PluginResult(
+                success=False,
+                plugin_name="des",
+                message=f"DES spine-ledger hook scripts install failed: {e}",
             )
 
     def _install_des_templates(self, context: InstallContext) -> PluginResult:
@@ -450,13 +953,41 @@ class DESPlugin(InstallationPlugin):
         Returns:
             Complete command string with $HOME-based paths
         """
-        lib_path = "$HOME/.claude/lib/python"
+        # When the install target is the default ~/.claude/, keep the portable
+        # $HOME form so settings.json works across machines via a synced
+        # ~/.claude/. When the target is non-default (e.g. ~/.claude-nwave
+        # via `nwave-ai install --target`, or a project-scoped <repo>/.claude),
+        # emit the absolute path: Claude Code passes hook commands to a shell
+        # that resolves $HOME to the user's real home, NOT to the chosen
+        # target, so the portable form would point at the wrong directory.
+        # See ADR-002 (per-project-install feature).
+        if context.claude_dir == Path.home() / ".claude":
+            lib_path = "$HOME/.claude/lib/python"
+        else:
+            lib_path = str(context.claude_dir / "lib" / "python")
         python_path = self._resolve_python_path()
         return self.HOOK_COMMAND_TEMPLATE.format(
             lib_path=lib_path,
             python_path=python_path,
             action=action,
         )
+
+    @staticmethod
+    def _resolve_nwave_hook_version() -> str:
+        """Resolve the installed nWave version for the D6 `nwave_hook_version` stamp.
+
+        Reuses `install_nwave._get_version` -- the single installer-side version
+        primitive (package metadata when pip/pipx-installed, pyproject.toml in a
+        dev checkout). The stamp lets the runtime hooks (and the SessionStart
+        skew detector) compare the installed hook surface against the running
+        checkout (ADR-030 D6 / M13).
+        """
+        try:
+            from scripts.install.install_nwave import _get_version
+
+            return _get_version()
+        except Exception:
+            return "0.0.0"
 
     def _install_des_hooks(self, context: InstallContext) -> PluginResult:
         """Install DES hooks into settings.json (global config).
@@ -486,58 +1017,85 @@ class DESPlugin(InstallationPlugin):
                 if event not in config["hooks"]:
                     config["hooks"][event] = []
 
-            # Check if hooks already exist with correct nested format
-            new_pretask_command = self._generate_hook_command(context, "pre-task")
-            new_stop_command = self._generate_hook_command(context, "subagent-stop")
-            new_post_command = self._generate_hook_command(context, "post-tool-use")
-            new_session_start_command = self._generate_hook_command(
-                context, "session-start"
-            )
-            new_subagent_start_command = self._generate_hook_command(
-                context, "subagent-start"
+            # Generate the desired hook config using shared definitions
+            def _installer_command(action: str) -> str:
+                return self._generate_hook_command(context, action)
+
+            def _installer_guard_command(action: str) -> str:
+                python_cmd = self._generate_hook_command(context, action)
+                return shared_hooks.build_guard_command(python_cmd)
+
+            desired_hooks = shared_hooks.generate_hook_config(
+                _installer_command, guard_command_fn=_installer_guard_command
             )
 
-            def _has_command(hooks_list, command):
+            # Check if hooks already exist with correct format.
+            # Both command AND matcher must match on the SAME entry to count
+            # as up-to-date (previously checked independently, which could
+            # yield false positives when entries were shuffled).
+            def _entry_matches(existing_entry, desired_entry):
+                """Check if an existing entry matches a desired entry exactly."""
+                # Compare matcher (None == absent)
+                if existing_entry.get("matcher") != desired_entry.get("matcher"):
+                    return False
+                # Compare command in nested hooks list
+                desired_cmd = desired_entry["hooks"][0]["command"]
                 return any(
-                    any(h2.get("command") == command for h2 in h.get("hooks", []))
-                    for h in hooks_list
+                    h.get("command") == desired_cmd
+                    for h in existing_entry.get("hooks", [])
                 )
 
-            def _has_matcher(hooks_list, matcher):
-                return any(h.get("matcher") == matcher for h in hooks_list)
+            all_up_to_date = True
+            for event, desired_entries in desired_hooks.items():
+                existing = config["hooks"].get(event, [])
+                for desired in desired_entries:
+                    if not any(_entry_matches(e, desired) for e in existing):
+                        all_up_to_date = False
+                        break
+                if not all_up_to_date:
+                    break
 
-            has_correct_pretask = _has_command(
-                config["hooks"]["PreToolUse"], new_pretask_command
-            )
-            has_correct_stop = _has_command(
-                config["hooks"]["SubagentStop"], new_stop_command
-            )
-            has_correct_post = _has_command(
-                config["hooks"]["PostToolUse"], new_post_command
-            )
-            has_correct_session_start = _has_command(
-                config["hooks"]["SessionStart"], new_session_start_command
-            )
-            has_correct_subagent_start = _has_command(
-                config["hooks"]["SubagentStart"], new_subagent_start_command
-            )
-            has_write_guard = _has_matcher(config["hooks"]["PreToolUse"], "Write")
-            has_edit_guard = _has_matcher(config["hooks"]["PreToolUse"], "Edit")
+            # Ensure slash command budget is sufficient for nWave commands
+            # Without this, commands disappear in long sessions (>50% context)
+            env_changed = False
+            if "env" not in config:
+                config["env"] = {}
+            if "SLASH_COMMAND_TOOL_CHAR_BUDGET" not in config.get("env", {}):
+                config["env"]["SLASH_COMMAND_TOOL_CHAR_BUDGET"] = "100000"
+                env_changed = True
 
-            if (
-                has_correct_pretask
-                and has_correct_stop
-                and has_correct_post
-                and has_correct_session_start
-                and has_correct_subagent_start
-                and has_write_guard
-                and has_edit_guard
-            ):
+            # D6 / M13: stamp `nwave_hook_version` into settings.json. The stamp
+            # records the nWave version whose DES hook surface is installed; the
+            # runtime SessionStart skew detector compares it against the running
+            # checkout. The stamp write is ATOMIC with the hook-array rewrite --
+            # `config` is one in-memory object written once by `_save_settings`,
+            # so a fresh hook set never carries a stale or absent stamp.
+            hook_version = self._resolve_nwave_hook_version()
+            version_changed = config.get("nwave_hook_version") != hook_version
+            if version_changed:
+                config["nwave_hook_version"] = hook_version
+
+            if all_up_to_date and not env_changed and not version_changed:
                 context.logger.info("  ✅ DES hooks up-to-date")
                 return PluginResult(
                     success=True,
                     plugin_name="des",
                     message="DES hooks already installed",
+                )
+
+            if all_up_to_date and (env_changed or version_changed):
+                # Only env / version stamp needs updating, hooks are fine. The
+                # single `_save_settings` write keeps the version stamp atomic
+                # with the (unchanged) hook arrays already in `config`.
+                if not context.dry_run:
+                    self._save_settings(settings_file, config, context)
+                context.logger.info(
+                    "  ✅ DES hooks up-to-date + env/nwave_hook_version stamped"
+                )
+                return PluginResult(
+                    success=True,
+                    plugin_name="des",
+                    message="DES hooks up-to-date, env + version stamp configured",
                 )
 
             # Remove any existing DES hooks (both old flat and new nested format)
@@ -546,66 +1104,13 @@ class DESPlugin(InstallationPlugin):
                     config["hooks"][event] = [
                         h
                         for h in config["hooks"][event]
-                        if not self._is_des_hook_entry(h)
+                        if not shared_hooks.is_des_hook_entry(h)
                     ]
 
-            # Generate hooks with Claude Code v2 nested format
-            # Format: {"matcher": "...", "hooks": [{"type": "command", "command": "..."}]}
-            pretooluse_hook = {
-                "matcher": "Task",
-                "hooks": [{"type": "command", "command": new_pretask_command}],
-            }
-            subagent_stop_hook = {
-                "hooks": [{"type": "command", "command": new_stop_command}],
-            }
-            posttooluse_hook = {
-                "matcher": "Task",
-                "hooks": [{"type": "command", "command": new_post_command}],
-            }
-
-            # Generate Write/Edit guard hooks with shell fast-path
-            # test -f exits in ~1ms when no deliver session exists
-            # Uses $HOME for portability across machines
-            lib_path = "$HOME/.claude/lib/python"
-            python_path = self._resolve_python_path()
-            write_guard_command = (
-                f"test -f .nwave/des/deliver-session.json || exit 0; "
-                f"PYTHONPATH={lib_path} {python_path} -m "
-                f"des.adapters.drivers.hooks.claude_code_hook_adapter pre-write"
-            )
-            edit_guard_command = (
-                f"test -f .nwave/des/deliver-session.json || exit 0; "
-                f"PYTHONPATH={lib_path} {python_path} -m "
-                f"des.adapters.drivers.hooks.claude_code_hook_adapter pre-edit"
-            )
-            write_hook = {
-                "matcher": "Write",
-                "hooks": [{"type": "command", "command": write_guard_command}],
-            }
-            edit_hook = {
-                "matcher": "Edit",
-                "hooks": [{"type": "command", "command": edit_guard_command}],
-            }
-
-            # Generate SessionStart hook (session-level event, matcher="startup")
-            session_start_hook = {
-                "matcher": "startup",
-                "hooks": [{"type": "command", "command": new_session_start_command}],
-            }
-
-            # Generate SubagentStart hook (no matcher — fires for all agent types)
-            subagent_start_hook = {
-                "hooks": [{"type": "command", "command": new_subagent_start_command}],
-            }
-
-            # Add DES hooks
-            config["hooks"]["PreToolUse"].append(pretooluse_hook)
-            config["hooks"]["PreToolUse"].append(write_hook)
-            config["hooks"]["PreToolUse"].append(edit_hook)
-            config["hooks"]["SubagentStop"].append(subagent_stop_hook)
-            config["hooks"]["PostToolUse"].append(posttooluse_hook)
-            config["hooks"]["SessionStart"].append(session_start_hook)
-            config["hooks"]["SubagentStart"].append(subagent_start_hook)
+            # Add all DES hooks from shared definitions
+            for event, entries in desired_hooks.items():
+                for entry in entries:
+                    config["hooks"][event].append(entry)
 
             if not context.dry_run:
                 self._save_settings(settings_file, config, context)
@@ -653,6 +1158,9 @@ class DESPlugin(InstallationPlugin):
         """Add update_check to existing config that lacks it (migration path)."""
         existing = self._read_json_config(config_file)
 
+        # Ensure .gitignore on every install/upgrade (migration for existing installs)
+        self._ensure_gitignore(config_file.parent)
+
         if "update_check" in existing:
             context.logger.info("  ✅ DES config already exists")
             return PluginResult(
@@ -673,6 +1181,24 @@ class DESPlugin(InstallationPlugin):
             message=f"DES config migrated (update_check added) at {config_file}",
         )
 
+    @staticmethod
+    def _ensure_gitignore(nwave_dir: Path) -> None:
+        """Create .nwave/.gitignore with '*' to prevent accidental commits.
+
+        Idempotent: preserves user-customized .gitignore (no nWave marker).
+        Handles read-only directories gracefully.
+        """
+        gitignore = nwave_dir / ".gitignore"
+        marker = "# Generated by nWave. Do not edit."
+        try:
+            if gitignore.exists():
+                content = gitignore.read_text(encoding="utf-8")
+                if marker not in content:
+                    return  # User-customized, don't overwrite
+            gitignore.write_text(f"{marker}\n*\n", encoding="utf-8")
+        except OSError:
+            pass  # Read-only directory, skip silently
+
     def _create_config(
         self, config_file: Path, nwave_dir: Path, context: InstallContext
     ) -> PluginResult:
@@ -685,6 +1211,7 @@ class DESPlugin(InstallationPlugin):
             context.logger.info(f"  🚨 [DRY RUN] Would create {config_file}")
         else:
             nwave_dir.mkdir(parents=True, exist_ok=True)
+            self._ensure_gitignore(nwave_dir)
             self._write_json_config(config_file, default_config)
             context.logger.info(f"  ✅ DES config created: {config_file}")
         return PluginResult(
@@ -702,6 +1229,12 @@ class DESPlugin(InstallationPlugin):
 
         The config lives in the project directory (.nwave/), not ~/.claude,
         because audit log paths are project-relative.
+
+        Resilience: when the resolved project directory is read-only (e.g.
+        running the installer from a read-only mount or a site-packages
+        dir that the user doesn't own), silently skip config creation.
+        DES runs with sensible built-in defaults when the config is absent;
+        blocking the install over an optional customization file is wrong.
         """
         try:
             project_root = context.project_root or Path.cwd()
@@ -713,6 +1246,25 @@ class DESPlugin(InstallationPlugin):
 
             return self._create_config(config_file, nwave_dir, context)
 
+        except OSError as e:
+            # EROFS, EACCES, ENOSPC, etc. — directory not writable.
+            # Treat as soft-skip: DES operates on built-in defaults when
+            # the project-level config file is missing, so the install
+            # can continue safely.  The warning surfaces the condition
+            # without breaking the happy path.
+            context.logger.info(
+                f"  ⚠️  DES config skipped (read-only project dir): {e}. "
+                f"Built-in defaults apply; customize later via "
+                f"{config_file} when project dir is writable."
+            )
+            return PluginResult(
+                success=True,
+                plugin_name="des",
+                message=(
+                    f"DES config skipped (project dir not writable): {e}. "
+                    "Built-in defaults in effect."
+                ),
+            )
         except Exception as e:
             return PluginResult(
                 success=False,
@@ -775,6 +1327,161 @@ class DESPlugin(InstallationPlugin):
 
         context.logger.info(f"  ✅ Settings updated at {settings_file}")
 
+    def _install_des_shims(self, context: InstallContext) -> PluginResult:
+        """Copy 5 DES CLI shims to ~/.claude/bin/ with mode 0o755.
+
+        Also prepends $HOME/.claude/bin to settings.json env.PATH so the
+        shim command names are resolvable from the Bash tool without an
+        env-var-prefix first token.
+
+        Idempotent: repeated invocations overwrite shims (shutil.copy2) and
+        skip the PATH entry if already present.
+        """
+        try:
+            # Resolve source: framework_source/scripts/des or project nWave/scripts/des
+            if context.framework_source:
+                source_dir = context.framework_source / "scripts" / "des"
+                if not source_dir.exists() and context.project_root:
+                    source_dir = context.project_root / "nWave" / "scripts" / "des"
+            elif context.project_root:
+                source_dir = context.project_root / "nWave" / "scripts" / "des"
+            else:
+                source_dir = Path("nWave/scripts/des")
+
+            if not source_dir.exists():
+                return PluginResult(
+                    success=False,
+                    plugin_name="des",
+                    message=f"DES shims source not found: {source_dir}",
+                )
+
+            target_bin = context.claude_dir / "bin"
+            target_bin.mkdir(parents=True, exist_ok=True)
+
+            for shim_name in self.DES_SHIMS:
+                src = source_dir / shim_name
+                if not src.exists():
+                    return PluginResult(
+                        success=False,
+                        plugin_name="des",
+                        message=f"DES shim not found in source: {shim_name}",
+                    )
+                dst = target_bin / shim_name
+                if not context.dry_run:
+                    shutil.copy2(src, dst)
+                    dst.chmod(0o755)
+
+            # R17 residuality cleanup: delete pre-consolidation des-* shims
+            # left over from a prior install. Mirrors DDD-7 break-immediate
+            # migration policy on the deployed target.
+            if not context.dry_run:
+                for legacy_name in self.LEGACY_DES_SHIMS:
+                    legacy_path = target_bin / legacy_name
+                    if legacy_path.exists():
+                        legacy_path.unlink()
+                        context.logger.info(
+                            f"  🗑️  Removed legacy DES shim: {legacy_name}"
+                        )
+
+            # Update settings.json env.PATH with absolute bin path
+            des_bin_path = str(context.claude_dir / "bin")
+            self._update_path_in_settings(context, des_bin_path)
+
+            context.logger.info(
+                f"  ✅ Installed {len(self.DES_SHIMS)} DES shims to {target_bin}"
+            )
+            return PluginResult(
+                success=True,
+                plugin_name="des",
+                message=f"Installed {len(self.DES_SHIMS)} DES shims to {target_bin}",
+            )
+
+        except Exception as e:
+            return PluginResult(
+                success=False,
+                plugin_name="des",
+                message=f"DES shims install failed: {e}",
+            )
+
+    def _update_path_in_settings(
+        self, context: InstallContext, des_bin_path: str
+    ) -> None:
+        """Prepend the absolute DES bin path to settings.json env.PATH if not present.
+
+        Idempotent: skips prepend if des_bin_path is already a colon-delimited
+        segment of the current PATH value.
+
+        When settings.json has no prior env.PATH, seeds it from the live
+        install-time PATH (os.environ["PATH"]) so user-visible directories
+        (~/.local/bin, ~/.deno/bin, ~/.cargo/bin, /snap/bin, ~/bin, etc.)
+        remain reachable. Claude Code REPLACES env.PATH (it does not merge
+        with the inherited shell PATH), so seeding from a hardcoded minimum
+        would strip the user's real PATH. Falls back to SYSTEM_PATH_FALLBACK
+        only when os.environ has no PATH (highly unusual).
+
+        Auto-heals settings written by older installer versions whose PATH
+        equals exactly '<des_bin>:<SYSTEM_PATH_FALLBACK>': those values
+        replaced the user's real PATH and broke bare-name resolution of
+        binaries in ~/.local/bin (where pipx-installed CLIs live, including
+        claude and nwave-ai itself).
+
+        Normalizes pre-existing $HOME entries to absolute paths. Claude Code passes
+        env.PATH verbatim to exec() without shell expansion, so $HOME literals never
+        resolve to the actual filesystem directory. Re-running install on a settings.json
+        with $HOME entries rewrites them to absolute paths (BUG-2 from RCA).
+
+        Uses absolute path resolved at install time. env.PATH values are passed
+        verbatim to exec() and are never shell-expanded. Re-run 'nwave-ai install'
+        on each machine if settings.json is synced.
+        """
+        settings_file = context.claude_dir / "settings.json"
+        config = self._load_settings(settings_file)
+
+        if "env" not in config:
+            config["env"] = {}
+
+        existing_path = config["env"].get("PATH", "")
+
+        # Normalize any $HOME references in existing PATH entries to absolute paths.
+        # Claude Code does not shell-expand env values, so $HOME must be resolved now.
+        if existing_path and "$HOME" in existing_path:
+            home = str(Path.home())
+            segments = [s.replace("$HOME", home) for s in existing_path.split(":")]
+            existing_path = ":".join(segments)
+
+        # Auto-heal settings written by older installer versions: detect the
+        # exact byte-for-byte signature of the prior fabricated value
+        # (des_bin + SYSTEM_PATH_FALLBACK only) and rewrite from the live
+        # install-time PATH. Probability of a user manually configuring
+        # exactly this value is effectively zero, so this is safe to assume
+        # is installer-fabricated.
+        legacy_fabricated_path = f"{des_bin_path}:{self.SYSTEM_PATH_FALLBACK}"
+        if existing_path == legacy_fabricated_path:
+            live_path = os.environ.get("PATH") or self.SYSTEM_PATH_FALLBACK
+            config["env"]["PATH"] = des_bin_path + ":" + live_path
+            if not context.dry_run:
+                self._save_settings(settings_file, config, context)
+            return
+
+        if des_bin_path in existing_path.split(":"):
+            if existing_path != config["env"].get("PATH", ""):
+                config["env"]["PATH"] = existing_path
+                if not context.dry_run:
+                    self._save_settings(settings_file, config, context)
+            return
+
+        if existing_path:
+            config["env"]["PATH"] = des_bin_path + ":" + existing_path
+        else:
+            # Seed from the user's live install-time PATH so binaries reachable
+            # from their shell (claude itself in ~/.local/bin, pnpm, node, etc.)
+            # remain reachable inside Claude Code sessions and hooks.
+            live_path = os.environ.get("PATH") or self.SYSTEM_PATH_FALLBACK
+            config["env"]["PATH"] = des_bin_path + ":" + live_path
+
+        if not context.dry_run:
+            self._save_settings(settings_file, config, context)
+
     def _hooks_already_installed(self, config: dict) -> bool:
         """Check if DES hooks are already installed.
 
@@ -786,31 +1493,20 @@ class DESPlugin(InstallationPlugin):
             return False
 
         return any(
-            any(self._is_des_hook_entry(h) for h in config["hooks"].get(event, []))
+            any(
+                shared_hooks.is_des_hook_entry(h)
+                for h in config["hooks"].get(event, [])
+            )
             for event in self.HOOK_EVENTS
         )
 
     def _is_des_hook_entry(self, hook_entry: dict) -> bool:
         """Check if a hook entry is a DES hook.
 
-        Supports both old flat format and new nested format:
-        - Old flat: {"matcher": "Task", "command": "...claude_code_hook_adapter..."}
-        - New nested: {"matcher": "Task", "hooks": [{"type": "command", "command": "...claude_code_hook_adapter..."}]}
-
-        Args:
-            hook_entry: Hook entry dictionary from settings JSON
-
-        Returns:
-            bool: True if entry is a DES hook
+        Delegates to shared hook_definitions module for consistent detection
+        across plugin builder and installer paths.
         """
-        # Check old flat format
-        if "claude_code_hook_adapter" in hook_entry.get("command", ""):
-            return True
-        # Check new nested format
-        for h in hook_entry.get("hooks", []):
-            if "claude_code_hook_adapter" in h.get("command", ""):
-                return True
-        return False
+        return shared_hooks.is_des_hook_entry(hook_entry)
 
     def uninstall(self, context: InstallContext) -> PluginResult:
         """Uninstall DES plugin.
@@ -839,6 +1535,16 @@ class DESPlugin(InstallationPlugin):
                 if script_path.exists():
                     script_path.unlink()
                     context.logger.info(f"  🗑️ Removed DES script: {script_name}")
+
+            # 3b. Remove DES spine-ledger hook scripts (slice-04 of
+            # F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2)
+            for hook_script_name in self.DES_HOOKS:
+                hook_script_path = scripts_dir / hook_script_name
+                if hook_script_path.exists():
+                    hook_script_path.unlink()
+                    context.logger.info(
+                        f"  🗑️ Removed DES hook script: {hook_script_name}"
+                    )
 
             # 4. Remove DES templates
             templates_dir = context.claude_dir / "templates"
@@ -893,7 +1599,7 @@ class DESPlugin(InstallationPlugin):
                         config["hooks"][event] = [
                             h
                             for h in config["hooks"][event]
-                            if not self._is_des_hook_entry(h)
+                            if not shared_hooks.is_des_hook_entry(h)
                         ]
 
             self._save_settings(settings_file, config, context)
@@ -913,6 +1619,18 @@ class DESPlugin(InstallationPlugin):
 
     def verify(self, context: InstallContext) -> PluginResult:
         """Verify DES installation."""
+        # Dry-run preview never wrote files, so verification has nothing to
+        # assert against. Defensive guard — the primary caller already skips
+        # validate_installation under dry_run, but any future caller (e.g. a
+        # standalone verifier) that forwards an InstallContext with dry_run
+        # must not be misled into reporting failure for a no-op preview.
+        if context.dry_run:
+            return PluginResult(
+                success=True,
+                plugin_name="des",
+                message="dry-run: verification skipped",
+            )
+
         errors = []
 
         # 1. Verify DES module importable under the SAME Python that hooks use
@@ -970,14 +1688,24 @@ class DESPlugin(InstallationPlugin):
                     "audit_logging_enabled": True,
                     "audit_log_dir": ".nwave/des/logs",
                 }
-                nwave_dir.mkdir(parents=True, exist_ok=True)
-                with open(config_file, "w", encoding="utf-8") as f:
-                    json.dump(default_config, f, indent=2)
-                    f.write("\n")
-                context.logger.info(
-                    f"  \u2705 DES config created (migration): {config_file}"
-                )
-                des_cfg = default_config
+                try:
+                    nwave_dir.mkdir(parents=True, exist_ok=True)
+                    with open(config_file, "w", encoding="utf-8") as f:
+                        json.dump(default_config, f, indent=2)
+                        f.write("\n")
+                    context.logger.info(
+                        f"  \u2705 DES config created (migration): {config_file}"
+                    )
+                    des_cfg = default_config
+                except OSError as e:
+                    # Read-only project dir (e.g. installer invoked from a
+                    # mounted source repo); built-in defaults apply.  Match
+                    # the _bootstrap_des_config soft-skip semantics.
+                    context.logger.info(
+                        f"  \u26a0\ufe0f  DES config skipped (read-only project "
+                        f"dir): {e}. Built-in defaults apply."
+                    )
+                    des_cfg = default_config
             else:
                 errors.append("DES config not found: .nwave/des-config.json")
         if not errors and config_file.exists():

@@ -9,7 +9,7 @@ argument-hint: "[product-concept] - Optional: --interview-depth=[overview|compre
 
 ## Overview
 
-Execute evidence-based product discovery through assumption testing and market validation. First wave in nWave (DISCOVER > DISCUSS > DESIGN > DEVOPS > DISTILL > DELIVER).
+Execute evidence-based product discovery through assumption testing and market validation. First wave in nWave (DISCOVER > DISCUSS > SPIKE > DESIGN > DEVOPS > DISTILL > DELIVER).
 
 Scout establishes product-market fit through rigorous customer development using Mom Test interviewing principles and continuous discovery practices.
 
@@ -22,6 +22,32 @@ Scout establishes product-market fit through rigorous customer development using
 
 None (DISCOVER is the first wave).
 
+## Wave Decisions Summary
+
+Before completing DISCOVER, produce `docs/feature/{feature-id}/discover/wave-decisions.md`:
+
+```markdown
+# DISCOVER Decisions — {feature-id}
+
+## Key Decisions
+- [D1] {decision}: {rationale} (see: {source-file})
+
+## Constraints Established
+- {constraint from evidence}
+
+## Validated Assumptions
+- {assumption validated by evidence, with confidence level}
+
+## Invalidated Assumptions
+- {assumption disproved, with evidence reference}
+```
+
+This summary enables downstream waves to quickly assess DISCOVER outcomes without reading all artifacts.
+
+## Document Update (Back-Propagation)
+
+Not applicable (DISCOVER is the first wave — no prior documents to update).
+
 ## Agent Invocation
 
 @nw-product-discoverer
@@ -33,6 +59,10 @@ Execute \*discover for {product-concept-name}.
 **Configuration:**
 - interactive: high | output_format: markdown
 - interview_depth: comprehensive | evidence_standard: past_behavior
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 
@@ -52,7 +82,7 @@ Refer to Scout's quality gates in ~/.claude/agents/nw/nw-product-discoverer.md.
 
 ### Example 1: New SaaS product discovery
 ```
-/nw:discover invoice-automation
+/nw-discover invoice-automation
 ```
 Scout conducts customer development interviews, validates problem-solution fit through Mom Test questioning, and produces a lean canvas with evidence-backed assumptions.
 
@@ -65,4 +95,5 @@ docs/feature/{feature-id}/discover/
   solution-testing.md
   lean-canvas.md
   interview-log.md
+  wave-decisions.md
 ```

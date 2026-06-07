@@ -1,5 +1,30 @@
 # CLAUDE.md — nWave Developer Experience System
 
+## 🔥 LYRA-DEV MANDATE (this repo, this Claude instance) — PRIORITÀ MASSIMA, marchiato-a-fuoco 2026-05-24
+
+**Il mio compito è il SUCCESSO di nWave OSS, NON di SF.** (Ale 2026-05-24, post YAML-pipeline-composition retraction.)
+
+- **Scope**: T1 OSS (nwave-dev = this repo) publish-target ≥90% PRR + hook-only spine stabilization
+- **Out-of-scope**: T2 SF (closed-source proprietary, sister Lyra-SF mandate) + T3 Tsunami (closed-source, sister Lyra-Tsunami mandate)
+- **Cross-tree relay**: SERVICE function ONLY, NOT primary objective. Exchange surface = skills + agents + workflows + detector-taxonomy. NEVER source code, gate config, sequencer YAML, or any IP-disclosing impl per [[feedback_oss_sf_ip_separation_directive_2026_05_24]].
+- **Architecture invariant**: OSS = hooks (no sequencer, no engine at runtime — Ale STANDING "nwave-dev no sequencer no engine, SOLO hooks"). Mimicking SF architectural patterns (YAML state-machine compose, sequencer interpretation) is IP-blind import + standing-violating.
+- **Mandate-check protocol**: before any architectural proposal, ask "OSS-scope? hook-compatible? importing SF mental model?". If any answer suggests SF-import or SF-scope, REFRAME or RETRACT.
+
+**Memory anchors** (must be loaded before any architectural decision):
+- `~/.claude-alt/projects/-home-alexd-Projects-nWave-dev/memory/feedback_mandato_oss_non_sf_2026_05_24.md` — this rule, full text
+- `~/.claude-alt/projects/-home-alexd-Projects-nWave-dev/memory/feedback_oss_sf_ip_separation_directive_2026_05_24.md` — 3-tier IP framework
+- `~/.claude-alt/projects/-home-alexd-Projects-nWave-dev/memory/feedback_atdd_pure_stabilization_max_priority_2026_05_24.md` — atdd_pure stabilization (applies WITHIN OSS tier)
+
+**Anti-pattern caught 2026-05-24** (2 incidents in single afternoon):
+1. Q-40 bias-(a) hook-only-as-convergence-target → IP-blind, retracted Q-50
+2. F-ATDD-PURE-GATE-YAML-PIPELINE-COMPOSITION proposal → SF mental model import + violates OSS hook-only standing, retracted
+
+If 3rd same-class incident occurs: pause, reload anchors, framing-attack on self before continuing.
+
+**Cross-instance memory contamination caveat**: sisters share memory via symlink. Memory files like `feedback_lyra_mandate_*_success_*.md` may be authored by other instances (Lyra-SF, Lyra-Tsunami) and apply ONLY to their scope. ALWAYS identify instance scope before applying. This instance = Lyra-DEV → OSS mandate ONLY.
+
+---
+
 ## What is nWave?
 
 nWave is an AI-powered workflow framework that orchestrates specialized Claude AI agents through disciplined software development waves. It runs inside Claude Code, enforcing TDD, phase tracking, and deterministic validation at every step.
@@ -12,13 +37,64 @@ nWave is an AI-powered workflow framework that orchestrates specialized Claude A
 
 ---
 
+## Repository Topology (three channels, one source)
+
+This is the canonical truth about what is public vs private. Do not infer from filenames — follow the matrix below.
+
+| Channel | What | Visibility | Example paths |
+|---------|------|------------|---------------|
+| **nWave-dev** (this repo) | Full development environment — source, tests, CI, dev tooling, internal docs, all agents (public + private) | **PRIVATE** (github.com/nWave-ai internal org) | everything you see in `/home/alexd/Projects/nWave-dev` |
+| **nWave prod** (github.com/nWave-ai/nWave) | Public-facing source mirror — open-source subset synced from this repo at release time by `release-prod.yml:sync-public`. Strips private agents via `scripts/release/strip_private_agents.py` (fail-closed by catalog), removes `docs/analysis/`, `docs/internal/`, `.github/`, `nWave/checklists/`, caches | **PUBLIC** (open source) | `src/des/`, `scripts/install/`, `scripts/release/`, `nWave/` (public agents only), `nwave_ai/`, `tests/`, `docs/guides/`, `docs/reference/`, `CONTRIBUTING.md`, `LICENSE`, `PRIVACY.md` |
+| **nwave-ai** (PyPI wheel) | Minimal installer CLI — `pipx install nwave-ai` entry. Built from the public tree with minimized payload via `patch_pyproject.py` | **PUBLIC** (PyPI, MIT-licensed) | `nwave_ai/` + a narrow force-include subset |
+| **nWave-hardening** (worktree `~/Projects/nWave-hardening/`, branch `des-hardening`) — also known as "software factory" | Closed-source enterprise track: DES 3.0 dispatch layer, expectations engine, hardening agents. Never merged to master of this repo | **CLOSED SOURCE** (commercial) | `feature/des-hardening` branch artifacts; never reference from master commits |
+
+### What is open vs closed — the simple rule
+
+- **Open**: everything that lands on `nWave-ai/nWave` after the release rsync. That includes `src/des/` (DES runtime source, open), `scripts/install`, `scripts/release`, `scripts/hooks`, the framework catalog's **public** agents+skills, and user-facing docs.
+- **Private (but not closed-source)**: internal analysis docs (`docs/analysis/`, `docs/internal/`), checklists, CI workflow internals (`.github/`), non-public agents (flagged `public: false` in `framework-catalog.yaml`), plus every cache/artifact directory.
+- **Closed source**: only the nWave-hardening track lives here. Not in this repo's master branch. See `feedback_branch_isolation.md` / `feedback_no_des_hardening_on_master.md` for the hard rule: **zero references** to DES 3.0, CPE, dispatch layer, expectations engine, or the hardening worktree in any master commit.
+
+### Wheel vs GitHub (for `nwave-ai`)
+
+The **GitHub repo** `nWave-ai/nWave` ships the full open-source tree (source, tests, scripts, docs). The **PyPI wheel** `nwave-ai` is the *install-time-only* subset: the packaged `nwave_ai/` Python module plus the minimum `scripts/install`, `scripts/shared`, `nWave/` assets, and pre-built `lib/python/des/`. Source browsing/forking goes through GitHub — not through `pipx show nwave-ai -v`. When a file appears both on GitHub and in the wheel, it is double-distribution (not a privacy issue but a packaging-bloat concern).
+
+### Release sync rules (for reference)
+
+- `.github/workflows/release-prod.yml:sync-public` does `rsync -avL --delete` from this repo to the public target with explicit excludes: `.github/`, `docs/analysis/`, `docs/internal/`, `nWave/checklists/`, plus caches and bookkeeping files. `docs/*` excluded by default; only `docs/guides/` and `docs/reference/` explicitly included.
+- `scripts/release/strip_private_agents.py` then filters the public tree against the catalog's `public: true` allow-list (fail-closed: anything uncatalogued is stripped).
+- `scripts/release/patch_pyproject.py` then rewrites `pyproject.toml` for the `nwave-ai` PyPI build, defining a narrow Hatch `force-include` map that controls exactly which paths enter the `.whl`.
+
+**If something is leaking where it shouldn't** (e.g. private agent in public repo, unused script in the PyPI wheel), the fix path is usually: (a) update `framework-catalog.yaml` `public:` flags, (b) tighten rsync excludes, or (c) narrow `patch_pyproject.py` force-include. Do not modify the tests that guard these contracts.
+
+### Repository topology — separation contract (2026-05-15)
+
+Ale 2026-05-15 directive: **nwave-dev and nwave-software-factory are two independent repos**, each with own `.git/`, own origin remote. Worktree-sharing era pre-split (2026-04-09 to 2026-05-15) is decommissioned.
+
+**Hard invariants enforced mechanically**:
+
+1. **Origin URL contract** — this repo's `origin` MUST be `git@github.com:nWave-ai/nwave-dev.git`. Verified by `.git/hooks/pre-push` repo-separation guard (blocks pushes to URLs containing `nwave-software-factory`).
+2. **`.git/` independence** — no `git worktree` shared with nwave-software-factory. Each repo has own `.git/`.
+3. **No cross-tree code leak** — nwave-dev MUST NOT contain DES 3.0 / CPE / dispatch layer / expectations engine / license_runtime / cost-efficiency-determinism modules. Shared canonical agents+skills DO span both repos by design (most are non-IP-sensitive methodology assets).
+4. **Memory rule reinforcement** — `feedback_target_machine_independence_2026_05_15.md` + `feedback_branch_isolation.md` + `feedback_no_des_hardening_on_master.md` enforce zero references to closed-source artifacts in master commits.
+5. **CI/release pipeline filters** — release-prod.yml rsync `--exclude 'docs/*'` (catch-all) + framework-catalog `public:` flag + `patch_pyproject.py` force-include narrow gate. Pipeline already filters non-public docs; only `docs/guides/` + `docs/reference/` are public.
+
+**Workflow going forward**:
+
+- nwave-dev work → push `git@github.com:nWave-ai/nwave-dev.git`
+- nwave-software-factory work → done in sibling repo `~/Projects/nWave-software-factory/` (sister Lyra), origin = `git@github.com:nWave-ai/nWave-software-factory.git`
+- v3.15.0 PyPI release: cosmetic leak detected post-publish (2 references in `nWave/skills/nw-tdd-methodology/SKILL.md`, shared content per Ale, scrubbed via commit `3ab776967`). Re-evaluated as operational data, NOT IP disclosure. Routine 3.15.1 supersede planned.
+
+**Origin story**: 2026-04-09 → 2026-05-15 worktree-shared period mixed histories on nwave-dev remote. ~7 SF-only branches (feat/contract-architecture-test-directive-followup, determinism, feature/bas-core, feature/wave-events-projection-discuss, feature/prism-event-emission-completeness, feature/wave-lang-r1, wt-framework-rationalization-p6-exec) await branch cleanup epic #55.
+
+---
+
 ## Project Structure
 
 ```
 nWave-dev/
 ├── nWave/                    # Framework definition (agents, commands, skills, templates)
 │   ├── agents/               # 23 agent specifications (YAML frontmatter + markdown)
-│   ├── tasks/nw/             # 21 slash command definitions (/nw:deliver, /nw:design, etc.)
+│   ├── tasks/nw/             # 21 slash command definitions (/nw-deliver, /nw-design, etc.)
 │   ├── skills/               # 98 agent skill files (deep domain knowledge)
 │   ├── templates/            # Methodology templates (TDD schema, pre-commit, README)
 │   ├── data/                 # Configuration data, methodologies, research references
@@ -84,7 +160,7 @@ Claude Code Hooks (pre-tool-use, subagent-stop, post-tool-use)
         ▼
 ┌─ Application Layer ───────────────────────────────────────┐
 │  DESOrchestrator       — prompt rendering, phase execution │
-│  PreToolUseService     — validates before Task invocation  │
+│  PreToolUseService     — validates before Agent invocation │
 │  SubagentStopService   — validates after sub-agent returns │
 │  TemplateValidator     — checks 9 mandatory sections       │
 │  StaleExecutionDetector — detects abandoned phases         │
@@ -110,12 +186,19 @@ Claude Code Hooks (pre-tool-use, subagent-stop, post-tool-use)
 └────────────────────────────────────────────────────────────┘
 ```
 
-**TDD 5-Phase Cycle** (canonical, from `step-tdd-cycle-schema.json` v4.0):
+**TDD 3-Phase Canon** (ADR-025, 2026-05-07):
+1. RED — unskip the acceptance test scaffold authored by DISTILL (fail-for-right-reason gate: collected ≥ 1, failures ≥ 1, semantic AssertionError); write PBT unit tests ONLY when the AT cannot reach GREEN without them. DISTILL retains canonical AT authorship — DELIVER does NOT re-author ATs.
+2. GREEN — minimal implementation to make AT + any RED-authored unit tests pass.
+3. COMMIT — refactor, stage, conventional commit with `Step-Id:` trailer. No regressions.
+
+**Legacy 5-Phase Contract** (ADR-024 era, schema `step-tdd-cycle-schema.json` v4.0 — preserved for audit-log replay of pre-2026-05-07 commits):
 1. PREPARE — setup test fixtures
 2. RED_ACCEPTANCE — write failing acceptance test
 3. RED_UNIT — write failing unit tests
 4. GREEN — implement until all tests pass
 5. COMMIT — refactor, finalize, no regressions
+
+References to RED_ACCEPTANCE / RED_UNIT in existing execution logs describe the legacy contract; new work treats them as merged inside RED.
 
 ---
 
@@ -140,34 +223,51 @@ Claude Code Hooks (pre-tool-use, subagent-stop, post-tool-use)
 ## Development Commands
 
 ```bash
+# Setup (one-time per clone)
+uv sync                                    # Install project + dev group (PEP 735)
+
 # Testing
-pipenv run pytest                          # All tests
-pipenv run pytest tests/des/unit/          # DES unit tests only
-pipenv run pytest -m unit                  # All unit tests
-pipenv run pytest -m "not slow"            # Skip slow tests
-pipenv run pytest --cov                    # With coverage (fail_under=60)
+uv run poe test                            # All tests
+uv run poe test-des-unit                   # DES unit tests only
+uv run poe test-unit                       # All unit tests
+uv run poe test-not-slow                   # Skip slow tests
+uv run poe test-coverage                   # With coverage (fail_under=60)
 
 # Linting & Formatting
-ruff check src/ scripts/ tests/            # Lint
-ruff format .                              # Format (88 chars, double quotes)
-mypy src/des/                              # Type check (strict mode)
+uv run poe lint                            # Lint (ruff check src/ scripts/ tests/)
+uv run poe format                          # Format (88 chars, double quotes)
+uv run poe typecheck                       # Type check (mypy src/des/, strict mode)
 
 # Pre-commit hooks
-pre-commit run --all-files                 # All hooks
-pre-commit run --hook-stage pre-push       # Push-time hooks only
+uv run pre-commit run --all-files          # All hooks
+uv run pre-commit run --hook-stage pre-push # Push-time hooks only
 
 # Build & Install
-python scripts/build_dist.py               # Build distribution
-python -m nwave_ai.cli install             # Install nWave locally
+uv run poe build                           # Build distribution
+uv run python -m nwave_ai.cli install      # Install nWave locally
 
 # Documentation
-python scripts/docgen.py                   # Regenerate reference docs
+uv run poe docgen                          # Regenerate reference docs
 
 # Mutation testing
-pipenv run mutmut run                      # Run mutation tests
+uv run poe mutation-test                   # Run mutation tests
 ```
 
+> Task aliases live in `[tool.poe.tasks]` (`pyproject.toml`); run `uv run poe` to list them. See [ADR-PLAT-004](docs/architecture/adr/ADR-PLAT-004-uv-dev-workflow.md) for the pipenv→uv decision.
+
 ---
+
+## Development Paradigm
+
+object-oriented
+
+Rationale: hexagonal architecture (`src/des/{domain,application,ports,adapters}/`), heavy use of dataclasses + ABC + dependency injection via constructor. Crafter dispatch defaults to `@nw-software-crafter`.
+
+## Mutation Testing Strategy
+
+nightly-delta
+
+Rationale: `.nwave/des-config.json` has `mutation_enabled=false` for per-feature gates (mutmut runs are slow). CI runs mutmut nightly on changed modules; thresholds reviewed on a release boundary.
 
 ## Conventions
 
@@ -237,12 +337,12 @@ DISCOVER → DISCUSS → DESIGN → DEVOPS → DISTILL → DELIVER
 
 | Wave | Command | Agent | Output |
 |------|---------|-------|--------|
-| DISCOVER | `/nw:discover` | product-discoverer | Evidence, opportunity validation |
-| DISCUSS | `/nw:discuss` | product-owner | User stories, acceptance criteria |
-| DESIGN | `/nw:design` | solution-architect | Architecture, component boundaries |
-| DEVOPS | `/nw:devops` | platform-architect | Infrastructure, CI/CD, deployment |
-| DISTILL | `/nw:distill` | acceptance-designer | BDD test scenarios (Given-When-Then) |
-| DELIVER | `/nw:deliver` | software-crafter | Working code via Outside-In TDD |
+| DISCOVER | `/nw-discover` | product-discoverer | Evidence, opportunity validation |
+| DISCUSS | `/nw-discuss` | product-owner | User stories, acceptance criteria |
+| DESIGN | `/nw-design` | solution-architect | Architecture, component boundaries |
+| DEVOPS | `/nw-devops` | platform-architect | Infrastructure, CI/CD, deployment |
+| DISTILL | `/nw-distill` | acceptance-designer | BDD test scenarios (Given-When-Then) |
+| DELIVER | `/nw-deliver` | software-crafter | Working code via Outside-In TDD |
 
 **Cross-wave agents**: researcher, troubleshooter, documentarist, visual-architect
 **Reviewers**: 11 peer review agents (one per specialist + specialized reviewers)
@@ -259,3 +359,25 @@ DISCOVER → DISCUSS → DESIGN → DEVOPS → DISTILL → DELIVER
 - **No shell scripts**: Cross-platform policy enforced by pre-commit hook
 - **Coverage threshold**: 60% minimum (will fail CI if below)
 - **Ruff version pinned**: v0.15.0 — do not upgrade without updating CI and pre-commit
+- **Script distribution is whitelist-only**: Only scripts listed in `UTILITY_SCRIPTS` in `build_dist.py` are shipped to users. Everything else in `scripts/` stays in the repo. Check the whitelist before assuming a script will or won't be distributed.
+
+---
+
+## Architectural Constraints (STANDING — marchiati 2026-05-31)
+
+These are hard, non-negotiable constraints. Violations are tech-debt tracked in [`ARCH_TECH_DEBT.md`](ARCH_TECH_DEBT.md). Re-read before any gate/wave/design proposal.
+
+### Generality & target-machine agnosticism — depend ONLY on Python
+
+- **The only runtime dependency is Python.** nWave gates and waves must run on any target machine with Python 3.10+ and nothing else assumed present.
+- **`git` (and every other external CLI tool) is NOT a dependency.** Gates and waves **MUST NOT** require `git`, `gh`, `curl`, `shasum`, etc. to function. Anything language- or tool-bound must be extracted behind a port + per-language/per-tool plugin (the genericità/agnosticismo mandate). A gate that shells out to `git` to do its job is a portability violation, not an implementation detail.
+  - Corollary: gate/wave **logic** is Python + filesystem only. Where git/tool data is genuinely needed (e.g. commit verification), it must sit behind an optional driven-port adapter that degrades loudly (INDETERMINATE, never silent-pass) when the tool is absent — never a hard requirement baked into the gate.
+  - This extends ADR-PLAT-001 (pure-Python deps for install) to the **runtime gate/wave layer**, and operationalizes `[[feedback_target_machine_independence_2026_05_15]]` + the genericità mandate `[[feedback_language_adapter_plugin_architecture_2026_05_24]]`.
+- **Mechanical enforcement of gates is Python-only, git-free, cross-OS, language-agnostic** (filesystem snapshot + per-language AST adapter port), per the AT-as-specification mandate.
+
+### ADR SSOT — one canonical folder for permanent ADRs
+
+- **Permanent/active platform ADRs live in exactly one folder: `docs/product/architecture/`** (per `docs/architecture/adr-ssot-document-model.md` §Model, line 36). Do not create new permanent ADRs under `docs/adrs/` or `docs/architecture/` (those locations are being consolidated; see AD-20 in ARCH_TECH_DEBT.md).
+- **Feature-local design ADRs stay with their feature** (`docs/feature/{id}/design/adrs/...`) — they are delta, not SSOT, and are NOT consolidated.
+- **Archived ADRs** (`docs/archive/.../adrs/...`) are frozen historical records — never moved or renumbered.
+- ADR numbers are an SSOT join-key — they must be globally unique within the permanent folder (no two `ADR-001`).

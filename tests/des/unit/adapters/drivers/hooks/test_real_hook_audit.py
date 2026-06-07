@@ -10,7 +10,7 @@ from pathlib import Path
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.phase_event import PhaseEventParser
 from des.domain.step_completion_validator import StepCompletionValidator
-from des.domain.tdd_schema import get_tdd_schema
+from des.domain.tdd_schema import TDDSchemaLoader
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driven_ports.execution_log_reader import ExecutionLogReader
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
@@ -94,7 +94,7 @@ def test_audit_log_passed_includes_feature_name_and_step_id():
 
     service = SubagentStopService(
         log_reader=log_reader,
-        completion_validator=StepCompletionValidator(schema=get_tdd_schema()),
+        completion_validator=StepCompletionValidator(schema=TDDSchemaLoader().load()),
         scope_checker=scope_checker,
         audit_writer=audit_writer,
         time_provider=time_provider,
@@ -139,7 +139,7 @@ def test_audit_log_failed_includes_feature_name_and_step_id():
 
     service = SubagentStopService(
         log_reader=log_reader,
-        completion_validator=StepCompletionValidator(schema=get_tdd_schema()),
+        completion_validator=StepCompletionValidator(schema=TDDSchemaLoader().load()),
         scope_checker=scope_checker,
         audit_writer=audit_writer,
         time_provider=time_provider,
@@ -194,7 +194,7 @@ def test_audit_log_scope_violation_includes_feature_name_and_step_id():
 
     service = SubagentStopService(
         log_reader=log_reader,
-        completion_validator=StepCompletionValidator(schema=get_tdd_schema()),
+        completion_validator=StepCompletionValidator(schema=TDDSchemaLoader().load()),
         scope_checker=scope_checker,
         audit_writer=audit_writer,
         time_provider=time_provider,
@@ -237,7 +237,7 @@ def test_audit_log_retains_all_existing_fields():
 
     service = SubagentStopService(
         log_reader=log_reader,
-        completion_validator=StepCompletionValidator(schema=get_tdd_schema()),
+        completion_validator=StepCompletionValidator(schema=TDDSchemaLoader().load()),
         scope_checker=scope_checker,
         audit_writer=audit_writer,
         time_provider=time_provider,

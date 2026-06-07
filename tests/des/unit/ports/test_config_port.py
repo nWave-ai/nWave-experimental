@@ -24,7 +24,6 @@ def test_config_port_interface_defines_required_methods():
     assert issubclass(ConfigPort, ABC)
 
     # Verify required methods exist
-    assert hasattr(ConfigPort, "get_max_turns_default")
     assert hasattr(ConfigPort, "get_timeout_threshold_default")
 
 
@@ -43,13 +42,10 @@ def test_in_memory_config_adapter_returns_hardcoded_values():
     config = InMemoryConfigAdapter()
 
     # Get default values
-    max_turns = config.get_max_turns_default()
     timeout_threshold = config.get_timeout_threshold_default()
 
     # Verify values are integers and reasonable for testing
-    assert isinstance(max_turns, int)
     assert isinstance(timeout_threshold, int)
-    assert max_turns == 10  # Expected test default
     assert timeout_threshold == 300  # Expected test default (5 minutes)
 
 
@@ -65,9 +61,8 @@ def test_in_memory_config_adapter_accepts_custom_values():
         InMemoryConfigAdapter,
     )
 
-    config = InMemoryConfigAdapter(max_turns=5, timeout_threshold=60)
+    config = InMemoryConfigAdapter(timeout_threshold=60)
 
-    assert config.get_max_turns_default() == 5
     assert config.get_timeout_threshold_default() == 60
 
 
@@ -84,18 +79,15 @@ def test_environment_config_adapter_reads_env_variables():
     )
 
     # Set environment variables
-    os.environ["DES_MAX_TURNS_DEFAULT"] = "15"
     os.environ["DES_TIMEOUT_THRESHOLD_DEFAULT"] = "600"
 
     try:
         config = EnvironmentConfigAdapter()
 
         # Verify values are read from environment
-        assert config.get_max_turns_default() == 15
         assert config.get_timeout_threshold_default() == 600
     finally:
         # Clean up environment
-        os.environ.pop("DES_MAX_TURNS_DEFAULT", None)
         os.environ.pop("DES_TIMEOUT_THRESHOLD_DEFAULT", None)
 
 
@@ -112,18 +104,14 @@ def test_environment_config_adapter_uses_defaults_when_env_not_set():
     )
 
     # Ensure env vars are not set
-    os.environ.pop("DES_MAX_TURNS_DEFAULT", None)
     os.environ.pop("DES_TIMEOUT_THRESHOLD_DEFAULT", None)
 
     config = EnvironmentConfigAdapter()
 
     # Verify defaults are returned
-    max_turns = config.get_max_turns_default()
     timeout_threshold = config.get_timeout_threshold_default()
 
-    assert isinstance(max_turns, int)
     assert isinstance(timeout_threshold, int)
-    assert max_turns > 0
     assert timeout_threshold > 0
 
 

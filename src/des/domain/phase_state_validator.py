@@ -10,6 +10,8 @@ Generates recovery suggestions to guide developers toward correct state.
 
 from typing import Any
 
+from des.domain.value_objects import PhaseStatus
+
 
 class PhaseStateValidator:
     """
@@ -45,7 +47,7 @@ class PhaseStateValidator:
         phase_name = phase.get("phase_name", "UNKNOWN")
 
         # Validate EXECUTED state
-        if status == "EXECUTED":
+        if status == PhaseStatus.EXECUTED:
             outcome = phase.get("outcome")
             if outcome is None or (isinstance(outcome, str) and not outcome.strip()):
                 errors.append(
@@ -54,7 +56,7 @@ class PhaseStateValidator:
                 )
 
         # Validate SKIPPED state
-        elif status == "SKIPPED":
+        elif status == PhaseStatus.SKIPPED:
             blocked_by = phase.get("blocked_by")
             if blocked_by is None or (
                 isinstance(blocked_by, str) and not blocked_by.strip()
@@ -80,12 +82,12 @@ class PhaseStateValidator:
         status = phase.get("status")
         phase_name = phase.get("phase_name", "UNKNOWN")
 
-        if status == "EXECUTED":
+        if status == PhaseStatus.EXECUTED:
             outcome = phase.get("outcome")
             if outcome is None or (isinstance(outcome, str) and not outcome.strip()):
                 suggestions = self._generate_executed_state_suggestions(phase_name)
 
-        elif status == "SKIPPED":
+        elif status == PhaseStatus.SKIPPED:
             blocked_by = phase.get("blocked_by")
             if blocked_by is None or (
                 isinstance(blocked_by, str) and not blocked_by.strip()

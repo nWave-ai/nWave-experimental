@@ -1,0 +1,516 @@
+"""des-verify-slice-commit-completeness -- slice-commit verify-then-record gate.
+
+slice-14 of the atdd-pure-roadmap-free-rollout (E1, the completeness check) +
+slice-02 of simplify-atdd-pure-carpaccio-spine (DDD-3, the atomic
+verify-then-record exit gate).
+
+Given a commit carrying a `Slice-Id:` trailer, this CLI runs two checks in
+order -- E1 completeness then E2 the feature-scoped contract gate -- and
+appends a `SliceCommitVerified` ledger record IF AND ONLY IF both exit 0, in
+the same process. On any non-zero half the CLI exits non-zero and appends
+nothing: an unverified slice never leaves a record behind (the M-3
+non-vacuity contract, wall W3).
+
+E1 completeness: assert every scenario tagged `@slice-NN` for the slice lives
+in a git-tracked `.feature` file that is EITHER present in this commit OR
+already tracked and unmodified by this slice. Under `--feature-id` the
+`.feature` search is scoped to that feature via the `@feature-{id}` tag
+(wall W5 -- a global `rglob` collides `@slice-NN` tags across features).
+
+E2 contract gate: compose `run_contract_gate --feature-id` as a subprocess --
+the feature-scoped contract suite with the M-1/M-8 non-vacuity floor.
+
+Bounded-change: the ONLY filesystem mutation is one `SliceCommitVerified`
+record appended per listed slice to the feature's M7 AT-completion ledger
+(`.nwave/telemetry/atdd-pure/{feature_id}.jsonl`, via
+`AtCompletionLedger.append_gate_event`), performed IFF E1 exit 0 AND E2 exit 0.
+Reads otherwise (`git show`, `.feature` files).
+
+MUST be stdlib-only (no `import yaml`) per the DES-bundle contract -- the very
+contract the slice-01 regression violated. Every import below is stdlib or an
+intra-package `des` module that is itself stdlib-only:
+`carpaccio_slice_gate._feature_tag_files` (the `@feature-{id}` resolver, the
+same import `run_contract_gate` uses for its `--feature-id` scope) and
+`AtCompletionLedger` (the M7 ledger writer -- `fcntl` / `hashlib` / `json`,
+all stdlib).
+
+A commit MAY carry MULTIPLE `Slice-Id:` trailer lines -- the whole-tree-stashing
+pre-commit hook forces interleaved multi-slice work to batch into ONE commit,
+which then lists every slice it covers as a separate `Slice-Id:` trailer (see
+friction F-07, docs/analysis/atdd-pure-dogfooding-friction-2026-05-20.md). The
+gate verifies slice-commit completeness for EVERY listed slice and certifies
+the commit only when every listed slice is complete; a single-`Slice-Id:`
+commit is the one-element case of the same logic.
+
+Exit codes:
+    0 = verified -- E1 and E2 both cleared; exactly one `SliceCommitVerified`
+        record was appended for the slice(s).
+    1 = refused -- E1 (completeness) or E2 (contract gate) failed; the JSON
+        payload names the failed half. Nothing was appended.
+    2 = malformed input -- no `Slice-Id:` trailer, or repo / commit unreadable.
+
+Reference: docs/feature/atdd-pure-roadmap-free-rollout/feature-delta.md
+           # slice-14 design note (E1);
+           docs/feature/simplify-atdd-pure-carpaccio-spine/feature-delta.md
+           # slice-02 (DDD-3).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.application.slice_at_completeness import (
+    _git,
+    feature_files_for_slice,
+    files_in_commit,
+    missing_at_files,
+)
+from des.cli.human_surface import Verdict, print_human_summary
+from des.domain.slice_id_trailer import (
+    _SLICE_ID_TRAILER_RE,
+    extract_slice_id,
+    extract_slice_ids,
+)
+from des.runtime.interpreter import python_for
+
+
+# DDD-3 identity guarantee: re-export the pure-function SSOT symbols so the
+# 18 pre-existing callers (reverify_slice_commit + the multi-slice-trailer /
+# atdd-pure-exit-gate ATs) keep importing from this module unchanged. The
+# completeness symbols' canonical home is ``des.application.slice_at_completeness``;
+# the pure trailer-parsers (``extract_slice_id`` / ``extract_slice_ids`` and the
+# ``_SLICE_ID_TRAILER_RE`` they share) are domain logic homed in
+# ``des.domain.slice_id_trailer`` (AD-05 layering fix -- adapters imported them
+# downward from this CLI module). This module is the CLI driving port that wraps
+# them with argparse + verdict emission. ``__all__`` marks the re-exported names
+# as intentional so autoflake keeps the otherwise-internally-unused regex.
+__all__ = [
+    "_SLICE_ID_TRAILER_RE",
+    "extract_slice_id",
+    "extract_slice_ids",
+    "feature_files_for_slice",
+    "files_in_commit",
+    "main",
+    "missing_at_files",
+]
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="des verify-slice-commit",
+        description="Verify a slice commit carries the slice's .feature AT files.",
+    )
+    parser.add_argument(
+        "--repo", required=True, help="Path to the git repository to inspect."
+    )
+    parser.add_argument(
+        "--commit",
+        required=True,
+        help="The commit-ish to inspect (e.g. HEAD).",
+    )
+    parser.add_argument(
+        "--feature-id",
+        help=(
+            "The feature the slice commit belongs to. When given, the CLI runs "
+            "the atomic verify-then-record exit gate: E1 completeness scoped to "
+            "this feature, then E2 the feature-scoped contract gate, then one "
+            "SliceCommitVerified ledger record IFF both clear. When omitted the "
+            "CLI runs the legacy E1-only completeness check (classic-mode "
+            "callers -- reverify_slice_commit, the U2 hook)."
+        ),
+    )
+    parser.add_argument(
+        "--expected-head",
+        help=(
+            "The pinned HEAD SHA the gate was launched against (M9). When "
+            "present, the CLI re-reads HEAD and fails closed with "
+            "CommitHeadRaced if HEAD has moved off this SHA. When absent, no "
+            "race check runs -- behaviour is byte-for-byte unchanged."
+        ),
+    )
+    parser.add_argument(
+        "--scope-feature-id",
+        help=(
+            "Scope the legacy E1-only completeness check to this feature's "
+            "`@feature-{id}`-tagged `.feature` files (slice-03). Unlike "
+            "`--feature-id` (which flips the CLI into the verify-then-record "
+            "exit gate -- E1 + E2 + a SliceCommitVerified ledger record), "
+            "`--scope-feature-id` keeps the legacy E1-only verdict shape and "
+            "writes NO ledger record: it only narrows E1's `.feature` candidate "
+            "scan so a co-resident feature sharing the slice number on the tree "
+            "is not cross-bound into this commit's completeness check. The U2 "
+            "hook supplies it so E1 runs scoped while the hook stays the sole "
+            "author of the verified record (E1 runs once, one record)."
+        ),
+    )
+    return parser
+
+
+def _commit_head_raced(repo: Path, expected_head: str | None) -> dict[str, str] | None:
+    """Detect a HEAD that has raced off the pinned ``expected_head`` SHA (M9 / F3).
+
+    Returns a `CommitHeadRaced` payload when HEAD has moved off the pinned SHA;
+    None when HEAD still matches (or no `--expected-head` was given, so no race
+    check runs). Under a concurrent amend/rebase the HEAD the gate was launched
+    against can move before the gate inspects it -- a stale verdict. Re-reading
+    HEAD makes the race detectable and fail-closed.
+    """
+    if expected_head is None:
+        return None
+    try:
+        current = _git(repo, "rev-parse", "HEAD").strip()
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        return {
+            "event": "CommitHeadRaced",
+            "pinned_sha": expected_head,
+            "current_sha": "",
+            "error": f"cannot re-read HEAD to verify the pinned SHA: {exc}",
+        }
+    if current == expected_head:
+        return None
+    return {
+        "event": "CommitHeadRaced",
+        "pinned_sha": expected_head,
+        "current_sha": current,
+        "error": (
+            "HEAD moved during the G_COMMIT exit gate "
+            f"(pinned {expected_head}, now {current}); re-run the gate"
+        ),
+    }
+
+
+def _emit(payload: dict[str, object]) -> None:
+    """Print exactly one single-line JSON object on BOTH stdout and stderr.
+
+    The pre-existing machine-readable contract (DISCUSS row 4: no breaking
+    change for existing pre-commit / CI / hook consumers) keeps the event on
+    stdout; the slice-02 human-readable surface co-emits it on stderr so a
+    single channel carries both the structured event and the new colored
+    verdict line.
+    """
+    line = json.dumps(payload)
+    print(line)
+    print(line, file=sys.stderr)
+
+
+def _human_summary_for(payload: dict[str, object]) -> tuple[Verdict, str]:
+    """Return the (verdict, summary) pair the named ``event`` maps to.
+
+    Per slice-02 verdict mapping: SliceCommitComplete / SliceCommitVerified
+    → ✅ PASS, every refusal / malformed input → ❌ FAIL. The summary names
+    the listed slice(s) when available so the operator immediately sees what
+    cleared / refused.
+    """
+    event = payload.get("event")
+    slice_ids = payload.get("slice_ids")
+    slice_label = (
+        ", ".join(slice_ids) if isinstance(slice_ids, list) and slice_ids else ""
+    )
+    if event in ("SliceCommitComplete", "SliceCommitVerified"):
+        verdict = Verdict.PASS
+        summary = (
+            f"slice commit verified ({slice_label})"
+            if slice_label
+            else "slice commit verified"
+        )
+        return verdict, summary
+    verdict = Verdict.FAIL
+    error = payload.get("error")
+    summary = (
+        f"slice commit refused: {error}"
+        if isinstance(error, str) and error
+        else "slice commit refused"
+    )
+    return verdict, summary
+
+
+def _emit_with_human_surface(payload: dict[str, object]) -> None:
+    """Emit the JSON event on both channels plus the human-readable verdict line.
+
+    Composes ``_emit`` (dual-channel JSON) with ``print_human_summary``: every
+    operator-facing verdict point in this CLI carries BOTH surfaces, so the
+    operator sees a colored ✅/❌ line and the structured event lands on
+    stderr for the slice-02 AT assertions.
+    """
+    _emit(payload)
+    verdict, summary = _human_summary_for(payload)
+    print_human_summary(verdict, summary)
+
+
+def _run_contract_gate(repo: Path, feature_id: str, slice_id: str) -> int:
+    """Run E2 -- the feature-scoped contract gate -- for one slice.
+
+    Composes `run_contract_gate --feature-id` as a subprocess (DDD-12: the
+    test-runner seam stays inside `run_contract_gate`; this CLI adds no pytest
+    call site of its own). Returns the contract gate's exit code -- 0 when the
+    feature-scoped suite cleared, non-zero on a refusal or a malformed scope.
+    """
+    completed = subprocess.run(
+        [
+            python_for(None),
+            "-m",
+            "des.cli.run_contract_gate",
+            "--repo",
+            str(repo),
+            "--feature-id",
+            feature_id,
+            "--entering-slice",
+            slice_id,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    return completed.returncode
+
+
+def _append_slice_commit_verified(
+    repo: Path,
+    feature_id: str,
+    slice_ids: list[str],
+) -> None:
+    """Record one `SliceCommitVerified` event per verified slice (DDD-3).
+
+    The single filesystem mutation of this CLI -- performed only after E1 and
+    E2 have both cleared. Each record is written through
+    ``AtCompletionLedger.append_gate_event`` (REUSE-unchanged, DDD-3 Reuse
+    Analysis), so it lands on the carpaccio chain's read substrate
+    (``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``) carrying the M7
+    integrity fields (gap-free ``seq`` + ``record_hash``) the slice-03
+    predecessor check and the M-2 backstop fail-closed on.
+
+    Idempotency (C4a): ``AtCompletionLedger.verified_slices()`` is set-valued,
+    so a re-run on an already-verified commit appends a further record yet the
+    carpaccio chain still sees the slice exactly once -- the predecessor
+    ordering it depends on is uncorrupted.
+    """
+    ledger = AtCompletionLedger(feature_id, repo)
+    for slice_id in slice_ids:
+        ledger.append_gate_event("SliceCommitVerified", slice_id)
+
+
+def _resolve_slice_ids(repo: Path, commit: str) -> tuple[list[str], str, int | None]:
+    """Read a commit's `Slice-Id:` trailer(s) + its SHA.
+
+    Returns ``(slice_ids, commit_sha, error_code)``. ``error_code`` is None on
+    success, or the exit code (2) when the commit is unreadable / has no
+    trailer -- in which case the malformed verdict has already been emitted.
+    """
+    try:
+        commit_message = _git(repo, "log", "-1", "--format=%B", commit)
+        commit_sha = _git(repo, "rev-parse", commit).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        _emit_with_human_surface(
+            {
+                "event": "MalformedInput",
+                "error": f"cannot read commit {commit!r}: {exc}",
+            }
+        )
+        return [], "", 2
+
+    slice_ids = extract_slice_ids(commit_message)
+    if not slice_ids:
+        _emit_with_human_surface(
+            {
+                "event": "MalformedInput",
+                "error": "commit carries no Slice-Id:/Step-Id: trailer",
+            }
+        )
+        return [], "", 2
+    return slice_ids, commit_sha, None
+
+
+def _missing_by_slice(
+    repo: Path, commit: str, slice_ids: list[str], feature_id: str | None
+) -> tuple[dict[str, list[str]], int | None]:
+    """Run E1 completeness for every listed slice.
+
+    Returns ``(deficient, error_code)``: ``deficient`` maps each slice with
+    missing `.feature` files to that list; ``error_code`` is 2 (and the
+    malformed verdict already emitted) when the repository is unreadable.
+    """
+    try:
+        missing = {
+            slice_id: missing_at_files(repo, commit, slice_id, feature_id)
+            for slice_id in slice_ids
+        }
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        _emit_with_human_surface(
+            {
+                "event": "MalformedInput",
+                "error": f"cannot inspect repository: {exc}",
+            }
+        )
+        return {}, 2
+    return {sid: m for sid, m in missing.items() if m}, None
+
+
+def _effective_scope(
+    repo: Path, slice_ids: list[str], scope_feature_id: str | None
+) -> str | None:
+    """Resolve the feature scope E1 narrows its `.feature` scan to (Seam A).
+
+    Returns ``scope_feature_id`` when that feature actually owns at least one
+    `@feature-{id}`-tagged `.feature` file for one of the listed slices, so the
+    scoped scan ignores a co-resident feature sharing the slice number (the
+    slice-03 cross-feature isolation property). Returns ``None`` -- the legacy
+    whole-tree scan -- when ``scope_feature_id`` is absent OR resolves to ZERO
+    candidate files: a feature that tags no `.feature` under its id must NOT
+    have its completeness check silently degrade to a vacuous always-pass.
+    Falling back to the whole-tree scan keeps the genuine-incompleteness guard
+    intact for callers whose `.feature` files predate the `@feature-{id}`
+    convention (anti-vacuity: scoping narrows, it never blinds the check).
+    """
+    if scope_feature_id is None:
+        return None
+    has_scoped_candidate = any(
+        feature_files_for_slice(repo, slice_id, scope_feature_id)
+        for slice_id in slice_ids
+    )
+    return scope_feature_id if has_scoped_candidate else None
+
+
+def _run_legacy_completeness(repo: Path, args: argparse.Namespace) -> int:
+    """The legacy E1-only completeness check (no `--feature-id`).
+
+    Classic-mode callers -- `reverify_slice_commit`, the U2 hook -- invoke the
+    CLI without `--feature-id` and expect the original `SliceCommitComplete` /
+    `SliceCommitIncomplete` verdict shape and the pure-read git contract.
+
+    slice-03 (Seam A): when `--scope-feature-id` is supplied the E1 `.feature`
+    candidate scan is scoped to that feature's `@feature-{id}`-tagged files, so
+    a co-resident feature sharing the slice number on the tree is not
+    cross-bound into this commit's completeness check. The verdict shape stays
+    the legacy E1-only `SliceCommitComplete` / `SliceCommitIncomplete` and NO
+    ledger record is written -- the verify-then-record seam (`--feature-id`) is
+    not entered.
+    """
+    slice_ids, _commit_sha, error_code = _resolve_slice_ids(repo, args.commit)
+    if error_code is not None:
+        return error_code
+
+    scope = _effective_scope(repo, slice_ids, args.scope_feature_id)
+    deficient, error_code = _missing_by_slice(repo, args.commit, slice_ids, scope)
+    if error_code is not None:
+        return error_code
+
+    if deficient:
+        _emit_with_human_surface(
+            {
+                "event": "SliceCommitIncomplete",
+                "slice_ids": slice_ids,
+                "commit": args.commit,
+                "missing_feature_files_by_slice": deficient,
+                "error": "; ".join(
+                    f"slice {slice_id} commit is missing "
+                    f"{len(missing)} .feature AT file(s): " + ", ".join(missing)
+                    for slice_id, missing in deficient.items()
+                ),
+            }
+        )
+        return 1
+
+    _emit_with_human_surface(
+        {
+            "event": "SliceCommitComplete",
+            "slice_ids": slice_ids,
+            "commit": args.commit,
+        }
+    )
+    return 0
+
+
+def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
+    """The atomic verify-then-record exit gate (`--feature-id` given, DDD-3).
+
+    Runs E1 (completeness, feature-scoped) then E2 (the feature-scoped
+    contract gate) and appends one `SliceCommitVerified` record IFF both
+    clear. On any non-zero half the CLI refuses (exit 1, naming the failed
+    half) and appends nothing.
+    """
+    feature_id = args.feature_id
+    slice_ids, commit_sha, error_code = _resolve_slice_ids(repo, args.commit)
+    if error_code is not None:
+        return error_code
+
+    # E1 -- completeness. A deficient slice refuses before E2 is reached.
+    deficient, error_code = _missing_by_slice(repo, args.commit, slice_ids, feature_id)
+    if error_code is not None:
+        return error_code
+    if deficient:
+        _emit_with_human_surface(
+            {
+                "event": "SliceCommitRefused",
+                "refused_half": "E1",
+                "slice_ids": slice_ids,
+                "commit": args.commit,
+                "missing_feature_files_by_slice": deficient,
+                "error": "; ".join(
+                    f"slice {slice_id} commit is missing "
+                    f"{len(missing)} .feature AT file(s): " + ", ".join(missing)
+                    for slice_id, missing in deficient.items()
+                ),
+            }
+        )
+        return 1
+
+    # E2 -- the feature-scoped contract gate, one run per listed slice.
+    for slice_id in slice_ids:
+        contract_code = _run_contract_gate(repo, feature_id, slice_id)
+        if contract_code != 0:
+            _emit_with_human_surface(
+                {
+                    "event": "SliceCommitRefused",
+                    "refused_half": "E2",
+                    "slice_ids": slice_ids,
+                    "commit": args.commit,
+                    "failed_slice": slice_id,
+                    "contract_gate_exit_code": contract_code,
+                    "error": (
+                        f"slice {slice_id} failed the feature-scoped contract "
+                        f"gate (exit {contract_code})"
+                    ),
+                }
+            )
+            return 1
+
+    # E1 and E2 both cleared -- record one SliceCommitVerified per slice.
+    _append_slice_commit_verified(repo, feature_id, slice_ids)
+    _emit_with_human_surface(
+        {
+            "event": "SliceCommitVerified",
+            "slice_ids": slice_ids,
+            "commit": args.commit,
+            "commit_sha": commit_sha,
+        }
+    )
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Verify a slice commit -- and, under `--feature-id`, record it.
+
+    With `--feature-id`: the atomic verify-then-record exit gate (DDD-3) --
+    E1 then E2 then one ledger record IFF both clear. Without `--feature-id`:
+    the legacy E1-only completeness check (classic-mode callers).
+    """
+    args = _build_parser().parse_args(argv)
+    repo = Path(args.repo)
+
+    # M9 / F3: a HEAD raced off the pinned SHA fails closed before any verdict.
+    raced = _commit_head_raced(repo, args.expected_head)
+    if raced is not None:
+        _emit_with_human_surface(raced)
+        return 1
+
+    if args.feature_id:
+        return _run_verify_then_record(repo, args)
+    return _run_legacy_completeness(repo, args)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(main())

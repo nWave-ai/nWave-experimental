@@ -18,7 +18,7 @@ Plan and execute complex refactoring using the Mikado Method. Builds dependency 
 ## Context Files Required
 
 - src/\* - Codebase to refactor
-- docs/architecture/architecture-design.md - Target architecture (if available)
+- docs/product/architecture/brief.md - Target architecture (if available)
 
 ## Agent Invocation
 
@@ -28,12 +28,16 @@ Execute \*mikado for {refactoring-goal}.
 
 **Context Files:**
 - src/\*
-- docs/architecture/architecture-design.md
+- docs/product/architecture/brief.md
 
 **Configuration:**
 - refactoring_goal: "{goal description with business value}"
 - complexity: complex # simple/moderate/complex
 - visualization: {tree|graph} # tree = indented markdown checklist, graph = Mermaid dependency diagram
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 
@@ -54,7 +58,7 @@ Execute \*mikado for {refactoring-goal}.
 
 ### Example 1: Extract shared domain model
 ```
-/nw:mikado "Extract shared domain model from monolithic service layer"
+/nw-mikado "Extract shared domain model from monolithic service layer"
 ```
 Crafty builds Mikado dependency {visualization} through iterative exploration, discovers 12 leaf nodes across 4 modules, executes bottom-up from leaves to goal with discovery commits at each step.
 

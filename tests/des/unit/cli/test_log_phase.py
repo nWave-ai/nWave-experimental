@@ -2,7 +2,7 @@
 
 Tests the log_phase CLI tool that appends structured JSON objects (v3.0 format)
 to execution-log.json with real UTC timestamps. All tests use tmp_path fixture
-and mock get_tdd_schema.
+and mock TDDSchemaLoader.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from des.domain.tdd_schema import TDDSchema
 
 @pytest.fixture()
 def mock_schema():
-    """Patch get_tdd_schema in the log_phase module to return a test schema."""
+    """Patch TDDSchemaLoader.load in the log_phase module to return a test schema."""
     schema = TDDSchema(
         tdd_phases=(
             "PREPARE",
@@ -32,7 +32,8 @@ def mock_schema():
         valid_skip_prefixes=("NOT_APPLICABLE:",),
         blocking_skip_prefixes=("APPROVED_SKIP:",),
     )
-    with patch("des.cli.log_phase.get_tdd_schema", return_value=schema):
+    with patch("des.cli.log_phase.TDDSchemaLoader") as mock_loader_cls:
+        mock_loader_cls.return_value.load.return_value = schema
         yield schema
 
 

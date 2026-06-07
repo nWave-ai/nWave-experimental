@@ -19,7 +19,7 @@ class DESHookInstaller:
     # Format: {"matcher": "...", "hooks": [{"type": "command", "command": "..."}]}
     # Note: Commands run from project root with PYTHONPATH set for module imports
     DES_PRETOOLUSE_HOOK = {
-        "matcher": "Task",
+        "matcher": "Agent",
         "hooks": [
             {
                 "type": "command",
@@ -38,7 +38,7 @@ class DESHookInstaller:
     }
 
     DES_POSTTOOLUSE_HOOK = {
-        "matcher": "Task",
+        "matcher": "Agent",
         "hooks": [
             {
                 "type": "command",
@@ -220,12 +220,20 @@ class DESHookInstaller:
         Returns:
             bool: True if entry is a DES hook
         """
+        # DES hook signatures across all event types:
+        #   - claude_code_hook_adapter: Python adapter invoked from PreToolUse/
+        #     SubagentStop/PostToolUse/SessionStart/SubagentStart
+        #   - des-hook: shell-style prefix used by inline Bash matchers
+        #     (e.g. "# des-hook:pre-bash" guard at the top of the command)
+        des_signatures = ("claude_code_hook_adapter", "des-hook:")
         # Check old flat format
-        if "claude_code_hook_adapter" in hook_entry.get("command", ""):
+        cmd = hook_entry.get("command", "")
+        if any(sig in cmd for sig in des_signatures):
             return True
         # Check new nested format
         for h in hook_entry.get("hooks", []):
-            if "claude_code_hook_adapter" in h.get("command", ""):
+            h_cmd = h.get("command", "")
+            if any(sig in h_cmd for sig in des_signatures):
                 return True
         return False
 
@@ -315,31 +323,22 @@ class DESHookInstaller:
         """
         Remove DES hooks from configuration.
 
+        Iterates every hook event in the config (not a hard-coded subset)
+        so newly-added DES events (e.g. SessionStart, SubagentStart,
+        PreCompact) are also cleaned. Filters each event's entry list,
+        keeping only non-DES entries.
+
         Args:
             config: Configuration dictionary to update
         """
         if "hooks" not in config:
             return
 
-        if "PreToolUse" in config["hooks"]:
-            config["hooks"]["PreToolUse"] = [
-                h
-                for h in config["hooks"]["PreToolUse"]
-                if not self._is_des_hook_entry(h)
-            ]
-
-        if "SubagentStop" in config["hooks"]:
-            config["hooks"]["SubagentStop"] = [
-                h
-                for h in config["hooks"]["SubagentStop"]
-                if not self._is_des_hook_entry(h)
-            ]
-
-        if "PostToolUse" in config["hooks"]:
-            config["hooks"]["PostToolUse"] = [
-                h
-                for h in config["hooks"]["PostToolUse"]
-                if not self._is_des_hook_entry(h)
+        for event_name, entries in list(config["hooks"].items()):
+            if not isinstance(entries, list):
+                continue
+            config["hooks"][event_name] = [
+                h for h in entries if not self._is_des_hook_entry(h)
             ]
 
 

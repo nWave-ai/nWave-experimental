@@ -1,0 +1,42 @@
+# Gate-contract: verify-commit-trailers (D4 Phase 1 slice-02)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-commit-trailers.
+
+gate_id: verify-commit-trailers
+responsibility: |
+  Verify a commit message carries required Slice-Id and optional Reviewed-by HMAC trailers.
+module: des.cli.verify_commit_trailers
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --commit
+    required: true
+    type: string
+    help: "Commit-ish to inspect."
+  - name: --require-reviewed-by
+    required: false
+    type: bool
+    help: "Fail if Reviewed-by trailer missing."
+
+log_events:
+  - CommitTrailersVerified
+
+failure_modes:
+  - error_class: MalformedInput
+    exit_code: 2
+    remediation: "Provide --commit"
+  - error_class: MissingTrailer
+    exit_code: 1
+    remediation: "Add Slice-Id trailer to commit message"
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli
+  - git-hook

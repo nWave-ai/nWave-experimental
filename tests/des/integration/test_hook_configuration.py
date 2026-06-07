@@ -6,6 +6,40 @@ Tests verify that:
 3. Hooks point to claude_code_hook_adapter module (not missing files)
 
 These tests MUST fail if claude_code_hook_adapter.py is deleted or not referenced.
+
+State-delta migration summary
+------------------------------
+CONVERTED (0 tests) — no filesystem-mutating tests present:
+  All 12 tests operate on read-only or in-memory surfaces:
+    - TestHookAdapterReference: module existence + import checks (filesystem read,
+      no write). hasattr() and callable() assertions have no state slot to capture.
+    - TestHookInstallerConfiguration: installer source-code text assertions (file
+      read, no write). "assert substring in source" has no before/after delta.
+    - TestHookConfigurationIntegrity: reads real ~/.claude/settings.json (skips if
+      absent). No install action is exercised — no state transition occurs.
+    - TestHookAdapterFunctionality: in-memory stdin/stdout redirections via StringIO.
+      Protocol decisions are returned as values, not written to disk. The
+      state-delta paradigm targets filesystem slots; there are none here.
+
+KEPT as-is (12 tests) — state-delta adds no hidden-mutation value:
+  - test_hook_adapter_module_exists: filesystem existence assertion
+  - test_hook_adapter_is_importable: import + hasattr assertions
+  - test_hook_adapter_has_main_entry_point: callable + SystemExit assertion
+  - test_standalone_installer_references_hook_adapter: text search in source file
+  - test_plugin_installer_references_hook_adapter: text search in source file
+  - test_hook_command_format_is_correct: text search in source file
+  - test_global_settings_json_has_des_hooks: read-only settings.json inspection
+  - test_installed_module_has_hook_adapter: filesystem existence assertion
+  - test_hook_adapter_accepts_schema_v2_input: hasattr assertion
+  - test_pre_tool_use_reads_tool_input_from_top_level: in-memory stdin/stdout
+  - test_pre_tool_use_blocks_incomplete_des_prompt: in-memory stdin/stdout
+  - test_hook_adapter_rejects_missing_required_fields: in-memory stdin/stdout
+
+Hidden mutations found: none — no filesystem-mutating SUT code exercised here.
+  Hook adapter tests have lower hit rate than filesystem-mutation tests, confirming
+  Tier A #1 insight.
+
+Tests: 12 total. Hit rate update: 5/11 files exposed hidden mutations.
 """
 
 import json
@@ -120,7 +154,7 @@ class TestHookInstallerConfiguration:
         # CRITICAL: Plugin MUST reference claude_code_hook_adapter
         assert "claude_code_hook_adapter" in plugin_code, (
             "Plugin installer does not reference claude_code_hook_adapter!\n"
-            "Hooks installed via /nw:install will not work.\n"
+            "Hooks installed via /nw-install will not work.\n"
             "Update HOOK_COMMAND_TEMPLATE constant."
         )
 
@@ -223,7 +257,7 @@ class TestHookConfigurationIntegrity:
     def test_installed_module_has_hook_adapter(self):
         """Verify installed DES module includes claude_code_hook_adapter.
 
-        NOTE: May be skipped if module not installed via /nw:install.
+        NOTE: May be skipped if module not installed via /nw-install.
         """
         installed_module_path = (
             Path.home()
@@ -231,13 +265,13 @@ class TestHookConfigurationIntegrity:
         )
 
         if not installed_module_path.parent.exists():
-            pytest.skip("DES module not installed (run /nw:install)")
+            pytest.skip("DES module not installed (run /nw-install)")
 
         # CRITICAL: Installed module MUST include the hook adapter
         assert installed_module_path.exists(), (
             f"Hook adapter not found in installed module: {installed_module_path}\n"
             "This means hooks are configured but the module is missing!\n"
-            "Re-run /nw:install to fix installation."
+            "Re-run /nw-install to fix installation."
         )
 
 
@@ -267,27 +301,22 @@ class TestHookAdapterFunctionality:
     def test_pre_tool_use_reads_tool_input_from_top_level(self):
         """Regression: PreToolUse must read tool_input at top level, not nested under tool.input.
 
-        Claude Code sends: {"tool_name": "Task", "tool_input": {"max_turns": 30, ...}}
-        NOT: {"tool": {"input": {"max_turns": 30, ...}}}
-
-        Bug (fixed 2026-02-06): handle_pre_tool_use() read hook_input["tool"]["input"]
-        which always returned {} because Claude Code puts tool_input at the top level.
-        This caused MISSING_MAX_TURNS for ALL Task invocations even with max_turns set.
+        Claude Code sends: {"tool_name": "Agent", "tool_input": {...}}
+        NOT: {"tool": {"input": {...}}}
         """
         import sys
         from io import StringIO
 
         from des.adapters.drivers.hooks import claude_code_hook_adapter
 
-        # Claude Code protocol: tool_input at top level
+        # Claude Code protocol: tool_input at top level (non-DES = passthrough)
         test_input = json.dumps(
             {
                 "session_id": "test-session",
                 "hook_event_name": "PreToolUse",
-                "tool_name": "Task",
+                "tool_name": "Agent",
                 "tool_input": {
                     "prompt": "Find all Python files",
-                    "max_turns": 30,
                     "subagent_type": "Explore",
                 },
             }
@@ -301,21 +330,24 @@ class TestHookAdapterFunctionality:
 
             exit_code = claude_code_hook_adapter.handle_pre_tool_use()
 
-            output = json.loads(captured.getvalue())
+            stdout_content = captured.getvalue().strip()
             assert exit_code == 0, (
-                f"Expected allow (exit 0) for valid tool_input with max_turns=30, "
-                f"got exit {exit_code}: {output}"
+                f"Expected allow (exit 0) for non-DES task, "
+                f"got exit {exit_code}: {stdout_content}"
             )
-            assert output["decision"] == "allow"
+            # Allow path: no stdout (Claude Code protocol)
+            assert stdout_content == "", (
+                f"Allow path should produce no stdout. Got: {stdout_content!r}"
+            )
         finally:
             sys.stdin = original_stdin
             sys.stdout = original_stdout
 
-    def test_pre_tool_use_rejects_missing_max_turns(self):
-        """PreToolUse must block DES tasks when max_turns is absent.
+    def test_pre_tool_use_blocks_incomplete_des_prompt(self):
+        """PreToolUse must block DES tasks when mandatory sections are missing.
 
-        Non-DES tasks bypass max_turns validation (nwave-ai/nwave#9),
-        so this test uses a DES-marked prompt to verify the policy.
+        DES-marked prompts without all 9 mandatory sections are blocked
+        by template validation.
         """
         import sys
         from io import StringIO
@@ -324,7 +356,7 @@ class TestHookAdapterFunctionality:
 
         test_input = json.dumps(
             {
-                "tool_name": "Task",
+                "tool_name": "Agent",
                 "tool_input": {
                     "prompt": (
                         "<!-- DES-VALIDATION : required -->\n"
@@ -347,11 +379,11 @@ class TestHookAdapterFunctionality:
 
             output = json.loads(captured.getvalue())
             assert exit_code == 2, (
-                f"Expected block (exit 2) for missing max_turns, "
+                f"Expected block (exit 2) for incomplete DES prompt, "
                 f"got exit {exit_code}: {output}"
             )
             assert output["decision"] == "block"
-            assert "MISSING_MAX_TURNS" in output["reason"]
+            assert "MISSING" in output["reason"]
         finally:
             sys.stdin = original_stdin
             sys.stdout = original_stdout

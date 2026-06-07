@@ -56,7 +56,7 @@ class TestFailureRecoveryGuidance:
         Expected Recovery Suggestions:
         1. Review agent transcript for error details
         2. Reset GREEN_UNIT phase status to NOT_EXECUTED
-        3. Run `/nw:execute` again to resume from GREEN_UNIT
+        3. Run `/nw-execute` again to resume from GREEN_UNIT
 
         Domain Example (from US-005):
         Alex's agent crashed during GREEN_UNIT.
@@ -106,7 +106,7 @@ class TestFailureRecoveryGuidance:
         assert any("NOT_EXECUTED" in s for s in suggestions), (
             "Should reference phase status"
         )
-        assert any("/nw:execute" in s or "execute" in s.lower() for s in suggestions), (
+        assert any("/nw-execute" in s or "execute" in s.lower() for s in suggestions), (
             "Should mention execution"
         )
 
@@ -359,7 +359,7 @@ class TestFailureRecoveryGuidance:
         )
 
         # Assert: Suggestions are actionable
-        assert any("/nw:execute" in s or "execute" in s.lower() for s in suggestions), (
+        assert any("/nw-execute" in s or "execute" in s.lower() for s in suggestions), (
             "Suggestions should include execution command"
         )
         assert any("NOT_EXECUTED" in s for s in suggestions), (
@@ -412,7 +412,7 @@ class TestFailureRecoveryGuidance:
         step_data["state"]["recovery_suggestions"] = [
             "Review agent transcript for error details",
             "Reset GREEN_UNIT phase status to NOT_EXECUTED",
-            "Run /nw:execute again to resume from GREEN_UNIT",
+            "Run /nw-execute again to resume from GREEN_UNIT",
         ]
 
         # Persist to file
@@ -438,11 +438,11 @@ class TestFailureRecoveryGuidance:
         THEN suggestions include specific commands Alex can execute
 
         Business Value: Alex doesn't have to interpret abstract guidance.
-                       He gets specific commands like `/nw:execute @software-crafter
+                       He gets specific commands like `/nw-execute @software-crafter
                        "steps/01-01.json"` that he can copy-paste to recover.
 
         Actionable Criteria:
-        - Contains executable command (e.g., `/nw:execute`)
+        - Contains executable command (e.g., `/nw-execute`)
         - Contains file path reference (e.g., `steps/01-01.json`)
         - Contains phase name for context (e.g., `REFACTOR_L2`)
         """
@@ -462,7 +462,7 @@ class TestFailureRecoveryGuidance:
 
         # Assert: Suggestions contain actionable elements
         actionable_command_found = any(
-            "/nw:execute" in s or "/nw:develop" in s for s in suggestions
+            "/nw-execute" in s or "/nw-develop" in s for s in suggestions
         )
         file_path_found = any("steps/" in s or ".json" in s for s in suggestions)
         phase_name_found = any("REFACTOR_L2" in s for s in suggestions)
@@ -536,7 +536,7 @@ class TestFailureRecoveryGuidance:
         prompt_missing_boundary_rules = """
 # DES_METADATA
 Step: 01-01.json
-Command: /nw:develop
+Command: /nw-develop
 
 # AGENT_IDENTITY
 Agent: software-crafter
@@ -884,7 +884,7 @@ Update step file with phase completion
         assert any(
             pattern in s
             for s in suggestions
-            for pattern in ["/nw:execute", "timeout", "minutes", "run", "measure"]
+            for pattern in ["/nw-execute", "timeout", "minutes", "run", "measure"]
         ), "Should include actionable commands or technical guidance"
 
         # AC-005.5: Suggestions explain WHY and HOW
@@ -942,7 +942,7 @@ Update step file with phase completion
 
         Example (GOOD): "Your agent stopped during the GREEN phase. To retry, you need to
                        reset the phase status from IN_PROGRESS to NOT_EXECUTED in the step file.
-                       Then run `/nw:execute` again. This tells the system the phase is ready
+                       Then run `/nw-execute` again. This tells the system the phase is ready
                        to try again from the start."
         """
         # Arrange: Recovery suggestions for abandoned phase failure

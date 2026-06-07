@@ -149,11 +149,7 @@ EXPECTED_INSTALLATION_STRUCTURE = {
         "file_pattern": "*.md",
         "minimum_count": 10,
     },
-    "commands": {
-        "subdirectory": "nw",
-        "file_pattern": "*.md",
-        "minimum_count": 1,
-    },
+    # commands/ removed — migrated to skills format as of v2.8.0
     "templates": {
         "subdirectory": None,
         "file_pattern": "*.json",

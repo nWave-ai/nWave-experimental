@@ -12,6 +12,7 @@ from scripts.install.plugins.base import (
     InstallContext,
     PluginResult,
 )
+from scripts.shared.agent_catalog import is_public_agent, load_public_agents
 
 
 class AgentsPlugin(InstallationPlugin):
@@ -58,13 +59,24 @@ class AgentsPlugin(InstallationPlugin):
                 shutil.rmtree(target_agent_dir)
             target_agent_dir.mkdir(parents=True, exist_ok=True)
 
-            source_agent_count = len(list(source_agent_dir.glob("nw-*.md")))
+            public_agents = (
+                set()
+                if context.dev_mode
+                else load_public_agents(context.project_root / "nWave")
+            )
+
+            all_agents = list(source_agent_dir.glob("nw-*.md"))
+            source_agent_count = sum(
+                1 for f in all_agents if is_public_agent(f.name, public_agents)
+            )
             context.logger.info(f"  ⏳ From source ({source_agent_count} agents)...")
 
-            # Copy only nw-*.md files from source root (excludes legacy/ and README.md)
+            # Copy only public nw-*.md files from source root (excludes legacy/ and README.md)
             copied_count = 0
             installed_files = []
             for source_file in sorted(source_agent_dir.glob("nw-*.md")):
+                if not is_public_agent(source_file.name, public_agents):
+                    continue
                 shutil.copy2(source_file, target_agent_dir / source_file.name)
                 installed_files.append(str(target_agent_dir / source_file.name))
                 copied_count += 1

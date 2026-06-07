@@ -12,7 +12,7 @@ class DESMarkerGenerator:
         """Generate DES validation markers for execute/develop commands.
 
         Args:
-            command: Command type (e.g., "/nw:execute", "/nw:develop")
+            command: Command type (e.g., "/nw-execute", "/nw-develop")
             step_file: Path to step file
 
         Returns:

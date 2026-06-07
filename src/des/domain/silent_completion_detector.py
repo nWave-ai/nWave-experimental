@@ -18,6 +18,8 @@ DOMAIN LANGUAGE:
 
 from typing import Any
 
+from des.domain.value_objects import PhaseStatus
+
 
 class SilentCompletionDetector:
     """
@@ -62,7 +64,8 @@ class SilentCompletionDetector:
 
         # Check if all phases are NOT_EXECUTED (no phase updates were recorded)
         all_phases_untouched = all(
-            phase.get("status") == "NOT_EXECUTED" for phase in phase_execution_log
+            phase.get("status") == PhaseStatus.NOT_EXECUTED
+            for phase in phase_execution_log
         )
 
         return all_phases_untouched
@@ -91,7 +94,7 @@ class SilentCompletionDetector:
             outcome = phase.get("outcome")
 
             # EXECUTED status requires non-empty outcome
-            if status == "EXECUTED" and not outcome:
+            if status == PhaseStatus.EXECUTED and not outcome:
                 phase_name = phase.get("phase_name", "UNKNOWN")
                 missing.append(phase_name)
 
@@ -121,14 +124,14 @@ class SilentCompletionDetector:
             outcome = phase.get("outcome", "")
             phase_name = phase.get("phase_name", "UNKNOWN")
 
-            if not outcome or status == "NOT_EXECUTED":
+            if not outcome or status == PhaseStatus.NOT_EXECUTED:
                 continue
 
             # Check for contradictions between status and outcome
             outcome_lower = outcome.lower()
 
             # Status says EXECUTED but outcome describes failure/error
-            if status == "EXECUTED":
+            if status == PhaseStatus.EXECUTED:
                 failure_indicators = [
                     "failed",
                     "error",
@@ -199,7 +202,7 @@ class SilentCompletionDetector:
             f"HOW: You can manually update the phase status based on what you find in the transcript. "
             f"Match each completed phase to its actual outcome (EXECUTED, FAILED, SKIPPED, etc.).\n\n"
             f"ACTION: Based on {transcript_path}, manually set each completed phase's status and outcome "
-            f"in the step file, then retry execution with `/nw:execute`."
+            f"in the step file, then retry execution with `/nw-execute`."
         )
 
         return suggestions
@@ -242,7 +245,7 @@ class SilentCompletionDetector:
             f"ACTION STEPS:\n"
             f"Step 1: `cat {transcript_path}` - Review agent execution history\n"
             f"Step 2: For each completed phase, update the step file with status and outcome\n"
-            f"Step 3: Run `/nw:execute` again to continue from the first incomplete phase\n"
+            f"Step 3: Run `/nw-execute` again to continue from the first incomplete phase\n"
             f"Step 4: Add OUTCOME_RECORDING section to your prompt template to prevent recurrence"
         )
 

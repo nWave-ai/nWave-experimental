@@ -11,10 +11,21 @@ from __future__ import annotations
 
 import argparse
 import re
-import shutil
 import sys
 from pathlib import Path
 from typing import TypedDict
+
+
+# Ensure project root is in sys.path when invoked as standalone script
+_project_root = str(Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from scripts.shared.agent_catalog import (  # noqa: E402
+    is_public_agent,
+    is_public_skill,
+    load_public_agents,
+)
 
 
 class DocgenError(Exception):
@@ -105,12 +116,30 @@ def require_fields(data: dict, fields: list[str], path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Stage 1: Scan
 # ---------------------------------------------------------------------------
-def scan(root: Path) -> dict[str, list[Path]]:
-    """Discover artifact files grouped by type."""
+def scan(root: Path, *, public_only: bool = False) -> dict[str, list[Path]]:
+    """Discover artifact files grouped by type.
+
+    When *public_only* is True, private agents and their skills are excluded
+    using the same shared catalog logic as the build and install pipelines.
+    """
     nwave = root / "nWave"
+
+    public_agents: set[str] = set()
+    if public_only:
+        public_agents = load_public_agents(nwave)
+
     agents = sorted((nwave / "agents").glob("*.md"))
+    if public_agents:
+        agents = [a for a in agents if is_public_agent(a.name, public_agents)]
+
     commands = sorted((nwave / "tasks" / "nw").glob("*.md"))
-    skills = sorted((nwave / "skills").rglob("*.md"))
+
+    skills_dir = nwave / "skills"
+    skill_dirs = sorted(d for d in skills_dir.iterdir() if d.is_dir())
+    if public_agents:
+        skill_dirs = [d for d in skill_dirs if is_public_skill(d.name, public_agents)]
+    skills = sorted(md for d in skill_dirs for md in d.rglob("*.md"))
+
     templates = sorted(
         p for p in (nwave / "templates").glob("*.yaml") if not p.name.startswith(".")
     )
@@ -257,21 +286,36 @@ def extract_all(paths: dict[str, list[Path]]) -> dict[str, list]:
 _WAVE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bDISCOVER(?:Y)?\s+wave\b", re.IGNORECASE), "DISCOVER"),
     (re.compile(r"\bDISCUSS\s+wave\b", re.IGNORECASE), "DISCUSS"),
+    (re.compile(r"\bSPIKE\s+wave\b", re.IGNORECASE), "SPIKE"),
     (re.compile(r"\bDISTILL\s+wave\b", re.IGNORECASE), "DISTILL"),
     (re.compile(r"\bDESIGN\s+wave\b", re.IGNORECASE), "DESIGN"),
     (re.compile(r"\bDELIVER\s+wave\b", re.IGNORECASE), "DELIVER"),
     (re.compile(r"\bDEVOPS?\s+wave\b", re.IGNORECASE), "DEVOPS"),
 ]
 
-_WAVE_ORDER = [
-    "DISCOVER",
-    "DISCUSS",
-    "DESIGN",
-    "DISTILL",
-    "DELIVER",
-    "DEVOPS",
-    "Other",
-]
+
+def _load_wave_order(root: Path | None = None) -> list[str]:
+    """Read wave_phases from framework-catalog.yaml (SSOT) and append 'Other'."""
+    if root is None:
+        root = Path(__file__).resolve().parent.parent
+    catalog_path = root / "nWave" / "framework-catalog.yaml"
+    text = catalog_path.read_text(encoding="utf-8")
+    phases: list[str] = []
+    in_wave_phases = False
+    for line in text.splitlines():
+        if line.startswith("wave_phases:"):
+            in_wave_phases = True
+            continue
+        if in_wave_phases:
+            item_match = re.match(r"^-\s+(\S+)$", line)
+            if item_match:
+                phases.append(item_match.group(1))
+            else:
+                break
+    if not phases:
+        raise DocgenError(f"Could not parse wave_phases from {catalog_path}")
+    phases.append("Other")
+    return phases
 
 
 def _infer_wave(description: str) -> str:
@@ -284,11 +328,16 @@ def _infer_wave(description: str) -> str:
 
 def enrich(data: dict[str, list]) -> dict[str, list]:
     """Resolve cross-references and add derived fields."""
-    # Build lookup: both "skill-name" and "agent-dir/skill-name" resolve
+    # Build lookup: skill name, directory name, and agent-dir/skill-name all resolve.
+    # In flat layout (nw-*/SKILL.md), agent_dir IS the directory name (e.g., "nw-ad-critique-dimensions").
+    # Agent frontmatter references skills by directory name, not by frontmatter name.
     skill_lookup: set[str] = set()
     for s in data["skills"]:
-        skill_lookup.add(s["name"])
-        skill_lookup.add(f"{s['agent_dir']}/{s['name']}")
+        skill_lookup.add(s["name"])  # frontmatter name
+        skill_lookup.add(s["agent_dir"])  # directory name (flat layout key)
+        skill_lookup.add(
+            f"{s['agent_dir']}/{s['name']}"
+        )  # legacy: agent-dir/skill-name
     agent_names = {a["name"] for a in data["agents"]}
     agent_dirs = {a["name"].removeprefix("nw-") for a in data["agents"]}
 
@@ -301,11 +350,14 @@ def enrich(data: dict[str, list]) -> dict[str, list]:
                 )
 
     # Validate skill→agent refs (parent dir must match an agent)
-    # Shared skill directories (e.g., "common") are not agent-specific
+    # In flat layout (nw-*/SKILL.md), agent_dir is the skill directory name — skip validation.
+    # In old layout (agent-name/skill.md), agent_dir must match an agent.
     shared_skill_dirs = {"common"}
     for skill in data["skills"]:
         if skill["agent_dir"] in shared_skill_dirs:
             continue
+        if skill["agent_dir"].startswith("nw-"):
+            continue  # flat layout: skill dir is standalone, not agent-named
         if skill["agent_dir"] not in agent_dirs:
             raise DocgenError(
                 f"Skill '{skill['name']}' in dir '{skill['agent_dir']}' has no matching agent"
@@ -385,7 +437,7 @@ def render_agents_index(agents: list[Agent], skills: list[Skill]) -> str:
     by_wave: dict[str, list[Agent]] = {}
     for a in agents:
         by_wave.setdefault(a.get("wave", "Other"), []).append(a)
-    for wave in _WAVE_ORDER:
+    for wave in _load_wave_order():
         wave_agents = by_wave.get(wave, [])
         if not wave_agents:
             continue
@@ -431,13 +483,16 @@ def render_agent_detail(agent: Agent, skills: list[Skill]) -> str:
         lines.append("## Commands")
         lines.append("")
         for cmd_name in commands:
-            lines.append(f"- [`/nw:{cmd_name}`](../commands/index.md)")
+            lines.append(f"- [`/nw-{cmd_name}`](../commands/index.md)")
         lines.append("")
     if agent_skills:
         lines.append("## Skills")
         lines.append("")
         for s in sorted(agent_skills, key=lambda x: x["name"]):
-            skill_path = f"../../../nWave/skills/{s['agent_dir']}/{s['name']}.md"
+            if s["agent_dir"].startswith("nw-"):
+                skill_path = f"../../../nWave/skills/{s['agent_dir']}/SKILL.md"
+            else:
+                skill_path = f"../../../nWave/skills/{s['agent_dir']}/{s['name']}.md"
             lines.append(f"- [{s['name']}]({skill_path}) — {s['description']}")
         lines.append("")
     return "\n".join(lines)
@@ -448,7 +503,7 @@ def render_commands_index(commands: list[Command]) -> str:
     for c in sorted(commands, key=lambda x: x["name"]):
         agent_links = ", ".join(f"[{a}](../agents/{a}.md)" for a in c.get("agents", []))
         rows.append(
-            [f"`/nw:{c['name']}`", c["description"], agent_links, c["argument_hint"]]
+            [f"`/nw-{c['name']}`", c["description"], agent_links, c["argument_hint"]]
         )
     table = _md_table(["Command", "Description", "Agents", "Arguments"], rows)
     return f"# Commands\n\n{table}\n"
@@ -463,11 +518,20 @@ def render_skills_index(skills: list[Skill]) -> str:
         if agent_dir == "common":
             lines.append("## Shared Skills")
         else:
-            agent_link = f"[nw-{agent_dir}](../agents/nw-{agent_dir}.md)"
-            lines.append(f"## {agent_link}")
+            # In flat layout, agent_dir is the skill directory (nw-prefixed).
+            # Don't double-prefix with nw-.
+            display_name = (
+                agent_dir if agent_dir.startswith("nw-") else f"nw-{agent_dir}"
+            )
+            lines.append(f"## {display_name}")
         lines.append("")
         for s in sorted(by_agent[agent_dir], key=lambda x: x["name"]):
-            skill_path = f"../../../nWave/skills/{s['agent_dir']}/{s['name']}.md"
+            if s["agent_dir"].startswith("nw-"):
+                # Flat layout: nw-{skill}/SKILL.md
+                skill_path = f"../../../nWave/skills/{s['agent_dir']}/SKILL.md"
+            else:
+                # Old layout: {agent}/{skill}.md
+                skill_path = f"../../../nWave/skills/{s['agent_dir']}/{s['name']}.md"
             lines.append(f"- [{s['name']}]({skill_path}) — {s['description']}")
         lines.append("")
     return "\n".join(lines)
@@ -501,9 +565,18 @@ def render(data: dict[str, list]) -> dict[str, str]:
 # Stage 5: Write
 # ---------------------------------------------------------------------------
 def write_pages(pages: dict[str, str], output_dir: Path) -> None:
-    """Write pages to output_dir, cleaning it first for deterministic output."""
-    if output_dir.exists():
-        shutil.rmtree(output_dir)
+    """Write pages to output_dir surgically.
+
+    Files in pages.keys() are created or overwritten with the new content.
+    Files NOT in pages.keys() (foreign / hand-authored / out-of-band) are
+    left untouched. output_dir is created if it does not yet exist.
+
+    This replaces the prior shutil.rmtree-based regeneration which destroyed
+    any file under output_dir that the renderer did not reproduce. See
+    docs/analysis/rca-pre-push-hook-untracked-deletion-2026-05-06.md for the
+    RCA that motivated this surgical-write design.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
     for rel_path, content in pages.items():
         full_path = output_dir / rel_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -563,9 +636,11 @@ def check_links(root: Path, dirs: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
-def run_pipeline(root: Path, output_dir: Path) -> dict[str, str]:
+def run_pipeline(
+    root: Path, output_dir: Path, *, public_only: bool = False
+) -> dict[str, str]:
     """Execute full pipeline: scan → extract → enrich → render. Returns pages."""
-    paths = scan(root)
+    paths = scan(root, public_only=public_only)
     data = extract_all(paths)
     data = enrich(data)
     return render(data)
@@ -594,13 +669,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Validate markdown links in README and docs/ (exit 1 if broken)",
     )
+    parser.add_argument(
+        "--public-only",
+        action="store_true",
+        help="Exclude private agents and their skills from generated docs",
+    )
     args = parser.parse_args(argv)
 
     root = Path(__file__).resolve().parent.parent
     output_dir = args.output_dir or root / "docs" / "reference"
 
     try:
-        pages = run_pipeline(root, output_dir)
+        pages = run_pipeline(root, output_dir, public_only=args.public_only)
     except DocgenError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1

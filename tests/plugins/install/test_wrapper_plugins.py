@@ -27,6 +27,11 @@ class TestAgentsPlugin:
         (source_agents / "researcher.md").write_text("# Researcher Agent")
         (source_agents / "software-crafter.md").write_text("# Software Crafter Agent")
 
+        # Create minimal catalog to satisfy fail-closed load_public_agents
+        (tmp_path / "nWave" / "framework-catalog.yaml").write_text(
+            "agents:\n  test-agent:\n    public: true\n"
+        )
+
         # Set up target directory
         claude_dir = tmp_path / "claude_config"
         claude_dir.mkdir(parents=True)
@@ -46,21 +51,50 @@ class TestAgentsPlugin:
 
 
 class TestCommandsPlugin:
-    """Tests for commands wrapper plugin."""
+    """Tests for commands legacy-cleanup plugin.
 
-    def test_commands_plugin_install_success(self, tmp_path):
-        """Verify successful commands plugin installation copies files to target."""
+    Since v2.8.0, commands are migrated to skills format.
+    CommandsPlugin now only removes legacy commands/nw/ if present.
+    """
+
+    def test_commands_plugin_install_removes_legacy_directory(self, tmp_path):
+        """Verify install removes legacy commands/nw/ directory when present."""
         from scripts.install.plugins.commands_plugin import CommandsPlugin
 
         plugin = CommandsPlugin()
 
-        # Set up source directory with command files (matches plugin path)
-        source_commands = tmp_path / "nWave" / "tasks" / "nw"
-        source_commands.mkdir(parents=True)
-        (source_commands / "devop.md").write_text("# Devop Command")
-        (source_commands / "design.md").write_text("# Design Command")
+        # Set up legacy commands directory that should be cleaned up
+        claude_dir = tmp_path / "claude_config"
+        legacy_commands = claude_dir / "commands" / "nw"
+        legacy_commands.mkdir(parents=True)
+        (legacy_commands / "devop.md").write_text("# Devop Command")
+        (legacy_commands / "design.md").write_text("# Design Command")
 
-        # Set up target directory
+        context = Mock(spec=InstallContext)
+        context.dry_run = False
+        context.project_root = tmp_path
+        context.framework_source = tmp_path / "framework_source"
+        context.claude_dir = claude_dir
+        context.logger = Mock()
+
+        result = plugin.install(context)
+
+        assert result.success is True
+        assert result.plugin_name == "commands"
+        assert (
+            "cleaned up" in result.message.lower()
+            or "removed" in result.message.lower()
+        )
+
+        # Legacy directory should be gone
+        assert not legacy_commands.exists(), "Legacy commands/nw/ should be removed"
+
+    def test_commands_plugin_install_succeeds_when_no_legacy(self, tmp_path):
+        """Verify install succeeds with no-op when no legacy commands exist."""
+        from scripts.install.plugins.commands_plugin import CommandsPlugin
+
+        plugin = CommandsPlugin()
+
         claude_dir = tmp_path / "claude_config"
         claude_dir.mkdir(parents=True)
 
@@ -73,31 +107,17 @@ class TestCommandsPlugin:
 
         result = plugin.install(context)
 
-        # Verify result
         assert result.success is True
         assert result.plugin_name == "commands"
-        assert "installed" in result.message.lower()
+        assert "no legacy" in result.message.lower()
 
-        # Verify files were actually copied to target
-        target_commands_dir = claude_dir / "commands" / "nw"
-        assert target_commands_dir.exists(), "Target commands/nw directory should exist"
-        assert (target_commands_dir / "devop.md").exists(), "devop.md should be copied"
-        assert (target_commands_dir / "design.md").exists(), (
-            "design.md should be copied"
-        )
-
-    def test_commands_plugin_verify_success_when_files_exist(self, tmp_path):
-        """Verify CommandsPlugin.verify() returns success when command files exist."""
+    def test_commands_plugin_verify_success_when_no_commands_dir(self, tmp_path):
+        """Verify passes when commands/nw/ does NOT exist (correct post-migration state)."""
         from scripts.install.plugins.commands_plugin import CommandsPlugin
 
         plugin = CommandsPlugin()
 
-        # Set up target directory with command files
-        target_commands = tmp_path / "commands" / "nw"
-        target_commands.mkdir(parents=True)
-        (target_commands / "devop.md").write_text("# Devop Command")
-        (target_commands / "design.md").write_text("# Design Command")
-
+        # No commands directory — this is the expected state after migration
         context = Mock(spec=InstallContext)
         context.claude_dir = tmp_path
         context.logger = Mock()
@@ -106,35 +126,18 @@ class TestCommandsPlugin:
 
         assert result.success is True
         assert result.plugin_name == "commands"
-        assert "2" in result.message or "passed" in result.message.lower()
 
-    def test_commands_plugin_verify_failure_when_no_files(self, tmp_path):
-        """Verify CommandsPlugin.verify() returns failure when no command files exist."""
+    def test_commands_plugin_verify_failure_when_legacy_still_exists(self, tmp_path):
+        """Verify fails when legacy commands/nw/ still exists (cleanup failed)."""
         from scripts.install.plugins.commands_plugin import CommandsPlugin
 
         plugin = CommandsPlugin()
 
-        # Set up empty target directory
-        target_commands = tmp_path / "commands" / "nw"
-        target_commands.mkdir(parents=True)
+        # Legacy directory still present — cleanup did not work
+        legacy_commands = tmp_path / "commands" / "nw"
+        legacy_commands.mkdir(parents=True)
+        (legacy_commands / "devop.md").write_text("# Devop Command")
 
-        context = Mock(spec=InstallContext)
-        context.claude_dir = tmp_path
-        context.logger = Mock()
-
-        result = plugin.verify(context)
-
-        assert result.success is False
-        assert result.plugin_name == "commands"
-        assert result.errors is not None and len(result.errors) > 0
-
-    def test_commands_plugin_verify_failure_when_directory_missing(self, tmp_path):
-        """Verify CommandsPlugin.verify() returns failure when target directory missing."""
-        from scripts.install.plugins.commands_plugin import CommandsPlugin
-
-        plugin = CommandsPlugin()
-
-        # Do not create any directory
         context = Mock(spec=InstallContext)
         context.claude_dir = tmp_path
         context.logger = Mock()

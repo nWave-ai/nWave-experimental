@@ -10,6 +10,7 @@ Includes rollback mechanism for handling plugin installation failures.
 from __future__ import annotations
 
 import shutil
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -175,13 +176,18 @@ class PluginRegistry:
         self._installed_files = []
         self._installed_plugins = []
 
+        total_start = time.perf_counter_ns()
+
         for plugin_name in order:
             # Skip excluded plugins
             if plugin_name in exclude_set:
                 continue
 
             plugin = self.plugins[plugin_name]
+            start = time.perf_counter_ns()
             result = plugin.install(context)
+            duration_ms = (time.perf_counter_ns() - start) / 1_000_000
+            result.duration_ms = duration_ms
             results[plugin_name] = result
 
             if result.success:
@@ -196,6 +202,10 @@ class PluginRegistry:
                     for error in result.errors:
                         context.logger.error(f"    ❌ {error}")
                 break
+
+        total_ms = (time.perf_counter_ns() - total_start) / 1_000_000
+        if self._logger:
+            self._logger.info(f"  ⏱️ Total installation time: {total_ms:.1f}ms")
 
         return results
 

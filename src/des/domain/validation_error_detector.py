@@ -17,7 +17,15 @@ Failure modes detected:
 - Partially-valid step files with mixed valid/invalid state
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+from des.domain.value_objects import PhaseStatus
+
+
+if TYPE_CHECKING:
+    from des.domain.tdd_schema import TDDSchema
 
 
 class ValidationErrorDetector:
@@ -43,11 +51,15 @@ class ValidationErrorDetector:
         "tdd_cycle",
     ]
 
-    def __init__(self):
-        """Initialize detector with schema loader."""
-        from des.domain.tdd_schema import get_tdd_schema
+    def __init__(self, schema: TDDSchema | None = None):
+        """Initialize detector with TDD schema.
 
-        self._schema = get_tdd_schema()
+        Args:
+            schema: TDDSchema instance. If None, loads from default path.
+        """
+        from des.domain.tdd_schema import resolve_schema_or_default
+
+        self._schema = resolve_schema_or_default(schema)
         self.VALID_PHASE_SEQUENCE = self._schema.tdd_phases
 
     def detect_errors(self, step: dict[str, Any]) -> list[str]:
@@ -269,13 +281,13 @@ class ValidationErrorDetector:
 
         for i, phase in enumerate(phases):
             phase_name = phase.get("phase_name", "UNKNOWN")
-            status = phase.get("status", "NOT_EXECUTED")
+            status = phase.get("status", PhaseStatus.NOT_EXECUTED)
 
-            if status == "EXECUTED":
+            if status == PhaseStatus.EXECUTED:
                 # Valid if in correct sequence (don't require outcome for this test)
                 # Check if any previous phases are NOT_EXECUTED
                 earlier_phases_incomplete = any(
-                    phase_entry.get("status") != "EXECUTED"
+                    phase_entry.get("status") != PhaseStatus.EXECUTED
                     for phase_entry in phases[:i]
                 )
                 if not earlier_phases_incomplete:
@@ -284,13 +296,13 @@ class ValidationErrorDetector:
                     result["invalid_phases"].append(
                         f"{phase_name}: EXECUTED but earlier phases not completed"
                     )
-            elif status == "IN_PROGRESS":
+            elif status == PhaseStatus.IN_PROGRESS:
                 result["incomplete_phases"].append(phase_name)
-            elif status == "NOT_EXECUTED":
+            elif status == PhaseStatus.NOT_EXECUTED:
                 # Check if it's out of order
                 if i < len(phases) - 1 and phases[i + 1].get("status") in [
-                    "EXECUTED",
-                    "IN_PROGRESS",
+                    PhaseStatus.EXECUTED,
+                    PhaseStatus.IN_PROGRESS,
                 ]:
                     # A NOT_EXECUTED phase appears before executed phases
                     result["missing_phases"].append(phase_name)

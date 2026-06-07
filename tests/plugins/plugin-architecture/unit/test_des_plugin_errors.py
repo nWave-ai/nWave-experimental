@@ -83,7 +83,7 @@ def isolated_project_with_scripts_only(
     src_des.parent.mkdir(parents=True, exist_ok=True)
     src_des.symlink_to(shared_des_source)
 
-    # Create nWave/scripts/des/ with scripts
+    # Create nWave/scripts/des/ with scripts AND shims
     scripts_dir = isolated_root / "nWave" / "scripts" / "des"
     scripts_dir.mkdir(parents=True, exist_ok=True)
     (scripts_dir / "check_stale_phases.py").write_text(
@@ -92,6 +92,8 @@ def isolated_project_with_scripts_only(
     (scripts_dir / "scope_boundary_check.py").write_text(
         "#!/usr/bin/env python3\n# scope boundary check\n"
     )
+    for shim_name in DESPlugin.DES_SHIMS:
+        (scripts_dir / shim_name).write_text(f"#!/usr/bin/env python3\n# {shim_name}\n")
 
     # DO NOT create nWave/templates/ with DES templates
     return isolated_root

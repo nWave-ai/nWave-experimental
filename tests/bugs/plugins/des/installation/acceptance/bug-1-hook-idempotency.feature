@@ -28,7 +28,7 @@ Feature: Hook Installation Idempotency
     When I install DES hooks
     And I install DES hooks again
     Then settings.local.json should contain exactly 3 PreToolUse hook
-    And settings.local.json should contain exactly 1 SubagentStop hook
+    And settings.local.json should contain exactly 2 SubagentStop hook
     And no duplicate hook entries should exist
 
   @bug-1 @priority-critical
@@ -52,7 +52,7 @@ Feature: Hook Installation Idempotency
     Given DES hooks were previously installed and uninstalled
     When I install DES hooks
     Then settings.local.json should contain exactly 3 PreToolUse hook
-    And settings.local.json should contain exactly 1 SubagentStop hook
+    And settings.local.json should contain exactly 2 SubagentStop hook
 
   @bug-1 @failing @priority-high
   Scenario: Hook detection works for both old and new command formats

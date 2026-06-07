@@ -25,7 +25,6 @@ from des.application.pre_tool_use_service import PreToolUseService
 from des.domain.des_enforcement_policy import DesEnforcementPolicy
 from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
-from des.domain.max_turns_policy import MaxTurnsPolicy
 from des.domain.session_guard_policy import SessionGuardPolicy
 from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
 from tests.des.acceptance.conftest import FakeTimeProvider
@@ -39,7 +38,6 @@ from tests.des.acceptance.conftest import FakeTimeProvider
 def _build_pre_tool_use_service() -> PreToolUseService:
     """Build PreToolUseService with real domain logic and null I/O adapters."""
     return PreToolUseService(
-        max_turns_policy=MaxTurnsPolicy(),
         marker_parser=DesMarkerParser(),
         prompt_validator=_make_template_validator(),
         audit_writer=NullAuditLogWriter(),
@@ -69,7 +67,7 @@ def _make_valid_des_prompt(
 # DES_METADATA
 Project: {project_id}
 Step: {step_id}
-Command: /nw:execute
+Command: /nw-execute
 
 # AGENT_IDENTITY
 Agent: @software-crafter
@@ -136,7 +134,6 @@ class TestStepIdEnforcement:
         decision = service.validate(
             PreToolUseInput(
                 prompt="Execute step 01-01 for the authentication feature",
-                max_turns=30,
                 subagent_type="nw-software-crafter",
             )
         )
@@ -158,7 +155,6 @@ class TestStepIdEnforcement:
         decision = service.validate(
             PreToolUseInput(
                 prompt=_make_valid_des_prompt(),
-                max_turns=30,
                 subagent_type="nw-software-crafter",
             )
         )
@@ -177,7 +173,6 @@ class TestStepIdEnforcement:
         decision = service.validate(
             PreToolUseInput(
                 prompt="Research authentication best practices for the project",
-                max_turns=30,
                 subagent_type="nw-researcher",
             )
         )
@@ -200,7 +195,6 @@ class TestStepIdEnforcement:
                     "<!-- DES-ENFORCEMENT : exempt -->\n"
                     "Review roadmap step 01-01 for completeness"
                 ),
-                max_turns=30,
                 subagent_type="nw-solution-architect",
             )
         )
@@ -220,7 +214,6 @@ class TestStepIdEnforcement:
         decision = service.validate(
             PreToolUseInput(
                 prompt="Implement step 02-03 changes to the system",
-                max_turns=30,
                 subagent_type="nw-software-crafter",
             )
         )
@@ -247,7 +240,6 @@ class TestStepIdEnforcement:
 
         spy = SpyAuditWriter()
         service = PreToolUseService(
-            max_turns_policy=MaxTurnsPolicy(),
             marker_parser=DesMarkerParser(),
             prompt_validator=_make_template_validator(),
             audit_writer=spy,
@@ -261,7 +253,6 @@ class TestStepIdEnforcement:
         service.validate(
             PreToolUseInput(
                 prompt="Execute step 01-01",
-                max_turns=30,
                 subagent_type="nw-software-crafter",
             )
         )
@@ -277,22 +268,19 @@ class TestStepIdEnforcement:
 
 
 # =============================================================================
-# PHASE 1.5: Non-DES Task Passthrough (nwave-ai/nwave#9)
+# PHASE 1.5: Non-DES Task Passthrough (nWave-ai/nWave#9)
 # =============================================================================
 
 
 class TestNonDesTaskPassthrough:
-    """Tests that non-DES Task invocations bypass all DES validation.
+    """Tests that non-DES Agent invocations bypass all DES validation.
 
-    Bug: max_turns was checked BEFORE DES marker parsing, so non-DES
-    tasks without max_turns were blocked. Fix: parse markers first,
-    allow non-DES tasks immediately with no further checks.
+    Non-DES tasks pass through with no validation at all.
     """
 
-    def test_non_des_task_without_max_turns_allowed(self):
+    def test_non_des_task_allowed(self):
         """
-        GIVEN a Task prompt without DES markers
-        AND max_turns is not provided (None)
+        GIVEN an Agent prompt without DES markers
         WHEN PreToolUse hook fires
         THEN exit code is 0 (allow)
         """
@@ -300,7 +288,6 @@ class TestNonDesTaskPassthrough:
         decision = service.validate(
             PreToolUseInput(
                 prompt="Summarize the authentication module for me",
-                max_turns=None,
                 subagent_type="default",
             )
         )
@@ -309,50 +296,9 @@ class TestNonDesTaskPassthrough:
         )
         assert decision.action == "allow"
 
-    def test_non_des_task_with_max_turns_allowed(self):
+    def test_des_task_with_valid_prompt_allowed(self):
         """
-        GIVEN a Task prompt without DES markers
-        AND max_turns is provided
-        WHEN PreToolUse hook fires
-        THEN exit code is 0 (allow)
-        """
-        service = _build_pre_tool_use_service()
-        decision = service.validate(
-            PreToolUseInput(
-                prompt="Research best practices for error handling",
-                max_turns=30,
-                subagent_type="default",
-            )
-        )
-        assert decision.exit_code == 0, (
-            f"Expected exit_code 0 (allow), got {decision.exit_code}: {decision.reason}"
-        )
-
-    def test_des_task_without_max_turns_blocked(self):
-        """
-        GIVEN a Task prompt WITH DES markers
-        AND max_turns is not provided (None)
-        WHEN PreToolUse hook fires
-        THEN exit code is 2 (block)
-        AND reason contains MISSING_MAX_TURNS
-        """
-        service = _build_pre_tool_use_service()
-        decision = service.validate(
-            PreToolUseInput(
-                prompt=_make_valid_des_prompt(),
-                max_turns=None,
-                subagent_type="nw-software-crafter",
-            )
-        )
-        assert decision.exit_code == 2, (
-            f"Expected exit_code 2 (block), got {decision.exit_code}: {decision.reason}"
-        )
-        assert "MISSING_MAX_TURNS" in (decision.reason or "")
-
-    def test_des_task_with_valid_max_turns_allowed(self):
-        """
-        GIVEN a Task prompt WITH DES markers and valid structure
-        AND max_turns is provided within valid range
+        GIVEN an Agent prompt WITH DES markers and valid structure
         WHEN PreToolUse hook fires
         THEN exit code is 0 (allow)
         """
@@ -360,34 +306,12 @@ class TestNonDesTaskPassthrough:
         decision = service.validate(
             PreToolUseInput(
                 prompt=_make_valid_des_prompt(),
-                max_turns=30,
                 subagent_type="nw-software-crafter",
             )
         )
         assert decision.exit_code == 0, (
             f"Expected exit_code 0 (allow), got {decision.exit_code}: {decision.reason}"
         )
-
-    def test_des_task_with_out_of_range_max_turns_blocked(self):
-        """
-        GIVEN a Task prompt WITH DES markers
-        AND max_turns is outside valid range (e.g., 5)
-        WHEN PreToolUse hook fires
-        THEN exit code is 2 (block)
-        AND reason contains INVALID_MAX_TURNS
-        """
-        service = _build_pre_tool_use_service()
-        decision = service.validate(
-            PreToolUseInput(
-                prompt=_make_valid_des_prompt(),
-                max_turns=5,
-                subagent_type="nw-software-crafter",
-            )
-        )
-        assert decision.exit_code == 2, (
-            f"Expected exit_code 2 (block), got {decision.exit_code}: {decision.reason}"
-        )
-        assert "INVALID_MAX_TURNS" in (decision.reason or "")
 
 
 # =============================================================================
@@ -487,7 +411,6 @@ class TestMarkerCompleteness:
                     "<!-- DES-STEP-ID : 01-01 -->\n"
                     "Execute step 01-01"
                 ),
-                max_turns=30,
                 subagent_type="nw-software-crafter",
             )
         )
@@ -514,7 +437,6 @@ class TestMarkerCompleteness:
                     "<!-- DES-PROJECT-ID : auth-upgrade -->\n"
                     "Execute step 01-01"
                 ),
-                max_turns=30,
                 subagent_type="nw-software-crafter",
             )
         )
@@ -536,7 +458,6 @@ class TestMarkerCompleteness:
         decision = service.validate(
             PreToolUseInput(
                 prompt=_make_valid_des_prompt(),
-                max_turns=30,
                 subagent_type="nw-software-crafter",
             )
         )

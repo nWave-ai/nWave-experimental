@@ -441,30 +441,30 @@ class TestVerifyNwaveLogging:
 
         # ARRANGE
         config_dir = tmp_path / ".claude"
-        commands_dir = config_dir / "commands" / "nw"
         agents_dir = config_dir / "agents" / "nw"
-        skills_dir = config_dir / "skills" / "nw" / "researcher"
+        skills_dir = config_dir / "skills"
         des_dir = config_dir / "lib" / "python" / "des"
-        commands_dir.mkdir(parents=True)
         agents_dir.mkdir(parents=True)
         skills_dir.mkdir(parents=True)
         des_dir.mkdir(parents=True)
 
-        # Create essential files
-        essential_files = [
-            "commit.md",
-            "review.md",
-            "devops.md",
-            "discuss.md",
-            "design.md",
-            "distill.md",
-            "deliver.md",
-        ]
-        for f in essential_files:
-            (commands_dir / f).write_text(f"# {f}")
+        # Create essential command-skills
+        for name in [
+            "nw-review",
+            "nw-devops",
+            "nw-discuss",
+            "nw-design",
+            "nw-distill",
+            "nw-deliver",
+        ]:
+            d = skills_dir / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: test\n"
+                f"user-invocable: true\n---\n# {name}\n"
+            )
 
-        # Create skills and DES files for verification
-        (skills_dir / "research-methodology.md").write_text("# skill")
+        # Create DES files for verification
         (des_dir / "__init__.py").write_text("")
 
         # Create manifest

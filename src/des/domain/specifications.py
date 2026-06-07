@@ -7,6 +7,8 @@ making complex validation logic explicit and testable.
 from abc import ABC, abstractmethod
 from typing import Any, Generic, TypeVar
 
+from des.domain.value_objects import PhaseStatus
+
 
 T = TypeVar("T")
 
@@ -125,7 +127,7 @@ class PhaseIsExecutedSpecification(Specification[dict[str, Any]]):
 
     def is_satisfied_by(self, phase: dict[str, Any]) -> bool:
         """Check if phase status is EXECUTED."""
-        return phase.get("status") == "EXECUTED"
+        return phase.get("status") == PhaseStatus.EXECUTED
 
 
 class PhaseIsSkippedSpecification(Specification[dict[str, Any]]):
@@ -133,7 +135,7 @@ class PhaseIsSkippedSpecification(Specification[dict[str, Any]]):
 
     def is_satisfied_by(self, phase: dict[str, Any]) -> bool:
         """Check if phase status is SKIPPED."""
-        return phase.get("status") == "SKIPPED"
+        return phase.get("status") == PhaseStatus.SKIPPED
 
 
 class PhaseIsInProgressSpecification(Specification[dict[str, Any]]):
@@ -141,7 +143,7 @@ class PhaseIsInProgressSpecification(Specification[dict[str, Any]]):
 
     def is_satisfied_by(self, phase: dict[str, Any]) -> bool:
         """Check if phase status is IN_PROGRESS."""
-        return phase.get("status") == "IN_PROGRESS"
+        return phase.get("status") == PhaseStatus.IN_PROGRESS
 
 
 class PhaseHasOutcomeSpecification(Specification[dict[str, Any]]):

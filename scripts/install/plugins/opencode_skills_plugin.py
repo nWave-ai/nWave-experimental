@@ -13,6 +13,7 @@ so uninstall() can remove only nWave skills without touching user-created ones.
 """
 
 import json
+import os
 import re
 import shutil
 from collections import Counter
@@ -22,6 +23,13 @@ from scripts.install.plugins.base import (
     InstallationPlugin,
     InstallContext,
     PluginResult,
+)
+from scripts.shared.agent_catalog import load_public_agents
+from scripts.shared.platform_contracts import OPENCODE_SKILL_FORBIDDEN_FIELDS
+from scripts.shared.skill_distribution import (
+    SkillEntry,
+    enumerate_skills,
+    filter_public_skills,
 )
 
 
@@ -37,7 +45,9 @@ def _opencode_skills_dir() -> Path:
     Returns:
         Path to ~/.config/opencode/skills/
     """
-    return Path.home() / ".config" / "opencode" / "skills"
+    override = os.environ.get("OPENCODE_CONFIG_DIR")
+    base = Path(override) if override else Path.home() / ".config" / "opencode"
+    return base / "skills"
 
 
 def _find_skills_source(context: InstallContext) -> Path | None:
@@ -60,36 +70,22 @@ def _find_skills_source(context: InstallContext) -> Path | None:
     return None
 
 
-def _collect_skill_entries(skills_source: Path) -> list[tuple[str, str, Path]]:
-    """Collect all (agent_name, skill_name, file_path) triples from source.
-
-    Args:
-        skills_source: Path to the skills source directory
-
-    Returns:
-        List of (agent_name, skill_name, file_path) tuples
-    """
-    entries = []
-    for agent_dir in sorted(skills_source.iterdir()):
-        if not agent_dir.is_dir():
-            continue
-        for skill_file in sorted(agent_dir.glob("*.md")):
-            entries.append((agent_dir.name, skill_file.stem, skill_file))
-    return entries
-
-
 def _detect_duplicate_names(
-    entries: list[tuple[str, str, Path]],
+    entries: list[SkillEntry],
 ) -> set[str]:
-    """Find skill names that appear in more than one agent group.
+    """Find skill names that appear more than once.
+
+    In the flat layout (nw-* directories), names are globally unique so
+    this returns an empty set. For the old hierarchical layout, different
+    agents can have skills with the same stem name.
 
     Args:
-        entries: List of (agent_name, skill_name, file_path) tuples
+        entries: List of SkillEntry(name, source_path)
 
     Returns:
-        Set of skill names that have collisions across agent groups
+        Set of skill names that have collisions
     """
-    name_counts = Counter(skill_name for _, skill_name, _ in entries)
+    name_counts = Counter(entry.name for entry in entries)
     return {name for name, count in name_counts.items() if count > 1}
 
 
@@ -148,6 +144,37 @@ def _rewrite_frontmatter_name(content: str, new_name: str) -> str:
     return _FRONTMATTER_NAME_PATTERN.sub(rf"\g<1>{new_name}", content, count=1)
 
 
+def _strip_forbidden_fields(content: str) -> str:
+    """Remove Claude Code-only frontmatter fields from skill content.
+
+    Strips YAML frontmatter fields listed in OPENCODE_SKILL_FORBIDDEN_FIELDS.
+    Only operates within the frontmatter block (between --- delimiters).
+    Body content is never modified.
+
+    Args:
+        content: Full skill file content with YAML frontmatter
+
+    Returns:
+        Content with forbidden fields removed from frontmatter
+    """
+    if not content.startswith("---"):
+        return content
+
+    end_index = content.index("---", 3)
+    frontmatter = content[4:end_index]
+    body = content[end_index:]
+
+    filtered_lines = [
+        line
+        for line in frontmatter.splitlines(keepends=True)
+        if not any(
+            line.startswith(f"{field}:") for field in OPENCODE_SKILL_FORBIDDEN_FIELDS
+        )
+    ]
+
+    return "---\n" + "".join(filtered_lines) + body
+
+
 def _write_manifest(
     target_dir: Path,
     installed_skill_names: list[str],
@@ -163,7 +190,7 @@ def _write_manifest(
         "version": "1.0",
     }
     manifest_path = target_dir / _MANIFEST_FILENAME
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
 def _read_manifest(target_dir: Path) -> dict | None:
@@ -178,7 +205,7 @@ def _read_manifest(target_dir: Path) -> dict | None:
     manifest_path = target_dir / _MANIFEST_FILENAME
     if not manifest_path.exists():
         return None
-    return json.loads(manifest_path.read_text())
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
 class OpenCodeSkillsPlugin(InstallationPlugin):
@@ -222,22 +249,39 @@ class OpenCodeSkillsPlugin(InstallationPlugin):
             target_dir = _opencode_skills_dir()
             target_dir.mkdir(parents=True, exist_ok=True)
 
-            entries = _collect_skill_entries(skills_source)
+            public_agents = (
+                set()
+                if context.dev_mode
+                else load_public_agents(context.project_root / "nWave")
+            )
+
+            # Build ownership map for flat namespace filtering (ADR-003)
+            from scripts.shared.agent_catalog import build_ownership_map
+
+            agents_dir = context.project_root / "nWave" / "agents"
+            ownership_map = (
+                build_ownership_map(agents_dir) if agents_dir.exists() else {}
+            )
+
+            entries = enumerate_skills(skills_source)
+            entries = filter_public_skills(entries, public_agents, ownership_map)
+
             duplicate_names = _detect_duplicate_names(entries)
 
             installed_names = []
             installed_files = []
             skipped = []
 
-            for agent_name, skill_name, source_file in entries:
+            for entry in entries:
+                # For hierarchical layout, derive agent name from parent dir
+                agent_name = entry.source_path.parent.name
                 resolved_name = _resolve_target_name(
-                    agent_name, skill_name, duplicate_names
+                    agent_name, entry.name, duplicate_names
                 )
 
                 if not _validate_skill_name(resolved_name):
                     skipped.append(
-                        f"{agent_name}/{skill_name} -> {resolved_name} "
-                        f"(invalid OpenCode name)"
+                        f"{entry.name} -> {resolved_name} (invalid OpenCode name)"
                     )
                     continue
 
@@ -246,11 +290,17 @@ class OpenCodeSkillsPlugin(InstallationPlugin):
                     shutil.rmtree(skill_target_dir)
                 skill_target_dir.mkdir(parents=True)
 
+                # Read source: for flat layout, source_path is a directory
                 target_file = skill_target_dir / "SKILL.md"
-                content = source_file.read_text()
-                if resolved_name != skill_name:
+                if entry.source_path.is_dir():
+                    source_file = entry.source_path / "SKILL.md"
+                else:
+                    source_file = entry.source_path
+                content = source_file.read_text(encoding="utf-8")
+                content = _strip_forbidden_fields(content)
+                if resolved_name != entry.name:
                     content = _rewrite_frontmatter_name(content, resolved_name)
-                target_file.write_text(content)
+                target_file.write_text(content, encoding="utf-8")
 
                 installed_names.append(resolved_name)
                 installed_files.append(target_file)

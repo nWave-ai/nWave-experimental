@@ -23,7 +23,7 @@ def _make_patches():
     mock_time_cls.return_value = mock_time_provider
 
     writer_patch = patch(
-        "des.application.orchestrator.JsonlAuditLogWriter",
+        "des.application.audit_bridge.JsonlAuditLogWriter",
         mock_writer_cls,
     )
     time_patch = patch(
@@ -39,7 +39,7 @@ class TestLogAuditEventDirectFields:
     def test_feature_name_and_step_id_as_direct_fields(self):
         """AC1: When called with feature_name and step_id kwargs,
         PortAuditEvent has them as direct fields, NOT in data dict."""
-        from des.application.orchestrator import _log_audit_event
+        from des.application.audit_bridge import log_audit_event as _log_audit_event
 
         writer_patch, time_patch, mock_writer = _make_patches()
 
@@ -64,7 +64,7 @@ class TestLogAuditEventDirectFields:
     def test_direct_fields_with_extra_kwargs_in_data(self):
         """AC2: When called with feature_name, step_id, AND other kwargs,
         feature_name/step_id are direct fields; command/agent in data dict."""
-        from des.application.orchestrator import _log_audit_event
+        from des.application.audit_bridge import log_audit_event as _log_audit_event
 
         writer_patch, time_patch, mock_writer = _make_patches()
 
@@ -73,7 +73,7 @@ class TestLogAuditEventDirectFields:
                 "TASK_INVOCATION_STARTED",
                 feature_name="audit-log-refactor",
                 step_id="03-01",
-                command="/nw:execute",
+                command="/nw-execute",
                 agent="@software-crafter",
             )
 
@@ -84,7 +84,7 @@ class TestLogAuditEventDirectFields:
             assert event.step_id == "03-01"
 
             # Extra kwargs in data dict
-            assert event.data["command"] == "/nw:execute"
+            assert event.data["command"] == "/nw-execute"
             assert event.data["agent"] == "@software-crafter"
 
             # NOT in data dict
@@ -94,14 +94,14 @@ class TestLogAuditEventDirectFields:
     def test_without_feature_name_or_step_id(self):
         """AC3: When called WITHOUT feature_name or step_id,
         PortAuditEvent has feature_name=None, step_id=None, all kwargs in data dict."""
-        from des.application.orchestrator import _log_audit_event
+        from des.application.audit_bridge import log_audit_event as _log_audit_event
 
         writer_patch, time_patch, mock_writer = _make_patches()
 
         with writer_patch, time_patch:
             _log_audit_event(
                 "TASK_INVOCATION_STARTED",
-                command="/nw:execute",
+                command="/nw-execute",
                 agent="@software-crafter",
             )
 
@@ -112,13 +112,13 @@ class TestLogAuditEventDirectFields:
             assert event.step_id is None
 
             # All kwargs in data dict
-            assert event.data["command"] == "/nw:execute"
+            assert event.data["command"] == "/nw-execute"
             assert event.data["agent"] == "@software-crafter"
 
     def test_none_valued_feature_name_excluded_from_data(self):
         """AC4: When called with None-valued feature_name,
         it's excluded from data dict (existing None-filtering), feature_name=None on event."""
-        from des.application.orchestrator import _log_audit_event
+        from des.application.audit_bridge import log_audit_event as _log_audit_event
 
         writer_patch, time_patch, mock_writer = _make_patches()
 
@@ -127,7 +127,7 @@ class TestLogAuditEventDirectFields:
                 "TASK_INVOCATION_STARTED",
                 feature_name=None,
                 step_id=None,
-                command="/nw:execute",
+                command="/nw-execute",
             )
 
             event = mock_writer.log_event.call_args[0][0]
@@ -141,4 +141,4 @@ class TestLogAuditEventDirectFields:
             assert "step_id" not in event.data
 
             # Non-None kwargs present in data
-            assert event.data["command"] == "/nw:execute"
+            assert event.data["command"] == "/nw-execute"

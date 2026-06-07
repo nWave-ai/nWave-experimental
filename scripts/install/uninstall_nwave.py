@@ -12,6 +12,7 @@ import argparse
 import json
 import shutil
 import sys
+from pathlib import Path
 
 
 try:
@@ -164,6 +165,55 @@ class NWaveUninstaller:
 
         return confirm_action("Are you sure you want to proceed?")
 
+    def check_global_config(
+        self,
+        global_config_path: Path | None = None,
+        prompt_fn: object = None,
+    ) -> None:
+        """Check for global config and prompt user about handling it.
+
+        Called between confirm_removal() and create_backup() in the
+        uninstall flow. Handles keep/delete prompt in interactive mode,
+        auto-preserves in force mode, and logs status in dry-run mode.
+
+        Args:
+            global_config_path: Override path to global config file.
+                Defaults to ~/.nwave/global-config.json.
+            prompt_fn: Optional callable(prompt_str) -> bool for testing.
+                Defaults to confirm_action from install_utils.
+        """
+        path = global_config_path or (Path.home() / ".nwave" / "global-config.json")
+
+        if not path.exists():
+            return
+
+        if self.dry_run:
+            self.logger.info(f"  [DRY RUN] Would prompt about global config at {path}")
+            return
+
+        if self.force:
+            self.logger.info("  Preserved global config (--force: skipping prompt)")
+            return
+
+        # Interactive mode: prompt user to keep or delete
+        ask = prompt_fn if prompt_fn is not None else confirm_action
+        self.logger.info("")
+        self.logger.info(f"  Found global configuration at {path}")
+        should_delete = ask("  Delete global config? (No = keep for next install)")
+
+        if not should_delete:
+            self.logger.info(f"  Preserved global config at {path}")
+            return
+
+        path.unlink()
+        self.logger.info(f"  Deleted global config at {path}")
+
+        # Clean up empty directory
+        nwave_dir = path.parent
+        if nwave_dir.exists() and not any(nwave_dir.iterdir()):
+            nwave_dir.rmdir()
+            self.logger.info(f"  Removed empty directory {nwave_dir}")
+
     def create_backup(self) -> None:
         """Create backup before removal."""
         if not self.backup_before_removal:
@@ -172,53 +222,53 @@ class NWaveUninstaller:
         self.backup_manager.create_backup(dry_run=self.dry_run)
 
     def remove_agents(self) -> None:
-        """Remove nWave agents."""
-        if self.dry_run:
-            self.logger.info("  🚨 [DRY RUN] Would remove nWave agents")
-            agents_nw_dir = self.claude_config_dir / "agents" / "nw"
-            if agents_nw_dir.exists():
-                self.logger.info("    🚨 [DRY RUN] Would remove agents/nw directory")
-            return
-
-        with self.logger.progress_spinner("  🚧 Removing nWave agents..."):
-            agents_nw_dir = self.claude_config_dir / "agents" / "nw"
-            if agents_nw_dir.exists():
-                shutil.rmtree(agents_nw_dir)
-                self.logger.info("  🗑️ Removed agents/nw directory")
-
-            # Remove parent agents directory if empty
-            agents_dir = self.claude_config_dir / "agents"
-            if agents_dir.exists():
-                try:
-                    if not any(agents_dir.iterdir()):
-                        agents_dir.rmdir()
-                        self.logger.info("  🗑️ Removed empty agents directory")
-                    else:
-                        self.logger.info(
-                            "  📂 Kept agents directory (contains other files)"
-                        )
-                except OSError:
-                    self.logger.info(
-                        "  📂 Kept agents directory (contains other files)"
-                    )
+        """Remove nWave agents (delegates to shared nw-namespace remover)."""
+        self._remove_nw_namespace_subdir("agents")
 
     def remove_skills(self) -> None:
-        """Remove nWave skills."""
+        """Remove nWave skills.
+
+        Install layout writes flat `~/.claude/skills/nw-<name>/` directories
+        (NEW_FLAT layout per skills_plugin.py). The legacy nested
+        `~/.claude/skills/nw/<name>/` layout is also handled for backward
+        compatibility with users still on pre-flat installs. User-created
+        skills (no `nw-` prefix) are preserved.
+        """
+        skills_dir = self.claude_config_dir / "skills"
+
         if self.dry_run:
             self.logger.info("  🚨 [DRY RUN] Would remove nWave skills")
-            skills_nw_dir = self.claude_config_dir / "skills" / "nw"
-            if skills_nw_dir.exists():
-                self.logger.info("    🚨 [DRY RUN] Would remove skills/nw directory")
+            if skills_dir.exists():
+                nw_dirs = sorted(skills_dir.glob("nw-*"))
+                legacy_nested = skills_dir / "nw"
+                if nw_dirs:
+                    self.logger.info(
+                        f"    🚨 [DRY RUN] Would remove {len(nw_dirs)} skills/nw-* dirs"
+                    )
+                if legacy_nested.exists():
+                    self.logger.info(
+                        "    🚨 [DRY RUN] Would remove legacy skills/nw/ dir"
+                    )
             return
 
         with self.logger.progress_spinner("  🚧 Removing nWave skills..."):
-            skills_nw_dir = self.claude_config_dir / "skills" / "nw"
-            if skills_nw_dir.exists():
-                shutil.rmtree(skills_nw_dir)
-                self.logger.info("  🗑️ Removed skills/nw directory")
+            removed_count = 0
+            if skills_dir.exists():
+                # New flat layout: skills/nw-<name>/
+                for nw_dir in skills_dir.glob("nw-*"):
+                    if nw_dir.is_dir():
+                        shutil.rmtree(nw_dir)
+                        removed_count += 1
+                # Legacy nested layout: skills/nw/<name>/
+                legacy_nested = skills_dir / "nw"
+                if legacy_nested.exists():
+                    shutil.rmtree(legacy_nested)
+                    self.logger.info("  🗑️ Removed legacy skills/nw directory")
+
+            if removed_count:
+                self.logger.info(f"  🗑️ Removed {removed_count} skills/nw-* dirs")
 
             # Remove parent skills directory if empty
-            skills_dir = self.claude_config_dir / "skills"
             if skills_dir.exists():
                 try:
                     if not any(skills_dir.iterdir()):
@@ -226,42 +276,82 @@ class NWaveUninstaller:
                         self.logger.info("  🗑️ Removed empty skills directory")
                     else:
                         self.logger.info(
-                            "  📂 Kept skills directory (contains other files)"
+                            "  📂 Kept skills directory (contains user files)"
                         )
                 except OSError:
-                    self.logger.info(
-                        "  📂 Kept skills directory (contains other files)"
-                    )
+                    self.logger.info("  📂 Kept skills directory (contains user files)")
 
-    def remove_commands(self) -> None:
-        """Remove nWave commands."""
+    def remove_lib_python(self) -> None:
+        """Remove ~/.claude/lib/python/des/ (DES runtime library shipped with install).
+
+        The installer writes the DES runtime to `lib/python/des/` for the
+        hook adapters to import. Uninstall must remove it; otherwise stale
+        runtime survives across installs of different nWave versions.
+        Sibling lib/python/ contents (non-des) are preserved; parent dirs
+        are removed only if empty.
+        """
+        lib_des = self.claude_config_dir / "lib" / "python" / "des"
+
         if self.dry_run:
-            self.logger.info("  🚨 [DRY RUN] Would remove nWave commands")
-            commands_nw_dir = self.claude_config_dir / "commands" / "nw"
-            if commands_nw_dir.exists():
-                self.logger.info("    🚨 [DRY RUN] Would remove commands/nw directory")
+            if lib_des.exists():
+                self.logger.info("  🚨 [DRY RUN] Would remove lib/python/des directory")
             return
 
-        with self.logger.progress_spinner("  🚧 Removing nWave commands..."):
-            commands_nw_dir = self.claude_config_dir / "commands" / "nw"
-            if commands_nw_dir.exists():
-                shutil.rmtree(commands_nw_dir)
-                self.logger.info("  🗑️ Removed commands/nw directory")
+        with self.logger.progress_spinner("  🚧 Removing nWave Python runtime..."):
+            if lib_des.exists():
+                shutil.rmtree(lib_des)
+                self.logger.info("  🗑️ Removed lib/python/des directory")
 
-            # Remove parent commands directory if empty
-            commands_dir = self.claude_config_dir / "commands"
-            if commands_dir.exists():
+            # Cascade-clean empty parents (lib/python, then lib)
+            for parent in (lib_des.parent, lib_des.parent.parent):
+                if parent.exists():
+                    try:
+                        if not any(parent.iterdir()):
+                            parent.rmdir()
+                            self.logger.info(f"  🗑️ Removed empty {parent.name}")
+                    except OSError:
+                        pass
+
+    def remove_commands(self) -> None:
+        """Remove nWave commands (delegates to shared nw-namespace remover)."""
+        self._remove_nw_namespace_subdir("commands")
+
+    def _remove_nw_namespace_subdir(self, noun: str) -> None:
+        """Remove ~/.claude/{noun}/nw/ directory + cascade-clean empty parent.
+
+        Shared by remove_agents("agents") and remove_commands("commands").
+        Both followed identical 27-line bodies; consolidated 2026-05-03 (RPP L3).
+
+        Args:
+            noun: Plural label for logging + directory name ("agents" / "commands").
+        """
+        nested_dir = self.claude_config_dir / noun / "nw"
+        parent_dir = self.claude_config_dir / noun
+
+        if self.dry_run:
+            self.logger.info(f"  🚨 [DRY RUN] Would remove nWave {noun}")
+            if nested_dir.exists():
+                self.logger.info(f"    🚨 [DRY RUN] Would remove {noun}/nw directory")
+            return
+
+        with self.logger.progress_spinner(f"  🚧 Removing nWave {noun}..."):
+            if nested_dir.exists():
+                shutil.rmtree(nested_dir)
+                self.logger.info(f"  🗑️ Removed {noun}/nw directory")
+
+            # Remove parent directory if empty
+            if parent_dir.exists():
                 try:
-                    if not any(commands_dir.iterdir()):
-                        commands_dir.rmdir()
-                        self.logger.info("  🗑️ Removed empty commands directory")
+                    if not any(parent_dir.iterdir()):
+                        parent_dir.rmdir()
+                        self.logger.info(f"  🗑️ Removed empty {noun} directory")
                     else:
                         self.logger.info(
-                            "  📂 Kept commands directory (contains other files)"
+                            f"  📂 Kept {noun} directory (contains other files)"
                         )
                 except OSError:
                     self.logger.info(
-                        "  📂 Kept commands directory (contains other files)"
+                        f"  📂 Kept {noun} directory (contains other files)"
                     )
 
     def remove_config_files(self) -> None:
@@ -326,6 +416,75 @@ class NWaveUninstaller:
                 self.logger.info("  🗑️ Removed DES hooks from settings.json")
             else:
                 self.logger.warn("  ⚠️ DES hooks not found (may not be installed)")
+
+    def remove_copilot_des_hooks(self) -> None:
+        """Remove the nWave DES hook config from the Copilot CLI hooks dir.
+
+        slice-01 of copilot-cli-integration: the installer writes
+        ``<COPILOT_HOME>/hooks/nwave-des.json`` (FM-1 file-in-dir) when Copilot
+        is detected. Clean uninstall MUST remove it (and the manifest) while
+        leaving any hook the operator authored themselves untouched -- the
+        plugin owns its own dedicated file, so foreign hooks survive.
+        """
+        if self.dry_run:
+            self.logger.info("  🚨 [DRY RUN] Would remove Copilot DES hook config")
+            return
+
+        try:
+            from scripts.install.plugins.base import InstallContext
+            from scripts.install.plugins.copilot_des_plugin import CopilotDESPlugin
+        except ImportError:
+            from plugins.base import InstallContext
+            from plugins.copilot_des_plugin import CopilotDESPlugin
+
+        context = InstallContext(
+            claude_dir=self.claude_config_dir,
+            scripts_dir=self.claude_config_dir / "scripts",
+            templates_dir=self.claude_config_dir / "templates",
+            logger=self.logger,
+        )
+        result = CopilotDESPlugin().uninstall(context)
+        if result.success:
+            self.logger.info("  🗑️ Removed Copilot DES hook config")
+        else:
+            self.logger.warn(f"  ⚠️ Copilot DES hook removal: {result.message}")
+
+    def remove_des_hook_scripts(self) -> None:
+        """Remove DES spine-ledger hook scripts from ~/.claude/scripts/.
+
+        slice-04 of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2: the installer
+        propagates 3 spine-ledger hook scripts to `<claude_dir>/scripts/`
+        via `DESPlugin.DES_HOOKS`; clean uninstall MUST remove them so the
+        operator's `~/.claude/scripts/` tree does not accumulate orphan
+        files when nWave is removed.
+
+        Mirrors `remove_des_hooks` semantics: skip in dry-run, log per-script
+        removal, warn when none found.
+        """
+        if self.dry_run:
+            self.logger.info(
+                "  🚨 [DRY RUN] Would remove DES spine-ledger hook scripts"
+            )
+            return
+
+        # SSOT: read the canonical list from DESPlugin.DES_HOOKS so a single
+        # `DES_HOOKS = [...]` edit drives BOTH install propagation AND
+        # uninstall cleanup (no parallel hand-maintained list to drift).
+        from scripts.install.plugins.des_plugin import DESPlugin
+
+        scripts_dir = self.claude_config_dir / "scripts"
+        removed_count = 0
+        for hook_script_name in DESPlugin.DES_HOOKS:
+            hook_script_path = scripts_dir / hook_script_name
+            if hook_script_path.exists():
+                hook_script_path.unlink()
+                removed_count += 1
+                self.logger.info(f"  🗑️ Removed DES hook script: {hook_script_name}")
+
+        if removed_count == 0:
+            self.logger.info(
+                "  ✅ No DES spine-ledger hook scripts to remove (already clean)"
+            )
 
     def validate_removal(self) -> bool:
         """Validate complete removal."""
@@ -512,6 +671,9 @@ def main():
         uninstaller.logger.info("  ⚠️ Uninstallation cancelled by user")
         return 0
 
+    # Check global config (prompt keep/delete before backup)
+    uninstaller.check_global_config()
+
     # Create backup
     uninstaller.create_backup()
 
@@ -519,7 +681,10 @@ def main():
     uninstaller.remove_agents()
     uninstaller.remove_skills()
     uninstaller.remove_commands()
+    uninstaller.remove_lib_python()
     uninstaller.remove_des_hooks()
+    uninstaller.remove_copilot_des_hooks()
+    uninstaller.remove_des_hook_scripts()
     uninstaller.remove_config_files()
     uninstaller.remove_backups()
 

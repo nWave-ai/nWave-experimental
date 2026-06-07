@@ -3,17 +3,29 @@
 ## Development Setup
 
 ```bash
-# Clone and install
+# Clone and install (uv installs the project + dev group from uv.lock)
 git clone https://github.com/nWave-ai/nwave-dev.git
 cd nwave-dev
-pip install -e ".[dev]"
+uv sync
+
+# Install pre-commit hooks (all types: pre-commit, pre-push, commit-msg, ...)
+uv run poe install-hooks
 
 # Verify
-pytest
-
-# Install pre-commit hooks
-pre-commit install
+uv run poe test
 ```
+
+> Don't have uv? `curl -LsSf https://astral.sh/uv/install.sh | sh` (see [uv docs](https://docs.astral.sh/uv/getting-started/installation/)).
+
+### DES freshness gate (dev tree)
+
+The repo ships a `.env` file with `NWAVE_FRESHNESS=skip` so that `uv run`
+commands bypass the DES runtime freshness gate against the unmaintained dev
+tree. Without this, every `uv run python -m des.cli.*` REFUSES with exit
+78 (no install manifest is written until slice-02 of
+`fix-des-self-hosted-gate-sync` lands). The bypass is audit-bearing — each
+invocation emits a structured `des.runtime.freshness.skipped` event on stderr.
+See `docs/feature/fix-des-self-hosted-gate-sync/feature-delta.md` §1.8 / §6.
 
 ## Pre-commit Hooks
 
@@ -34,10 +46,10 @@ git commit --no-verify
 
 ```bash
 # Run tests
-pytest
+uv run poe test
 
 # Format code
-ruff format .
+uv run poe format
 
 # Commit with conventional format
 git commit -m "feat(agents): add new capability"

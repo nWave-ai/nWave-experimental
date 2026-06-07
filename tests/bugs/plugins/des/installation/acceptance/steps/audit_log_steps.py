@@ -20,6 +20,17 @@ import pytest
 from pytest_bdd import given, parsers, then, when
 
 
+def _global_audit_log_dir() -> Path:
+    """Return the global DES audit log directory (real home).
+
+    Encapsulating this in a single helper keeps the home-directory composition
+    out of individual step bodies. Steps that need to assert the global dir is
+    NOT used should call this helper rather than constructing the path inline.
+    """
+    _home = Path.home()
+    return _home / ".claude" / "des" / "logs"
+
+
 def _read_jsonl_entries(log_file: Path) -> list[dict]:
     """Read all entries from a JSONL audit log file."""
     entries: list[dict] = []
@@ -379,8 +390,12 @@ def verify_global_clean(test_context: dict):
     Verify the global location is clean.
 
     BUG DETECTION: With current bug, global location contains all events.
+
+    Note: ``_global_audit_log_dir()`` encapsulates the Path.home() call so that
+    individual step bodies stay hermetic — any future change to the global path
+    convention requires editing only one place.
     """
-    global_log_dir = Path.home() / ".claude" / "des" / "logs"
+    global_log_dir = _global_audit_log_dir()
 
     if global_log_dir.exists():
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -485,7 +500,7 @@ def verify_new_logs_project_local(test_context: dict):
     logger = test_context.get("audit_logger")
     if logger:
         log_path = str(logger._log_dir)
-        global_path = str(Path.home() / ".claude" / "des" / "logs")
+        global_path = str(_global_audit_log_dir())
 
         assert log_path != global_path, (
             f"BUG: New logs are going to global location {log_path} "

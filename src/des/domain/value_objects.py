@@ -4,9 +4,16 @@ Replaces primitive obsession with explicit domain types that make
 invalid states unrepresentable.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
-from typing import Self
+
+
+try:
+    from typing import Self
+except ImportError:  # pragma: no cover — only hit on Python 3.10
+    from typing_extensions import Self
 
 
 class PhaseStatus(str, Enum):
@@ -38,6 +45,80 @@ class PhaseOutcome(str, Enum):
 
     PASS = "PASS"
     FAIL = "FAIL"
+
+
+class PhaseName(str, Enum):
+    """Valid TDD phase names across all schema versions.
+
+    Dual-canon (ADR-025, 2026-05-07):
+    - v5 canonical (3-phase): RED, GREEN, COMMIT.
+    - v4 legacy (5-phase): PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT.
+    All legacy members are retained for audit-log replay of pre-2026-05-07
+    commits. ``is_canonical`` / ``to_canonical`` resolve between canons.
+    """
+
+    # v5.0 canonical (3-phase, ADR-025)
+    RED = "RED"
+    # v4.0 (5-phase streamlined) — legacy
+    PREPARE = "PREPARE"
+    RED_ACCEPTANCE = "RED_ACCEPTANCE"
+    RED_UNIT = "RED_UNIT"
+    GREEN = "GREEN"
+    COMMIT = "COMMIT"
+    # v3.0 additions (7-phase consolidated)
+    REVIEW = "REVIEW"
+    REFACTOR_CONTINUOUS = "REFACTOR_CONTINUOUS"
+    # v2.0 additions (8-phase optimized)
+    REFACTOR_L4 = "REFACTOR_L4"
+    # v1.0 additions (14-phase full)
+    GREEN_UNIT = "GREEN_UNIT"
+    CHECK_ACCEPTANCE = "CHECK_ACCEPTANCE"
+    GREEN_ACCEPTANCE = "GREEN_ACCEPTANCE"
+    REFACTOR_L1 = "REFACTOR_L1"
+    REFACTOR_L2 = "REFACTOR_L2"
+    REFACTOR_L3 = "REFACTOR_L3"
+    POST_REFACTOR_REVIEW = "POST_REFACTOR_REVIEW"
+    FINAL_VALIDATE = "FINAL_VALIDATE"
+
+    def is_canonical(self) -> bool:
+        """True iff this phase belongs to the v5 canonical 3-phase contract.
+
+        Canonical members: RED, GREEN, COMMIT.
+        Everything else (PREPARE, RED_ACCEPTANCE, RED_UNIT, REVIEW, ...) is
+        legacy and present only for backward-compat audit-log replay.
+        """
+        return self in (PhaseName.RED, PhaseName.GREEN, PhaseName.COMMIT)
+
+    def to_canonical(self) -> PhaseName:
+        """Collapse a legacy phase name onto its canonical (v5) equivalent.
+
+        Mapping (per ADR-025):
+        - PREPARE, RED_ACCEPTANCE, RED_UNIT → RED
+        - GREEN, GREEN_UNIT, GREEN_ACCEPTANCE, CHECK_ACCEPTANCE → GREEN
+        - COMMIT, POST_REFACTOR_REVIEW, FINAL_VALIDATE → COMMIT
+        - REVIEW, REFACTOR_* → COMMIT (collapsed into the COMMIT-side
+          refactor/review pass that the canonical cycle treats as part of
+          post-GREEN COMMIT activity)
+
+        Canonical members map to themselves.
+        """
+        if self in (PhaseName.RED, PhaseName.GREEN, PhaseName.COMMIT):
+            return self
+        if self in (
+            PhaseName.PREPARE,
+            PhaseName.RED_ACCEPTANCE,
+            PhaseName.RED_UNIT,
+        ):
+            return PhaseName.RED
+        if self in (
+            PhaseName.GREEN_UNIT,
+            PhaseName.GREEN_ACCEPTANCE,
+            PhaseName.CHECK_ACCEPTANCE,
+        ):
+            return PhaseName.GREEN
+        # REVIEW, REFACTOR_*, POST_REFACTOR_REVIEW, FINAL_VALIDATE all
+        # collapse to COMMIT in the canonical cycle.
+        return PhaseName.COMMIT
 
 
 class ValidationStatus(str, Enum):
@@ -143,7 +224,12 @@ class CommandName:
     value: str
 
     # Valid DES commands
-    VALID_COMMANDS = ["/nw:execute", "/nw:develop", "/nw:research"]
+    VALID_COMMANDS = ["/nw-execute", "/nw-develop", "/nw-research"]
+
+    # SSOT: commands that require full DES validation. The single canonical
+    # source consulted by is_validation_command and imported by the
+    # application layer (prompt_rendering_service, orchestrator).
+    VALIDATION_COMMANDS = ["/nw-execute", "/nw-develop"]
 
     def __post_init__(self) -> None:
         """Validate command format."""
@@ -158,4 +244,4 @@ class CommandName:
 
     def is_validation_command(self) -> bool:
         """Check if this command requires DES validation."""
-        return self.value in ["/nw:execute", "/nw:develop"]
+        return self.value in CommandName.VALIDATION_COMMANDS

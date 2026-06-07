@@ -146,27 +146,24 @@ def test_plugin_installation_creates_agents_directory(
     )
 
 
-def test_plugin_installation_creates_commands_directory(
+def test_commands_plugin_does_not_create_commands_directory(
     plugin_registry: PluginRegistry,
     install_context: InstallContext,
 ):
     """
-    Plugin-based installation should create commands directory with files.
+    CommandsPlugin should NOT create commands/nw/ (migrated to skills).
 
     Given: PluginRegistry with CommandsPlugin
     When: registry.install_all(context) is called
-    Then: commands/nw/ directory exists with .md files
+    Then: commands/nw/ directory does NOT exist (commands are now skills)
     """
     # Act
     plugin_registry.install_all(install_context)
 
     # Assert
     commands_dir = install_context.claude_dir / "commands" / "nw"
-    assert commands_dir.exists(), f"Commands directory not found: {commands_dir}"
-
-    command_files = list(commands_dir.glob("*.md"))
-    assert len(command_files) >= 1, (
-        f"Expected >= 1 command files, found {len(command_files)}"
+    assert not commands_dir.exists(), (
+        f"Legacy commands directory should not exist: {commands_dir}"
     )
 
 

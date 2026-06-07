@@ -2,7 +2,7 @@
 Unit tests for TIMEOUT_INSTRUCTION generation in DESOrchestrator.render_full_prompt().
 
 These tests verify that the orchestrator correctly generates the TIMEOUT_INSTRUCTION
-section when rendering prompts for validation commands (/nw:execute, /nw:develop).
+section when rendering prompts for validation commands (/nw-execute, /nw-develop).
 
 Test Coverage:
 - render_full_prompt() generates TIMEOUT_INSTRUCTION section
@@ -21,12 +21,12 @@ class TestOrchestratorTimeoutInstruction:
         self, des_orchestrator, tmp_project_root, minimal_step_file
     ):
         """
-        GIVEN /nw:execute command
+        GIVEN /nw-execute command
         WHEN render_full_prompt is called
         THEN prompt includes TIMEOUT_INSTRUCTION section header
         """
         # GIVEN
-        command = "/nw:execute"
+        command = "/nw-execute"
         agent = "@software-crafter"
         step_file = str(minimal_step_file.relative_to(tmp_project_root))
 
@@ -46,12 +46,12 @@ class TestOrchestratorTimeoutInstruction:
         self, des_orchestrator, tmp_project_root, minimal_step_file
     ):
         """
-        GIVEN /nw:develop command
+        GIVEN /nw-develop command
         WHEN render_full_prompt is called
         THEN prompt includes TIMEOUT_INSTRUCTION section header
         """
         # GIVEN
-        command = "/nw:develop"
+        command = "/nw-develop"
         agent = "@software-crafter"
         step_file = str(minimal_step_file.relative_to(tmp_project_root))
 
@@ -70,12 +70,12 @@ class TestOrchestratorTimeoutInstruction:
         self, des_orchestrator, tmp_project_root, minimal_step_file
     ):
         """
-        GIVEN /nw:execute command
+        GIVEN /nw-execute command
         WHEN render_full_prompt is called
         THEN TIMEOUT_INSTRUCTION includes turn budget (~50)
         """
         # GIVEN
-        command = "/nw:execute"
+        command = "/nw-execute"
         step_file = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN
@@ -96,12 +96,12 @@ class TestOrchestratorTimeoutInstruction:
         self, des_orchestrator, tmp_project_root, minimal_step_file
     ):
         """
-        GIVEN /nw:execute command
+        GIVEN /nw-execute command
         WHEN render_full_prompt is called
         THEN TIMEOUT_INSTRUCTION includes progress checkpoints
         """
         # GIVEN
-        command = "/nw:execute"
+        command = "/nw-execute"
         step_file = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN
@@ -124,12 +124,12 @@ class TestOrchestratorTimeoutInstruction:
         self, des_orchestrator, tmp_project_root, minimal_step_file
     ):
         """
-        GIVEN /nw:execute command
+        GIVEN /nw-execute command
         WHEN render_full_prompt is called
         THEN TIMEOUT_INSTRUCTION includes early exit protocol
         """
         # GIVEN
-        command = "/nw:execute"
+        command = "/nw-execute"
         step_file = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN
@@ -152,12 +152,12 @@ class TestOrchestratorTimeoutInstruction:
         self, des_orchestrator, tmp_project_root, minimal_step_file
     ):
         """
-        GIVEN /nw:execute command
+        GIVEN /nw-execute command
         WHEN render_full_prompt is called
         THEN TIMEOUT_INSTRUCTION includes turn logging instruction
         """
         # GIVEN
-        command = "/nw:execute"
+        command = "/nw-execute"
         step_file = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN
@@ -179,12 +179,12 @@ class TestOrchestratorTimeoutInstruction:
         self, des_orchestrator, tmp_project_root
     ):
         """
-        GIVEN non-validation command (/nw:research)
+        GIVEN non-validation command (/nw-research)
         WHEN render_full_prompt is called
         THEN ValueError is raised
         """
         # GIVEN
-        command = "/nw:research"
+        command = "/nw-research"
         agent = "@researcher"
         step_file = "steps/research.json"
 
@@ -201,12 +201,12 @@ class TestOrchestratorTimeoutInstruction:
         self, des_orchestrator, tmp_project_root, minimal_step_file
     ):
         """
-        GIVEN /nw:execute command
+        GIVEN /nw-execute command
         WHEN render_full_prompt is called
         THEN prompt includes DES validation markers
         """
         # GIVEN
-        command = "/nw:execute"
+        command = "/nw-execute"
         step_file = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN
@@ -220,7 +220,7 @@ class TestOrchestratorTimeoutInstruction:
         # THEN
         assert "<!-- DES-VALIDATION: required -->" in prompt
         assert f"<!-- DES-STEP-FILE: {step_file} -->" in prompt
-        assert "<!-- DES-ORIGIN: command:/nw:execute -->" in prompt
+        assert "<!-- DES-ORIGIN: command:/nw-execute -->" in prompt
 
 
 class TestPrepareAdHocPrompt:

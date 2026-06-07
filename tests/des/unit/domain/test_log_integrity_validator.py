@@ -11,12 +11,25 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from des.domain.log_integrity_validator import LogIntegrityValidator
 from des.domain.phase_event import PhaseEvent
 from des.domain.tdd_schema import TDDSchema
 from des.ports.driven_ports.time_provider_port import TimeProvider
 
+
+# Valid phases matching the schema fixture
+VALID_PHASES = {
+    "PREPARE",
+    "RED_ACCEPTANCE",
+    "RED_UNIT",
+    "GREEN",
+    "REVIEW",
+    "REFACTOR_CONTINUOUS",
+    "COMMIT",
+}
 
 # Fixed "now" for deterministic timestamp checks
 FIXED_NOW = "2026-02-10T15:00:00+00:00"
@@ -106,6 +119,48 @@ class TestPhaseNameCheck:
         assert len(result.warnings) == 1
         assert "Unrecognized phase name 'XYZZY'" in result.warnings[0]
         assert "did you mean" not in result.warnings[0]
+
+
+class TestFutureTimestampProperty:
+    """PBT: Any event with timestamp > now produces a 'Future timestamp' warning."""
+
+    @given(
+        future_dt=st.datetimes(
+            min_value=datetime(2027, 1, 1),
+            max_value=datetime(2099, 12, 31),
+        )
+    )
+    @settings(
+        max_examples=50,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
+    def test_any_future_timestamp_produces_warning(
+        self, validator: LogIntegrityValidator, future_dt: datetime
+    ) -> None:
+        ts = future_dt.replace(tzinfo=timezone.utc).isoformat()
+        events = [_make_event(timestamp=ts)]
+        result = validator.validate(step_id="01-01", all_events=events)
+        assert any("Future timestamp" in w for w in result.warnings)
+
+
+class TestUnrecognizedPhaseProperty:
+    """PBT: Any phase_name NOT in schema.tdd_phases produces an 'Unrecognized phase name' warning."""
+
+    @given(
+        phase_name=st.text(min_size=1, max_size=30).filter(
+            lambda s: s not in VALID_PHASES
+        )
+    )
+    @settings(
+        max_examples=50,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
+    def test_any_non_schema_phase_produces_warning(
+        self, validator: LogIntegrityValidator, phase_name: str
+    ) -> None:
+        events = [_make_event(phase_name=phase_name)]
+        result = validator.validate(step_id="01-01", all_events=events)
+        assert any("Unrecognized phase name" in w for w in result.warnings)
 
 
 class TestForeignStepIdCheck:
@@ -228,17 +283,18 @@ class TestAccumulation:
 class TestEmptyEvents:
     """UT-10: Empty events list produces no warnings."""
 
-    def test_empty_events_no_warnings(self, validator: LogIntegrityValidator) -> None:
-        result = validator.validate(step_id="01-01", all_events=[])
-        assert result.warnings == []
-
-    def test_empty_events_with_task_start_time_no_warnings(
-        self, validator: LogIntegrityValidator
+    @pytest.mark.parametrize(
+        "task_start_time",
+        [None, "2026-02-10T14:00:00+00:00"],
+        ids=["no-task-start", "with-task-start"],
+    )
+    def test_empty_events_no_warnings(
+        self, validator: LogIntegrityValidator, task_start_time: str | None
     ) -> None:
         result = validator.validate(
             step_id="01-01",
             all_events=[],
-            task_start_time=TASK_START,
+            task_start_time=task_start_time,
         )
         assert result.warnings == []
 
@@ -246,37 +302,31 @@ class TestEmptyEvents:
 class TestCorrectableEntries:
     """Correction detection tests for timestamp enforcement."""
 
-    def test_pre_task_timestamps_produce_correctable_entries(
-        self, validator: LogIntegrityValidator
+    @pytest.mark.parametrize(
+        ("timestamp", "expected_reason", "phase_name"),
+        [
+            ("2026-02-10T10:00:00+00:00", "pre_task", "PREPARE"),
+            ("2099-01-01T00:00:00+00:00", "future", "GREEN"),
+        ],
+        ids=["pre-task-timestamp", "future-timestamp"],
+    )
+    def test_timestamp_anomalies_produce_correctable_entries(
+        self,
+        validator: LogIntegrityValidator,
+        timestamp: str,
+        expected_reason: str,
+        phase_name: str,
     ) -> None:
-        """Timestamps >60s before task start are correctable."""
-        events = [
-            _make_event(phase_name="PREPARE", timestamp="2026-02-10T10:00:00+00:00")
-        ]
+        """Timestamps >60s before task start or in the future are correctable."""
+        events = [_make_event(phase_name=phase_name, timestamp=timestamp)]
         result = validator.validate(
             step_id="01-01",
             all_events=events,
             task_start_time=TASK_START,
         )
         assert len(result.correctable_entries) == 1
-        assert result.correctable_entries[0].reason == "pre_task"
-        assert result.correctable_entries[0].phase_name == "PREPARE"
-
-    def test_future_timestamps_produce_correctable_entries(
-        self, validator: LogIntegrityValidator
-    ) -> None:
-        """Future timestamps are correctable."""
-        events = [
-            _make_event(phase_name="GREEN", timestamp="2099-01-01T00:00:00+00:00")
-        ]
-        result = validator.validate(
-            step_id="01-01",
-            all_events=events,
-            task_start_time=TASK_START,
-        )
-        assert len(result.correctable_entries) == 1
-        assert result.correctable_entries[0].reason == "future"
-        assert result.correctable_entries[0].phase_name == "GREEN"
+        assert result.correctable_entries[0].reason == expected_reason
+        assert result.correctable_entries[0].phase_name == phase_name
 
     def test_within_tolerance_not_correctable(
         self, validator: LogIntegrityValidator

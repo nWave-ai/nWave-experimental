@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 COMMANDS_DIR = PROJECT_ROOT / "nWave" / "tasks" / "nw"
 CATALOG_PATH = PROJECT_ROOT / "nWave" / "framework-catalog.yaml"
 SHARED_RULES_PATH = (
-    PROJECT_ROOT / "nWave" / "skills" / "common" / "wizard-shared-rules.md"
+    PROJECT_ROOT / "nWave" / "skills" / "nw-wizard-shared-rules" / "SKILL.md"
 )
 
 WIZARD_COMMANDS = ["new", "continue", "fast-forward"]
@@ -114,10 +114,10 @@ class TestFastForwardNaming:
         )
 
     def test_fast_forward_uses_correct_command_name(self):
-        """fast-forward.md must reference /nw:fast-forward, not /nw:ff."""
+        """fast-forward.md must reference /nw-fast-forward, not /nw-ff."""
         content = (COMMANDS_DIR / "fast-forward.md").read_text(encoding="utf-8")
-        assert "/nw:fast-forward" in content
-        assert "/nw:ff" not in content
+        assert "/nw-fast-forward" in content
+        assert "/nw-ff" not in content
 
     def test_fast_forward_uses_correct_header(self):
         """fast-forward.md must use NW-FAST-FORWARD header, not NW-FF."""

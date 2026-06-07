@@ -30,7 +30,7 @@ from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.phase_event import PhaseEvent
 from des.domain.step_completion_validator import StepCompletionValidator
-from des.domain.tdd_schema import get_tdd_schema
+from des.domain.tdd_schema import TDDSchemaLoader
 from des.ports.driven_ports.execution_log_reader import ExecutionLogReader
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
 from des.ports.driven_ports.time_provider_port import TimeProvider
@@ -82,7 +82,7 @@ class InMemoryLogReader(ExecutionLogReader):
 
 def _build_service(events: list[PhaseEvent]) -> SubagentStopService:
     """Build SubagentStopService with in-memory adapters."""
-    schema = get_tdd_schema()
+    schema = TDDSchemaLoader().load()
     return SubagentStopService(
         log_reader=InMemoryLogReader(project_id="test-project", events=events),
         completion_validator=StepCompletionValidator(schema=schema),
@@ -207,10 +207,32 @@ def _make_invalid_skip_events(
 
 
 def _make_multiple_issues_events(tdd_phases, step_id="01-01") -> list[PhaseEvent]:
-    """Create events with multiple validation issues."""
+    """Create events with multiple validation issues.
+
+    ADR-025 sweep follow-up (2026-05-18): rewritten to be canon-agnostic.
+    Issue 1 = phase[1] has invalid (empty) outcome → incomplete_phase.
+    Issue 2 = last phase EXECUTED with invalid outcome (empty) → incomplete.
+    Phase[0] is omitted entirely → missing/abandoned phase.
+    Works for both 3-phase canonical and 5-phase legacy without positional
+    assumptions on phases[4]/phases[5].
+    """
+    if len(tdd_phases) < 2:
+        return []
     events = []
-    # First 3 phases OK
-    for phase in tdd_phases[:3]:
+    # Phase[0] omitted → "Missing phases" error
+    # Phase[1] has invalid empty outcome → "Invalid outcome" error
+    events.append(
+        PhaseEvent(
+            step_id=step_id,
+            phase_name=tdd_phases[1],
+            status="EXECUTED",
+            outcome="",
+            timestamp="2026-02-02T10:00:00+00:00",
+        )
+    )
+    # Subsequent phases EXECUTED with PASS (so we get at least one valid
+    # outcome assertion mixed in) — last phase gets invalid skip reason.
+    for phase in tdd_phases[2:-1]:
         events.append(
             PhaseEvent(
                 step_id=step_id,
@@ -220,30 +242,16 @@ def _make_multiple_issues_events(tdd_phases, step_id="01-01") -> list[PhaseEvent
                 timestamp="2026-02-02T10:00:00+00:00",
             )
         )
-    # Phase 4 missing (abandoned)
-    # Phase 5 has invalid outcome
-    if len(tdd_phases) > 4:
+    if len(tdd_phases) >= 3:
         events.append(
             PhaseEvent(
                 step_id=step_id,
-                phase_name=tdd_phases[4],
-                status="EXECUTED",
-                outcome="",
-                timestamp="2026-02-02T10:00:00+00:00",
-            )
-        )
-    # Phase 6 has invalid skip
-    if len(tdd_phases) > 5:
-        events.append(
-            PhaseEvent(
-                step_id=step_id,
-                phase_name=tdd_phases[5],
+                phase_name=tdd_phases[-1],
                 status="SKIPPED",
                 outcome="Bad reason",
                 timestamp="2026-02-02T10:00:00+00:00",
             )
         )
-    # Remaining phases missing
     return events
 
 
@@ -335,7 +343,7 @@ class TestPostExecutionStateValidation:
         Error Format: "Missing phases: GREEN" (in v2.0, abandoned = missing from log)
         """
         events = _make_abandoned_phase_events(
-            tdd_phases, abandoned_phase="GREEN", last_completed_phase="RED_UNIT"
+            tdd_phases, abandoned_phase="GREEN", last_completed_phase="RED"
         )
         service = _build_service(events)
         decision = service.validate(_make_context())
@@ -594,7 +602,8 @@ class TestOrchestratorHookIntegration:
         from des.adapters.drivers.validators.mocked_validator import (
             MockedTemplateValidator,
         )
-        from des.application.orchestrator import DESOrchestrator, HookResult
+        from des.application.orchestrator import DESOrchestrator
+        from des.ports.driven_ports.hook_port import HookResult
 
         hook = MockedSubagentStopHook(HookResult(validation_status="PASSED"))
         orchestrator = DESOrchestrator(
@@ -631,7 +640,8 @@ class TestOrchestratorHookIntegration:
         from des.adapters.drivers.validators.mocked_validator import (
             MockedTemplateValidator,
         )
-        from des.application.orchestrator import DESOrchestrator, HookResult
+        from des.application.orchestrator import DESOrchestrator
+        from des.ports.driven_ports.hook_port import HookResult
 
         hook = MockedSubagentStopHook(
             HookResult(

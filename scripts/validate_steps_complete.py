@@ -113,7 +113,7 @@ def validate_all_steps_complete(
                 "RESOLUTION REQUIRED:",
                 "  1. Execute all incomplete steps through full 14-phase TDD",
                 "  2. Ensure each step reaches COMMIT phase with outcome=PASS",
-                "  3. Re-run /nw:finalize after all steps complete",
+                "  3. Re-run /nw-finalize after all steps complete",
                 "",
                 "This gate exists to prevent 'silent completion' where features",
                 "are archived without actually being implemented.",

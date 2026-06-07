@@ -10,7 +10,7 @@ Usage:
 
     # Test with custom scenario
     python scripts/framework/compression_e2e_test.py test nWave/tasks/nw/deliver.md \
-        --scenario "User says: /nw:deliver 'Add rate limiting to API'"
+        --scenario "User says: /nw-deliver 'Add rate limiting to API'"
 
     # Test all modified files
     python scripts/framework/compression_e2e_test.py test-all
@@ -78,7 +78,7 @@ DEFAULT_SCENARIOS: dict[str, list[dict[str, str]]] = {
     "deliver.md": [
         {
             "name": "fresh_feature",
-            "prompt": "User says: /nw:deliver 'Add rate limiting to the API gateway'\n\nList the exact sequence of phases you execute, with which agent handles each.",
+            "prompt": "User says: /nw-deliver 'Add rate limiting to the API gateway'\n\nList the exact sequence of phases you execute, with which agent handles each.",
         },
         {
             "name": "paradigm_detection",

@@ -41,7 +41,7 @@ class TestPreInvocationLimitsValidation:
         AND sub-agent invocation is blocked
 
         Business Context:
-        Marcus runs /nw:execute but forgot to configure max_turns in step file.
+        Marcus runs /nw-execute but forgot to configure max_turns in step file.
         The orchestrator should catch this before invoking software-crafter,
         providing clear guidance on what to add and where.
 

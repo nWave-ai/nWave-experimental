@@ -8,8 +8,18 @@ The uninstaller is executed ONCE (module-scoped fixture) against a freshly
 installed config dir. All tests assert against the same captured stdout.
 """
 
+import pytest
+
 from scripts.install.install_nwave import __version__ as install_version
 from scripts.install.uninstall_nwave import __version__ as uninstall_version
+
+
+# Pin to the installer_walking_skeleton xdist group — both this file
+# and test_installer_tui_output.py exercise installer/uninstaller fixtures
+# that write to ~/.config/opencode/ (a real path, NOT temp); running them
+# on different xdist workers triggers File-exists races on shared state.
+# Same group => same worker => serialized + safe.
+pytestmark = pytest.mark.xdist_group("installer_walking_skeleton")
 
 
 # ─── Design constraints ─────────────────────────────────────────────
@@ -56,9 +66,14 @@ class TestWalkingSkeleton:
         """Existing agents directory is detected."""
         assert "Found nWave agents" in output
 
-    def test_step_02_found_commands(self, output: str):
-        """Existing commands directory is detected."""
-        assert "Found nWave commands" in output
+    def test_step_02_found_skills_or_commands(self, output: str):
+        """Existing skills or commands directory is detected."""
+        # Commands migrated to skills in v2.8.0; uninstaller may detect either
+        assert (
+            "Found nWave skills" in output
+            or "Found nWave commands" in output
+            or "skills" in output.lower()
+        )
 
     def test_step_02_found_manifest(self, output: str):
         """Existing manifest file is detected."""

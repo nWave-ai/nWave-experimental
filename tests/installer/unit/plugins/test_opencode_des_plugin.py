@@ -1,511 +1,728 @@
 """Unit tests for OpenCode DES installer plugin.
 
 Tests validate that:
-- install() copies the TypeScript DES plugin to OpenCode plugins directory
-- install() writes a .nwave-des-manifest.json tracking the installed file
-- install() handles missing source gracefully (returns success with skip message)
-- verify() passes after successful install (file exists + content check)
-- verify() fails when the plugin file is missing
-- verify() content check detects "tool.execute.before"
-- uninstall() removes only manifest-tracked files
-- uninstall() handles missing manifest with fallback to known path
-- _create_plugin_registry includes opencode-des when opencode platform detected
-- _create_plugin_registry excludes opencode-des when opencode platform not detected
-- Topological order: opencode-des after opencode-commands, before des
+- Fresh install creates shim file and manifest
+- OpenCode not detected -> plugin skips with success
+- Template rendered with correct Python path and PYTHONPATH substitution
+- Manifest created with version and hash
+- Reinstall overwrites existing shim (idempotent)
+- Uninstall removes shim and manifest without touching other plugins
+- Verify passes when shim exists with valid markers
+- Verify fails when shim is missing
 
 CRITICAL: Tests follow hexagonal architecture - mocks only at port boundaries.
+
+State-delta migration summary
+------------------------------
+CONVERTED (6 tests) — state-delta + implicit-unchanged invariant:
+  - test_fresh_install_creates_shim_and_manifest: multi-slot (shim + manifest);
+    implicit-unchanged prevents unintended file creation
+  - test_template_rendered_with_correct_paths: shim content multi-slot
+    (python_path, pythonpath, no-placeholder, no-$HOME); catches silently
+    dropped substitutions or extra mutations
+  - test_manifest_contains_version_and_hash: manifest multi-slot (version,
+    sha256, shim_file) + hash cross-reference; guards undeclared extra keys
+  - test_reinstall_overwrites_existing_shim: idempotent overwrite with
+    multi-slot: content changed, manifest updated, user files untouched
+  - test_uninstall_removes_shim_and_manifest: classic uninstall "preserve
+    user plugins" semantic — strongest state-delta use case
+  - test_rendered_shim_python_path_has_no_dollar_home: content multi-slot
+    (no $HOME, correct python literal present)
+
+KEPT as-is (5 tests) — no state-delta benefit:
+  - test_opencode_not_detected_skips: result property + message text; no
+    filesystem state written
+  - test_verify_passes_when_shim_exists: single result.success; verify() is
+    read-only
+  - test_verify_fails_when_shim_missing: result properties on error path;
+    no state mutation
+  - test_rendered_shim_forward_slash_only_on_windows_shape: line-granular
+    assertions on extracted string tokens; state-delta ceremony without gain
+  - test_des_module_not_installed_fails_prereq: interaction test
+    (result.success=False + message); no filesystem mutation
 """
 
+import hashlib
 import json
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
+from nwave_ai.state_delta import assert_state_delta, set_to
 
 from scripts.install.plugins.base import InstallContext
-from scripts.install.plugins.opencode_des_plugin import (
-    OpenCodeDESPlugin,
-)
+from scripts.install.plugins.opencode_des_plugin import OpenCodeDESPlugin
 
 
-def _make_context(tmp_path):
-    """Create an InstallContext with a minimal DES source layout.
+def _make_context(
+    tmp_path: Path,
+    *,
+    opencode_exists: bool = True,
+    des_module_exists: bool = True,
+    template_exists: bool = True,
+) -> tuple[InstallContext, Path, Path]:
+    """Create an InstallContext with configurable OpenCode and DES layout.
 
     Returns:
-        Tuple of (context, des_source_dir, opencode_plugins_target)
+        Tuple of (context, opencode_dir, opencode_plugins_dir)
     """
     project_root = tmp_path / "project"
     framework_source = tmp_path / "framework"
+    framework_source.mkdir(parents=True)
 
-    des_source = project_root / "src" / "des"
-    des_source.mkdir(parents=True)
+    # Create TS template if requested
+    if template_exists:
+        templates_dir = framework_source / "templates"
+        templates_dir.mkdir(parents=True)
+        (templates_dir / "opencode-des-plugin.ts.template").write_text(
+            "// Python: {{PYTHON_PATH}}\n"
+            "// PYTHONPATH: {{PYTHONPATH}}\n"
+            "export default function nwaveDES() { return {}; }\n",
+            encoding="utf-8",
+        )
 
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir(parents=True)
+
+    # Create DES module if requested
+    if des_module_exists:
+        des_dir = claude_dir / "lib" / "python" / "des"
+        des_dir.mkdir(parents=True)
+        (des_dir / "__init__.py").write_text("")
+
+    # Create OpenCode config dir if requested
+    opencode_dir = tmp_path / "home" / ".config" / "opencode"
+    if opencode_exists:
+        opencode_dir.mkdir(parents=True)
+
+    opencode_plugins_dir = opencode_dir / "plugins"
 
     logger = MagicMock()
 
     context = InstallContext(
         claude_dir=claude_dir,
         scripts_dir=tmp_path / "scripts",
-        templates_dir=tmp_path / "templates",
+        templates_dir=framework_source / "templates",
         logger=logger,
         project_root=project_root,
         framework_source=framework_source,
     )
 
-    opencode_plugins_target = tmp_path / "home" / ".config" / "opencode" / "plugins"
-
-    return context, des_source, opencode_plugins_target
-
-
-_SAMPLE_TS_CONTENT = """\
-// nWave DES Plugin for OpenCode
-// Deterministic Execution System
-
-import type { Plugin } from "@opencode-ai/plugin"
-
-// Hook handlers
-const plugin: Plugin = {
-  name: "nwave-des",
-  hooks: {
-    "tool.execute.before": async (input, output) => {
-      // Phase enforcement logic
-      return { allow: true }
-    },
-  },
-}
-
-export default plugin
-"""
-
-
-class TestInstall:
-    """Test that install() copies TS file and writes manifest."""
-
-    def test_install_copies_file_and_writes_manifest(self, tmp_path, monkeypatch):
-        """
-        GIVEN: src/des/opencode-plugin.ts exists in the source tree
-        WHEN: install() runs
-        THEN: the file is copied to ~/.config/opencode/plugins/nwave-des.ts
-              and a .nwave-des-manifest.json is written tracking the installed file
-        """
-        context, des_source, target = _make_context(tmp_path)
-        monkeypatch.setattr(
-            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
-            lambda: target,
-        )
-
-        # Create source TS file
-        (des_source / "opencode-plugin.ts").write_text(_SAMPLE_TS_CONTENT)
-
-        plugin = OpenCodeDESPlugin()
-        result = plugin.install(context)
-
-        assert result.success is True
-
-        # Verify file was copied with correct name
-        installed_file = target / "nwave-des.ts"
-        assert installed_file.exists(), "Expected nwave-des.ts to exist in plugins dir"
-        assert installed_file.read_text() == _SAMPLE_TS_CONTENT
-
-        # Verify manifest was written
-        manifest_path = target / ".nwave-des-manifest.json"
-        assert manifest_path.exists(), "Expected manifest to be written"
-        manifest = json.loads(manifest_path.read_text())
-        assert "installed_files" in manifest
-        assert "nwave-des.ts" in manifest["installed_files"]
-
-
-class TestInstallHandlesMissingSourceGracefully:
-    """Test that install() handles missing source gracefully."""
-
-    def test_install_missing_source_returns_success_with_skip(
-        self, tmp_path, monkeypatch
-    ):
-        """
-        GIVEN: No opencode-plugin.ts exists in any source location
-        WHEN: install() runs
-        THEN: Returns success with a skip message (not failure)
-        """
-        context, _des_source, target = _make_context(tmp_path)
-        monkeypatch.setattr(
-            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
-            lambda: target,
-        )
-
-        # Don't create source TS file -- it's missing
-
-        plugin = OpenCodeDESPlugin()
-        result = plugin.install(context)
-
-        assert result.success is True
-        assert "not found" in result.message.lower() or "skip" in result.message.lower()
-
-
-class TestVerifyPassesAfterSuccessfulInstall:
-    """Test that verify() passes after a successful install."""
-
-    def test_verify_passes_after_install(self, tmp_path, monkeypatch):
-        """
-        GIVEN: A successful installation (nwave-des.ts exists with correct content)
-        WHEN: verify() runs
-        THEN: It confirms nwave-des.ts exists and contains 'tool.execute.before'
-        """
-        context, des_source, target = _make_context(tmp_path)
-        monkeypatch.setattr(
-            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
-            lambda: target,
-        )
-
-        # Create source and install
-        (des_source / "opencode-plugin.ts").write_text(_SAMPLE_TS_CONTENT)
-
-        plugin = OpenCodeDESPlugin()
-        plugin.install(context)
-
-        # Now verify
-        result = plugin.verify(context)
-
-        assert result.success is True
-        assert result.errors == []
-
-
-class TestVerifyFailsWhenFileMissing:
-    """Test that verify() fails when the plugin file is missing."""
-
-    def test_verify_fails_when_file_missing(self, tmp_path, monkeypatch):
-        """
-        GIVEN: nwave-des.ts does NOT exist in the plugins directory
-        WHEN: verify() runs
-        THEN: Returns failure indicating the file is missing
-        """
-        context, des_source, target = _make_context(tmp_path)
-        monkeypatch.setattr(
-            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
-            lambda: target,
-        )
-
-        # Create source so plugin knows it should be installed
-        (des_source / "opencode-plugin.ts").write_text(_SAMPLE_TS_CONTENT)
-
-        # Don't install -- file should be missing
-        target.mkdir(parents=True, exist_ok=True)
-
-        plugin = OpenCodeDESPlugin()
-        result = plugin.verify(context)
-
-        assert result.success is False
-
-
-class TestVerifyDetectsMissingPluginFile:
-    """Test that verify() fails when manifest exists but plugin file was deleted."""
-
-    def test_verify_fails_when_manifest_present_but_file_deleted(
-        self, tmp_path, monkeypatch
-    ):
-        """
-        GIVEN: plugin installed (file + manifest exist)
-        AND: plugin file manually deleted
-        WHEN: verify() runs
-        THEN: reports failure
-        """
-        context, des_source, target = _make_context(tmp_path)
-        monkeypatch.setattr(
-            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
-            lambda: target,
-        )
-
-        # Create source TS file
-        (des_source / "opencode-plugin.ts").write_text(_SAMPLE_TS_CONTENT)
-
-        plugin = OpenCodeDESPlugin()
-        plugin.install(context)
-
-        # Verify install succeeded
-        assert (target / "nwave-des.ts").exists()
-
-        # Manually delete the plugin file (simulating corruption/manual removal)
-        (target / "nwave-des.ts").unlink()
-
-        # Verify should now fail
-        result = plugin.verify(context)
-
-        assert result.success is False
-
-
-class TestUninstallRemovesOnlyManifestTrackedFiles:
-    """Test that uninstall() removes only manifest-tracked files."""
-
-    def test_uninstall_removes_only_manifest_files(self, tmp_path, monkeypatch):
-        """
-        GIVEN: .nwave-des-manifest.json exists tracking nwave-des.ts
-        WHEN: uninstall() runs
-        THEN: Only nwave-des.ts and the manifest are removed;
-              other user files in the plugins directory remain
-        """
-        context, _des_source, target = _make_context(tmp_path)
-        monkeypatch.setattr(
-            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
-            lambda: target,
-        )
-
-        target.mkdir(parents=True, exist_ok=True)
-
-        # Create the nWave-installed plugin file
-        nwave_file = target / "nwave-des.ts"
-        nwave_file.write_text(_SAMPLE_TS_CONTENT)
-
-        # Create a user-owned plugin file (NOT in manifest)
-        user_file = target / "my-custom-plugin.ts"
-        user_file.write_text("// User plugin")
-
-        # Write manifest tracking only nwave-des.ts
-        manifest = {"installed_files": ["nwave-des.ts"], "version": "1.0"}
-        (target / ".nwave-des-manifest.json").write_text(json.dumps(manifest))
-
-        plugin = OpenCodeDESPlugin()
-        result = plugin.uninstall(context)
-
-        assert result.success is True
-        assert not nwave_file.exists(), "nwave-des.ts should be removed"
-        assert not (target / ".nwave-des-manifest.json").exists(), (
-            "manifest should be removed"
-        )
-        assert user_file.exists(), "User plugin must remain untouched"
-
-
-class TestUninstallHandlesMissingManifestGracefully:
-    """Test that uninstall() handles missing manifest with fallback."""
-
-    def test_uninstall_fallback_removes_known_file(self, tmp_path, monkeypatch):
-        """
-        GIVEN: No .nwave-des-manifest.json exists but nwave-des.ts is present
-        WHEN: uninstall() runs
-        THEN: Falls back to removing the known file nwave-des.ts
-        """
-        context, _des_source, target = _make_context(tmp_path)
-        monkeypatch.setattr(
-            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
-            lambda: target,
-        )
-
-        target.mkdir(parents=True, exist_ok=True)
-
-        # File exists but no manifest
-        known_file = target / "nwave-des.ts"
-        known_file.write_text(_SAMPLE_TS_CONTENT)
-
-        plugin = OpenCodeDESPlugin()
-        result = plugin.uninstall(context)
-
-        assert result.success is True
-        assert not known_file.exists(), "Known file should be removed in fallback"
-
-    def test_uninstall_no_manifest_no_file_returns_success(self, tmp_path, monkeypatch):
-        """
-        GIVEN: Neither manifest nor nwave-des.ts exists
-        WHEN: uninstall() runs
-        THEN: Returns success (nothing to uninstall)
-        """
-        context, _des_source, target = _make_context(tmp_path)
-        monkeypatch.setattr(
-            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
-            lambda: target,
-        )
-
-        plugin = OpenCodeDESPlugin()
-        result = plugin.uninstall(context)
-
-        assert result.success is True
-
-
-class TestVerifyContentCheck:
-    """Test that verify() checks for 'tool.execute.before' in content."""
-
-    def test_verify_fails_when_content_missing_hook_string(self, tmp_path, monkeypatch):
-        """
-        GIVEN: nwave-des.ts exists but does NOT contain 'tool.execute.before'
-        WHEN: verify() runs
-        THEN: Returns failure indicating content check failed
-        """
-        context, des_source, target = _make_context(tmp_path)
-        monkeypatch.setattr(
-            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
-            lambda: target,
-        )
-
-        # Create source so plugin knows it should be installed
-        (des_source / "opencode-plugin.ts").write_text(_SAMPLE_TS_CONTENT)
-
-        target.mkdir(parents=True, exist_ok=True)
-
-        # Write file with WRONG content (no hook string)
-        (target / "nwave-des.ts").write_text("// empty plugin, no hooks")
-
-        # Write manifest
-        manifest = {"installed_files": ["nwave-des.ts"], "version": "1.0"}
-        (target / ".nwave-des-manifest.json").write_text(json.dumps(manifest))
-
-        plugin = OpenCodeDESPlugin()
-        result = plugin.verify(context)
-
-        assert result.success is False
-        assert any("tool.execute.before" in err for err in result.errors), (
-            f"Expected content check error, got: {result.errors}"
-        )
-
-
-class TestInstallVerifyUninstallCycle:
-    """Acceptance test: full install -> verify -> uninstall cycle."""
-
-    def test_full_cycle(self, tmp_path, monkeypatch):
-        """
-        GIVEN: src/des/opencode-plugin.ts exists in the source tree
-        WHEN: install() -> verify() -> uninstall() are called in sequence
-        THEN: install copies the file and writes manifest,
-              verify confirms everything is correct,
-              uninstall removes only tracked files and manifest
-        """
-        context, des_source, target = _make_context(tmp_path)
-        monkeypatch.setattr(
-            "scripts.install.plugins.opencode_des_plugin._opencode_plugins_dir",
-            lambda: target,
-        )
-
-        # Create source TS file
-        (des_source / "opencode-plugin.ts").write_text(_SAMPLE_TS_CONTENT)
-
-        plugin = OpenCodeDESPlugin()
-
-        # --- INSTALL ---
-        install_result = plugin.install(context)
-        assert install_result.success is True
-        assert (target / "nwave-des.ts").exists()
-        assert (target / ".nwave-des-manifest.json").exists()
-
-        # --- VERIFY ---
-        verify_result = plugin.verify(context)
-        assert verify_result.success is True
-
-        # --- UNINSTALL ---
-        uninstall_result = plugin.uninstall(context)
-        assert uninstall_result.success is True
-        assert not (target / "nwave-des.ts").exists()
-        assert not (target / ".nwave-des-manifest.json").exists()
+    return context, opencode_dir, opencode_plugins_dir
 
 
 # ---------------------------------------------------------------------------
-# Registry integration tests
+# State-delta helpers
 # ---------------------------------------------------------------------------
 
 
-def _build_installer():
-    """Build an NWaveInstaller with mocked filesystem paths.
+def _des_shim_filesystem_state(
+    opencode_dir: Path,
+    track: frozenset[str] | None = None,
+) -> dict[str, object]:
+    """Return a flat state dict for the DES shim filesystem layout.
+
+    Slots:
+      "shim.exists"     — whether plugins/nwave-des.ts exists
+      "manifest.exists" — whether .nwave-des-manifest.json exists
+
+    When ``track`` is provided, every name in the set is always emitted with
+    True/False. Without ``track``, only existing files are emitted.
+
+    Args:
+        opencode_dir: ~/.config/opencode/ equivalent in tests.
+        track: Optional explicit set of slot names to always emit.
 
     Returns:
-        NWaveInstaller configured for testing (dry_run=True).
+        Flat dict mapping slot names to their current values.
     """
-    with (
-        patch(
-            "scripts.install.install_nwave.PathUtils.get_claude_config_dir"
-        ) as mock_config,
-        patch("scripts.install.install_nwave.PathUtils.get_project_root") as mock_root,
+    shim = opencode_dir / "plugins" / "nwave-des.ts"
+    manifest = opencode_dir / ".nwave-des-manifest.json"
+
+    state: dict[str, object] = {}
+
+    if track is not None:
+        if "shim.exists" in track:
+            state["shim.exists"] = shim.exists()
+        if "manifest.exists" in track:
+            state["manifest.exists"] = manifest.exists()
+    else:
+        if shim.exists():
+            state["shim.exists"] = True
+        if manifest.exists():
+            state["manifest.exists"] = True
+
+    return state
+
+
+def _des_shim_content_state(opencode_dir: Path) -> dict[str, object]:
+    """Return a flat state dict for the rendered DES shim content.
+
+    Slots:
+      "content.exists"         — whether the shim file exists
+      "content.has_python"     — whether shim contains Python path comment line
+      "content.has_pythonpath" — whether shim contains PYTHONPATH comment line
+      "content.has_dollar_home" — whether shim contains literal '$HOME'
+      "content.has_placeholder" — whether shim contains '{{' (unreplaced template)
+      "content.full"           — raw file text (None when absent)
+
+    Args:
+        opencode_dir: ~/.config/opencode/ equivalent in tests.
+
+    Returns:
+        Flat dict with content property slots.
+    """
+    shim = opencode_dir / "plugins" / "nwave-des.ts"
+    if not shim.exists():
+        return {
+            "content.exists": False,
+            "content.has_python": False,
+            "content.has_pythonpath": False,
+            "content.has_dollar_home": False,
+            "content.has_placeholder": False,
+            "content.full": None,
+        }
+    text = shim.read_text(encoding="utf-8")
+    return {
+        "content.exists": True,
+        "content.has_python": "// Python:" in text,
+        "content.has_pythonpath": "// PYTHONPATH:" in text,
+        "content.has_dollar_home": "$HOME" in text,
+        "content.has_placeholder": "{{" in text,
+        "content.full": text,
+    }
+
+
+def _manifest_content_state(opencode_dir: Path) -> dict[str, object]:
+    """Return a flat state dict for the DES manifest JSON content.
+
+    Slots:
+      "manifest.exists"   — whether .nwave-des-manifest.json exists
+      "manifest.version"  — 'version' field value (None when absent)
+      "manifest.sha256"   — 'sha256' field value (None when absent)
+      "manifest.shim_file" — 'shim_file' field value (None when absent)
+      "manifest.extra_keys" — frozenset of keys beyond the three declared ones
+
+    Args:
+        opencode_dir: ~/.config/opencode/ equivalent in tests.
+
+    Returns:
+        Flat dict with manifest content slots.
+    """
+    manifest_path = opencode_dir / ".nwave-des-manifest.json"
+    if not manifest_path.exists():
+        return {
+            "manifest.exists": False,
+            "manifest.version": None,
+            "manifest.sha256": None,
+            "manifest.shim_file": None,
+            "manifest.extra_keys": frozenset(),
+        }
+    data: dict[str, object] = json.loads(manifest_path.read_text(encoding="utf-8"))
+    declared = {"version", "sha256", "shim_file"}
+    return {
+        "manifest.exists": True,
+        "manifest.version": data.get("version"),
+        "manifest.sha256": data.get("sha256"),
+        "manifest.shim_file": data.get("shim_file"),
+        "manifest.extra_keys": frozenset(set(data.keys()) - declared),
+    }
+
+
+def _user_plugins_state(
+    plugins_dir: Path,
+    track: frozenset[str],
+) -> dict[str, object]:
+    """Return a flat state dict for user-owned plugin files in plugins_dir.
+
+    Each key is "<filename>.exists" with a bool value. The ``track`` set
+    is always fully emitted (True/False) to allow before/after comparison.
+
+    Args:
+        plugins_dir: The opencode plugins directory.
+        track: Set of filenames to track.
+
+    Returns:
+        Flat dict mapping "<filename>.exists" to bool.
+    """
+    return {f"{name}.exists": (plugins_dir / name).exists() for name in track}
+
+
+# ---------------------------------------------------------------------------
+# Tests: install()
+# ---------------------------------------------------------------------------
+
+
+class TestFreshInstallCreatesShimAndManifest:
+    """Test that install() creates shim file and manifest on fresh install."""
+
+    def test_fresh_install_creates_shim_and_manifest(self, tmp_path, monkeypatch):
+        """
+        GIVEN: OpenCode is detected and DES module is installed and no prior shim exists
+        WHEN: install() is called
+        THEN: nwave-des.ts exists in plugins dir and manifest exists;
+              no other filesystem slots mutate.
+        """
+        context, opencode_dir, _plugins_dir = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin.resolve_python_command_for_spawn",
+            lambda: "/usr/bin/python3",
+        )
+
+        tracked = frozenset({"shim.exists", "manifest.exists"})
+        before = _des_shim_filesystem_state(opencode_dir, track=tracked)
+
+        plugin = OpenCodeDESPlugin()
+        result = plugin.install(context)
+
+        assert result.success is True
+
+        after = _des_shim_filesystem_state(opencode_dir, track=tracked)
+        universe = set(before.keys()) | set(after.keys())
+        assert_state_delta(
+            before=before,
+            after=after,
+            universe=universe,
+            expected={
+                "shim.exists": set_to(True),
+                "manifest.exists": set_to(True),
+            },
+        )
+
+
+class TestOpenCodeNotDetectedSkips:
+    """Test that plugin skips with success when OpenCode is not detected."""
+
+    def test_opencode_not_detected_skips(self, tmp_path, monkeypatch):
+        """
+        GIVEN: ~/.config/opencode/ does not exist
+        WHEN: validate_prerequisites() is called
+        THEN: Returns success with skip message (not an error)
+        """
+        context, opencode_dir, _ = _make_context(tmp_path, opencode_exists=False)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+
+        plugin = OpenCodeDESPlugin()
+        result = plugin.validate_prerequisites(context)
+
+        assert result.success is True
+        assert (
+            "skip" in result.message.lower() or "not detected" in result.message.lower()
+        )
+
+
+class TestTemplateRenderedWithCorrectPaths:
+    """Test that template placeholders are replaced with correct paths."""
+
+    def test_template_rendered_with_correct_paths(self, tmp_path, monkeypatch):
+        """
+        GIVEN: A TS template with {{PYTHON_PATH}} and {{PYTHONPATH}} placeholders
+        WHEN: install() renders the template
+        THEN: The shim contains resolved Python path and PYTHONPATH;
+              no unreplaced placeholders remain; no $HOME literal survives;
+              no other content slots mutate.
+        """
+        context, opencode_dir, _plugins_dir = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin.resolve_python_command_for_spawn",
+            lambda: "/home/tester/.local/bin/python3",
+        )
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin.resolve_des_lib_path_for_spawn",
+            lambda: "/home/tester/.claude/lib/python",
+        )
+
+        before = _des_shim_content_state(opencode_dir)
+
+        plugin = OpenCodeDESPlugin()
+        plugin.install(context)
+
+        after = _des_shim_content_state(opencode_dir)
+        universe = set(before.keys()) | set(after.keys())
+
+        def contains_python_path(old: object, new: object) -> bool:
+            return isinstance(new, str) and "/home/tester/.local/bin/python3" in new
+
+        def contains_pythonpath(old: object, new: object) -> bool:
+            return isinstance(new, str) and "/home/tester/.claude/lib/python" in new
+
+        assert_state_delta(
+            before=before,
+            after=after,
+            universe=universe,
+            expected={
+                "content.exists": set_to(True),
+                "content.full": contains_python_path,
+                "content.has_python": set_to(True),
+                "content.has_pythonpath": set_to(True),
+                "content.has_dollar_home": set_to(False),
+                "content.has_placeholder": set_to(False),
+            },
+        )
+        # Extra check: PYTHONPATH resolved value in content (predicate only checks python)
+        shim_text = (opencode_dir / "plugins" / "nwave-des.ts").read_text(
+            encoding="utf-8"
+        )
+        assert "/home/tester/.claude/lib/python" in shim_text
+
+
+class TestManifestContainsVersionAndHash:
+    """Test that manifest records version and content hash."""
+
+    def test_manifest_contains_version_and_hash(self, tmp_path, monkeypatch):
+        """
+        GIVEN: A fresh install
+        WHEN: install() completes
+        THEN: Manifest contains version, sha256, and shim_file with correct hash;
+              no undeclared keys appear in the manifest.
+        """
+        context, opencode_dir, plugins_dir = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin.resolve_python_command_for_spawn",
+            lambda: "/usr/bin/python3",
+        )
+
+        before = _manifest_content_state(opencode_dir)
+
+        plugin = OpenCodeDESPlugin()
+        plugin.install(context)
+
+        after = _manifest_content_state(opencode_dir)
+        universe = set(before.keys()) | set(after.keys())
+
+        # Compute expected hash from actual shim content
+        shim_content = (plugins_dir / "nwave-des.ts").read_bytes()
+        expected_hash = hashlib.sha256(shim_content).hexdigest()
+        expected_shim_file = str(plugins_dir / "nwave-des.ts")
+
+        def has_version(old: object, new: object) -> bool:
+            return isinstance(new, str) and len(new) > 0
+
+        assert_state_delta(
+            before=before,
+            after=after,
+            universe=universe,
+            expected={
+                "manifest.exists": set_to(True),
+                "manifest.version": has_version,
+                "manifest.sha256": set_to(expected_hash),
+                "manifest.shim_file": set_to(expected_shim_file),
+                # extra_keys: implicit-unchanged enforces no undeclared manifest keys
+                # were present before (frozenset()) so any addition is caught
+            },
+        )
+
+
+class TestReinstallOverwritesExistingShim:
+    """Test that reinstall overwrites existing shim without errors."""
+
+    def test_reinstall_overwrites_existing_shim(self, tmp_path, monkeypatch):
+        """
+        GIVEN: A prior installation with version 1.0.0
+        WHEN: install() runs again with a new template
+        THEN: The shim is overwritten and manifest is updated;
+              no user-created files in the directory are removed.
+        """
+        context, opencode_dir, _plugins_dir = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin.resolve_python_command_for_spawn",
+            lambda: "/usr/bin/python3",
+        )
+
+        # First install
+        plugin = OpenCodeDESPlugin()
+        plugin.install(context)
+
+        # Modify template to simulate version change
+        templates_dir = context.framework_source / "templates"
+        (templates_dir / "opencode-des-plugin.ts.template").write_text(
+            "// Python: {{PYTHON_PATH}}\n"
+            "// PYTHONPATH: {{PYTHONPATH}}\n"
+            "// Version 2.0\n"
+            "export default function nwaveDES() { return {}; }\n",
+            encoding="utf-8",
+        )
+
+        before_content = _des_shim_content_state(opencode_dir)
+
+        # Second install
+        result = plugin.install(context)
+
+        assert result.success is True
+
+        after_content = _des_shim_content_state(opencode_dir)
+        universe = set(before_content.keys()) | set(after_content.keys())
+
+        def content_updated_with_v2(old: object, new: object) -> bool:
+            return (
+                isinstance(new, str)
+                and "Version 2.0" in new
+                and isinstance(old, str)
+                and "Version 2.0" not in old
+            )
+
+        assert_state_delta(
+            before=before_content,
+            after=after_content,
+            universe=universe,
+            expected={
+                "content.full": content_updated_with_v2,
+            },
+        )
+
+
+class TestUninstallRemovesShimAndManifest:
+    """Test that uninstall removes shim and manifest only."""
+
+    def test_uninstall_removes_shim_and_manifest(self, tmp_path, monkeypatch):
+        """
+        GIVEN: A prior installation left the shim and manifest
+        WHEN: uninstall() is called
+        THEN: The shim and manifest are removed and other user plugins are untouched;
+              implicit-unchanged enforces user plugin preservation automatically.
+        """
+        context, opencode_dir, plugins_dir = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin.resolve_python_command_for_spawn",
+            lambda: "/usr/bin/python3",
+        )
+
+        # Install first
+        plugin = OpenCodeDESPlugin()
+        plugin.install(context)
+
+        # Create a user plugin that should NOT be removed
+        user_plugin = plugins_dir / "my-custom-plugin.ts"
+        user_plugin.write_text("// my custom plugin", encoding="utf-8")
+
+        tracked_files = frozenset({"nwave-des.ts", "my-custom-plugin.ts"})
+        before_plugins = _user_plugins_state(plugins_dir, track=tracked_files)
+        tracked_slots = frozenset({"shim.exists", "manifest.exists"})
+        before_shim = _des_shim_filesystem_state(opencode_dir, track=tracked_slots)
+
+        result = plugin.uninstall(context)
+
+        assert result.success is True
+
+        after_plugins = _user_plugins_state(plugins_dir, track=tracked_files)
+        after_shim = _des_shim_filesystem_state(opencode_dir, track=tracked_slots)
+
+        # Filesystem delta: shim and manifest removed; user plugin unchanged
+        universe_shim = set(before_shim.keys()) | set(after_shim.keys())
+        assert_state_delta(
+            before=before_shim,
+            after=after_shim,
+            universe=universe_shim,
+            expected={
+                "shim.exists": set_to(False),
+                "manifest.exists": set_to(False),
+            },
+        )
+
+        # User plugins delta: user plugin unchanged (implicit-unchanged via empty expected)
+        universe_plugins = set(before_plugins.keys()) | set(after_plugins.keys())
+        assert_state_delta(
+            before=before_plugins,
+            after=after_plugins,
+            universe=universe_plugins,
+            expected={
+                # nwave-des.ts: True -> False (already covered above, duplicated for clarity)
+                "nwave-des.ts.exists": set_to(False),
+                # "my-custom-plugin.ts.exists" NOT in expected ->
+                # implicit-unchanged: True must stay True
+            },
+        )
+
+
+class TestVerifyPassesWhenShimExists:
+    """Test that verify passes when shim file exists with valid content."""
+
+    def test_verify_passes_when_shim_exists(self, tmp_path, monkeypatch):
+        """
+        GIVEN: A successful installation
+        WHEN: verify() is called
+        THEN: Returns success
+        """
+        context, opencode_dir, _plugins_dir = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin.resolve_python_command_for_spawn",
+            lambda: "/usr/bin/python3",
+        )
+
+        plugin = OpenCodeDESPlugin()
+        plugin.install(context)
+
+        result = plugin.verify(context)
+
+        assert result.success is True
+
+
+class TestVerifyFailsWhenShimMissing:
+    """Test that verify fails when shim file is missing."""
+
+    def test_verify_fails_when_shim_missing(self, tmp_path, monkeypatch):
+        """
+        GIVEN: OpenCode is detected but shim was not installed
+        WHEN: verify() is called
+        THEN: Returns failure indicating shim is missing
+        """
+        context, opencode_dir, _ = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+
+        plugin = OpenCodeDESPlugin()
+        result = plugin.verify(context)
+
+        assert result.success is False
+        assert (
+            "shim" in result.message.lower() or "nwave-des.ts" in result.message.lower()
+        )
+
+
+class TestNoHomeLiteralInRenderedShim:
+    """Regression: the rendered OpenCode DES shim must not contain any
+    literal '$HOME' string in substituted positions. Bun.spawn does not
+    invoke a shell, so a '$HOME' literal would be passed to posix_spawn
+    as a literal character sequence and fail with ENOENT.
+
+    Empirically reproduced by
+    tests/e2e/Dockerfile.smoke-opencode-subagent-hooks before this fix.
+    """
+
+    def test_rendered_shim_python_path_has_no_dollar_home(self, tmp_path, monkeypatch):
+        """
+        GIVEN: OpenCode DES plugin rendered with the real resolver functions
+        WHEN: the shim file is inspected
+        THEN: no occurrence of '$HOME' appears in the rendered content;
+              no unreplaced template placeholders survive.
+        """
+        context, opencode_dir, _plugins_dir = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+
+        before = _des_shim_content_state(opencode_dir)
+
+        plugin = OpenCodeDESPlugin()
+        result = plugin.install(context)
+        assert result.success is True
+
+        after = _des_shim_content_state(opencode_dir)
+        universe = set(before.keys()) | set(after.keys())
+
+        def shim_rendered_without_dollar_home(old: object, new: object) -> bool:
+            return isinstance(new, str) and "$HOME" not in new and "{{" not in new
+
+        assert_state_delta(
+            before=before,
+            after=after,
+            universe=universe,
+            expected={
+                "content.exists": set_to(True),
+                "content.full": shim_rendered_without_dollar_home,
+                "content.has_dollar_home": set_to(False),
+                "content.has_placeholder": set_to(False),
+                "content.has_python": set_to(True),
+                "content.has_pythonpath": set_to(True),
+            },
+        )
+
+    def test_rendered_shim_forward_slash_only_on_windows_shape(
+        self, tmp_path, monkeypatch
     ):
-        mock_config.return_value = Path("/fake/.claude")
-        mock_root.return_value = Path("/fake/project")
-        from scripts.install.install_nwave import NWaveInstaller
-
-        installer = NWaveInstaller(dry_run=True)
-    return installer
-
-
-class TestRegistryIncludesOpencodeDes:
-    """Test that _create_plugin_registry registers opencode-des for opencode platform."""
-
-    def test_registry_includes_opencode_des_when_opencode_platform_detected(self):
         """
-        GIVEN: target_platforms contains 'opencode'
-        WHEN: _create_plugin_registry() executes
-        THEN: OpenCodeDESPlugin is registered with name 'opencode-des'
-              and depends on 'opencode-commands'
+        GIVEN: a Windows-shape sys.executable (backslash-separated) and a
+               fake home directory
+        WHEN: install() renders the shim
+        THEN: the shim contains forward-slash-only paths with no '$HOME'
+              and no backslash (which would trigger TS escape sequences)
         """
-        installer = _build_installer()
+        import scripts.shared.install_paths as ip
 
-        registry = installer._create_plugin_registry(
-            silent=True, target_platforms={"opencode"}
+        monkeypatch.setattr(
+            sys,
+            "executable",
+            r"C:\Users\tester\pipx\venvs\nwave-ai\Scripts\python.exe",
+        )
+        fake_home = tmp_path / "fake-home"
+        fake_home.mkdir()
+        monkeypatch.setattr(ip.Path, "home", lambda: fake_home)
+
+        context, opencode_dir, plugins_dir = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
         )
 
-        assert "opencode-des" in registry.plugins, (
-            "opencode-des should be registered when opencode platform detected"
+        plugin = OpenCodeDESPlugin()
+        result = plugin.install(context)
+        assert result.success is True
+
+        shim_content = (plugins_dir / "nwave-des.ts").read_text(encoding="utf-8")
+        assert "$HOME" not in shim_content
+        # No backslash in the two substituted lines
+        python_line = next(
+            line for line in shim_content.splitlines() if "Python:" in line
         )
-        plugin = registry.plugins["opencode-des"]
-        assert "opencode-commands" in plugin.get_dependencies(), (
-            "opencode-des should depend on opencode-commands"
+        pythonpath_line = next(
+            line for line in shim_content.splitlines() if "PYTHONPATH:" in line
         )
+        assert "\\" not in python_line, (
+            f"PYTHON_PATH contains backslash: {python_line!r}"
+        )
+        assert "\\" not in pythonpath_line, (
+            f"PYTHONPATH contains backslash: {pythonpath_line!r}"
+        )
+        assert "C:/Users/tester/pipx/venvs/nwave-ai/Scripts/python.exe" in python_line
 
 
-class TestRegistryExcludesOpencodeDesWithoutPlatform:
-    """Test that _create_plugin_registry excludes opencode-des without opencode platform."""
+class TestDESModuleNotInstalledFailsPrereq:
+    """Test that missing DES module fails prerequisite validation."""
 
-    def test_registry_excludes_opencode_des_without_opencode_platform(self):
+    def test_des_module_not_installed_fails_prereq(self, tmp_path, monkeypatch):
         """
-        GIVEN: target_platforms does NOT contain 'opencode'
-        WHEN: _create_plugin_registry() executes
-        THEN: OpenCodeDESPlugin is NOT registered
+        GIVEN: OpenCode is detected but DES Python module is NOT installed
+        WHEN: validate_prerequisites() is called
+        THEN: Returns failure indicating DES module must be installed first
         """
-        installer = _build_installer()
-
-        registry = installer._create_plugin_registry(
-            silent=True, target_platforms={"claude_code"}
+        context, opencode_dir, _ = _make_context(tmp_path, des_module_exists=False)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
         )
 
-        assert "opencode-des" not in registry.plugins, (
-            "opencode-des should NOT be registered without opencode platform"
-        )
+        plugin = OpenCodeDESPlugin()
+        result = plugin.validate_prerequisites(context)
 
-    def test_registry_excludes_opencode_des_with_no_platforms(self):
-        """
-        GIVEN: target_platforms is None
-        WHEN: _create_plugin_registry() executes
-        THEN: OpenCodeDESPlugin is NOT registered
-        """
-        installer = _build_installer()
-
-        registry = installer._create_plugin_registry(silent=True, target_platforms=None)
-
-        assert "opencode-des" not in registry.plugins, (
-            "opencode-des should NOT be registered with no target platforms"
-        )
-
-
-class TestRegistryTopologicalOrder:
-    """Test that topological sort places opencode-des correctly in execution order."""
-
-    def test_opencode_des_after_opencode_commands_before_des(self):
-        """
-        GIVEN: Full plugin registry with opencode platform
-        WHEN: Topological sort resolves execution order
-        THEN: opencode-des runs after opencode-commands (dependency)
-              and before des (priority 39 < 50)
-        """
-        installer = _build_installer()
-
-        registry = installer._create_plugin_registry(
-            silent=True, target_platforms={"opencode"}
-        )
-        execution_order = registry.get_execution_order()
-
-        assert "opencode-des" in execution_order, (
-            "opencode-des should be in execution order"
-        )
-        opencode_des_idx = execution_order.index("opencode-des")
-        opencode_commands_idx = execution_order.index("opencode-commands")
-        des_idx = execution_order.index("des")
-
-        assert opencode_des_idx > opencode_commands_idx, (
-            f"opencode-des (idx={opencode_des_idx}) should run after "
-            f"opencode-commands (idx={opencode_commands_idx})"
-        )
-        assert opencode_des_idx < des_idx, (
-            f"opencode-des (idx={opencode_des_idx}) should run before "
-            f"des (idx={des_idx})"
-        )
+        assert result.success is False
+        assert "des" in result.message.lower()

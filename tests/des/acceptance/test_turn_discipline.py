@@ -44,20 +44,20 @@ class TestTurnDisciplineInclusion:
         """
         AC-006.1: All DES-validated prompts include TIMEOUT_INSTRUCTION section.
 
-        GIVEN /nw:execute command invoked with step file
+        GIVEN /nw-execute command invoked with step file
         WHEN orchestrator renders the full Task prompt
         THEN prompt contains TIMEOUT_INSTRUCTION section header
 
         Business Context:
-        Marcus runs `/nw:execute @software-crafter steps/01-01.json`.
+        Marcus runs `/nw-execute @software-crafter steps/01-01.json`.
         The prompt must include turn discipline so the agent knows to
         self-regulate and exit gracefully if stuck.
 
         Without this section, agents could loop indefinitely trying to fix
         an unfixable test, wasting compute and blocking Marcus's workflow.
         """
-        # GIVEN: /nw:execute command with step file
-        command = "/nw:execute"
+        # GIVEN: /nw-execute command with step file
+        command = "/nw-execute"
         agent = "@software-crafter"
         step_file_path = str(minimal_step_file.relative_to(tmp_project_root))
 
@@ -86,7 +86,7 @@ class TestTurnDisciplineInclusion:
         """
         AC-006.2: Turn budget (approximately 50) is specified in instructions.
 
-        GIVEN /nw:execute command invoked with step file
+        GIVEN /nw-execute command invoked with step file
         WHEN orchestrator renders the full Task prompt
         THEN TIMEOUT_INSTRUCTION section specifies ~50 turn budget
 
@@ -98,8 +98,8 @@ class TestTurnDisciplineInclusion:
         Example instruction:
         "Aim to complete this task within approximately 50 turns."
         """
-        # GIVEN: /nw:execute command with step file
-        command = "/nw:execute"
+        # GIVEN: /nw-execute command with step file
+        command = "/nw-execute"
         step_file_path = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN: Orchestrator renders full Task prompt
@@ -128,7 +128,7 @@ class TestTurnDisciplineInclusion:
         """
         AC-006.3: Progress checkpoints are defined (turn ~10, ~25, ~40, ~50).
 
-        GIVEN /nw:execute command invoked with step file
+        GIVEN /nw-execute command invoked with step file
         WHEN orchestrator renders the full Task prompt
         THEN TIMEOUT_INSTRUCTION section defines progress checkpoints
 
@@ -143,8 +143,8 @@ class TestTurnDisciplineInclusion:
         If an agent is at turn 40 but still in RED phase, it knows something
         is wrong and should consider early exit.
         """
-        # GIVEN: /nw:execute command with step file
-        command = "/nw:execute"
+        # GIVEN: /nw-execute command with step file
+        command = "/nw-execute"
         step_file_path = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN: Orchestrator renders full Task prompt
@@ -184,7 +184,7 @@ class TestTurnDisciplineInclusion:
         """
         AC-006.4: Early exit protocol is documented in prompt.
 
-        GIVEN /nw:execute command invoked with step file
+        GIVEN /nw-execute command invoked with step file
         WHEN orchestrator renders the full Task prompt
         THEN TIMEOUT_INSTRUCTION section documents early exit protocol
 
@@ -199,8 +199,8 @@ class TestTurnDisciplineInclusion:
         This allows Marcus to review and provide guidance rather than
         having the agent spin indefinitely.
         """
-        # GIVEN: /nw:execute command with step file
-        command = "/nw:execute"
+        # GIVEN: /nw-execute command with step file
+        command = "/nw-execute"
         step_file_path = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN: Orchestrator renders full Task prompt
@@ -241,7 +241,7 @@ class TestTurnDisciplineInclusion:
         """
         AC-006.5: Prompt instructs agent to log turn count at each phase transition.
 
-        GIVEN /nw:execute command invoked with step file
+        GIVEN /nw-execute command invoked with step file
         WHEN orchestrator renders the full Task prompt
         THEN TIMEOUT_INSTRUCTION instructs agent to log turn count at phase transitions
 
@@ -256,8 +256,8 @@ class TestTurnDisciplineInclusion:
 
         This helps identify if certain phases are consuming too many turns.
         """
-        # GIVEN: /nw:execute command with step file
-        command = "/nw:execute"
+        # GIVEN: /nw-execute command with step file
+        command = "/nw-execute"
         step_file_path = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN: Orchestrator renders full Task prompt
@@ -329,7 +329,7 @@ class TestTurnDisciplineNonValidationCommands:
         self, tmp_project_root, des_orchestrator
     ):
         """
-        GIVEN Marcus invokes /nw:research for exploration
+        GIVEN Marcus invokes /nw-research for exploration
         WHEN orchestrator prepares Task prompt
         THEN prompt does NOT contain TIMEOUT_INSTRUCTION section
 
@@ -338,8 +338,8 @@ class TestTurnDisciplineNonValidationCommands:
         They should not have turn discipline overhead since
         they bypass DES validation entirely.
         """
-        # GIVEN: /nw:research command
-        command = "/nw:research"
+        # GIVEN: /nw-research command
+        command = "/nw-research"
         research_topic = "authentication patterns"
 
         # WHEN: Orchestrator renders research prompt
@@ -442,7 +442,7 @@ class TestTurnDisciplineContent:
         self, tmp_project_root, minimal_step_file, des_orchestrator
     ):
         """
-        GIVEN /nw:execute command with step file
+        GIVEN /nw-execute command with step file
         WHEN orchestrator renders full prompt
         THEN TIMEOUT_INSTRUCTION contains all required elements:
              - Turn budget (~50)
@@ -455,8 +455,8 @@ class TestTurnDisciplineContent:
         of TIMEOUT_INSTRUCTION. All elements must be present for
         effective agent self-regulation.
         """
-        # GIVEN: /nw:execute command
-        command = "/nw:execute"
+        # GIVEN: /nw-execute command
+        command = "/nw-execute"
         step_file_path = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN: Orchestrator renders full prompt
@@ -501,17 +501,17 @@ class TestTurnDisciplineContent:
         self, tmp_project_root, minimal_step_file, des_orchestrator
     ):
         """
-        GIVEN /nw:develop command with step file
+        GIVEN /nw-develop command with step file
         WHEN orchestrator renders full prompt
         THEN prompt includes TIMEOUT_INSTRUCTION (same as execute)
 
         Business Context:
-        Both /nw:execute and /nw:develop are production workflows
+        Both /nw-execute and /nw-develop are production workflows
         requiring full DES validation. The TIMEOUT_INSTRUCTION must
         be present for both command types.
         """
-        # GIVEN: /nw:develop command
-        command = "/nw:develop"
+        # GIVEN: /nw-develop command
+        command = "/nw-develop"
         step_file_path = str(minimal_step_file.relative_to(tmp_project_root))
 
         # WHEN: Orchestrator renders full prompt
@@ -524,7 +524,7 @@ class TestTurnDisciplineContent:
 
         # THEN: TIMEOUT_INSTRUCTION present
         assert "TIMEOUT_INSTRUCTION" in prompt, (
-            "/nw:develop command must include TIMEOUT_INSTRUCTION like /nw:execute"
+            "/nw-develop command must include TIMEOUT_INSTRUCTION like /nw-execute"
         )
 
         # Verify it has the same structure as execute command
@@ -569,7 +569,7 @@ class TestTurnDisciplineContent:
         # WHEN: Execute step with mocked elapsed times crossing thresholds
         # Mocked elapsed times simulate 5 iterations: 15, 21, 26, 31, 37 minutes
         result = des_orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file=step_file_path,
             project_root=tmp_project_root,
@@ -635,7 +635,7 @@ class TestTurnDisciplineContent:
         # WHEN: Execute step with mocked elapsed times crossing 75% threshold (30 min)
         # Mocked: 3 iterations at 28, 31, 37 minutes elapsed
         result = des_orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file=step_file_path,
             project_root=tmp_project_root,

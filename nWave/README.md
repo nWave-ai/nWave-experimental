@@ -4,18 +4,20 @@
 
 ## Overview
 
-The nWave framework implements the comprehensive DISCOVER→DISCUSS→DESIGN→DEVOPS→DISTILL→DELIVER methodology. This framework provides a streamlined, integrated workflow with complete knowledge preservation for critical technical execution agents and comprehensive 5-layer testing framework.
+The nWave framework implements the comprehensive DISCOVER→DIVERGE→DISCUSS→SPIKE→DESIGN→DEVOPS→DISTILL→DELIVER methodology. This framework provides a streamlined, integrated workflow with complete knowledge preservation for critical technical execution agents and comprehensive 5-layer testing framework.
 
 ## nWave Methodology
 
-The nWave methodology implements a systematic approach to software development through six distinct waves:
+The nWave methodology implements a systematic approach to software development through eight distinct waves:
 
 1. **DISCOVER**: Evidence-based product discovery and market validation
-2. **DISCUSS**: Requirements gathering and business analysis
-3. **DESIGN**: Architecture design with visual representation
-4. **DEVOPS**: Platform readiness, CI/CD, infrastructure, and deployment design
-5. **DISTILL**: Acceptance test creation and business validation scenarios
-6. **DELIVER**: Outside-In TDD implementation with production readiness validation
+2. **DIVERGE**: Structured divergent option generation (JTBD, competitive research, brainstorming)
+3. **DISCUSS**: Requirements gathering and business analysis
+4. **SPIKE**: Timeboxed assumption validation before committing to design
+5. **DESIGN**: Architecture design with visual representation
+6. **DEVOPS**: Platform readiness, CI/CD, infrastructure, and deployment design
+7. **DISTILL**: Acceptance test creation and business validation scenarios
+8. **DELIVER**: Outside-In TDD implementation with production readiness validation
 
 ## Core and Specialist Agents (10 Total)
 
@@ -39,22 +41,24 @@ The nWave methodology implements a systematic approach to software development t
 
 ### nWave Core Commands (DW Prefix)
 
-- `/nw:discover [product-concept]` - Wave 1: Evidence-based product discovery
-- `/nw:discuss [requirements]` - Wave 2: Business analysis
-- `/nw:design [system-context]` - Wave 3: Architecture design
-- `/nw:devops [deployment-target]` - Wave 4: Platform readiness and infrastructure
-- `/nw:distill [acceptance-criteria]` - Wave 5: Test scenarios
-- `/nw:deliver [feature-description]` - Wave 6: Outside-In TDD implementation
+- `/nw-discover [product-concept]` - Wave 1: Evidence-based product discovery
+- `/nw-diverge [feature-id]` - Wave 2: Divergent option generation
+- `/nw-discuss [requirements]` - Wave 3: Business analysis
+- `/nw-spike [feature-description]` - Wave 4: Timeboxed assumption validation
+- `/nw-design [system-context]` - Wave 5: Architecture design
+- `/nw-devops [deployment-target]` - Wave 6: Platform readiness and infrastructure
+- `/nw-distill [acceptance-criteria]` - Wave 7: Test scenarios
+- `/nw-deliver [feature-description]` - Wave 8: Outside-In TDD implementation
 
 ### Specialist Commands
 
-- `/nw:mikado [target] [options]` - Complex refactoring roadmaps
-- `/nw:root-why [problem-description]` - Root cause analysis & debugging
-- `/nw:diagram [scope] [action]` - Architecture diagram management
+- `/nw-mikado [target] [options]` - Complex refactoring roadmaps
+- `/nw-root-why [problem-description]` - Root cause analysis & debugging
+- `/nw-diagram [scope] [action]` - Architecture diagram management
 
 ## Wave Directory Structure
 
-All wave outputs follow a unified pattern: `docs/feature/{feature-id}/{wave}/`. See the [Wave Directory Structure Guide](../docs/guides/wave-directory-structure.md) for the complete layout, handoff chain, and wave detection rules.
+All wave outputs follow a unified pattern: `docs/feature/{feature-id}/{wave}/`. See the [Wave Directory Structure Guide](../docs/guides/wave-directory-structure/) for the complete layout, handoff chain, and wave detection rules.
 
 ## Knowledge Preservation Guarantee
 
@@ -105,13 +109,13 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 
 **Option 1: Automated DELIVER Wave (Recommended)**
 ```bash
-/nw:discover "User authentication market research"
-/nw:discuss "User registration and login requirements"
-/nw:design "Microservices with JWT authentication"
-/nw:distill "User can register and login securely"
-/nw:devops "user-authentication"
-/nw:distill "User can register and login securely"
-/nw:deliver "Implement user authentication with JWT"
+/nw-discover "User authentication market research"
+/nw-discuss "User registration and login requirements"
+/nw-design "Microservices with JWT authentication"
+/nw-distill "User can register and login securely"
+/nw-devops "user-authentication"
+/nw-distill "User can register and login securely"
+/nw-deliver "Implement user authentication with JWT"
   # Automatically: roadmap → execute all steps → finalize
   # Quality gates: 3 + 3N reviews (e.g., 10 steps = 33 reviews)
 ```
@@ -119,28 +123,28 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 **Option 2: Manual Granular Control (Advanced)**
 ```bash
 # DISCOVER and DISCUSS and DESIGN waves
-/nw:discover "User authentication market research"
-/nw:discuss "User registration requirements"
-/nw:design "JWT authentication architecture"
+/nw-discover "User authentication market research"
+/nw-discuss "User registration requirements"
+/nw-design "JWT authentication architecture"
 
 # DELIVER wave - manual orchestration
-/nw:roadmap @solution-architect "Implement user authentication"
+/nw-roadmap @solution-architect "Implement user authentication"
 
 # Execute individual steps with 11-phase TDD
-/nw:execute @software-crafter "docs/feature/user-authentication/steps/01-01.json"
-/nw:execute @software-crafter "docs/feature/user-authentication/steps/01-02.json"
+/nw-execute @software-crafter "docs/feature/user-authentication/steps/01-01.json"
+/nw-execute @software-crafter "docs/feature/user-authentication/steps/01-02.json"
 # ... (repeat for all steps)
 
-/nw:finalize @platform-architect "user-authentication"
+/nw-finalize @platform-architect "user-authentication"
 
 # DELIVER wave
-/nw:deliver "user-authentication"
+/nw-deliver "user-authentication"
 ```
 
 **Option 3: Execute Single Step with Complete 11-Phase TDD**
 ```bash
 # For executing one specific step with full TDD workflow
-/nw:execute @software-crafter "docs/feature/user-auth/steps/01-02.json"
+/nw-execute @software-crafter "docs/feature/user-auth/steps/01-02.json"
   # Automatic: PREPARE → RED → GREEN → REVIEW → REFACTOR → VALIDATE → COMMIT
   # Includes mandatory reviews and progressive refactoring (L1-L4)
 ```
@@ -148,14 +152,14 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 ### Complex Refactoring with Visual Tracking
 
 ```
-/nw:mikado "legacy-auth-modernization" --with-diagrams
-/nw:diagram mikado-tree "auth-refactoring" --visualize-dependencies
+/nw-mikado "legacy-auth-modernization" --with-diagrams
+/nw-diagram mikado-tree "auth-refactoring" --visualize-dependencies
 ```
 
 ### Walking Skeleton with Architecture Validation
 
 ```
-/nw:diagram skeleton "user-auth" --minimal-slice
+/nw-diagram skeleton "user-auth" --minimal-slice
 ```
 
 ## Quality Assurance

@@ -3,9 +3,8 @@
 This module provides post-installation verification to ensure all expected
 files are present after the build process completes. It validates:
 - Agent file counts in ~/.claude/agents/
-- Command file counts in ~/.claude/commands/
+- Essential command-skills in ~/.claude/skills/nw-{name}/
 - Manifest existence at ~/.claude/nwave-manifest.txt
-- Essential command files (review.md, devops.md, etc.)
 - Skills directory presence and file counts
 - DES module presence (lib/python/des/)
 
@@ -39,9 +38,9 @@ class VerificationResult:
     Attributes:
         success: True if verification passed, False otherwise.
         agent_file_count: Number of agent .md files found.
-        command_file_count: Number of command .md files found.
+        command_file_count: Number of command-skill directories found.
         manifest_exists: True if nwave-manifest.txt exists.
-        missing_essential_files: List of missing essential command files.
+        missing_essential_files: List of missing essential command-skill names.
         skill_file_count: Number of skill .md files found.
         skill_group_count: Number of skill group directories found.
         des_installed: True if DES module directory exists with files.
@@ -66,23 +65,24 @@ class InstallationVerifier:
 
     This class provides verification methods to ensure the nWave framework
     installation completed successfully. It checks file counts, manifest
-    existence, and essential command presence.
+    existence, and essential command-skill presence.
 
     Attributes:
         claude_config_dir: Path to Claude config directory (~/.claude).
         agents_dir: Path to agents directory.
-        commands_dir: Path to commands directory.
+        skills_dir: Path to skills directory.
         manifest_path: Path to installation manifest file.
     """
 
-    # Essential command files that must exist for a valid installation
-    ESSENTIAL_COMMANDS: list[str] = [
-        "review.md",
-        "devops.md",
-        "discuss.md",
-        "design.md",
-        "distill.md",
-        "deliver.md",
+    # Essential command-skills that must exist for a valid installation.
+    # These are the core wave commands (migrated from commands/nw/ to skills/).
+    ESSENTIAL_COMMAND_SKILLS: list[str] = [
+        "nw-review",
+        "nw-devops",
+        "nw-discuss",
+        "nw-design",
+        "nw-distill",
+        "nw-deliver",
     ]
 
     def __init__(self, claude_config_dir: Path | None = None):
@@ -94,8 +94,7 @@ class InstallationVerifier:
         """
         self.claude_config_dir = claude_config_dir or PathUtils.get_claude_config_dir()
         self.agents_dir = self.claude_config_dir / "agents" / "nw"
-        self.commands_dir = self.claude_config_dir / "commands" / "nw"
-        self.skills_dir = self.claude_config_dir / "skills" / "nw"
+        self.skills_dir = self.claude_config_dir / "skills"
         self.des_dir = self.claude_config_dir / "lib" / "python" / "des"
         self.manifest_path = self.claude_config_dir / "nwave-manifest.txt"
 
@@ -108,14 +107,31 @@ class InstallationVerifier:
         """
         return PathUtils.count_files(self.agents_dir, "*.md")
 
-    def verify_command_files(self) -> int:
-        """Count command markdown files in the commands directory.
+    def verify_command_skills(self) -> int:
+        """Count command-skill directories (user-invocable skills).
+
+        Counts nw-* directories in ~/.claude/skills/ that contain
+        a SKILL.md with ``user-invocable:`` in the frontmatter.
 
         Returns:
-            Number of .md files found in ~/.claude/commands/nw/.
-            Returns 0 if directory does not exist.
+            Number of command-skill directories found.
         """
-        return PathUtils.count_files(self.commands_dir, "*.md")
+        if not self.skills_dir.exists():
+            return 0
+        count = 0
+        for d in self.skills_dir.iterdir():
+            if not d.is_dir() or not d.name.startswith("nw-"):
+                continue
+            skill_file = d / "SKILL.md"
+            if not skill_file.exists():
+                continue
+            try:
+                text = skill_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if text.startswith("---") and "user-invocable:" in text.split("\n---\n")[0]:
+                count += 1
+        return count
 
     def verify_manifest(self) -> bool:
         """Check if the installation manifest file exists.
@@ -126,21 +142,26 @@ class InstallationVerifier:
         return self.manifest_path.exists()
 
     def verify_essential_commands(self) -> list[str]:
-        """Check for missing essential command files.
+        """Check for missing essential command-skill directories.
+
+        Looks for nw-{name}/SKILL.md in the skills directory.
 
         Returns:
-            List of missing essential command filenames.
+            List of missing essential command-skill names.
             Empty list if all essential commands are present.
         """
         missing = []
-        for command_file in self.ESSENTIAL_COMMANDS:
-            command_path = self.commands_dir / command_file
-            if not command_path.exists():
-                missing.append(command_file)
+        for skill_name in self.ESSENTIAL_COMMAND_SKILLS:
+            skill_path = self.skills_dir / skill_name / "SKILL.md"
+            if not skill_path.exists():
+                missing.append(skill_name)
         return missing
 
     def verify_skills(self) -> tuple[int, int]:
         """Verify skills installation.
+
+        Supports both new flat layout (skills/nw-{name}/SKILL.md) and
+        old hierarchical layout (skills/nw/{agent}/*.md).
 
         Returns:
             Tuple of (skill_file_count, skill_group_count).
@@ -148,9 +169,22 @@ class InstallationVerifier:
         """
         if not self.skills_dir.exists():
             return 0, 0
-        skill_files = list(self.skills_dir.rglob("*.md"))
-        skill_groups = [d for d in self.skills_dir.iterdir() if d.is_dir()]
-        return len(skill_files), len(skill_groups)
+        # New flat layout: nw-*/SKILL.md directories
+        nw_dirs = [
+            d
+            for d in self.skills_dir.iterdir()
+            if d.is_dir() and d.name.startswith("nw-")
+        ]
+        if nw_dirs:
+            skill_files = [d / "SKILL.md" for d in nw_dirs if (d / "SKILL.md").exists()]
+            return len(skill_files), len(nw_dirs)
+        # Old layout fallback: nw/{agent}/*.md
+        old_dir = self.skills_dir / "nw"
+        if old_dir.exists():
+            skill_files = list(old_dir.rglob("*.md"))
+            skill_groups = [d for d in old_dir.iterdir() if d.is_dir()]
+            return len(skill_files), len(skill_groups)
+        return 0, 0
 
     def verify_des(self) -> bool:
         """Verify DES module installation.
@@ -172,7 +206,7 @@ class InstallationVerifier:
             success=True only if all checks pass.
         """
         agent_count = self.verify_agent_files()
-        command_count = self.verify_command_files()
+        command_count = self.verify_command_skills()
         manifest_exists = self.verify_manifest()
         missing_essential = self.verify_essential_commands()
         skill_file_count, skill_group_count = self.verify_skills()
@@ -180,7 +214,7 @@ class InstallationVerifier:
 
         # Determine overall success
         # Verification fails if:
-        # - Essential files are missing
+        # - Essential command-skills are missing
         # - Manifest does not exist
         # - Skills are not installed
         # - DES module is not installed
@@ -204,7 +238,7 @@ class InstallationVerifier:
             issues = []
             if missing_essential:
                 issues.append(
-                    f"missing essential files: {', '.join(missing_essential)}"
+                    f"missing essential commands: {', '.join(missing_essential)}"
                 )
             if not manifest_exists:
                 issues.append("manifest file not found")

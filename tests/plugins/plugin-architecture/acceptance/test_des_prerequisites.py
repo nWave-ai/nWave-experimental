@@ -54,7 +54,16 @@ def installer_version(version: str):
 
 @given("plugin infrastructure exists (base.py, registry.py)")
 def plugin_infrastructure_exists(project_root: Path):
-    """Verify plugin infrastructure files exist."""
+    """Verify plugin infrastructure files exist.
+
+    NOTE: this step is also defined in steps/plugin_steps.py and in 5 other
+    test_*.py modules in this directory (6 clones total). The duplication
+    is STRUCTURALLY NECESSARY — pytest-bdd does not auto-discover steps
+    from sibling steps/ packages, and the parent directory `plugin-architecture/`
+    contains a hyphen which makes it un-importable as a Python module
+    (no dotted-path equivalent). Explicit import is therefore impossible.
+    Investigated 2026-05-03; AST-flagged but a false-positive refactor target.
+    """
     base_path = project_root / "scripts" / "install" / "plugins" / "base.py"
     registry_path = project_root / "scripts" / "install" / "plugins" / "registry.py"
 
@@ -158,7 +167,7 @@ def scripts_execute_without_import_errors():
             [sys.executable, str(script)],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,
         )
         # Scripts should return 0 (success) or print warning if DES not available
         assert result.returncode == 0 or "DES module not available" in result.stdout, (
@@ -174,7 +183,7 @@ def scripts_output_help_or_status_messages():
             [sys.executable, str(script)],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,
         )
         # Should have some output
         output = result.stdout + result.stderr

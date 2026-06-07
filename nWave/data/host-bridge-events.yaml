@@ -1,0 +1,125 @@
+# Host-bridge closed abstract event vocabulary (D4 § 3.4 slice-03)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.4.
+# Per INV-7 multi-host (Claude Code + Codex + OpenCode + git-hook).
+#
+# This file is the SSOT for lifecycle event names referenced by:
+#   - workflow flavor `lifecycle_events` keys (D7)
+#   - host-bridge adapter event normalization (D6)
+#
+# Each host adapter maps its native events to these abstract names.
+# A flavor composition that uses an event NOT in this file fails
+# validation at install-time (closes H4 cross-hook contract drift).
+
+version: "1.0.0"
+
+events:
+
+  # Dispatch lifecycle (Agent / Task tool invocation)
+  - id: dispatch.pre
+    description: |
+      Fired BEFORE an agent/Task dispatch is allowed to proceed.
+      Carries the dispatch prompt + matched markers.
+      Block decision = dispatch rejected.
+    hosts:
+      claude-code: PreToolUse:Agent
+      codex: before_tool_call (kind=task)
+      opencode: tool.execute.before (kind=task)
+      git-hook: n/a
+
+  - id: dispatch.post
+    description: |
+      Fired AFTER an agent/Task dispatch completes (success or failure).
+      Carries the dispatch outcome + agent return.
+    hosts:
+      claude-code: PostToolUse:Agent
+      codex: after_tool_call (kind=task)
+      opencode: tool.execute.after (kind=task)
+      git-hook: n/a
+
+  # Tool invocation lifecycle (Write/Edit/Bash)
+  - id: file.write.pre
+    description: |
+      Fired BEFORE a Write/Edit tool invocation is allowed.
+      Carries the target file path + content.
+    hosts:
+      claude-code: PreToolUse:Write + PreToolUse:Edit
+      codex: before_tool_call (kind=file_write)
+      opencode: tool.execute.before (kind=edit/write)
+      git-hook: n/a
+
+  - id: bash.exec.pre
+    description: |
+      Fired BEFORE a Bash tool invocation is allowed.
+      Carries the command + working dir context.
+    hosts:
+      claude-code: PreToolUse:Bash
+      codex: before_tool_call (kind=bash)
+      opencode: tool.execute.before (kind=bash)
+      git-hook: n/a
+
+  # Subagent lifecycle
+  - id: subagent.stop
+    description: |
+      Fired when a dispatched subagent returns. Carries verdict + emitted
+      ledger events. Claude Code-specific concept; other hosts route to
+      dispatch.post for similar semantics.
+    hosts:
+      claude-code: SubagentStop
+      codex: n/a (single-loop, no subagent — route to dispatch.post)
+      opencode: n/a (route to dispatch.post)
+      git-hook: n/a
+
+  # Session lifecycle
+  - id: session.init
+    description: |
+      Fired at session start. Carries CWD + project root + operator context.
+      Distribution boundary check (Phase 5 D3 gate) fires here.
+    hosts:
+      claude-code: SessionStart
+      codex: session_start
+      opencode: session.created
+      git-hook: n/a
+
+  # Slice lifecycle (atdd_pure flavor)
+  - id: slice.entered
+    description: |
+      Fired when carpaccio gate clears a slice. Logical, not native —
+      hosts route via dispatch.pre + carpaccio-slice-gate composition.
+    hosts:
+      claude-code: dispatch.pre → carpaccio-slice-gate
+      codex: dispatch.pre → carpaccio-slice-gate
+      opencode: dispatch.pre → carpaccio-slice-gate
+      git-hook: n/a
+
+  - id: slice.committed
+    description: |
+      Fired when a slice commit lands successfully. Triggers
+      verify-slice-commit + SliceCommitVerified ledger write.
+    hosts:
+      claude-code: SubagentStop → verify-slice-commit
+      codex: dispatch.post → verify-slice-commit
+      opencode: dispatch.post → verify-slice-commit
+      git-hook: post-commit (alternative trigger)
+
+  # Commit lifecycle (git-hook host)
+  - id: commit.pre
+    description: |
+      Fired BEFORE git commit message is sealed. Used by prepare-commit-msg
+      hook to derive Reviewed-by HMAC trailer from ledger record (closes
+      friction #35 mechanical-HMAC-trailer-derivation).
+    hosts:
+      claude-code: n/a
+      codex: n/a
+      opencode: n/a
+      git-hook: prepare-commit-msg
+
+  - id: commit.post
+    description: |
+      Fired AFTER git commit lands. Used for SliceCommitVerified backfill
+      + ledger consistency check.
+    hosts:
+      claude-code: n/a
+      codex: n/a
+      opencode: n/a
+      git-hook: post-commit

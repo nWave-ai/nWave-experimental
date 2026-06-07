@@ -35,6 +35,14 @@ REQUIRED_MODULES: list[str] = [
     "pathlib",  # For path handling (stdlib, but verify availability)
 ]
 
+# Path markers that identify tool-managed virtual environments.
+# Used by is_virtual_environment() as a fallback when env vars are stripped.
+TOOL_VENV_PATH_MARKERS: tuple[str, ...] = (
+    "/uv/tools/",
+    "/pipx/venvs/",
+    "/.virtualenvs/",
+)
+
 
 @dataclass
 class CheckResult:
@@ -53,22 +61,77 @@ class CheckResult:
     remediation: str | None
 
 
+def detect_install_tool() -> str | None:
+    """Detect which install tool (uv or pipx) is available on PATH.
+
+    Checks for uv first (recommended), then pipx, then returns None
+    if neither is found.
+
+    Returns:
+        "uv" if uv is on PATH, "pipx" if pipx is on PATH (and uv is not),
+        or None if neither is available.
+    """
+    if shutil.which("uv"):
+        return "uv"
+    if shutil.which("pipx"):
+        return "pipx"
+    return None
+
+
+def _build_remediation(tool: str | None) -> str:
+    """Build a tool-aware remediation message for VirtualEnvironmentCheck.
+
+    Args:
+        tool: The detected install tool ("uv", "pipx", or None).
+
+    Returns:
+        A remediation string matching the user's actual install tool.
+    """
+    if tool == "uv":
+        return (
+            "Install nwave-ai using uv (recommended):\n"
+            "  uv tool install nwave-ai\n"
+            "  nwave-ai install"
+        )
+    if tool == "pipx":
+        return (
+            "Install nwave-ai using pipx:\n  pipx install nwave-ai\n  nwave-ai install"
+        )
+    return (
+        "Install uv first (recommended package manager for nwave-ai):\n"
+        "  curl -LsSf https://astral.sh/uv/install.sh | sh\n"
+        "Then install nwave-ai:\n"
+        "  uv tool install nwave-ai\n"
+        "  nwave-ai install"
+    )
+
+
 def is_virtual_environment() -> bool:
     """Detect if running inside a Python virtual environment.
 
-    Uses the standard detection method: sys.prefix != sys.base_prefix
-    when running in a virtual environment (venv, virtualenv, etc.).
+    Checks 4 conditions in priority order (most-reliable first):
 
-    Falls back to checking the VIRTUAL_ENV environment variable, which
-    covers cases where nwave-ai was installed outside the active venv
-    (e.g., globally or via pipx).
+    1. VIRTUAL_ENV env var: set by venv/virtualenv activation scripts and
+       by pipx when the tool subprocess inherits the environment.
+    2. UV_TOOL_ENV env var: set by uv when running a tool in its managed
+       environment (uv tool run / uv tool install).
+    3. sys.prefix != sys.base_prefix: standard detection for activated venvs.
+    4. sys.executable path patterns: fallback when env vars are stripped by
+       the calling process. Matches uv (/uv/tools/), pipx (/pipx/venvs/),
+       and legacy virtualenv (/.virtualenvs/) layouts.
+       Note: path normalised to forward slashes for Windows compatibility.
 
     Returns:
         True if in a virtual environment, False otherwise.
     """
+    if "VIRTUAL_ENV" in os.environ:
+        return True
+    if "UV_TOOL_ENV" in os.environ:
+        return True
     if sys.prefix != sys.base_prefix:
         return True
-    return "VIRTUAL_ENV" in os.environ
+    exe = (sys.executable or "").replace("\\", "/")
+    return any(marker in exe for marker in TOOL_VENV_PATH_MARKERS)
 
 
 class VirtualEnvironmentCheck:
@@ -97,27 +160,18 @@ class VirtualEnvironmentCheck:
             passed=False,
             error_code=ENV_NO_VENV,
             message="Not running in a virtual environment.",
-            remediation=(
-                "Create and activate a virtual environment before running the "
-                "installer:\n"
-                "  python -m venv .venv\n"
-                "  source .venv/bin/activate  # Unix/macOS\n"
-                "  .venv\\Scripts\\activate   # Windows\n"
-                "\n"
-                "If you already have a venv activated, install nwave-ai inside it:\n"
-                "  pip install nwave-ai"
-            ),
+            remediation=_build_remediation(detect_install_tool()),
         )
 
 
 class PipenvCheck:
     """Check that pipenv is available for dependency management.
 
-    nWave uses pipenv for reproducible dependency management. This check
-    verifies that pipenv is installed and available on the system PATH.
-
-    NOTE: Error messages must ONLY reference pipenv - no mentions of pip,
-    poetry, or conda alternatives. This is a pipenv-only policy.
+    DEPRECATED: PipenvCheck is no longer included in the active preflight
+    check chain (see PreflightChecker._checks). nwave-ai is now distributed
+    via pipx/uv and no longer requires pipenv at runtime. This class is
+    retained because existing tests import it; it will be removed in a
+    future cleanup once those tests are retired.
     """
 
     def run(self) -> CheckResult:
@@ -187,13 +241,12 @@ class DependencyCheck:
             error_code=DEP_MISSING,
             message=f"Missing required dependencies: {missing_list}",
             remediation=(
-                "Install missing dependencies using pipenv:\n"
-                "  pipenv install\n"
+                "Re-run `nwave-ai install` to regenerate the install environment.\n"
                 "\n"
-                "Or install specific packages:\n"
-                f"  pipenv install {' '.join(missing_modules)}\n"
-                "\n"
-                "For PyYAML (yaml module): pipenv install pyyaml"
+                "If this persists, reinstall nwave-ai:\n"
+                "  pipx reinstall nwave-ai\n"
+                "  # Or, if you use uv:\n"
+                "  uv tool install --reinstall nwave-ai"
             ),
         )
 

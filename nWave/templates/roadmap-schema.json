@@ -7,7 +7,7 @@
   },
   "optional_fields": {
     "phase": ["description", "default_agent", "default_deps_strategy", "depends_on"],
-    "step": ["agent", "deps", "scenario", "files_to_modify", "implementation_notes"]
+    "step": ["agent", "deps", "scenario", "test_file", "scenario_name", "files_to_modify", "implementation_notes"]
   },
   "id_patterns": {
     "phase_id": "^\\d{2}$",

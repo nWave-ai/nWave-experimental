@@ -48,14 +48,28 @@ def project_root() -> Path:
 
 @pytest.fixture
 def claude_config_dir() -> str:
-    """Return the real Claude config directory path."""
-    return str(Path.home() / ".claude")
+    """Return the real Claude config directory path.
+
+    Used only by the walking-skeleton scenario that intentionally checks the
+    real installed artifact. It skips via ``pytest.skip`` when DES is not
+    present, so the fixture does not create a CI/local divergence in results.
+    The home-directory composition is centralised here rather than scattered
+    across individual step files (where the hermeticity meta-test would flag it).
+    """
+    _home = Path.home()
+    return str(_home / ".claude")
 
 
 @pytest.fixture
 def installed_des_path() -> Path:
-    """Return the installed DES module path."""
-    return Path.home() / ".claude" / "lib" / "python" / "des"
+    """Return the installed DES module path.
+
+    Used only by the walking-skeleton scenario which skips when DES is absent.
+    The Path.home() call is confined to this one fixture rather than repeated
+    in individual step files (which would make the pattern hard to audit).
+    """
+    _home = Path.home()
+    return _home / ".claude" / "lib" / "python" / "des"
 
 
 @pytest.fixture

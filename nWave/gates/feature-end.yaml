@@ -1,0 +1,57 @@
+# Gate-contract: feature-end (DDD-7 — consolidated feature-end namespace)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=feature-end.
+
+gate_id: feature-end
+responsibility: |
+  Consolidated feature-end command namespace (DDD-7, single entry point).
+  Verb `sign` HMACs a real reviewer deep-review verdict (agent +
+  APPROVED/REJECTED + findings) into a verifiable verdict_hash through the
+  at_review_signing SSOT -- the hex that feeds `des emit-feature-end
+  --record FeatureEndReviewVerdict --verdict-hash`. A non-real verdict
+  (no/empty agent, unknown/missing verdict) or an unresolvable signing key
+  is refused (anti-theater); no hash is minted.
+module: des.cli.feature_end
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --repo
+    required: true
+    type: path
+    help: "Path to the project root the signing key resolves against."
+  - name: --feature-id
+    required: true
+    type: string
+    help: "The kebab-case feature identifier the verdict is scoped to."
+  - name: --reviewer-agent-id
+    required: false
+    type: string
+    help: "The reviewer agent that produced the deep-review verdict."
+  - name: --verdict
+    required: false
+    type: string
+    help: "The deep-review decision: APPROVED or REJECTED."
+  - name: --finding
+    required: false
+    type: string
+    help: "A reviewer finding (repeatable). Documentary; not part of the signed region."
+
+log_events:
+  - FeatureEndReviewSigned
+  - SignRefused
+
+failure_modes:
+  - error_class: SignRefused
+    exit_code: 2
+    remediation: "Supply a real deep-review verdict (non-empty reviewer agent + APPROVED|REJECTED verdict) and a resolvable NWAVE_REVIEWER_SIGNING_KEY."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

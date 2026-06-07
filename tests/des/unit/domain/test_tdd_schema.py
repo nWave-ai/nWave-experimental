@@ -5,14 +5,9 @@ Tests that the schema loader correctly reads from step-tdd-cycle-schema.json
 and provides the expected TDD phase names, statuses, and skip prefixes.
 """
 
-import pytest
-
 from des.domain.tdd_schema import (
     TDDSchema,
     TDDSchemaLoader,
-    get_tdd_schema,
-    get_tdd_schema_loader,
-    reset_global_schema_loader,
 )
 
 
@@ -26,18 +21,22 @@ class TestTDDSchemaLoader:
         assert isinstance(schema, TDDSchema)
 
     def test_schema_defines_expected_phase_count(self, tdd_schema):
-        """Schema should define exactly 5 TDD phases."""
-        assert len(tdd_schema.tdd_phases) == 5
+        """Default schema defines exactly 3 canonical TDD phases (ADR-025).
+
+        F6 sweep (2026-05-18): inverted from 5 to 3. The default getter
+        ``tdd_phases`` follows ADR-025 canonical (RED/GREEN/COMMIT). Legacy
+        5-phase replay path remains via schema.phases_for("4.0").
+        """
+        assert len(tdd_schema.tdd_phases) == 3
 
     def test_phases_are_in_correct_order(self, tdd_schema):
-        """TDD phases should be in the expected order."""
-        expected = (
-            "PREPARE",
-            "RED_ACCEPTANCE",
-            "RED_UNIT",
-            "GREEN",
-            "COMMIT",
-        )
+        """TDD phases match the ADR-025 canonical 3-phase order.
+
+        F6 sweep (2026-05-18): inverted from legacy 5-tuple to canonical
+        3-tuple. Default getter migrated; legacy preserved via
+        schema.phases_for("4.0") and schema.legacy_phases field.
+        """
+        expected = ("RED", "GREEN", "COMMIT")
         assert tdd_schema.tdd_phases == expected
 
     def test_valid_statuses_includes_required_values(self, tdd_schema):
@@ -87,37 +86,3 @@ class TestTDDSchemaLoaderCaching:
         # Different instances but same content
         assert schema1 is not schema2
         assert schema1.tdd_phases == schema2.tdd_phases
-
-
-class TestGlobalSchemaAccess:
-    """Tests for module-level singleton access."""
-
-    @pytest.fixture(autouse=True)
-    def reset_global_state(self):
-        """Reset global state before and after each test."""
-        reset_global_schema_loader()
-        yield
-        reset_global_schema_loader()
-
-    def test_get_tdd_schema_returns_schema(self):
-        """get_tdd_schema should return a TDDSchema instance."""
-        schema = get_tdd_schema()
-        assert isinstance(schema, TDDSchema)
-
-    def test_get_tdd_schema_returns_cached_instance(self):
-        """get_tdd_schema should return the same instance."""
-        schema1 = get_tdd_schema()
-        schema2 = get_tdd_schema()
-        assert schema1 is schema2
-
-    def test_get_tdd_schema_loader_returns_loader(self):
-        """get_tdd_schema_loader should return the global loader."""
-        loader = get_tdd_schema_loader()
-        assert isinstance(loader, TDDSchemaLoader)
-
-    def test_reset_clears_global_state(self):
-        """reset_global_schema_loader should clear cached state."""
-        schema1 = get_tdd_schema()
-        reset_global_schema_loader()
-        schema2 = get_tdd_schema()
-        assert schema1 is not schema2

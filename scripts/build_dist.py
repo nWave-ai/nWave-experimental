@@ -3,12 +3,14 @@
 
 Assembles a distributable layout from scattered source directories:
   nWave/agents/       → dist/agents/nw/
-  nWave/tasks/nw/     → dist/commands/nw/    (tasks → commands mapping)
   nWave/templates/    → dist/templates/
-  nWave/skills/       → dist/skills/nw/
+  nWave/skills/nw-*/  → dist/skills/nw-*/    (flat layout, includes command-skills)
   nWave/scripts/des/  → dist/scripts/des/
   src/des/            → dist/lib/python/des/  (imports rewritten: src.des → des)
   scripts/*.py        → dist/scripts/
+
+Note: Commands are now installed as skills (nw-{name}/SKILL.md) since v2.8.0.
+The legacy commands/nw/ directory is no longer built.
 
 Usage:
     python scripts/build_dist.py
@@ -24,11 +26,30 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+# Ensure project root is in sys.path when invoked as standalone script
+_project_root = str(Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from scripts.shared.agent_catalog import (  # noqa: E402
+    build_ownership_map,
+    detect_command_skills,
+    is_public_agent,
+    load_public_agents,
+)
+from scripts.shared.skill_distribution import (  # noqa: E402
+    copy_skills_to_target,
+    enumerate_skills,
+    filter_public_skills,
+)
+
+
+# Static directories that must exist after build.
+# Skills use dynamic validation (nw-* directories under skills/).
 REQUIRED_DIRS = [
     "agents/nw",
-    "commands/nw",
     "templates",
-    "skills/nw",
+    "skills",
     "scripts/des",
     "lib/python/des",
 ]
@@ -39,6 +60,8 @@ _IMPORT_PATTERN = re.compile(r"\bimport\s+src\.des\b")
 _GENERAL_PATTERN = re.compile(r"\bsrc\.des\.")
 
 # Utility scripts to include in dist/scripts/
+# Entries may include subdirectory prefixes (e.g. "hooks/foo.py") — the file is
+# copied from scripts/<entry> into dist/scripts/<basename>.
 UTILITY_SCRIPTS = [
     "install_nwave_target_hooks.py",
     "validate_step_file.py",
@@ -72,6 +95,7 @@ class DistBuilder:
         self.dist_dir = self.project_root / "dist"
         self.nwave_dir = self.project_root / "nWave"
         self.version = _get_version(self.project_root)
+        self.public_agents: set[str] = set()  # loaded in run() after source validation
 
     def _log(self, message: str, level: str = "INFO"):
         print(f"[{level}] {message}")
@@ -101,31 +125,24 @@ class DistBuilder:
         self._log("Cleaned dist/")
 
     def build_agents(self) -> int:
-        """nWave/agents/nw-*.md → dist/agents/nw/"""
+        """nWave/agents/nw-*.md → dist/agents/nw/ (public agents only)."""
         src = self.nwave_dir / "agents"
         dst = self.dist_dir / "agents" / "nw"
         dst.mkdir(parents=True, exist_ok=True)
 
         count = 0
+        skipped = 0
         for md_file in src.glob("nw-*.md"):
-            shutil.copy2(md_file, dst / md_file.name)
-            count += 1
+            if is_public_agent(md_file.name, self.public_agents):
+                shutil.copy2(md_file, dst / md_file.name)
+                count += 1
+            else:
+                skipped += 1
 
-        self._log(f"Agents: {count} files")
-        return count
-
-    def build_commands(self) -> int:
-        """nWave/tasks/nw/*.md → dist/commands/nw/ (tasks → commands mapping)."""
-        src = self.nwave_dir / "tasks" / "nw"
-        dst = self.dist_dir / "commands" / "nw"
-        dst.mkdir(parents=True, exist_ok=True)
-
-        count = 0
-        for md_file in src.glob("*.md"):
-            shutil.copy2(md_file, dst / md_file.name)
-            count += 1
-
-        self._log(f"Commands: {count} files")
+        msg = f"Agents: {count} files"
+        if skipped:
+            msg += f" ({skipped} private, excluded)"
+        self._log(msg)
         return count
 
     def build_templates(self) -> int:
@@ -144,18 +161,27 @@ class DistBuilder:
         return count
 
     def build_skills(self) -> int:
-        """nWave/skills/*/ → dist/skills/nw/*/ (adds nw/ namespace)."""
+        """nWave/skills/nw-*/ → dist/skills/nw-*/ (flat, public + commands)."""
         src = self.nwave_dir / "skills"
-        dst = self.dist_dir / "skills" / "nw"
+        dst = self.dist_dir / "skills"
         dst.mkdir(parents=True, exist_ok=True)
 
-        count = 0
-        for skill_dir in src.iterdir():
-            if skill_dir.is_dir():
-                shutil.copytree(skill_dir, dst / skill_dir.name, dirs_exist_ok=True)
-                count += 1
+        # Build ownership map for flat namespace filtering (ADR-003)
+        agents_dir = self.nwave_dir / "agents"
+        ownership_map = build_ownership_map(agents_dir) if agents_dir.exists() else {}
+        command_skills = detect_command_skills(src)
 
-        self._log(f"Skills: {count} groups")
+        entries = enumerate_skills(src)
+        public_entries = filter_public_skills(
+            entries, self.public_agents, ownership_map, command_skills
+        )
+        count = copy_skills_to_target(public_entries, dst)
+
+        skipped = len(entries) - len(public_entries)
+        msg = f"Skills: {count} directories ({len(command_skills)} commands)"
+        if skipped:
+            msg += f" ({skipped} private, excluded)"
+        self._log(msg)
         return count
 
     def build_des_scripts(self) -> int:
@@ -208,7 +234,12 @@ class DistBuilder:
         return files_modified
 
     def build_utilities(self) -> int:
-        """scripts/*.py → dist/scripts/ (selected utility scripts only)."""
+        """scripts/*.py → dist/scripts/ (selected utility scripts only).
+
+        Entries in UTILITY_SCRIPTS may include a subdirectory prefix
+        (e.g. "hooks/check_probe_method.py") — the file is copied flat
+        into dist/scripts/<basename>.
+        """
         src = self.project_root / "scripts"
         dst = self.dist_dir / "scripts"
         dst.mkdir(parents=True, exist_ok=True)
@@ -216,8 +247,9 @@ class DistBuilder:
         count = 0
         for script_name in UTILITY_SCRIPTS:
             script_file = src / script_name
+            dest_name = Path(script_name).name  # flatten subdirectory
             if script_file.exists():
-                shutil.copy2(script_file, dst / script_name)
+                shutil.copy2(script_file, dst / dest_name)
                 count += 1
 
         self._log(f"Utility scripts: {count} files")
@@ -230,7 +262,6 @@ class DistBuilder:
             "built_at": datetime.now(timezone.utc).isoformat(),
             "contents": {
                 "agents": len(list((self.dist_dir / "agents" / "nw").glob("nw-*.md"))),
-                "commands": len(list((self.dist_dir / "commands" / "nw").glob("*.md"))),
                 "templates": len(list((self.dist_dir / "templates").iterdir())),
                 "skills": counts.get("skills", 0),
                 "des_module": counts.get("des_module", 0),
@@ -247,6 +278,19 @@ class DistBuilder:
         for dir_path in REQUIRED_DIRS:
             if not (self.dist_dir / dir_path).is_dir():
                 missing.append(dir_path)
+
+        # Dynamic validation: at least one nw-* skill directory must exist
+        skills_dir = self.dist_dir / "skills"
+        if skills_dir.is_dir():
+            nw_skill_dirs = [
+                d
+                for d in skills_dir.iterdir()
+                if d.is_dir() and d.name.startswith("nw-")
+            ]
+            if not nw_skill_dirs:
+                missing.append("skills/nw-* (no skill directories found)")
+        else:
+            missing.append("skills")
 
         if not (self.dist_dir / "MANIFEST.json").exists():
             missing.append("MANIFEST.json")
@@ -269,6 +313,9 @@ class DistBuilder:
             self._log(f"nWave/ not found at {self.nwave_dir}", "ERROR")
             return False
 
+        # Load public agents (after source validation)
+        self.public_agents = load_public_agents(self.nwave_dir)
+
         # Always clean first
         self.clean()
 
@@ -277,7 +324,6 @@ class DistBuilder:
 
         counts = {}
         counts["agents"] = self.build_agents()
-        counts["commands"] = self.build_commands()
         counts["templates"] = self.build_templates()
         counts["skills"] = self.build_skills()
         self.build_des_scripts()

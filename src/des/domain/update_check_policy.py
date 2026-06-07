@@ -4,7 +4,7 @@ Pure business rule for determining whether an update check should be performed.
 No I/O dependencies. Evaluates frequency windows, skipped-version lists, and
 first-run detection.
 
-Follows the MaxTurnsPolicy pattern: frozen dataclass result + stateless class.
+Follows the PolicyResult pattern: frozen dataclass result + stateless class.
 
 Frequency windows:
     every_session: always CHECK (no window)

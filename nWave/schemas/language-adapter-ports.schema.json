@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nwave.ai/schemas/language-adapter-ports.schema.json",
+  "title": "LanguageAdapterPortsCatalog",
+  "description": "SSOT for the language-adapter port catalog (F-LANGUAGE-ADAPTER-PLUGIN-INFRASTRUCTURE slice-01 walking-skeleton floor). Machine-readable distillation of docs/architecture/language-adapter-catalog.md; consumed by scripts/cli/validate_language_adapter_catalog.py and src/des/cli/doctor.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema-version", "ports"],
+  "properties": {
+    "schema-version": {
+      "description": "Catalog schema version. Pinned to the single legal value until an ADR authorises a major bump.",
+      "const": "1.0"
+    },
+    "supported-languages": {
+      "description": "First-class target-language identifiers the catalog enumerates plugin coverage for. Slice-01 floor: python, typescript, go (Nova-audit first-class set).",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "ports": {
+      "description": "Per-port enumeration. Each entry pins a port-id, classification, and witness file:symbol references.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/portEntry" }
+    }
+  },
+  "$defs": {
+    "portEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port-id", "classification", "witnesses"],
+      "properties": {
+        "port-id": {
+          "description": "Stable kebab-or-PascalCase port identifier (e.g., TestRunnerPort, run_contract_gate).",
+          "type": "string",
+          "minLength": 1
+        },
+        "classification": {
+          "description": "Per Nova audit taxonomy (docs/architecture/language-adapter-catalog.md §Classification Taxonomy).",
+          "type": "string",
+          "enum": [
+            "LANGUAGE_BOUND",
+            "SEMI_BOUND",
+            "LANGUAGE_NEUTRAL",
+            "NWAVE_INTERNAL"
+          ]
+        },
+        "witnesses": {
+          "description": "Repo-relative file paths grounding this port to the codebase. Validator grep-finds every entry; missing path => exit 1 (CitedPathNotFound).",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "summary": {
+          "description": "One-line human-readable summary for operator-facing CLI output.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

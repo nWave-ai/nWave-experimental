@@ -137,24 +137,37 @@ def plugin_generated_with_version(version: str, build_result: dict[str, Any]):
 
 @then("the plugin build step runs after the existing distribution build")
 def plugin_after_dist_build():
-    """Verify ordering in the release pipeline.
+    """Verify ordering in the three-track release pipelines.
 
-    This is validated by inspecting the release.yml structure:
-    build-plugin has `needs: [build]`, ensuring it runs after the distribution build.
+    The monolithic release.yml was replaced by three separate pipelines
+    (release-dev.yml, release-rc.yml, release-prod.yml). In the new
+    architecture, build-plugin runs in parallel with build — both gate
+    on version-calc (dev) or validate-source (RC/prod). This ensures
+    the plugin is versioned correctly without blocking on dist build.
     """
     import yaml
 
-    release_yml = (
-        Path(__file__).resolve().parents[5] / ".github" / "workflows" / "release.yml"
-    )
-    with open(release_yml) as f:
-        workflow = yaml.safe_load(f)
+    workflows_dir = Path(__file__).resolve().parents[5] / ".github" / "workflows"
+    pipelines = {
+        "release-dev.yml": "version-calc",
+        "release-rc.yml": "version-calc",
+        "release-prod.yml": "version-calc",
+    }
 
-    jobs = workflow.get("jobs", {})
-    assert "build-plugin" in jobs, "build-plugin job not found in release.yml"
+    for pipeline, expected_gate in pipelines.items():
+        pipeline_path = workflows_dir / pipeline
+        assert pipeline_path.exists(), f"Release pipeline not found: {pipeline}"
 
-    build_plugin_needs = jobs["build-plugin"].get("needs", [])
-    assert "build" in build_plugin_needs, "build-plugin must depend on build job"
+        with open(pipeline_path) as f:
+            workflow = yaml.safe_load(f)
+
+        jobs = workflow.get("jobs", {})
+        assert "build-plugin" in jobs, f"build-plugin job not found in {pipeline}"
+
+        build_plugin_needs = jobs["build-plugin"].get("needs", [])
+        assert expected_gate in build_plugin_needs, (
+            f"build-plugin must depend on {expected_gate} in {pipeline}"
+        )
 
 
 @then("the plugin directory can be committed as a standalone repository")
@@ -217,7 +230,7 @@ def manifest_has_download(build_result: dict[str, Any]):
 
     plugin_dir = build_result["plugin_dir"]
     test_download_url = (
-        "https://github.com/nwave-ai/nwave/releases/download/v1.0.0/nwave-plugin.zip"
+        "https://github.com/nWave-ai/nWave/releases/download/v1.0.0/nwave-plugin.zip"
     )
 
     # Regenerate with a download URL to verify the field is present

@@ -1,30 +1,33 @@
 ---
-description: "Selects a quality-vs-token-consumption profile (lean, standard, thorough, exhaustive, custom, inherit) and persists it to .nwave/des-config.json. Use when tuning how much rigor wave commands apply."
+description: "Selects a quality-vs-token-consumption profile (lean, standard, thorough, exhaustive, custom, inherit) and persists it globally (~/.nwave/global-config.json) or per-project (.nwave/des-config.json). Use when tuning how much rigor wave commands apply."
 disable-model-invocation: true
 argument-hint: '[profile] - Optional: lean, standard, thorough, exhaustive, custom, inherit. Omit for interactive selection.'
 ---
 
 # NW-RIGOR: Quality Profile Selection
 
-**Wave**: CROSS_WAVE | **Agent**: Main Instance (self) | **Command**: `/nw:rigor [profile]`
+**Wave**: CROSS_WAVE | **Agent**: Main Instance (self) | **Command**: `/nw-rigor [profile]`
 
 ## Overview
 
-Interactive command to select a quality-vs-token-consumption profile. Persists choice to `.nwave/des-config.json` under the `rigor` key. All wave commands read this config to adjust agent models, review policy, TDD phases, and mutation testing.
+Interactive command to select a quality-vs-token-consumption profile. Persists choice to either `~/.nwave/global-config.json` (global scope) or `.nwave/des-config.json` (project scope) under the `rigor` key. All wave commands read this config to adjust agent models, review policy, TDD phases, and mutation testing.
 
 You (the main Claude instance) run this directly. No subagent delegation.
 
+**Note on TDD phase canons (dual-canon, ADR-025, 2026-05-07)**: the canonical TDD cycle is **3-phase v5** (`RED, GREEN, COMMIT`) as described in `nw-tdd-methodology`. The **legacy 5-phase v4** (`PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT`) is preserved for backward-compat audit-log replay of pre-2026-05-07 commits. The `.nwave/des-config.json` `tdd_phases` field accepts BOTH canons: writers of new logs may emit v5; the validator + schema (`step-tdd-cycle-schema.json`) dispatch on `schema_version` (`"5.0"` → canonical, anything else → legacy). The profile table below shows both canons side-by-side: pick v5 for new features, keep v4 only when extending a feature whose audit log was started under the legacy canon.
+
 ## Profile Mappings (Single Source of Truth)
 
-| Setting            | lean                  | standard [recommended]                              | thorough                                            | exhaustive                                          | inherit                                             |
-|--------------------|-----------------------|-----------------------------------------------------|-----------------------------------------------------|-----------------------------------------------------|-----------------------------------------------------|
-| agent_model        | haiku                 | sonnet                                              | opus                                                | opus                                                | inherit                                             |
-| reviewer_model     | skip                  | haiku                                               | sonnet                                              | opus                                                | haiku                                               |
-| review_enabled     | false                 | true                                                | true                                                | true                                                | true                                                |
-| double_review      | false                 | false                                               | true                                                | true                                                | false                                               |
-| tdd_phases         | [RED_UNIT, GREEN]     | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]  | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]  | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]  | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]  |
-| refactor_pass      | false                 | true                                                | true                                                | true                                                | true                                                |
-| mutation_enabled   | false                 | false                                               | false                                               | true                                                | false                                               |
+| Setting            | lean                                  | standard [recommended]                                                       | thorough                                                                     | exhaustive                                                                   | inherit                                                                      |
+|--------------------|---------------------------------------|------------------------------------------------------------------------------|------------------------------------------------------------------------------|------------------------------------------------------------------------------|------------------------------------------------------------------------------|
+| agent_model        | haiku                                 | sonnet                                                                       | opus                                                                         | opus                                                                         | inherit                                                                      |
+| reviewer_model     | skip                                  | haiku                                                                        | sonnet                                                                       | opus                                                                         | haiku                                                                        |
+| review_enabled     | false                                 | true                                                                         | true                                                                         | true                                                                         | true                                                                         |
+| double_review      | false                                 | false                                                                        | true                                                                         | true                                                                         | false                                                                        |
+| tdd_phases (v5 canonical, ADR-025)    | [RED, GREEN]                          | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         |
+| tdd_phases (v4 legacy, audit-replay)  | [RED_UNIT, GREEN]                     | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           |
+| refactor_pass      | false                                 | true                                                                         | true                                                                         | true                                                                         | true                                                                         |
+| mutation_enabled   | false                                 | false                                                                        | false                                                                        | true                                                                         | false                                                                        |
 
 ## Behavior Flow
 
@@ -45,6 +48,22 @@ If JSON is invalid -> backup as `.nwave/des-config.json.bak`, reset config to `{
 Display current profile (from `config.rigor.profile`) or "none set" if absent.
 
 Brief explanation: "Rigor profiles control how much quality infrastructure nWave applies per wave: agent models, review depth, TDD phases, mutation testing. Higher rigor = better guarantees, higher token cost."
+
+#### Step 1.5: Scope Selection
+
+Display the current project rigor (from `.nwave/des-config.json`) and current global rigor (from `~/.nwave/global-config.json`, if it exists).
+
+Ask via AskUserQuestion:
+```
+Where do you want to save this configuration?
+```
+Options:
+1. Globally (~/.nwave/global-config.json) — applies to all projects without their own rigor
+2. This project only (.nwave/des-config.json) — overrides global for this project
+
+Store the user's choice as `{scope}` and the corresponding file path as `{target_file}`:
+- If global: `{target_file}` = `~/.nwave/global-config.json`
+- If project: `{target_file}` = `.nwave/des-config.json`
 
 #### Step 2: Comparison Table
 
@@ -185,9 +204,10 @@ Ask user to confirm via AskUserQuestion:
 
 #### Step 6: Save to Config
 
-1. Read `.nwave/des-config.json`
-2. Parse JSON (handle corruption as in Step 1)
-3. Set `config["rigor"]` to the full profile object:
+1. If `{scope}` is global AND the directory `~/.nwave/` does not exist, create it with `parents=True`
+2. Read `{target_file}` (handle missing file or corrupt JSON: start with `{}`)
+3. Parse JSON
+4. Set `config["rigor"]` to the full profile object:
    ```json
    {
      "profile": "{selected}",
@@ -200,7 +220,7 @@ Ask user to confirm via AskUserQuestion:
      "refactor_pass": true/false
    }
    ```
-4. Write back, preserving all other top-level keys (audit_logging_enabled, skill_tracking, etc.)
+5. Write back to `{target_file}`, preserving all other top-level keys (audit_logging_enabled, skill_tracking, update_check, etc.)
 
 #### Step 7: Summary
 
@@ -220,7 +240,7 @@ Rigor profile saved: {name}
   | refactor_pass         | {value}                                           |
   +-----------------------+---------------------------------------------------+
 
-  Config: .nwave/des-config.json
+  Config: {target_file} ({scope})
   All wave commands will use these settings.
 ```
 
@@ -233,6 +253,10 @@ If argument is not one of: lean, standard, thorough, exhaustive, custom, inherit
 If argument is `custom` -> redirect to Mode 3 (Custom Builder).
 
 Read `.nwave/des-config.json`. If missing -> same error as Mode 1 Step 1.
+
+#### Step 1.5: Scope Selection
+
+Same as Mode 1 Step 1.5. Ask scope question, store `{scope}` and `{target_file}`.
 
 #### Step 2: Show Diff
 
@@ -268,15 +292,19 @@ Ask user to confirm via AskUserQuestion:
 
 #### Step 4: Save + Summary
 
-Same as Mode 1 Steps 6 and 7.
+Same as Mode 1 Steps 6 and 7. Uses `{target_file}` from Step 1.5.
 
-### Mode 3: Custom Builder (`/nw:rigor custom` or selected from interactive)
+### Mode 3: Custom Builder (`/nw-rigor custom` or selected from interactive)
 
 Build a profile setting by setting. Each question uses AskUserQuestion with sensible defaults (standard values pre-selected). After all questions, show summary and confirm.
 
 #### Step 1: Config Check
 
 Same as Mode 1 Step 1 (read config, handle missing/corrupt).
+
+#### Step 1.5: Scope Selection
+
+Same as Mode 1 Step 1.5. Ask scope question, store `{scope}` and `{target_file}`.
 
 #### Step 2: Agent Model
 
@@ -370,7 +398,7 @@ Ask to confirm via AskUserQuestion:
 
 #### Step 9: Save + Summary
 
-Same as Mode 1 Steps 6 and 7. Save with `"profile": "custom"`.
+Same as Mode 1 Steps 6 and 7. Uses `{target_file}` from Step 1.5. Save with `"profile": "custom"`.
 
 ## Error Handling
 
@@ -381,48 +409,54 @@ Same as Mode 1 Steps 6 and 7. Save with `"profile": "custom"`.
 | Unknown profile name | "Unknown profile '{name}'. Available: lean, standard, thorough, exhaustive, custom, inherit" |
 | inherit with undetectable session model | Fallback to sonnet with notice: "Could not detect session model. Defaulting agent_model to sonnet." |
 
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
+
 ## Success Criteria
 
 - [ ] Current profile displayed (or "none set")
+- [ ] Scope question asked (global vs project) in all 3 modes
 - [ ] Comparison table shown with all 5 profiles
 - [ ] User selected and confirmed a profile
-- [ ] Config written to `.nwave/des-config.json` (read-modify-write, other keys preserved)
-- [ ] Summary of all resolved settings displayed
+- [ ] Config written to `{target_file}` (read-modify-write, other keys preserved)
+- [ ] `~/.nwave/` directory auto-created with `parents=True` on first global save
+- [ ] Summary of all resolved settings displayed (including scope and target file path)
 
 ## Examples
 
 ### Example 1: Interactive first-time selection
 ```
-/nw:rigor
+/nw-rigor
 ```
 No current profile set. Shows comparison table, user picks "standard", sees detail view, confirms. Config written with full rigor block.
 
 ### Example 2: Quick switch to lean
 ```
-/nw:rigor lean
+/nw-rigor lean
 ```
 Current profile is "standard". Shows diff: loses review, loses PREPARE/COMMIT phases, loses refactoring pass. Agent drops from sonnet to haiku. User confirms. Config updated.
 
 ### Example 3: Quick switch up
 ```
-/nw:rigor thorough
+/nw-rigor thorough
 ```
 Current profile is "standard". Shows diff: sonnet->opus agent, haiku->sonnet reviewer, double review enabled. No losses to highlight (pure upgrade). User confirms. Config updated.
 
 ### Example 4: Custom profile builder
 ```
-/nw:rigor custom
+/nw-rigor custom
 ```
 Walks through 6 questions: agent model (opus), reviewer (haiku), double review (no), TDD (full 5-phase), refactoring (yes), mutation (yes). Saves as custom profile with opus agent, haiku reviewer, single review, full TDD, refactoring, and mutation testing — a combination no preset offers.
 
 ### Example 5: Invalid profile name
 ```
-/nw:rigor turbo
+/nw-rigor turbo
 ```
 Error: "Unknown profile 'turbo'. Available: lean, standard, thorough, exhaustive, inherit"
 
 ### Example 6: No nWave installed
 ```
-/nw:rigor
+/nw-rigor
 ```
 No `.nwave/` directory found. Shows: "No nWave config directory found. Run nwave install first." Stops.

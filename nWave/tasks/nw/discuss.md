@@ -5,7 +5,7 @@ argument-hint: "[feature-name] - Optional: --phase=[jtbd|journey|requirements] -
 
 # NW-DISCUSS: Jobs-to-be-Done Analysis, UX Journey Design, and Requirements Gathering
 
-**Wave**: DISCUSS (wave 2 of 6) | **Agent**: Luna (nw-product-owner) | **Command**: `/nw:discuss`
+**Wave**: DISCUSS (wave 2 of 6) | **Agent**: Luna (nw-product-owner) | **Command**: `/nw-discuss`
 
 ## Overview
 
@@ -38,21 +38,46 @@ For greenfield projects (no src/ code, no docs/feature/ history), Luna proposes 
 2. Comprehensive -- full experience mapping with emotional arcs
 3. Deep-dive -- extensive user research, multiple personas, edge cases
 
-## Context Files Required
+## Prior Wave Consultation
 
-- docs/project-brief.md | docs/stakeholders.yaml | docs/architecture/constraints.md
+Before beginning DISCUSS work, read SSOT and prior wave artifacts:
 
-## Previous Artifacts (Wave Handoff)
+1. **SSOT** (if `docs/product/` exists):
+   - `docs/product/journeys/{name}.yaml` — existing journey to extend (if applicable)
+   - `docs/product/jobs.yaml` — validated jobs and opportunity scores
+   - `docs/product/vision.md` — product vision
+2. **Project context**: `docs/project-brief.md` | `docs/stakeholders.yaml`
+3. **DISCOVER artifacts**: Read `docs/feature/{feature-id}/discover/` (if present)
+4. **DIVERGE artifacts**: Read `docs/feature/{feature-id}/diverge/` (if present)
+   - `recommendation.md` is the primary input — the selected design direction and job statement
+   - `job-analysis.md` — validated JTBD job statements and ODI outcome statements — use directly, do not re-run JTBD analysis
 
-- docs/feature/{feature-id}/discover/problem-validation.md | opportunity-tree.md | lean-canvas.md — From DISCOVER
+DISCUSS is the convergence wave — it takes the direction from DIVERGE (or a direct decision) and transforms it into UX journeys and testable requirements.
+
+If `docs/product/` does not exist, this is the first feature using the SSOT model. DISCUSS will create it (see SSOT Update below).
+
+**READING ENFORCEMENT**: You MUST read every file listed in Prior Wave Consultation above using the Read tool before proceeding. After reading, output a confirmation checklist (`✓ {file}` for each read, `⊘ {file} (not found)` for missing). Do NOT skip files that exist — skipping causes requirements disconnected from evidence.
+
+After reading, check whether any DISCUSS decisions would contradict DISCOVER evidence. Flag contradictions and resolve with user before proceeding. Example: DISCOVER found "users don't want automation" but DISCUSS story assumes "automated workflow" — this must be resolved.
+
+## Document Update (Back-Propagation)
+
+When DISCUSS decisions change assumptions established in DISCOVER:
+1. Document the change in a `## Changed Assumptions` section at the end of the affected DISCUSS artifact
+2. Reference the original DISCOVER document and quote the original assumption
+3. State the new assumption and the rationale for the change
+4. Do NOT modify DISCOVER documents directly — they represent historical evidence
 
 ## Agent Invocation
 
 @nw-product-owner
 
-Execute *jtbd-analysis for {feature-id}, then *journey informed by JTBD artifacts, then *gather-requirements informed by both.
+IF DIVERGE artifacts present (`docs/feature/{feature-id}/diverge/recommendation.md` exists):
+  Read `recommendation.md` and `job-analysis.md` to ground journey design|execute *journey for {feature-id} informed by DIVERGE direction|then *story-map|then *gather-requirements with outcome KPIs.
+ELSE:
+  Execute *journey for {feature-id}|then *story-map|then *gather-requirements with outcome KPIs.
 
-Context files: see Context Files Required and Previous Artifacts above.
+Context files: see Prior Wave Consultation above + project context files.
 
 **Configuration:**
 - format: visual | yaml | gherkin | all (default: all)
@@ -61,26 +86,13 @@ Context files: see Context Files Required and Previous Artifacts above.
 - walking_skeleton: {Decision 2}
 - output_directory: docs/feature/{feature-id}/discuss/
 
-**Phase 1 -- Jobs-to-be-Done Analysis (REQUIRED):**
+**Phase 1 -- Job Grounding (from DIVERGE artifacts):**
 
-Grounds all subsequent artifacts in real user motivations.
+If DIVERGE artifacts are present, read `recommendation.md` and `job-analysis.md` before any journey work.
+Extract: the selected design direction|the validated job statement|ODI outcome statements.
+These ground all subsequent journey and story work — every story must trace to the job from DIVERGE.
 
-1. **Job Discovery**: Ask user what users are trying to accomplish. Capture in job story format: "When [situation], I want to [motivation], so I can [outcome]."
-2. **Job Dimensions**: For each job — functional (practical task)|emotional (desired feeling)|social (desired perception)
-3. **Four Forces Analysis**: For each primary job:
-   - **Push** (current frustration): "What frustrated users enough to request this?"
-   - **Pull** (desired future): "What could they do that they cannot now?"
-   - **Anxiety** (adoption concerns): "What concerns about adopting this?"
-   - **Habit** (current behavior): "What behavior must change?"
-   If interview transcripts|support tickets|analytics exist, extract forces from those instead of relying solely on user description.
-4. **Opportunity Scoring** (multiple jobs): Rank by importance vs. satisfaction gap. High importance + low satisfaction = strongest opportunities. Produce scored table.
-5. **JTBD-to-Story Bridge**: Each job story feeds into user stories and acceptance criteria in Phase 3. Every user story must trace to at least one job.
-
-| Artifact | Path |
-|----------|------|
-| Job Stories | `docs/feature/{feature-id}/discuss/jtbd-job-stories.md` |
-| Four Forces | `docs/feature/{feature-id}/discuss/jtbd-four-forces.md` |
-| Opportunity Scores | `docs/feature/{feature-id}/discuss/jtbd-opportunity-scores.md` (when multiple jobs) |
+If no DIVERGE artifacts: journey design proceeds without a pre-validated job. Note this as a risk in `wave-decisions.md`.
 
 **Phase 2 -- Journey Design:**
 
@@ -89,84 +101,142 @@ Luna runs deep discovery (mental model|emotional arc|shared artifacts|error path
 | Artifact | Path |
 |----------|------|
 | Visual Journey | `docs/feature/{feature-id}/discuss/journey-{name}-visual.md` |
-| Journey Schema | `docs/feature/{feature-id}/discuss/journey-{name}.yaml` |
-| Gherkin Scenarios | `docs/feature/{feature-id}/discuss/journey-{name}.feature` |
+| Journey Schema | `docs/feature/{feature-id}/discuss/journey-{name}.yaml` (includes Gherkin per step — DISTILL extracts at wave start) |
 | Artifact Registry | `docs/feature/{feature-id}/discuss/shared-artifacts-registry.md` |
 
-**Phase 3 -- Requirements and User Stories:**
+**Phase 2.5 -- User Story Mapping:**
+Luna loads `user-story-mapping` skill before this phase.
 
-Luna crafts LeanUX stories informed by JTBD + journey artifacts. Every story traces to at least one job story. Validates against DoR, invokes peer review, prepares handoff.
+Organizes discovered stories into a visual story map (backbone → walking skeleton → incremental slices). Produces prioritization suggestions based on outcomes identified in earlier phases.
+
+1. **Backbone**: Map user activities (big steps) horizontally across the top
+2. **Walking Skeleton**: Identify minimum slice that delivers end-to-end value
+3. **Release Slices**: Group stories into outcome-based releases
+4. **Priority Rationale**: Suggest priority order based on outcome impact and dependencies (included as `## Priority Rationale` section in story-map.md)
 
 | Artifact | Path |
 |----------|------|
-| Requirements | `docs/feature/{feature-id}/discuss/requirements.md` |
-| User Stories | `docs/feature/{feature-id}/discuss/user-stories.md` |
-| Acceptance Criteria | `docs/feature/{feature-id}/discuss/acceptance-criteria.md` |
-| DoR Checklist | `docs/feature/{feature-id}/discuss/dor-checklist.md` |
+| Story Map (includes Priority Rationale) | `docs/feature/{feature-id}/discuss/story-map.md` |
+
+**Phase 3 -- User Stories:**
+
+Luna crafts LeanUX stories informed by JTBD + journey artifacts. Every story traces to at least one job story. System constraints go in `## System Constraints` section at the top of user-stories.md. Validates against DoR, invokes peer review, prepares handoff.
+
+> **ADR-022 single-narrative**: these are INLINE `## Wave: DISCUSS / [REF] <Section>` headings in `docs/feature/{feature-id}/feature-delta.md` — NOT separate `discuss/*.md` files (legacy multi-file outputs are not produced; validator `scripts/validation/validate_feature_layout.py`). DoR-location is `## Wave: DISCUSS / [REF] DoR Validation` inline, so the DoR gate is deterministically satisfiable.
+
+| Artifact | Location (inline heading in `docs/feature/{feature-id}/feature-delta.md`) |
+|----------|------|
+| User Stories (includes System Constraints + AC per story) | `## Wave: DISCUSS / [REF] User Stories` |
+| DoR Validation | `## Wave: DISCUSS / [REF] DoR Validation` |
+| Outcome KPIs | `## Wave: DISCUSS / [REF] Outcome KPIs` |
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 
-- [ ] JTBD analysis complete: all jobs in job story format
-- [ ] Job dimensions identified: functional|emotional|social per job
-- [ ] Four Forces mapped per job (push|pull|anxiety|habit)
-- [ ] Opportunity scores produced (when multiple jobs)
+- [ ] (when DIVERGE artifacts present) DIVERGE recommendation read and direction confirmed before journey design
 - [ ] UX journey map with emotional arcs and shared artifacts
-- [ ] Every journey maps to at least one job
+- [ ] (when DIVERGE artifacts present) Every journey maps to the job from DIVERGE job-analysis.md
 - [ ] Discovery complete: user mental model understood, no vague steps
 - [ ] Happy path defined: all steps start-to-goal with expected outputs
 - [ ] Emotional arc coherent: confidence builds progressively
 - [ ] Shared artifacts tracked: every ${variable} has single documented source
-- [ ] Requirements completeness score > 0.95
-- [ ] Every user story traces to at least one job story
-- [ ] All acceptance criteria testable
-- [ ] DoR passed: all 8 items validated with evidence
+- [ ] Story map created with backbone, walking skeleton, release slices, and priority rationale
+- [ ] Outcome KPIs defined with measurable targets
+- [ ] (when DIVERGE artifacts present) Every user story traces to the validated job from DIVERGE
+- [ ] All UAT scenarios testable (AC derived from scenarios, embedded in user-stories.md)
+- [ ] DoR passed: all 9 items validated with evidence
 - [ ] Peer review approved
 - [ ] Handoff accepted by nw-solution-architect (DESIGN wave)
 
 ## Next Wave
 
-**Handoff To**: nw-solution-architect (DESIGN wave)
-**Deliverables**: JTBD artifacts (job stories|four forces|opportunity scores) + journey artifacts (visual|YAML|Gherkin|artifact registry) + requirements (stories|acceptance criteria|DoR validation|peer review)
+**Handoff To**: nw-solution-architect (DESIGN wave) + nw-platform-architect (DEVOPS wave, KPIs only)
+**Deliverables**: Journey artifacts (visual + YAML) + story map (with priority rationale) + user-stories + outcome KPIs
+
+## Wave Decisions Summary
+
+Before completing DISCUSS, produce `docs/feature/{feature-id}/discuss/wave-decisions.md`:
+
+```markdown
+# DISCUSS Decisions — {feature-id}
+
+## Key Decisions
+- [D1] {decision}: {rationale} (see: {source-file})
+
+## Requirements Summary
+- Primary jobs/user needs: {1-3 sentence summary}
+- Walking skeleton scope: {if applicable}
+- Feature type: {user-facing|backend|infrastructure|cross-cutting}
+
+## Constraints Established
+- {constraint from requirements analysis}
+
+## Upstream Changes
+- {any DISCOVER assumptions changed, with rationale}
+```
+
+This summary enables DESIGN to quickly assess DISCUSS outcomes. DESIGN reads this plus key artifacts (user-stories.md, story-map.md, outcome-kpis.md) rather than all DISCUSS files.
+
+## SSOT Update
+
+After producing feature-level artifacts, update the product-level SSOT:
+
+1. **Journey SSOT**: If journey is new, create `docs/product/journeys/{name}.yaml` + `{name}-visual.md`. If journey exists, update it with new/changed steps and add a changelog entry.
+2. **Jobs SSOT**: If DIVERGE produced a validated job, ensure it is in `docs/product/jobs.yaml`. If `jobs.yaml` does not exist, create it.
+
+If `docs/product/` does not exist, create the directory structure. This is the SSOT bootstrap — first wave initializes it.
+
+SSOT files use `schema_version` and `changelog` fields. See canonical schemas in the design-methodology skill.
 
 ## Expected Outputs
 
+### Feature delta — ADR-022 single-narrative (`docs/feature/{feature-id}/feature-delta.md`)
+All DISCUSS findings are INLINE `## Wave: DISCUSS / [REF] <Section>` headings in the one `feature-delta.md` — the legacy separate `discuss/*.md` files are NOT produced (validator `scripts/validation/validate_feature_layout.py`):
 ```
-docs/feature/{feature-id}/discuss/
-  jtbd-job-stories.md
-  jtbd-four-forces.md
-  jtbd-opportunity-scores.md    (when multiple jobs)
-  journey-{name}-visual.md
-  journey-{name}.yaml
-  journey-{name}.feature
-  shared-artifacts-registry.md
-  requirements.md
-  user-stories.md               (each story traces to a job)
-  acceptance-criteria.md
-  dor-checklist.md
+  ## Wave: DISCUSS / [REF] User Stories      (System Constraints + Impacted Journeys + AC per story)
+  ## Wave: DISCUSS / [REF] Slice Plan        (atdd_pure: carpaccio decomposition + Priority Rationale)
+  ## Wave: DISCUSS / [REF] DoR Validation
+  ## Wave: DISCUSS / [REF] Outcome KPIs
+  ## Wave: DISCUSS / [REF] Wave Decisions
+```
+
+### SSOT updates (in `docs/product/`)
+```
+  journeys/{name}.yaml          (created or updated + changelog entry)
+  journeys/{name}-visual.md     (created or updated)
+  jobs.yaml                     (updated with validated jobs, if DIVERGE ran)
+```
+
+### Internal artifacts (produced but not persisted as standalone files)
+```
+  shared-artifacts-registry.md  (used during coherence validation, content folded into journey.yaml shared_artifacts)
 ```
 
 ## Examples
 
-### Example 1: User-facing feature with comprehensive UX research
+### Example 1: User-facing feature after DIVERGE wave
 ```
-/nw:discuss first-time-setup
+/nw-discuss first-time-setup
 ```
-Orchestrator asks Decision 1-3. User selects "User-facing", "No skeleton", "Comprehensive". Luna starts with JTBD analysis: discovers jobs like "When I first open the app, I want to feel productive immediately, so I can justify the purchase." Maps four forces for each job. Scores opportunities. Then runs journey discovery informed by JTBD, produces visual journey + YAML + Gherkin. Finally crafts stories where each traces to a job, validates DoR, and prepares handoff.
+Orchestrator detects DIVERGE artifacts present. Reads `recommendation.md` — direction is "proactive push notification on workflow failure". Luna reads `job-analysis.md` for the validated job statement. Runs journey discovery informed by the selected direction, produces visual journey + YAML. Crafts stories where each traces to the DIVERGE job, validates DoR, prepares handoff.
 
-### Example 2: JTBD-only invocation
+### Example 2: Feature without DIVERGE
 ```
-/nw:discuss --phase=jtbd onboarding-flow
+/nw-discuss new-monitoring-feature
 ```
-Runs only Luna's JTBD analysis phase (job discovery + dimensions + four forces + opportunity scoring). Produces JTBD artifacts without proceeding to journey design or requirements. Useful for early discovery when you need to understand user motivations before committing to UX design.
+No DIVERGE artifacts found. Luna proceeds with discovery conversation from scratch, notes the absence of a pre-validated job in `wave-decisions.md` as a risk.
 
 ### Example 3: Journey-only invocation
 ```
-/nw:discuss --phase=journey release-nwave
+/nw-discuss --phase=journey release-nwave
 ```
 Runs only Luna's journey design phases (discovery + visualization + coherence validation). Produces journey artifacts without proceeding to requirements crafting. Useful when JTBD is already done and journey design needs standalone iteration.
 
 ### Example 4: Requirements-only invocation
 ```
-/nw:discuss --phase=requirements new-plugin-system
+/nw-discuss --phase=requirements new-plugin-system
 ```
 Runs only Luna's requirements phases (gathering + crafting + DoR validation). Assumes JTBD and journey artifacts already exist or are not needed (e.g., backend feature).

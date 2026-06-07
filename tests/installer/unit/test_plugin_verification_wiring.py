@@ -73,6 +73,13 @@ class TestValidateInstallationPluginVerification:
 
     def _build_installer_with_mocks(self, tmp_path):
         """Build an NWaveInstaller with filesystem and verifier mocked."""
+        # Create minimal catalog to satisfy fail-closed load_public_agents
+        nwave_dir = tmp_path / "project" / "nWave"
+        nwave_dir.mkdir(parents=True, exist_ok=True)
+        (nwave_dir / "framework-catalog.yaml").write_text(
+            "agents:\n  test-agent:\n    public: true\n"
+        )
+
         with (
             patch(
                 "scripts.install.install_nwave.PathUtils.get_claude_config_dir"

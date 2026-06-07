@@ -4,15 +4,15 @@ Conducts evidence-based product discovery through customer interviews, assumptio
 
 **Wave:** Other
 **Model:** inherit
-**Max turns:** 50
+**Max turns:** 0
 **Tools:** Read, Write, Edit, Glob, Grep, Task
 
 ## Commands
 
-- [`/nw:discover`](../commands/index.md)
+- [`/nw-discover`](../commands/index.md)
 
 ## Skills
 
-- [discovery-workflow](../../../nWave/skills/product-discoverer/discovery-workflow.md) — 4-phase discovery workflow with decision gates, phase transitions, success metrics, and state tracking
-- [interviewing-techniques](../../../nWave/skills/product-discoverer/interviewing-techniques.md) — Mom Test questioning toolkit, JTBD analysis, interview conduct, assumption testing framework, and hypothesis design
-- [opportunity-mapping](../../../nWave/skills/product-discoverer/opportunity-mapping.md) — Opportunity Solution Trees, opportunity scoring, Lean Canvas, JTBD job mapping, and technique selection guide
+- [nw-discovery-workflow](../../../nWave/skills/nw-discovery-workflow/SKILL.md) — 4-phase discovery workflow with decision gates, phase transitions, success metrics, and state tracking
+- [nw-interviewing-techniques](../../../nWave/skills/nw-interviewing-techniques/SKILL.md) — Mom Test questioning toolkit, JTBD analysis, interview conduct, assumption testing framework, and hypothesis design
+- [nw-opportunity-mapping](../../../nWave/skills/nw-opportunity-mapping/SKILL.md) — Opportunity Solution Trees, opportunity scoring, Lean Canvas, JTBD job mapping, and technique selection guide

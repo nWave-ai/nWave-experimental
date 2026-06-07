@@ -25,7 +25,7 @@ from des.adapters.driven.hooks.json_execution_log_reader import JsonExecutionLog
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.log_integrity_validator import LogIntegrityValidator
 from des.domain.step_completion_validator import StepCompletionValidator
-from des.domain.tdd_schema import get_tdd_schema
+from des.domain.tdd_schema import TDDSchemaLoader
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
 from des.ports.driven_ports.time_provider_port import TimeProvider
@@ -121,7 +121,7 @@ def _build_service_with_integrity(
     time_provider: StubTimeProvider,
 ) -> SubagentStopService:
     """Build SubagentStopService with real JsonExecutionLogReader and LogIntegrityValidator."""
-    schema = get_tdd_schema()
+    schema = TDDSchemaLoader().load()
     return SubagentStopService(
         log_reader=JsonExecutionLogReader(),
         completion_validator=StepCompletionValidator(schema=schema),

@@ -6,6 +6,7 @@ JSON parsing, and current phase extraction.
 
 from pathlib import Path
 
+from des.domain.value_objects import PhaseStatus
 from des.ports.driven_ports.filesystem_port import FileSystemPort
 
 
@@ -70,7 +71,7 @@ class StepFileRepository:
         phase_log = step_data["tdd_cycle"]["phase_execution_log"]
         current_phase = phase_log[0]  # For now, use first phase
 
-        if current_phase["status"] == "NOT_EXECUTED":
-            current_phase["status"] = "IN_PROGRESS"
+        if current_phase["status"] == PhaseStatus.NOT_EXECUTED:
+            current_phase["status"] = PhaseStatus.IN_PROGRESS
 
         return current_phase

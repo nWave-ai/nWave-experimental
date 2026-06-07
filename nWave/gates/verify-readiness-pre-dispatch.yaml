@@ -1,0 +1,64 @@
+# Gate-contract: verify-readiness-pre-dispatch (D4 Phase 3 slice-03)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull
+# + § 5 Phase 3 slice-03 (D1 readiness gate).
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` (appended by crafter A_GREEN_ATS).
+#
+# Single-invocation aggregate gate. Verifies the 5 cascading invariants
+# catalogued in `docs/backlog.md` friction #57 BEFORE a NEW feature first
+# crafter dispatch. Cascade-debug reduced from 5 friction roundtrips to 1
+# combined diagnostic.
+
+gate_id: verify-readiness-pre-dispatch
+responsibility: |
+  Verify the 5 cascading first-dispatch invariants (slice plan section, slice
+  tags per scenario, AT-review verdict ledger record, gate output produceable,
+  pre-commit pytest scope satisfiable) in one invocation; emit combined
+  diagnostic naming every failed invariant.
+module: des.cli.verify_readiness_pre_dispatch
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "Feature being dispatched."
+  - name: --slice-id
+    required: true
+    type: string
+    help: "Slice id about to enter A_GREEN_ATS (slice-NN)."
+  - name: --repo-root
+    required: false
+    type: path
+    help: "Repo root path. Defaults to CWD."
+
+log_events:
+  - ReadinessVerified
+  - ReadinessRefused
+
+failure_modes:
+  - error_class: SlicePlanSectionMissing
+    exit_code: 1
+    remediation: "Add `## Wave: DISCUSS / [REF] Slice Plan` heading + table to feature-delta.md"
+  - error_class: CarpaccioSliceTooLarge
+    exit_code: 1
+    remediation: "Tag every Gherkin scenario with `@slice-NN` per friction #57 invariant 2"
+  - error_class: AtReviewVerdictMissing
+    exit_code: 1
+    remediation: "Record ATReviewVerdict via at_review_verdict CLI for entering slice"
+  - error_class: NoGateOutput
+    exit_code: 1
+    remediation: "Run carpaccio CLI from valid CWD (freshness gate compatible per friction #16)"
+  - error_class: PreCommitScopeUnsatisfiable
+    exit_code: 1
+    remediation: "Add `@skip @pending` markers to RED scaffolds within pre-commit pytest scope"
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

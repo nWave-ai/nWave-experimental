@@ -1,0 +1,20 @@
+# GOLDEN FIXTURE (planted violation -- uncovered failure mode) -- M11 gate.
+#
+# This is NOT a real component manifest. It is the coverage-half recall corpus
+# the slice-07 gate cross-checks: a component manifest declaring a failure_modes
+# entry (``disk_full_during_write``) that NO named test covers. Per Mandate 11,
+# every failure_modes entry MUST have at least one matching named sad-path test;
+# a declared-but-untested failure mode is a coverage gap. The M11 coverage
+# cross-check MUST flag it (``detect_failure_mode_coverage(...).flagged is True``),
+# naming ``disk_full_during_write`` as an ``uncovered_failure_mode`` breach.
+#
+# The composition supplies the set of named tests in scope; for this corpus that
+# set covers ``permission_denied`` but NOT ``disk_full_during_write`` -- so the
+# gate must pinpoint the uncovered mode.
+
+component: install_writer
+failure_modes:
+  - id: disk_full_during_write
+    description: "the target filesystem runs out of space mid-write"
+  - id: permission_denied
+    description: "the target path is not writable by the current user"

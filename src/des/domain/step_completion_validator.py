@@ -21,6 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from des.domain.value_objects import PhaseOutcome, PhaseStatus
+
 
 if TYPE_CHECKING:
     from des.domain.phase_event import PhaseEvent
@@ -66,8 +68,30 @@ class StepCompletionValidator:
             print(result.error_messages)
     """
 
+    _LEGACY_ONLY_PHASES: frozenset[str] = frozenset(
+        {"PREPARE", "RED_ACCEPTANCE", "RED_UNIT"}
+    )
+
     def __init__(self, schema: TDDSchema) -> None:
         self._schema = schema
+
+    def _active_phases_for_events(self, events: list[PhaseEvent]) -> tuple[str, ...]:
+        """Return the active phase list to validate against.
+
+        ADR-025 per-log dispatch (2026-05-18): detect legacy v4 logs by the
+        presence of the COMPLETE legacy-only phase set
+        (PREPARE + RED_ACCEPTANCE + RED_UNIT). A single stray legacy phase
+        name in an otherwise-canonical event stream is treated as an
+        anomaly, NOT a canon switch — log integrity warnings flag it
+        downstream.
+
+        Preserves audit-log replay backward-compat without false positives
+        from contaminated event streams.
+        """
+        recorded = {e.phase_name for e in events if e.phase_name}
+        if self._LEGACY_ONLY_PHASES.issubset(recorded):
+            return self._schema.legacy_phases
+        return self._schema.tdd_phases
 
     def validate(self, events: list[PhaseEvent]) -> CompletionResult:
         """Validate TDD phase completion from a list of phase events.
@@ -108,7 +132,8 @@ class StepCompletionValidator:
         error_messages: list[str] = []
         recovery_suggestions: list[str] = []
 
-        for phase in self._schema.tdd_phases:
+        active_phases = self._active_phases_for_events(events)
+        for phase in active_phases:
             # Rule 1: All phases must have an event
             if phase not in phase_map:
                 missing_phases.append(phase)
@@ -188,7 +213,7 @@ class StepCompletionValidator:
         outcome = event.outcome
 
         # Rule 2 & 3: Validate EXECUTED phases
-        if status == "EXECUTED":
+        if status == PhaseStatus.EXECUTED:
             self._validate_executed_phase(
                 phase,
                 outcome,
@@ -197,7 +222,7 @@ class StepCompletionValidator:
             )
 
         # Rule 4 & 5: Validate SKIPPED phases
-        elif status == "SKIPPED":
+        elif status == PhaseStatus.SKIPPED:
             self._validate_skipped_phase(
                 phase,
                 outcome,
@@ -221,13 +246,13 @@ class StepCompletionValidator:
     ) -> None:
         """Validate an EXECUTED phase's outcome."""
         # Rule 2: Outcome must be PASS or FAIL
-        if outcome not in ("PASS", "FAIL"):
+        if outcome not in (PhaseOutcome.PASS, PhaseOutcome.FAIL):
             incomplete_phases.append(phase)
             error_messages.append(
                 f"{phase}: Invalid outcome '{outcome}' (must be PASS or FAIL)"
             )
         # Rule 3: Terminal phases must PASS
-        elif phase in self._schema.terminal_phases and outcome != "PASS":
+        elif phase in self._schema.terminal_phases and outcome != PhaseOutcome.PASS:
             incomplete_phases.append(phase)
             error_messages.append(
                 f"{phase}: Terminal phase must have outcome PASS (not FAIL)"

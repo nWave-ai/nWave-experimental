@@ -125,7 +125,7 @@ def extract_profile(text: str) -> SemanticProfile:
         for ref in re.findall(r"(?:docs|nWave|src|tests)/[\w/{}.*-]+", stripped):
             profile.file_refs.add(ref)
 
-        # Commands (*command or /nw:command)
+        # Commands (*command or /nw-command)
         # *command must be at line start, after pipe, or after backtick (not bold markdown)
         for cmd in re.findall(r"/nw:\w[\w-]*", stripped):
             profile.commands.add(cmd)

@@ -19,7 +19,7 @@ class TestSuggestionFormatterBasics:
 
         why_text = "The agent left GREEN_UNIT in IN_PROGRESS state"
         how_text = "Reset the phase to NOT_EXECUTED"
-        actionable = "/nw:execute @software-crafter steps/01-01.json"
+        actionable = "/nw-execute @software-crafter steps/01-01.json"
 
         suggestion = formatter.format_suggestion(why_text, how_text, actionable)
 
@@ -32,7 +32,7 @@ class TestSuggestionFormatterBasics:
 
         why_text = "The agent left phase IN_PROGRESS"
         how_text = "Resetting phase allows retry from clean state"
-        actionable = "/nw:execute"
+        actionable = "/nw-execute"
 
         suggestion = formatter.format_suggestion(why_text, how_text, actionable)
 
@@ -122,7 +122,7 @@ class TestTimeoutFailureFormatting:
 
         why_text = "Phase ran 35 minutes (exceeded 30-minute timeout)"
         how_text = "Optimize performance or increase timeout threshold"
-        actionable = "/nw:execute with --timeout=50"
+        actionable = "/nw-execute with --timeout=50"
 
         suggestion = formatter.format_suggestion(why_text, how_text, actionable)
 
@@ -139,7 +139,7 @@ class TestTimeoutFailureFormatting:
 
         why_text = "Exceeded timeout threshold"
         how_text = "Try code optimization or increase timeout limit"
-        actionable = "/nw:execute @software-crafter --timeout=45"
+        actionable = "/nw-execute @software-crafter --timeout=45"
 
         suggestion = formatter.format_suggestion(why_text, how_text, actionable)
 
@@ -209,7 +209,7 @@ class TestEdgeCasesAndValidation:
 
         why_text = "Multiple reasons for failure:\n- Network timeout\n- Server overload"
         how_text = "Recovery steps:\n1. Check network\n2. Restart server"
-        actionable = "Run: /nw:execute"
+        actionable = "Run: /nw-execute"
 
         suggestion = formatter.format_suggestion(why_text, how_text, actionable)
 

@@ -31,7 +31,7 @@ class TestOrchestratorPromptWarnings:
 
         # Should not raise TypeError
         prompt = orchestrator.render_prompt(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/project",
@@ -58,7 +58,7 @@ class TestOrchestratorPromptWarnings:
         )
 
         prompt = orchestrator.render_prompt(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/project",
@@ -87,7 +87,7 @@ class TestOrchestratorPromptWarnings:
         )
 
         prompt = orchestrator.render_prompt(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/project",
@@ -116,7 +116,7 @@ class TestOrchestratorPromptWarnings:
         )
 
         prompt = orchestrator.render_prompt(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/project",
@@ -145,7 +145,7 @@ class TestOrchestratorPromptWarnings:
         )
 
         prompt = orchestrator.render_prompt(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/project",
@@ -174,7 +174,7 @@ class TestOrchestratorPromptWarnings:
         )
 
         prompt = orchestrator.render_prompt(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/project",
@@ -203,7 +203,7 @@ class TestOrchestratorPromptWarnings:
         )
 
         prompt = orchestrator.render_prompt(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/project",

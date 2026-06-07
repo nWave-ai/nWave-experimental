@@ -164,13 +164,12 @@ class TestUserJourneyPluginInstallation:
 
         # Assert: Key directories created
         claude_dir = context.claude_dir
-        expected_dirs = ["agents", "commands", "templates", "scripts"]
+        # commands/ is no longer created (migrated to skills format)
+        expected_dirs = ["agents", "templates"]
 
         for dir_name in expected_dirs:
             dir_path = claude_dir / dir_name
-            assert dir_path.exists() or dir_name == "scripts", (
-                f"Expected directory not created: {dir_path}"
-            )
+            assert dir_path.exists(), f"Expected directory not created: {dir_path}"
 
     def test_des_artifacts_installed(self, installed_plugin_state):
         """

@@ -681,7 +681,7 @@ class TestCZConfigExpansion:
 
     def test_psr_removed_from_dev_dependencies(self):
         """Given pyproject.toml at repo root,
-        when reading [project.optional-dependencies].dev,
+        when reading [dependency-groups].dev,
         then no entry contains 'python-semantic-release',
         and at least one entry contains 'commitizen'.
 
@@ -690,7 +690,7 @@ class TestCZConfigExpansion:
         pyproject_path = REPO_ROOT / "pyproject.toml"
         with pyproject_path.open("rb") as f:
             toml = tomllib.load(f)
-        dev_deps = toml["project"]["optional-dependencies"]["dev"]
+        dev_deps = toml["dependency-groups"]["dev"]
 
         psr_entries = [d for d in dev_deps if "python-semantic-release" in d]
         assert psr_entries == [], (
@@ -707,36 +707,6 @@ class TestLegacyWorkflowMigration:
     Maps to: US-CZ-05, Scenarios 31-32 (Roadmap Step 07).
     These are file-content assertions, not subprocess tests.
     """
-
-    def test_release_yml_uses_cz_bump_instead_of_psr(self):
-        """Given .github/workflows/release.yml at repo root,
-        when reading the file content,
-        then 'cz bump' is present (auto and force modes),
-        'cz bump --dry-run' is present (dry-run mode),
-        'semantic-release version' is absent,
-        and 'python-semantic-release' is absent.
-
-        Maps to: Scenario 31 "Legacy release.yml uses CZ instead of PSR".
-        """
-        workflow_path = REPO_ROOT / ".github" / "workflows" / "release.yml"
-        content = workflow_path.read_text()
-
-        # CZ commands present
-        assert "cz bump" in content, "release.yml missing 'cz bump' command"
-        assert "cz bump --dry-run" in content, (
-            "release.yml missing 'cz bump --dry-run' for dry-run mode"
-        )
-        assert "cz bump --increment" in content, (
-            "release.yml missing 'cz bump --increment' for force-bump mode"
-        )
-
-        # PSR commands absent
-        assert "semantic-release version" not in content, (
-            "release.yml still contains 'semantic-release version' (PSR command)"
-        )
-        assert "python-semantic-release" not in content, (
-            "release.yml still references 'python-semantic-release' package"
-        )
 
     def test_cz_changelog_generation_configured(self):
         """Given pyproject.toml has [tool.commitizen] with changelog_file,
@@ -970,7 +940,7 @@ class TestReleaseTrainVersionSync:
     def test_stable_changelog_targets_public_repo_not_private(self):
         """Given the stable release workflow at release-prod.yml,
         when the changelog generation step invokes generate_changelog.py,
-        then --repo is set to "nWave-ai/nwave" (public stable repo)
+        then --repo is set to "nWave-ai/nWave" (public stable repo)
         and does not reference the private nwave-dev repository.
 
         Regression: release-prod.yml used github.repository (private repo)
@@ -979,8 +949,8 @@ class TestReleaseTrainVersionSync:
         workflow_path = REPO_ROOT / ".github" / "workflows" / "release-prod.yml"
         content = workflow_path.read_text()
 
-        assert '--repo "nWave-ai/nwave"' in content, (
-            'release-prod.yml changelog must use --repo "nWave-ai/nwave" '
+        assert '--repo "nWave-ai/nWave"' in content, (
+            'release-prod.yml changelog must use --repo "nWave-ai/nWave" '
             "(public repo for stable releases)"
         )
 
@@ -998,7 +968,7 @@ class TestReleaseTrainVersionSync:
     def test_rc_changelog_targets_beta_repo_not_private(self):
         """Given the RC release workflow at release-rc.yml,
         when the changelog generation step invokes generate_changelog.py,
-        then --repo is set to "nWave-ai/nwave-beta" (public RC repo)
+        then --repo is set to "nWave-ai/nWave-beta" (public RC repo)
         and does not reference the private nwave-dev repository.
 
         Regression: release-rc.yml used github.repository (private repo)
@@ -1007,8 +977,8 @@ class TestReleaseTrainVersionSync:
         workflow_path = REPO_ROOT / ".github" / "workflows" / "release-rc.yml"
         content = workflow_path.read_text()
 
-        assert '--repo "nWave-ai/nwave-beta"' in content, (
-            'release-rc.yml changelog must use --repo "nWave-ai/nwave-beta" '
+        assert '--repo "nWave-ai/nWave-beta"' in content, (
+            'release-rc.yml changelog must use --repo "nWave-ai/nWave-beta" '
             "(public repo for RC releases)"
         )
 

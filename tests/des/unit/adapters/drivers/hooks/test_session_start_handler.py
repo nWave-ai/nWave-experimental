@@ -1,15 +1,35 @@
 """Unit tests for SessionStart hook handler.
 
 Tests all behaviors via handle_session_start() driving port.
-Test budget: 8 behaviors x 2 = 16 unit tests max.
+Test budget: 11 behaviors x 2 = 22 unit tests max.
 (3 new behaviors added for housekeeping integration: B6, B7, B8)
+(2 new behaviors added for substrate probe wiring: B10, B11)
 """
 
 import io
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from des.application.update_check_service import UpdateCheckResult, UpdateStatus
+
+
+@pytest.fixture(autouse=True)
+def _silence_probe(request):
+    """Silence substrate probe by default so tests that don't test probe are unaffected.
+
+    Tests in TestSessionStartHandlerSubstrateProbe patch run_probe themselves
+    and are excluded from this autouse fixture via marker.
+    """
+    if request.node.get_closest_marker("probe_test"):
+        yield
+        return
+    with patch(
+        "des.adapters.drivers.hooks.session_start_handler.run_probe",
+        return_value="",
+    ):
+        yield
 
 
 class TestSessionStartHandlerUpdateAvailable:
@@ -385,3 +405,72 @@ class TestSessionStartHandlerHousekeepingIntegration:
         assert captured["housekeeping_config"] is captured["update_check_config"], (
             "DESConfig must be the same object passed to both housekeeping and update check"
         )
+
+
+class TestSessionStartHandlerSubstrateProbe:
+    """B10-B11: substrate probe advisory printed to stdout when non-empty; silent on healthy install."""
+
+    @pytest.mark.probe_test
+    def test_advisory_printed_to_stdout_when_probe_returns_non_empty(self, capsys):
+        """B10: run_probe() non-empty advisory is printed to stdout."""
+        import io
+
+        from des.adapters.drivers.hooks.session_start_handler import (
+            handle_session_start,
+        )
+        from des.application.update_check_service import UpdateCheckResult, UpdateStatus
+
+        result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
+
+        with (
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service"
+            ) as mock_factory,
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler.run_probe",
+                return_value="advisory line\n",
+            ),
+            patch("sys.stdin", io.StringIO("{}")),
+        ):
+            mock_svc = MagicMock()
+            mock_svc.check_for_updates.return_value = result
+            mock_factory.return_value = mock_svc
+
+            exit_code = handle_session_start()
+
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        assert out == "advisory line\n"
+
+    @pytest.mark.probe_test
+    def test_no_output_when_probe_returns_empty(self, capsys):
+        """B11: run_probe() empty string produces no advisory output."""
+        import io
+
+        from des.adapters.drivers.hooks.session_start_handler import (
+            handle_session_start,
+        )
+        from des.application.update_check_service import UpdateCheckResult, UpdateStatus
+
+        result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
+
+        with (
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service"
+            ) as mock_factory,
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler.run_probe",
+                return_value="",
+            ),
+            patch("sys.stdin", io.StringIO("{}")),
+        ):
+            mock_svc = MagicMock()
+            mock_svc.check_for_updates.return_value = result
+            mock_factory.return_value = mock_svc
+
+            exit_code = handle_session_start()
+
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        # When update check returns UP_TO_DATE and probe returns empty, stdout has nothing
+        assert out == ""

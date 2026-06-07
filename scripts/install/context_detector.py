@@ -212,11 +212,15 @@ class TargetPlatform(Enum):
     """Target AI coding platforms for nWave installation.
 
     CLAUDE_CODE: Anthropic's Claude Code CLI
-    OPENCODE: OpenCode AI coding assistant
+    OPENCODE: OpenCode AI coding assistant (Charm Bracelet, ~/.config/opencode/)
+    CODEX: OpenAI Codex CLI (Rust, ~/.codex/)
+    COPILOT_CLI: GitHub Copilot CLI (@github/copilot, ~/.copilot/)
     """
 
     CLAUDE_CODE = "claude_code"
     OPENCODE = "opencode"
+    CODEX = "codex"
+    COPILOT_CLI = "copilot"
 
 
 def _detect_claude_code() -> bool:
@@ -249,12 +253,53 @@ def _detect_opencode() -> bool:
     return opencode_binary or opencode_config_exists
 
 
+def _detect_codex() -> bool:
+    """Detect if Codex CLI is available for installation.
+
+    Checks two signals:
+    - `codex` binary in PATH (via shutil.which)
+    - ~/.codex/ directory exists
+
+    Returns:
+        True if any Codex CLI signal is detected.
+    """
+    codex_binary = shutil.which("codex") is not None
+    codex_config_exists = (Path.home() / ".codex").is_dir()
+    return codex_binary or codex_config_exists
+
+
+def _detect_copilot() -> bool:
+    """Detect if GitHub Copilot CLI is available for installation.
+
+    Checks the spike-validated signals (copilot-cli-prereq-spike-2026-05-28 §4):
+    - COPILOT_CLI env set (the binary exports COPILOT_CLI=1 into hook subprocesses)
+    - $COPILOT_HOME (or ~/.copilot) directory exists (created on first launch)
+    - `copilot` binary in PATH (via shutil.which)
+
+    Returns:
+        True if any Copilot CLI signal is detected.
+    """
+    copilot_env = bool(os.environ.get("COPILOT_CLI", ""))
+    copilot_home_override = os.environ.get("COPILOT_HOME")
+    copilot_home = (
+        Path(copilot_home_override)
+        if copilot_home_override
+        else Path.home() / ".copilot"
+    )
+    copilot_config_exists = copilot_home.is_dir()
+    copilot_binary = shutil.which("copilot") is not None
+    return copilot_env or copilot_config_exists or copilot_binary
+
+
 def detect_target_platforms() -> set[TargetPlatform]:
     """Auto-detect which AI coding platforms are available for installation.
 
     Detection signals:
     - Claude Code: ~/.claude/ directory exists OR CLAUDE_CODE env var set
     - OpenCode: `opencode` binary in PATH (shutil.which) OR ~/.config/opencode/ exists
+    - Codex CLI: `codex` binary in PATH OR ~/.codex/ directory exists
+    - Copilot CLI: COPILOT_CLI env set OR $COPILOT_HOME/~/.copilot/ exists OR
+      `copilot` binary in PATH
 
     Returns:
         Set of detected platforms. Defaults to {CLAUDE_CODE} if nothing detected.
@@ -266,6 +311,12 @@ def detect_target_platforms() -> set[TargetPlatform]:
 
     if _detect_opencode():
         platforms.add(TargetPlatform.OPENCODE)
+
+    if _detect_codex():
+        platforms.add(TargetPlatform.CODEX)
+
+    if _detect_copilot():
+        platforms.add(TargetPlatform.COPILOT_CLI)
 
     # Default to Claude Code if nothing detected
     if not platforms:

@@ -9,9 +9,12 @@ blocked by a reminder hook.
 
 Output format (for nw-* agents only):
     {"additionalContext": "MANDATORY: You are @{agent_type}. Load your relevant
-    skill files from ~/.claude/skills/nw/{agent_type}/ before beginning work.
-    Skills encode your methodology — load the ones applicable to your current
-    task at the appropriate phase."}
+    skill files from ~/.claude/skills/nw-<skill-name>/SKILL.md for each skill
+    you need. Skills use a flat topical layout — for example:
+    ~/.claude/skills/nw-tdd-methodology/SKILL.md
+    ~/.claude/skills/nw-bdd-methodology/SKILL.md
+    ~/.claude/skills/nw-progressive-refactoring/SKILL.md
+    Load the ones applicable to your current task at the appropriate phase."}
 """
 
 from __future__ import annotations
@@ -21,12 +24,18 @@ import sys
 
 
 def _build_reminder_message(agent_type: str) -> str:
-    """Build the additionalContext reminder for a nWave sub-agent."""
+    """Build the additionalContext reminder for a nWave sub-agent.
+
+    Skills use a flat topical layout: ~/.claude/skills/nw-<skill-name>/SKILL.md
+    """
     return (
         f"MANDATORY: You are @{agent_type}. Load your relevant skill files from "
-        f"~/.claude/skills/nw/{agent_type}/ before beginning work. "
-        "Skills encode your methodology — load the ones applicable to your current "
-        "task at the appropriate phase."
+        "~/.claude/skills/nw-<skill-name>/SKILL.md for each skill you need. "
+        "Skills use a flat topical layout — for example: "
+        "~/.claude/skills/nw-tdd-methodology/SKILL.md, "
+        "~/.claude/skills/nw-bdd-methodology/SKILL.md, "
+        "~/.claude/skills/nw-progressive-refactoring/SKILL.md. "
+        "Load the ones applicable to your current task at the appropriate phase."
     )
 
 

@@ -1,0 +1,68 @@
+# Gate-contract: commit-slice (D4 Phase 1 — control-plane SSOT mirror)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=commit-slice.
+
+gate_id: commit-slice
+responsibility: |
+  Produce a correct-by-construction slice commit (stage slice files, commit with
+  Slice-Id trailer, compute and amend committed-scope Gate-Scope digest of HEAD,
+  verify) with no manual amend.
+module: des.cli.commit_slice
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --repo
+    required: true
+    type: path
+    help: "Path to the git repository / project root."
+  - name: --message
+    required: true
+    type: string
+    help: "The commit message body; the Gate-Scope: trailer is appended mechanically."
+  - name: --path
+    required: false
+    type: string
+    help: "A path to stage (repeatable). Omit with --all to stage everything."
+  - name: --all
+    required: false
+    type: bool
+    help: "Stage all tracked+untracked changes (git add -A) instead of --path."
+    default: false
+  - name: --no-verify-commit
+    required: false
+    type: bool
+    help: "Pass --no-verify to the underlying git commit/amend (skip git hooks)."
+    default: false
+  - name: --skip-verify
+    required: false
+    type: bool
+    help: "Skip the post-amend run_contract_gate --verify-gate-scope check."
+    default: false
+
+log_events:
+  - SliceCommitted
+  - SliceCommitUnverified
+  - MalformedInput
+  - CommitFailed
+
+failure_modes:
+  - error_class: MalformedInput
+    exit_code: 2
+    remediation: "Provide a non-empty --message without a Gate-Scope: trailer and stage at least one change via --path or --all."
+  - error_class: CommitFailed
+    exit_code: 2
+    remediation: "Resolve the underlying git commit/amend failure (hooks, index state) and retry."
+  - error_class: SliceCommitUnverified
+    exit_code: 1
+    remediation: "The committed-scope digest did not verify after amend; inspect run_contract_gate --verify-gate-scope output for the mismatch."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

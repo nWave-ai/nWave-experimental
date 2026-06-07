@@ -63,7 +63,7 @@ class TestOrchestratorExecuteStep:
 
         # WHEN: execute_step() is called
         result = orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/tmp",
@@ -89,7 +89,7 @@ class TestOrchestratorExecuteStep:
 
         # WHEN: execute_step() runs with 3 simulated iterations
         result = orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/tmp",
@@ -115,7 +115,7 @@ class TestOrchestratorExecuteStep:
 
         # WHEN: execute_step() runs with 5 simulated iterations
         orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/tmp",
@@ -143,7 +143,7 @@ class TestOrchestratorExecuteStep:
 
         # WHEN: execute_step() resumes with 2 more iterations
         result = orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/tmp",
@@ -178,7 +178,7 @@ class TestOrchestratorTimeoutMonitoringIntegration:
 
         # WHEN: execute_step() is called with timeout_thresholds
         result = orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/tmp",
@@ -213,7 +213,7 @@ class TestOrchestratorTimeoutMonitoringIntegration:
 
         # WHEN: execute_step() is called
         result = orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/tmp",
@@ -248,7 +248,7 @@ class TestOrchestratorTimeoutMonitoringIntegration:
 
         # WHEN: execute_step() runs with threshold checking
         result = orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/tmp",
@@ -284,7 +284,7 @@ class TestOrchestratorTimeoutMonitoringIntegration:
 
         # WHEN: execute_step() runs with thresholds [5, 10, 15]
         result = orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/project",
@@ -321,7 +321,7 @@ class TestOrchestratorTimeoutMonitoringIntegration:
 
         # WHEN: execute_step() runs
         result = orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/project",
@@ -357,7 +357,7 @@ class TestOrchestratorTimeoutMonitoringIntegration:
 
         # WHEN: execute_step() runs
         result = orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="test_step.json",
             project_root="/project",

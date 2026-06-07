@@ -9,6 +9,7 @@ import pytest
 from des.domain.deliver_integrity_verifier import (
     DeliverIntegrityVerifier,
 )
+from des.domain.deliver_progress_tracker import DeliverProgressState
 
 
 REQUIRED_PHASES = [
@@ -119,3 +120,75 @@ class TestDeliverIntegrityVerifier:
         result = verifier.verify(roadmap_steps, execution_log_entries)
         assert result.is_valid is True
         assert result.steps_verified == 1
+
+
+class TestCheckPhaseProgress:
+    """Tests for check_phase_progress — orchestrator phase completion check."""
+
+    @pytest.fixture
+    def verifier(self):
+        return DeliverIntegrityVerifier(required_phases=REQUIRED_PHASES)
+
+    def test_warns_when_all_steps_done_but_phases_not_recorded(self, verifier):
+        """AC1: all_steps_done=True + empty phases_completed -> warnings for phases 3-5."""
+        progress = DeliverProgressState(
+            project_id="test-feature",
+            total_steps=3,
+            completed_steps=3,
+            all_steps_done=True,
+            phases_completed={},
+        )
+        warnings = verifier.check_phase_progress(progress)
+        assert len(warnings) == 3
+        assert any("3" in w for w in warnings)
+        assert any("4" in w for w in warnings)
+        assert any("5" in w for w in warnings)
+
+    def test_no_warnings_when_all_phases_recorded(self, verifier):
+        """AC2: all_steps_done=True + phases 3,4,5 present -> no warnings."""
+        progress = DeliverProgressState(
+            project_id="test-feature",
+            total_steps=3,
+            completed_steps=3,
+            all_steps_done=True,
+            phases_completed={
+                "3": "2026-03-16T10:00:00Z",
+                "4": "2026-03-16T11:00:00Z",
+                "5": "2026-03-16T12:00:00Z",
+            },
+        )
+        warnings = verifier.check_phase_progress(progress)
+        assert warnings == []
+
+    def test_skips_check_when_progress_state_is_none(self, verifier):
+        """AC3: no progress file -> None -> skip check, no error."""
+        warnings = verifier.check_phase_progress(None)
+        assert warnings == []
+
+    def test_skips_check_when_not_all_steps_done(self, verifier):
+        """Check only applies after all steps done; partial progress -> no warnings."""
+        progress = DeliverProgressState(
+            project_id="test-feature",
+            total_steps=3,
+            completed_steps=1,
+            all_steps_done=False,
+            phases_completed={},
+        )
+        warnings = verifier.check_phase_progress(progress)
+        assert warnings == []
+
+    def test_warns_only_for_missing_phases(self, verifier):
+        """AC1 variant: only phase 5 missing -> exactly 1 warning mentioning phase 5."""
+        progress = DeliverProgressState(
+            project_id="test-feature",
+            total_steps=2,
+            completed_steps=2,
+            all_steps_done=True,
+            phases_completed={
+                "3": "2026-03-16T10:00:00Z",
+                "4": "2026-03-16T11:00:00Z",
+            },
+        )
+        warnings = verifier.check_phase_progress(progress)
+        assert len(warnings) == 1
+        assert "5" in warnings[0]

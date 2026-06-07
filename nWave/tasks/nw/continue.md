@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # NW-CONTINUE: Resume a Feature
 
-**Wave**: CROSS_WAVE (entry point) | **Agent**: Main Instance (self — wizard) | **Command**: `/nw:continue`
+**Wave**: CROSS_WAVE (entry point) | **Agent**: Main Instance (self — wizard) | **Command**: `/nw-continue`
 
 ## Overview
 
@@ -25,7 +25,7 @@ Otherwise scan `docs/feature/` for project directories:
 ls -d docs/feature/*/
 ```
 
-**No directories found:** Display "No active projects found under `docs/feature/`." Suggest `/nw:new`. Stop.
+**No directories found:** Display "No active projects found under `docs/feature/`." Suggest `/nw-new`. Stop.
 
 ### Step 2: Project Selection (Multiple Projects)
 
@@ -44,7 +44,7 @@ Check each wave's artifacts using Wave Detection Rules in `~/.claude/nWave/skill
 
 Check before showing progress:
 
-**Empty/corrupted artifacts:** Verify file size > 0 for each "complete" artifact. If empty, flag: "Warning: `requirements.md` exists but is empty (0 bytes). Recommend re-running DISCUSS wave."
+**Empty/corrupted artifacts:** Verify file size > 0 for each "complete" artifact. If empty, flag: "Warning: `user-stories.md` exists but is empty (0 bytes). Recommend re-running DISCUSS wave."
 
 **Non-adjacent waves (skipped):** If artifacts exist for non-consecutive waves (e.g., DISCUSS + DELIVER but no DESIGN/DISTILL), warn with options:
 1. Fill the gap — start from missing wave
@@ -53,10 +53,19 @@ Check before showing progress:
 
 ### Step 5: DELIVER Progress Detail
 
-If DELIVER in progress, show step-level detail:
-- Read `docs/feature/{id}/deliver/execution-log.json`: count COMMIT/PASS steps, find first without COMMIT/PASS
+DELIVER progress detection branches on `workflow.mode` (read from `.nwave/config.yaml`).
+
+**`classic` mode** — if DELIVER in progress, show step-level detail:
+- `classic` mode: read `docs/feature/{id}/deliver/execution-log.json` — count COMMIT/PASS steps, find first without COMMIT/PASS
 - Read `.develop-progress.json` if exists: check last failure point
 - Display: "DELIVER in progress: Steps 01-01 through 02-01 complete. Next: 02-02"
+
+**`atdd_pure` mode** — there is no `classic`-mode execution-log; resume is driven by the AT-completion ledger using the **two-case cue** (ADR-028 D6). Read the slice plan and the ledger, then pick the case:
+
+1. **Case (i): slices still `pending`.** Some slices are not yet `shipped`. Restart the `/nw-execute` per-slice lean cycle at the first **un-shipped slice** — the first slice plan row whose Status is not `shipped`.
+2. **Case (ii): all slices `shipped`, feature-end cycle unfinished.** The Status column gives no signal once every row is `shipped`, so read the latest `FeatureEndCheckpoint` ledger record and resume the **feature-end cycle** at the recorded step.
+
+Display under `atdd_pure`: "DELIVER (atdd_pure) in progress: 3/5 slices shipped. Next: re-enter /nw-execute at the first un-shipped slice" or "DELIVER (atdd_pure): all slices shipped. Resuming feature-end cycle from FeatureEndCheckpoint."
 
 ### Step 6: Progress Display
 
@@ -82,11 +91,15 @@ Recommend next wave: resume in-progress wave|successor of last complete wave. Sh
 
 | Error | Response |
 |-------|----------|
-| No `docs/feature/` directory | Suggest `/nw:new` |
-| Empty project directory | Suggest `/nw:new` or re-run from DISCUSS |
+| No `docs/feature/` directory | Suggest `/nw-new` |
+| Empty project directory | Suggest `/nw-new` or re-run from DISCUSS |
 | Corrupted artifact (0 bytes) | Flag file, recommend re-running that wave |
 | Skipped waves | Warn, offer gap-fill or continue options |
-| Cannot parse execution-log.json | Show raw file status, suggest manual review |
+| `classic` mode: cannot parse execution-log.json | Show raw file status, suggest manual review |
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 
@@ -102,24 +115,24 @@ Recommend next wave: resume in-progress wave|successor of last complete wave. Sh
 
 ### Example 1: Single project, resume at DESIGN
 ```
-/nw:continue
+/nw-continue
 ```
-Wizard finds one project: `notification-service`. DISCUSS artifacts exist (complete), no DESIGN artifacts. Shows progress, recommends DESIGN. User confirms, wizard launches `/nw:design notification-service`.
+Wizard finds one project: `notification-service`. DISCUSS artifacts exist (complete), no DESIGN artifacts. Shows progress, recommends DESIGN. User confirms, wizard launches `/nw-design notification-service`.
 
 ### Example 2: DELIVER resume
 ```
-/nw:continue rate-limiting
+/nw-continue rate-limiting
 ```
-Wizard checks `rate-limiting` project. All waves through DISTILL complete, DELIVER in progress (steps 01-01 through 02-01 done). Shows "Next: step 02-02", launches `/nw:deliver "rate-limiting"`.
+Wizard checks `rate-limiting` project. All waves through DISTILL complete, DELIVER in progress (steps 01-01 through 02-01 done). Shows "Next: step 02-02", launches `/nw-deliver "rate-limiting"`.
 
 ### Example 3: Multiple projects
 ```
-/nw:continue
+/nw-continue
 ```
 Wizard finds `rate-limiting` (modified today) and `user-notifications` (modified 3 days ago). Lists them, user picks `rate-limiting`. Wizard shows progress and recommends next wave.
 
 ### Example 4: No projects
 ```
-/nw:continue
+/nw-continue
 ```
-Wizard finds no `docs/feature/` directories. Shows "No active projects found" and suggests `/nw:new`.
+Wizard finds no `docs/feature/` directories. Shows "No active projects found" and suggests `/nw-new`.

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from des.application.orchestrator import ExecuteStepResult
+from des.application.execution_results import ExecuteStepResult
 
 
 class TestOrchestratorE2EWiring:
@@ -42,7 +42,7 @@ class TestOrchestratorE2EWiring:
         mocked_times = [900, 1350, 1620]  # 15min (50%), 22.5min (75%), 27min (90%)
 
         result = des_orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="step.json",
             project_root="/tmp",
@@ -81,7 +81,7 @@ class TestOrchestratorE2EWiring:
         in_memory_filesystem.write_json(step_file_path, minimal_step_file_dict)
 
         result = des_orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="step.json",
             project_root="/tmp",
@@ -108,7 +108,7 @@ class TestOrchestratorE2EWiring:
         in_memory_filesystem.write_json(step_file_path, minimal_step_file_dict)
 
         result = des_orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="step.json",
             project_root="/tmp",
@@ -134,7 +134,7 @@ class TestOrchestratorE2EWiring:
         in_memory_filesystem.write_json(step_file_path, minimal_step_file_dict)
 
         result = des_orchestrator.execute_step(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="step.json",
             project_root="/tmp",

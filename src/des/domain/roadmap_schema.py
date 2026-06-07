@@ -9,9 +9,9 @@ singleton loader with WSL-safe path handling.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
-from pathlib import Path
+
+from des.domain.json_schema_loader import JsonSchemaLoader
 
 
 @dataclass(frozen=True)
@@ -34,75 +34,15 @@ class RoadmapSchema:
     valid_statuses: tuple[str, ...] = field(default_factory=tuple)
 
 
-class RoadmapSchemaLoader:
-    """Loads schema from roadmap-schema.json. WSL-safe path resolution."""
+class RoadmapSchemaLoader(JsonSchemaLoader[RoadmapSchema]):
+    """Loads schema from roadmap-schema.json. WSL-safe path resolution.
+
+    Scaffolding (path-resolution, caching, clear_cache) lives in the shared
+    ``JsonSchemaLoader`` base; this subclass supplies only the bundled schema
+    filename and the ``_parse_schema`` step.
+    """
 
     SCHEMA_FILENAME = "roadmap-schema.json"
-
-    @staticmethod
-    def _resolve_default_schema_path() -> Path:
-        """Resolve schema path for current environment.
-
-        Handles three deployment contexts:
-        - Source: src/des/domain/roadmap_schema.py -> project_root/nWave/templates/
-        - Installed: ~/.claude/lib/python/des/domain/roadmap_schema.py -> ~/.claude/templates/
-        - Plugin: .../scripts/des/domain/roadmap_schema.py -> .../scripts/templates/
-        """
-        module_file = Path(__file__)
-        module_str = str(module_file).replace("\\", "/")
-        module_resolved_str = str(module_file.resolve()).replace("\\", "/")
-
-        is_installed = (
-            ".claude" in module_str or ".claude" in module_resolved_str
-        ) and (
-            "lib/python/des" in module_str or "lib/python/des" in module_resolved_str
-        )
-
-        if is_installed:
-            for search_path in [module_file, module_file.resolve()]:
-                for parent in search_path.parents:
-                    if parent.name == ".claude":
-                        candidate = (
-                            parent / "templates" / RoadmapSchemaLoader.SCHEMA_FILENAME
-                        )
-                        if candidate.exists():
-                            return candidate
-
-        # Plugin context: scripts/des/domain/roadmap_schema.py → scripts/templates/
-        for search_path in [module_file, module_file.resolve()]:
-            for parent in search_path.parents:
-                if parent.name == "scripts":
-                    candidate = (
-                        parent / "templates" / RoadmapSchemaLoader.SCHEMA_FILENAME
-                    )
-                    if candidate.exists():
-                        return candidate
-
-        return (
-            module_file.resolve().parent.parent.parent.parent
-            / "nWave"
-            / "templates"
-            / RoadmapSchemaLoader.SCHEMA_FILENAME
-        )
-
-    def __init__(self, schema_path: Path | None = None):
-        self._schema_path = schema_path or self._resolve_default_schema_path()
-        self._cached_schema: RoadmapSchema | None = None
-
-    @property
-    def schema_path(self) -> Path:
-        return self._schema_path
-
-    def load(self) -> RoadmapSchema:
-        if self._cached_schema is not None:
-            return self._cached_schema
-        raw_data = self._read_schema_file()
-        self._cached_schema = self._parse_schema(raw_data)
-        return self._cached_schema
-
-    def _read_schema_file(self) -> dict:
-        with open(self._schema_path, encoding="utf-8") as f:
-            return json.load(f)
 
     def _parse_schema(self, raw: dict) -> RoadmapSchema:
         required = raw.get("required_fields", {})
@@ -125,23 +65,3 @@ class RoadmapSchemaLoader:
             valid_deps_strategies=tuple(raw.get("valid_deps_strategies", [])),
             valid_statuses=tuple(raw.get("valid_validation_statuses", [])),
         )
-
-    def clear_cache(self) -> None:
-        self._cached_schema = None
-
-
-_global_loader: RoadmapSchemaLoader | None = None
-
-
-def get_roadmap_schema() -> RoadmapSchema:
-    """Get roadmap schema via cached singleton."""
-    global _global_loader
-    if _global_loader is None:
-        _global_loader = RoadmapSchemaLoader()
-    return _global_loader.load()
-
-
-def reset_global_schema_loader() -> None:
-    """Reset singleton. Used in tests."""
-    global _global_loader
-    _global_loader = None

@@ -47,7 +47,7 @@ class TestScenario014AgentReceivesTimeoutWarningsInPrompt:
 
             # When: Rendering prompt after threshold crossed
             prompt = orchestrator.render_prompt(
-                command="/nw:execute",
+                command="/nw-execute",
                 agent="@software-crafter",
                 step_file="test_step.json",
                 project_root=tmpdir,

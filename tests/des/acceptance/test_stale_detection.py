@@ -26,7 +26,7 @@ class TestSessionScopedStaleDetection:
     """E2E acceptance tests for US-008: Session-scoped stale execution detection."""
 
     # =========================================================================
-    # AC-008.1: Stale check runs automatically before each /nw:execute invocation
+    # AC-008.1: Stale check runs automatically before each /nw-execute invocation
     # Scenario 1: Pre-execution scan detects stale execution from previous session
     # =========================================================================
 
@@ -35,7 +35,7 @@ class TestSessionScopedStaleDetection:
     ):
         """
         GIVEN step 01-01 has RED_UNIT phase IN_PROGRESS since 45 minutes ago
-        WHEN Marcus runs /nw:execute for step 02-01
+        WHEN Marcus runs /nw-execute for step 02-01
         THEN execution is BLOCKED with alert showing stale step details
 
         Business Value: Priya ensures Marcus cannot accidentally start new work
@@ -43,7 +43,7 @@ class TestSessionScopedStaleDetection:
                        confusing state where multiple steps appear "in progress".
 
         Domain Example (from story):
-        Marcus runs `/nw:execute @software-crafter "steps/02-01.json"`.
+        Marcus runs `/nw-execute @software-crafter "steps/02-01.json"`.
         Before starting, DES scans for stale executions.
         Finds step 01-01 with RED_UNIT IN_PROGRESS since 45 min ago.
         Alert: "Stale execution found: step 01-01.json, phase RED_UNIT (45 min)"
@@ -100,7 +100,7 @@ class TestSessionScopedStaleDetection:
 
         orchestrator = DESOrchestrator.create_with_defaults()
         result = orchestrator.execute_step_with_stale_check(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="steps/02-01.json",
             project_root=tmp_project_root,
@@ -115,14 +115,14 @@ class TestSessionScopedStaleDetection:
         assert "Resolve before proceeding" in result.stale_alert.message
 
     # =========================================================================
-    # AC-008.1: Stale check runs automatically before each /nw:execute invocation
+    # AC-008.1: Stale check runs automatically before each /nw-execute invocation
     # Scenario 2: Clean start when no stale executions exist
     # =========================================================================
 
     def test_scenario_002_clean_start_when_no_stale_executions(self, tmp_project_root):
         """
         GIVEN no step files have IN_PROGRESS phases
-        WHEN Marcus runs /nw:execute for step 01-01
+        WHEN Marcus runs /nw-execute for step 01-01
         THEN pre-execution scan passes and execution proceeds normally
 
         Business Value: Priya ensures the stale detection mechanism does not
@@ -130,7 +130,7 @@ class TestSessionScopedStaleDetection:
                        when all previous work is properly completed.
 
         Domain Example (from story):
-        Marcus runs `/nw:execute @software-crafter "steps/01-01.json"`.
+        Marcus runs `/nw-execute @software-crafter "steps/01-01.json"`.
         Pre-execution scan finds no stale IN_PROGRESS phases.
         Execution proceeds normally.
         No daemon running in background - check completes and control returns.
@@ -188,7 +188,7 @@ class TestSessionScopedStaleDetection:
 
         orchestrator = DESOrchestrator.create_with_defaults()
         result = orchestrator.execute_step_with_stale_check(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="steps/01-01.json",
             project_root=tmp_project_root,
@@ -214,7 +214,7 @@ class TestSessionScopedStaleDetection:
         """
         GIVEN step 01-01 has GREEN_UNIT phase IN_PROGRESS since 15 minutes ago
         AND stale threshold is 30 minutes (default)
-        WHEN Marcus runs /nw:execute for step 02-01
+        WHEN Marcus runs /nw-execute for step 02-01
         THEN execution proceeds (15 min < 30 min threshold)
 
         Business Value: Priya ensures legitimate in-progress work is not
@@ -282,7 +282,7 @@ class TestSessionScopedStaleDetection:
         """
         GIVEN DES_STALE_THRESHOLD_MINUTES=10 environment variable is set
         AND step 01-01 has IN_PROGRESS phase since 15 minutes ago
-        WHEN Marcus runs /nw:execute for step 02-01
+        WHEN Marcus runs /nw-execute for step 02-01
         THEN execution is BLOCKED (15 min > 10 min custom threshold)
 
         Business Value: Priya can configure stricter stale detection for
@@ -417,7 +417,7 @@ class TestSessionScopedStaleDetection:
         """
         GIVEN stale step 01-01 is detected (RED_UNIT IN_PROGRESS for 45 min)
         WHEN Marcus marks step 01-01 as ABANDONED with recovery suggestions
-        AND runs /nw:execute for step 02-01 again
+        AND runs /nw-execute for step 02-01 again
         THEN pre-execution scan passes and new execution starts
 
         Business Value: Priya ensures developers can recover from stuck states
@@ -426,7 +426,7 @@ class TestSessionScopedStaleDetection:
 
         Domain Example (from story):
         Marcus resolves stale step 01-01 (marks as ABANDONED with recovery suggestions).
-        Runs `/nw:execute` again.
+        Runs `/nw-execute` again.
         Pre-execution scan passes - no stale phases found.
         New execution starts on step 02-01.
         """
@@ -444,7 +444,7 @@ class TestSessionScopedStaleDetection:
                 "recovery_suggestions": [
                     "Review agent transcript for error details",
                     "Reset RED_UNIT phase status to NOT_EXECUTED",
-                    "Run `/nw:execute` again to resume from RED_UNIT",
+                    "Run `/nw-execute` again to resume from RED_UNIT",
                 ],
                 "abandoned_at": datetime.now(timezone.utc).isoformat(),
             },

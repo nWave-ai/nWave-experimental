@@ -22,9 +22,12 @@ class TestInvocationLimitsValidator:
         step_file.write_text(json.dumps(step_data))
 
         # WHEN
-        from des.domain.invocation_limits_validator import InvocationLimitsValidator
+        from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
+        from des.application.invocation_limits_validator import (
+            InvocationLimitsValidator,
+        )
 
-        validator = InvocationLimitsValidator()
+        validator = InvocationLimitsValidator(filesystem=RealFileSystem())
         result = validator.validate_limits(step_file)
 
         # THEN
@@ -49,9 +52,12 @@ class TestInvocationLimitsValidator:
         step_file.write_text(json.dumps(step_data))
 
         # WHEN
-        from des.domain.invocation_limits_validator import InvocationLimitsValidator
+        from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
+        from des.application.invocation_limits_validator import (
+            InvocationLimitsValidator,
+        )
 
-        validator = InvocationLimitsValidator()
+        validator = InvocationLimitsValidator(filesystem=RealFileSystem())
         result = validator.validate_limits(step_file)
 
         # THEN
@@ -73,9 +79,12 @@ class TestInvocationLimitsValidator:
         step_file.write_text(json.dumps(step_data))
 
         # WHEN
-        from des.domain.invocation_limits_validator import InvocationLimitsValidator
+        from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
+        from des.application.invocation_limits_validator import (
+            InvocationLimitsValidator,
+        )
 
-        validator = InvocationLimitsValidator()
+        validator = InvocationLimitsValidator(filesystem=RealFileSystem())
         result = validator.validate_limits(step_file)
 
         # THEN
@@ -101,9 +110,12 @@ class TestInvocationLimitsValidator:
         step_file.write_text(json.dumps(step_data))
 
         # WHEN
-        from des.domain.invocation_limits_validator import InvocationLimitsValidator
+        from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
+        from des.application.invocation_limits_validator import (
+            InvocationLimitsValidator,
+        )
 
-        validator = InvocationLimitsValidator()
+        validator = InvocationLimitsValidator(filesystem=RealFileSystem())
         result = validator.validate_limits(step_file)
 
         # THEN
@@ -137,9 +149,12 @@ class TestInvocationLimitsValidator:
         step_file.write_text(json.dumps(step_data))
 
         # WHEN
-        from des.domain.invocation_limits_validator import InvocationLimitsValidator
+        from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
+        from des.application.invocation_limits_validator import (
+            InvocationLimitsValidator,
+        )
 
-        validator = InvocationLimitsValidator()
+        validator = InvocationLimitsValidator(filesystem=RealFileSystem())
         result = validator.validate_limits(step_file)
 
         # THEN
@@ -173,9 +188,12 @@ class TestInvocationLimitsValidator:
         step_file.write_text(json.dumps(step_data))
 
         # WHEN
-        from des.domain.invocation_limits_validator import InvocationLimitsValidator
+        from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
+        from des.application.invocation_limits_validator import (
+            InvocationLimitsValidator,
+        )
 
-        validator = InvocationLimitsValidator()
+        validator = InvocationLimitsValidator(filesystem=RealFileSystem())
         result = validator.validate_limits(step_file)
 
         # THEN
@@ -194,9 +212,12 @@ class TestInvocationLimitsValidator:
         step_file.write_text(json.dumps(step_data))
 
         # WHEN
-        from des.domain.invocation_limits_validator import InvocationLimitsValidator
+        from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
+        from des.application.invocation_limits_validator import (
+            InvocationLimitsValidator,
+        )
 
-        validator = InvocationLimitsValidator()
+        validator = InvocationLimitsValidator(filesystem=RealFileSystem())
         result = validator.validate_limits(step_file)
 
         # THEN

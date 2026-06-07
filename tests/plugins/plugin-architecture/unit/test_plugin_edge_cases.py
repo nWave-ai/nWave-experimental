@@ -389,6 +389,11 @@ class TestAgentsPluginSourceFallback:
         for i in range(10):
             (source_agents / f"nw-agent{i}.md").write_text(f"# Agent {i}")
 
+        # Create minimal catalog to satisfy fail-closed load_public_agents
+        (tmp_path / "nWave" / "framework-catalog.yaml").write_text(
+            "agents:\n  test-agent:\n    public: true\n"
+        )
+
         context = InstallContext(
             claude_dir=claude_dir,
             scripts_dir=tmp_path / "scripts",
@@ -484,20 +489,17 @@ class TestUtilitiesPluginFreshInstall:
 # =============================================================================
 
 
-class TestCommandsPluginFileCopy:
-    """Tests for file (not directory) copy path."""
+class TestCommandsPluginLegacyCleanup:
+    """Tests for CommandsPlugin legacy cleanup behavior."""
 
-    def test_install_copies_individual_files(
+    def test_install_removes_legacy_commands(
         self, tmp_path: Path, test_logger: logging.Logger
     ):
-        """install should copy individual files in commands source."""
+        """install removes legacy commands/nw/ directory."""
         claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create source at the path the plugin actually reads
-        commands_source = tmp_path / "nWave" / "tasks" / "nw"
-        commands_source.mkdir(parents=True)
-        (commands_source / "standalone.md").write_text("# Standalone Command")
+        legacy_dir = claude_dir / "commands" / "nw"
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "standalone.md").write_text("# Old Command")
 
         context = InstallContext(
             claude_dir=claude_dir,
@@ -512,5 +514,4 @@ class TestCommandsPluginFileCopy:
         result = plugin.install(context)
 
         assert result.success
-        target = claude_dir / "commands" / "nw" / "standalone.md"
-        assert target.exists()
+        assert not legacy_dir.exists()

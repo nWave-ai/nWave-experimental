@@ -5,11 +5,11 @@ argument-hint: "[deployment-target] - Optional: --environment=[staging|productio
 
 # NW-DEVOPS: Platform Readiness and Infrastructure Design
 
-**Wave**: DEVOPS (wave 4 of 6) | **Agent**: Apex (nw-platform-architect) | **Command**: `/nw:devops`
+**Wave**: DEVOPS (wave 4 of 6) | **Agent**: Apex (nw-platform-architect) | **Command**: `/nw-devops`
 
 ## Overview
 
-Execute DEVOPS wave: platform readiness|CI/CD pipeline setup|observability design|infrastructure preparation. Positioned between DESIGN and DISTILL (DISCOVER > DISCUSS > DESIGN > DEVOPS > DISTILL > DELIVER), ensures infrastructure is ready before acceptance tests and code.
+Execute DEVOPS wave: platform readiness|CI/CD pipeline setup|observability design|infrastructure preparation. Positioned between DESIGN and DISTILL (DISCOVER > DISCUSS > SPIKE > DESIGN > DEVOPS > DISTILL > DELIVER), ensures infrastructure is ready before acceptance tests and code.
 
 Apex translates DESIGN architecture decisions into operational infrastructure: CI/CD pipelines|logging|monitoring|alerting|observability.
 
@@ -116,15 +116,29 @@ After selection, Apex asks permission to write to project CLAUDE.md under `## Mu
 
 Default if not chosen: **per-feature**.
 
-## Context Files Required
+## Prior Wave Consultation
 
-- docs/feature/{feature-id}/design/architecture-design.md
-- docs/feature/{feature-id}/design/technology-stack.md
-- docs/feature/{feature-id}/design/component-boundaries.md
+Before beginning DEVOPS work, read SSOT and prior wave artifacts:
 
-## Previous Artifacts (Wave Handoff)
+1. **SSOT** (if `docs/product/` exists):
+   - `docs/product/architecture/brief.md` — current architecture (driving ports, component topology)
+   - `docs/product/kpi-contracts.yaml` — existing KPI contracts (if any — extend, don't duplicate)
+2. **DISCUSS** (KPIs only): Read `docs/feature/{feature-id}/discuss/outcome-kpis.md` — drives observability and instrumentation design
+3. **DESIGN** (primary input): Read `docs/feature/{feature-id}/design/wave-decisions.md` + SSOT architecture — architecture drives infrastructure decisions
 
-- docs/feature/{feature-id}/design/* — Complete architecture from DESIGN
+SSOT architecture is the primary input for infrastructure design. Feature-level `outcome-kpis.md` defines what to instrument for this specific feature.
+
+**READING ENFORCEMENT**: You MUST read every file listed in Prior Wave Consultation above using the Read tool before proceeding. After reading, output a confirmation checklist (`✓ {file}` for each read, `⊘ {file} (not found)` for missing). Do NOT skip files that exist — skipping causes infrastructure decisions disconnected from architecture.
+
+After reading, check whether any DEVOPS decisions would contradict DESIGN architecture. Flag contradictions and resolve with user before proceeding. Example: DESIGN specifies "single-region deployment" but DEVOPS discovers latency requirements from outcome-kpis.md that demand multi-region — this must be resolved.
+
+## Document Update (Back-Propagation)
+
+When DEVOPS decisions change assumptions from prior waves:
+1. Document the change in a `## Changed Assumptions` section at the end of the affected DEVOPS artifact
+2. Reference the original prior-wave document and quote the original assumption
+3. State the new assumption and the rationale for the change
+4. If infrastructure constraints require architecture changes, note them in `docs/feature/{feature-id}/devops/upstream-changes.md` for the architect to review
 
 ## Agent Invocation
 
@@ -132,7 +146,7 @@ Default if not chosen: **per-feature**.
 
 Execute platform readiness and infrastructure design for {feature-id}.
 
-Context files: see Context Files Required above.
+Context files: see Prior Wave Consultation above.
 
 **Configuration:**
 - deployment_target: {Decision 1} | container_orchestration: {Decision 2}
@@ -140,6 +154,16 @@ Context files: see Context Files Required above.
 - observability_and_logging: {Decision 5} | deployment_strategy: {Decision 6}
 - continuous_learning: {Decision 7} | git_branching_strategy: {Decision 8}
 - mutation_testing_strategy: {Decision 9}
+
+**KPI-Driven Observability:**
+If `outcome-kpis.md` exists in the feature's discuss directory, Apex MUST read it and design instrumentation to collect the defined KPIs. Each KPI's "Measured By" and "Measurement Plan" sections drive:
+- Data collection infrastructure (events, logs, analytics)
+- Dashboard design (which metrics to visualize)
+- Alerting rules (guardrail metric thresholds)
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 
@@ -151,6 +175,9 @@ Context files: see Context Files Required above.
 - [ ] Continuous learning capabilities designed (if applicable)
 - [ ] Git branching strategy selected and CI/CD triggers aligned
 - [ ] Mutation testing strategy selected and persisted to project CLAUDE.md
+- [ ] Outcome KPIs instrumentation designed (if outcome-kpis.md exists)
+- [ ] Data collection pipeline documented for each KPI
+- [ ] Dashboard mockup or spec includes all outcome KPIs
 - [ ] Handoff accepted by nw-acceptance-designer (DISTILL wave)
 
 ## Next Wave
@@ -162,18 +189,50 @@ Context files: see Context Files Required above.
 
 ### Example 1: Cloud-native greenfield
 ```
-/nw:devops payment-gateway
+/nw-devops payment-gateway
 ```
 User selects: cloud-native, Kubernetes, GitHub Actions, no existing infra, OpenTelemetry, blue-green, trunk-based development. Apex designs full infrastructure from scratch with robust CI gates on every commit to main.
 
 ### Example 2: Brownfield with existing CI/CD
 ```
-/nw:devops auth-upgrade
+/nw-devops auth-upgrade
 ```
 User selects: hybrid, Docker Compose, GitLab CI (existing), existing CI/CD only, Datadog, rolling, GitFlow. Apex extends existing pipelines with branch-specific stages for develop, release, and hotfix branches.
 
+## Wave Decisions Summary
+
+Before completing DEVOPS, produce `docs/feature/{feature-id}/devops/wave-decisions.md`:
+
+```markdown
+# DEVOPS Decisions — {feature-id}
+
+## Key Decisions
+- [D1] {decision}: {rationale} (see: {source-file})
+
+## Infrastructure Summary
+- Deployment: {target + strategy}
+- CI/CD: {platform + branching strategy}
+- Observability: {stack}
+- Mutation testing: {strategy}
+
+## Constraints Established
+- {infrastructure constraint}
+
+## Upstream Changes
+- {any DESIGN assumptions changed, with rationale}
+```
+
+## SSOT Update
+
+After producing feature-level artifacts, update the product-level SSOT:
+
+1. **KPI contracts**: Translate `outcome-kpis.md` (from DISCUSS) into machine-readable contracts in `docs/product/kpi-contracts.yaml`. Each contract needs: `id`, `feature`, `job`, `metric`, `baseline`, `target`, `threshold_alert`, `measurement_method`, `status`. Add changelog entry. If `kpi-contracts.yaml` does not exist, create it with `schema_version: 1`.
+
+If `docs/product/` does not exist, create it. This is SSOT bootstrap for KPI contracts.
+
 ## Expected Outputs
 
+### Feature delta (internal planning, not persisted in SSOT model)
 ```
 docs/feature/{feature-id}/devops/
   platform-architecture.md
@@ -182,5 +241,10 @@ docs/feature/{feature-id}/devops/
   monitoring-alerting.md
   infrastructure-integration.md    (if existing infra)
   branching-strategy.md
-  continuous-learning.md           (if applicable)
+  wave-decisions.md
+```
+
+### SSOT updates (in `docs/product/`)
+```
+  kpi-contracts.yaml               (created or updated + changelog entry)
 ```

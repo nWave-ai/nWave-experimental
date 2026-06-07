@@ -17,6 +17,10 @@ from pathlib import Path
 import pytest
 
 
+# Serialize tests touching .git/hooks/ to avoid xdist races on shared state.
+pytestmark = pytest.mark.xdist_group("git_hooks")
+
+
 # Constants for clarity and maintainability
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
@@ -34,7 +38,27 @@ class TestCommitMsgHook:
 
     @pytest.fixture
     def git_hooks_dir(self, project_root):
-        """Get git hooks directory."""
+        """Get git hooks directory, supporting both regular repos and worktrees.
+
+        In a worktree, .git is a file pointing to the main repo's worktree
+        directory, so .git/hooks/ doesn't exist. Use git rev-parse to find
+        the actual hooks directory reliably.
+        """
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--git-common-dir"],
+                capture_output=True,
+                text=True,
+                cwd=project_root,
+                timeout=SUBPROCESS_TIMEOUT,
+            )
+            if result.returncode == 0:
+                git_common_dir = Path(result.stdout.strip())
+                if not git_common_dir.is_absolute():
+                    git_common_dir = project_root / git_common_dir
+                return git_common_dir / "hooks"
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
         return project_root / ".git" / "hooks"
 
     @pytest.fixture

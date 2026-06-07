@@ -18,7 +18,7 @@ WAVE: DISTILL (Acceptance Test Creation)
 STATUS: RED (Outside-In TDD - awaiting DELIVER wave implementation)
 
 DOMAIN EXAMPLES FROM USER STORY:
-1. Complete Execution Audit: Marcus runs /nw:execute, audit log captures all phases
+1. Complete Execution Audit: Marcus runs /nw-execute, audit log captures all phases
 2. Failed Validation Audit: Incomplete prompt rejection is logged
 3. Crash Recovery Audit: Partial execution with abandoned phase is traceable
 
@@ -259,7 +259,7 @@ class TestAuditTrailForComplianceVerification:
 
     def test_scenario_003a_task_invocation_events_captured(self):
         """
-        GIVEN Marcus runs /nw:execute @software-crafter "steps/01-01.json"
+        GIVEN Marcus runs /nw-execute @software-crafter "steps/01-01.json"
         WHEN task invocation begins and passes validation
         THEN audit log contains TASK_INVOCATION_STARTED and TASK_INVOCATION_VALIDATED
 
@@ -605,7 +605,7 @@ class TestAuditTrailForComplianceVerification:
 
     def test_scenario_010_complete_execution_produces_reviewable_audit_trail(self):
         """
-        GIVEN Marcus runs /nw:execute @software-crafter "steps/01-01.json" on 2026-01-22
+        GIVEN Marcus runs /nw-execute @software-crafter "steps/01-01.json" on 2026-01-22
         WHEN execution completes successfully through all 14 phases
         THEN Priya can review audit-2026-01-22.log and see:
              - TASK_INVOCATION_STARTED with step path

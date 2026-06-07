@@ -1,4 +1,4 @@
-"""Unit tests for session-start routing in claude_code_hook_adapter.
+"""Unit tests for session-start routing in hook_router.
 
 Test budget: 3 behaviors x 2 = 6 unit tests max.
 """
@@ -26,29 +26,27 @@ class TestSessionStartRouting:
 
     def test_session_start_calls_handle_session_start(self):
         """session-start command dispatches to handle_session_start."""
-        from des.adapters.drivers.hooks import claude_code_hook_adapter
+        from des.adapters.drivers.hooks import hook_router
 
         with patch.object(
-            claude_code_hook_adapter,
+            hook_router,
             "handle_session_start",
             return_value=0,
         ) as mock_handler:
-            _capture_exit(claude_code_hook_adapter, ["adapter", "session-start"])
+            _capture_exit(hook_router, ["adapter", "session-start"])
 
         mock_handler.assert_called_once()
 
     def test_session_start_exit_code_from_handler(self):
         """session-start forwards handler return value as exit code."""
-        from des.adapters.drivers.hooks import claude_code_hook_adapter
+        from des.adapters.drivers.hooks import hook_router
 
         with patch.object(
-            claude_code_hook_adapter,
+            hook_router,
             "handle_session_start",
             return_value=0,
         ):
-            exits = _capture_exit(
-                claude_code_hook_adapter, ["adapter", "session-start"]
-            )
+            exits = _capture_exit(hook_router, ["adapter", "session-start"])
 
         assert exits == [0]
 
@@ -58,11 +56,9 @@ class TestUnknownCommandExits1:
 
     def test_unknown_command_still_exits_1(self, capsys):
         """Unknown command exits 1 with error JSON."""
-        from des.adapters.drivers.hooks import claude_code_hook_adapter
+        from des.adapters.drivers.hooks import hook_router
 
-        exits = _capture_exit(
-            claude_code_hook_adapter, ["adapter", "totally-unknown-xyz"]
-        )
+        exits = _capture_exit(hook_router, ["adapter", "totally-unknown-xyz"])
 
         assert exits == [1]
         out = capsys.readouterr().out.strip()
@@ -76,13 +72,13 @@ class TestExistingRoutingUnaffected:
 
     def test_pre_task_still_routes_to_pre_tool_use_handler(self):
         """pre-task command still routes to handle_pre_tool_use."""
-        from des.adapters.drivers.hooks import claude_code_hook_adapter
+        from des.adapters.drivers.hooks import hook_router
 
         with patch.object(
-            claude_code_hook_adapter,
+            hook_router,
             "handle_pre_tool_use",
             return_value=0,
         ) as mock_handler:
-            _capture_exit(claude_code_hook_adapter, ["adapter", "pre-task"])
+            _capture_exit(hook_router, ["adapter", "pre-task"])
 
         mock_handler.assert_called_once()

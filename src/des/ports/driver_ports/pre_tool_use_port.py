@@ -1,9 +1,9 @@
-"""PreToolUsePort - driver port for validating Task tool invocations.
+"""PreToolUsePort - driver port for validating Agent tool invocations.
 
 Abstract interface defining how the Claude Code hook adapter communicates
 with the application layer for pre-tool-use validation.
 
-Called by: ClaudeCodeHookAdapter when PreToolUse hook fires for Task tool.
+Called by: ClaudeCodeHookAdapter when PreToolUse hook fires for Agent tool.
 Implemented by: PreToolUseService (application layer).
 """
 
@@ -18,13 +18,11 @@ class PreToolUseInput:
     """Input data for pre-tool-use validation.
 
     Attributes:
-        prompt: Full Task prompt text
-        max_turns: max_turns parameter (may be absent/None)
+        prompt: Full Agent tool prompt text
         subagent_type: Type of subagent being created
     """
 
     prompt: str
-    max_turns: int | None = None
     subagent_type: str = ""
 
 
@@ -65,7 +63,7 @@ class HookDecision:
 
 
 class PreToolUsePort(ABC):
-    """Driver port: validates Task tool invocations before execution.
+    """Driver port: validates Agent tool invocations before execution.
 
     This is the application-layer interface that the hook adapter calls.
     The adapter translates Claude Code's JSON protocol into PreToolUseInput,
@@ -74,7 +72,7 @@ class PreToolUsePort(ABC):
 
     @abstractmethod
     def validate(self, input_data: PreToolUseInput) -> HookDecision:
-        """Validate a Task tool invocation.
+        """Validate an Agent tool invocation.
 
         Args:
             input_data: Parsed input from the hook protocol

@@ -28,7 +28,7 @@ class TestRecoverySuggestionsDataStructure:
         step_state["recovery_suggestions"] = [
             "Review agent transcript for error details",
             "Reset phase status to NOT_EXECUTED",
-            "Run /nw:execute again to resume",
+            "Run /nw-execute again to resume",
         ]
 
         # Assert
@@ -119,7 +119,7 @@ class TestRecoverySuggestionsDataStructure:
                 "recovery_suggestions": [
                     "Review agent transcript for error details",
                     "Reset GREEN_UNIT phase status to NOT_EXECUTED",
-                    "Run /nw:execute again to resume from GREEN_UNIT",
+                    "Run /nw-execute again to resume from GREEN_UNIT",
                 ],
             },
         }
@@ -172,7 +172,7 @@ class TestRecoverySuggestionsDataStructure:
         suggestions = [
             "Check transcript at /path/to/file",
             "Reset phase status to NOT_EXECUTED",
-            "Run /nw:execute to continue",
+            "Run /nw-execute to continue",
         ]
 
         # Act & Assert
@@ -190,7 +190,7 @@ class TestRecoverySuggestionsDataStructure:
         step_state = {
             "recovery_suggestions": [
                 "Check agent transcript at /tmp/agent-transcripts/session-12345.log",
-                "Run command: /nw:execute @software-crafter steps/01-01.json",
+                "Run command: /nw-execute @software-crafter steps/01-01.json",
                 "Reset phase status by editing step file at docs/feature/des/steps/01-01.json",
             ],
         }

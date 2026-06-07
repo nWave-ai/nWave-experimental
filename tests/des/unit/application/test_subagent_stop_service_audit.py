@@ -18,7 +18,7 @@ import pytest
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.phase_event import PhaseEvent
 from des.domain.step_completion_validator import StepCompletionValidator
-from des.domain.tdd_schema import get_tdd_schema
+from des.domain.tdd_schema import TDDSchemaLoader
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driven_ports.execution_log_reader import ExecutionLogReader
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
@@ -155,7 +155,7 @@ def _build_service(
     audit_spy = SpyAuditWriter()
     service = SubagentStopService(
         log_reader=StubExecutionLogReader(project_id=project_id, events=events),
-        completion_validator=StepCompletionValidator(schema=get_tdd_schema()),
+        completion_validator=StepCompletionValidator(schema=TDDSchemaLoader().load()),
         scope_checker=StubScopeChecker(violations=violations),
         audit_writer=audit_spy,
         time_provider=StubTimeProvider(),
@@ -170,8 +170,8 @@ class TestAuditEventsUseDirectFields:
     """AC1: PASSED, FAILED, and SCOPE_VIOLATION events use feature_name and step_id
     as direct AuditEvent fields (not in data dict)."""
 
-    def test_passed_event_has_feature_name_as_direct_field(self) -> None:
-        """PASSED event has feature_name as direct AuditEvent field."""
+    def test_passed_event_has_feature_name_and_step_id_as_direct_fields(self) -> None:
+        """PASSED event has both feature_name and step_id as direct AuditEvent fields."""
         service, audit_spy = _build_service(
             project_id="my-feature",
             events=_make_complete_phase_events("02-01"),
@@ -189,25 +189,6 @@ class TestAuditEventsUseDirectFields:
         ]
         assert len(passed) == 1
         assert passed[0].feature_name == "my-feature"
-
-    def test_passed_event_has_step_id_as_direct_field(self) -> None:
-        """PASSED event has step_id as direct AuditEvent field."""
-        service, audit_spy = _build_service(
-            project_id="my-feature",
-            events=_make_complete_phase_events("02-01"),
-        )
-        context = SubagentStopContext(
-            execution_log_path="/fake/execution-log.json",
-            project_id="my-feature",
-            step_id="02-01",
-        )
-
-        service.validate(context)
-
-        passed = [
-            e for e in audit_spy.events if e.event_type == "HOOK_SUBAGENT_STOP_PASSED"
-        ]
-        assert len(passed) == 1
         assert passed[0].step_id == "02-01"
 
     def test_failed_event_has_feature_name_and_step_id_as_direct_fields(self) -> None:
@@ -493,7 +474,7 @@ class TestIntegrityValidationIntegration:
         )
 
         audit_spy = SpyAuditWriter()
-        schema = get_tdd_schema()
+        schema = TDDSchemaLoader().load()
         service = SubagentStopService(
             log_reader=StubExecutionLogReader(project_id="my-feature", events=events),
             completion_validator=StepCompletionValidator(schema=schema),
@@ -534,7 +515,7 @@ class TestIntegrityValidationIntegration:
         )
 
         audit_spy = SpyAuditWriter()
-        schema = get_tdd_schema()
+        schema = TDDSchemaLoader().load()
         time_provider = StubTimeProvider()
         service = SubagentStopService(
             log_reader=StubExecutionLogReader(project_id="my-feature", events=events),

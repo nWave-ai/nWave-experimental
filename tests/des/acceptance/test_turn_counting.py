@@ -46,14 +46,14 @@ class TestTurnCountingIntegration:
         """
         AC-004.1: Turn count increments on each agent call during execute_step().
 
-        GIVEN /nw:execute or /nw:develop command invoked
+        GIVEN /nw-execute or /nw-develop command invoked
         WHEN orchestrator executes step via execute_step()
         AND sub-agent makes multiple invocation iterations
         THEN turn_count field increments for each iteration
         AND turn_count persisted to step file phase_execution_log
 
         Business Context:
-        Marcus runs `/nw:execute @software-crafter steps/01-01.json`.
+        Marcus runs `/nw-execute @software-crafter steps/01-01.json`.
         The orchestrator must track how many turns the agent uses during
         execution and persist this to the step file for audit trail.
 
@@ -62,9 +62,9 @@ class TestTurnCountingIntegration:
         2. Timeout monitoring (agent approaching turn limit)
         3. Resume capability (restore turn count on interrupted execution)
         """
-        # GIVEN: /nw:execute command with step file
+        # GIVEN: /nw-execute command with step file
 
-        command = "/nw:execute"
+        command = "/nw-execute"
         agent = "@software-crafter"
         step_file_path = str(minimal_step_file.relative_to(tmp_project_root))
 

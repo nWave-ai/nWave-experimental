@@ -16,5 +16,5 @@ Feature: DES Installation Bug Detection Walking Skeleton
     Given the DES plugin is installed
     When I check the installation status
     Then the DES module should be present at "~/.claude/lib/python/des"
-    And the real settings.local.json file should exist
+    And the real settings.json file should exist
     And I should be able to import from scripts.install.plugins.des_plugin

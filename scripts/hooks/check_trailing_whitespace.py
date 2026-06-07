@@ -12,10 +12,36 @@ def main() -> int:
     result = subprocess.run(
         ["git", "ls-files"], capture_output=True, text=True, check=False
     )
+    BINARY_EXT = frozenset(
+        {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".ico",
+            ".bmp",
+            ".webp",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot",
+            ".zip",
+            ".gz",
+            ".tar",
+            ".bz2",
+            ".pdf",
+            ".pyc",
+            ".pyo",
+            ".so",
+            ".dll",
+        }
+    )
     files = [
         f
         for f in result.stdout.splitlines()
-        if f and not f.startswith(("dist/", ".git/"))
+        if f
+        and not f.startswith(("dist/", ".git/"))
+        and not any(f.lower().endswith(ext) for ext in BINARY_EXT)
     ]
 
     bad = []

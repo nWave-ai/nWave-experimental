@@ -132,12 +132,21 @@ class TestAgentFrontmatterAcceptance:
         2. Any group: nWave/skills/**/{skill}.md (cross-ref)
         """
         skills_dir = PROJECT_ROOT / "nWave" / "skills"
-        # Build index: skill-name → set of groups that contain it
+        # Build index: skill-name -> set of groups that contain it
         skill_index: dict[str, set[str]] = {}
         for skill_file in skills_dir.rglob("*.md"):
-            group = skill_file.parent.name
-            name = skill_file.stem
-            skill_index.setdefault(name, set()).add(group)
+            parent_name = skill_file.parent.name
+            if parent_name.startswith("nw-") and skill_file.name == "SKILL.md":
+                # New flat layout: nw-{skill}/SKILL.md
+                # Index by both bare name and nw-prefixed name
+                bare_name = parent_name.removeprefix("nw-")
+                skill_index.setdefault(bare_name, set()).add(parent_name)
+                skill_index.setdefault(parent_name, set()).add(parent_name)
+            else:
+                # Old hierarchical layout: {agent}/{skill}.md
+                group = parent_name
+                name = skill_file.stem
+                skill_index.setdefault(name, set()).add(group)
 
         broken: list[str] = []
         for agent_name in EXPECTED_AGENTS:

@@ -1,0 +1,41 @@
+# Gate-contract: roadmap (D4 Phase 1 slice-02)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=roadmap.
+
+gate_id: roadmap
+responsibility: |
+  Render or validate a classic-mode roadmap.json file.
+module: des.cli.roadmap
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --project-dir
+    required: true
+    type: path
+    help: "Deliver project containing roadmap.json."
+  - name: --validate-only
+    required: false
+    type: bool
+    help: "Skip render; validate schema only."
+
+log_events:
+  - RoadmapValidated
+
+failure_modes:
+  - error_class: RoadmapNotFound
+    exit_code: 1
+    remediation: "Author roadmap.json under deliver/"
+  - error_class: SchemaViolation
+    exit_code: 2
+    remediation: "Fix roadmap.json shape per schema"
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

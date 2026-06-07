@@ -6,11 +6,11 @@ disable-model-invocation: true
 
 # NW-FAST-FORWARD: Fast-Forward
 
-**Wave**: CROSS_WAVE (entry point) | **Agent**: Main Instance (self — orchestrator) | **Command**: `/nw:fast-forward`
+**Wave**: CROSS_WAVE (entry point) | **Agent**: Main Instance (self — orchestrator) | **Command**: `/nw-fast-forward`
 
 ## Overview
 
-Chains remaining waves end-to-end after single user confirmation. Detects current progress (like `/nw:continue`), shows planned sequence, runs each wave automatically — DISCUSS > DESIGN > DEVOPS > DISTILL > DELIVER — without stopping between waves.
+Chains remaining waves end-to-end after single user confirmation. Detects current progress (like `/nw-continue`), shows planned sequence, runs each wave automatically — DISCUSS > DESIGN > DEVOPS > DISTILL > DELIVER — without stopping between waves.
 
 You (main Claude instance) run this orchestration directly. Each wave invoked by reading its task file.
 
@@ -26,7 +26,7 @@ Accept: feature description (new project)|`--from` flag with optional feature ID
 
 **New project (description provided):** Derive feature ID per `~/.claude/nWave/skills/common/wizard-shared-rules.md` (Feature ID Derivation). Show derived ID, allow override via AskUserQuestion. Create `docs/feature/{feature-id}/`.
 
-**Existing project (no description):** Scan `docs/feature/` (same as `/nw:continue` Step 1-2). If multiple, ask user to select.
+**Existing project (no description):** Scan `docs/feature/` (same as `/nw-continue` Step 1-2). If multiple, ask user to select.
 
 ### Step 3: Detect Current Progress
 
@@ -36,7 +36,7 @@ Check wave artifacts using Wave Detection Rules in `~/.claude/nWave/skills/commo
 
 Default order (DISCOVER skipped): DISCUSS > DESIGN > DEVOPS > DISTILL > DELIVER
 
-**With `--from` flag:** Validate prerequisite artifacts exist. If missing: "Cannot start from {wave} — {missing} artifacts missing. Run `/nw:continue` to fill the gap." Start from specified wave.
+**With `--from` flag:** Validate prerequisite artifacts exist. If missing: "Cannot start from {wave} — {missing} artifacts missing. Run `/nw-continue` to fill the gap." Start from specified wave.
 
 **Without `--from`:** Find first incomplete wave, start from there.
 
@@ -81,7 +81,7 @@ For each wave:
 
 Between waves show brief status:
 ```
-✓ DISCUSS complete — requirements.md, user-stories.md created
+✓ DISCUSS complete — user-stories.md, story-map.md created
   Starting DESIGN...
 ```
 
@@ -93,9 +93,9 @@ If any wave fails:
    ```
    ✗ {WAVE} failed
      Error: [details]
-     Progress saved. Run /nw:continue to resume from {WAVE}.
+     Progress saved. Run /nw-continue to resume from {WAVE}.
    ```
-3. Suggest `/nw:continue` for manual resume
+3. Suggest `/nw-continue` for manual resume
 4. Do NOT retry automatically
 
 ### Step 8: Completion
@@ -116,11 +116,15 @@ If any wave fails:
 
 | Error | Response |
 |-------|----------|
-| No description and no existing projects | Suggest `/nw:new` |
+| No description and no existing projects | Suggest `/nw-new` |
 | `--from` with missing prerequisites | List missing artifacts, refuse |
-| Wave failure mid-pipeline | Stop, show error, suggest `/nw:continue` |
+| Wave failure mid-pipeline | Stop, show error, suggest `/nw-continue` |
 | Artifact verification fails after wave | Treat as wave failure |
-| Name conflict on new project | Same as `/nw:new` conflict handling |
+| Name conflict on new project | Same as `/nw-new` conflict handling |
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 
@@ -130,31 +134,31 @@ If any wave fails:
 - [ ] User confirmed one-time before execution
 - [ ] Each wave executed in sequence
 - [ ] Output artifacts verified between waves
-- [ ] Failure stops pipeline with clear error and `/nw:continue` suggestion
+- [ ] Failure stops pipeline with clear error and `/nw-continue` suggestion
 - [ ] Completion summary shown
 
 ## Examples
 
 ### Example 1: Full fast-forward from scratch
 ```
-/nw:fast-forward "Upgrade authentication to OAuth2"
+/nw-fast-forward "Upgrade authentication to OAuth2"
 ```
 Wizard derives `oauth2-upgrade`, detects no prior artifacts, shows plan: DISCUSS > DESIGN > DEVOPS > DISTILL > DELIVER. User confirms. All 5 waves execute in sequence.
 
 ### Example 2: Fast-forward from mid-pipeline
 ```
-/nw:fast-forward
+/nw-fast-forward
 ```
 Wizard finds `notification-service` with DISCUSS complete. Shows plan: DESIGN > DEVOPS > DISTILL > DELIVER. User confirms. 4 waves execute.
 
 ### Example 3: Fast-forward with --from flag
 ```
-/nw:fast-forward --from=distill rate-limiting
+/nw-fast-forward --from=distill rate-limiting
 ```
 Wizard validates DESIGN artifacts exist for `rate-limiting`. Shows plan: DISTILL > DELIVER. User confirms. 2 waves execute.
 
 ### Example 4: Fast-forward with failure
 ```
-/nw:fast-forward "Add payment processing"
+/nw-fast-forward "Add payment processing"
 ```
-DISCUSS succeeds, DESIGN succeeds, DEVOPS fails. Pipeline stops. Shows error and suggests `/nw:continue` to resume from DEVOPS.
+DISCUSS succeeds, DESIGN succeeds, DEVOPS fails. Pipeline stops. Shows error and suggests `/nw-continue` to resume from DEVOPS.

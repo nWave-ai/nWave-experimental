@@ -4,15 +4,15 @@ Use for documentation quality enforcement using DIVIO/Diataxis principles. Class
 
 **Wave:** Other
 **Model:** haiku
-**Max turns:** 30
+**Max turns:** 0
 **Tools:** Read, Write, Edit, Glob, Grep
 
 ## Commands
 
-- [`/nw:document`](../commands/index.md)
+- [`/nw-document`](../commands/index.md)
 
 ## Skills
 
-- [collapse-detection](../../../nWave/skills/documentarist/collapse-detection.md) — Documentation collapse anti-patterns - detection rules, bad examples, and remediation strategies for type-mixing violations
-- [divio-framework](../../../nWave/skills/documentarist/divio-framework.md) — DIVIO/Diataxis four-quadrant documentation framework - type definitions, classification decision tree, and signal catalog
-- [quality-validation](../../../nWave/skills/documentarist/quality-validation.md) — Type-specific validation checklists, six quality characteristics, and quality gate thresholds for documentation assessment
+- [nw-collapse-detection](../../../nWave/skills/nw-collapse-detection/SKILL.md) — Documentation collapse anti-patterns - detection rules, bad examples, and remediation strategies for type-mixing violations
+- [nw-divio-framework](../../../nWave/skills/nw-divio-framework/SKILL.md) — DIVIO/Diataxis four-quadrant documentation framework - type definitions, classification decision tree, and signal catalog
+- [nw-quality-validation](../../../nWave/skills/nw-quality-validation/SKILL.md) — Type-specific validation checklists, six quality characteristics, and quality gate thresholds for documentation assessment

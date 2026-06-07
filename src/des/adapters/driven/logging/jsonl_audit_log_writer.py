@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from des.domain.audit_log_path_resolver import AuditLogPathResolver
+from des.domain.nwave_dir_gitignore import ensure_nwave_gitignore
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 
 
@@ -55,6 +56,7 @@ class JsonlAuditLogWriter(AuditLogWriter):
 
         self._log_dir = resolved
         self._log_dir.mkdir(parents=True, exist_ok=True)
+        ensure_nwave_gitignore(resolved)
 
     def log_event(self, event: AuditEvent) -> None:
         """Append a single audit event to the log.

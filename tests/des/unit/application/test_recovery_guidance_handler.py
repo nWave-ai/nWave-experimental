@@ -182,7 +182,7 @@ class TestGenerateRecoverySuggestions:
         has_actionable = any(
             pattern in combined
             for pattern in [
-                "/nw:execute",
+                "/nw-execute",
                 "steps/",
                 "transcript",
                 "NOT_EXECUTED",
@@ -319,6 +319,192 @@ class TestHandleFailure:
         assert isinstance(result, dict)
         assert "recovery_suggestions" in result
         assert "status" in result  # Original fields preserved
+
+
+class TestSuggestionsActionableElementsTranscriptPath:
+    """Track B.3 migration: transcript-path-specific actionable element coverage.
+
+    The legacy ``tests/des/unit/test_recovery_guidance_handler.py`` had a
+    dedicated test asserting that ``transcript_path`` from the context is
+    surfaced verbatim in at least one suggestion. The canonical file's
+    ``test_suggestions_contain_actionable_elements`` covers the general
+    case but accepts substring matches; this test pins the specific path.
+    """
+
+    def test_includes_specific_transcript_path_when_provided(self):
+        """A specific transcript path supplied in context must appear verbatim."""
+        handler = RecoveryGuidanceHandler()
+        transcript_path = "/tmp/transcripts/agent-123.log"
+        suggestions = handler.generate_recovery_suggestions(
+            failure_type="abandoned_phase",
+            context={
+                "phase": "GREEN_UNIT",
+                "transcript_path": transcript_path,
+            },
+        )
+
+        has_path = any(transcript_path in s for s in suggestions)
+        assert has_path, f"Should reference specific transcript path: {transcript_path}"
+
+
+class TestMissingSectionRecovery:
+    """Track B.3 migration: missing_section failure mode recovery contract.
+
+    Migrated from ``tests/des/unit/test_recovery_guidance_handler.py``
+    where 3 tests covered: section_name surfacing, WHY/HOW/ACTION
+    structure, and variation by section name. The WHY/HOW/ACTION
+    structural assertion is already covered by
+    ``TestSuggestionFormat.test_suggestion_format_includes_why_how_actionable``
+    so we keep just the two missing_section-specific behaviors.
+    """
+
+    def test_missing_section_includes_section_name(self):
+        """The supplied section_name must appear in at least one suggestion."""
+        handler = RecoveryGuidanceHandler()
+        section_name = "TDD_PHASES"
+        suggestions = handler.generate_recovery_suggestions(
+            failure_type="missing_section",
+            context={"section_name": section_name},
+        )
+
+        assert suggestions is not None
+        assert isinstance(suggestions, list)
+        assert len(suggestions) >= 2
+        assert any(section_name in s for s in suggestions), (
+            f"Section name '{section_name}' not found in suggestions"
+        )
+
+    def test_missing_section_suggestions_vary_by_section_name(self):
+        """Different section names must produce distinct suggestion content."""
+        handler = RecoveryGuidanceHandler()
+
+        suggestions_tdd = handler.generate_recovery_suggestions(
+            failure_type="missing_section",
+            context={"section_name": "TDD_PHASES"},
+        )
+        suggestions_boundary = handler.generate_recovery_suggestions(
+            failure_type="missing_section",
+            context={"section_name": "BOUNDARY_RULES"},
+        )
+
+        assert any("TDD_PHASES" in s for s in suggestions_tdd)
+        assert any("BOUNDARY_RULES" in s for s in suggestions_boundary)
+        assert "\n".join(suggestions_tdd) != "\n".join(suggestions_boundary), (
+            "Suggestions should vary by section_name"
+        )
+
+
+class TestMissingPhaseRecovery:
+    """Track B.3 migration: missing_phase failure mode recovery contract.
+
+    Migrated from ``tests/des/unit/test_recovery_guidance_handler.py``
+    where 4 tests covered: smoke, phase context, WHY/HOW/ACTION, explains
+    purpose. Smoke + WHY/HOW/ACTION are already covered structurally;
+    the two unique behaviors below are migrated.
+    """
+
+    def test_missing_phase_includes_phase_name(self):
+        """The supplied phase name must appear in at least one suggestion."""
+        handler = RecoveryGuidanceHandler()
+        phase_name = "GREEN_ACCEPTANCE"
+        suggestions = handler.generate_recovery_suggestions(
+            failure_type="missing_phase",
+            context={"phase": phase_name},
+        )
+
+        assert suggestions is not None
+        assert isinstance(suggestions, list)
+        assert len(suggestions) >= 2
+        assert any(phase_name in s for s in suggestions), (
+            f"Phase name '{phase_name}' not found in suggestions"
+        )
+
+    def test_missing_phase_explains_purpose(self):
+        """Suggestions for missing_phase must explain why the phase is needed."""
+        handler = RecoveryGuidanceHandler()
+        suggestions = handler.generate_recovery_suggestions(
+            failure_type="missing_phase",
+            context={"phase": "REVIEW"},
+        )
+
+        suggestion_text = "\n".join(suggestions).lower()
+        purpose_keywords = ("needed", "required", "purpose", "important", "critical")
+        assert any(keyword in suggestion_text for keyword in purpose_keywords), (
+            "Suggestions should explain why the phase is required"
+        )
+
+
+class TestTimeoutFailureRecovery:
+    """Track B.3 migration: timeout_failure failure mode recovery contract.
+
+    Migrated from ``tests/des/unit/test_recovery_guidance_handler.py``
+    where 5 tests covered: smoke, timeout context values, WHY/HOW/ACTION,
+    optimization keywords, threshold-adjustment keywords. The smoke +
+    WHY/HOW/ACTION are already covered upstream; the unique behaviors
+    are consolidated into 2 tests below — one for surfacing the actual
+    timeout values, one for offering both optimization AND threshold
+    adjustment guidance (combined to avoid keyword-grep duplication).
+    """
+
+    def test_timeout_failure_includes_timeout_context_values(self):
+        """Both configured and actual timeout values must appear in suggestions."""
+        handler = RecoveryGuidanceHandler()
+        configured_timeout = "30"
+        actual_runtime = "35"
+        suggestions = handler.generate_recovery_suggestions(
+            failure_type="timeout_failure",
+            context={
+                "configured_timeout_minutes": configured_timeout,
+                "actual_runtime_minutes": actual_runtime,
+            },
+        )
+
+        assert any(configured_timeout in s for s in suggestions), (
+            f"Configured timeout '{configured_timeout}' not found in suggestions"
+        )
+        assert any(actual_runtime in s for s in suggestions), (
+            f"Actual runtime '{actual_runtime}' not found in suggestions"
+        )
+
+    def test_timeout_failure_offers_optimization_and_threshold_guidance(self):
+        """Suggestions must offer BOTH optimization and threshold-adjustment paths.
+
+        Two recovery strategies for a timeout: speed up the work (optimize),
+        or raise the bar (threshold adjustment). The contract is "both options
+        surfaced", consolidating the two legacy keyword-grep tests into one.
+        """
+        handler = RecoveryGuidanceHandler()
+        suggestions = handler.generate_recovery_suggestions(
+            failure_type="timeout_failure",
+            context={
+                "configured_timeout_minutes": "30",
+                "actual_runtime_minutes": "35",
+            },
+        )
+
+        suggestion_text = "\n".join(suggestions).lower()
+        optimization_keywords = (
+            "optimize",
+            "performance",
+            "profile",
+            "improve",
+            "reduce",
+            "simplify",
+        )
+        threshold_keywords = (
+            "increase",
+            "threshold",
+            "timeout",
+            "extend",
+            "raise",
+            "adjust",
+        )
+        assert any(k in suggestion_text for k in optimization_keywords), (
+            f"No optimization keywords found. Expected one of: {optimization_keywords}"
+        )
+        assert any(k in suggestion_text for k in threshold_keywords), (
+            f"No threshold-adjustment keywords found. Expected one of: {threshold_keywords}"
+        )
 
 
 class TestSuggestionFormatter:

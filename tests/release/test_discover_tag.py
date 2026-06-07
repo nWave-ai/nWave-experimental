@@ -421,11 +421,16 @@ class TestStalenessDetection:
 # ---------------------------------------------------------------------------
 def _git(path, *command):
     """Run a git command in the given repo directory."""
+    env = {
+        **__import__("os").environ,
+        "GIT_CEILING_DIRECTORIES": str(Path(path).parent),
+    }
     subprocess.run(
         ["git", *command],
         cwd=str(path),
         capture_output=True,
         check=True,
+        env=env,
     )
 
 
@@ -434,6 +439,7 @@ def _init_git_repo(path):
     _git(path, "init")
     _git(path, "config", "user.email", "test@example.com")
     _git(path, "config", "user.name", "Test")
+    _git(path, "config", "core.hooksPath", "/dev/null")
 
 
 def _create_commit(path, message):
@@ -454,9 +460,11 @@ def _project_root():
 def _run_discover_in_repo(repo_path, *args):
     """Run discover_tag.py inside a specific git repo directory."""
     script_path = str(Path(_project_root()) / SCRIPT)
+    env = {**__import__("os").environ, "GIT_CEILING_DIRECTORIES": str(repo_path)}
     return subprocess.run(
         [sys.executable, script_path, *args],
         cwd=str(repo_path),
         capture_output=True,
         text=True,
+        env=env,
     )

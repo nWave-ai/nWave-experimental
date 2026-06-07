@@ -255,3 +255,102 @@ class TestTraceMessageEdgeCases:
                 dev_tag="v1.1.22.dev1",
                 pipeline_url=SAMPLE_PIPELINE_URL,
             )
+
+
+class TestCoauthorsFileAppending:
+    """Append co-author trailers from a file to the composed message."""
+
+    def test_coauthors_file_appends_trailers(self, tmp_path):
+        """When --coauthors-file has content, it's appended after a blank line."""
+        coauthors = tmp_path / "coauthors.txt"
+        coauthors.write_text(
+            "Co-Authored-By: Alice <alice@example.com>\n"
+            "Co-Authored-By: Bob <bob@example.com>\n"
+        )
+        message = compose_trace_message(
+            stage="rc",
+            version="1.1.22rc1",
+            commit_sha=SAMPLE_SHA,
+            dev_tag="v1.1.22.dev3",
+            pipeline_url=SAMPLE_PIPELINE_URL,
+            coauthors_file=str(coauthors),
+        )
+        assert message.endswith(
+            "\n\n"
+            "Co-Authored-By: Alice <alice@example.com>\n"
+            "Co-Authored-By: Bob <bob@example.com>"
+        )
+
+    def test_empty_coauthors_file_is_noop(self, tmp_path):
+        """Empty file -> no trailing blank line, same as no file given."""
+        coauthors = tmp_path / "empty.txt"
+        coauthors.write_text("")
+        message_with = compose_trace_message(
+            stage="rc",
+            version="1.1.22rc1",
+            commit_sha=SAMPLE_SHA,
+            dev_tag="v1.1.22.dev3",
+            pipeline_url=SAMPLE_PIPELINE_URL,
+            coauthors_file=str(coauthors),
+        )
+        message_without = compose_trace_message(
+            stage="rc",
+            version="1.1.22rc1",
+            commit_sha=SAMPLE_SHA,
+            dev_tag="v1.1.22.dev3",
+            pipeline_url=SAMPLE_PIPELINE_URL,
+        )
+        assert message_with == message_without
+
+    def test_whitespace_only_coauthors_file_is_noop(self, tmp_path):
+        """File containing only whitespace -> treated as empty."""
+        coauthors = tmp_path / "ws.txt"
+        coauthors.write_text("   \n\n  \n")
+        message_with = compose_trace_message(
+            stage="rc",
+            version="1.1.22rc1",
+            commit_sha=SAMPLE_SHA,
+            dev_tag="v1.1.22.dev3",
+            pipeline_url=SAMPLE_PIPELINE_URL,
+            coauthors_file=str(coauthors),
+        )
+        message_without = compose_trace_message(
+            stage="rc",
+            version="1.1.22rc1",
+            commit_sha=SAMPLE_SHA,
+            dev_tag="v1.1.22.dev3",
+            pipeline_url=SAMPLE_PIPELINE_URL,
+        )
+        assert message_with == message_without
+
+    def test_missing_coauthors_file_raises(self, tmp_path):
+        """Nonexistent --coauthors-file path raises a clear error."""
+        missing = tmp_path / "nope.txt"
+        with pytest.raises((FileNotFoundError, OSError)):
+            compose_trace_message(
+                stage="rc",
+                version="1.1.22rc1",
+                commit_sha=SAMPLE_SHA,
+                dev_tag="v1.1.22.dev3",
+                pipeline_url=SAMPLE_PIPELINE_URL,
+                coauthors_file=str(missing),
+            )
+
+    def test_coauthors_file_works_with_stable_stage(self, tmp_path):
+        """Coauthors appended correctly for stable-stage messages too."""
+        coauthors = tmp_path / "c.txt"
+        coauthors.write_text("Co-Authored-By: Alice <alice@example.com>\n")
+        message = compose_trace_message(
+            stage="stable",
+            version="1.1.22",
+            commit_sha=SAMPLE_SHA,
+            dev_tag="v1.1.22.dev3",
+            rc_tag="v1.1.22rc1",
+            stable_tag="v1.1.22",
+            pipeline_url=SAMPLE_PIPELINE_URL,
+            coauthors_file=str(coauthors),
+        )
+        assert message.endswith(
+            f"Pipeline: {SAMPLE_PIPELINE_URL}\n\n"
+            "Co-Authored-By: Alice <alice@example.com>"
+        )

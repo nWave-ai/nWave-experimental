@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 import pytest
 
-from des.ports.driven_ports.audit_log_writer import AuditEvent
+from des.adapters.drivers.hooks import hook_protocol, service_factory
 
 
 UUID4_PATTERN = re.compile(
@@ -32,25 +32,13 @@ UUID4_PATTERN = re.compile(
 )
 
 
-def _make_capturing_writer(events: list[AuditEvent]):
-    """Create a mock AuditLogWriter that appends events to the given list."""
-    from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-
-    class CapturingWriter(NullAuditLogWriter):
-        def log_event(self, event: AuditEvent) -> None:
-            events.append(event)
-
-    return CapturingWriter()
-
-
 def _build_pre_tool_use_stdin() -> str:
-    """Valid Task input that passes max_turns validation (allow path)."""
+    """Valid Agent input (allow path — non-DES task passes through)."""
     return json.dumps(
         {
-            "tool_name": "Task",
+            "tool_name": "Agent",
             "tool_input": {
                 "prompt": "Do something",
-                "max_turns": 15,
                 "subagent_type": "code",
             },
         }
@@ -72,7 +60,7 @@ def _build_subagent_stop_stdin() -> str:
 
 def _build_post_tool_use_stdin() -> str:
     """PostToolUse input (always allow)."""
-    return json.dumps({"tool_name": "Task", "tool_input": {"prompt": "done"}})
+    return json.dumps({"tool_name": "Agent", "tool_input": {"prompt": "done"}})
 
 
 def _build_pre_write_stdin() -> str:
@@ -83,10 +71,10 @@ def _build_pre_write_stdin() -> str:
 
 
 def _build_pre_tool_use_block_stdin() -> str:
-    """Task input missing max_turns (triggers block from MaxTurnsPolicy)."""
+    """Agent input with DES marker but missing mandatory sections (triggers block)."""
     return json.dumps(
         {
-            "tool_name": "Task",
+            "tool_name": "Agent",
             "tool_input": {
                 "prompt": "<!-- DES-VALIDATION : required -->\nDo something",
                 "subagent_type": "code",
@@ -114,24 +102,20 @@ def _build_pre_tool_use_block_stdin() -> str:
     ],
 )
 def test_hook_completed_emitted_with_correct_exit_code_and_decision(
-    handler_name, stdin_factory, expected_decision, monkeypatch
+    handler_name, stdin_factory, expected_decision, monkeypatch, audit_events
 ):
     """HOOK_COMPLETED event is emitted with correct exit_code and decision for each handler."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
-    events = []
-    writer = _make_capturing_writer(events)
-
     monkeypatch.setattr("sys.stdin", io.StringIO(stdin_factory()))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
-        exit_code = getattr(adapter, handler_name)()
+    exit_code = getattr(adapter, handler_name)()
 
-    completed_events = [e for e in events if e.event_type == "HOOK_COMPLETED"]
+    completed_events = [e for e in audit_events if e.event_type == "HOOK_COMPLETED"]
     assert len(completed_events) == 1, (
         f"Expected exactly one HOOK_COMPLETED event from {handler_name}, "
-        f"got {len(completed_events)}. All events: {[e.event_type for e in events]}"
+        f"got {len(completed_events)}. All events: {[e.event_type for e in audit_events]}"
     )
 
     event = completed_events[0]
@@ -143,20 +127,16 @@ def test_hook_completed_emitted_with_correct_exit_code_and_decision(
 # --- Test 2: HOOK_COMPLETED emitted on block path with exit_code=2, decision='block' ---
 
 
-def test_hook_completed_emitted_on_block_path(monkeypatch):
+def test_hook_completed_emitted_on_block_path(monkeypatch, audit_events):
     """HOOK_COMPLETED event is emitted with exit_code=2, decision='block' when validation fails."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    events = []
-    writer = _make_capturing_writer(events)
 
     monkeypatch.setattr("sys.stdin", io.StringIO(_build_pre_tool_use_block_stdin()))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
-        exit_code = adapter.handle_pre_tool_use()
+    exit_code = adapter.handle_pre_tool_use()
 
-    completed_events = [e for e in events if e.event_type == "HOOK_COMPLETED"]
+    completed_events = [e for e in audit_events if e.event_type == "HOOK_COMPLETED"]
     assert len(completed_events) == 1, (
         f"Expected HOOK_COMPLETED on block path, got {len(completed_events)} events"
     )
@@ -170,21 +150,17 @@ def test_hook_completed_emitted_on_block_path(monkeypatch):
 # --- Test 3: hook_id in HOOK_COMPLETED matches hook_id in HOOK_INVOKED ---
 
 
-def test_hook_completed_hook_id_matches_hook_invoked(monkeypatch):
+def test_hook_completed_hook_id_matches_hook_invoked(monkeypatch, audit_events):
     """The hook_id in HOOK_COMPLETED matches the hook_id in the corresponding HOOK_INVOKED event."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    events = []
-    writer = _make_capturing_writer(events)
 
     monkeypatch.setattr("sys.stdin", io.StringIO(_build_pre_tool_use_stdin()))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
-        adapter.handle_pre_tool_use()
+    adapter.handle_pre_tool_use()
 
-    invoked_events = [e for e in events if e.event_type == "HOOK_INVOKED"]
-    completed_events = [e for e in events if e.event_type == "HOOK_COMPLETED"]
+    invoked_events = [e for e in audit_events if e.event_type == "HOOK_INVOKED"]
+    completed_events = [e for e in audit_events if e.event_type == "HOOK_COMPLETED"]
 
     assert len(invoked_events) >= 1, "Expected at least one HOOK_INVOKED event"
     assert len(completed_events) == 1, "Expected exactly one HOOK_COMPLETED event"
@@ -204,20 +180,16 @@ def test_hook_completed_hook_id_matches_hook_invoked(monkeypatch):
 # --- Test 4: duration_ms is a positive float ---
 
 
-def test_hook_completed_duration_ms_is_positive(monkeypatch):
+def test_hook_completed_duration_ms_is_positive(monkeypatch, audit_events):
     """HOOK_COMPLETED event has duration_ms as a positive float."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    events = []
-    writer = _make_capturing_writer(events)
 
     monkeypatch.setattr("sys.stdin", io.StringIO(_build_pre_tool_use_stdin()))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
-        adapter.handle_pre_tool_use()
+    adapter.handle_pre_tool_use()
 
-    completed_events = [e for e in events if e.event_type == "HOOK_COMPLETED"]
+    completed_events = [e for e in audit_events if e.event_type == "HOOK_COMPLETED"]
     assert len(completed_events) == 1
 
     duration_ms = completed_events[0].data["duration_ms"]
@@ -230,12 +202,9 @@ def test_hook_completed_duration_ms_is_positive(monkeypatch):
 # --- Test 5: HOOK_COMPLETED emitted even when handler raises exception ---
 
 
-def test_hook_completed_emitted_on_exception(monkeypatch):
+def test_hook_completed_emitted_on_exception(monkeypatch, audit_events):
     """HOOK_COMPLETED event is emitted even when the handler raises an exception (finally block)."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    events = []
-    writer = _make_capturing_writer(events)
 
     # Provide valid JSON stdin but make the service creation blow up
     monkeypatch.setattr("sys.stdin", io.StringIO(_build_pre_tool_use_stdin()))
@@ -244,21 +213,20 @@ def test_hook_completed_emitted_on_exception(monkeypatch):
     def exploding_service():
         raise RuntimeError("Simulated service failure")
 
-    with (
-        patch.object(adapter, "_create_audit_writer", return_value=writer),
-        patch.object(
-            adapter, "create_pre_tool_use_service", side_effect=exploding_service
-        ),
+    with patch.object(
+        service_factory,
+        "create_pre_tool_use_service",
+        side_effect=exploding_service,
     ):
         exit_code = adapter.handle_pre_tool_use()
 
     # Should return 1 (error/fail-closed)
     assert exit_code == 1
 
-    completed_events = [e for e in events if e.event_type == "HOOK_COMPLETED"]
+    completed_events = [e for e in audit_events if e.event_type == "HOOK_COMPLETED"]
     assert len(completed_events) == 1, (
         f"Expected HOOK_COMPLETED even on exception, got {len(completed_events)} events. "
-        f"All events: {[e.event_type for e in events]}"
+        f"All events: {[e.event_type for e in audit_events]}"
     )
 
     event = completed_events[0]
@@ -271,16 +239,17 @@ def test_hook_completed_emitted_on_exception(monkeypatch):
 
 
 def test_log_hook_completed_never_raises():
-    """_log_hook_completed is wrapped in try/except and never propagates exceptions."""
-    from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
+    """log_hook_completed is wrapped in try/except and never propagates exceptions."""
 
     class ExplodingWriter:
         def log_event(self, event):
             raise RuntimeError("Writer explosion")
 
-    with patch.object(adapter, "_create_audit_writer", return_value=ExplodingWriter()):
+    with patch.object(
+        hook_protocol, "_audit_writer_factory", return_value=ExplodingWriter()
+    ):
         # Should not raise
-        adapter._log_hook_completed(
+        hook_protocol.log_hook_completed(
             hook_id="test-id",
             handler="test_handler",
             exit_code=0,
@@ -292,16 +261,13 @@ def test_log_hook_completed_never_raises():
 # --- Test 7: slow_hook=true when duration_ms exceeds threshold ---
 
 
-def test_hook_completed_slow_hook_detection(monkeypatch):
+def test_hook_completed_slow_hook_detection(monkeypatch, audit_events):
     """HOOK_COMPLETED event includes slow_hook=true when duration_ms exceeds threshold."""
-    from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    events = []
-    writer = _make_capturing_writer(events)
-
     # We need to simulate a slow handler. We can do this by patching
     # time.perf_counter_ns to return values with a large gap.
     import time
+
+    from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
     call_count = 0
 
@@ -316,13 +282,10 @@ def test_hook_completed_slow_hook_detection(monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO(_build_pre_tool_use_stdin()))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with (
-        patch.object(adapter, "_create_audit_writer", return_value=writer),
-        patch.object(time, "perf_counter_ns", side_effect=fake_perf_counter_ns),
-    ):
+    with patch.object(time, "perf_counter_ns", side_effect=fake_perf_counter_ns):
         adapter.handle_pre_tool_use()
 
-    completed_events = [e for e in events if e.event_type == "HOOK_COMPLETED"]
+    completed_events = [e for e in audit_events if e.event_type == "HOOK_COMPLETED"]
     assert len(completed_events) == 1
 
     event = completed_events[0]

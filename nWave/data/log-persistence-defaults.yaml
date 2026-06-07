@@ -1,0 +1,61 @@
+# LogPersistencePort defaults (D4 § 3.3 slice-03)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.3.
+# Per INV-3 gate emits log via adapter port (gate does NOT know where
+# log goes — config selects the adapter).
+#
+# Customer/operator config (`.nwave/config.yaml`) can override:
+#   log_persistence:
+#     active_adapter: jsonl  # or stdout, silent
+#     adapters:
+#       jsonl:
+#         per_feature_path: ".nwave/telemetry/atdd-pure/{feature_id}.jsonl"
+#         common_log_path: ".nwave/audit/atdd-pure-events.jsonl"
+#         fanout: true
+#
+# This file is the project-default; operator overrides happen in
+# ~/.nwave/global-config.json (per INV-10 NO env vars, INV-9 config-as-driver).
+
+version: "1.0.0"
+
+# The default adapter activated for OSS gate-log emission.
+# Phase 3 will refactor gates to use LogPersistencePort instead of direct
+# ledger calls (closes friction #36 walking-skeleton partial-ship via
+# structural fanout).
+active_adapter: jsonl
+
+adapters:
+
+  # JSONL append-only adapter (matches current .nwave/telemetry/ behavior).
+  # fanout: true writes BOTH per-feature AND common log atomically.
+  jsonl:
+    per_feature_path: ".nwave/telemetry/atdd-pure/{feature_id}.jsonl"
+    common_log_path: ".nwave/audit/atdd-pure-events.jsonl"
+    fanout: true
+    fail_open: true  # gate verdict NOT changed by log write failure
+    rotation:
+      enabled: false  # rotation in Phase 3+; today: monotonic append
+
+  # Stdout adapter for `des <gate> --emit-stdout` operator-debug mode.
+  # Per-event single-line JSON; no file write.
+  stdout:
+    stream: stderr  # gate events go to stderr per current convention
+    include_timestamp: true
+
+  # Silent adapter for tests + replay (no I/O).
+  # Used by `des <gate> --silent-log` and by acceptance test fixtures
+  # that need deterministic gate behavior without log side effects.
+  silent:
+    capture_in_memory: true  # tests can introspect emitted events post-hoc
+
+# Closed list of event_id namespaces gates may emit (cross-checked at
+# install-time validation; arch test ensures no orphan events).
+event_namespaces:
+  - gate.carpaccio    # carpaccio-slice-gate events
+  - gate.contract     # run-contract-gate events
+  - gate.scope        # check-slice-at-completeness, walking-skeleton events
+  - gate.freshness    # freshness gate events
+  - gate.distribution # check-distribution-boundary (Phase 5)
+  - gate.ledger       # at_review_verdict, slice_commit_verified
+  - gate.health       # health-check, doctor
+  - gate.feature_end  # FeatureEndCheckpoint, EnvironmentalE2eVerified

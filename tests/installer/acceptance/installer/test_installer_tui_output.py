@@ -9,7 +9,14 @@ assert against the same captured stdout, making the suite fast while
 covering every visible step of the installation journey.
 """
 
+import pytest
+
 from scripts.install.install_nwave import __version__
+
+
+# Pin all tests in this file to one xdist worker — module-scoped fixture
+# (e.g. installer_result) is class-mutating and not safe across xdist workers.
+pytestmark = pytest.mark.xdist_group("installer_walking_skeleton")
 
 
 # ─── Design constraints ─────────────────────────────────────────────
@@ -114,9 +121,9 @@ class TestWalkingSkeleton:
     def test_step_12_quick_start_commands(self, output: str):
         """Quick start section lists the core nWave commands."""
         assert "Quick start" in output
-        assert "/nw:discuss" in output
-        assert "/nw:develop" in output
-        assert "/nw:deliver" in output
+        assert "/nw-discuss" in output
+        assert "/nw-develop" in output
+        assert "/nw-deliver" in output
 
     def test_step_12_docs_url(self, output: str):
         """Docs URL points to the correct repository."""

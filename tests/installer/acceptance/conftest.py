@@ -4,7 +4,43 @@ Pytest configuration for DES acceptance tests.
 Provides shared fixtures for test setup and teardown.
 """
 
+from pathlib import Path
+
 import pytest
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Pin the whole installer-acceptance subtree to one xdist worker group.
+
+    The installer/uninstaller acceptance suites under this directory perform
+    PROCESS-GLOBAL mutation as part of their fixtures: monkeypatching
+    ``subprocess.run``, mutating ``os.environ`` (``OPENCODE_CONFIG_DIR``),
+    swapping ``PathUtils.get_*_config_dir`` class attributes, and
+    ``importlib.reload``-ing shared ``scripts.*`` modules. Under the contract
+    gate's ``-n auto --dist loadgroup`` these mutations race ACROSS workers
+    non-deterministically -- the same install run on worker A sees worker B's
+    half-applied global state, surfacing as spurious install-setup ERRORs
+    ("Existing manifest/skills directory detected") whose failing set wanders
+    run-to-run.
+
+    Pinning every item in this subtree to the ``installer_walking_skeleton``
+    group forces them onto a SINGLE worker, where pytest serializes them and
+    each suite's try/finally global-state restore is honored before the next
+    runs. This is NOT masking: every test runs for real with full assertions,
+    just serialized relative to the colliding installer mutations. Pure-unit
+    installer tests live under ``tests/installer/unit/`` (a different tree) and
+    are unaffected.
+    """
+    suite_dir = Path(__file__).parent
+    group = pytest.mark.xdist_group("installer_walking_skeleton")
+    for item in items:
+        item_path = getattr(item, "path", None)
+        if item_path is None:
+            continue
+        if suite_dir in Path(item_path).parents or Path(item_path) == suite_dir:
+            item.add_marker(group)
 
 
 @pytest.fixture

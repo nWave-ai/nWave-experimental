@@ -110,7 +110,7 @@ def main():
     else:
         print("\n❌ nWave Structure: COMMIT BLOCKED")
         print("   Step files must have phase_execution_log with all 14 phases")
-        print("   Run /nw:split to regenerate step files correctly")
+        print("   Run /nw-split to regenerate step files correctly")
         return 1
 
 

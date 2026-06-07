@@ -1,0 +1,13 @@
+{
+  "mutmut_ran": true,
+  "positive_control": {
+    "seeded": true,
+    "killed": true
+  },
+  "mutants": {
+    "tests/fixture/test_target.py::function_under_test": {
+      "killed": 3,
+      "survived": 1
+    }
+  }
+}

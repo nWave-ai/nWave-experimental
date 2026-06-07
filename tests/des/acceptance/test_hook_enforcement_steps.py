@@ -17,7 +17,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.phase_event import PhaseEvent
 from des.domain.step_completion_validator import StepCompletionValidator
-from des.domain.tdd_schema import get_tdd_schema
+from des.domain.tdd_schema import TDDSchemaLoader
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driven_ports.execution_log_reader import ExecutionLogReader
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
@@ -188,7 +188,7 @@ def validate_step(test_context: dict[str, Any]) -> None:
         violations=test_context.get("scope_violations", [])
     )
 
-    validator = StepCompletionValidator(get_tdd_schema())
+    validator = StepCompletionValidator(TDDSchemaLoader().load())
 
     service = SubagentStopService(
         log_reader=log_reader,

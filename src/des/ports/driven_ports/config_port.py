@@ -18,16 +18,6 @@ class ConfigPort(ABC):
     """
 
     @abstractmethod
-    def get_max_turns_default(self) -> int:
-        """
-        Get the default maximum number of turns allowed.
-
-        Returns:
-            int: Default maximum turns
-        """
-        pass
-
-    @abstractmethod
     def get_timeout_threshold_default(self) -> int:
         """
         Get the default timeout threshold in seconds.

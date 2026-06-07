@@ -114,6 +114,11 @@ class TestBuildTargetRewrite:
         """Given source has simple wheel config,
         when patching for nwave-ai,
         then selective force-include entries are added.
+
+        Regression guard (fix-wheel-leaks-des-config-p0 01-02): the force-include
+        map must NOT contain broad ``"scripts"`` or ``"src/des"`` entries, which
+        ship dev-only tooling and closed-source runtime respectively.  Only the
+        narrow subset actually consumed by nwave_ai/ at runtime may be included.
         """
         output_path = str(tmp_path / "out.toml")
         patch_pyproject(
@@ -124,14 +129,64 @@ class TestBuildTargetRewrite:
         )
         content = (tmp_path / "out.toml").read_text()
         assert "[tool.hatch.build.targets.wheel.force-include]" in content
-        assert '"scripts" = "scripts"' in content
+        # nWave/ subtree (public framework content)
         assert '"nWave/agents" = "nWave/agents"' in content
         assert '"nWave/skills" = "nWave/skills"' in content
         assert '"nWave/tasks/nw" = "nWave/tasks/nw"' in content
-        assert '"src/des" = "src/des"' in content
+        # Narrow scripts includes: only the subset nwave_ai/ actually imports
+        assert '"scripts/install" = "scripts/install"' in content
+        assert '"scripts/shared" = "scripts/shared"' in content
+        # Pre-built DES module (produced by scripts/build_dist.py into dist/lib/
+        # and staged to repo root ./lib before `python -m build --wheel`).
+        # Hatch force-include semantics: LHS=source, RHS=destination.  The
+        # destination MUST be nWave/lib/python/des so the installer's
+        # des_plugin.py (framework_source = site-packages/nWave/) finds it.
+        assert '"lib/python/des" = "nWave/lib/python/des"' in content
         # Should NOT include nWave/ as a whole (avoids broken symlinks)
         lines = content.splitlines()
         assert not any(line.strip() == '"nWave" = "nWave"' for line in lines)
+
+    def test_force_include_excludes_broad_scripts(
+        self, sample_pyproject_path, tmp_path
+    ):
+        """Regression guard: the broad ``"scripts" = "scripts"`` force-include
+        shipped 136 files of dev-only tooling (release/, hooks/, framework/,
+        validation/) to the 3.11.0 public wheel.  The patched output must NOT
+        contain this entry.
+        """
+        output_path = str(tmp_path / "out.toml")
+        patch_pyproject(
+            input_path=sample_pyproject_path,
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+        content = (tmp_path / "out.toml").read_text()
+        lines = content.splitlines()
+        assert not any(line.strip() == '"scripts" = "scripts"' for line in lines), (
+            "broad 'scripts' force-include is present — dev-only tooling will "
+            "ship publicly (regression of fix-wheel-leaks-des-config-p0)"
+        )
+
+    def test_force_include_excludes_raw_src_des(self, sample_pyproject_path, tmp_path):
+        """Regression guard: the ``"src/des" = "src/des"`` force-include shipped
+        149 files of closed-source DES runtime to the 3.11.0 public wheel.
+        The patched output must NOT contain this entry — use the pre-built
+        ``lib/python/des`` (import-rewritten) instead.
+        """
+        output_path = str(tmp_path / "out.toml")
+        patch_pyproject(
+            input_path=sample_pyproject_path,
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+        content = (tmp_path / "out.toml").read_text()
+        lines = content.splitlines()
+        assert not any(line.strip() == '"src/des" = "src/des"' for line in lines), (
+            "raw 'src/des' force-include is present — closed-source DES runtime "
+            "will ship publicly (regression of fix-wheel-leaks-des-config-p0)"
+        )
 
 
 class TestCliEntryPoint:
@@ -175,6 +230,33 @@ class TestCliEntryPoint:
         )
         content = (tmp_path / "out.toml").read_text()
         assert content.count("[project.scripts]") == 1
+
+    def test_patched_output_contains_nwave_ai_entry(self, tmp_path):
+        """Given source already has [project.scripts] with foreign entries
+        (no nwave-ai), when patching, then the patched output MUST contain
+        the nwave-ai console script entry.
+
+        Postcondition assertion absent from test_existing_scripts_not_duplicated
+        (which only asserted dedupe count). Codifies issue #41 RCA Branch D:
+        the existing test is satisfied by the bug, this one falsifies it.
+        """
+        toml_with_scripts = (
+            '[project]\nname = "nwave"\nversion = "1.0.0"\n\n'
+            '[project.urls]\nHomepage = "https://example.com"\n\n'
+            '[project.scripts]\nnwave = "nwave.cli:main"\n\n'
+            '[tool.hatch.build.targets.wheel]\npackages = ["nWave"]\n'
+        )
+        src = tmp_path / "src.toml"
+        src.write_text(toml_with_scripts)
+        output_path = str(tmp_path / "out.toml")
+        patch_pyproject(
+            input_path=str(src),
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+        content = (tmp_path / "out.toml").read_text()
+        assert 'nwave-ai = "nwave_ai.cli:main"' in content
 
 
 class TestDevSectionRemoval:

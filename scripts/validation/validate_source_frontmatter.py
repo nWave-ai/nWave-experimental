@@ -49,30 +49,32 @@ def parse_frontmatter(filepath: Path) -> dict | None:
     return parsed
 
 
-def validate_agent_file(filepath: Path) -> list[str]:
-    """Validate a single agent file. Returns list of error messages."""
-    errors = []
+def _validate_required_fields(filepath: Path, required_fields: list[str]) -> list[str]:
+    """Shared frontmatter validation: parse + check required fields exist+non-null.
+
+    Extracted 2026-05-03 (RPP L3) — `validate_agent_file` and
+    `validate_command_file` were 10-line clones differing only in the
+    required-fields list.
+    """
+    errors: list[str] = []
     fm = parse_frontmatter(filepath)
     if fm is None:
         errors.append(f"{filepath.name}: missing or invalid YAML frontmatter")
         return errors
-    for field in AGENT_REQUIRED_FIELDS:
+    for field in required_fields:
         if field not in fm or fm[field] is None:
             errors.append(f"{filepath.name}: missing required field '{field}'")
     return errors
+
+
+def validate_agent_file(filepath: Path) -> list[str]:
+    """Validate a single agent file. Returns list of error messages."""
+    return _validate_required_fields(filepath, AGENT_REQUIRED_FIELDS)
 
 
 def validate_command_file(filepath: Path) -> list[str]:
     """Validate a single command file. Returns list of error messages."""
-    errors = []
-    fm = parse_frontmatter(filepath)
-    if fm is None:
-        errors.append(f"{filepath.name}: missing or invalid YAML frontmatter")
-        return errors
-    for field in COMMAND_REQUIRED_FIELDS:
-        if field not in fm or fm[field] is None:
-            errors.append(f"{filepath.name}: missing required field '{field}'")
-    return errors
+    return _validate_required_fields(filepath, COMMAND_REQUIRED_FIELDS)
 
 
 def validate_project(project_root: Path) -> list[str]:

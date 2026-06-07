@@ -1,0 +1,45 @@
+# Gate-contract: verify-slice-ledger-evidence (D4 Phase 1 slice-02 follow-up)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-slice-ledger-evidence.
+#
+# F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2 slice-04 (FINAL): read-only
+# aggregator surface closing platform-architect critical-4 (observability
+# aggregator gap). Operator-runnable surface for PRR scorecard cell lift.
+
+gate_id: verify-slice-ledger-evidence
+responsibility: |
+  Read-only aggregator: scan the spine-ledger audit log under .nwave/des/logs/,
+  group events by name, filter by --since=<YYYY-MM-DD>, emit a single-line JSON
+  report on stdout naming cumulative counts of SliceCommitVerified,
+  CarpaccioGateCleared, SpineBypassDetected, SpineBypassUsed events on or after
+  the given date.
+module: des.cli.verify_slice_ledger_evidence
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --report
+    required: true
+    type: bool
+    help: "Emit the structured JSON report to stdout."
+  - name: --since
+    required: true
+    type: string
+    help: "ISO date (YYYY-MM-DD); events on or after this date are counted."
+
+log_events: []
+
+failure_modes:
+  - error_class: MalformedInput
+    exit_code: 2
+    remediation: "Provide --report and --since=<YYYY-MM-DD> arguments"
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

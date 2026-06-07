@@ -11,6 +11,7 @@ user-created ones.
 """
 
 import json
+import os
 from pathlib import Path
 
 from scripts.install.plugins.base import (
@@ -21,12 +22,21 @@ from scripts.install.plugins.base import (
 from scripts.install.plugins.opencode_common import (
     parse_frontmatter,
     render_frontmatter,
+    uninstall_with_manifest,
+    verify_with_manifest,
+)
+from scripts.shared.install_paths import (
+    PYTHON_CMD_SUBSTITUTION,
+    resolve_python_command,
+)
+from scripts.shared.platform_contracts import (
+    OPENCODE_COMMAND_FORBIDDEN_FIELDS,
+    OPENCODE_PATH_REWRITE_EXCEPTIONS,
+    OPENCODE_PATH_REWRITES,
 )
 
 
 _MANIFEST_FILENAME = ".nwave-commands-manifest.json"
-
-_FIELDS_TO_REMOVE = {"argument-hint", "disable-model-invocation"}
 
 
 def _opencode_commands_dir() -> Path:
@@ -35,7 +45,9 @@ def _opencode_commands_dir() -> Path:
     Returns:
         Path to ~/.config/opencode/commands/
     """
-    return Path.home() / ".config" / "opencode" / "commands"
+    override = os.environ.get("OPENCODE_CONFIG_DIR")
+    base = Path(override) if override else Path.home() / ".config" / "opencode"
+    return base / "commands"
 
 
 def _find_commands_source(context: InstallContext) -> Path | None:
@@ -73,7 +85,9 @@ def _transform_frontmatter(frontmatter: dict) -> dict:
         New dict with OpenCode-compatible frontmatter
     """
     return {
-        key: value for key, value in frontmatter.items() if key not in _FIELDS_TO_REMOVE
+        key: value
+        for key, value in frontmatter.items()
+        if key not in OPENCODE_COMMAND_FORBIDDEN_FIELDS
     }
 
 
@@ -92,6 +106,60 @@ def _transform_command(content: str) -> str:
     return rendered + body
 
 
+def _is_exception_path(text_segment: str) -> bool:
+    """Check if a text segment contains an exception path that should not be rewritten.
+
+    Args:
+        text_segment: A portion of text surrounding a potential rewrite match
+
+    Returns:
+        True if the segment contains an exception path
+    """
+    return any(
+        exception in text_segment for exception in OPENCODE_PATH_REWRITE_EXCEPTIONS
+    )
+
+
+def _rewrite_paths(content: str) -> str:
+    """Rewrite Claude Code paths to OpenCode equivalents in command body text.
+
+    Applies path rewrite rules from platform_contracts.OPENCODE_PATH_REWRITES,
+    respecting exceptions from platform_contracts.OPENCODE_PATH_REWRITE_EXCEPTIONS.
+
+    Rules are applied in order. Exception paths (e.g. ~/.claude/lib/python) are
+    protected from rewriting by checking each match against the exceptions list.
+
+    Args:
+        content: Command file body text containing Claude Code paths
+
+    Returns:
+        Text with all non-exception paths rewritten to OpenCode equivalents
+    """
+    result = content
+    for claude_prefix, opencode_prefix in OPENCODE_PATH_REWRITES:
+        # Process each occurrence, skipping exceptions
+        new_result = []
+        remaining = result
+        while claude_prefix in remaining:
+            match_index = remaining.index(claude_prefix)
+            # Check if this match is part of an exception path
+            # Look at enough context after the match to check exceptions
+            context_end = min(match_index + 100, len(remaining))
+            context_segment = remaining[match_index:context_end]
+            if _is_exception_path(context_segment):
+                # Keep this occurrence as-is, skip past it
+                new_result.append(remaining[: match_index + len(claude_prefix)])
+                remaining = remaining[match_index + len(claude_prefix) :]
+            else:
+                # Rewrite this occurrence
+                new_result.append(remaining[:match_index])
+                new_result.append(opencode_prefix)
+                remaining = remaining[match_index + len(claude_prefix) :]
+        new_result.append(remaining)
+        result = "".join(new_result)
+    return result
+
+
 def _write_manifest(
     target_dir: Path,
     installed_command_names: list[str],
@@ -107,22 +175,10 @@ def _write_manifest(
         "version": "1.0",
     }
     manifest_path = target_dir / _MANIFEST_FILENAME
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
-def _read_manifest(target_dir: Path) -> dict | None:
-    """Read the manifest file if it exists.
-
-    Args:
-        target_dir: OpenCode commands directory
-
-    Returns:
-        Parsed manifest dict, or None if not found
-    """
-    manifest_path = target_dir / _MANIFEST_FILENAME
-    if not manifest_path.exists():
-        return None
-    return json.loads(manifest_path.read_text())
+# _read_manifest moved to opencode_common.read_manifest (parameterized).
 
 
 class OpenCodeCommandsPlugin(InstallationPlugin):
@@ -177,14 +233,25 @@ class OpenCodeCommandsPlugin(InstallationPlugin):
             installed_names = []
             installed_files = []
 
+            python_cmd = resolve_python_command()
+
             for source_file in command_files:
                 command_name = source_file.stem
-                content = source_file.read_text()
+                content = source_file.read_text(encoding="utf-8")
 
                 transformed = _transform_command(content)
 
+                # Rewrite Claude Code paths to OpenCode equivalents
+                transformed = _rewrite_paths(transformed)
+
+                # Resolve Python command substitution at install time
+                if PYTHON_CMD_SUBSTITUTION in transformed:
+                    transformed = transformed.replace(
+                        PYTHON_CMD_SUBSTITUTION, python_cmd
+                    )
+
                 target_file = target_dir / f"{command_name}.md"
-                target_file.write_text(transformed)
+                target_file.write_text(transformed, encoding="utf-8")
 
                 installed_names.append(command_name)
                 installed_files.append(target_file)
@@ -215,147 +282,24 @@ class OpenCodeCommandsPlugin(InstallationPlugin):
             )
 
     def uninstall(self, context: InstallContext) -> PluginResult:
-        """Uninstall only nWave-installed OpenCode commands using manifest.
-
-        Reads the manifest to determine which commands were installed by nWave,
-        removes only those, and leaves user-created commands untouched.
-
-        Args:
-            context: InstallContext with shared installation utilities
-
-        Returns:
-            PluginResult indicating success or failure
-        """
-        try:
-            context.logger.info("  \U0001f5d1\ufe0f Uninstalling OpenCode commands...")
-
-            target_dir = _opencode_commands_dir()
-            manifest = _read_manifest(target_dir)
-
-            if manifest is None:
-                context.logger.info(
-                    "  \u23ed\ufe0f No OpenCode commands manifest found, skipping"
-                )
-                return PluginResult(
-                    success=True,
-                    plugin_name=self.name,
-                    message="No OpenCode commands to uninstall (no manifest found)",
-                )
-
-            installed_commands = manifest.get("installed_commands", [])
-            removed_count = 0
-
-            for command_name in installed_commands:
-                command_file = target_dir / f"{command_name}.md"
-                if command_file.exists():
-                    command_file.unlink()
-                    removed_count += 1
-
-            # Remove the manifest itself
-            manifest_path = target_dir / _MANIFEST_FILENAME
-            if manifest_path.exists():
-                manifest_path.unlink()
-
-            context.logger.info(
-                f"  \U0001f5d1\ufe0f Removed {removed_count} OpenCode commands"
-            )
-
-            return PluginResult(
-                success=True,
-                plugin_name=self.name,
-                message=f"OpenCode commands uninstalled ({removed_count} removed)",
-            )
-        except Exception as e:
-            context.logger.error(f"  \u274c Failed to uninstall OpenCode commands: {e}")
-            return PluginResult(
-                success=False,
-                plugin_name=self.name,
-                message=f"OpenCode commands uninstallation failed: {e!s}",
-                errors=[str(e)],
-            )
+        """Uninstall only nWave-installed OpenCode commands using manifest."""
+        return uninstall_with_manifest(
+            context=context,
+            plugin_name=self.name,
+            target_dir=_opencode_commands_dir(),
+            manifest_filename=_MANIFEST_FILENAME,
+            noun="commands",
+            installed_key="installed_commands",
+        )
 
     def verify(self, context: InstallContext) -> PluginResult:
-        """Verify OpenCode commands were installed correctly.
-
-        Checks that each command listed in the manifest exists as a file
-        with valid YAML frontmatter.
-
-        Args:
-            context: InstallContext with shared installation utilities
-
-        Returns:
-            PluginResult indicating verification success or failure
-        """
-        try:
-            context.logger.info("  \U0001f50e Verifying OpenCode commands...")
-
-            target_dir = _opencode_commands_dir()
-            manifest = _read_manifest(target_dir)
-
-            if manifest is None:
-                commands_source = _find_commands_source(context)
-                if commands_source is None:
-                    context.logger.info(
-                        "  \u23ed\ufe0f No OpenCode commands to verify "
-                        "(none configured)"
-                    )
-                    return PluginResult(
-                        success=True,
-                        plugin_name=self.name,
-                        message=(
-                            "No OpenCode commands configured, verification skipped"
-                        ),
-                    )
-
-                return PluginResult(
-                    success=False,
-                    plugin_name=self.name,
-                    message=(
-                        "OpenCode commands verification failed: manifest not found"
-                    ),
-                    errors=[f"Manifest file {_MANIFEST_FILENAME} not found"],
-                )
-
-            installed_commands = manifest.get("installed_commands", [])
-            missing_commands = []
-            verified_count = 0
-
-            for command_name in installed_commands:
-                command_file = target_dir / f"{command_name}.md"
-                if not command_file.exists():
-                    missing_commands.append(f"{command_name}.md not found")
-                else:
-                    verified_count += 1
-
-            if missing_commands:
-                context.logger.error(
-                    f"  \u274c OpenCode commands verification failed: "
-                    f"{len(missing_commands)} missing"
-                )
-                return PluginResult(
-                    success=False,
-                    plugin_name=self.name,
-                    message=(
-                        f"OpenCode commands verification failed: "
-                        f"{len(missing_commands)} commands missing"
-                    ),
-                    errors=missing_commands,
-                )
-
-            context.logger.info(f"  \u2705 Verified {verified_count} OpenCode commands")
-
-            return PluginResult(
-                success=True,
-                plugin_name=self.name,
-                message=(
-                    f"OpenCode commands verification passed ({verified_count} commands)"
-                ),
-            )
-        except Exception as e:
-            context.logger.error(f"  \u274c Failed to verify OpenCode commands: {e}")
-            return PluginResult(
-                success=False,
-                plugin_name=self.name,
-                message=f"OpenCode commands verification failed: {e!s}",
-                errors=[str(e)],
-            )
+        """Verify OpenCode commands were installed correctly."""
+        return verify_with_manifest(
+            context=context,
+            plugin_name=self.name,
+            target_dir=_opencode_commands_dir(),
+            manifest_filename=_MANIFEST_FILENAME,
+            noun="commands",
+            installed_key="installed_commands",
+            source_finder=_find_commands_source,
+        )

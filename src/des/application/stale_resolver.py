@@ -29,6 +29,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from des.domain.value_objects import PhaseStatus
+
 
 class StaleResolver:
     """
@@ -88,7 +90,7 @@ class StaleResolver:
         # Update IN_PROGRESS phase to ABANDONED
         if "tdd_cycle" in step_data and "phase_execution_log" in step_data["tdd_cycle"]:
             for phase in step_data["tdd_cycle"]["phase_execution_log"]:
-                if phase.get("status") == "IN_PROGRESS":
+                if phase.get("status") == PhaseStatus.IN_PROGRESS:
                     phase["status"] = "ABANDONED"
 
         # Save updated step data

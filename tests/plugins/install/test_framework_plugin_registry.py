@@ -28,6 +28,7 @@ def configured_installer(tmp_path):
     with patch.object(NWaveInstaller, "__init__", lambda self, *args, **kwargs: None):
         installer = NWaveInstaller()
         installer.dry_run = False
+        installer.dev_mode = False
         installer._platform_override = {"claude_code"}
         installer.claude_config_dir = tmp_path / "claude"
         installer.project_root = tmp_path
@@ -78,7 +79,7 @@ class TestInstallFrameworkUsesPluginRegistry:
     def test_install_framework_registers_all_wrapper_plugins(
         self, configured_installer
     ):
-        """Verify all 6 wrapper plugins are registered with the registry."""
+        """Verify all 8 wrapper plugins are registered with the registry."""
         installer = configured_installer
 
         # Patch PluginRegistry to capture registrations
@@ -101,13 +102,19 @@ class TestInstallFrameworkUsesPluginRegistry:
                     success=True, plugin_name="utilities", message="OK"
                 ),
                 "des": PluginResult(success=True, plugin_name="des", message="OK"),
+                "attribution": PluginResult(
+                    success=True, plugin_name="attribution", message="OK"
+                ),
+                "reviewer_signing": PluginResult(
+                    success=True, plugin_name="reviewer_signing", message="OK"
+                ),
             }
             MockRegistry.return_value = mock_registry
 
             installer.install_framework()
 
-            # Verify 6 plugins registered (including skills and DES)
-            assert mock_registry.register.call_count == 6
+            # Verify 8 plugins registered (skills, DES, attribution, reviewer_signing)
+            assert mock_registry.register.call_count == 8
 
             # Verify each plugin type was registered
             registered_plugins = [
@@ -121,6 +128,8 @@ class TestInstallFrameworkUsesPluginRegistry:
             assert "skills" in plugin_names
             assert "utilities" in plugin_names
             assert "des" in plugin_names
+            assert "attribution" in plugin_names
+            assert "reviewer_signing" in plugin_names
 
     def test_install_framework_creates_install_context(self, configured_installer):
         """Verify InstallContext is created with required fields."""
@@ -221,19 +230,27 @@ class TestInstallFrameworkPluginExecutionOrder:
                     success=True, plugin_name="utilities", message="OK"
                 ),
                 "des": PluginResult(success=True, plugin_name="des", message="OK"),
+                "attribution": PluginResult(
+                    success=True, plugin_name="attribution", message="OK"
+                ),
+                "reviewer_signing": PluginResult(
+                    success=True, plugin_name="reviewer_signing", message="OK"
+                ),
             }
             MockRegistry.return_value = mock_registry
 
             installer.install_framework()
 
-            # All 6 plugins should be registered (including skills and DES)
-            assert len(registration_order) == 6
+            # All 8 plugins should be registered (skills, DES, attribution, reviewer_signing)
+            assert len(registration_order) == 8
             assert "agents" in registration_order
             assert "commands" in registration_order
             assert "templates" in registration_order
             assert "skills" in registration_order
             assert "utilities" in registration_order
             assert "des" in registration_order
+            assert "attribution" in registration_order
+            assert "reviewer_signing" in registration_order
 
 
 class TestInstallFrameworkDryRunMode:

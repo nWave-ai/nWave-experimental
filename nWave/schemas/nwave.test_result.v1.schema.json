@@ -1,0 +1,24 @@
+{
+  "schema": "nwave.test_result.v1",
+  "_provenance": {
+    "ssot": "cross-tree-frozen",
+    "source": "ADR-042 Earned-Verdict (concept) — frozen by sister nwave-software-factory 2026-05-29",
+    "version_locked": true,
+    "mirror": "src/des/data/schemas/ (SF tier) — copies MUST be content-identical",
+    "ip_boundary": "concept + language-agnostic architecture + this contract = allowed cross-tree exchange; gate implementation is tier-specific (OSS=hooks, SF=sequencer)"
+  },
+  "_description": "Output of TestRunnerPort: the RUN result (counts + exit) of a single test invocation in the target language. Per-language adapter emits this; verdict is NOT computed here. seam_id does NOT belong here (it belongs to nwave.earned_verdict.v1). 'error' is SINGULAR for byte-identity with the SF pytest-plugin emission.",
+  "fields": {
+    "schema": "nwave.test_result.v1",
+    "runner": "pytest|jest|go-test|cargo",
+    "exit_code": "int",
+    "collected": "int",
+    "passed": "int",
+    "failed": "int",
+    "xfailed": "int",
+    "xpassed": "int",
+    "skipped": "int",
+    "deselected": "int",
+    "error": "int"
+  }
+}

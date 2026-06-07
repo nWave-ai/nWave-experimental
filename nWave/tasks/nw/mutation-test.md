@@ -12,6 +12,10 @@ argument-hint: "[feature-id] - Optional: --threshold=[75|80|85] --language=[auto
 
 Run mutation testing against implementation files from the current feature. Extracts targets from execution-log.json|generates feature-scoped configs|delegates to software-crafter. Uses cosmic-ray (Python)|PIT (Java)|Stryker (JS/TS/C#).
 
+## Mutation Testing Strategy
+
+Projects declare a strategy via `## Mutation Testing Strategy` in `CLAUDE.md`: `per-feature` | `nightly-delta` | `pre-release` | `disabled`. **Default when unspecified: `nightly-delta`** (recommended — CI runs mutmut nightly on changed modules; keeps per-feature delivery gates fast). `/nw-mutation-test` is an explicit on-demand run independent of strategy.
+
 ## Context Files Required
 
 - `docs/feature/{feature-id}/deliver/execution-log.json` - Implementation file extraction
@@ -51,21 +55,25 @@ Execute mutation testing for project {feature-id}.
 
 ### Example 1: Python project with config generator
 ```bash
-/nw:mutation-test des-hook-enforcement tests/des/
+/nw-mutation-test des-hook-enforcement tests/des/
 ```
 Reads execution-log.json, runs `generate_scoped_configs.py des-hook-enforcement`, delegates to software-crafter with per-component configs. Agent runs cosmic-ray, produces mutation-report.md.
 
 ### Example 2: Python project without config generator
 ```bash
-/nw:mutation-test auth-upgrade tests/auth/
+/nw-mutation-test auth-upgrade tests/auth/
 ```
 Extracts files manually from execution-log.json, creates single cosmic-ray config with `module-path = [file1, file2, ...]` and `test-command = "pytest -x tests/auth/"`, delegates to agent.
 
 ### Example 3: Non-Python project
 ```bash
-/nw:mutation-test payment-gateway tests/payment/
+/nw-mutation-test payment-gateway tests/payment/
 ```
 Detects `package.json`, selects Stryker, delegates with Stryker-specific instructions.
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 

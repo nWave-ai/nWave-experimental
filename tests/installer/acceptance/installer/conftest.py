@@ -6,6 +6,7 @@ isolated environment and capture its TUI output for assertion.
 
 import importlib
 import io
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -36,13 +37,16 @@ def installer_result(project_root, tmp_path_factory):
     - subprocess.run returns success for embedding/build calls
     """
     claude_config_dir = tmp_path_factory.mktemp("claude_config")
+    opencode_config_dir = tmp_path_factory.mktemp("opencode_config")
 
     # Save originals for cleanup
     original_logger_init = Logger.__init__
     original_get_config = PathUtils.get_claude_config_dir
+    original_get_opencode = PathUtils.get_opencode_config_dir
     original_run_checks = PreflightChecker.run_all_checks
     original_subprocess_run = subprocess.run
     original_argv = sys.argv
+    original_opencode_env = os.environ.get("OPENCODE_CONFIG_DIR")
 
     try:
         # --- Patch Logger: disable Rich so output goes through plain print ---
@@ -52,8 +56,15 @@ def installer_result(project_root, tmp_path_factory):
 
         Logger.__init__ = plain_logger_init
 
-        # --- Patch config dir → temp ---
+        # --- Patch config dirs → temp ---
+        # claude_config_dir: resolved via PathUtils.get_claude_config_dir
+        # opencode_config_dir: resolved via both PathUtils.get_opencode_config_dir
+        #   AND the per-plugin _opencode_*_dir functions that each read
+        #   OPENCODE_CONFIG_DIR directly — set both paths to the same tmp
+        #   dir to isolate the installer from the user's real ~/.config/opencode/.
         PathUtils.get_claude_config_dir = staticmethod(lambda: claude_config_dir)
+        PathUtils.get_opencode_config_dir = staticmethod(lambda: opencode_config_dir)
+        os.environ["OPENCODE_CONFIG_DIR"] = str(opencode_config_dir)
 
         # --- Patch preflight → all pass ---
         passing_results = [
@@ -84,6 +95,24 @@ def installer_result(project_root, tmp_path_factory):
         )
         subprocess.run = lambda *a, **kw: mock_completed
 
+        # --- Patch AttributionPlugin hook lifecycle to prevent real FS writes ---
+        # AttributionPlugin() defaults self._config_dir to Path.home() / ".nwave",
+        # and install_attribution_hook's _resolve_hooks_dir falls through to a
+        # cwd-relative .git/hooks/ when subprocess returns empty stdout (as the
+        # mock above does). Without patching, the installer writes to the real
+        # ~/.nwave/ and .git/hooks/ of whichever repo the tests run from.
+        import scripts.install.attribution_utils as _attr_utils
+        import scripts.install.plugins.attribution_plugin as _attr_plugin
+
+        original_install_hook_utils = _attr_utils.install_attribution_hook
+        original_install_hook_plugin = _attr_plugin.install_attribution_hook
+        original_write_pref = _attr_utils.write_attribution_preference
+        _attr_plugin.install_attribution_hook = lambda config_dir=None: (
+            claude_config_dir / ".nwave" / "hooks" / "prepare-commit-msg"
+        )
+        _attr_utils.install_attribution_hook = _attr_plugin.install_attribution_hook
+        _attr_utils.write_attribution_preference = lambda *a, **kw: None
+
         # --- Set argv ---
         sys.argv = ["install_nwave.py"]
 
@@ -107,9 +136,17 @@ def installer_result(project_root, tmp_path_factory):
         # Restore everything
         Logger.__init__ = original_logger_init
         PathUtils.get_claude_config_dir = original_get_config
+        PathUtils.get_opencode_config_dir = original_get_opencode
         PreflightChecker.run_all_checks = original_run_checks
         subprocess.run = original_subprocess_run
+        _attr_utils.install_attribution_hook = original_install_hook_utils
+        _attr_plugin.install_attribution_hook = original_install_hook_plugin
+        _attr_utils.write_attribution_preference = original_write_pref
         sys.argv = original_argv
+        if original_opencode_env is None:
+            os.environ.pop("OPENCODE_CONFIG_DIR", None)
+        else:
+            os.environ["OPENCODE_CONFIG_DIR"] = original_opencode_env
 
 
 @pytest.fixture(scope="module")

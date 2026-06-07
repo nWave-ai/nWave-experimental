@@ -24,9 +24,9 @@ Run `git log --name-only` over the configured time period, count commits per fil
 Show the most-changed files in the repo. Output is inline only — no files persisted.
 
 ```
-/nw:hotspot
-/nw:hotspot --top=20
-/nw:hotspot --since=12m
+/nw-hotspot
+/nw-hotspot --top=20
+/nw-hotspot --since=12m
 ```
 
 **Steps:**
@@ -52,7 +52,7 @@ Show the most-changed files in the repo. Output is inline only — no files pers
 Overlay churn data on an existing analysis report to prioritize findings.
 
 ```
-/nw:hotspot --rank code-smell-detector-report.md
+/nw-hotspot --rank code-smell-detector-report.md
 ```
 
 **Steps:**
@@ -68,7 +68,7 @@ Overlay churn data on an existing analysis report to prioritize findings.
 Deep-dive into a single file's change history.
 
 ```
-/nw:hotspot --detail src/services/payment.ts
+/nw-hotspot --detail src/services/payment.ts
 ```
 
 **Steps:**
@@ -80,7 +80,7 @@ Deep-dive into a single file's change history.
 ### 4. JSON export (pre-filter composition)
 
 ```
-/nw:hotspot --top=10 --json
+/nw-hotspot --top=10 --json
 ```
 
 Output: `[{"path": "src/services/payment.ts", "commits": 87, "last_changed": "2 days ago"}, ...]`
@@ -105,20 +105,20 @@ Output: `[{"path": "src/services/payment.ts", "commits": 87, "last_changed": "2 
 
 ### Pre-filter (scope downstream analysis)
 
-Run `/nw:hotspot --top=10 --json` first, then pass the file list to:
+Run `/nw-hotspot --top=10 --json` first, then pass the file list to:
 - **code-smell-detector**: "Analyze only these files: {hotspot list}"
 - **cognitive-load-analyzer**: "Focus analysis on these files: {hotspot list}"
 - **refactoring-expert**: "Prioritize recommendations for these files"
 
 ### Post-filter (rank existing findings)
 
-Run `/nw:hotspot --rank {report.md}` after any analysis to prioritize by churn.
+Run `/nw-hotspot --rank {report.md}` after any analysis to prioritize by churn.
 
 ### In nWave workflows
 
-- Before `/nw:refactor` — identify which files to refactor first
-- Before `/nw:review` — focus review effort on high-churn areas
-- Before `/nw:root-why` — check if the problematic area is a known hotspot
+- Before `/nw-refactor` — identify which files to refactor first
+- Before `/nw-review` — focus review effort on high-churn areas
+- Before `/nw-root-why` — check if the problematic area is a known hotspot
 
 ## Next Wave
 
@@ -129,23 +129,27 @@ Run `/nw:hotspot --rank {report.md}` after any analysis to prioritize by churn.
 
 ### Example 1: Quick scan of a legacy codebase
 ```
-/nw:hotspot
+/nw-hotspot
 ```
 
 ### Example 2: Scope a code smell analysis to hotspots
 ```
-/nw:hotspot --top=10 --json
+/nw-hotspot --top=10 --json
 ```
 
 ### Example 3: Prioritize an existing refactoring report
 ```
-/nw:hotspot --rank code-refactoring-report.md
+/nw-hotspot --rank code-refactoring-report.md
 ```
 
 ### Example 4: Investigate a specific troubled file
 ```
-/nw:hotspot --detail src/services/payment.ts
+/nw-hotspot --detail src/services/payment.ts
 ```
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Expected Outputs
 

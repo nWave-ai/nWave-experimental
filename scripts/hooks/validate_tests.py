@@ -7,7 +7,17 @@ Optimizations (v2):
   - Fail-fast (-x): stops at first failure
   - Changed-file targeting: maps staged files to relevant test directories
   - Build acceptance tests moved to pre-push (slow plugin assembly)
-  - Parallel execution via pytest-xdist (-n auto)
+  - Parallel execution via pytest-xdist
+
+pytest-xdist worker count:
+  Defaults to ``-n 1`` (a single test process, no memory doubling) so the
+  commit test gate runs on any target machine regardless of available RAM.
+  Two or more workers each load the full test suite, roughly doubling memory
+  use; on memory-constrained hosts (e.g. WSL2) that triggers
+  ``OSError [Errno 12] Cannot allocate memory`` and blocks commits spuriously.
+  Hosts with headroom can opt into more workers by exporting
+  ``NWAVE_PYTEST_XDIST_WORKERS`` (e.g. ``NWAVE_PYTEST_XDIST_WORKERS=4`` or
+  ``=auto``); the value is passed straight to ``pytest -n``.
 """
 
 import os
@@ -29,9 +39,12 @@ _SOURCE_TO_TESTS: dict[str, list[str]] = {
     "src/des/": ["tests/des/", "tests/bugs/des/"],
     "scripts/install/plugins/": ["tests/plugins/", "tests/bugs/plugins/"],
     "scripts/install/": ["tests/installer/", "tests/bugs/installer/"],
+    "scripts/cli/": ["tests/scripts/cli/"],
     "scripts/validation/": ["tests/validation/"],
     "scripts/framework/": ["tests/build/"],
     "scripts/build_dist.py": ["tests/build/"],
+    "scripts/shared/": ["tests/plugins/", "tests/installer/"],
+    "scripts/observability/": ["tests/observability/"],
     "scripts/hooks/": [],
     "scripts/docgen.py": [],
     "nWave/": ["tests/build/"],
@@ -68,14 +81,13 @@ def clear_git_environment():
         os.environ.pop(var, None)
 
 
-def get_targeted_test_dirs() -> list[str] | None:
+def get_targeted_test_dirs() -> list[str] | None | str:
     """Map staged files to relevant test directories.
 
-    Returns a sorted list of test directories to run, or None to run everything.
-    Falls back to None (all tests) when:
-      - git diff fails
-      - a config file changed (pyproject.toml, conftest.py, etc.)
-      - a staged file doesn't match any known mapping
+    Returns:
+      - list[str]: targeted test directories to run (non-empty)
+      - None: run the full suite (config changed, unknown file, git failed)
+      - "skip": no relevant tests for these staged files (docs/CI only)
     """
     try:
         result = subprocess.run(
@@ -98,11 +110,16 @@ def get_targeted_test_dirs() -> list[str] | None:
         if filepath in _RUN_ALL_TRIGGERS:
             return None
 
-        # Changed test files → include their top-level test directory
+        # Changed test files → scope to their enclosing dir, capped at
+        # 4 levels (tests/{layer}/{tier}/{feature}/). Capping limits blast
+        # radius so an in-flight RED scaffold under one feature does not
+        # block commits touching a sibling feature (chronic D3 backup-move
+        # pattern, friction #15).
         if filepath.startswith("tests/"):
             parts = filepath.split("/")
-            if len(parts) >= 2:
-                test_dirs.add(f"tests/{parts[1]}/")
+            scope_depth = min(len(parts) - 1, 4)
+            if scope_depth >= 2:
+                test_dirs.add("/".join(parts[:scope_depth]) + "/")
             continue
 
         # Match against source prefix map (longest prefix first)
@@ -120,12 +137,41 @@ def get_targeted_test_dirs() -> list[str] | None:
             return None
 
     if not test_dirs:
-        # Only non-testable files changed (docs, CI, etc.) — still run all for safety
-        return None
+        # Every staged file matched a known prefix mapped to no test dirs
+        # (docs/, scripts/hooks/, .github/, etc.). Skip pytest entirely —
+        # these files have no runtime impact on Python code under test.
+        # An "unknown file" path returns None earlier (full-suite safety net).
+        return "skip"
 
     # Keep only directories that actually exist
     existing = sorted(d for d in test_dirs if Path(d).is_dir())
     return existing if existing else None
+
+
+# Env var: opt-in override for the pytest-xdist worker count.
+_XDIST_WORKERS_ENV = "NWAVE_PYTEST_XDIST_WORKERS"
+
+
+def resolve_xdist_workers() -> str:
+    """Resolve the pytest-xdist worker count for ``-n``.
+
+    Defaults to ``"1"`` (single process, no memory doubling) so the test
+    gate runs on memory-constrained hosts. The default is overridable via
+    the ``NWAVE_PYTEST_XDIST_WORKERS`` env var: a positive integer or the
+    literal ``auto``. An unset, empty, or invalid value falls back to ``"1"``.
+    """
+    raw = os.environ.get(_XDIST_WORKERS_ENV, "").strip()
+    if not raw:
+        return "1"
+    if raw == "auto":
+        return "auto"
+    if raw.isdigit() and int(raw) > 0:
+        return raw
+    print(
+        f"{YELLOW}Ignoring invalid {_XDIST_WORKERS_ENV}={raw!r} "
+        f"(expected a positive integer or 'auto'); using -n 1{NC}"
+    )
+    return "1"
 
 
 def has_xdist() -> bool:
@@ -153,16 +199,16 @@ def main():
         print(f"{YELLOW}Warning: python3 not available, skipping tests{NC}")
         return 0
 
-    # Determine pytest command: prefer pipenv run (matches CI) over bare python3
-    use_pipenv = False
+    # Determine pytest command: prefer uv run (matches CI) over bare python3
+    use_uv = False
     try:
         subprocess.run(
-            ["pipenv", "run", "python3", "-m", "pytest", "--version"],
+            ["uv", "run", "python3", "-m", "pytest", "--version"],
             check=True,
             capture_output=True,
             text=True,
         )
-        use_pipenv = True
+        use_uv = True
     except (subprocess.CalledProcessError, FileNotFoundError):
         try:
             subprocess.run(
@@ -180,9 +226,15 @@ def main():
         print(f"{YELLOW}No tests directory found, skipping tests{NC}")
         return 0
 
-    # Determine test scope: targeted dirs or full suite
+    # Determine test scope: skip / targeted / full suite
     targeted = get_targeted_test_dirs()
-    if targeted:
+    if targeted == "skip":
+        print(
+            f"{GREEN}Skip mode: only doc / CI / hook files staged — "
+            f"no Python runtime impact{NC}"
+        )
+        return 0
+    if isinstance(targeted, list) and targeted:
         test_targets = targeted
         print(
             f"{BLUE}Targeted mode: {len(targeted)} directories "
@@ -199,7 +251,9 @@ def main():
         env["PYTHONPATH"] = os.getcwd() + ":" + env.get("PYTHONPATH", "")
 
         # Pre-commit runs unit/acceptance tests only.
-        # Integration, e2e, and build acceptance tests run at pre-push.
+        # Integration, e2e, build acceptance, and heavy smoke tests run at pre-push.
+        # feature_delta/acceptance: calls nwave-ai CLI with 30s timeout — pre-push.
+        # polyglot-pilot: compiles Kotlin/Rust/Go/Java/TS/C# — pre-push.
         base_args = [
             *test_targets,
             "-x",
@@ -207,19 +261,26 @@ def main():
             "--ignore-glob=**/integration/**",
             "--ignore-glob=**/e2e/**",
             "--ignore-glob=**/build/acceptance/**",
+            "--ignore-glob=**/feature_delta/acceptance/**",
+            "--ignore-glob=**/polyglot-pilot/**",
         ]
 
-        # Parallel execution with pytest-xdist (if available)
+        # Parallel execution with pytest-xdist (if available).
+        # Default -n 1: each worker loads the full suite, so >1 worker roughly
+        # multiplies memory use and OOMs (Errno 12) on memory-constrained hosts
+        # (e.g. WSL2). -n 1 makes the gate run everywhere; hosts with headroom
+        # opt into more workers via NWAVE_PYTEST_XDIST_WORKERS (see module
+        # docstring) — the env var is the escape hatch, not a requirement.
         # --dist loadfile keeps tests from the same file on one worker
-        # (prevents shared-fixture conflicts between BDD scenarios)
+        # (prevents shared-fixture conflicts between BDD scenarios).
         if has_xdist():
-            base_args.extend(["-n", "auto", "--dist", "loadfile"])
+            base_args.extend(["-n", resolve_xdist_workers(), "--dist", "loadfile"])
         else:
             base_args.append("-v")
 
         cmd = (
-            ["pipenv", "run", "python3", "-m", "pytest", *base_args]
-            if use_pipenv
+            ["uv", "run", "python3", "-m", "pytest", *base_args]
+            if use_uv
             else ["python3", "-m", "pytest", *base_args]
         )
         result = subprocess.run(
@@ -234,6 +295,15 @@ def main():
     except Exception as e:
         print(f"{RED}Error running tests: {e}{NC}")
         return 1
+
+    # Observation-only telemetry: collect runtime, never blocks
+    try:
+        from scripts.hooks.test_runtime_observe import observe_runtime
+
+        scope = "targeted" if isinstance(targeted, list) else "full"
+        observe_runtime(test_output, scope=scope, project_root=Path())
+    except Exception:
+        pass  # telemetry must never block the pipeline
 
     # Count tests using regex
     passed_match = re.search(r"(\d+) passed", test_output)

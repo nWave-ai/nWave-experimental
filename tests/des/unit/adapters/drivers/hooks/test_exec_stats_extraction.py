@@ -26,15 +26,18 @@ from unittest.mock import patch
 if TYPE_CHECKING:
     from pathlib import Path
 
+from des.adapters.drivers.hooks import hook_protocol
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.phase_event import PhaseEvent
 from des.domain.step_completion_validator import StepCompletionValidator
-from des.domain.tdd_schema import get_tdd_schema
+from des.domain.tdd_schema import TDDSchemaLoader
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driven_ports.execution_log_reader import ExecutionLogReader
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
 from des.ports.driven_ports.time_provider_port import TimeProvider
 from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+
+from .conftest import make_capturing_writer
 
 
 # --- Test doubles ---
@@ -150,24 +153,13 @@ def _build_service(
     audit_spy = SpyAuditWriter()
     service = SubagentStopService(
         log_reader=StubExecutionLogReader(project_id=project_id, events=events),
-        completion_validator=StepCompletionValidator(schema=get_tdd_schema()),
+        completion_validator=StepCompletionValidator(schema=TDDSchemaLoader().load()),
         scope_checker=StubScopeChecker(),
         audit_writer=audit_spy,
         time_provider=StubTimeProvider(),
         commit_verifier=commit_verifier,
     )
     return service, audit_spy
-
-
-def _make_capturing_writer(events: list[AuditEvent]):
-    """Create an AuditLogWriter that captures events."""
-    from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-
-    class CapturingWriter(NullAuditLogWriter):
-        def log_event(self, event: AuditEvent) -> None:
-            events.append(event)
-
-    return CapturingWriter()
 
 
 # --- Test 1: SubagentStopContext carries optional turns_used and tokens_used ---
@@ -262,7 +254,12 @@ def test_commit_verified_event_includes_stats_when_provided():
     )
 
     class StubCommitVerifier(CommitVerifier):
-        def verify_commit(self, step_id: str, cwd: str) -> CommitVerificationResult:
+        def verify_commit(
+            self,
+            step_id: str,
+            cwd: str,
+            feature_id_filter: str | None = None,
+        ) -> CommitVerificationResult:
             return CommitVerificationResult(
                 verified=True,
                 commit_hash="abc123",
@@ -300,7 +297,7 @@ def test_handle_subagent_stop_extracts_stats_from_hook_input(monkeypatch, tmp_pa
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
     events: list[AuditEvent] = []
-    writer = _make_capturing_writer(events)
+    writer = make_capturing_writer(events)
 
     # Non-DES agent (passthrough) with stats in hook_input
     stop_stdin = json.dumps(
@@ -317,7 +314,7 @@ def test_handle_subagent_stop_extracts_stats_from_hook_input(monkeypatch, tmp_pa
     monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
+    with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
         adapter.handle_subagent_stop()
 
     completed = [e for e in events if e.event_type == "HOOK_COMPLETED"]
@@ -334,7 +331,7 @@ def test_handle_subagent_stop_graceful_when_stats_missing(monkeypatch, tmp_path)
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
     events: list[AuditEvent] = []
-    writer = _make_capturing_writer(events)
+    writer = make_capturing_writer(events)
 
     # No stats fields in hook_input
     stop_stdin = json.dumps(
@@ -349,7 +346,7 @@ def test_handle_subagent_stop_graceful_when_stats_missing(monkeypatch, tmp_path)
     monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
+    with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
         exit_code = adapter.handle_subagent_stop()
 
     assert exit_code == 0

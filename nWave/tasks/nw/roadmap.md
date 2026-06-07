@@ -15,12 +15,14 @@ Dispatches expert agent to fill a pre-scaffolded YAML roadmap skeleton. CLI tool
 
 Output: `docs/feature/{feature-id}/deliver/roadmap.json`
 
+> **Mode scope (ADR-028):** the `roadmap.json` flow this command produces is a classic-mode artifact and is **not used under the `atdd_pure` workflow** — under `atdd_pure` the feature-delta `[REF] Slice Plan` section plus per-slice ATs replace it. Run `/nw-roadmap` only when `.nwave/config.yaml:workflow.mode` is `classic`.
+
 ## Usage
 
 ```bash
-/nw:roadmap @nw-solution-architect "Migrate monolith to microservices"
-/nw:roadmap @nw-software-crafter "Replace legacy authentication system"
-/nw:roadmap @nw-product-owner "Implement multi-tenant support"
+/nw-roadmap @nw-solution-architect "Migrate monolith to microservices"
+/nw-roadmap @nw-software-crafter "Replace legacy authentication system"
+/nw-roadmap @nw-product-owner "Implement multi-tenant support"
 ```
 
 ## Execution Steps
@@ -35,7 +37,7 @@ You MUST execute these steps in order. Do NOT skip any.
 **Step 2 — Scaffold skeleton via CLI (mandatory, BEFORE invoking agent):**
 
 ```bash
-PYTHONPATH=~/.claude/lib/python python3 -m des.cli.roadmap init \
+des roadmap init \
   --project-id {feature-id} \
   --goal "{goal-description}" \
   --output docs/feature/{feature-id}/deliver/roadmap.json
@@ -63,7 +65,7 @@ Context to pass (if available): measurement baseline|mikado-graph.md|existing do
 **Step 4 — Validate via CLI (hard gate, mandatory):**
 
 ```bash
-PYTHONPATH=~/.claude/lib/python python3 -m des.cli.roadmap validate docs/feature/{feature-id}/deliver/roadmap.json
+des roadmap validate docs/feature/{feature-id}/deliver/roadmap.json
 ```
 - Exit 0 -> success, roadmap ready
 - Exit 1 -> print errors, STOP, do NOT proceed
@@ -77,6 +79,10 @@ Pass: skeleton file path + goal description + measurement context (if available)
 Do not pass: YAML templates|phase guidance|step decomposition rules.
 
 For performance roadmaps, include measurement context inline so agent can validate targets against baselines.
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 
@@ -104,26 +110,26 @@ For performance roadmaps, include measurement context inline so agent can valida
 
 ### Example 1: Standard architecture roadmap
 ```
-/nw:roadmap @nw-solution-architect "Migrate authentication to OAuth2"
+/nw-roadmap @nw-solution-architect "Migrate authentication to OAuth2"
 ```
 Derives feature-id="migrate-auth-to-oauth2", scaffolds skeleton, invokes agent to fill TODOs, validates. Produces docs/feature/migrate-auth-to-oauth2/deliver/roadmap.json.
 
 ### Example 2: Performance roadmap with measurement context
 ```
-/nw:roadmap @nw-solution-architect "Optimize test suite execution"
+/nw-roadmap @nw-solution-architect "Optimize test suite execution"
 ```
 Passes measurement data inline. Agent fills skeleton, validates targets against baseline, prioritizes largest bottleneck first.
 
 ### Example 3: Mikado refactoring
 ```
-/nw:roadmap @nw-software-crafter "Extract payment module from monolith"
+/nw-roadmap @nw-software-crafter "Extract payment module from monolith"
 ```
 Agent fills skeleton with methodology: mikado, references mikado-graph.md, maps leaf nodes to steps.
 
 ## Workflow Context
 
 ```bash
-/nw:roadmap @agent "goal"           # 1. Plan (init -> agent fills -> validate)
-/nw:execute @agent "feature-id" "01-01" # 2. Execute steps
-/nw:finalize @agent "feature-id"        # 3. Finalize
+/nw-roadmap @agent "goal"           # 1. Plan (init -> agent fills -> validate)
+/nw-execute @agent "feature-id" "01-01" # 2. Execute steps
+/nw-finalize @agent "feature-id"        # 3. Finalize
 ```

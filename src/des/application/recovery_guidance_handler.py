@@ -39,10 +39,6 @@ class JuniorDevFormatter:
         "SKIPPED": "intentionally skipped",
     }
 
-    def __init__(self):
-        """Initialize JuniorDevFormatter."""
-        pass
-
     def format_suggestion(
         self,
         raw_why: str,
@@ -64,16 +60,13 @@ class JuniorDevFormatter:
             Formatted suggestion string with junior-developer friendly language,
             structured as WHY / HOW / ACTION sections
         """
-        # Simplify technical terms
         simplified_why = self._simplify_language(raw_why)
         simplified_how = self._simplify_language(raw_how)
         simplified_action = self._simplify_language(raw_action)
 
-        # Add educational context
         educational_why = self._add_educational_context(simplified_why)
         educational_how = self._add_educational_context(simplified_how)
 
-        # Format as structured suggestion
         return f"WHY: {educational_why}\n\nHOW: {educational_how}\n\nACTION: {simplified_action}"
 
     def _simplify_language(self, text: str) -> str:
@@ -90,26 +83,14 @@ class JuniorDevFormatter:
             Text with simplified language
         """
         result = text
-
-        # Replace orchestrator with system
         result = re.sub(r"\borchestrator\b", "system", result, flags=re.IGNORECASE)
-
-        # Replace framework with "system" or explain
         result = re.sub(r"\bframework\b", "system", result, flags=re.IGNORECASE)
-
-        # Simplify "partially state" to something clearer
         result = re.sub(
             r"partially\s+state", "incomplete state", result, flags=re.IGNORECASE
         )
-
-        # Replace "corrupted state" with "broken state"
         result = re.sub(
             r"corrupted\s+state", "broken state", result, flags=re.IGNORECASE
         )
-
-        # Keep IN_PROGRESS, NOT_EXECUTED but ensure they're explained
-        # (will be done in _add_educational_context)
-
         return result
 
     def _add_educational_context(self, text: str) -> str:
@@ -125,15 +106,8 @@ class JuniorDevFormatter:
         Returns:
             Text with added educational context
         """
-        result = text
-
-        # Explain status codes with context
-        result = self._explain_status_codes(result)
-
-        # Replace technical terms with explanations
-        result = self._replace_technical_terms(result)
-
-        return result
+        result = self._explain_status_codes(text)
+        return self._replace_technical_terms(result)
 
     def _explain_status_codes(self, text: str) -> str:
         """
@@ -171,14 +145,10 @@ class JuniorDevFormatter:
         Returns:
             Text with technical terms replaced
         """
-        result = text
-
-        # Replace "state" with "current condition" for clarity
-        if "state" in result.lower() and "condition" not in result.lower():
-            result = result.replace("state", "current condition")
-            result = result.replace("State", "Current condition")
-
-        return result
+        if "state" in text.lower() and "condition" not in text.lower():
+            text = text.replace("state", "current condition")
+            text = text.replace("State", "Current condition")
+        return text
 
 
 class SuggestionFormatter:
@@ -229,13 +199,13 @@ class RecoveryGuidanceHandler:
             "suggestions": [
                 "WHY: Your agent stopped during {phase} and left it marked IN_PROGRESS.\n"
                 "HOW: Reset the phase status to NOT_EXECUTED so the system knows it can retry.\n"
-                "ACTION: Review {transcript_path} for what went wrong, then run `/nw:execute` to try {phase} again.",
+                "ACTION: Review {transcript_path} for what went wrong, then run `/nw-execute` to try {phase} again.",
                 "WHY: A phase stuck IN_PROGRESS blocks your system from continuing.\n"
                 "HOW: Resetting clears the incomplete state and lets execution continue.\n"
                 "ACTION: Update your step file: change state.tdd_cycle.{phase}.status to 'NOT_EXECUTED'.",
                 "WHY: You need to understand why the agent stopped to fix the real problem.\n"
                 "HOW: The transcript contains the error details and what the agent was doing.\n"
-                "ACTION: Check the transcript at {transcript_path}, then run `/nw:execute @software-crafter '{step_file}'` to retry.",
+                "ACTION: Check the transcript at {transcript_path}, then run `/nw-execute @software-crafter '{step_file}'` to retry.",
             ],
         },
         "silent_completion": {
@@ -310,7 +280,7 @@ class RecoveryGuidanceHandler:
                 "ACTION: Review {transcript_path}, identify the failure, then decide: fix the error and retry, or adjust your configuration.",
                 "WHY: Your {phase} phase can't continue until you fix the crash issue.\n"
                 "HOW: Once you know the cause, reset the phase and retry with better conditions.\n"
-                "ACTION: After reviewing {transcript_path}, reset {phase} to NOT_EXECUTED and run `/nw:execute` again.",
+                "ACTION: After reviewing {transcript_path}, reset {phase} to NOT_EXECUTED and run `/nw-execute` again.",
             ],
         },
         "invalid_skip": {
@@ -332,7 +302,7 @@ class RecoveryGuidanceHandler:
                 "ACTION: Check {transcript_path} to see what happened, then reset {phase} to NOT_EXECUTED and retry.",
                 "WHY: A phase that's been stuck for {stale_threshold_hours}+ hours won't complete on its own.\n"
                 "HOW: Reset it to NOT_EXECUTED so the system can retry from a clean state.\n"
-                "ACTION: Update state.tdd_cycle.{phase}.status to 'NOT_EXECUTED', then run `/nw:execute` again.",
+                "ACTION: Update state.tdd_cycle.{phase}.status to 'NOT_EXECUTED', then run `/nw-execute` again.",
                 "WHY: Stale execution blocks your whole workflow from continuing to the next phase.\n"
                 "HOW: Clearing the stale state lets the system progress instead of waiting forever.\n"
                 "ACTION: After reviewing {transcript_path}, force-reset {phase} to NOT_EXECUTED in your step file.",
@@ -383,37 +353,29 @@ class RecoveryGuidanceHandler:
                 f"Unknown failure mode: {failure_type}. Please consult documentation."
             ]
 
-        template = self.FAILURE_MODE_TEMPLATES[failure_type]
-        suggestion_templates = template["suggestions"]
+        suggestion_templates = self.FAILURE_MODE_TEMPLATES[failure_type]["suggestions"]
 
-        # Format suggestions with context values, providing defaults for optional fields
         suggestions = []
         for suggestion_template in suggestion_templates:
-            # Create a safe format context with defaults for all possible placeholders
             safe_context = {
-                # Common fields
                 "phase": context.get("phase", "UNKNOWN_PHASE"),
                 "step_file": context.get("step_file", "unknown_step_file.json"),
                 "transcript_path": context.get(
                     "transcript_path", "/path/to/transcript.log"
                 ),
                 "section_name": context.get("section_name", "section"),
-                # Timeout failure fields
                 "configured_timeout_minutes": context.get(
                     "configured_timeout_minutes", "30"
                 ),
                 "actual_runtime_minutes": context.get("actual_runtime_minutes", "35"),
                 "phase_start": context.get("phase_start", "2026-01-01T00:00:00Z"),
-                # Stale execution fields
                 "stale_threshold_hours": context.get("stale_threshold_hours", "24"),
             }
-            # Add any other context values not in defaults
             for key, value in context.items():
                 if key not in safe_context:
                     safe_context[key] = value
 
-            formatted = suggestion_template.format(**safe_context)
-            suggestions.append(formatted)
+            suggestions.append(suggestion_template.format(**safe_context))
 
         return suggestions
 
@@ -423,18 +385,10 @@ class RecoveryGuidanceHandler:
         how_text: str,
         actionable_command: str,
     ) -> str:
-        """
-        Format a recovery suggestion with WHY, HOW, and actionable elements.
-
-        Args:
-            why_text: Explanation of why the error occurred
-            how_text: Explanation of how the fix resolves the issue
-            actionable_command: Specific command or action to take
-
-        Returns:
-            Formatted suggestion string combining all components
-        """
-        return f"WHY: {why_text}\n\nHOW: {how_text}\n\nACTION: {actionable_command}"
+        """Format a recovery suggestion with WHY, HOW, and actionable elements."""
+        return SuggestionFormatter().format_suggestion(
+            why_text, how_text, actionable_command
+        )
 
     def handle_failure(
         self,
@@ -453,24 +407,19 @@ class RecoveryGuidanceHandler:
         Returns:
             Dictionary with updated state including recovery_suggestions
         """
-        # Generate suggestions
         suggestions = self.generate_recovery_suggestions(failure_type, context)
 
-        # Load step file
         step_file = Path(step_file_path)
         step_data = json.loads(step_file.read_text())
 
-        # Update step state with recovery suggestions
         if "state" not in step_data:
             step_data["state"] = {}
 
         step_data["state"]["recovery_suggestions"] = suggestions
 
-        # Add failure reason if provided
         if "failure_reason" in context:
             step_data["state"]["failure_reason"] = context["failure_reason"]
 
-        # Persist to file
         step_file.write_text(json.dumps(step_data, indent=2))
 
         return step_data["state"]

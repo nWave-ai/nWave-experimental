@@ -160,7 +160,12 @@ class TestVirtualEnvironmentCheck:
         GIVEN: Running outside a virtual environment (no sys.prefix diff, no VIRTUAL_ENV)
         WHEN: VirtualEnvironmentCheck.run() is called
         THEN: Returns CheckResult with passed=False, ENV_NO_VENV error,
-              and remediation includes pip install nwave-ai suggestion
+              and remediation guides user to nwave-ai install via a detected tool.
+
+        NOTE: Remediation no longer suggests 'pip install nwave-ai' as primary path
+        (AC-3, install-uv-primary step 01-03). The remediation is now tool-aware:
+        uv → 'uv tool install nwave-ai', pipx → 'pipx install nwave-ai',
+        neither → curl uv install + 'uv tool install nwave-ai'.
         """
         # ARRANGE
         check = VirtualEnvironmentCheck()
@@ -179,8 +184,8 @@ class TestVirtualEnvironmentCheck:
                         "not running in a virtual environment" in result.message.lower()
                     )
                     assert result.remediation is not None
-                    assert "venv" in result.remediation.lower()
-                    assert "pip install nwave-ai" in result.remediation
+                    assert "nwave-ai install" in result.remediation
+                    assert "pip install nwave-ai" not in result.remediation
 
 
 class TestPreflightChecker:

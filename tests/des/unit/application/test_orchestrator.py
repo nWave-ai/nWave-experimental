@@ -11,12 +11,12 @@ class TestDESOrchestrator:
 
     def test_execute_command_includes_validation_marker(self, des_orchestrator):
         """
-        GIVEN /nw:execute command
+        GIVEN /nw-execute command
         WHEN render_prompt is called
         THEN prompt includes <!-- DES-VALIDATION: required --> marker
         """
         prompt = des_orchestrator.render_prompt(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="steps/01-01.json",
             project_root="/tmp/test",
@@ -25,12 +25,12 @@ class TestDESOrchestrator:
 
     def test_execute_command_includes_step_file_marker(self, des_orchestrator):
         """
-        GIVEN /nw:execute command with step file
+        GIVEN /nw-execute command with step file
         WHEN render_prompt is called
         THEN prompt includes step file marker
         """
         prompt = des_orchestrator.render_prompt(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="steps/01-01.json",
             project_root="/tmp/test",
@@ -39,26 +39,26 @@ class TestDESOrchestrator:
 
     def test_execute_command_includes_origin_marker(self, des_orchestrator):
         """
-        GIVEN /nw:execute command
+        GIVEN /nw-execute command
         WHEN render_prompt is called
         THEN prompt includes origin marker
         """
         prompt = des_orchestrator.render_prompt(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="steps/01-01.json",
             project_root="/tmp/test",
         )
-        assert "<!-- DES-ORIGIN: command:/nw:execute -->" in prompt
+        assert "<!-- DES-ORIGIN: command:/nw-execute -->" in prompt
 
     def test_develop_command_includes_validation_marker(self, des_orchestrator):
         """
-        GIVEN /nw:develop command
+        GIVEN /nw-develop command
         WHEN render_prompt is called
         THEN prompt includes DES-VALIDATION marker
         """
         prompt = des_orchestrator.render_prompt(
-            command="/nw:develop",
+            command="/nw-develop",
             agent="@software-crafter",
             step_file="steps/01-01.json",
             project_root="/tmp/test",
@@ -67,12 +67,12 @@ class TestDESOrchestrator:
 
     def test_research_command_excludes_validation_marker(self, des_orchestrator):
         """
-        GIVEN /nw:research command
+        GIVEN /nw-research command
         WHEN render_prompt is called
         THEN prompt does NOT include DES-VALIDATION marker
         """
         prompt = des_orchestrator.render_prompt(
-            command="/nw:research",
+            command="/nw-research",
             topic="authentication patterns",
             project_root="/tmp/test",
         )
@@ -93,29 +93,29 @@ class TestDESOrchestrator:
 
     def test_get_validation_level_returns_full_for_execute(self, des_orchestrator):
         """
-        GIVEN /nw:execute command
+        GIVEN /nw-execute command
         WHEN _get_validation_level is called
         THEN it returns "full"
         """
-        validation_level = des_orchestrator._get_validation_level("/nw:execute")
+        validation_level = des_orchestrator._get_validation_level("/nw-execute")
         assert validation_level == "full"
 
     def test_get_validation_level_returns_full_for_develop(self, des_orchestrator):
         """
-        GIVEN /nw:develop command
+        GIVEN /nw-develop command
         WHEN _get_validation_level is called
         THEN it returns "full"
         """
-        validation_level = des_orchestrator._get_validation_level("/nw:develop")
+        validation_level = des_orchestrator._get_validation_level("/nw-develop")
         assert validation_level == "full"
 
     def test_get_validation_level_returns_none_for_research(self, des_orchestrator):
         """
-        GIVEN /nw:research command
+        GIVEN /nw-research command
         WHEN _get_validation_level is called
         THEN it returns "none"
         """
-        validation_level = des_orchestrator._get_validation_level("/nw:research")
+        validation_level = des_orchestrator._get_validation_level("/nw-research")
         assert validation_level == "none"
 
     def test_get_validation_level_returns_none_for_unknown_command(
@@ -126,7 +126,7 @@ class TestDESOrchestrator:
         WHEN _get_validation_level is called
         THEN it returns "none" (safe default)
         """
-        validation_level = des_orchestrator._get_validation_level("/nw:unknown")
+        validation_level = des_orchestrator._get_validation_level("/nw-unknown")
         assert validation_level == "none"
 
     def test_generate_des_markers_returns_string(self, des_orchestrator):
@@ -136,7 +136,7 @@ class TestDESOrchestrator:
         THEN it returns a string
         """
         result = des_orchestrator._generate_des_markers(
-            command="/nw:execute", step_file="steps/01-01.json"
+            command="/nw-execute", step_file="steps/01-01.json"
         )
         assert isinstance(result, str)
 
@@ -147,7 +147,7 @@ class TestDESOrchestrator:
         THEN result includes DES-VALIDATION marker
         """
         result = des_orchestrator._generate_des_markers(
-            command="/nw:execute", step_file="steps/01-01.json"
+            command="/nw-execute", step_file="steps/01-01.json"
         )
         assert "<!-- DES-VALIDATION: required -->" in result
 
@@ -158,7 +158,7 @@ class TestDESOrchestrator:
         THEN result includes DES-STEP-FILE marker with correct path
         """
         result = des_orchestrator._generate_des_markers(
-            command="/nw:execute", step_file="steps/02-03.json"
+            command="/nw-execute", step_file="steps/02-03.json"
         )
         assert "<!-- DES-STEP-FILE: steps/02-03.json -->" in result
 
@@ -169,9 +169,9 @@ class TestDESOrchestrator:
         THEN result includes DES-ORIGIN marker with command
         """
         result = des_orchestrator._generate_des_markers(
-            command="/nw:develop", step_file="steps/01-01.json"
+            command="/nw-develop", step_file="steps/01-01.json"
         )
-        assert "<!-- DES-ORIGIN: command:/nw:develop -->" in result
+        assert "<!-- DES-ORIGIN: command:/nw-develop -->" in result
 
     def test_generate_des_markers_format_multiline(self, des_orchestrator):
         """
@@ -180,13 +180,13 @@ class TestDESOrchestrator:
         THEN result contains markers separated by newlines
         """
         result = des_orchestrator._generate_des_markers(
-            command="/nw:execute", step_file="steps/01-01.json"
+            command="/nw-execute", step_file="steps/01-01.json"
         )
         lines = result.split("\n")
         assert len(lines) == 3
         assert lines[0] == "<!-- DES-VALIDATION: required -->"
         assert lines[1] == "<!-- DES-STEP-FILE: steps/01-01.json -->"
-        assert lines[2] == "<!-- DES-ORIGIN: command:/nw:execute -->"
+        assert lines[2] == "<!-- DES-ORIGIN: command:/nw-execute -->"
 
 
 class TestDESOrchestratorEdgeCases:
@@ -228,7 +228,7 @@ class TestDESOrchestratorEdgeCases:
         self, des_orchestrator
     ):
         """
-        GIVEN /nw:execute command with None step_file
+        GIVEN /nw-execute command with None step_file
         WHEN render_prompt is called
         THEN it should raise ValueError
         """
@@ -238,7 +238,7 @@ class TestDESOrchestratorEdgeCases:
             ValueError, match="Step file required for validation commands"
         ):
             des_orchestrator.render_prompt(
-                command="/nw:execute",
+                command="/nw-execute",
                 agent="@software-crafter",
                 step_file=None,
             )
@@ -247,7 +247,7 @@ class TestDESOrchestratorEdgeCases:
         self, des_orchestrator
     ):
         """
-        GIVEN /nw:execute command with empty step_file
+        GIVEN /nw-execute command with empty step_file
         WHEN render_prompt is called
         THEN it should raise ValueError
         """
@@ -257,7 +257,7 @@ class TestDESOrchestratorEdgeCases:
             ValueError, match="Step file required for validation commands"
         ):
             des_orchestrator.render_prompt(
-                command="/nw:execute",
+                command="/nw-execute",
                 agent="@software-crafter",
                 step_file="",
             )
@@ -304,7 +304,7 @@ class TestDESOrchestratorEdgeCases:
 
         with pytest.raises(ValueError, match="Step file cannot be None or empty"):
             des_orchestrator._generate_des_markers(
-                command="/nw:execute", step_file=None
+                command="/nw-execute", step_file=None
             )
 
     def test_generate_des_markers_with_empty_step_file_raises_value_error(
@@ -318,7 +318,7 @@ class TestDESOrchestratorEdgeCases:
         import pytest
 
         with pytest.raises(ValueError, match="Step file cannot be None or empty"):
-            des_orchestrator._generate_des_markers(command="/nw:execute", step_file="")
+            des_orchestrator._generate_des_markers(command="/nw-execute", step_file="")
 
     def test_get_validation_level_with_none_command_defaults_to_none(
         self, des_orchestrator
@@ -365,7 +365,7 @@ class TestOrchestratorHookIntegration:
         """
         from pathlib import Path
 
-        from des.application.orchestrator import HookResult
+        from des.ports.driven_ports.hook_port import HookResult
 
         # Seed in-memory filesystem with minimal step file
         step_file_path = Path("/test-step.json")

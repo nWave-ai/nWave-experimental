@@ -1,0 +1,193 @@
+# Gate-contract catalog schema (D4 § 3.1 slice-01)
+#
+# JSON Schema (YAML-encoded) for nWave/gates/_catalog.yaml — the registry of
+# OSS gate atomic units (INV-1) consumed by:
+#   - workflow-flavor compositions (INV-11)
+#   - host-bridge dispatch (INV-7)
+#   - single CLI entry subcommand registration (INV-13)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1.
+# Per INV-4 (workflow IS data): the schema itself is data; consumers parse
+# this YAML and validate `_catalog.yaml` entries at install-time + CI.
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://nwave.dev/schemas/gates/_schema.yaml"
+title: "nWave Gate Catalog Schema"
+description: |
+  Schema for `_catalog.yaml` — the source-of-truth listing of all OSS
+  gate atomic units. Each entry MUST correspond 1:1 to a `_SubcommandRow`
+  in `src/des/cli/__main__.py:_REGISTRY` (mechanical cross-check enforced
+  by Phase 1 slice-01 AT-2).
+
+type: object
+required: [version, gates]
+additionalProperties: false
+
+properties:
+  version:
+    type: string
+    pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    description: "Semantic version of the catalog schema contract."
+
+  gates:
+    type: array
+    minItems: 1
+    items:
+      $ref: "#/$defs/GateContract"
+    description: "Ordered list of gate-contract entries."
+
+$defs:
+  GateContract:
+    type: object
+    required:
+      - gate_id
+      - responsibility
+      - module
+      - entry_function
+      - language_neutral_contract
+    additionalProperties: false
+
+    properties:
+      gate_id:
+        type: string
+        pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+        description: |
+          Kebab-case identifier. MUST equal the `_SubcommandRow.name` field
+          in `src/des/cli/__main__.py:_REGISTRY` for current gates, or be
+          a documented future gate (per Phase 2+ migration).
+
+      responsibility:
+        type: string
+        minLength: 10
+        description: |
+          Single sentence describing the gate's single responsibility (INV-1).
+
+      module:
+        type: string
+        pattern: "^(des|scripts)\\.[a-z0-9_.]+$"
+        description: |
+          Dot-notation module path. For current gates, MUST equal the
+          `_SubcommandRow.module` field in `_REGISTRY`.
+
+      entry_function:
+        type: string
+        pattern: "^[a-z_][a-z0-9_]*$"
+        default: "main"
+        description: |
+          Function name in `module` that argparse calls. MUST equal the
+          `_SubcommandRow.entry` field in `_REGISTRY`.
+
+      language_neutral_contract:
+        type: boolean
+        description: |
+          true: gate logic is language-agnostic (operates on metadata files,
+          ledger JSONL, Markdown, Gherkin tags — translatable to TS/Go/Rust
+          adapters per INV-6).
+          false: gate is bound to a specific language ecosystem (e.g.
+          `check-robustness-density` is Python-pytest-mutmut-bound).
+
+  # Per-gate file schema (slice-02): one YAML file per gate at
+  # `nWave/gates/<gate-id>.yaml` carrying full GateContract per M76 §3.1.
+  GateContractFull:
+    type: object
+    required:
+      - gate_id
+      - responsibility
+      - module
+      - entry_function
+      - language_neutral_contract
+      - cli_args
+      - log_events
+      - failure_modes
+      - idempotency
+      - host_visibility
+    additionalProperties: false
+
+    properties:
+      gate_id:
+        type: string
+        pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+      responsibility:
+        type: string
+        minLength: 10
+      module:
+        type: string
+        pattern: "^(des|scripts)\\.[a-z0-9_.]+$"
+      entry_function:
+        type: string
+        pattern: "^[a-z_][a-z0-9_]*$"
+      language_neutral_contract:
+        type: boolean
+
+      cli_args:
+        type: array
+        description: |
+          Ordered list of argparse arguments the gate accepts. Each entry is
+          {name, required, type, help, default?}.
+        items:
+          type: object
+          required: [name, required, type]
+          additionalProperties: false
+          properties:
+            name:
+              type: string
+              pattern: "^--[a-z][a-z0-9-]*$"
+            required:
+              type: boolean
+            type:
+              type: string
+              enum: [string, int, bool, path, choice]
+            help:
+              type: string
+            default:
+              description: "Default value (any type)."
+            choices:
+              type: array
+              items: { type: string }
+
+      log_events:
+        type: array
+        description: |
+          Names of structured events the gate may emit via LogPersistencePort.
+        items:
+          type: string
+          pattern: "^[A-Z][a-zA-Z0-9]*$"
+        minItems: 0
+
+      failure_modes:
+        type: array
+        description: |
+          Typed failure taxonomy. Each entry is {error_class, exit_code, remediation}.
+        items:
+          type: object
+          required: [error_class, exit_code, remediation]
+          additionalProperties: false
+          properties:
+            error_class:
+              type: string
+              pattern: "^[A-Z][a-zA-Z0-9_]*$"
+            exit_code:
+              type: integer
+              minimum: 0
+              maximum: 255
+            remediation:
+              type: string
+              minLength: 5
+
+      idempotency:
+        type: string
+        enum: [idempotent, side-effects-explicit]
+        description: |
+          idempotent: invocation has no observable state change OR repeated
+          invocation produces identical state. side-effects-explicit: gate
+          writes to ledger/filesystem/git; side effects documented.
+
+      host_visibility:
+        type: array
+        description: |
+          Hosts that can invoke this gate. "cli" = operator-direct invocation.
+        items:
+          type: string
+          enum: [claude-code, codex, opencode, cli, git-hook]
+        minItems: 1
+        uniqueItems: true

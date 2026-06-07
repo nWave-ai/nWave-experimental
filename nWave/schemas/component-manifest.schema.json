@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nwave.ai/schemas/component-manifest.schema.json",
+  "title": "ComponentManifest",
+  "description": "Validates docs/feature/{id}/design/component-manifest.yaml -- the DESIGN-wave structured component contract carrying the unbounded-input-domains block (F-DESIGN-COMPONENT-MANIFEST).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema-version", "feature-id", "unbounded-input-domains"],
+  "properties": {
+    "schema-version": {
+      "description": "Schema version -- pinned to the single legal value until an ADR authorises a major bump (feature-delta open question 3).",
+      "const": "1.0"
+    },
+    "feature-id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "unbounded-input-domains": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/unboundedInputDomain" }
+    },
+    "unbounded-input-domains-empty-rationale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "typed-error-set": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["port", "errors"],
+        "properties": {
+          "port": { "type": "string" },
+          "errors": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "port-invariants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["port", "invariant"],
+        "properties": {
+          "port": { "type": "string" },
+          "invariant": { "type": "string" }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "unbounded-input-domains": { "minItems": 1 }
+      }
+    },
+    {
+      "properties": {
+        "unbounded-input-domains": { "maxItems": 0 }
+      },
+      "required": ["unbounded-input-domains-empty-rationale"]
+    }
+  ],
+  "$defs": {
+    "unboundedInputDomain": {
+      "type": "object",
+      "required": [
+        "id",
+        "sut",
+        "domain",
+        "why-unbounded",
+        "canonical-category",
+        "declared-at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "sut": {
+          "type": "string",
+          "pattern": "^.+::.+$"
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "why-unbounded": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonical-category": {
+          "enum": ["C2", "C5", "C6", "C7"]
+        },
+        "declared-at": {
+          "const": "design"
+        }
+      }
+    }
+  }
+}

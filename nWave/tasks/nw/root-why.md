@@ -25,7 +25,7 @@ Execute \*investigate-root-cause for {problem-statement}.
 
 ## Usage: DELIVER Wave Retrospective (Phase 3.5)
 
-When invoked as part of `/nw:deliver` Phase 3.5, analyze across 4 categories:
+When invoked as part of `/nw-deliver` Phase 3.5, analyze across 4 categories:
 
 1. **What worked well** (and why — preserve these practices)
 2. **What worked better than before** (and why — reinforce improvements)
@@ -37,6 +37,10 @@ When invoked as part of `/nw:deliver` Phase 3.5, analyze across 4 categories:
 **Skip**: If clean execution (no skips|no failures|no tooling issues), generate brief summary only.
 
 Tag items requiring nWave framework changes as **meta-improvements**.
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 
@@ -55,7 +59,7 @@ Tag items requiring nWave framework changes as **meta-improvements**.
 
 ### Example 1: Investigate test flakiness
 ```
-/nw:root-why "Integration tests fail intermittently on CI but pass locally"
+/nw-root-why "Integration tests fail intermittently on CI but pass locally"
 ```
 Rex investigates 5 WHY levels with multi-causal branches, discovers race condition in database cleanup, proposes transaction-isolated test fixtures.
 

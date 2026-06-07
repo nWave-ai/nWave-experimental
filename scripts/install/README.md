@@ -28,12 +28,6 @@ This directory contains Python scripts for installing, uninstalling, updating, a
    - Pre-update backups
    - Validates update success
 
-4. **`enhanced_backup_system.py`** - Advanced backup system
-   - Framework conflict detection (SuperClaude vs nWave)
-   - Namespace separation implementation
-   - Restoration script generation
-   - Comprehensive backup manifests
-
 ### Utilities
 
 - **`install_utils.py`** - Shared utilities module
@@ -93,20 +87,17 @@ python scripts/install/update_nwave.py --force --backup
 python scripts/install/update_nwave.py --dry-run
 ```
 
-### Enhanced Backup System
+### Backups
+
+Backups are managed by `BackupManager` in `install_utils.py`. Every
+`install_nwave.py` and `uninstall_nwave.py` run creates a timestamped
+`~/.claude/backups/nwave-<type>-<timestamp>/` snapshot of the existing
+agents/, commands/, and manifests. Retention keeps the most recent N
+(default 10, override via `~/.nwave/global-config.json:backups.max_count`).
 
 ```bash
-# Create comprehensive backup
-python scripts/install/enhanced_backup_system.py backup
-
-# List available backups
-python scripts/install/enhanced_backup_system.py list
-
-# Restore from specific backup
-python scripts/install/enhanced_backup_system.py restore 20250121_143022
-
-# Show backup system status
-python scripts/install/enhanced_backup_system.py status
+# Restore from the most recent nWave backup
+python scripts/install/install_nwave.py --restore
 ```
 
 ## Features
@@ -218,9 +209,6 @@ python scripts/install/install_nwave.py --dry-run
 python scripts/install/uninstall_nwave.py --dry-run
 python scripts/install/update_nwave.py --dry-run
 
-# Test backup system
-python scripts/install/enhanced_backup_system.py status
-python scripts/install/enhanced_backup_system.py list
 ```
 
 ## Troubleshooting

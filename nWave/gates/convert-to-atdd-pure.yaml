@@ -1,0 +1,46 @@
+# Gate-contract: convert-to-atdd-pure (D4 Phase 1 slice-02)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=convert-to-atdd-pure.
+
+gate_id: convert-to-atdd-pure
+responsibility: |
+  Convert a classic-mode feature workspace to atdd_pure carpaccio shape with rollback journal.
+module: des.cli.convert_to_atdd_pure
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "Feature to convert."
+  - name: --dry-run
+    required: false
+    type: bool
+    help: "Preview without writing."
+  - name: --rollback
+    required: false
+    type: bool
+    help: "Restore from journal."
+
+log_events:
+  - FeatureConverted
+  - ConversionRolledBack
+
+failure_modes:
+  - error_class: MalformedInput
+    exit_code: 2
+    remediation: "Provide --feature-id"
+  - error_class: AlreadyAtddPure
+    exit_code: 0
+    remediation: "Feature already in atdd_pure shape"
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

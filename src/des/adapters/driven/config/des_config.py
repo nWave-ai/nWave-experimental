@@ -4,6 +4,9 @@ DES Configuration Adapter - Driven Port Implementation.
 Loads configuration from .nwave/des-config.json and provides access to settings.
 Falls back to safe defaults (audit logging ON) when file is missing or invalid.
 
+Rigor cascade: project config -> global config -> standard defaults.
+When a project has a "rigor" key, the entire global rigor block is ignored.
+
 Hexagonal Architecture:
 - DRIVEN ADAPTER: Implements configuration port (driven by business logic)
 - ON BY DEFAULT: Audit logging enabled unless explicitly disabled in config
@@ -12,7 +15,13 @@ Hexagonal Architecture:
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from des.domain.nwave_dir_gitignore import ensure_nwave_gitignore
+
+
+if TYPE_CHECKING:
+    from des.domain.pending_update_flag import PendingUpdateFlag
 
 
 class DESConfig:
@@ -20,41 +29,64 @@ class DESConfig:
     Configuration loader for DES settings.
 
     Loads configuration from .nwave/des-config.json with on-by-default audit logging.
-    Does NOT auto-create config files.
+    Supports global configuration via ~/.nwave/global-config.json for cross-project
+    rigor preferences. Does NOT auto-create config files.
+
+    Rigor cascade: project rigor -> global rigor -> standard defaults.
     """
+
+    _DEFAULT_GLOBAL_CONFIG_PATH = Path.home() / ".nwave" / "global-config.json"
 
     def __init__(
         self,
         config_path: Path | None = None,
         cwd: Path | None = None,
+        *,
+        global_config_path: Path | None = None,
     ):
         """
         Initialize DESConfig.
 
         Args:
-            config_path: Optional explicit path to config file
+            config_path: Optional explicit path to project config file
             cwd: Optional working directory (defaults to Path.cwd());
                  used to resolve .nwave/des-config.json when config_path is None
+            global_config_path: Optional explicit path to global config file
+                (keyword-only; defaults to ~/.nwave/global-config.json)
         """
         if config_path is None:
             effective_cwd = cwd or Path.cwd()
             config_path = effective_cwd / ".nwave" / "des-config.json"
 
         self._config_path = config_path
-        self._config_data = self._load_configuration()
+        self._config_data = self._load_json_file(self._config_path)
 
-    def _load_configuration(self) -> dict[str, Any]:
+        effective_global_path = (
+            global_config_path
+            if global_config_path is not None
+            else self._DEFAULT_GLOBAL_CONFIG_PATH
+        )
+        self._global_config_data = self._load_json_file(effective_global_path)
+
+    @staticmethod
+    def _load_json_file(path: Path) -> dict[str, Any]:
         """
-        Load configuration from JSON file.
+        Load configuration from a JSON file.
+
+        Returns empty dict when the file is missing, corrupt, or unreadable.
+        Pure function: no side effects beyond filesystem read.
+
+        Args:
+            path: Path to the JSON file to load
 
         Returns:
             Configuration dictionary, empty dict if loading fails
         """
-        if not self._config_path.exists():
+        if not path.exists():
             return {}
 
         try:
-            return json.loads(self._config_path.read_text(encoding="utf-8"))
+            return json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return {}
 
@@ -85,6 +117,51 @@ class DESConfig:
         return self._config_data.get("skill_tracking", "disabled")
 
     @property
+    def coverage_map_adoption(self) -> str:
+        """Repo-wide coverage-map adoption switch: ``"active"`` | ``"inactive"``.
+
+        fix-feature-end-ws-gate-applicability slice-04 (DDD-3). The feature-end
+        cycle reads this from ``repo_root/.nwave/des-config.json`` (the SAME
+        repo-level path no individual feature can shadow -- the LOAD-BEARING
+        un-per-feature-gameability invariant) to decide whether an absent
+        ``distill/coverage-map.md`` may be granted NOT_APPLICABLE.
+
+        Two failure modes degrade in OPPOSITE directions (CONCERN-2): a key that
+        is ABSENT from a present-and-parseable config ⇒ ``"inactive"`` (the
+        permissive NA, the designed 0/74 pre-adoption default); a config file
+        that is MALFORMED / unreadable ⇒ ``"active"`` (hard-verify, degrade
+        toward MORE rigour -- an unreadable switch must never silently grant NA).
+
+        The standard ``_load_json_file`` collapses absent and corrupt files to
+        ``{}`` (it cannot itself distinguish them), so this property closes the
+        gap with an explicit present-and-parseable pre-check rather than reading
+        an empty load as "key absent". No second full read path is forked: the
+        pre-check only classifies success vs failure of the SAME config file.
+        """
+        if not self._config_present_and_parseable():
+            return "active"
+        value = self._config_data.get("coverage_map_adoption", "inactive")
+        return value if isinstance(value, str) else "inactive"
+
+    def _config_present_and_parseable(self) -> bool:
+        """True iff the project config file exists and parses as a JSON object.
+
+        Distinguishes "key absent" (file present + parseable, returns True) from
+        "file malformed/unreadable" (returns False) -- the
+        ``_load_json_file:85-91`` absent==corrupt collapse the coverage-map
+        adoption switch must NOT conflate. An absent file is also treated as
+        present-and-parseable (no config ⇒ the designed inactive default), so
+        ONLY a genuinely malformed/unreadable present file returns False.
+        """
+        if not self._config_path.exists():
+            return True
+        try:
+            json.loads(self._config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return False
+        return True
+
+    @property
     def audit_logging_enabled(self) -> bool:
         """
         Check if audit logging is enabled.
@@ -100,8 +177,14 @@ class DESConfig:
         return self._config_data.get("audit_logging_enabled", True)
 
     def _rigor(self) -> dict:
-        """Return rigor sub-config dict, defaulting to empty dict."""
-        return self._config_data.get("rigor", {})
+        """Return rigor sub-config via cascade: project -> global -> empty dict.
+
+        When the project config contains a "rigor" key (even if empty),
+        the entire global rigor block is ignored -- full block override.
+        """
+        if "rigor" in self._config_data:
+            return self._config_data["rigor"]
+        return self._global_config_data.get("rigor", {})
 
     def _update_check(self) -> dict:
         """Return update_check sub-config dict, defaulting to empty dict."""
@@ -128,10 +211,16 @@ class DESConfig:
 
     @property
     def rigor_tdd_phases(self) -> tuple[str, ...]:
-        """Get TDD phases as tuple. Default: full 5-phase."""
+        """Get TDD phases as tuple.
+
+        Default: canonical 3-phase (RED, GREEN, COMMIT) per ADR-025 (default
+        flip 2026-05-18). Existing projects with an explicit ``rigor.tdd_phases``
+        list in ``.nwave/des-config.json`` continue to override this default
+        unchanged (backward-compat preserved).
+        """
         phases = self._rigor().get(
             "tdd_phases",
-            ["PREPARE", "RED_ACCEPTANCE", "RED_UNIT", "GREEN", "COMMIT"],
+            ["RED", "GREEN", "COMMIT"],
         )
         return tuple(phases)
 
@@ -198,6 +287,24 @@ class DESConfig:
         """Get maximum skill log size in bytes before rotation. Default: 1 MiB."""
         return self._housekeeping().get("skill_log_max_bytes", 1_048_576)
 
+    # --- Observability (NWave unified logging) ---
+
+    @property
+    def log_level(self) -> str:
+        """Log level: NW_LOG_LEVEL env > config log_level > default WARN."""
+        env = os.environ.get("NW_LOG_LEVEL")
+        if env:
+            return env.upper()
+        return self._config_data.get("log_level", "WARN").upper()
+
+    @property
+    def log_enabled(self) -> bool:
+        """Log enabled: NW_LOG env > config log_enabled > default False."""
+        env = os.environ.get("NW_LOG")
+        if env is not None:
+            return env.lower() in ("true", "1", "yes")
+        return bool(self._config_data.get("log_enabled", False))
+
     def save_update_check_state(
         self,
         last_checked: str,
@@ -234,6 +341,46 @@ class DESConfig:
         current_data["update_check"] = update_check
 
         self._config_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_nwave_gitignore(self._config_path.parent)
         self._config_path.write_text(
             json.dumps(current_data, indent=2), encoding="utf-8"
         )
+
+    # --- Pending update flag I/O (deferred self-update) ---
+
+    @property
+    def pending_update_path(self) -> Path:
+        """Path to the pending-update flag file (~/.nwave/pending-update.json)."""
+        return Path.home() / ".nwave" / "pending-update.json"
+
+    def save_pending_update_state(self, flag: "PendingUpdateFlag") -> None:
+        """Persist PendingUpdateFlag to pending_update_path as JSON.
+
+        Creates the parent directory and the runtime ``.gitignore`` sentinel
+        (invariant: every time we touch ``~/.nwave/`` we ensure it is ignored).
+        """
+        path = self.pending_update_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_nwave_gitignore(path.parent)
+        path.write_text(json.dumps(flag.to_dict(), indent=2), encoding="utf-8")
+
+    def read_pending_update(self) -> "PendingUpdateFlag | None":
+        """Read pending-update flag. Returns None if missing or invalid JSON."""
+        from des.domain.pending_update_flag import PendingUpdateFlag
+
+        path = self.pending_update_path
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return PendingUpdateFlag.from_dict(payload)
+        except (json.JSONDecodeError, OSError, KeyError, ValueError):
+            return None
+
+    def clear_pending_update(self) -> None:
+        """Remove the pending-update flag file. Idempotent (no error if absent)."""
+        path = self.pending_update_path
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass

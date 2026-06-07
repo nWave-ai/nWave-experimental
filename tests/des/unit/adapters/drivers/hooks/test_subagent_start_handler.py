@@ -160,10 +160,12 @@ class TestAdditionalContextMessageFormat:
         out = capsys.readouterr().out.strip()
         payload = json.loads(out)
         msg = payload["additionalContext"]
-        # Must be an imperative reminder referencing skills path
+        # Must be an imperative reminder referencing the flat topical skill layout
         assert "MANDATORY" in msg
         assert "nw-solution-architect" in msg
-        assert "~/.claude/skills/nw/nw-solution-architect/" in msg
+        # Flat layout: nw-<skill-name>/SKILL.md — NOT old per-agent subdirs
+        assert "~/.claude/skills/nw-" in msg
+        assert "~/.claude/skills/nw/nw-" not in msg
 
 
 class TestSubagentStartHandlerFailOpen:

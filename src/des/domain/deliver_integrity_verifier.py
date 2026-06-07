@@ -11,6 +11,11 @@ went through proper DES-monitored execution.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from des.domain.deliver_progress_tracker import DeliverProgressState
 
 
 @dataclass(frozen=True)
@@ -110,3 +115,32 @@ class DeliverIntegrityVerifier:
             steps_verified=len(roadmap_steps),
             violations=[],
         )
+
+    _ORCHESTRATOR_PHASES = ("3", "4", "5")
+
+    def check_phase_progress(
+        self,
+        progress_state: DeliverProgressState | None,
+    ) -> list[str]:
+        """Check if orchestrator phases 3-5 have been recorded.
+
+        Args:
+            progress_state: Loaded from .develop-progress.json, or None if
+                missing/corrupted.
+
+        Returns:
+            List of warning messages. Empty list means all phases recorded
+            or check not applicable.
+        """
+        if progress_state is None:
+            return []
+        if not progress_state.all_steps_done:
+            return []
+
+        warnings: list[str] = []
+        for phase in self._ORCHESTRATOR_PHASES:
+            if phase not in progress_state.phases_completed:
+                warnings.append(
+                    f"Orchestrator phase {phase} not yet recorded in progress state"
+                )
+        return warnings

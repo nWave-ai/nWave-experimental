@@ -25,18 +25,9 @@ from unittest.mock import patch
 
 import pytest
 
-from des.ports.driven_ports.audit_log_writer import AuditEvent
+from des.adapters.drivers.hooks import hook_protocol, service_factory
 
-
-def _make_capturing_writer(events: list[AuditEvent]):
-    """Create a mock AuditLogWriter that appends events to the given list."""
-    from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-
-    class CapturingWriter(NullAuditLogWriter):
-        def log_event(self, event: AuditEvent) -> None:
-            events.append(event)
-
-    return CapturingWriter()
+from .conftest import make_capturing_writer
 
 
 def _build_valid_pre_tool_use_stdin() -> str:
@@ -62,15 +53,17 @@ def _run_handler_with_exception(monkeypatch, exception_factory, events=None):
 
     if events is None:
         events = []
-    writer = _make_capturing_writer(events)
+    writer = make_capturing_writer(events)
 
     monkeypatch.setattr("sys.stdin", io.StringIO(_build_valid_pre_tool_use_stdin()))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
     with (
-        patch.object(adapter, "_create_audit_writer", return_value=writer),
+        patch.object(hook_protocol, "_audit_writer_factory", return_value=writer),
         patch.object(
-            adapter, "create_pre_tool_use_service", side_effect=exception_factory
+            service_factory,
+            "create_pre_tool_use_service",
+            side_effect=exception_factory,
         ),
     ):
         exit_code = adapter.handle_pre_tool_use()
@@ -212,24 +205,22 @@ def test_hook_error_stderr_empty_when_no_output(monkeypatch):
 # --- Test 5: stderr redirect does not interfere with normal handler operation ---
 
 
-def test_stderr_redirect_does_not_interfere_with_normal_operation(monkeypatch):
+def test_stderr_redirect_does_not_interfere_with_normal_operation(
+    monkeypatch, audit_events
+):
     """Handlers still operate correctly when stderr redirect is in place
     (no exceptions, normal allow path works)."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    events = []
-    writer = _make_capturing_writer(events)
 
     monkeypatch.setattr("sys.stdin", io.StringIO(_build_valid_pre_tool_use_stdin()))
     captured_output = []
     monkeypatch.setattr("builtins.print", lambda *a, **kw: captured_output.append(a))
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
-        exit_code = adapter.handle_pre_tool_use()
+    exit_code = adapter.handle_pre_tool_use()
 
     assert exit_code == 0, "Normal allow path should return 0"
     # Verify no HOOK_ERROR events (no exception occurred)
-    error_events = [e for e in events if e.event_type == "HOOK_ERROR"]
+    error_events = [e for e in audit_events if e.event_type == "HOOK_ERROR"]
     assert len(error_events) == 0, (
         f"No HOOK_ERROR expected on normal path, got {len(error_events)}"
     )

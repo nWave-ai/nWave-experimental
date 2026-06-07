@@ -1,0 +1,100 @@
+# Workflow flavor: atdd_pure (D4 Phase 2 slice-01)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.2.
+# Schema: `nWave/flavors/_schema.yaml`.
+#
+# Captures current atdd_pure spine behavior as config (INV-4 workflow IS
+# data). Today's logic at `src/des/adapters/drivers/hooks/carpaccio_intercept.py`
+# is functionally equivalent: M3 marker validation + M8 predecessor order
+# check + carpaccio CLI invocation.
+#
+# At flavor-level, M3 + M8 + CLI invocation are bundled into one atomic
+# gate (`carpaccio-slice-gate`) — internal hook logic is implementation
+# detail, NOT flavor composition concern (per INV-1 atomic).
+#
+# Phase 3 (D2 dispatcher refactor) will refactor `carpaccio_intercept.py`
+# to a thin caller that reads this flavor file + dispatches via flavor
+# dispatcher. Until then, this file is the SOURCE-OF-TRUTH spec that the
+# refactor target must satisfy (byte-equivalence regression per AT-3).
+
+flavor_id: atdd_pure
+
+description: |
+  Carpaccio-driven workflow with per-slice atomic delivery.
+  Each slice = ≤3 ATs authored in DISTILL, GREENed in DELIVER, committed
+  with mechanical ledger evidence (ATReviewVerdict + SliceCommitVerified
+  + CarpaccioGateCleared). Slices are ordered (slice-N predecessor
+  must carry SliceCommitVerified record before slice-N+1 dispatches).
+  Replaces classic roadmap-based DELIVER with config-driven gate
+  composition per INV-11 + INV-12.
+
+required_artifacts:
+  - docs/feature/{feature_id}/feature-delta.md
+  - tests/**/{feature_id}/**/*.feature
+  - .nwave/telemetry/atdd-pure/{feature_id}.jsonl
+
+lifecycle_events:
+
+  # PreToolUse:Agent dispatch (Claude Code) / before_tool_call (Codex) /
+  # tool.execute.before (OpenCode) — see nWave/data/host-bridge-events.yaml
+  #
+  # slice-05 multi-gate wire (friction #57 cascade closure): the D1
+  # readiness pre-dispatch gate (`verify-readiness-pre-dispatch`, shipped
+  # slice-03) is now wired ahead of `carpaccio-slice-gate` on dispatch.pre.
+  # The slice-05 `_gate_invoker_for` refactor builds a 2-entry registry
+  # from the injected runners + dispatches by gate_id (INV-2 composable,
+  # INV-12 future workflow change = reconfiguration, INV-4 workflow IS
+  # data). Reordering / adding a third gate on dispatch.pre is now a YAML
+  # edit + a new runner kwarg on `evaluate_atdd_pure_dispatch` -- zero
+  # change to the dispatch loop itself.
+  dispatch.pre:
+    - gate_id: verify-readiness-pre-dispatch
+      args:
+        feature_id: "{feature_id}"
+        slice_id: "{slice_id}"
+      on_failure: block
+    - gate_id: carpaccio-slice-gate
+      args:
+        feature_id: "{feature_id}"
+        entering_slice: "{slice_id}"
+      on_failure: block
+
+  # SubagentStop (Claude Code) / dispatch.post (Codex/OpenCode) —
+  # fires when dispatched subagent returns. Verify slice commit + emit
+  # SliceCommitVerified ledger record (M76 §3.4 slice.committed event).
+  subagent.stop:
+    - gate_id: verify-slice-commit
+      args:
+        repo: "{repo_root}"
+        commit: HEAD
+        feature_id: "{feature_id}"
+      on_failure: warn
+      # Gate-composition SSOT (des-spine-control-plane-ssot slice-04, DDD-3): the
+      # feature-end required-records profile the subagent.stop boundary demands
+      # before a feature is closeable. This is the YAML home of the records the
+      # `subagent_stop_handler._REQUIRED_FEATURE_END_RECORDS` frozenset used to
+      # hardcode (representation 3 -> 1) — adding/removing a feature-end record
+      # is now one readable row here, not a hand-edit of the Python frozenset.
+      feature_end_required_records:
+        - CoverageMapVerifiedAtDeliverExit
+        - CoverageMapVerifiedAtDistillExit
+        - EBatchRefactorCompleted
+        - EnvironmentalE2eGateRan
+        - FeatureEndReviewVerdict
+        - WalkingSkeletonGateRan
+
+  # Commit lifecycle (git-hook prepare-commit-msg) — closes friction #35
+  # mechanical HMAC trailer derivation. Phase 5 wiring; today the trailer
+  # is operator-typed (cosmetic per friction #35 standing).
+  commit.pre:
+    - gate_id: verify-commit-trailers
+      args:
+        commit: HEAD
+        require_reviewed_by: false  # Phase 5 will flip to true
+      on_failure: warn
+
+  # Session init (Claude Code SessionStart / Codex session_start /
+  # OpenCode session.created). Distribution boundary check ships Phase 5.
+  session.init:
+    - gate_id: health-check
+      on_failure: log

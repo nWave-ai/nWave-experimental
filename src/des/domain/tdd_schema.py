@@ -5,6 +5,16 @@ Loads TDD phase definitions, validation rules, and skip prefixes from
 nWave/templates/step-tdd-cycle-schema.json. Provides cached access to avoid
 repeated file I/O.
 
+Dual-canon support (ADR-025, 2026-05-07):
+- ``canonical_phases`` (v5, 3-phase: RED/GREEN/COMMIT) is the canonical list
+  per ADR-025. RED absorbs PREPARE+RED_ACCEPTANCE+RED_UNIT. This is the
+  default returned by ``tdd_phases`` (2026-05-18 flip — F1+F2+F3 closes
+  doc-impl drift identified in RCA RC-A).
+- ``legacy_phases`` (v4, 5-phase: PREPARE/RED_ACCEPTANCE/RED_UNIT/GREEN/COMMIT)
+  is preserved for backward-compat audit-log replay of pre-2026-05-07
+  commits. Callers reach the legacy list explicitly via
+  ``phases_for("4.0")`` or the ``legacy_phases`` field.
+
 Design Principles:
 - Single Responsibility: Only loads and parses TDD schema
 - Dependency Injection: Schema path can be overridden for testing
@@ -14,10 +24,30 @@ Design Principles:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Protocol
+
+from des.domain.json_schema_loader import JsonSchemaLoader
+
+
+# Module-level constants exposing both canons explicitly.
+# ADR-025 (2026-05-07): canonical TDD cycle is 3-phase. Legacy 5-phase
+# preserved for backward-compat audit-log replay.
+LEGACY_PHASES: tuple[str, ...] = (
+    "PREPARE",
+    "RED_ACCEPTANCE",
+    "RED_UNIT",
+    "GREEN",
+    "COMMIT",
+)
+"""5-phase TDD cycle (v4, ADR-024 era). Kept for audit-log replay of
+pre-2026-05-07 commits and for the JSON schema's active ``valid_tdd_phases``
+list (which still drives the default loader path)."""
+
+CANONICAL_PHASES: tuple[str, ...] = ("RED", "GREEN", "COMMIT")
+"""3-phase TDD cycle (v5, ADR-025, 2026-05-07). RED absorbs
+PREPARE+RED_ACCEPTANCE+RED_UNIT via the fail-for-right-reason gate; GREEN +
+COMMIT semantics unchanged from v4."""
 
 
 class TDDSchemaProtocol(Protocol):
@@ -28,7 +58,12 @@ class TDDSchemaProtocol(Protocol):
 
     @property
     def tdd_phases(self) -> tuple[str, ...]:
-        """Ordered tuple of TDD phase names (e.g., PREPARE, RED_ACCEPTANCE, ...)."""
+        """Ordered tuple of active TDD phase names.
+
+        Returns CANONICAL_PHASES (3-phase v5, ADR-025) by default;
+        ``schema_version='4.0'`` dispatch routes legacy callers via the
+        ``legacy_phases`` property / ``phases_for("4.0")``.
+        """
         ...
 
     @property
@@ -56,7 +91,14 @@ class TDDSchemaProtocol(Protocol):
 class TDDSchema:
     """Immutable container for TDD schema data.
 
-    All properties are frozen tuples to prevent mutation after construction.
+    Dual-canon (ADR-025, 2026-05-07; default flip 2026-05-18):
+    - ``tdd_phases`` / ``canonical_phases`` = 3-phase v5 (RED, GREEN, COMMIT)
+      — default active list returned by the getter.
+    - ``legacy_phases`` = 5-phase v4 (PREPARE/RED_ACCEPTANCE/RED_UNIT/GREEN/
+      COMMIT) — preserved for audit-log replay; reached via
+      ``phases_for("4.0")`` dispatch.
+
+    All tuple fields are frozen to prevent mutation after construction.
     """
 
     tdd_phases: tuple[str, ...] = field(default_factory=tuple)
@@ -66,105 +108,35 @@ class TDDSchema:
     terminal_phases: tuple[str, ...] = field(default_factory=tuple)
     schema_version: str = "4.0"
     total_phases: int = 5
+    canonical_phases: tuple[str, ...] = CANONICAL_PHASES
+    legacy_phases: tuple[str, ...] = LEGACY_PHASES
+
+    def phases_for(self, schema_version: str) -> tuple[str, ...]:
+        """Return phase list for the requested schema version.
+
+        - ``"5.0"`` → canonical 3-phase (RED, GREEN, COMMIT).
+        - any other version (default, ``"4.0"``, ``"3.0"``, etc.) → legacy
+          5-phase, preserving prior behaviour.
+        """
+        if schema_version == "5.0":
+            return self.canonical_phases
+        return self.legacy_phases
 
 
-class TDDSchemaLoader:
+class TDDSchemaLoader(JsonSchemaLoader[TDDSchema]):
     """Loads TDD schema from step-tdd-cycle-schema.json.
 
-    Responsible for:
-    - Locating the schema file relative to project root
-    - Parsing JSON structure
-    - Extracting phase names, statuses, and skip prefixes
-    - Caching parsed schema for efficiency
+    Scaffolding (path-resolution, caching, clear_cache) lives in the shared
+    ``JsonSchemaLoader`` base; this subclass supplies only the bundled schema
+    filename and the ``_parse_schema`` step (plus the focused extract helpers).
 
     Usage:
         loader = TDDSchemaLoader()
         schema = loader.load()
-        print(schema.tdd_phases)  # ('PREPARE', 'RED_ACCEPTANCE', ...)
+        print(schema.tdd_phases)  # ('RED', 'GREEN', 'COMMIT')
     """
 
-    @staticmethod
-    def _resolve_default_schema_path() -> Path:
-        """Resolve schema path for current environment.
-
-        Handles three deployment contexts:
-        - Source: src/des/domain/tdd_schema.py → project_root/nWave/templates/
-        - Installed: ~/.claude/lib/python/des/domain/tdd_schema.py → ~/.claude/templates/
-        - Plugin: .../scripts/des/domain/tdd_schema.py → .../scripts/templates/
-        """
-        module_file = Path(__file__)
-        # Normalize to forward slashes for cross-platform matching
-        module_str = str(module_file).replace("\\", "/")
-        module_resolved_str = str(module_file.resolve()).replace("\\", "/")
-
-        is_installed = (
-            ".claude" in module_str or ".claude" in module_resolved_str
-        ) and (
-            "lib/python/des" in module_str or "lib/python/des" in module_resolved_str
-        )
-
-        if is_installed:
-            for search_path in [module_file, module_file.resolve()]:
-                for parent in search_path.parents:
-                    if parent.name == ".claude":
-                        candidate = parent / "templates" / "step-tdd-cycle-schema.json"
-                        if candidate.exists():
-                            return candidate
-
-        # Plugin context: scripts/des/domain/tdd_schema.py → scripts/templates/
-        for search_path in [module_file, module_file.resolve()]:
-            for parent in search_path.parents:
-                if parent.name == "scripts":
-                    candidate = parent / "templates" / "step-tdd-cycle-schema.json"
-                    if candidate.exists():
-                        return candidate
-
-        return (
-            module_file.resolve().parent.parent.parent.parent
-            / "nWave"
-            / "templates"
-            / "step-tdd-cycle-schema.json"
-        )
-
-    def __init__(self, schema_path: Path | None = None):
-        """Initialize loader with optional custom schema path.
-
-        Args:
-            schema_path: Path to schema JSON file. Defaults to project's
-                         nWave/templates/step-tdd-cycle-schema.json
-        """
-        self._schema_path = schema_path or self._resolve_default_schema_path()
-        self._cached_schema: TDDSchema | None = None
-
-    @property
-    def schema_path(self) -> Path:
-        """Path to the schema JSON file."""
-        return self._schema_path
-
-    def load(self) -> TDDSchema:
-        """Load and parse the TDD schema.
-
-        Returns cached schema if already loaded.
-
-        Returns:
-            TDDSchema: Immutable schema data container
-
-        Raises:
-            FileNotFoundError: If schema file doesn't exist
-            json.JSONDecodeError: If schema file is not valid JSON
-            KeyError: If required schema fields are missing
-        """
-        if self._cached_schema is not None:
-            return self._cached_schema
-
-        raw_data = self._read_schema_file()
-        self._cached_schema = self._parse_schema(raw_data)
-        return self._cached_schema
-
-    def _read_schema_file(self) -> dict:
-        """Read raw JSON from schema file."""
-        with open(self._schema_path, encoding="utf-8") as f:
-            return json.load(f)
+    SCHEMA_FILENAME = "step-tdd-cycle-schema.json"
 
     def _parse_schema(self, raw_data: dict) -> TDDSchema:
         """Parse raw JSON into TDDSchema dataclass.
@@ -197,11 +169,16 @@ class TDDSchemaLoader:
         )
 
     def _extract_tdd_phases(self, raw_data: dict) -> tuple[str, ...]:
-        """Extract ordered TDD phase names from schema."""
-        phase_log = raw_data.get("tdd_cycle", {}).get("phase_execution_log", [])
-        return tuple(
-            phase["phase_name"] for phase in phase_log if "phase_name" in phase
-        )
+        """Extract ordered TDD phase names from schema.
+
+        ADR-025 (2026-05-07; default flip 2026-05-18): the active getter
+        returns CANONICAL_PHASES (3-phase v5) by default. The JSON file's
+        ``tdd_cycle.phase_execution_log`` still records the legacy 5-phase
+        list for audit-log replay; that path is reached via
+        ``phases_for("4.0")`` or the ``legacy_phases`` field, NOT the
+        default ``tdd_phases`` getter.
+        """
+        return CANONICAL_PHASES
 
     def _extract_valid_statuses(self, raw_data: dict) -> tuple[str, ...]:
         """Extract valid phase statuses from schema."""
@@ -245,53 +222,15 @@ class TDDSchemaLoader:
         phases = terminal_config.get("phases", [])
         return tuple(phases)
 
-    def clear_cache(self) -> None:
-        """Clear the cached schema, forcing reload on next access."""
-        self._cached_schema = None
 
+def resolve_schema_or_default(schema: TDDSchema | None) -> TDDSchema:
+    """Return ``schema`` if non-None, else load the default via TDDSchemaLoader.
 
-# Module-level singleton for convenience
-_global_loader: TDDSchemaLoader | None = None
-
-
-def get_tdd_schema() -> TDDSchema:
-    """Get the TDD schema using the global loader singleton.
-
-    Convenience function for accessing schema without managing loader instances.
-    Uses module-level caching for efficiency.
-
-    Returns:
-        TDDSchema: The loaded TDD schema
-
-    Example:
-        >>> schema = get_tdd_schema()
-        >>> print(schema.tdd_phases)
-        ('PREPARE', 'RED_ACCEPTANCE', 'RED_UNIT', 'GREEN', 'COMMIT')
+    Shared helper for constructor injection patterns where ``schema=None``
+    means "use the default loader". Extracted 2026-05-03 (RPP L3) — both
+    ``Validator.__init__`` and ``ValidationErrorDetector.__init__`` had
+    identical 5-line resolution logic.
     """
-    global _global_loader
-    if _global_loader is None:
-        _global_loader = TDDSchemaLoader()
-    return _global_loader.load()
-
-
-def get_tdd_schema_loader() -> TDDSchemaLoader:
-    """Get the global TDDSchemaLoader instance.
-
-    Useful when you need access to the loader itself (e.g., for cache control).
-
-    Returns:
-        TDDSchemaLoader: The global loader instance
-    """
-    global _global_loader
-    if _global_loader is None:
-        _global_loader = TDDSchemaLoader()
-    return _global_loader
-
-
-def reset_global_schema_loader() -> None:
-    """Reset the global schema loader.
-
-    Useful in tests to ensure clean state between test cases.
-    """
-    global _global_loader
-    _global_loader = None
+    if schema is None:
+        return TDDSchemaLoader().load()
+    return schema

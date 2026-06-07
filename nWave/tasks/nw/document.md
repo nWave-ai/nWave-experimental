@@ -21,7 +21,7 @@ Create evidence-based, DIVIO-compliant documentation by orchestrating research a
 ## Command Syntax
 
 ```bash
-/nw:document [topic] [--type=tutorial|howto|reference|explanation] [--research-depth=overview|detailed|comprehensive|deep-dive]
+/nw-document [topic] [--type=tutorial|howto|reference|explanation] [--research-depth=overview|detailed|comprehensive|deep-dive]
 ```
 
 If `--type` omitted, ask user. If `--research-depth` omitted, auto-select: tutorial->overview|howto->detailed|reference->comprehensive|explanation->deep-dive.
@@ -76,21 +76,25 @@ Applies to both review gates (Phase 1.5 and 2.5):
 
 ### Example 1: Tutorial with auto-depth
 ```bash
-/nw:document "Getting Started with nWave" --type=tutorial
+/nw-document "Getting Started with nWave" --type=tutorial
 ```
 Orchestrator auto-selects overview depth, invokes researcher, reviews, invokes documentarist, reviews, outputs to `docs/tutorials/getting-started-with-nwave.md`.
 
 ### Example 2: Explanation with explicit depth
 ```bash
-/nw:document "Why nWave Uses Hexagonal Architecture" --type=explanation --research-depth=deep-dive
+/nw-document "Why nWave Uses Hexagonal Architecture" --type=explanation --research-depth=deep-dive
 ```
 Full 4-phase pipeline with deep-dive research. Output to `docs/explanation/`.
 
 ### Example 3: Interactive type selection
 ```bash
-/nw:document "Mikado Method Integration"
+/nw-document "Mikado Method Integration"
 ```
 Orchestrator prompts user to select DIVIO type before proceeding.
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 

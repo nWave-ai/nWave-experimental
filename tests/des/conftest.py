@@ -27,9 +27,9 @@ def tdd_schema():
             - valid_skip_prefixes: Skip prefixes that allow commit
             - blocking_skip_prefixes: Skip prefixes that block commit
     """
-    from des.domain.tdd_schema import get_tdd_schema
+    from des.domain.tdd_schema import TDDSchemaLoader
 
-    return get_tdd_schema()
+    return TDDSchemaLoader().load()
 
 
 @pytest.fixture(scope="session")

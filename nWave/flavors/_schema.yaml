@@ -1,0 +1,93 @@
+# Workflow-flavor schema (D4 § 3.2 slice-03)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.2.
+# Per INV-4 workflow IS data + INV-11 atdd_pure + classic as flavors +
+# INV-12 future change = reconfig not rewrite.
+#
+# Files validated against this schema live at `nWave/flavors/<flavor-id>.yaml`.
+# Currently: atdd_pure.yaml + classic.yaml (Phase 2 deliverables).
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://nwave.dev/schemas/flavors/_schema.yaml"
+title: "nWave Workflow Flavor Schema"
+description: |
+  Schema for workflow flavor YAML files. A flavor describes which gates
+  fire on which lifecycle event, composing atomic gates (per nWave/gates/
+  catalog) into a workflow. Customer SELECTS flavor (built-in only):
+  no customer-defined flavors per Ale ratification 2026-05-26.
+
+type: object
+required: [flavor_id, description, lifecycle_events]
+additionalProperties: false
+
+properties:
+  flavor_id:
+    type: string
+    pattern: "^[a-z][a-z0-9_]*$"
+    description: |
+      Kebab/snake-case identifier (e.g. `atdd_pure`, `classic`).
+
+  description:
+    type: string
+    minLength: 20
+    description: "Multi-line description of flavor intent + tradeoffs."
+
+  required_artifacts:
+    type: array
+    description: |
+      Artifacts the flavor expects in the feature workspace (validated
+      at dispatch time by pre-dispatch readiness gate D1). Placeholders
+      like `{feature_id}` are substituted at composition time.
+    items:
+      type: string
+      pattern: "^[a-zA-Z.][a-zA-Z0-9_./*{}-]*$"
+    uniqueItems: true
+
+  lifecycle_events:
+    type: object
+    description: |
+      Map of abstract lifecycle event name (from host-bridge-events.yaml
+      closed vocabulary) to gate composition.
+    additionalProperties: false
+    patternProperties:
+      "^[a-z][a-z0-9_.]*$":
+        type: array
+        description: "Ordered list of gates to fire on this event."
+        items:
+          $ref: "#/$defs/GateInvocation"
+
+$defs:
+  GateInvocation:
+    type: object
+    required: [gate_id, on_failure]
+    additionalProperties: false
+    properties:
+      gate_id:
+        type: string
+        pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+        description: |
+          Must match a gate_id in nWave/gates/_catalog.yaml.
+      args:
+        type: object
+        description: |
+          Args passed to the gate CLI invocation. Keys must match cli_args
+          declared in the per-gate YAML file.
+        additionalProperties: true
+      on_failure:
+        type: string
+        enum: [block, warn, log]
+        description: |
+          block: halt composition + propagate failure.
+          warn: continue composition + annotate result.
+          log: continue silently, log event for audit.
+      feature_end_required_records:
+        type: array
+        description: |
+          des-spine-control-plane-ssot slice-04 (gate-composition SSOT, DDD-3):
+          the feature-end cycle records the subagent.stop boundary demands in
+          the AT-completion ledger before a feature is closeable. The YAML home
+          of the records the subagent_stop_handler frozenset used to hardcode
+          (representation 3 -> 1). Only meaningful on the subagent.stop event.
+        items:
+          type: string
+        uniqueItems: true

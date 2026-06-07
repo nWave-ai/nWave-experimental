@@ -1,7 +1,7 @@
 """CLI: Append a phase entry to execution-log.json with a real UTC timestamp.
 
 Usage:
-    PYTHONPATH=src python -m des.cli.log_phase \\
+    des log-phase \\
       --project-dir docs/feature/build-pipeline-elimination \\
       --step-id 02-03 \\
       --phase GREEN \\
@@ -28,13 +28,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from des.domain.tdd_schema import get_tdd_schema
+from des.domain.tdd_schema import TDDSchemaLoader
 
 
 def _build_parser() -> argparse.ArgumentParser:
     """Build the argument parser for log_phase CLI."""
     parser = argparse.ArgumentParser(
-        prog="des.cli.log_phase",
+        prog="des log-phase",
         description="Append a phase entry to execution-log.json with a real UTC timestamp.",
     )
     parser.add_argument(
@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    schema = get_tdd_schema()
+    schema = TDDSchemaLoader().load()
 
     # Validate phase name against schema
     if args.phase not in schema.tdd_phases:

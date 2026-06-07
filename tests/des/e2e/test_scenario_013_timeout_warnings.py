@@ -20,7 +20,7 @@ class TestScenario013TimeoutWarningsEmitAtThresholds:
     - Orchestrator checks thresholds during execution loop (e.g., every 5 turns)
     - Warning messages emitted to agent context when thresholds crossed
     - Warnings include remaining time and current progress
-    - Timeout warnings ACTIVATE when /nw:execute or /nw:develop invoked
+    - Timeout warnings ACTIVATE when /nw-execute or /nw-develop invoked
     """
 
     def test_timeout_warnings_emit_at_thresholds(
@@ -45,9 +45,9 @@ class TestScenario013TimeoutWarningsEmitAtThresholds:
             # Configure thresholds at 5, 10, 15 minutes
             thresholds = [5, 10, 15]
 
-            # When: Executing a step with /nw:execute command
+            # When: Executing a step with /nw-execute command
             result = orchestrator.execute_step(
-                command="/nw:execute",
+                command="/nw-execute",
                 agent="@software-crafter",
                 step_file="test_step.json",
                 project_root=tmpdir,

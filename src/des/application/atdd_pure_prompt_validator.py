@@ -1,0 +1,153 @@
+"""AtddPurePromptValidator - mode-aware DES prompt validation for atdd_pure.
+
+Transformation T-B (epic F-DES-ATDD-PURE-DISPATCH-LIFECYCLE, F-08 / G-2).
+
+A sibling ``ValidatorPort`` implementation alongside the classic
+``TemplateValidator`` (``validator.py``). It validates an ``atdd_pure``
+carpaccio-slice dispatch prompt against the ``atdd_pure`` mandatory section
+set — the A→G phase block and the AT-completion-ledger contract — NOT the
+classic 9-section schema (which demands ``TDD_PHASES`` / ``OUTCOME_RECORDING``
+execution-log sections an ``atdd_pure`` dispatch correctly omits).
+
+CREATE NEW (not a ``MandatorySectionChecker`` subclass) is the DESIGN-table
+boundary for T-B: the atdd_pure section *set* differs structurally and this
+validator runs NO TDD-phase / execution-log validation. Contract shape:
+**pure-function** (return-only) — ``prompt -> ValidationResult``, no I/O, no
+mutation. ``ValidatorPort`` has no write method, so "validator silently
+writes" is non-representable.
+"""
+
+from __future__ import annotations
+
+import time
+
+from des.domain.design_context_content_check import (
+    design_context_carries_architecture,
+)
+from des.ports.driver_ports.validator_port import ValidationResult, ValidatorPort
+
+
+# The atdd_pure dispatch mandatory section set — matched verbatim to the T-A
+# template in nWave/skills/nw-execute/SKILL.md (the
+# ATDD-PURE-DISPATCH-TEMPLATE:BEGIN/:END block). Distinct from the classic
+# 9-section set: ATDD_PURE_PHASES replaces TDD_PHASES, AT_COMPLETION_LEDGER
+# replaces OUTCOME_RECORDING, plus SKILL_LOADING / DESIGN_CONTEXT /
+# TERMINATING_RUN. No DES-STEP-ID, no execution-log sections.
+ATDD_PURE_MANDATORY_SECTIONS: tuple[str, ...] = (
+    "DES_METADATA",
+    "AGENT_IDENTITY",
+    "SKILL_LOADING",
+    "TASK_CONTEXT",
+    "DESIGN_CONTEXT",
+    "ATDD_PURE_PHASES",
+    "QUALITY_GATES",
+    "AT_COMPLETION_LEDGER",
+    "RECORDING_INTEGRITY",
+    "BOUNDARY_RULES",
+    "TERMINATING_RUN",
+    "TIMEOUT_INSTRUCTION",
+)
+
+_RECOVERY_GUIDANCE = {
+    "DES_METADATA": "Add DES_METADATA section with slice / feature / phase",
+    "AGENT_IDENTITY": "Add AGENT_IDENTITY section specifying the dispatched agent",
+    "SKILL_LOADING": "Add SKILL_LOADING section listing the skills to load at phase entry",
+    "TASK_CONTEXT": "Add TASK_CONTEXT section describing the slice and its ATs",
+    "DESIGN_CONTEXT": "Add DESIGN_CONTEXT section summarising relevant design decisions",
+    "ATDD_PURE_PHASES": (
+        "Add ATDD_PURE_PHASES section enumerating the A→G ATDD-pure phases"
+    ),
+    "QUALITY_GATES": "Add QUALITY_GATES section defining the slice quality criteria",
+    "AT_COMPLETION_LEDGER": (
+        "Add AT_COMPLETION_LEDGER section describing the ledger recording contract"
+    ),
+    "RECORDING_INTEGRITY": (
+        "Add RECORDING_INTEGRITY section with anti-fraud rules for AT outcomes"
+    ),
+    "BOUNDARY_RULES": "Add BOUNDARY_RULES section with the slice-scoped boundary",
+    "TERMINATING_RUN": "Add TERMINATING_RUN section with the terminating-test-run instruction",
+    "TIMEOUT_INSTRUCTION": "Add TIMEOUT_INSTRUCTION section with turn budget guidance",
+}
+
+
+def _extract_section_body(prompt: str, section: str) -> str:
+    """Return the body of ``# {section}`` — text after its heading line up to
+    the next ``# {SECTION}`` mandatory-section header (or end of prompt).
+
+    The mandatory-section set is the SSOT for what counts as a "next header", so
+    a ``#``-prefixed line *inside* a body (e.g. a comment or markdown) does not
+    prematurely terminate the section. Returns "" when the heading is absent.
+    """
+    heading = f"# {section}"
+    start = prompt.find(heading)
+    if start == -1:
+        return ""
+    body_start = start + len(heading)
+    next_headers = (
+        f"# {other}" for other in ATDD_PURE_MANDATORY_SECTIONS if other != section
+    )
+    end = len(prompt)
+    for header in next_headers:
+        pos = prompt.find(header, body_start)
+        if pos != -1 and pos < end:
+            end = pos
+    return prompt[body_start:end]
+
+
+class AtddPurePromptValidator(ValidatorPort):
+    """Validates an atdd_pure carpaccio-slice dispatch prompt.
+
+    Pure-function ``ValidatorPort`` implementation: ``validate_prompt`` reads
+    the prompt text and returns a ``ValidationResult``. No I/O, no mutation.
+    """
+
+    def validate_prompt(self, prompt: str) -> ValidationResult:
+        """Validate an atdd_pure dispatch prompt against the atdd_pure schema.
+
+        Args:
+            prompt: The full dispatch prompt text.
+
+        Returns:
+            ValidationResult — ``task_invocation_allowed`` is True only when
+            every atdd_pure mandatory section is present.
+        """
+        start_time = time.perf_counter()
+
+        errors = [
+            f"MISSING: Mandatory section '{section}' not found"
+            for section in ATDD_PURE_MANDATORY_SECTIONS
+            if f"# {section}" not in prompt
+        ]
+
+        recovery_guidance = [
+            f"FIX: {_RECOVERY_GUIDANCE[section]}"
+            for section in ATDD_PURE_MANDATORY_SECTIONS
+            if f"# {section}" not in prompt and section in _RECOVERY_GUIDANCE
+        ]
+
+        # DESIGN_CONTEXT content-presence gate (DDD-1, #63 INPUT-b). The header
+        # check above proves the heading is present; this proves its BODY carries
+        # a real architecture citation. A header with an empty/placeholder/
+        # citation-free body is refused so the crafter never runs without the
+        # design it must follow (the root of architectural drift).
+        if "# DESIGN_CONTEXT" in prompt:
+            body = _extract_section_body(prompt, "DESIGN_CONTEXT")
+            if not design_context_carries_architecture(body):
+                errors.append(
+                    "DESIGN_CONTEXT carries no architecture citation "
+                    "(empty, placeholder, or citation-free body)"
+                )
+                recovery_guidance.append(
+                    "FIX: Cite a real design artifact in DESIGN_CONTEXT "
+                    "(a DDD / ADR / SYS id, a feature-delta.md path, or brief.md)"
+                )
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        return ValidationResult(
+            status="PASSED" if not errors else "FAILED",
+            errors=errors,
+            task_invocation_allowed=not errors,
+            duration_ms=duration_ms,
+            recovery_guidance=recovery_guidance or None,
+        )

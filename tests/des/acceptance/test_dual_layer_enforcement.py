@@ -28,7 +28,7 @@ from des.application.post_tool_use_service import PostToolUseService
 from des.application.subagent_stop_service import SubagentStopService
 from des.domain.phase_event import PhaseEvent
 from des.domain.step_completion_validator import StepCompletionValidator
-from des.domain.tdd_schema import get_tdd_schema
+from des.domain.tdd_schema import TDDSchemaLoader
 from des.ports.driven_ports.audit_log_reader import AuditLogReader
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driven_ports.execution_log_reader import ExecutionLogReader
@@ -118,7 +118,7 @@ def _build_stop_service(
     audit_writer: AuditLogWriter | None = None,
 ) -> SubagentStopService:
     """Build SubagentStopService with in-memory adapters."""
-    schema = get_tdd_schema()
+    schema = TDDSchemaLoader().load()
     return SubagentStopService(
         log_reader=InMemoryLogReader(project_id="test-project", events=events),
         completion_validator=StepCompletionValidator(schema=schema),

@@ -53,6 +53,25 @@ class TemplatesPlugin(InstallationPlugin):
             templates_target = context.claude_dir / "templates"
             templates_target.mkdir(parents=True, exist_ok=True)
 
+            # Build set of source item names for stale detection
+            source_names = {item.name for item in templates_source.iterdir()}
+
+            # Remove stale files/directories from target not in current source
+            for existing in list(templates_target.iterdir()):
+                if existing.name not in source_names:
+                    try:
+                        if existing.is_dir():
+                            shutil.rmtree(existing)
+                        else:
+                            existing.unlink()
+                        context.logger.info(
+                            f"  🗑️ Removed stale template: {existing.name}"
+                        )
+                    except PermissionError:
+                        context.logger.warning(
+                            f"  ⚠️ Cannot remove read-only stale template: {existing.name}"
+                        )
+
             # Copy template files (preserving directory structure)
             installed_files = []
             for item in templates_source.iterdir():

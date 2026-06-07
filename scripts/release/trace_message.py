@@ -29,6 +29,7 @@ def compose_trace_message(
     rc_tag: str | None = None,
     stable_tag: str | None = None,
     pipeline_url: str | None = None,
+    coauthors_file: str | None = None,
 ) -> str:
     """Compose a traceability commit message for the given release stage.
 
@@ -88,7 +89,16 @@ def compose_trace_message(
 
     body_lines.append(f"Pipeline: {pipeline_url}")
 
-    return header + "\n\n" + "\n".join(body_lines)
+    message = header + "\n\n" + "\n".join(body_lines)
+
+    if coauthors_file:
+        from pathlib import Path
+
+        trailers = Path(coauthors_file).read_text()
+        if trailers.strip():
+            message = message + "\n\n" + trailers.rstrip("\n")
+
+    return message
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -103,6 +113,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rc-tag", default=None, help="RC tag (stable only)")
     parser.add_argument("--stable-tag", default=None, help="Stable tag (stable only)")
     parser.add_argument("--pipeline-url", default=None, help="Pipeline run URL")
+    parser.add_argument(
+        "--coauthors-file",
+        default=None,
+        help="Optional file with Co-Authored-By trailer lines to append.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -115,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
             rc_tag=args.rc_tag,
             stable_tag=args.stable_tag,
             pipeline_url=args.pipeline_url,
+            coauthors_file=args.coauthors_file,
         )
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)

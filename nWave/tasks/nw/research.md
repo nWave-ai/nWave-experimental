@@ -37,11 +37,28 @@ Execute \*research on {topic} [--skill-for={agent-name}].
 - skill_for: {agent-name} # Optional: distilled skill for specified agent
 - skill_output_directory: ~/.claude/nWave/skills/{agent-name}/
 
+## Output Management
+
+The researcher MUST create the output file in the FIRST 5 turns with a document skeleton (title, sections, placeholders). All subsequent findings are written DIRECTLY to this file as they are gathered -- never held only in context.
+
+If the agent is interrupted or runs out of turns, the output file contains all work done so far. This is the researcher's equivalent of the crafter's "commit early, commit often."
+
+Progressive write checkpoints:
+- Turn ~5: Output file exists with skeleton
+- Turn ~10: First findings written
+- Turn ~25: All gathered findings written so far
+- Turn ~35: Stop gathering, begin synthesizing
+- Turn ~45+: Polish only
+
+## Progress Tracking
+
+The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
+
 ## Success Criteria
 
 **Research:**
 - [ ] All sources from trusted source domains from prompt context
-- [ ] Cross-reference performed (3+ sources per major claim)
+- [ ] Cross-reference performed (3+ sources per major claim ideal, 2 acceptable, 1 authoritative minimum)
 - [ ] Research file created in docs/research/
 - [ ] Citation coverage > 95%
 - [ ] Average source reputation >= 0.80
@@ -61,13 +78,13 @@ Execute \*research on {topic} [--skill-for={agent-name}].
 
 ### Example 1: Standalone research
 ```
-/nw:research "event sourcing patterns" --research_depth=detailed
+/nw-research "event sourcing patterns" --research_depth=detailed
 ```
 Nova researches event sourcing from trusted sources, cross-references 3+ sources per claim, produces comprehensive research document.
 
 ### Example 2: Research with agent skill
 ```
-/nw:research "mutation testing methodologies" --skill-for=software-crafter
+/nw-research "mutation testing methodologies" --skill-for=software-crafter
 ```
 Nova researches mutation testing, distills into practitioner-focused skill file at ~/.claude/nWave/skills/software-crafter/.
 

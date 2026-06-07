@@ -9,14 +9,59 @@ Usage: python install_nwave.py [--backup-only] [--restore] [--dry-run] [--help]
 """
 
 import argparse
+import hashlib
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 
-# Add project root to sys.path to enable imports from scripts package
-# This allows the script to work when run directly or as a module
-_script_dir = Path(__file__).parent
-_project_root = _script_dir.parent.parent
+_HASH_CHUNK_BYTES = 65536  # 64 KiB chunked read keeps SKILL.md etc. memory-bounded
+
+
+def _file_md5(path: Path) -> str | None:
+    """Compute md5 of *path* read in 64 KiB chunks; return None on read error.
+
+    Returning ``None`` (vs. raising) lets the verifier treat "unreadable" the
+    same as "drifted" — both reach the operator via the same diagnostic line
+    naming the file, instead of crashing the verifier mid-walk.
+    """
+    try:
+        digest = hashlib.md5()
+        with path.open("rb") as fh:
+            while True:
+                chunk = fh.read(_HASH_CHUNK_BYTES)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def _files_content_equal(source: Path, target: Path) -> bool:
+    """Return True only when both files exist AND their md5 digests match.
+
+    Used by the verifier to detect content drift between an installer source
+    file and its installed counterpart. Existence check alone misses the
+    silent-template-skip bug class (RCA fix-installer-silent-template-skip).
+    """
+    if not target.exists():
+        return False
+    return _file_md5(source) == _file_md5(target)
+
+
+# Bootstrap sys.path BEFORE the import block below, so the `scripts.install.*`
+# package imports resolve identically whether this file is run as a bare script
+# (`python scripts/install/install_nwave.py`) or as a module
+# (`python -m scripts.install.install_nwave`).
+#
+# `.resolve()` is load-bearing: in bare-script mode `__file__` is a *relative*
+# path, so `Path(__file__).parent.parent.parent` without resolution collapses to
+# a relative `.` that does not place the repo root ahead of any stale `scripts/`
+# package shadowing it on sys.path. Resolving first yields the absolute repo
+# root; inserting it at index 0 makes the repo's `scripts` win namespace-package
+# resolution (F-05 dogfood friction regression).
+_project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
@@ -33,20 +78,37 @@ try:
     from scripts.install.installation_verifier import InstallationVerifier
     from scripts.install.output_formatter import format_error
     from scripts.install.plugins.agents_plugin import AgentsPlugin
+    from scripts.install.plugins.attribution_plugin import AttributionPlugin
     from scripts.install.plugins.base import InstallContext
+    from scripts.install.plugins.codex_agents_plugin import CodexAgentsPlugin
+    from scripts.install.plugins.codex_des_plugin import CodexDESPlugin
+    from scripts.install.plugins.codex_skills_plugin import CodexSkillsPlugin
     from scripts.install.plugins.commands_plugin import CommandsPlugin
+    from scripts.install.plugins.copilot_des_plugin import CopilotDESPlugin
     from scripts.install.plugins.des_plugin import DESPlugin
     from scripts.install.plugins.opencode_agents_plugin import OpenCodeAgentsPlugin
     from scripts.install.plugins.opencode_commands_plugin import OpenCodeCommandsPlugin
     from scripts.install.plugins.opencode_des_plugin import OpenCodeDESPlugin
     from scripts.install.plugins.opencode_skills_plugin import OpenCodeSkillsPlugin
     from scripts.install.plugins.registry import PluginRegistry
+    from scripts.install.plugins.reviewer_signing_plugin import (
+        ReviewerSigningPlugin,
+    )
     from scripts.install.plugins.skills_plugin import SkillsPlugin
     from scripts.install.plugins.templates_plugin import TemplatesPlugin
     from scripts.install.plugins.utilities_plugin import UtilitiesPlugin
     from scripts.install.preflight_checker import PreflightChecker
+    from scripts.shared.agent_catalog import is_public_agent, load_public_agents
 except ImportError:
-    # Fallback for standalone execution from scripts/install directory
+    # Safety-net fallback. With the sys.path bootstrap above the package
+    # imports in the `try` block resolve in BOTH invocation modes, so this
+    # branch is normally unreachable. It is retained as a defensive net and
+    # MUST stay import-correct: bare `scripts/install` directory imports plus
+    # an explicit re-bootstrap of the repo root for the `scripts.shared`
+    # package (which lives one level up from `scripts/install`, so a bare
+    # `from shared...` would fail — F-05 latent fallback bug).
+    if str(_project_root) not in sys.path:
+        sys.path.insert(0, str(_project_root))
     from context_detector import detect_target_platforms
     from install_utils import (
         BackupManager,
@@ -57,18 +119,26 @@ except ImportError:
     from installation_verifier import InstallationVerifier
     from output_formatter import format_error
     from plugins.agents_plugin import AgentsPlugin
+    from plugins.attribution_plugin import AttributionPlugin
     from plugins.base import InstallContext
+    from plugins.codex_agents_plugin import CodexAgentsPlugin
+    from plugins.codex_des_plugin import CodexDESPlugin
+    from plugins.codex_skills_plugin import CodexSkillsPlugin
     from plugins.commands_plugin import CommandsPlugin
+    from plugins.copilot_des_plugin import CopilotDESPlugin
     from plugins.des_plugin import DESPlugin
     from plugins.opencode_agents_plugin import OpenCodeAgentsPlugin
     from plugins.opencode_commands_plugin import OpenCodeCommandsPlugin
     from plugins.opencode_des_plugin import OpenCodeDESPlugin
     from plugins.opencode_skills_plugin import OpenCodeSkillsPlugin
     from plugins.registry import PluginRegistry
+    from plugins.reviewer_signing_plugin import ReviewerSigningPlugin
     from plugins.skills_plugin import SkillsPlugin
     from plugins.templates_plugin import TemplatesPlugin
     from plugins.utilities_plugin import UtilitiesPlugin
     from preflight_checker import PreflightChecker
+
+    from scripts.shared.agent_catalog import is_public_agent, load_public_agents
 
 # ANSI color codes for --help output (only consumer)
 _ANSI_BLUE = "\033[0;34m"
@@ -80,11 +150,10 @@ def _get_version() -> str:
     # 1. Try importlib.metadata first (works when installed via pip/pipx)
     from importlib.metadata import PackageNotFoundError, version
 
-    for pkg_name in ("nwave-ai", "nwave"):
-        try:
-            return version(pkg_name)
-        except PackageNotFoundError:
-            continue
+    try:
+        return version("nwave-ai")
+    except PackageNotFoundError:
+        pass
 
     # 2. Fallback: read pyproject.toml (dev checkout layout)
     pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
@@ -108,6 +177,62 @@ def _get_version() -> str:
 
 __version__ = _get_version()
 
+
+def _component_synced(matched: int, expected: int) -> bool:
+    """Return True iff a verifier component is synced.
+
+    Pure equality predicate: a component is synced when the count of
+    files present in the target equals the count expected from the
+    source. The "no work needed" state (matched == 0 AND expected == 0)
+    is success, NOT failure.
+
+    Earlier inline expressions added a defensive `and expected > 0`
+    clause that turned legitimate zero-expected states into hard fails
+    (v3.12.1 install regression, RCA Bugs #2 and #5). The verifier's
+    job is to assert that everything-expected is present — it does not
+    decide what counts as suspicious.
+    """
+    return matched == expected
+
+
+class ComponentResult(NamedTuple):
+    """Per-component sync verification result.
+
+    Carries the four facts the failure aggregator needs:
+    - name      : human-readable component name (agents/commands/...)
+    - matched   : count of files found in the target
+    - expected  : count of files declared by the source
+    - ok        : whether matched == expected (cached for clarity)
+    """
+
+    name: str
+    matched: int
+    expected: int
+    ok: bool
+
+
+def _format_sync_mismatch(components: list[ComponentResult]) -> str:
+    """Format a per-component sync-mismatch failure message.
+
+    Pure data transformation: take the list of component results, keep
+    only the failures, render each as ``<name> (<matched>/<expected>)``,
+    and join them under the prefix ``sync mismatch: ``.
+
+    Replaces the legacy literal ``"agent/command sync mismatch"`` which
+    blamed agents/commands regardless of which component actually failed
+    (v3.12.1 install regression, RCA Bug #3). Mentioning only the failing
+    components avoids contradiction with the per-component checkmarks
+    printed above the aggregate failure line.
+    """
+    failing = [c for c in components if not c.ok]
+    if not failing:
+        # Defensive: caller should not invoke us when all components are
+        # green, but if it does we still want a sensible non-empty token.
+        return "sync mismatch: unknown"
+    parts = [f"{c.name} ({c.matched}/{c.expected})" for c in failing]
+    return f"sync mismatch: {', '.join(parts)}"
+
+
 # ASCII art logo (raw text, no Rich markup)
 _LOGO_ART = [
     "        \u2584\u2584\u2584\u2584  \u2584\u2584\u2584  \u2584\u2584\u2584\u2584",
@@ -126,15 +251,20 @@ class NWaveInstaller:
     """nWave framework installer."""
 
     def __init__(
-        self, dry_run: bool = False, platform_override: set[str] | None = None
+        self,
+        dry_run: bool = False,
+        platform_override: set[str] | None = None,
+        dev_mode: bool = False,
     ):
         """Initialize installer.
 
         Args:
             dry_run: When True, show what would be done without making changes.
             platform_override: Override auto-detected platforms. None means auto-detect.
+            dev_mode: When True, install ALL agents/skills (not just public).
         """
         self.dry_run = dry_run
+        self.dev_mode = dev_mode
         self._platform_override = platform_override
         self.script_dir = Path(__file__).parent
         self.project_root = PathUtils.get_project_root(self.script_dir)
@@ -152,13 +282,45 @@ class NWaveInstaller:
         log_file = self.claude_config_dir / "nwave-install.log"
         self.logger = Logger(log_file if not dry_run else None)
         self.backup_manager = BackupManager(self.logger, "install")
+        # Public observability contract for restore_backup: after a successful
+        # restore, this attribute exposes the path of the backup that was
+        # selected. Acceptance tests inspect this to verify selection without
+        # re-running glob/sort logic in the test step (see DWD-09).
+        self.last_restored_from: Path | None = None
 
     def create_backup(self) -> None:
-        """Create backup of existing installation."""
+        """Create backup of existing installation, then enforce retention.
+
+        Wires backup creation and retention pruning into a single seam so
+        ``main()`` and any other caller automatically gets retention without
+        having to remember to call ``apply_retention`` themselves.
+
+        Retention is intentionally NOT applied in dry-run mode: dry-run must
+        not delete anything from disk. In live runs, retention runs even when
+        ``create_backup`` returns ``None`` (no prior install) — older
+        accumulated backups from previous runs may still need pruning, and
+        ``apply_retention`` is a no-op when the cap is not exceeded.
+
+        Raises:
+            ConfigValidationError: when ``~/.nwave/global-config.json``
+                provides an invalid ``backups.max_count`` value. Bubbled up
+                so ``main()`` aborts the install BEFORE ``install_framework``
+                runs — see scope.md S9 ("no backup is touched if config is
+                invalid"); equivalently, no install proceeds either.
+        """
         self.backup_manager.create_backup(dry_run=self.dry_run)
+        if self.dry_run:
+            return
+        self.backup_manager.apply_retention(max_count=None)
 
     def restore_backup(self) -> bool:
-        """Restore from most recent backup."""
+        """Restore from most recent backup.
+
+        Returns True on success, False on failure. On success, the selected
+        backup path is also exposed via ``self.last_restored_from`` (public
+        observability contract — see ``__init__``). Bool return is preserved
+        for the existing caller in ``main()``.
+        """
         self.logger.info("  🔍 Looking for backups to restore...")
 
         backup_root = self.claude_config_dir / "backups"
@@ -173,6 +335,7 @@ class NWaveInstaller:
             return False
 
         latest_backup = backups[-1]
+        self.last_restored_from = latest_backup
         self.logger.info(f"  ⏳ Restoring from {latest_backup}")
 
         # Remove current installation
@@ -229,6 +392,8 @@ class NWaveInstaller:
         registry.register(SkillsPlugin())
         registry.register(UtilitiesPlugin())
         registry.register(DESPlugin())
+        registry.register(ReviewerSigningPlugin())
+        registry.register(AttributionPlugin())
         # OpenCode plugins (registered when opencode detected)
         if target_platforms and "opencode" in target_platforms:
             opencode_skills = OpenCodeSkillsPlugin()
@@ -241,7 +406,21 @@ class NWaveInstaller:
             opencode_commands.set_dependencies(["opencode-skills"])
             opencode_des = OpenCodeDESPlugin()
             registry.register(opencode_des)
-            opencode_des.set_dependencies(["opencode-commands"])
+        # Codex CLI plugins (registered when codex detected)
+        if target_platforms and "codex" in target_platforms:
+            codex_skills = CodexSkillsPlugin()
+            registry.register(codex_skills)
+            codex_agents = CodexAgentsPlugin()
+            codex_agents.set_dependencies(["codex-skills"])
+            registry.register(codex_agents)
+            codex_des = CodexDESPlugin()
+            codex_des.set_dependencies(["des", "codex-skills"])
+            registry.register(codex_des)
+        # Copilot CLI plugins (registered when copilot detected)
+        if target_platforms and "copilot" in target_platforms:
+            copilot_des = CopilotDESPlugin()
+            copilot_des.set_dependencies(["des"])
+            registry.register(copilot_des)
         return registry
 
     def install_framework(self) -> bool:
@@ -306,6 +485,7 @@ class NWaveInstaller:
             project_root=self.project_root,
             framework_source=self.framework_source,
             dry_run=self.dry_run,
+            dev_mode=self.dev_mode,
             target_platforms=detected_platforms,
         )
 
@@ -414,6 +594,8 @@ class NWaveInstaller:
             logger=self.logger,
             project_root=self.project_root,
             framework_source=self.framework_source,
+            dry_run=self.dry_run,
+            dev_mode=self.dev_mode,
         )
         plugin_results = plugin_registry.verify_all(plugin_context)
         plugin_failures = {
@@ -424,8 +606,10 @@ class NWaveInstaller:
         # Supports both dist/ layout (agents/nw/, commands/nw/) and
         # nWave/ source layout (agents/nw-*.md, tasks/nw/*.md)
         all_synced = True
+        components: list[ComponentResult] = []
 
         # Agents: dist/agents/nw/ or nWave/agents/
+        # In dev_mode, all agents are installed; otherwise only public
         dist_agents = self.framework_source / "agents" / "nw"
         if dist_agents.exists():
             agents_source = dist_agents
@@ -433,7 +617,16 @@ class NWaveInstaller:
             agents_source = self.project_root / "nWave" / "agents"
         agents_target = self.claude_config_dir / "agents" / "nw"
         if agents_source.exists():
-            agent_source_files = sorted(agents_source.glob("nw-*.md"))
+            public_agents = (
+                set()
+                if self.dev_mode
+                else load_public_agents(self.project_root / "nWave")
+            )
+            agent_source_files = sorted(
+                f
+                for f in agents_source.glob("nw-*.md")
+                if is_public_agent(f.name, public_agents)
+            )
             agent_matched = sum(
                 1 for f in agent_source_files if (agents_target / f.name).exists()
             )
@@ -441,45 +634,70 @@ class NWaveInstaller:
             agent_ok = agent_matched == agent_expected and agent_expected > 0
             if not agent_ok:
                 all_synced = False
+            components.append(
+                ComponentResult("agents", agent_matched, agent_expected, agent_ok)
+            )
             self.logger.info(
                 f"    {'✅' if agent_ok else '❌'} Agents verified ({agent_matched}/{agent_expected})"
             )
 
-        # Commands: dist/commands/nw/ or nWave/tasks/nw/
-        dist_commands = self.framework_source / "commands" / "nw"
-        if dist_commands.exists():
-            commands_source = dist_commands
-        else:
-            commands_source = self.project_root / "nWave" / "tasks" / "nw"
-        commands_target = self.claude_config_dir / "commands" / "nw"
-        if commands_source.exists():
-            cmd_source_files = sorted(commands_source.glob("*.md"))
-            cmd_matched = sum(
-                1 for f in cmd_source_files if (commands_target / f.name).exists()
-            )
-            cmd_expected = len(cmd_source_files)
-            cmd_ok = cmd_matched == cmd_expected and cmd_expected > 0
-            if not cmd_ok:
-                all_synced = False
-            self.logger.info(
-                f"    {'✅' if cmd_ok else '❌'} Commands verified ({cmd_matched}/{cmd_expected})"
-            )
+        # Commands: now installed as skills (nw-{name}/SKILL.md with user-invocable)
+        skills_target = self.claude_config_dir / "skills"
+        essential_commands = [
+            "nw-deliver",
+            "nw-design",
+            "nw-discuss",
+            "nw-distill",
+            "nw-devops",
+            "nw-review",
+        ]
+        cmd_matched = sum(
+            1
+            for name in essential_commands
+            if (skills_target / name / "SKILL.md").exists()
+        )
+        cmd_expected = len(essential_commands)
+        cmd_ok = cmd_matched == cmd_expected
+        if not cmd_ok:
+            all_synced = False
+        components.append(
+            ComponentResult("commands", cmd_matched, cmd_expected, cmd_ok)
+        )
+        self.logger.info(
+            f"    {'✅' if cmd_ok else '❌'} Commands verified ({cmd_matched}/{cmd_expected})"
+        )
 
         # Templates from framework_source/templates/
+        #
+        # Content-aware verify (M1 fix-installer-silent-template-skip): replace
+        # the existence-only check with a md5 compare so a stale target that
+        # diverges from source is reported as drift instead of "verified".
         templates_source = self.framework_source / "templates"
         templates_target = self.claude_config_dir / "templates"
         if templates_source.exists():
             tmpl_files = [f for f in templates_source.iterdir() if f.is_file()]
-            tmpl_matched = sum(
-                1 for f in tmpl_files if (templates_target / f.name).exists()
-            )
+            tmpl_drifted: list[str] = []
+            tmpl_matched = 0
+            for f in tmpl_files:
+                if _files_content_equal(f, templates_target / f.name):
+                    tmpl_matched += 1
+                else:
+                    tmpl_drifted.append(f.name)
             tmpl_expected = len(tmpl_files)
-            tmpl_ok = tmpl_matched == tmpl_expected and tmpl_expected > 0
+            tmpl_ok = _component_synced(tmpl_matched, tmpl_expected)
             if not tmpl_ok:
                 all_synced = False
+            components.append(
+                ComponentResult("templates", tmpl_matched, tmpl_expected, tmpl_ok)
+            )
             self.logger.info(
                 f"    {'✅' if tmpl_ok else '❌'} Templates verified ({tmpl_matched}/{tmpl_expected})"
             )
+            for drifted in tmpl_drifted:
+                self.logger.error(
+                    f"      ❌ Content drift: templates/{drifted} differs from source "
+                    f"(re-run `python -m nwave_ai.cli install` to refresh)"
+                )
 
         # Scripts: dist/scripts/ or project_root/scripts/
         dist_scripts = self.framework_source / "scripts"
@@ -495,9 +713,12 @@ class NWaveInstaller:
         script_files = [s for s in utility_scripts if (scripts_source / s).exists()]
         script_matched = sum(1 for s in script_files if (scripts_target / s).exists())
         script_expected = len(script_files)
-        script_ok = script_matched == script_expected and script_expected > 0
+        script_ok = _component_synced(script_matched, script_expected)
         if not script_ok:
             all_synced = False
+        components.append(
+            ComponentResult("scripts", script_matched, script_expected, script_ok)
+        )
         self.logger.info(
             f"    {'✅' if script_ok else '❌'} Scripts verified ({script_matched}/{script_expected})"
         )
@@ -532,12 +753,24 @@ class NWaveInstaller:
             self.logger.info("  🍾 Deployment validated")
             return True
         else:
-            error_count = len(result.missing_essential_files) + (
-                0 if schema_valid else 1
-            )
+            # Identify every failing condition for clear diagnostics
+            failures: list[str] = []
+            if not result.success:
+                failures.append("essential files missing")
+            if not schema_valid:
+                failures.append("schema validation failed")
+            if not all_synced:
+                failures.append(_format_sync_mismatch(components))
+            if plugin_failures:
+                failures.append(
+                    f"plugin verification failed: {', '.join(plugin_failures)}"
+                )
             if not result.manifest_exists:
-                error_count += 1
-            self.logger.error(f"  ❌ Validation failed ({error_count} errors)")
+                failures.append("manifest not created")
+            detail = "; ".join(failures) if failures else "unknown condition"
+            self.logger.error(
+                f"  ❌ Validation failed ({len(failures)} issues: {detail})"
+            )
             return False
 
     def create_manifest(self) -> None:
@@ -593,18 +826,21 @@ def show_installation_summary(logger: Logger) -> None:
     logger.info("")
     logger.info("  📖 Quick start")
     commands = [
-        ("/nw:discover", "Evidence-based product discovery"),
-        ("/nw:discuss", "Requirements gathering and business analysis"),
-        ("/nw:design", "Architecture design with visual representation"),
-        ("/nw:distill", "Acceptance test creation and business validation"),
-        ("/nw:develop", "Outside-In TDD implementation with refactoring"),
-        ("/nw:deliver", "Production readiness validation"),
+        ("/nw-discover", "Evidence-based product discovery"),
+        ("/nw-discuss", "Requirements gathering and business analysis"),
+        ("/nw-design", "Architecture design with visual representation"),
+        ("/nw-distill", "Acceptance test creation and business validation"),
+        ("/nw-develop", "Outside-In TDD implementation with refactoring"),
+        ("/nw-deliver", "Production readiness validation"),
     ]
     for cmd, desc in commands:
         logger.info(f"    {cmd:<16} {desc}")
     logger.info("")
     logger.info(
-        "  💡 Open Claude Code in any project directory and type a /nw: command."
+        "  ⚠️  Quit and reopen Claude Code to load the new agents, skills, and commands."
+    )
+    logger.info(
+        "  💡 Open Claude Code in any project directory and type a /nw- command."
     )
     logger.info("  📚 Docs: https://github.com/nWave-ai/nWave")
 
@@ -633,6 +869,7 @@ def show_help():
     --backup-only     Create backup of existing nWave installation without installing
     --restore         Restore from the most recent backup
     --dry-run         Show what would be installed without making any changes
+    --dev             Install ALL agents and skills (including private/unreleased)
     --help            Show this help message
 
 {B}EXAMPLES:{N}
@@ -663,7 +900,8 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
     """Resolve CLI --platform flag to a platform override set.
 
     Args:
-        platform_flag: One of "auto", "claude-code", "opencode", "all".
+        platform_flag: One of "auto", "claude-code", "opencode", "codex",
+            "copilot", "all".
 
     Returns:
         None for auto-detect, or a set of platform string values.
@@ -672,7 +910,9 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
         "auto": None,
         "claude-code": {"claude_code"},
         "opencode": {"opencode"},
-        "all": {"claude_code", "opencode"},
+        "codex": {"codex"},
+        "copilot": {"copilot"},
+        "all": {"claude_code", "opencode", "codex", "copilot"},
     }
     return platform_map[platform_flag]
 
@@ -690,9 +930,14 @@ def main():
     parser.add_argument("--help", "-h", action="store_true", help="Show help")
     parser.add_argument(
         "--platform",
-        choices=["auto", "claude-code", "opencode", "all"],
+        choices=["auto", "claude-code", "opencode", "codex", "copilot", "all"],
         default="auto",
         help="Target platform (default: auto-detect)",
+    )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Install ALL agents and skills (not just public). For local dev only.",
     )
 
     args = parser.parse_args()
@@ -705,7 +950,9 @@ def main():
     platform_override = _resolve_platform_override(args.platform)
 
     installer = NWaveInstaller(
-        dry_run=args.dry_run, platform_override=platform_override
+        dry_run=args.dry_run,
+        platform_override=platform_override,
+        dev_mode=args.dev,
     )
 
     # Show title panel at startup
@@ -764,6 +1011,18 @@ def main():
     # This prevents circular dependency where validation fails because
     # manifest doesn't exist yet
     installer.create_manifest()
+
+    # Dry-run preview: install_framework + create_manifest already returned
+    # without side effects (each plugin honors context.dry_run). Skip the
+    # post-install verifier — it asserts real installation state which by
+    # definition does not exist in a dry-run preview. Fix for v1.1.14+
+    # regression where --dry-run exited 1 with "DES config not found".
+    if installer.dry_run:
+        installer.logger.info("")
+        installer.logger.info(
+            "  🍾 Dry-run preview complete (no changes made, verifier skipped)"
+        )
+        return 0
 
     if installer.validate_installation():
         installer.logger.info("")

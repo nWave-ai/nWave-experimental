@@ -22,18 +22,7 @@ from unittest.mock import patch
 
 import pytest
 
-from des.ports.driven_ports.audit_log_writer import AuditEvent
-
-
-def _make_capturing_writer(events: list[AuditEvent]):
-    """Create a mock AuditLogWriter that appends events to the given list."""
-    from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-
-    class CapturingWriter(NullAuditLogWriter):
-        def log_event(self, event: AuditEvent) -> None:
-            events.append(event)
-
-    return CapturingWriter()
+from des.adapters.drivers.hooks import hook_protocol
 
 
 # --- Test 1: Empty stdin in any handler produces HOOK_PROTOCOL_ANOMALY ---
@@ -50,26 +39,24 @@ def _make_capturing_writer(events: list[AuditEvent]):
     ids=["pre_tool_use", "subagent_stop", "post_tool_use", "pre_write"],
 )
 def test_empty_stdin_produces_protocol_anomaly(
-    handler_name, expected_fallback, expected_exit_code, monkeypatch
+    handler_name, expected_fallback, expected_exit_code, monkeypatch, audit_events
 ):
     """Empty stdin in any handler emits HOOK_PROTOCOL_ANOMALY with anomaly_type='empty_stdin'."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
-    events = []
-    writer = _make_capturing_writer(events)
-
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
-        exit_code = getattr(adapter, handler_name)()
+    exit_code = getattr(adapter, handler_name)()
 
     assert exit_code == expected_exit_code
 
-    anomaly_events = [e for e in events if e.event_type == "HOOK_PROTOCOL_ANOMALY"]
+    anomaly_events = [
+        e for e in audit_events if e.event_type == "HOOK_PROTOCOL_ANOMALY"
+    ]
     assert len(anomaly_events) == 1, (
         f"Expected exactly one HOOK_PROTOCOL_ANOMALY event from {handler_name} on empty stdin, "
-        f"got {len(anomaly_events)}. All events: {[e.event_type for e in events]}"
+        f"got {len(anomaly_events)}. All events: {[e.event_type for e in audit_events]}"
     )
 
     event = anomaly_events[0]
@@ -93,26 +80,24 @@ def test_empty_stdin_produces_protocol_anomaly(
     ids=["pre_tool_use", "subagent_stop", "post_tool_use", "pre_write"],
 )
 def test_json_parse_error_produces_protocol_anomaly(
-    handler_name, expected_fallback, expected_exit_code, monkeypatch
+    handler_name, expected_fallback, expected_exit_code, monkeypatch, audit_events
 ):
     """Malformed JSON in any handler emits HOOK_PROTOCOL_ANOMALY with anomaly_type='json_parse_error'."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
-    events = []
-    writer = _make_capturing_writer(events)
-
     monkeypatch.setattr("sys.stdin", io.StringIO("{not valid json"))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
-        exit_code = getattr(adapter, handler_name)()
+    exit_code = getattr(adapter, handler_name)()
 
     assert exit_code == expected_exit_code
 
-    anomaly_events = [e for e in events if e.event_type == "HOOK_PROTOCOL_ANOMALY"]
+    anomaly_events = [
+        e for e in audit_events if e.event_type == "HOOK_PROTOCOL_ANOMALY"
+    ]
     assert len(anomaly_events) == 1, (
         f"Expected exactly one HOOK_PROTOCOL_ANOMALY event from {handler_name} on bad JSON, "
-        f"got {len(anomaly_events)}. All events: {[e.event_type for e in events]}"
+        f"got {len(anomaly_events)}. All events: {[e.event_type for e in audit_events]}"
     )
 
     event = anomaly_events[0]
@@ -153,7 +138,9 @@ def test_anomaly_logging_failure_does_not_change_exit_code(
     monkeypatch.setattr("sys.stdin", io.StringIO(stdin_content))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=ExplodingWriter()):
+    with patch.object(
+        hook_protocol, "_audit_writer_factory", return_value=ExplodingWriter()
+    ):
         exit_code = getattr(adapter, handler_name)()
 
     assert exit_code == expected_exit_code, (

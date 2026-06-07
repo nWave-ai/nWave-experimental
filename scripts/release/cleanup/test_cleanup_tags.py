@@ -6,6 +6,7 @@ Uses temporary git repos as fixtures. No network calls, no real GitHub API.
 All tests are local and fast.
 """
 
+import os
 import subprocess
 
 import pytest
@@ -15,6 +16,18 @@ from scripts.release.cleanup.cleanup_tags import (
     TagCleaner,
     classify_tag,
 )
+
+
+# Layer 3 (RCA fix) — see docs/analysis/rca-test-git-pollution-2026-04-27.md.
+# Every subprocess git in this file passes GIT_CEILING_DIRECTORIES so that
+# even if cwd resolution races above tmp_path, git fails to find a parent
+# `.git` instead of walking into the host repo. The conftest autouse
+# fixture provides this transitively too; this is belt-and-braces because
+# `git init --bare` below would corrupt the host config in the exact
+# failure shape observed on 2026-04-27 if env protection were lost.
+def _git_env(tmp_root) -> dict[str, str]:
+    """Return an env dict with GIT_CEILING_DIRECTORIES set to tmp_root.parent."""
+    return {**os.environ, "GIT_CEILING_DIRECTORIES": str(tmp_root.parent)}
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +49,7 @@ def temp_git_repo(tmp_path):
     """
     repo = tmp_path / "test-repo"
     repo.mkdir()
+    env = _git_env(tmp_path)
 
     def _git(*args):
         subprocess.run(
@@ -44,6 +58,7 @@ def temp_git_repo(tmp_path):
             check=True,
             capture_output=True,
             text=True,
+            env=env,
         )
 
     _git("init")
@@ -79,6 +94,7 @@ def empty_git_repo(tmp_path):
     """
     repo = tmp_path / "empty-repo"
     repo.mkdir()
+    env = _git_env(tmp_path)
 
     def _git(*args):
         subprocess.run(
@@ -87,6 +103,7 @@ def empty_git_repo(tmp_path):
             check=True,
             capture_output=True,
             text=True,
+            env=env,
         )
 
     _git("init")
@@ -111,6 +128,7 @@ def temp_git_repo_with_remote(tmp_path):
     origin = tmp_path / "origin"
     origin.mkdir()
     clone = tmp_path / "clone"
+    env = _git_env(tmp_path)
 
     def _git(cwd, *args):
         subprocess.run(
@@ -119,6 +137,7 @@ def temp_git_repo_with_remote(tmp_path):
             check=True,
             capture_output=True,
             text=True,
+            env=env,
         )
 
     # Set up origin
@@ -130,6 +149,7 @@ def temp_git_repo_with_remote(tmp_path):
         check=True,
         capture_output=True,
         text=True,
+        env=env,
     )
     _git(clone, "config", "user.email", "test@test.com")
     _git(clone, "config", "user.name", "Test")
@@ -159,6 +179,7 @@ def conflict_same_commit_repo(tmp_path):
     """
     repo = tmp_path / "conflict-repo"
     repo.mkdir()
+    env = _git_env(tmp_path)
 
     def _git(*args):
         subprocess.run(
@@ -167,6 +188,7 @@ def conflict_same_commit_repo(tmp_path):
             check=True,
             capture_output=True,
             text=True,
+            env=env,
         )
 
     _git("init")
@@ -197,6 +219,7 @@ def _list_tags(repo_path):
         check=True,
         capture_output=True,
         text=True,
+        env=_git_env(repo_path.parent),
     )
     return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
 
@@ -209,6 +232,7 @@ def _get_tag_commit(repo_path, tag_name):
         check=True,
         capture_output=True,
         text=True,
+        env=_git_env(repo_path.parent),
     )
     return result.stdout.strip()
 
@@ -386,6 +410,7 @@ def test_execute_with_remote_renames_and_deletes_on_remote(
         check=True,
         capture_output=True,
         text=True,
+        env=_git_env(repo.parent),
     )
     assert "v2.17.0" not in ls_remote.stdout
     assert "v1.4.8" not in ls_remote.stdout

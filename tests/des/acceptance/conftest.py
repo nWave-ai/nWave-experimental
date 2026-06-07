@@ -13,8 +13,29 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _silence_probe_acceptance(request):
+    """Silence substrate probe in acceptance tests that don't test probe behavior.
+
+    Prevents real run_probe() from emitting advisory output that would
+    corrupt stdout assertions in update-check and housekeeping tests.
+
+    Tests marked with @pytest.mark.probe_test opt out and patch run_probe
+    themselves to verify probe advisory output.
+    """
+    if request.node.get_closest_marker("probe_test"):
+        yield
+        return
+    with patch(
+        "des.adapters.drivers.hooks.session_start_handler.run_probe",
+        return_value="",
+    ):
+        yield
 
 
 class FakeTimeProvider:
@@ -337,7 +358,7 @@ def valid_task_json():
 # DES_METADATA
 Project: test-project
 Step: 01-01
-Command: /nw:execute
+Command: /nw-execute
 
 # AGENT_IDENTITY
 Agent: @software-crafter
@@ -383,10 +404,9 @@ Turn budget: 50 turns
 Exit on: completion or blocking issue
 """
     return {
-        "tool": "Task",
+        "tool": "Agent",
         "tool_input": {
             "prompt": valid_prompt,
-            "max_turns": 30,  # Required per CLAUDE.md
         },
     }
 
@@ -404,10 +424,9 @@ def invalid_task_json():
 This prompt is missing most mandatory sections and should be blocked.
 """
     return {
-        "tool": "Task",
+        "tool": "Agent",
         "tool_input": {
             "prompt": invalid_prompt,
-            "max_turns": 30,  # Has max_turns but prompt is invalid
         },
     }
 

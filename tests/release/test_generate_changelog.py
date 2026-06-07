@@ -52,11 +52,16 @@ SCRIPT = "scripts/release/generate_changelog.py"
 
 def _git(path, *command):
     """Run a git command in the given repo directory."""
+    env = {
+        **__import__("os").environ,
+        "GIT_CEILING_DIRECTORIES": str(Path(path).parent),
+    }
     subprocess.run(
         ["git", *command],
         cwd=str(path),
         capture_output=True,
         check=True,
+        env=env,
     )
 
 
@@ -65,6 +70,7 @@ def _init_git_repo(path):
     _git(path, "init")
     _git(path, "config", "user.email", "test@example.com")
     _git(path, "config", "user.name", "Test")
+    _git(path, "config", "core.hooksPath", "/dev/null")
 
 
 def _create_commit(path, message):
@@ -85,11 +91,13 @@ def _project_root():
 def _run_changelog_in_repo(repo_path, *args):
     """Run generate_changelog.py inside a specific git repo directory."""
     script_path = str(Path(_project_root()) / SCRIPT)
+    env = {**__import__("os").environ, "GIT_CEILING_DIRECTORIES": str(repo_path)}
     return subprocess.run(
         [sys.executable, script_path, *args],
         cwd=str(repo_path),
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
@@ -122,7 +130,7 @@ class TestDevChangelog:
             "--version",
             "1.1.23.dev1",
             "--repo",
-            "nwave-ai/nwave-dev",
+            "nWave-ai/nwave-dev",
             "--output",
             output_file,
         )
@@ -154,7 +162,7 @@ class TestDevChangelog:
             "--version",
             "1.1.23.dev1",
             "--repo",
-            "nwave-ai/nwave-dev",
+            "nWave-ai/nwave-dev",
             "--output",
             output_file,
         )
@@ -163,7 +171,7 @@ class TestDevChangelog:
         notes = _read_output(output_file)
         assert "v1.1.23rc1" in notes
         assert (
-            "https://github.com/nwave-ai/nwave-dev/compare/v1.1.23rc1...v1.1.23.dev1"
+            "https://github.com/nWave-ai/nwave-dev/compare/v1.1.23rc1...v1.1.23.dev1"
         ) in notes
 
     def test_dev_changelog_has_no_install_section(self, tmp_path):
@@ -188,6 +196,7 @@ class TestDevChangelog:
         notes = _read_output(output_file)
         assert "Install" not in notes
         assert "pipx install" not in notes
+        assert "uv tool install" not in notes
 
     def test_dev_changelog_empty_history_shows_no_notable_changes(self, tmp_path):
         """Given only chore(release) commits,
@@ -339,7 +348,8 @@ class TestStableChangelog:
     def test_stable_changelog_install_command_has_no_pre_flag(self, tmp_path):
         """Given stable stage,
         when generating changelog,
-        then install command is 'pipx install nwave-ai' without --pre."""
+        then both uv and pipx install commands are present without --pre,
+        and uv is shown first as the recommended path."""
         _init_git_repo(tmp_path)
         _create_commit(tmp_path, "feat: initial")
 
@@ -356,7 +366,12 @@ class TestStableChangelog:
 
         assert result.returncode == 0, f"stderr: {result.stderr}"
         notes = _read_output(output_file)
+        assert "uv tool install nwave-ai" in notes
         assert "pipx install nwave-ai" in notes
+        # uv-first: uv snippet must appear before pipx snippet
+        assert notes.index("uv tool install nwave-ai") < notes.index(
+            "pipx install nwave-ai"
+        )
         assert "--pre" not in notes
         assert "# nWave Framework v1.1.23" in notes
 
@@ -435,7 +450,7 @@ class TestCompareLink:
             "--version",
             "1.1.22rc2",
             "--repo",
-            "nwave-ai/nwave-dev",
+            "nWave-ai/nwave-dev",
             "--output",
             output_file,
         )
@@ -443,7 +458,7 @@ class TestCompareLink:
         assert result.returncode == 0, f"stderr: {result.stderr}"
         notes = _read_output(output_file)
         assert "v1.1.22rc1" in notes
-        assert "https://github.com/nwave-ai/nwave-dev/compare/" in notes
+        assert "https://github.com/nWave-ai/nwave-dev/compare/" in notes
         assert "**Changes since**" in notes
 
 

@@ -90,6 +90,17 @@ class SubagentStopService(SubagentStopPort):
         Returns:
             HookDecision indicating allow or block
         """
+        # Step 0: Mode branch (T-C / F-DES-ATDD-PURE-DISPATCH-LIFECYCLE).
+        # An atdd_pure dispatch is roadmap-free and produces no
+        # execution-log.json -- the classic step-1..3.5 pipeline (which reads
+        # the execution-log via ExecutionLogReader and verifies commit
+        # trailers) is structurally inapplicable. The atdd_pure return is
+        # validated against the AT-completion ledger / commit-trailer surface;
+        # T-C does the minimum to ALLOW the return (no execution-log demand),
+        # trailer verification is deferred to T-G (HOOK-GATES slice-02).
+        if context.mode == "atdd_pure":
+            return self._validate_atdd_pure(context, hook_id)
+
         # Step 1: Read and validate project_id
         try:
             log_project_id = self._log_reader.read_project_id(
@@ -114,6 +125,19 @@ class SubagentStopService(SubagentStopPort):
                 reason=f"Project ID mismatch: expected '{context.project_id}', found '{log_project_id}'",
                 recovery_suggestions=[
                     f"Verify you're working on project '{context.project_id}'",
+                    "Check DES-PROJECT-ID marker in prompt",
+                ],
+            )
+
+        # Earned-Trust intake validation: project_id IS feature_id on DEV and
+        # drives the Task-Id grep in commit verification. Empty/whitespace
+        # values would silently disable AND-semantics at the verifier port,
+        # so reject upstream rather than defensively clamping at the caller.
+        if not context.project_id or not context.project_id.strip():
+            return HookDecision.block(
+                reason="EMPTY_PROJECT_ID: feature_id missing from execution context",
+                recovery_suggestions=[
+                    "Ensure execution-log carries a non-empty project_id",
                     "Check DES-PROJECT-ID marker in prompt",
                 ],
             )
@@ -181,16 +205,22 @@ class SubagentStopService(SubagentStopPort):
             )
 
         # Step 3.5: Verify git commit exists (only if phases passed and cwd provided)
+        # SF parity (commit ae109bd8): require AND-semantics on Step-Id + Task-Id
+        # to prevent cross-feature commit confusion. context.project_id IS the
+        # feature_id on DEV (validated in step 1 above).
         if context.cwd and self._commit_verifier:
             commit_result = self._commit_verifier.verify_commit(
-                context.step_id, context.cwd
+                context.step_id,
+                context.cwd,
+                feature_id_filter=context.project_id,
             )
             if not commit_result.verified:
                 self._log_commit_not_verified(context, commit_result, hook_id=hook_id)
                 return HookDecision.block(
                     reason=f"COMMIT_NOT_VERIFIED: {commit_result.error_reason}",
                     recovery_suggestions=[
-                        f"Create a git commit with trailer 'Step-ID: {context.step_id}'",
+                        f"Create a git commit with trailer 'Step-Id: {context.step_id}'",
+                        f"Include trailer 'Task-Id: {context.project_id}' on the same commit",
                         "Ensure the COMMIT phase actually runs git commit",
                         "Check that git is available and you're in a git repository",
                     ],
@@ -207,6 +237,44 @@ class SubagentStopService(SubagentStopPort):
             hook_id=hook_id,
             turns_used=context.turns_used,
             tokens_used=context.tokens_used,
+        )
+        return HookDecision.allow()
+
+    def _validate_atdd_pure(
+        self,
+        context: SubagentStopContext,
+        hook_id: str | None,
+    ) -> HookDecision:
+        """Validate an atdd_pure crafter return (T-C — no execution-log demand).
+
+        The atdd_pure dispatch lifecycle is execution-log-free: there is no
+        execution-log.json to read, no classic step-event sequence to validate
+        and no per-step git trailer to verify here (trailer verification is
+        T-G). The minimum to ALLOW the return is: confirm a non-empty
+        project_id (the feature_id) and emit the PASSED audit event. The
+        ExecutionLogReader is never consulted.
+        """
+        if not context.project_id or not context.project_id.strip():
+            return HookDecision.block(
+                reason="EMPTY_PROJECT_ID: feature_id missing from atdd_pure dispatch context",
+                recovery_suggestions=[
+                    "Ensure the atdd_pure dispatch carries a non-empty DES-PROJECT-ID marker",
+                ],
+            )
+
+        self._audit_writer.log_event(
+            AuditEvent(
+                event_type="HOOK_SUBAGENT_STOP_PASSED",
+                timestamp=self._time_provider.now_utc().isoformat(),
+                feature_name=context.project_id,
+                step_id=context.slice_id or "",
+                hook_id=hook_id,
+                data={
+                    "mode": "atdd_pure",
+                    "slice_id": context.slice_id,
+                    "atdd_pure_phase": context.atdd_pure_phase,
+                },
+            )
         )
         return HookDecision.allow()
 

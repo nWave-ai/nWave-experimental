@@ -1,7 +1,7 @@
 """DES Enforcement Policy - step-id based enforcement rule.
 
-Pure domain policy following MaxTurnsPolicy pattern.
-Every Task prompt containing a step-id pattern (\\d{2}-\\d{2}) without DES
+Pure domain policy following PolicyResult pattern.
+Every Agent prompt containing a step-id pattern (\\d{2}-\\d{2}) without DES
 markers gets blocked. This closes the bypass where the orchestrator delegates
 via Task but forgets DES markers.
 
@@ -38,8 +38,14 @@ class DesEnforcementPolicy:
     DES monitoring.
     """
 
-    # Negative lookbehind prevents matching date substrings like "2026-02-09"
-    STEP_ID_PATTERN = re.compile(r"(?<!\d{4}-)\b\d{2}-\d{2}\b")
+    # Keyword-anchored pattern: requires "step" keyword or DES-STEP-ID marker
+    # to avoid false positives on dates (03-29), line ranges (50-80), ports (80-82)
+    STEP_ID_PATTERN = re.compile(
+        r"(?i)(?:"
+        r"\bstep\s*[:\-]?\s*\d{2}-\d{2}\b"
+        r"|DES-STEP-ID\s*:\s*\d{2}-\d{2}"
+        r")"
+    )
     DES_MARKER = "DES-VALIDATION : required"
     EXEMPT_MARKER = "DES-ENFORCEMENT : exempt"
 
@@ -65,7 +71,7 @@ class DesEnforcementPolicy:
                 "<!-- DES-VALIDATION : required -->",
                 "<!-- DES-PROJECT-ID : {project-id} -->",
                 "<!-- DES-STEP-ID : {step-id} -->",
-                "Read ~/.claude/commands/nw/execute.md for the full template.",
+                "Read ~/.claude/skills/nw-execute/SKILL.md for the full template.",
                 "If this is NOT step execution, add: <!-- DES-ENFORCEMENT : exempt -->",
             ],
         )

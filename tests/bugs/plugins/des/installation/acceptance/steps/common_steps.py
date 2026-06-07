@@ -112,31 +112,47 @@ def des_module_present_at_path(path: str, test_context: dict):
     )
 
 
-@then("the settings.local.json file should exist")
+@then("the settings.json file should exist")
 def settings_file_exists(test_context: dict):
-    """Verify settings.local.json exists in Claude config (temp or real)."""
-    claude_dir = test_context.get("claude_dir")
-    if claude_dir:
-        # Test environment
-        settings_file = claude_dir / "settings.local.json"
-    else:
-        # Real installation
-        settings_file = Path.home() / ".claude" / "settings.local.json"
+    """Verify settings.json exists in the test Claude config directory.
 
+    The test must always supply a ``claude_dir`` via the
+    ``a temporary Claude config directory exists`` step. Falling back to the
+    real ``~/.claude`` directory would make this test non-hermetic (different
+    results on CI vs. a developer machine that has DES installed).
+    """
+    claude_dir = test_context.get("claude_dir")
+    if claude_dir is None:
+        pytest.skip(
+            "No test claude_dir in context — step 'a temporary Claude config directory"
+            " exists' must precede this assertion."
+        )
+
+    settings_file = claude_dir / "settings.json"
     assert settings_file.exists(), (
-        f"settings.local.json not found at {settings_file}. "
-        f"DES installation incomplete."
+        f"settings.json not found at {settings_file}. DES installation incomplete."
     )
 
 
-@then("the real settings.local.json file should exist")
-def real_settings_file_exists():
-    """Verify settings.local.json exists at the real Claude config location."""
-    settings_file = Path.home() / ".claude" / "settings.local.json"
+@then("the real settings.json file should exist")
+def real_settings_file_exists(test_context: dict):
+    """Verify settings.json exists in the controlled test Claude config directory.
 
+    Previously this step read the real ``~/.claude/settings.json``, which made
+    it non-hermetic (passes on dev machines, fails on CI). It now uses
+    ``claude_dir`` from the test context — the same tmp_path-backed directory
+    every other step in this suite uses.
+    """
+    claude_dir = test_context.get("claude_dir")
+    if claude_dir is None:
+        pytest.skip(
+            "No test claude_dir in context — step 'a temporary Claude config directory"
+            " exists' must precede this assertion."
+        )
+
+    settings_file = claude_dir / "settings.json"
     assert settings_file.exists(), (
-        f"settings.local.json not found at {settings_file}. "
-        f"DES installation incomplete."
+        f"settings.json not found at {settings_file}. DES installation incomplete."
     )
 
 

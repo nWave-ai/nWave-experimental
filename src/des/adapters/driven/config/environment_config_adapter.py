@@ -18,22 +18,6 @@ class EnvironmentConfigAdapter(ConfigPort):
     ensuring the system can operate even without explicit configuration.
     """
 
-    def __init__(self):
-        """Initialize the environment config adapter."""
-        pass
-
-    def get_max_turns_default(self) -> int:
-        """
-        Get maximum turns default from environment or use fallback.
-
-        Reads from DES_MAX_TURNS_DEFAULT environment variable.
-        Default: 30 (see src/des/config/des_defaults.yaml)
-
-        Returns:
-            int: Maximum turns default (from env or fallback of 30)
-        """
-        return int(os.environ.get("DES_MAX_TURNS_DEFAULT", "30"))
-
     def get_timeout_threshold_default(self) -> int:
         """
         Get timeout threshold default from environment or use fallback.

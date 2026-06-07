@@ -38,7 +38,7 @@ class TestOrchestratorStaleCheckIntegration:
         # Act: Call execute_step_with_stale_check
         orchestrator = DESOrchestrator.create_with_defaults()
         result = orchestrator.execute_step_with_stale_check(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="steps/01-01.json",
             project_root=tmp_path,
@@ -97,7 +97,7 @@ class TestOrchestratorStaleCheckIntegration:
         # Act: Call execute_step_with_stale_check
         orchestrator = DESOrchestrator.create_with_defaults()
         result = orchestrator.execute_step_with_stale_check(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="steps/02-01.json",
             project_root=tmp_path,
@@ -156,7 +156,7 @@ class TestOrchestratorStaleCheckIntegration:
         # Act: Call execute_step_with_stale_check
         orchestrator = DESOrchestrator.create_with_defaults()
         result = orchestrator.execute_step_with_stale_check(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="steps/02-01.json",
             project_root=tmp_path,
@@ -213,7 +213,7 @@ class TestOrchestratorStaleCheckIntegration:
         # Act: Call execute_step_with_stale_check
         orchestrator = DESOrchestrator.create_with_defaults()
         result = orchestrator.execute_step_with_stale_check(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="steps/02-01.json",
             project_root=tmp_path,
@@ -272,7 +272,7 @@ class TestOrchestratorStaleCheckIntegration:
         # Act: Call execute_step_with_stale_check
         orchestrator = DESOrchestrator.create_with_defaults()
         result = orchestrator.execute_step_with_stale_check(
-            command="/nw:execute",
+            command="/nw-execute",
             agent="@software-crafter",
             step_file="steps/02-01.json",
             project_root=tmp_path,

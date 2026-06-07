@@ -27,27 +27,23 @@ class TestSessionStartRoutingAcceptance:
 
     def test_session_start_command_dispatches_to_handler(self):
         """Running adapter with 'session-start' routes to session_start_handler."""
-        from des.adapters.drivers.hooks import claude_code_hook_adapter
+        from des.adapters.drivers.hooks import hook_router
 
         with patch.object(
-            claude_code_hook_adapter,
+            hook_router,
             "handle_session_start",
             return_value=0,
         ) as mock_handler:
-            exits = _capture_exit(
-                claude_code_hook_adapter, ["adapter", "session-start"]
-            )
+            exits = _capture_exit(hook_router, ["adapter", "session-start"])
 
         mock_handler.assert_called_once()
         assert exits == [0]
 
     def test_unknown_command_exits_1(self, capsys):
         """Unknown command still exits 1 (existing behaviour unchanged)."""
-        from des.adapters.drivers.hooks import claude_code_hook_adapter
+        from des.adapters.drivers.hooks import hook_router
 
-        exits = _capture_exit(
-            claude_code_hook_adapter, ["adapter", "not-a-real-command"]
-        )
+        exits = _capture_exit(hook_router, ["adapter", "not-a-real-command"])
 
         assert exits == [1]
         captured = capsys.readouterr()

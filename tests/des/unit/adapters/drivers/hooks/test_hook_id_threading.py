@@ -17,20 +17,16 @@ Using 4 tests (parametrized where appropriate):
 import io
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-from des.ports.driven_ports.audit_log_writer import AuditEvent
+from des.adapters.drivers.hooks import des_task_signal, hook_protocol
+
+from .conftest import make_capturing_writer
 
 
-def _make_capturing_writer(events: list[AuditEvent]):
-    """Create an AuditLogWriter that appends events to the given list."""
-    from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-
-    class CapturingWriter(NullAuditLogWriter):
-        def log_event(self, event: AuditEvent) -> None:
-            events.append(event)
-
-    return CapturingWriter()
+if TYPE_CHECKING:
+    from des.ports.driven_ports.audit_log_writer import AuditEvent
 
 
 def _build_des_task_stdin() -> str:
@@ -43,7 +39,7 @@ def _build_des_task_stdin() -> str:
         "# DES_METADATA\n"
         "Step: 01-01\n"
         "Project: test-project\n"
-        "Command: /nw:execute\n"
+        "Command: /nw-execute\n"
         "\n"
         "# AGENT_IDENTITY\n"
         "Agent: @software-crafter\n"
@@ -92,7 +88,7 @@ def _build_no_max_turns_stdin() -> str:
     """DES task input missing max_turns (triggers BLOCKED).
 
     Must include DES markers so the task is recognized as a DES task;
-    non-DES tasks bypass max_turns validation entirely (nwave-ai/nwave#9).
+    non-DES tasks bypass max_turns validation entirely (nWave-ai/nWave#9).
     """
     return json.dumps(
         {
@@ -118,25 +114,20 @@ def test_pre_tool_use_allowed_event_carries_hook_id(monkeypatch, tmp_path):
     event carries the same hook_id as the HOOK_INVOKED event."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
-    monkeypatch.setattr(adapter, "DES_SESSION_DIR", tmp_path / ".nwave" / "des")
+    monkeypatch.setattr(des_task_signal, "DES_SESSION_DIR", tmp_path / ".nwave" / "des")
     monkeypatch.setattr(
-        adapter, "DES_TASK_ACTIVE_FILE", tmp_path / ".nwave" / "des" / "des-task-active"
-    )
-    monkeypatch.setattr(
-        adapter,
-        "_signal_file_for",
-        lambda project_id, step_id: (
-            tmp_path / ".nwave" / "des" / f"des-task-active-{project_id}--{step_id}"
-        ),
+        des_task_signal,
+        "DES_TASK_ACTIVE_FILE",
+        tmp_path / ".nwave" / "des" / "des-task-active",
     )
 
     events: list[AuditEvent] = []
-    writer = _make_capturing_writer(events)
+    writer = make_capturing_writer(events)
 
     monkeypatch.setattr("sys.stdin", io.StringIO(_build_des_task_stdin()))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
+    with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
         exit_code = adapter.handle_pre_tool_use()
 
     assert exit_code == 0
@@ -161,12 +152,12 @@ def test_pre_tool_use_blocked_event_carries_hook_id(monkeypatch):
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
     events: list[AuditEvent] = []
-    writer = _make_capturing_writer(events)
+    writer = make_capturing_writer(events)
 
     monkeypatch.setattr("sys.stdin", io.StringIO(_build_no_max_turns_stdin()))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
+    with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
         exit_code = adapter.handle_pre_tool_use()
 
     assert exit_code == 2
@@ -219,14 +210,9 @@ def test_subagent_stop_passed_event_carries_hook_id(monkeypatch, tmp_path):
 
     des_dir = tmp_path / ".nwave" / "des"
     des_dir.mkdir(parents=True)
-    monkeypatch.setattr(adapter, "DES_SESSION_DIR", des_dir)
-    monkeypatch.setattr(adapter, "DES_TASK_ACTIVE_FILE", des_dir / "des-task-active")
+    monkeypatch.setattr(des_task_signal, "DES_SESSION_DIR", des_dir)
     monkeypatch.setattr(
-        adapter,
-        "_signal_file_for",
-        lambda project_id, step_id: (
-            des_dir / f"des-task-active-{project_id}--{step_id}"
-        ),
+        des_task_signal, "DES_TASK_ACTIVE_FILE", des_dir / "des-task-active"
     )
 
     # Write complete execution log
@@ -234,7 +220,7 @@ def test_subagent_stop_passed_event_carries_hook_id(monkeypatch, tmp_path):
     _write_complete_execution_log(log_path, "test-project", "01-01")
 
     events: list[AuditEvent] = []
-    writer = _make_capturing_writer(events)
+    writer = make_capturing_writer(events)
 
     stop_stdin = json.dumps(
         {
@@ -246,7 +232,7 @@ def test_subagent_stop_passed_event_carries_hook_id(monkeypatch, tmp_path):
     monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
+    with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
         exit_code = adapter.handle_subagent_stop()
 
     assert exit_code == 0
@@ -272,14 +258,9 @@ def test_subagent_stop_failed_event_carries_hook_id(monkeypatch, tmp_path):
 
     des_dir = tmp_path / ".nwave" / "des"
     des_dir.mkdir(parents=True)
-    monkeypatch.setattr(adapter, "DES_SESSION_DIR", des_dir)
-    monkeypatch.setattr(adapter, "DES_TASK_ACTIVE_FILE", des_dir / "des-task-active")
+    monkeypatch.setattr(des_task_signal, "DES_SESSION_DIR", des_dir)
     monkeypatch.setattr(
-        adapter,
-        "_signal_file_for",
-        lambda project_id, step_id: (
-            des_dir / f"des-task-active-{project_id}--{step_id}"
-        ),
+        des_task_signal, "DES_TASK_ACTIVE_FILE", des_dir / "des-task-active"
     )
 
     # Write incomplete execution log (only 2 of 7 phases)
@@ -296,7 +277,7 @@ def test_subagent_stop_failed_event_carries_hook_id(monkeypatch, tmp_path):
     log_path.write_text(json.dumps(log_data, indent=2))
 
     events: list[AuditEvent] = []
-    writer = _make_capturing_writer(events)
+    writer = make_capturing_writer(events)
 
     stop_stdin = json.dumps(
         {
@@ -308,7 +289,7 @@ def test_subagent_stop_failed_event_carries_hook_id(monkeypatch, tmp_path):
     monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
+    with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
         adapter.handle_subagent_stop()
 
     # Extract hook_id from HOOK_INVOKED

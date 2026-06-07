@@ -1,0 +1,213 @@
+# AT Completeness Check — 15-item mechanical checklist (Tier-1 coverage gate)
+#                          + S-family structural invariants (Tier-2 gate)
+# Machine-readable form of nw-at-completeness-check SKILL.md §§2 + 2-bis.
+#
+# Tier-1 verdict thresholds (unchanged):
+#   <10 INCOMPLETE | 10-12 ACCEPTABLE_WITH_DOCUMENTED_GAPS | >=13 COMPLETE
+# Tier-2 verdict: any S-family FAIL → BLOCK (regardless of Tier-1 score).
+#
+# Reviewer runs BOTH gates and combines verdict. Tier-1 items not applicable to
+# SUT (e.g. C7c for non-concurrent code) count as passing when explicit rationale
+# is provided. Tier-2 S-family items are mandatory unconditionally.
+
+version: "1.2.0"
+total_items: 15           # Tier-1 only; preserved for downstream consumers
+thresholds:
+  incomplete_below: 10
+  acceptable_range: [10, 12]
+  complete_at_or_above: 13
+
+categories:
+  - id: C1
+    name: "Equivalence & Boundary"
+    anchor: "ISTQB v4.0 §4.2 [1]; Beizer 1990 ch.5 [2]"
+  - id: C2
+    name: "State & Transition"
+    anchor: "ISTQB §4.2.4 [1]; Hendrickson [3]; Hypothesis stateful [4]"
+    upstream_wave: DISCUSS
+    upstream_artifact: "state diagram in user-stories Elevator Pitch + DoD"
+  - id: C3
+    name: "Count Cardinality (0/1/N)"
+    anchor: "Hendrickson Count [3]; Adzic key examples [5]"
+  - id: C4
+    name: "CRUD-Lifecycle & Idempotency"
+    anchor: "Hendrickson CRUD [3]; Hillel Wayne PBT+Contracts [6]"
+  - id: C5
+    name: "Mode-Flag / Decision-Table"
+    anchor: "ISTQB §4.2.3 [1]; Adzic [5,7]"
+    upstream_wave: DESIGN
+    upstream_artifact: "flag enumeration in component manifest"
+  - id: C6
+    name: "Negative & Robustness (Postel)"
+    anchor: "RFC 760 §1.2.10 [8]; FEW HICCUPPS [9]; Kaner LLST [10]; RIMGEA [11]"
+    upstream_wave: DESIGN
+    upstream_artifact: "typed error set + invariants per port"
+  - id: C7
+    name: "Configuration / Environment / Interruption"
+    anchor: "Bach HTSM SFDIPOT [12]; Hendrickson [3]; Marick Q4 [13]"
+    upstream_wave: DEVOPS
+    upstream_artifact: "env matrix + concurrency/interruption contract"
+
+checks:
+  - id: C1a
+    category: C1
+    description: ">=1 AT exercises empty/zero/minimum-size input"
+    mandatory: true
+  - id: C1b
+    category: C1
+    description: ">=1 AT on each partition boundary (max-1, max, max+1)"
+    mandatory: true
+  - id: C2a
+    category: C2
+    description: "SUT state machine documented in AT module docstring"
+    mandatory: true
+  - id: C2b
+    category: C2
+    description: "For each state, >=1 AT for illegal-event-from-that-state"
+    mandatory: true
+  - id: C3
+    category: C3
+    description: "parametrize/PBT covering n in {0, 1, many} for each collection input"
+    mandatory: true
+  - id: C4a
+    category: C4
+    description: "Each mutating op has 'apply twice' AT (idempotency or correct non-idempotency)"
+    mandatory: true
+  - id: C4b
+    category: C4
+    description: ">=1 AT for inverse op without prerequisite (uninstall-without-install)"
+    mandatory: true
+  - id: C5a
+    category: C5
+    description: "Each mode flag: every materially-distinct combination exercised"
+    mandatory: true
+  - id: C5b
+    category: C5
+    description: ">=1 AT asserting flag orthogonality (verbose toggles output only)"
+    mandatory: false
+  - id: C6a
+    category: C6
+    description: "Each input param: >=1 AT with malformed value (wrong type, malformed encoding)"
+    mandatory: true
+  - id: C6b
+    category: C6
+    description: "Each declared error in contract: >=1 AT triggers exactly that error"
+    mandatory: true
+  - id: C6c
+    category: C6
+    description: ">=1 AT asserts closed error set (no other error escapes)"
+    mandatory: true
+  - id: C7a
+    category: C7
+    description: ">=1 AT under degraded-resource condition (read-only FS / no network / low disk)"
+    mandatory: false
+  - id: C7b
+    category: C7
+    description: ">=1 AT for interruption mid-operation (SIGINT / timeout / partial commit)"
+    mandatory: false
+  - id: C7c
+    category: C7
+    description: "If concurrent-safe by claim: >=1 multi-actor AT (two parallel invocations)"
+    mandatory: false
+    applicability: "only when SUT claims concurrent-safety"
+
+reviewer_output_schema:
+  finding_kinds:
+    - AT_GAP_IN_DELIVERY_SCOPE
+    - SPECIFICATION_AMBIGUITY
+  severities:
+    - BLOCKER
+    - HIGH
+    - MEDIUM
+    - LOW
+
+falsifier_gate:
+  prune_rule:
+    description: "3 consecutive zero-findings on category X across pilot features -> prune X from default (C-family only; S-family exempt)"
+    window_months: 3
+    applies_to: C-family
+  escalate_rule:
+    description: "1 BLOCKER found via category X -> escalate X to MANDATORY"
+
+# Tier-2 — Structural Invariants Gate (independent of 15-item Tier-1).
+# Failure here BLOCKS regardless of Tier-1 score. Always AT_GAP_IN_DELIVERY_SCOPE,
+# always BLOCKER severity. Not subject to falsifier-prune.
+structural_invariants:
+  - id: S1
+    name: "Step-text uniqueness within feature scope"
+    description: >
+      Every @given/@when/@then decorator's literal argument string MUST be unique
+      across all step files in the same feature directory. Tolerable variants:
+      parsers.parse(...) parametrized templates (different binding); shared-import
+      re-use of one source module (single function object, no shadow possible).
+    detection: >
+      AST-walk every .py file under <feature_steps_dir>. Collect
+      (step_type, literal_arg) -> [Site(file, lineno, qualname)]. Flag keys where
+      sites span 2+ distinct files. Output: step_text_uniqueness verdict={PASS|FAIL}
+      collisions=<list>.
+    mandatory: true
+    failure_kind: AT_GAP_IN_DELIVERY_SCOPE
+    failure_severity: BLOCKER
+    rationale: >
+      pytest-bdd registers step bodies in a process-global registry keyed by
+      (step_type, literal_arg). Duplicates across files cause last-loaded body to
+      shadow earlier ones, producing silent test inversion. Mandate-12 SSOT
+      violation: one body per domain noun.
+    empirical_anchor: >
+      2026-05-24 — Slice-02 of Stream A (fix-des-self-hosted-gate-sync) double-
+      registered two @then literals across steps_slice_01_walking_skeleton.py and
+      steps_slice_02_install_manifest.py. Contract gate caught it only after AT
+      failed. S1 would catch at AT-completeness audit time, before DELIVER starts.
+    cross_language_pair: >
+      Tsunami sister Rhai recipe step_text_collision.rhai (tree-sitter #[step]
+      AtomDecorator query, group by qualname+body_text). S1 = first-line within-
+      feature Python check; Rhai recipe = broader cross-language / cross-feature
+      detector. Same invariant, two enforcement layers.
+
+  - id: S2
+    name: "Driving-Port-Only Boundary — NO direct-domain testing in ATs"
+    description: >
+      AT step modules (composition.py, steps_*.py, slice*.py under
+      tests/{path}/(acceptance|cli)/<feature>/) MUST NOT import production code
+      directly from des.domain.* or des.application.* for function-boundary
+      invocation. AND no NEW behavioral AT under tests/des/unit/(domain|cli)/*
+      (path reserved for legacy + arch tests; new behavioral ATs ship under
+      tests/des/(acceptance|cli)/<feature-name>/ only). ATs drive via composition-
+      root driving port at Layer 3 subprocess / Layer 3 composition / Layer 4
+      wiring_e2e only. Tolerable variants: production code under src/des/**;
+      legacy tests not modified this run; arch tests (test_arch_* prefix or
+      tests/des/architecture/* path); subprocess invocation of CLI entrypoints.
+    detection: >
+      Pass (a) import scan — for each .py in <feature_steps_dir>, match
+      ^from des\.(domain|application)\.\w+ import. Flag with file:line + snippet.
+      Pass (b) wrong-tier path scan — for each NEW test file this run, match
+      tests/des/unit/(domain|cli)/test_[^/]+\.py. Output:
+      driving_port_only verdict={PASS|FAIL} violations=<list of (kind, file:line,
+      snippet, remediation)>.
+    mandatory: true
+    failure_kind: AT_GAP_IN_DELIVERY_SCOPE
+    failure_severity: BLOCKER
+    rationale: >
+      Hexagonal boundary discipline + atdd_pure paradigm (Layer 3 only). Direct-
+      domain import + function-boundary invocation collapses the AT into a
+      Layer-1 unit test masquerading as AT — violates Mandate-13. Recursive
+      compounding: every future DISTILL paradigm-compliant via this invariant.
+    empirical_anchor: >
+      2026-05-25 — 2 instances caught BEFORE shipping: (1) M15 DISTILL
+      composition.py:115-118 imported DesMarkerParser directly + invoked .parse(),
+      comment admitted "layer-1 (unit, pure-function)" — REMOVED; (2) M16 D3
+      reviewer recommended Layer-1 parity guard at
+      tests/des/unit/cli/test_collect_node_ids_parity_guard.py, crafter shipped
+      per recommendation, REMOVED. Reviewer recommendation itself was anti-pattern
+      (reviewer Critical Rule 5 self-application).
+    ale_directive: >
+      "ma perche ci sono unit test? il nuovo DES non dovrebbe farne scrivere.
+      Inoltre il domain non dovrebbe essere testato direttamente." (2026-05-25)
+    remediation_hint: >
+      Always emit: "relocate to tests/des/(acceptance|cli)/[feature-name]/ +
+      restructure via driving port (Layer 3 subprocess / Layer 3 composition root
+      / Layer 4 wiring_e2e)". Never recommend deletion — restructure preserves
+      behavioral coverage at the right tier.
+    connects_to:
+      - "F-ATDD-PURE-AT-DIRECT-DOMAIN-TESTING-ANTI-PATTERN (friction #32, docs/backlog.md 2026-05-25)"
+      - "F-DIRECT-DOMAIN-TEST-RETRO-AUDIT (HIGH, separate retro audit of legacy violations)"

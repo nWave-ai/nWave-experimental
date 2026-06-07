@@ -10,10 +10,15 @@ from unittest.mock import Mock, patch
 
 
 def _patch_log_audit_event():
-    """Patch _log_audit_event at module level to capture calls."""
+    """Patch the audit seam to capture calls.
+
+    render_prompt now delegates to prompt_rendering_service.render_prompt,
+    which logs via prompt_rendering_service.log_audit_event. Patch that seam;
+    assertions on the emitted events stay identical.
+    """
     mock_log = Mock()
     log_patch = patch(
-        "des.application.orchestrator._log_audit_event",
+        "des.application.prompt_rendering_service.log_audit_event",
         mock_log,
     )
     return log_patch, mock_log
@@ -29,7 +34,7 @@ class TestRenderPromptAuditFeatureName:
 
         with log_patch:
             des_orchestrator.render_prompt(
-                command="/nw:execute",
+                command="/nw-execute",
                 agent="@software-crafter",
                 step_file="steps/03-02.json",
                 project_id="audit-log-refactor",
@@ -54,7 +59,7 @@ class TestRenderPromptAuditFeatureName:
 
         with log_patch:
             des_orchestrator.render_prompt(
-                command="/nw:execute",
+                command="/nw-execute",
                 agent="@software-crafter",
                 step_file="steps/03-02.json",
                 project_id="audit-log-refactor",
@@ -78,7 +83,7 @@ class TestRenderPromptAuditFeatureName:
 
         with log_patch:
             des_orchestrator.render_prompt(
-                command="/nw:execute",
+                command="/nw-execute",
                 agent="@software-crafter",
                 step_file="steps/03-02.json",
                 project_id="audit-log-refactor",
@@ -105,7 +110,7 @@ class TestRenderPromptAuditFeatureName:
 
         with log_patch:
             des_orchestrator.render_prompt(
-                command="/nw:execute",
+                command="/nw-execute",
                 agent="@software-crafter",
                 step_file="steps/03-02.json",
             )

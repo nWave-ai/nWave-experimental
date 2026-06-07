@@ -33,7 +33,7 @@ Feature: Correct Import Paths in Installed DES
     Then no files should contain "from src.des"
     And no files should contain "import src.des"
 
-  @bug-3 @failing @priority-critical
+  @bug-3 @priority-critical
   Scenario: DES should be importable with only installed path in PYTHONPATH
     # Current Behavior (BUG): Import fails with ImportError unless
     # PYTHONPATH includes project root (where src/ exists)
@@ -44,7 +44,7 @@ Feature: Correct Import Paths in Installed DES
     When I import "from des.application.orchestrator import DESOrchestrator"
     Then the import should succeed without ImportError
 
-  @bug-3 @failing @priority-critical
+  @bug-3 @priority-critical
   Scenario: DES hooks should work with only installed path
     # This is the production scenario - hooks must work without dev directory
 
@@ -70,7 +70,7 @@ Feature: Correct Import Paths in Installed DES
       | des.ports.driver_ports.hook_port                 |
     Then all imports should succeed without ImportError
 
-  @bug-3 @failing @priority-high
+  @bug-3 @priority-high
   Scenario: Hook adapter entry point should work standalone
     # The claude_code_hook_adapter.py is the main entry point
     # It must work when invoked as: python3 -m des.adapters.drivers.hooks.claude_code_hook_adapter

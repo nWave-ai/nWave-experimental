@@ -225,7 +225,7 @@ agent-activation:
 # COMPLIANCE TARGET: 100% - ALL commands MUST include ORCHESTRATOR BRIEFING
 #
 # WHY THIS MATTERS:
-# If a command says "Agent should invoke /nw:review", the agent will receive
+# If a command says "Agent should invoke /nw-review", the agent will receive
 # that text but CANNOT execute it. The agent completes without performing the
 # review because it has no mechanism to run commands. This is a SILENT FAILURE.
 #
@@ -315,20 +315,20 @@ agent-activation:
 # [EXPLICIT LIST OF DELIVERABLES WITH FILE PATHS AND CONTENT DESCRIPTIONS]
 #
 # QUALITY GATES:
-# [VALIDATION CRITERIA INLINE - DO NOT SAY "RUN /nw:review"]
+# [VALIDATION CRITERIA INLINE - DO NOT SAY "RUN /nw-review"]
 # [Include validation logic inline that agent can perform independently]
 # ```
 #
 # ANTI-PATTERNS (NEVER INCLUDE IN COMMANDS OR AGENT PROMPTS):
-# ❌ "Agent should invoke /nw:review" → SILENT FAILURE (agent can't invoke)
-# ❌ "Use /nw:execute to process the step" → AGENT CANNOT EXECUTE THIS
-# ❌ "After completion, run /nw:finalize" → SILENT FAILURE (agent can't invoke)
+# ❌ "Agent should invoke /nw-review" → SILENT FAILURE (agent can't invoke)
+# ❌ "Use /nw-execute to process the step" → AGENT CANNOT EXECUTE THIS
+# ❌ "After completion, run /nw-finalize" → SILENT FAILURE (agent can't invoke)
 # ❌ "See nWave/tasks/nw/baseline.md for workflow" → AGENT NEEDS CONTENT, NOT PATH
 # ❌ Any reference to agents calling skills or commands → AGENT CANNOT ACCESS
 # ❌ Assuming agents have access to anything beyond Read, Write, Edit, Bash, Grep
 #
 # CORRECT PATTERNS:
-# ✅ "Orchestrator should read /nw:review and embed review criteria in prompt"
+# ✅ "Orchestrator should read /nw-review and embed review criteria in prompt"
 # ✅ "Provide agent with complete workflow instructions inline (not as paths)"
 # ✅ "Agent prompt must contain full file content, not references to files"
 # ✅ "Include all quality gate criteria directly in the prompt for agent use"
@@ -383,8 +383,8 @@ agent-activation:
 # - [ ] Template shows CONTENT EMBEDDING (not file path references)
 # - [ ] NO references to agents invoking /nw:* commands
 # - [ ] NO assumptions that agents can call skills
-# - [ ] Quality gates embedded inline (never "run /nw:review")
-# - [ ] All workflow instructions inline (never "see /nw:execute")
+# - [ ] Quality gates embedded inline (never "run /nw-review")
+# - [ ] All workflow instructions inline (never "see /nw-execute")
 # - [ ] Anti-patterns section included (what NOT to put in agent prompts)
 # - [ ] Correct patterns section included (what TO put in agent prompts)
 # - [ ] **NEW**: Contains "## Agent Prompt Reinforcement" section with:

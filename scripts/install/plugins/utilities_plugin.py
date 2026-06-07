@@ -54,6 +54,20 @@ class UtilitiesPlugin(InstallationPlugin):
             # List of utility scripts to install with version checking
             utility_scripts = ["install_nwave_target_hooks.py", "validate_step_file.py"]
 
+            # Remove stale .py files in target not in current utility_scripts set
+            current_set = set(utility_scripts)
+            for existing in list(scripts_target.glob("*.py")):
+                if existing.name not in current_set:
+                    try:
+                        existing.unlink()
+                        context.logger.info(
+                            f"  🗑️ Removed stale utility script: {existing.name}"
+                        )
+                    except PermissionError:
+                        context.logger.warning(
+                            f"  ⚠️ Cannot remove read-only stale script: {existing.name}"
+                        )
+
             installed_files = []
             installed_count = 0
 

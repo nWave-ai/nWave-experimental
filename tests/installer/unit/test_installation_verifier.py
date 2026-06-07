@@ -2,9 +2,9 @@
 
 Tests validate post-installation verification logic including:
 - Agent file counting
-- Command file counting
+- Command-skill counting (user-invocable nw-* skill directories)
 - Manifest existence checking
-- Essential command file detection
+- Essential command-skill detection
 
 CRITICAL: Tests follow hexagonal architecture - domain classes use real objects.
 Only pathlib.Path is mocked at port boundaries.
@@ -57,7 +57,7 @@ class TestVerificationResultDataclass:
             agent_file_count=0,
             command_file_count=0,
             manifest_exists=False,
-            missing_essential_files=["design.md", "review.md"],
+            missing_essential_files=["nw-design", "nw-review"],
             error_code=VERIFY_FAILED,
             message="Verification failed: missing essential files.",
         )
@@ -65,8 +65,8 @@ class TestVerificationResultDataclass:
         # ASSERT
         assert result.success is False
         assert result.error_code == VERIFY_FAILED
-        assert "design.md" in result.missing_essential_files
-        assert "review.md" in result.missing_essential_files
+        assert "nw-design" in result.missing_essential_files
+        assert "nw-review" in result.missing_essential_files
 
 
 class TestInstallationVerifierAgentFiles:
@@ -139,40 +139,40 @@ class TestInstallationVerifierAgentFiles:
         assert count == 0
 
 
-class TestInstallationVerifierCommandFiles:
-    """Test command file verification."""
+class TestInstallationVerifierCommandSkills:
+    """Test command-skill verification."""
 
-    def test_verify_command_files_count_with_populated_directory(self, tmp_path):
+    def test_verify_command_skills_count_with_populated_directory(self, tmp_path):
         """
-        GIVEN: A directory with command markdown files
-        WHEN: verify_command_files() is called
-        THEN: Returns correct count of .md files
+        GIVEN: A skills directory with user-invocable nw-* skill directories
+        WHEN: verify_command_skills() is called
+        THEN: Returns correct count of command-skill directories
         """
         from scripts.install.installation_verifier import InstallationVerifier
 
         # ARRANGE
-        commands_dir = tmp_path / ".claude" / "commands" / "nw"
-        commands_dir.mkdir(parents=True)
+        skills_dir = tmp_path / ".claude" / "skills"
+        skill_content = (
+            "---\nname: {name}\ndescription: test\nuser-invocable: true\n---\n# content"
+        )
 
-        # Create sample command files
-        (commands_dir / "review.md").write_text("# Review command")
-        (commands_dir / "devops.md").write_text("# Devop command")
-        (commands_dir / "discuss.md").write_text("# Discuss command")
-        (commands_dir / "design.md").write_text("# Design command")
-        (commands_dir / "distill.md").write_text("# Distill command")
+        for name in ["nw-review", "nw-devops", "nw-discuss", "nw-design", "nw-distill"]:
+            d = skills_dir / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text(skill_content.format(name=name))
 
         verifier = InstallationVerifier(claude_config_dir=tmp_path / ".claude")
 
         # ACT
-        count = verifier.verify_command_files()
+        count = verifier.verify_command_skills()
 
         # ASSERT
         assert count == 5
 
-    def test_verify_command_files_count_with_missing_directory(self, tmp_path):
+    def test_verify_command_skills_count_with_missing_directory(self, tmp_path):
         """
-        GIVEN: A non-existent commands directory
-        WHEN: verify_command_files() is called
+        GIVEN: A non-existent skills directory
+        WHEN: verify_command_skills() is called
         THEN: Returns 0
         """
         from scripts.install.installation_verifier import InstallationVerifier
@@ -180,12 +180,12 @@ class TestInstallationVerifierCommandFiles:
         # ARRANGE
         config_dir = tmp_path / ".claude"
         config_dir.mkdir(parents=True)
-        # Commands directory does NOT exist
+        # Skills directory does NOT exist
 
         verifier = InstallationVerifier(claude_config_dir=config_dir)
 
         # ACT
-        count = verifier.verify_command_files()
+        count = verifier.verify_command_skills()
 
         # ASSERT
         assert count == 0
@@ -239,31 +239,34 @@ class TestInstallationVerifierManifest:
 
 
 class TestInstallationVerifierEssentialCommands:
-    """Test essential command file verification."""
+    """Test essential command-skill verification."""
 
     def test_verify_essential_commands_all_present(self, tmp_path):
         """
-        GIVEN: All essential command files exist
+        GIVEN: All essential command-skill directories exist
         WHEN: verify_essential_commands() is called
-        THEN: Returns empty list (no missing files)
+        THEN: Returns empty list (no missing skills)
         """
         from scripts.install.installation_verifier import InstallationVerifier
 
         # ARRANGE
-        commands_dir = tmp_path / ".claude" / "commands" / "nw"
-        commands_dir.mkdir(parents=True)
+        skills_dir = tmp_path / ".claude" / "skills"
 
-        # Create essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
-        essential_files = [
-            "review.md",
-            "devops.md",
-            "discuss.md",
-            "design.md",
-            "distill.md",
-            "deliver.md",
+        # Create essential command-skill dirs (matching ESSENTIAL_COMMAND_SKILLS)
+        essential_skills = [
+            "nw-review",
+            "nw-devops",
+            "nw-discuss",
+            "nw-design",
+            "nw-distill",
+            "nw-deliver",
         ]
-        for filename in essential_files:
-            (commands_dir / filename).write_text(f"# {filename}")
+        for name in essential_skills:
+            d = skills_dir / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: test\nuser-invocable: true\n---\n# content"
+            )
 
         verifier = InstallationVerifier(claude_config_dir=tmp_path / ".claude")
 
@@ -275,19 +278,22 @@ class TestInstallationVerifierEssentialCommands:
 
     def test_verify_essential_commands_some_missing(self, tmp_path):
         """
-        GIVEN: Some essential command files are missing
+        GIVEN: Some essential command-skill directories are missing
         WHEN: verify_essential_commands() is called
-        THEN: Returns list of missing filenames
+        THEN: Returns list of missing skill names
         """
         from scripts.install.installation_verifier import InstallationVerifier
 
         # ARRANGE
-        commands_dir = tmp_path / ".claude" / "commands" / "nw"
-        commands_dir.mkdir(parents=True)
+        skills_dir = tmp_path / ".claude" / "skills"
 
-        # Create only some essential files (missing design.md, review.md)
-        (commands_dir / "devops.md").write_text("# Devop command")
-        (commands_dir / "discuss.md").write_text("# Discuss command")
+        # Create only some essential skills (missing nw-design, nw-review)
+        for name in ["nw-devops", "nw-discuss"]:
+            d = skills_dir / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: test\nuser-invocable: true\n---\n# content"
+            )
 
         verifier = InstallationVerifier(claude_config_dir=tmp_path / ".claude")
 
@@ -295,22 +301,22 @@ class TestInstallationVerifierEssentialCommands:
         missing = verifier.verify_essential_commands()
 
         # ASSERT
-        assert "design.md" in missing
-        assert "review.md" in missing
-        assert "devops.md" not in missing
+        assert "nw-design" in missing
+        assert "nw-review" in missing
+        assert "nw-devops" not in missing
 
     def test_verify_essential_commands_all_missing(self, tmp_path):
         """
-        GIVEN: Commands directory is empty
+        GIVEN: Skills directory is empty
         WHEN: verify_essential_commands() is called
-        THEN: Returns list of all essential files
+        THEN: Returns list of all essential skill names
         """
         from scripts.install.installation_verifier import InstallationVerifier
 
         # ARRANGE
-        commands_dir = tmp_path / ".claude" / "commands" / "nw"
-        commands_dir.mkdir(parents=True)
-        # No files created
+        skills_dir = tmp_path / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+        # No skill directories created
 
         verifier = InstallationVerifier(claude_config_dir=tmp_path / ".claude")
 
@@ -318,10 +324,10 @@ class TestInstallationVerifierEssentialCommands:
         missing = verifier.verify_essential_commands()
 
         # ASSERT
-        # Should contain all 6 essential files (review, develop, discuss, design, distill, deliver)
+        # Should contain all 6 essential skills
         assert len(missing) == 6
-        assert "review.md" in missing
-        assert "devops.md" in missing
+        assert "nw-review" in missing
+        assert "nw-devops" in missing
 
 
 class TestInstallationVerifierFullVerification:
@@ -338,11 +344,9 @@ class TestInstallationVerifierFullVerification:
         # ARRANGE - Create complete installation
         config_dir = tmp_path / ".claude"
         agents_dir = config_dir / "agents" / "nw"
-        commands_dir = config_dir / "commands" / "nw"
-        skills_dir = config_dir / "skills" / "nw" / "software-crafter"
+        skills_dir = config_dir / "skills"
         des_dir = config_dir / "lib" / "python" / "des"
         agents_dir.mkdir(parents=True)
-        commands_dir.mkdir(parents=True)
         skills_dir.mkdir(parents=True)
         des_dir.mkdir(parents=True)
 
@@ -350,20 +354,21 @@ class TestInstallationVerifierFullVerification:
         for i in range(5):
             (agents_dir / f"agent{i}.md").write_text(f"# Agent {i}")
 
-        # Create all essential command files (matching InstallationVerifier.ESSENTIAL_COMMANDS)
-        essential_files = [
-            "review.md",
-            "devops.md",
-            "discuss.md",
-            "design.md",
-            "distill.md",
-            "deliver.md",
+        # Create all essential command-skill dirs (matching ESSENTIAL_COMMAND_SKILLS)
+        essential_skills = [
+            "nw-review",
+            "nw-devops",
+            "nw-discuss",
+            "nw-design",
+            "nw-distill",
+            "nw-deliver",
         ]
-        for filename in essential_files:
-            (commands_dir / filename).write_text(f"# {filename}")
-
-        # Create skills
-        (skills_dir / "tdd-methodology.md").write_text("# TDD")
+        for name in essential_skills:
+            d = skills_dir / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: test\nuser-invocable: true\n---\n# content"
+            )
 
         # Create DES module
         (des_dir / "__init__.py").write_text("")
@@ -382,8 +387,8 @@ class TestInstallationVerifierFullVerification:
         assert result.success is True
         assert result.agent_file_count == 5
         assert result.command_file_count == 6
-        assert result.skill_file_count == 1
-        assert result.skill_group_count == 1
+        assert result.skill_file_count == 6
+        assert result.skill_group_count == 6
         assert result.des_installed is True
         assert result.manifest_exists is True
         assert result.missing_essential_files == []
@@ -391,20 +396,21 @@ class TestInstallationVerifierFullVerification:
 
     def test_run_verification_failure_when_missing_essential_files(self, tmp_path):
         """
-        GIVEN: An incomplete installation with missing essential files
+        GIVEN: An incomplete installation with missing essential command-skills
         WHEN: run_verification() is called
         THEN: Returns VerificationResult with success=False and VERIFY_FAILED error code
         """
         from scripts.install.error_codes import VERIFY_FAILED
         from scripts.install.installation_verifier import InstallationVerifier
 
-        # ARRANGE - Create incomplete installation
+        # ARRANGE - Create incomplete installation (only nw-discuss present)
         config_dir = tmp_path / ".claude"
-        commands_dir = config_dir / "commands" / "nw"
-        commands_dir.mkdir(parents=True)
-
-        # Create only partial files (missing essential ones)
-        (commands_dir / "discuss.md").write_text("# Discuss")
+        skills_dir = config_dir / "skills"
+        d = skills_dir / "nw-discuss"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(
+            "---\nname: nw-discuss\ndescription: test\nuser-invocable: true\n---\n# content"
+        )
 
         verifier = InstallationVerifier(claude_config_dir=config_dir)
 
@@ -426,26 +432,27 @@ class TestInstallationVerifierFullVerification:
 
         # ARRANGE - Create installation without manifest
         config_dir = tmp_path / ".claude"
-        commands_dir = config_dir / "commands" / "nw"
-        skills_dir = config_dir / "skills" / "nw" / "crafter"
+        skills_dir = config_dir / "skills"
         des_dir = config_dir / "lib" / "python" / "des"
-        commands_dir.mkdir(parents=True)
         skills_dir.mkdir(parents=True)
         des_dir.mkdir(parents=True)
 
-        # Create all essential command files but no manifest
-        essential_files = [
-            "review.md",
-            "devops.md",
-            "discuss.md",
-            "design.md",
-            "distill.md",
-            "deliver.md",
+        # Create all essential command-skill dirs but no manifest
+        essential_skills = [
+            "nw-review",
+            "nw-devops",
+            "nw-discuss",
+            "nw-design",
+            "nw-distill",
+            "nw-deliver",
         ]
-        for filename in essential_files:
-            (commands_dir / filename).write_text(f"# {filename}")
+        for name in essential_skills:
+            d = skills_dir / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: test\nuser-invocable: true\n---\n# content"
+            )
 
-        (skills_dir / "skill.md").write_text("# Skill")
         (des_dir / "__init__.py").write_text("")
 
         verifier = InstallationVerifier(claude_config_dir=config_dir)
@@ -665,7 +672,7 @@ class TestInstallNwaveCallsVerifier:
             agent_file_count=0,
             command_file_count=0,
             manifest_exists=False,
-            missing_essential_files=["design.md", "review.md"],
+            missing_essential_files=["nw-design", "nw-review"],
             error_code=VERIFY_FAILED,
             message="Verification failed: missing essential files.",
         )

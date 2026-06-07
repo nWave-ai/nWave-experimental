@@ -1,15 +1,16 @@
+"""Plugin for installing the nWave DES TypeScript shim into OpenCode.
+
+OpenCode plugins live at: ~/.config/opencode/plugins/
+The DES shim translates OpenCode hook events to Claude Code JSON format
+and invokes the existing Python DES adapter via subprocess.
+
+A manifest (.nwave-des-manifest.json) tracks the installed shim for
+clean uninstallation and version tracking.
 """
-Plugin for installing the nWave DES TypeScript plugin into OpenCode's plugins directory.
 
-OpenCode expects plugins at: ~/.config/opencode/plugins/
-The DES plugin enforces TDD phase discipline via tool.execute.before hooks.
-
-A manifest file (.nwave-des-manifest.json) tracks which files nWave installed,
-so uninstall() can remove only nWave files without touching user-created ones.
-"""
-
+import hashlib
 import json
-import shutil
+import os
 from pathlib import Path
 
 from scripts.install.plugins.base import (
@@ -17,92 +18,114 @@ from scripts.install.plugins.base import (
     InstallContext,
     PluginResult,
 )
+from scripts.shared.install_paths import (
+    resolve_des_lib_path_for_spawn,
+    resolve_python_command_for_spawn,
+)
 
 
+_SHIM_FILENAME = "nwave-des.ts"
 _MANIFEST_FILENAME = ".nwave-des-manifest.json"
-
-_MANIFEST_VERSION = "1.0"
-
-_TARGET_FILENAME = "nwave-des.ts"
-
-# Hook event name -- proves the file is a valid DES plugin
-_CONTENT_CHECK_STRING = "tool.execute.before"
+_TEMPLATE_FILENAME = "opencode-des-plugin.ts.template"
 
 
-def _opencode_plugins_dir() -> Path:
-    """Return the OpenCode plugins target directory.
+def _opencode_config_dir() -> Path:
+    """Return the OpenCode configuration directory.
 
     Returns:
-        Path to ~/.config/opencode/plugins/
+        Path to ~/.config/opencode/
     """
-    return Path.home() / ".config" / "opencode" / "plugins"
+    override = os.environ.get("OPENCODE_CONFIG_DIR")
+    return Path(override) if override else Path.home() / ".config" / "opencode"
 
 
-def _find_des_source(context: InstallContext) -> Path | None:
-    """Locate the DES plugin TypeScript source from dist or project layout.
-
-    Prefers dist (framework_source) over project layout.
+def _get_framework_version(context: InstallContext) -> str:
+    """Read the framework version from VERSION file or fallback.
 
     Args:
-        context: InstallContext with framework_source and project_root
+        context: InstallContext with framework_source
 
     Returns:
-        Path to the opencode-plugin.ts source file, or None if not found
+        Version string (e.g. '1.7.0')
     """
-    dist_source = context.framework_source / "des" / "opencode-plugin.ts"
-    if dist_source.exists():
-        return dist_source
-
-    project_source = context.project_root / "src" / "des" / "opencode-plugin.ts"
-    if project_source.exists():
-        return project_source
-
-    return None
-
-
-def _write_manifest(target_dir: Path, installed_filename: str) -> None:
-    """Write the manifest file tracking the nWave-installed DES plugin.
-
-    Args:
-        target_dir: OpenCode plugins directory
-        installed_filename: Name of the installed file (e.g. 'nwave-des.ts')
-    """
-    manifest = {
-        "installed_files": [installed_filename],
-        "version": _MANIFEST_VERSION,
-    }
-    manifest_path = target_dir / _MANIFEST_FILENAME
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-
-
-def _read_manifest(target_dir: Path) -> dict | None:
-    """Read the manifest file if it exists.
-
-    Args:
-        target_dir: OpenCode plugins directory
-
-    Returns:
-        Parsed manifest dict, or None if not found
-    """
-    manifest_path = target_dir / _MANIFEST_FILENAME
-    if not manifest_path.exists():
-        return None
-    return json.loads(manifest_path.read_text())
+    version_file = context.framework_source / "VERSION"
+    if version_file.exists():
+        return version_file.read_text(encoding="utf-8").strip()
+    return "0.0.0"
 
 
 class OpenCodeDESPlugin(InstallationPlugin):
-    """Plugin for installing the nWave DES TypeScript plugin into OpenCode."""
+    """Plugin for installing the nWave DES TypeScript shim into OpenCode."""
 
     def __init__(self):
-        """Initialize OpenCode DES plugin with name and priority."""
-        # After opencode-commands (38), before des (50)
-        super().__init__(name="opencode-des", priority=39)
+        """Initialize OpenCode DES plugin with name, priority, and dependencies."""
+        super().__init__(name="opencode-des", priority=55)
+        self.dependencies = ["des", "opencode-skills"]
+
+    def validate_prerequisites(self, context: InstallContext) -> PluginResult:
+        """Validate that OpenCode and DES prerequisites exist.
+
+        Checks:
+        1. OpenCode config directory exists (~/.config/opencode/)
+        2. DES Python module is installed (~/.claude/lib/python/des/)
+        3. TS template exists in framework source
+
+        If OpenCode is not detected, returns success with skip message.
+
+        Args:
+            context: InstallContext with claude_dir and framework_source
+
+        Returns:
+            PluginResult with success=True to skip, or success=False on real errors
+        """
+        opencode_dir = _opencode_config_dir()
+
+        # OpenCode not detected: skip silently (not an error)
+        if not opencode_dir.exists():
+            return PluginResult(
+                success=True,
+                plugin_name=self.name,
+                message="OpenCode not detected, skipping DES shim installation",
+            )
+
+        # DES module must be installed
+        des_module = context.claude_dir / "lib" / "python" / "des"
+        if not des_module.exists():
+            return PluginResult(
+                success=False,
+                plugin_name=self.name,
+                message=(
+                    f"DES Python module not found at {des_module}. Install DES first."
+                ),
+                errors=["DES module must be installed before OpenCode DES shim"],
+            )
+
+        # TS template must exist
+        template_path = self._find_template(context)
+        if template_path is None:
+            return PluginResult(
+                success=False,
+                plugin_name=self.name,
+                message=f"TS template {_TEMPLATE_FILENAME} not found",
+                errors=[f"Template {_TEMPLATE_FILENAME} missing from framework source"],
+            )
+
+        return PluginResult(
+            success=True,
+            plugin_name=self.name,
+            message="OpenCode DES prerequisites validated",
+        )
 
     def install(self, context: InstallContext) -> PluginResult:
-        """Install the DES TypeScript plugin to OpenCode's plugins directory.
+        """Install the DES TypeScript shim into OpenCode plugins directory.
 
-        Locates the source opencode-plugin.ts, copies it as nwave-des.ts,
-        and writes a manifest for safe uninstallation.
+        Steps:
+        1. Validate prerequisites
+        2. Read TS template
+        3. Resolve Python path
+        4. Replace {{PYTHON_PATH}} and {{PYTHONPATH}} placeholders
+        5. Write rendered shim to ~/.config/opencode/plugins/nwave-des.ts
+        6. Write manifest with version and content hash
 
         Args:
             context: InstallContext with shared installation utilities
@@ -111,49 +134,73 @@ class OpenCodeDESPlugin(InstallationPlugin):
             PluginResult indicating success or failure
         """
         try:
-            context.logger.info("  \U0001f4e6 Installing OpenCode DES plugin...")
+            # Validate prerequisites first
+            prereq_result = self.validate_prerequisites(context)
+            if not prereq_result.success:
+                return prereq_result
 
-            source_file = _find_des_source(context)
-            if source_file is None:
-                context.logger.info(
-                    "  \u23ed\ufe0f No DES plugin source found, skipping"
+            # Skip if OpenCode not detected
+            opencode_dir = _opencode_config_dir()
+            if not opencode_dir.exists():
+                return prereq_result  # success=True with skip message
+
+            # Read template
+            template_path = self._find_template(context)
+            template_content = template_path.read_text(encoding="utf-8")
+
+            # Resolve Python path and render template
+            python_path = resolve_python_command_for_spawn()
+            rendered = template_content.replace("{{PYTHON_PATH}}", python_path)
+            rendered = rendered.replace(
+                "{{PYTHONPATH}}", resolve_des_lib_path_for_spawn()
+            )
+
+            # Write shim file
+            plugins_dir = opencode_dir / "plugins"
+            plugins_dir.mkdir(parents=True, exist_ok=True)
+            shim_path = plugins_dir / _SHIM_FILENAME
+
+            if not context.dry_run:
+                shim_path.write_text(rendered, encoding="utf-8")
+
+            # Write manifest
+            content_hash = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+            version = _get_framework_version(context)
+            manifest = {
+                "shim_file": str(shim_path),
+                "version": version,
+                "sha256": content_hash,
+            }
+            manifest_path = opencode_dir / _MANIFEST_FILENAME
+
+            if not context.dry_run:
+                manifest_path.write_text(
+                    json.dumps(manifest, indent=2) + "\n",
+                    encoding="utf-8",
                 )
-                return PluginResult(
-                    success=True,
-                    plugin_name=self.name,
-                    message="No DES plugin to install (source not found)",
-                )
 
-            target_dir = _opencode_plugins_dir()
-            target_dir.mkdir(parents=True, exist_ok=True)
-
-            target_file = target_dir / _TARGET_FILENAME
-            shutil.copy2(source_file, target_file)
-
-            _write_manifest(target_dir, _TARGET_FILENAME)
-
-            context.logger.info("  \u2705 OpenCode DES plugin installed")
+            context.logger.info(f"  OpenCode DES shim installed: {shim_path}")
 
             return PluginResult(
                 success=True,
                 plugin_name=self.name,
-                message="OpenCode DES plugin installed successfully",
-                installed_files=[target_file],
+                message="OpenCode DES shim installed successfully",
+                installed_files=[shim_path],
             )
+
         except Exception as e:
-            context.logger.error(f"  \u274c Failed to install OpenCode DES plugin: {e}")
             return PluginResult(
                 success=False,
                 plugin_name=self.name,
-                message=f"OpenCode DES plugin installation failed: {e!s}",
+                message=f"OpenCode DES shim installation failed: {e}",
                 errors=[str(e)],
             )
 
     def uninstall(self, context: InstallContext) -> PluginResult:
-        """Uninstall only nWave-installed DES plugin using manifest.
+        """Remove the DES shim file and manifest.
 
-        Reads the manifest to determine which files were installed by nWave.
-        Falls back to checking the known path if no manifest exists.
+        Only removes nwave-des.ts and the manifest. Other user plugins
+        in the plugins directory are untouched.
 
         Args:
             context: InstallContext with shared installation utilities
@@ -162,72 +209,40 @@ class OpenCodeDESPlugin(InstallationPlugin):
             PluginResult indicating success or failure
         """
         try:
-            context.logger.info(
-                "  \U0001f5d1\ufe0f Uninstalling OpenCode DES plugin..."
-            )
+            opencode_dir = _opencode_config_dir()
 
-            target_dir = _opencode_plugins_dir()
-            manifest = _read_manifest(target_dir)
+            # Remove shim
+            shim_path = opencode_dir / "plugins" / _SHIM_FILENAME
+            if shim_path.exists():
+                shim_path.unlink()
+                context.logger.info(f"  Removed DES shim: {shim_path}")
 
-            if manifest is not None:
-                installed_files = manifest.get("installed_files", [])
-                removed_count = 0
+            # Remove manifest
+            manifest_path = opencode_dir / _MANIFEST_FILENAME
+            if manifest_path.exists():
+                manifest_path.unlink()
+                context.logger.info(f"  Removed DES manifest: {manifest_path}")
 
-                for filename in installed_files:
-                    file_path = target_dir / filename
-                    if file_path.exists():
-                        file_path.unlink()
-                        removed_count += 1
-
-                manifest_path = target_dir / _MANIFEST_FILENAME
-                if manifest_path.exists():
-                    manifest_path.unlink()
-
-                context.logger.info(
-                    f"  \U0001f5d1\ufe0f Removed {removed_count} DES plugin file(s)"
-                )
-
-                return PluginResult(
-                    success=True,
-                    plugin_name=self.name,
-                    message=f"OpenCode DES plugin uninstalled ({removed_count} removed)",
-                )
-
-            # Fallback: no manifest, check known path
-            known_file = target_dir / _TARGET_FILENAME
-            if known_file.exists():
-                known_file.unlink()
-                context.logger.warning(
-                    "  \u26a0\ufe0f Removed nwave-des.ts (manifest was missing)"
-                )
-                return PluginResult(
-                    success=True,
-                    plugin_name=self.name,
-                    message="OpenCode DES plugin uninstalled (fallback, no manifest)",
-                )
-
-            context.logger.info("  \u23ed\ufe0f No OpenCode DES plugin found, skipping")
             return PluginResult(
                 success=True,
                 plugin_name=self.name,
-                message="No OpenCode DES plugin to uninstall",
+                message="OpenCode DES shim uninstalled",
             )
+
         except Exception as e:
-            context.logger.error(
-                f"  \u274c Failed to uninstall OpenCode DES plugin: {e}"
-            )
             return PluginResult(
                 success=False,
                 plugin_name=self.name,
-                message=f"OpenCode DES plugin uninstallation failed: {e!s}",
+                message=f"OpenCode DES shim uninstall failed: {e}",
                 errors=[str(e)],
             )
 
     def verify(self, context: InstallContext) -> PluginResult:
-        """Verify the OpenCode DES plugin was installed correctly.
+        """Verify the DES shim is installed and valid.
 
-        Checks that nwave-des.ts exists, the manifest is present,
-        and the file contains the expected hook string 'tool.execute.before'.
+        Checks:
+        1. Shim file exists at ~/.config/opencode/plugins/nwave-des.ts
+        2. Manifest exists at ~/.config/opencode/.nwave-des-manifest.json
 
         Args:
             context: InstallContext with shared installation utilities
@@ -236,70 +251,73 @@ class OpenCodeDESPlugin(InstallationPlugin):
             PluginResult indicating verification success or failure
         """
         try:
-            context.logger.info("  \U0001f50e Verifying OpenCode DES plugin...")
+            opencode_dir = _opencode_config_dir()
 
-            target_dir = _opencode_plugins_dir()
-            target_file = target_dir / _TARGET_FILENAME
-
-            # If source doesn't exist, nothing to verify
-            source_file = _find_des_source(context)
-            if source_file is None:
-                context.logger.info(
-                    "  \u23ed\ufe0f No DES plugin source configured, verification skipped"
-                )
+            # If OpenCode not detected, skip verification
+            if not opencode_dir.exists():
                 return PluginResult(
                     success=True,
                     plugin_name=self.name,
-                    message="No DES plugin configured, verification skipped",
+                    message="OpenCode not detected, verification skipped",
                 )
 
             errors = []
 
-            # Check file exists
-            if not target_file.exists():
-                errors.append(f"{_TARGET_FILENAME} not found in plugins directory")
+            # Check shim file
+            shim_path = opencode_dir / "plugins" / _SHIM_FILENAME
+            if not shim_path.exists():
+                errors.append(f"DES shim not found: {shim_path}")
 
-            # Check manifest exists
-            manifest = _read_manifest(target_dir)
-            if manifest is None:
-                errors.append(f"Manifest file {_MANIFEST_FILENAME} not found")
-
-            # Content check: verify hook string present
-            if target_file.exists():
-                content = target_file.read_text()
-                if _CONTENT_CHECK_STRING not in content:
-                    errors.append(
-                        f"{_TARGET_FILENAME} does not contain "
-                        f"'{_CONTENT_CHECK_STRING}' hook registration"
-                    )
+            # Check manifest
+            manifest_path = opencode_dir / _MANIFEST_FILENAME
+            if not manifest_path.exists():
+                errors.append(f"DES manifest not found: {manifest_path}")
 
             if errors:
-                context.logger.error(
-                    f"  \u274c OpenCode DES plugin verification failed: "
-                    f"{len(errors)} issue(s)"
-                )
                 return PluginResult(
                     success=False,
                     plugin_name=self.name,
-                    message=(
-                        f"OpenCode DES plugin verification failed: "
-                        f"{len(errors)} issue(s)"
-                    ),
+                    message="OpenCode DES shim verification failed: nwave-des.ts missing",
                     errors=errors,
                 )
 
-            context.logger.info("  \u2705 Verified OpenCode DES plugin")
+            context.logger.info("  OpenCode DES shim verified")
 
             return PluginResult(
                 success=True,
                 plugin_name=self.name,
-                message="OpenCode DES plugin verification passed",
+                message="OpenCode DES shim verification passed",
             )
+
         except Exception as e:
-            context.logger.error(f"  \u274c Failed to verify OpenCode DES plugin: {e}")
             return PluginResult(
                 success=False,
                 plugin_name=self.name,
-                message=f"OpenCode DES plugin verification failed: {e!s}",
+                message=f"OpenCode DES shim verification failed: {e}",
                 errors=[str(e)],
             )
+
+    def _find_template(self, context: InstallContext) -> Path | None:
+        """Locate the TS shim template file.
+
+        Checks framework_source/templates/ first, then project_root/nWave/templates/.
+
+        Args:
+            context: InstallContext with framework_source and project_root
+
+        Returns:
+            Path to the template file, or None if not found
+        """
+        # Check framework source (dist/ or nWave/)
+        if context.framework_source:
+            template = context.framework_source / "templates" / _TEMPLATE_FILENAME
+            if template.exists():
+                return template
+
+        # Check project root fallback
+        if context.project_root:
+            template = context.project_root / "nWave" / "templates" / _TEMPLATE_FILENAME
+            if template.exists():
+                return template
+
+        return None

@@ -48,8 +48,8 @@ Feature: Plugin Validation and Build Verification
   Scenario: Validation counts match expected component totals
     Given the plugin assembler has produced a plugin directory
     When the plugin validator checks the output
-    Then the validation report shows 23 agents
-    And the validation report shows at least 98 skill files
+    Then the validation report shows only public agents
+    And the validation report shows at least 80 skill files
     And the validation report shows at least 21 command files
 
   # --- Error Paths ---

@@ -53,7 +53,8 @@ class JsonExecutionLogReader(ExecutionLogReader):
             LogFileCorrupted: If the log file cannot be parsed
         """
         data = self._load_json(log_path)
-        return data.get("project_id")
+        # Schema v3.0 uses "feature_id"; fall back to "project_id" for compat
+        return data.get("feature_id") or data.get("project_id")
 
     def read_step_events(self, log_path: str, step_id: str) -> list[PhaseEvent]:
         """Read and parse phase events for a specific step.

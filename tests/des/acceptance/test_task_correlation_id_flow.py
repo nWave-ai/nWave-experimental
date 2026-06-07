@@ -14,6 +14,8 @@ import json
 import re
 from unittest.mock import patch
 
+from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
+from des.adapters.drivers.hooks import des_task_signal, hook_protocol
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 
 
@@ -25,7 +27,6 @@ UUID4_PATTERN = re.compile(
 
 def _make_capturing_writer(events: list[AuditEvent]):
     """Create an AuditLogWriter that appends events to the given list."""
-    from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
 
     class CapturingWriter(NullAuditLogWriter):
         def log_event(self, event: AuditEvent) -> None:
@@ -44,7 +45,7 @@ def _build_des_task_stdin() -> str:
         "# DES_METADATA\n"
         "Step: 01-01\n"
         "Project: test-project\n"
-        "Command: /nw:execute\n"
+        "Command: /nw-execute\n"
         "\n"
         "# AGENT_IDENTITY\n"
         "Agent: @software-crafter\n"
@@ -96,16 +97,11 @@ def test_task_correlation_id_flows_from_signal_to_hook_completed(monkeypatch, tm
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
     # Use tmp_path for signal files to avoid polluting working directory
-    monkeypatch.setattr(adapter, "DES_SESSION_DIR", tmp_path / ".nwave" / "des")
+    monkeypatch.setattr(des_task_signal, "DES_SESSION_DIR", tmp_path / ".nwave" / "des")
     monkeypatch.setattr(
-        adapter, "DES_TASK_ACTIVE_FILE", tmp_path / ".nwave" / "des" / "des-task-active"
-    )
-    monkeypatch.setattr(
-        adapter,
-        "_signal_file_for",
-        lambda project_id, step_id: (
-            tmp_path / ".nwave" / "des" / f"des-task-active-{project_id}--{step_id}"
-        ),
+        des_task_signal,
+        "DES_TASK_ACTIVE_FILE",
+        tmp_path / ".nwave" / "des" / "des-task-active",
     )
 
     # --- Step 1: PreToolUse allows a DES task and creates signal with correlation ID ---
@@ -115,7 +111,7 @@ def test_task_correlation_id_flows_from_signal_to_hook_completed(monkeypatch, tm
     monkeypatch.setattr("sys.stdin", io.StringIO(_build_des_task_stdin()))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=pre_writer):
+    with patch.object(hook_protocol, "_audit_writer_factory", return_value=pre_writer):
         pre_exit = adapter.handle_pre_tool_use()
 
     assert pre_exit == 0, "PreToolUse should allow the DES task"
@@ -160,7 +156,7 @@ def test_task_correlation_id_flows_from_signal_to_hook_completed(monkeypatch, tm
 
     # SubagentStopService will fail validation (no real log), but HOOK_COMPLETED
     # should still fire with the correlation ID from the signal file
-    with patch.object(adapter, "_create_audit_writer", return_value=stop_writer):
+    with patch.object(hook_protocol, "_audit_writer_factory", return_value=stop_writer):
         adapter.handle_subagent_stop()
 
     stop_completed = [e for e in stop_events if e.event_type == "HOOK_COMPLETED"]
@@ -192,7 +188,7 @@ def test_task_correlation_id_absent_for_non_des_tasks(monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO(non_des_stdin))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
+    with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
         adapter.handle_pre_tool_use()
 
     completed = [e for e in events if e.event_type == "HOOK_COMPLETED"]

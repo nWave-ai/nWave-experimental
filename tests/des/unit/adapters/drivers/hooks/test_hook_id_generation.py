@@ -9,7 +9,7 @@ Acceptance criteria:
 - hook_id is unique per handler invocation
 - hook_id appears in HOOK_INVOKED event data under key 'hook_id'
 - All four handlers generate hook_id
-- _log_hook_invoked accepts optional hook_id (backward compatible: None omits field)
+- log_hook_invoked accepts optional hook_id (backward compatible: None omits field)
 """
 
 import io
@@ -19,24 +19,15 @@ from unittest.mock import patch
 
 import pytest
 
-from des.ports.driven_ports.audit_log_writer import AuditEvent
+from des.adapters.drivers.hooks import hook_protocol
+
+from .conftest import make_capturing_writer
 
 
 UUID4_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
-
-
-def _make_capturing_writer(events: list[AuditEvent]):
-    """Create a mock AuditLogWriter that appends events to the given list."""
-    from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-
-    class CapturingWriter(NullAuditLogWriter):
-        def log_event(self, event: AuditEvent) -> None:
-            events.append(event)
-
-    return CapturingWriter()
 
 
 # --- Test 1: All four handlers produce HOOK_INVOKED with valid UUID4 hook_id ---
@@ -88,22 +79,18 @@ def _build_pre_write_stdin() -> str:
     ids=["pre_tool_use", "subagent_stop", "post_tool_use", "pre_write"],
 )
 def test_handler_generates_valid_uuid4_hook_id_in_hook_invoked_event(
-    handler_name, stdin_factory, monkeypatch
+    handler_name, stdin_factory, monkeypatch, audit_events
 ):
     """Each handler generates a UUID4 hook_id and includes it in the HOOK_INVOKED event."""
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
-    events = []
-    writer = _make_capturing_writer(events)
-
     monkeypatch.setattr("sys.stdin", io.StringIO(stdin_factory()))
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
-        handler_fn = getattr(adapter, handler_name)
-        handler_fn()
+    handler_fn = getattr(adapter, handler_name)
+    handler_fn()
 
-    hook_invoked_events = [e for e in events if e.event_type == "HOOK_INVOKED"]
+    hook_invoked_events = [e for e in audit_events if e.event_type == "HOOK_INVOKED"]
     assert len(hook_invoked_events) >= 1, (
         f"Expected at least one HOOK_INVOKED event from {handler_name}"
     )
@@ -128,12 +115,12 @@ def test_hook_id_unique_across_invocations(monkeypatch):
 
     for _ in range(2):
         events = []
-        writer = _make_capturing_writer(events)
+        writer = make_capturing_writer(events)
 
         monkeypatch.setattr("sys.stdin", io.StringIO(_build_pre_tool_use_stdin()))
         monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
-        with patch.object(adapter, "_create_audit_writer", return_value=writer):
+        with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
             adapter.handle_pre_tool_use()
 
         hook_invoked = [e for e in events if e.event_type == "HOOK_INVOKED"]
@@ -143,18 +130,16 @@ def test_hook_id_unique_across_invocations(monkeypatch):
     assert all_hook_ids[0] != all_hook_ids[1], "hook_id must be unique per invocation"
 
 
-# --- Test 3: _log_hook_invoked with hook_id=None omits the field ---
+# --- Test 3: log_hook_invoked with hook_id=None omits the field ---
 
 
 def test_log_hook_invoked_without_hook_id_omits_field():
-    """Backward compatibility: calling _log_hook_invoked without hook_id omits the field."""
-    from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
+    """Backward compatibility: calling log_hook_invoked without hook_id omits the field."""
     events = []
-    writer = _make_capturing_writer(events)
+    writer = make_capturing_writer(events)
 
-    with patch.object(adapter, "_create_audit_writer", return_value=writer):
-        adapter._log_hook_invoked("test_handler", summary={"key": "val"})
+    with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
+        hook_protocol.log_hook_invoked("test_handler", summary={"key": "val"})
 
     hook_invoked = [e for e in events if e.event_type == "HOOK_INVOKED"]
     assert len(hook_invoked) == 1

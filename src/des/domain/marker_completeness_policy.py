@@ -37,20 +37,73 @@ class MarkerCompletenessPolicy:
     Business rules:
     1. Non-DES tasks always valid (no markers to check)
     2. DES tasks require DES-PROJECT-ID
-    3. DES tasks require DES-STEP-ID (unless orchestrator mode)
+    3. classic DES tasks require DES-STEP-ID (unless orchestrator mode)
+    4. atdd_pure DES tasks require DES-PHASE + DES-SLICE instead of DES-STEP-ID
+       (the marker-set completeness contract is mode-aware — T-B / F-08 G-2;
+       an atdd_pure dispatch is roadmap-free and carries no step-id)
     """
 
     def validate(self, markers: DesMarkers) -> CompletenessResult:
-        """Validate marker completeness."""
+        """Validate marker completeness (mode-aware)."""
         if not markers.is_des_task:
             return CompletenessResult(is_valid=True)
 
+        if markers.mode == "atdd_pure":
+            return self._validate_atdd_pure(markers)
+        return self._validate_classic(markers)
+
+    def _validate_classic(self, markers: DesMarkers) -> CompletenessResult:
+        """Classic dispatch completeness — DES-PROJECT-ID + DES-STEP-ID."""
         missing = []
         if not markers.project_id:
             missing.append("DES-PROJECT-ID")
         if not markers.step_id and not markers.is_orchestrator_mode:
             missing.append("DES-STEP-ID")
 
+        return self._result_for(
+            missing,
+            recovery_lead="Add the missing DES markers to the Task prompt:",
+            marker_template_lines=(
+                "<!-- DES-PROJECT-ID : {project-id} -->",
+                "<!-- DES-STEP-ID : {step-id} -->",
+            ),
+        )
+
+    def _validate_atdd_pure(self, markers: DesMarkers) -> CompletenessResult:
+        """atdd_pure dispatch completeness — DES-PROJECT-ID + DES-PHASE + DES-SLICE."""
+        missing = []
+        if not markers.project_id:
+            missing.append("DES-PROJECT-ID")
+        if not markers.atdd_pure_phase:
+            missing.append("DES-PHASE")
+        if not markers.slice_id:
+            missing.append("DES-SLICE")
+
+        return self._result_for(
+            missing,
+            recovery_lead="Add the missing atdd_pure DES markers to the Task prompt:",
+            marker_template_lines=(
+                "<!-- DES-PROJECT-ID : {project-id} -->",
+                "<!-- DES-PHASE : {phase} -->",
+                "<!-- DES-SLICE : {slice-NN} -->",
+            ),
+        )
+
+    @staticmethod
+    def _result_for(
+        missing: list[str],
+        *,
+        recovery_lead: str,
+        marker_template_lines: tuple[str, ...],
+    ) -> CompletenessResult:
+        """Build the CompletenessResult for a checked marker set.
+
+        Centralises the valid/invalid branch shared by the classic and
+        atdd_pure completeness checks: an empty ``missing`` list is valid;
+        otherwise the same DES_MARKERS_INCOMPLETE reason and recovery
+        scaffold is produced, parametrised by the mode-specific lead line
+        and marker template lines.
+        """
         if not missing:
             return CompletenessResult(is_valid=True)
 
@@ -58,9 +111,8 @@ class MarkerCompletenessPolicy:
             is_valid=False,
             reason=f"DES_MARKERS_INCOMPLETE: {', '.join(missing)} missing",
             recovery_suggestions=[
-                "Add the missing DES markers to the Task prompt:",
-                "<!-- DES-PROJECT-ID : {project-id} -->",
-                "<!-- DES-STEP-ID : {step-id} -->",
-                "Read ~/.claude/commands/nw/execute.md for the full template.",
+                recovery_lead,
+                *marker_template_lines,
+                "Read ~/.claude/skills/nw-execute/SKILL.md for the full template.",
             ],
         )

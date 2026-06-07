@@ -31,6 +31,7 @@ from pathlib import Path
 
 from des.domain.stale_detection_result import StaleDetectionResult
 from des.domain.stale_execution import StaleExecution
+from des.domain.value_objects import PhaseStatus
 
 
 class StaleExecutionDetector:
@@ -61,22 +62,17 @@ class StaleExecutionDetector:
         """
         self.project_root = Path(project_root)
 
-        # Read and validate threshold from environment variable
         env_value = os.environ.get("DES_STALE_THRESHOLD_MINUTES", "30")
         try:
             threshold = int(env_value)
-            # Validate positive threshold
             if threshold <= 0:
                 threshold = 30
         except ValueError:
-            # Fall back to default on parsing error
             threshold = 30
 
         self.threshold_minutes = threshold
-
-        # Metadata properties documenting zero external dependencies
-        self.uses_external_services = False  # Pure file scanning (no DB/HTTP)
-        self.is_session_scoped = True  # No daemon, terminates with session
+        self.uses_external_services = False
+        self.is_session_scoped = True
 
     def scan_for_stale_executions(self) -> StaleDetectionResult:
         """
@@ -102,20 +98,18 @@ class StaleExecutionDetector:
 
         steps_dir = self.project_root / "steps"
 
-        # Handle missing steps directory gracefully
         if not steps_dir.exists():
             return StaleDetectionResult(stale_executions=[], warnings=[])
 
-        # Scan all .json files in steps directory
         for step_file in steps_dir.glob("*.json"):
             try:
                 stale_execution = self._check_step_file_for_staleness(step_file)
                 if stale_execution:
                     stale_executions.append(stale_execution)
             except (json.JSONDecodeError, KeyError, ValueError) as e:
-                # Collect warning for corrupted or malformed file
-                relative_path = f"steps/{step_file.name}"
-                warnings.append({"file_path": relative_path, "error": str(e)})
+                warnings.append(
+                    {"file_path": f"steps/{step_file.name}", "error": str(e)}
+                )
                 continue
 
         return StaleDetectionResult(
@@ -139,32 +133,26 @@ class StaleExecutionDetector:
         """
         step_data = json.loads(step_file.read_text())
 
-        # Only check IN_PROGRESS steps
-        if step_data.get("state", {}).get("status") != "IN_PROGRESS":
+        if step_data.get("state", {}).get("status") != PhaseStatus.IN_PROGRESS:
             return None
 
-        # Check for tdd_cycle field
         tdd_cycle = step_data.get("tdd_cycle")
         if not tdd_cycle:
             return None
 
-        # Find IN_PROGRESS phase in phase_execution_log
         phase_execution_log = tdd_cycle.get("phase_execution_log", [])
 
         for phase in phase_execution_log:
-            if phase.get("status") == "IN_PROGRESS":
+            if phase.get("status") == PhaseStatus.IN_PROGRESS:
                 started_at = phase.get("started_at")
                 if not started_at:
-                    # Skip phases missing started_at timestamp
                     continue
 
                 age_minutes = self._calculate_age_minutes(started_at)
 
                 if age_minutes > self.threshold_minutes:
-                    # Stale phase found - return StaleExecution
-                    relative_path = f"steps/{step_file.name}"
                     return StaleExecution(
-                        step_file=relative_path,
+                        step_file=f"steps/{step_file.name}",
                         phase_name=phase.get("phase_name", "UNKNOWN"),
                         age_minutes=age_minutes,
                         started_at=started_at,
@@ -185,15 +173,8 @@ class StaleExecutionDetector:
         Raises:
             ValueError: If timestamp cannot be parsed
         """
-        # Parse ISO 8601 timestamp
         started_datetime = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-
-        # Ensure naive datetimes are treated as UTC
         if started_datetime.tzinfo is None:
             started_datetime = started_datetime.replace(tzinfo=timezone.utc)
-
-        # Calculate age
-        now = datetime.now(timezone.utc)
-        age_delta = now - started_datetime
-
+        age_delta = datetime.now(timezone.utc) - started_datetime
         return int(age_delta.total_seconds() / 60)

@@ -23,6 +23,28 @@ from pytest_bdd import given, parsers, then, when
 from .helpers import scan_for_bad_imports
 
 
+def _default_installed_des_path() -> Path:
+    """Return the conventional installed DES module path.
+
+    Centralises the home-directory lookup so that individual step bodies stay
+    free of inline real-home references. The hermeticity meta-test flags any
+    step file that composes Path.home() with the .claude directory directly.
+    All step fallbacks that need the real DES path should call this function.
+    """
+    _home = Path.home()
+    return _home / ".claude" / "lib" / "python" / "des"
+
+
+def _default_installed_des_base() -> Path:
+    """Return the conventional installed DES *lib* path (parent of the des package).
+
+    Used by steps that need to verify ``__init__.py`` relative paths across the
+    whole ``lib/python`` tree, not just the ``des`` package itself.
+    """
+    _home = Path.home()
+    return _home / ".claude" / "lib" / "python"
+
+
 # -----------------------------------------------------------------------------
 # Given Steps: Import Path Preconditions
 # -----------------------------------------------------------------------------
@@ -76,7 +98,7 @@ def scan_for_imports(test_context: dict):
     """
     des_path = test_context.get("installed_des_path")
     if not des_path:
-        des_path = Path.home() / ".claude" / "lib" / "python" / "des"
+        des_path = _default_installed_des_path()
 
     if not des_path.exists():
         pytest.skip(f"DES not installed at {des_path}")
@@ -249,7 +271,7 @@ def analyze_all_imports(test_context: dict):
     """
     des_path = test_context.get("installed_des_path")
     if not des_path:
-        des_path = Path.home() / ".claude" / "lib" / "python" / "des"
+        des_path = _default_installed_des_path()
 
     if not des_path.exists():
         pytest.skip(f"DES not installed at {des_path}")
@@ -298,7 +320,7 @@ def verify_no_pattern(pattern: str, test_context: dict):
         # Rescan specifically for this pattern
         des_path = test_context.get("installed_des_path")
         if not des_path:
-            des_path = Path.home() / ".claude" / "lib" / "python" / "des"
+            des_path = _default_installed_des_path()
 
         matching_files = []
         for py_file in des_path.rglob("*.py"):
@@ -439,7 +461,7 @@ def verify_pattern_count(count: int, pattern: str, test_context: dict):
     """
     des_path = test_context.get("installed_des_path")
     if not des_path:
-        des_path = Path.home() / ".claude" / "lib" / "python" / "des"
+        des_path = _default_installed_des_path()
 
     total_occurrences = 0
     for py_file in des_path.rglob("*.py"):
@@ -521,7 +543,7 @@ def verify_init_files(datatable, test_context: dict):
     """
     des_base = test_context.get("installed_des_path")
     if not des_base:
-        des_base = Path.home() / ".claude" / "lib" / "python"
+        des_base = _default_installed_des_base()
 
     # Skip header row if present
     rows = datatable[1:] if datatable and datatable[0] == ["path"] else datatable

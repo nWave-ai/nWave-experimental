@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from des.domain.value_objects import PhaseStatus
+
 
 @dataclass
 class PhaseAbandonmentCheck:
@@ -39,10 +41,6 @@ class AbandonedPhaseDetector:
 
     DEFAULT_TIMEOUT_MINUTES = 30
     DEFAULT_STALLED_THRESHOLD_MINUTES = 20
-
-    def __init__(self):
-        """Initialize detector with default timeout thresholds."""
-        pass
 
     def is_abandoned(
         self,
@@ -78,7 +76,7 @@ class AbandonedPhaseDetector:
             return False
 
         status = phase.get("status", "")
-        return status in ("IN_PROGRESS", "NOT_EXECUTED")
+        return status in (PhaseStatus.IN_PROGRESS, PhaseStatus.NOT_EXECUTED)
 
     def is_abandoned_by_stalled_turn_count(
         self,
@@ -182,7 +180,7 @@ class AbandonedPhaseDetector:
         if reason == "timeout":
             why = f"Your {phase_name} phase is stuck IN_PROGRESS. The agent either crashed or timed out, leaving the phase incomplete."
             how = "Resetting the phase status to NOT_EXECUTED lets the system know it can try again from the beginning, ensuring a clean state."
-            action = f"Reset {phase_name} status to 'NOT_EXECUTED' in your step file ({step_file_path}), then run `/nw:execute` to retry."
+            action = f"Reset {phase_name} status to 'NOT_EXECUTED' in your step file ({step_file_path}), then run `/nw-execute` to retry."
 
         elif reason == "stalled_turns":
             why = f"Your {phase_name} phase started but never made any progress (turn count stayed at 0), suggesting the agent encountered an immediate error."
@@ -192,7 +190,7 @@ class AbandonedPhaseDetector:
         else:
             why = f"Your {phase_name} phase appears abandoned or stalled."
             how = "Check the agent transcript to understand what happened, then reset the phase to NOT_EXECUTED."
-            action = f"Review your step file at {step_file_path} and agent transcript, then retry with `/nw:execute`."
+            action = f"Review your step file at {step_file_path} and agent transcript, then retry with `/nw-execute`."
 
         return f"WHY: {why}\n\nHOW: {how}\n\nACTION: {action}"
 
@@ -201,7 +199,7 @@ class AbandonedPhaseDetector:
         status = phase.get("status", "")
         turn_count = phase.get("turn_count", 0)
 
-        return status == "IN_PROGRESS" and turn_count == 0
+        return status == PhaseStatus.IN_PROGRESS and turn_count == 0
 
     def _parse_timestamp(self, timestamp_str: str | None) -> datetime | None:
         """

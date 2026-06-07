@@ -2,7 +2,6 @@
 
 Tests for:
 - PhaseEvent + PhaseEventParser (phase_event.py)
-- MaxTurnsPolicy + PolicyResult (max_turns_policy.py)
 - DesMarkerParser + DesMarkers (des_marker_parser.py)
 - StepCompletionValidator + CompletionResult (step_completion_validator.py)
 
@@ -10,9 +9,10 @@ All domain classes are pure (no I/O), so tests are fast and deterministic.
 """
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from des.domain.des_marker_parser import DesMarkerParser, DesMarkers
-from des.domain.max_turns_policy import MaxTurnsPolicy, PolicyResult
 from des.domain.phase_event import PhaseEvent, PhaseEventParser
 from des.domain.step_completion_validator import (
     CompletionResult,
@@ -96,12 +96,18 @@ class TestPhaseEventParser:
         assert result.outcome == "PASS"
         assert result.timestamp == "2026-02-02T10:00:00Z"
 
-    def test_parse_returns_none_for_too_few_fields(self):
+    @pytest.mark.parametrize(
+        "input_string",
+        [
+            "01-01|PREPARE|EXECUTED",
+            "01-01|PREPARE",
+            "single",
+            "",
+        ],
+    )
+    def test_parse_returns_none_for_too_few_fields(self, input_string):
         parser = PhaseEventParser()
-        assert parser.parse("01-01|PREPARE|EXECUTED") is None
-        assert parser.parse("01-01|PREPARE") is None
-        assert parser.parse("single") is None
-        assert parser.parse("") is None
+        assert parser.parse(input_string) is None
 
     def test_parse_handles_extra_fields_gracefully(self):
         parser = PhaseEventParser()
@@ -150,51 +156,37 @@ class TestPhaseEventParser:
         with pytest.raises(AttributeError):
             event.status = "SKIPPED"  # type: ignore[misc]
 
+    # --- Property-based tests for PhaseEventParser.parse() ---
 
-# ===========================================================================
-# MaxTurnsPolicy tests
-# ===========================================================================
+    _pbt_field = st.text(
+        alphabet=st.characters(blacklist_characters="|"), min_size=1, max_size=50
+    )
 
+    @given(
+        f1=_pbt_field,
+        f2=_pbt_field,
+        f3=_pbt_field,
+        f4=_pbt_field,
+        f5=_pbt_field,
+    )
+    @settings(max_examples=50)
+    def test_parse_any_five_field_string_produces_phase_event(self, f1, f2, f3, f4, f5):
+        event_str = "|".join([f1, f2, f3, f4, f5])
+        result = PhaseEventParser().parse(event_str)
+        assert result is not None
+        assert result.step_id == f1
+        assert result.phase_name == f2
+        assert result.status == f3
+        assert result.outcome == f4
+        assert result.timestamp == f5
 
-class TestMaxTurnsPolicy:
-    """Tests for MaxTurnsPolicy.validate()."""
-
-    @pytest.mark.parametrize("value", [10, 30, 50, 100])
-    def test_validate_accepts_valid_range(self, value: int):
-        policy = MaxTurnsPolicy()
-        result = policy.validate(value)
-        assert result.is_valid is True
-        assert result.reason is None
-
-    def test_validate_rejects_none(self):
-        policy = MaxTurnsPolicy()
-        result = policy.validate(None)
-        assert result.is_valid is False
-        assert "MISSING_MAX_TURNS" in result.reason
-
-    @pytest.mark.parametrize("value", [0, 1, 9, 101, 200, -1])
-    def test_validate_rejects_out_of_range(self, value: int):
-        policy = MaxTurnsPolicy()
-        result = policy.validate(value)
-        assert result.is_valid is False
-        assert "INVALID_MAX_TURNS" in result.reason
-        assert str(value) in result.reason
-
-    def test_validate_rejects_non_integer(self):
-        policy = MaxTurnsPolicy()
-        result = policy.validate("thirty")  # type: ignore[arg-type]
-        assert result.is_valid is False
-        assert "INVALID_MAX_TURNS" in result.reason
-
-    def test_validate_rejects_float(self):
-        policy = MaxTurnsPolicy()
-        result = policy.validate(30.5)  # type: ignore[arg-type]
-        assert result.is_valid is False
-
-    def test_policy_result_is_frozen(self):
-        result = PolicyResult(is_valid=True)
-        with pytest.raises(AttributeError):
-            result.is_valid = False  # type: ignore[misc]
+    @given(num_fields=st.integers(min_value=0, max_value=4))
+    @settings(max_examples=50)
+    def test_parse_fewer_than_five_fields_returns_none(self, num_fields):
+        parts = [f"field{i}" for i in range(num_fields)]
+        event_str = "|".join(parts)
+        result = PhaseEventParser().parse(event_str)
+        assert result is None
 
 
 # ===========================================================================

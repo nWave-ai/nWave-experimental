@@ -2,7 +2,7 @@
 # Based on: architecture-design.md - Roadmap Step 01-01
 # Acceptance Criteria:
 #   - Plugin directory contains .claude-plugin/plugin.json with version from pyproject.toml
-#   - All 23 agent files present in plugin/agents/
+#   - All public agent files present in plugin/agents/
 #   - All 98+ skill files present in plugin/skills/ preserving directory structure
 #   - All 22 command files present in plugin/commands/nw/
 # Date: 2026-02-27
@@ -33,7 +33,7 @@ Feature: Plugin Assembler with Metadata Generation
 
   Scenario: All agent definitions are included in the plugin
     When the plugin assembler builds the plugin
-    Then the plugin contains all 23 agent definitions
+    Then the plugin contains only public agent definitions
     And every agent file is readable and properly structured
 
   Scenario: Agent files preserve body content with skill refs rewritten

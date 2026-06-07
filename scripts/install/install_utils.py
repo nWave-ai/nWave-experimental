@@ -248,6 +248,19 @@ class PathUtils:
         return Path.home() / ".claude"
 
     @staticmethod
+    def get_opencode_config_dir() -> Path:
+        """Get OpenCode config directory path.
+
+        Honors the OPENCODE_CONFIG_DIR environment variable for test isolation
+        and non-standard installations (analogous to CLAUDE_CONFIG_DIR for Claude).
+        Defaults to the platform-standard ~/.config/opencode/.
+        """
+        config_dir = os.environ.get("OPENCODE_CONFIG_DIR")
+        if config_dir:
+            return Path(config_dir)
+        return Path.home() / ".config" / "opencode"
+
+    @staticmethod
     def get_project_root(script_path: Path) -> Path:
         """Get project root from script path."""
         # Assumes scripts are in scripts/ or scripts/install/
@@ -365,13 +378,13 @@ class BackupManager:
         # Backup agents
         if agents_dir.exists():
             backup_agents = self.backup_dir / "agents"
-            shutil.copytree(agents_dir, backup_agents)
+            shutil.copytree(agents_dir, backup_agents, dirs_exist_ok=True)
             self.logger.info("  ✅ Agents backed up")
 
         # Backup commands
         if commands_dir.exists():
             backup_commands = self.backup_dir / "commands"
-            shutil.copytree(commands_dir, backup_commands)
+            shutil.copytree(commands_dir, backup_commands, dirs_exist_ok=True)
             self.logger.info("  ✅ Commands backed up")
 
         # Backup config files
@@ -401,6 +414,169 @@ Backup contents: {files_count} framework files
 """
 
         manifest_path.write_text(content, encoding="utf-8")
+
+    # ------------------------------------------------------------------
+    # Retention policy (feature backup-retention-policy)
+    # ------------------------------------------------------------------
+    # See ``docs/feature/backup-retention-policy/discuss/scope.md`` for the
+    # locked decisions D1-D5 that drive the semantics below.
+
+    DEFAULT_MAX_BACKUP_COUNT = 10
+    """Default cap when ~/.nwave/global-config.json:backups.max_count is unset (D4)."""
+
+    BACKUP_GLOB = "nwave-*"
+    """Pattern identifying nWave-managed backup directories.
+
+    Pool semantics (D1): the same glob captures install / uninstall / update
+    backups so they share a single retention pool.
+    """
+
+    def apply_retention(self, max_count: int | None = None) -> "RetentionResult":
+        """Prune oldest nwave-* backup directories until count <= max_count.
+
+        Pool semantics (D1): sums across types — ``nwave-install-*``,
+        ``nwave-uninstall-*``, ``nwave-update-*`` share one pool.
+
+        Sort semantics (D2): lex-sort on full backup dirname, no timestamp
+        parsing (mirrors ``restore_backup`` in install_nwave.py).
+
+        Foreign directories (anything not matching ``nwave-*``) are never
+        touched.
+
+        Args:
+            max_count: Cap to enforce. If None, reads from global config or
+                falls back to DEFAULT_MAX_BACKUP_COUNT.
+
+        Returns:
+            RetentionResult with the list of pruned directory names and the
+            list of surviving backup directory names.
+
+        Raises:
+            ConfigValidationError: when the global config provides an invalid
+                max_count (negative, non-integer, etc.) — see scenario S9.
+        """
+        cap = max_count if max_count is not None else read_backup_retention_config()
+        # Defensive: positional args bypass config validation. Validate again
+        # so explicit max_count=-1 from a caller gets the same treatment as
+        # config-driven invalid values.
+        if not isinstance(cap, int) or isinstance(cap, bool) or cap < 0:
+            raise ConfigValidationError(
+                f"Invalid max_count {cap!r} — backups.max_count must be a "
+                f"non-negative integer."
+            )
+
+        if not self.backup_root.exists():
+            return RetentionResult(pruned=[], retained=[], cap_applied=cap)
+
+        # D2: lex-sort on full dirname. Oldest = lex-smallest.
+        existing = sorted(
+            p for p in self.backup_root.glob(self.BACKUP_GLOB) if p.is_dir()
+        )
+
+        if len(existing) <= cap:
+            return RetentionResult(
+                pruned=[],
+                retained=[p.name for p in existing],
+                cap_applied=cap,
+            )
+
+        prune_count = len(existing) - cap
+        to_prune = existing[:prune_count]
+        survivors = existing[prune_count:]
+
+        pruned_names: list[str] = []
+        for victim in to_prune:
+            shutil.rmtree(victim)
+            pruned_names.append(victim.name)
+            self.logger.info(f"  🗑  Pruned old backup {victim.name}")
+
+        return RetentionResult(
+            pruned=pruned_names,
+            retained=[p.name for p in survivors],
+            cap_applied=cap,
+        )
+
+
+class RetentionResult:
+    """Outcome of a retention pass — what was pruned, what survives.
+
+    Minimal observable shape for acceptance tests. ``pruned`` is the list of
+    backup directory names that were removed (sorted oldest-first).
+    ``retained`` is the list of backup directory names still on disk (sorted
+    oldest-first). ``cap_applied`` is the integer cap that was enforced.
+    """
+
+    def __init__(
+        self,
+        pruned: list[str] | None = None,
+        retained: list[str] | None = None,
+        cap_applied: int | None = None,
+    ):
+        self.pruned = pruned or []
+        self.retained = retained or []
+        self.cap_applied = cap_applied
+
+
+class ConfigValidationError(ValueError):
+    """Raised when ~/.nwave/global-config.json:backups.max_count is invalid.
+
+    Inherits from ValueError so existing handlers that catch ValueError
+    continue to work; specialised callers can pattern-match on this subclass.
+    """
+
+
+def read_backup_retention_config(
+    nwave_config_dir: Path | None = None,
+) -> int:
+    """Resolve ``backups.max_count`` from ~/.nwave/global-config.json.
+
+    Pure helper (Mandate 4): the validation logic lives here, isolated from
+    the I/O of pruning. Returns the validated cap, or
+    ``BackupManager.DEFAULT_MAX_BACKUP_COUNT`` when no override exists.
+
+    Args:
+        nwave_config_dir: Override for the config directory. When None,
+            defaults to ``Path.home() / ".nwave"``.
+
+    Returns:
+        Integer cap >= 0.
+
+    Raises:
+        ConfigValidationError: when max_count is present but not a
+            non-negative integer.
+    """
+    import json
+
+    config_dir = nwave_config_dir or (Path.home() / ".nwave")
+    config_file = config_dir / "global-config.json"
+
+    if not config_file.exists():
+        return BackupManager.DEFAULT_MAX_BACKUP_COUNT
+
+    try:
+        config = json.loads(config_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as err:
+        raise ConfigValidationError(
+            f"Could not parse {config_file} — backups.max_count cannot be "
+            f"resolved: {err}"
+        ) from err
+
+    backups_section = config.get("backups") if isinstance(config, dict) else None
+    if not isinstance(backups_section, dict) or "max_count" not in backups_section:
+        return BackupManager.DEFAULT_MAX_BACKUP_COUNT
+
+    raw_value = backups_section["max_count"]
+    # ``bool`` is a subclass of ``int`` — reject it explicitly so True/False
+    # do not silently pass as 1/0.
+    if isinstance(raw_value, bool) or not isinstance(raw_value, int):
+        raise ConfigValidationError(
+            f"backups.max_count must be a non-negative integer; got {raw_value!r}."
+        )
+    if raw_value < 0:
+        raise ConfigValidationError(
+            f"backups.max_count must be >= 0; got {raw_value!r}."
+        )
+    return raw_value
 
 
 class VersionUtils:
@@ -487,8 +663,8 @@ Framework Components:
 - Quality validation network with Level 1-6 refactoring
 
 Usage:
-- Use nWave commands: '/nw:discuss', '/nw:design', '/nw:distill', '/nw:develop', '/nw:deliver'
-- Use '/nw:start "feature description"' to initialize nWave workflow
+- Use nWave commands: '/nw-discuss', '/nw-design', '/nw-distill', '/nw-develop', '/nw-deliver'
+- Use '/nw-start "feature description"' to initialize nWave workflow
 - All agents available globally across projects
 
 For help: https://github.com/nWave-ai/nWave
