@@ -946,6 +946,90 @@ def _slice_tags(feature_file: Path) -> set[str]:
     return set(_SLICE_TAG_RE.findall(text))
 
 
+# Lookup table for FeatureScopeMalformed explain-and-guide triads.
+# Each entry maps a reason token to {"what": ..., "why": ..., "next": ...}.
+# Returns empty dict for unknown tokens (forward-compatible no-op via .get default).
+_EXPLAIN_AND_GUIDE_TABLE: dict[str, dict[str, str]] = {
+    "zero-collected": {
+        "what": "feature-scope tag resolution",
+        "why": (
+            "no .feature file in the repository carries the"
+            " @feature-<id> tag for this feature;"
+            " the scoped gate would pass vacuously"
+        ),
+        "next": (
+            "add the slice's .feature file with the"
+            " @feature-<id> and @<slice> tags in its header,"
+            " or verify the feature directory exists and"
+            " the tag spelling matches the feature-id argument"
+        ),
+    },
+    "empty-intersection": {
+        "what": "entering-slice tag intersection",
+        "why": (
+            "feature .feature files were found but none carries"
+            " the @<entering-slice> tag for the requested slice;"
+            " the entering-slice would match zero scenarios"
+        ),
+        "next": (
+            "add @<entering-slice> to the relevant scenarios"
+            " in the slice's .feature file,"
+            " or pass the correct --entering-slice argument"
+            " matching an existing slice tag"
+        ),
+    },
+    "collection-failed": {
+        "what": "pytest collection",
+        "why": (
+            "pytest raised a collection-time error (import error,"
+            " syntax error, or plugin failure) while scanning"
+            " the feature's test files"
+        ),
+        "next": (
+            "run `des run-contract-gate --feature-id <id>`"
+            " locally and inspect the collection traceback,"
+            " or run pytest directly on the feature directory"
+            " to see the full error"
+        ),
+    },
+    "arch-invariant-failed": {
+        "what": "architecture-invariant tier",
+        "why": (
+            "an architecture invariant test in the build tier"
+            " failed or errored during the feature-scope gate run"
+        ),
+        "next": (
+            "run the arch-invariant test set directly"
+            " to identify which invariant failed,"
+            " then fix the production code or architecture"
+            " to restore the invariant"
+        ),
+    },
+    "arch-scope-zero-collected": {
+        "what": "architecture-invariant scope",
+        "why": (
+            "the architecture-invariant tier is present"
+            " but its test scope collected zero tests;"
+            " a vacuous arch-tier pass is refused"
+        ),
+        "next": (
+            "check the arch-tier glob and markers"
+            " to ensure at least one invariant test is"
+            " discoverable and collected for this feature"
+        ),
+    },
+}
+
+
+def _explain_and_guide(reason: str) -> dict[str, str]:
+    """Return the what/why/next triad for a ``FeatureScopeMalformed`` reason token.
+
+    Pure function: table lookup, no I/O.  Unknown tokens return ``{}``
+    (forward-compatible; ``payload.update({})`` is a no-op).
+    """
+    return _EXPLAIN_AND_GUIDE_TABLE.get(reason, {})
+
+
 def _feature_scope_malformed(
     feature_id: str, reason: str, error: str, **extra: object
 ) -> int:
@@ -958,6 +1042,7 @@ def _feature_scope_malformed(
         "error": error,
     }
     payload.update(extra)
+    payload.update(_explain_and_guide(reason))
     _emit(payload)
     return 2
 
