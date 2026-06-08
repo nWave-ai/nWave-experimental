@@ -24,6 +24,7 @@ Exit codes:
     4 = hash mismatch (tampering detected)
     5 = missing key (env unset + file absent)
     6 = malformed trailer OR --strict + no trailers
+    7 = cannot-evaluate: git absent or SHA unresolvable (LOUD INDETERMINATE)
 """
 
 from __future__ import annotations
@@ -34,10 +35,17 @@ import hmac
 import json
 import os
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from des.adapters.driven.git.git_commit_trailer_read_adapter import (
+    GitCommitTrailerReadAdapter,
+)
+from des.ports.driven_ports.commit_trailer_read_port import (
+    CommitTrailerReadPort,
+    Indeterminate,
+)
 
 
 DEFAULT_KEY_ENV = "NWAVE_REVIEWER_SIGNING_KEY"
@@ -129,17 +137,19 @@ def _extract_verdicts(commit_message: str) -> list[dict[str, object]]:
     return payloads
 
 
-def _get_commit_message(commit_sha: str) -> str:
-    """Read commit body via ``git show -s --format=%B``."""
-    result = subprocess.run(
-        ["git", "show", "-s", "--format=%B", commit_sha],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"git show failed: {result.stderr.strip()}")
-    return result.stdout
+def _read_commit_message(
+    repo: Path, sha: str, port: CommitTrailerReadPort
+) -> str | Indeterminate:
+    """Read a single commit body via the port; return body string or Indeterminate.
+
+    git access is fully delegated to the port (AD-21 genericita mandate: no
+    subprocess/git in CLI gate logic). On ``Indeterminate`` the caller emits a
+    LOUD structured reason to stderr and returns exit 7.
+    """
+    result = port.commit_message(repo, sha)
+    if isinstance(result, Indeterminate):
+        return result
+    return result.body
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -152,7 +162,8 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Exit codes: 0 ok | 4 hash mismatch | 5 missing key | "
-            "6 malformed trailer or --strict + no trailers."
+            "6 malformed trailer or --strict + no trailers | "
+            "7 cannot-evaluate (git absent / SHA unresolvable)."
         ),
     )
     parser.add_argument("--commit", default="HEAD", help="target commit SHA")
@@ -176,15 +187,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(sys.argv[1:] if argv is None else list(argv))
 
-    try:
-        message = _get_commit_message(args.commit)
-    except RuntimeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 6
+    port: CommitTrailerReadPort = GitCommitTrailerReadAdapter()
+    repo = Path.cwd()
+    body = _read_commit_message(repo, args.commit, port)
+    if isinstance(body, Indeterminate):
+        print(
+            f"INDETERMINATE: cannot-evaluate git commit body -- {body.reason}",
+            file=sys.stderr,
+        )
+        return 7
 
     try:
-        trailers = extract_trailers(message)
-        verdicts = _extract_verdicts(message)
+        trailers = extract_trailers(body)
+        verdicts = _extract_verdicts(body)
     except ValueError as exc:
         print(f"MALFORMED: {exc}", file=sys.stderr)
         return 6

@@ -62,6 +62,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from des.ports.driven_ports.commit_trailer_read_port import (
+    CommitMessage,
     CommitMessages,
     CommitTrailerReadPort,
     Indeterminate,
@@ -106,6 +107,15 @@ class _FakeNonGitTrailerSource(CommitTrailerReadPort):
         # Git-free by construction: no filesystem read, no subprocess, no `repo`
         # consultation -- the source IS the in-memory stream supplied at build.
         return self._result
+
+    def commit_message(self, repo: Path, sha: str) -> CommitMessage | Indeterminate:
+        # This in-memory double models only the full-history `commit_messages`
+        # read that slice-02 exercises; single-commit reads (the seam-A method
+        # added by `gate-trailer-read-seam-a-indeterminate`) are not modelled
+        # here, so it degrades LOUD rather than fabricating a body.
+        return Indeterminate(
+            reason="_FakeNonGitTrailerSource does not model single-commit reads"
+        )
 
 
 def _build_fake_source(source: NonGitTrailerSource) -> CommitTrailerReadPort:

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.git_subprocess import git_text
 from des.ports.driven_ports.commit_trailer_read_port import (
+    CommitMessage,
     CommitMessages,
     CommitTrailerReadPort,
     Indeterminate,
@@ -42,8 +43,10 @@ class GitCommitTrailerReadAdapter(CommitTrailerReadPort):
 
     ``commit_messages`` returns the repo's commit-message bodies (``git log
     --format=%B%x1e``, split on the record separator), or an ``Indeterminate``
-    when git is absent / ``repo`` is not a work-tree. Pure read of the git
-    history -- no filesystem mutation.
+    when git is absent / ``repo`` is not a work-tree. ``commit_message`` returns
+    the body of a single commit (``git show -s --format=%B <sha>``), or an
+    ``Indeterminate`` on any git failure. Pure read of the git history -- no
+    filesystem mutation.
     """
 
     def commit_messages(self, repo: Path) -> CommitMessages | Indeterminate:
@@ -67,6 +70,27 @@ class GitCommitTrailerReadAdapter(CommitTrailerReadPort):
             )
         messages = tuple(stdout.split(_RECORD_SEPARATOR))
         return CommitMessages(messages)
+
+    def commit_message(self, repo: Path, sha: str) -> CommitMessage | Indeterminate:
+        """Return the body of a single commit, or Indeterminate.
+
+        ``git show -s --format=%B <sha>``. A missing git binary
+        (``FileNotFoundError``) or a non-zero git exit (unresolvable SHA /
+        not-a-work-tree -> ``CalledProcessError`` from ``git_text``'s
+        ``check=True``) degrades LOUD to ``Indeterminate`` -- never a raw
+        exception to the caller (AD-24 uniform-INDETERMINATE mandate). Mirrors
+        the ``commit_messages`` exception-translation contract exactly.
+        """
+        try:
+            body = git_text(repo, "show", "-s", "--format=%B", sha)
+        except FileNotFoundError as exc:
+            return Indeterminate(f"git binary not found: {exc}")
+        except subprocess.CalledProcessError as exc:
+            return Indeterminate(
+                f"git show failed (exit {exc.returncode}): "
+                f"{(exc.stderr or '').strip()[:200]}"
+            )
+        return CommitMessage(body=body)
 
 
 __all__ = ["GitCommitTrailerReadAdapter"]

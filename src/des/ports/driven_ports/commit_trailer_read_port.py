@@ -50,6 +50,18 @@ class CommitMessages:
     messages: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class CommitMessage:
+    """The raw body of a single commit read via ``git show -s --format=%B <sha>``.
+
+    Analogous to ``CommitMessages`` but for a single-commit point read (seam-A
+    re-point). The body is the full commit message text as git emits it; the
+    caller is responsible for parsing trailers out of it. Pure data -- no git.
+    """
+
+    body: str
+
+
 class CommitTrailerReadPort(ABC):
     """Driven, read-only port over a repo's commit-message stream.
 
@@ -73,5 +85,17 @@ class CommitTrailerReadPort(ABC):
         """
         ...
 
+    @abstractmethod
+    def commit_message(self, repo: Path, sha: str) -> CommitMessage | Indeterminate:
+        """Return the body of a single commit, or Indeterminate.
 
-__all__ = ["CommitMessages", "CommitTrailerReadPort", "Indeterminate"]
+        Reads the commit message body via ``git show -s --format=%B <sha>``. A
+        missing git binary (``FileNotFoundError``) or a non-zero git exit
+        (unresolvable SHA / not-a-work-tree -> ``CalledProcessError``) degrades
+        LOUD to ``Indeterminate`` -- never a raw exception to the caller. Pure
+        read (principle-12 effect-isolation): no write method added to this port.
+        """
+        ...
+
+
+__all__ = ["CommitMessage", "CommitMessages", "CommitTrailerReadPort", "Indeterminate"]

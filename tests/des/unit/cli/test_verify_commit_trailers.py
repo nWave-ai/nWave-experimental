@@ -66,7 +66,9 @@ def _run_with_message(
     completed = subprocess.CompletedProcess(
         args=[], returncode=0, stdout=message, stderr=""
     )
-    with patch("des.cli.verify_commit_trailers.subprocess.run", return_value=completed):
+    with patch(
+        "des.adapters.driven.git.git_subprocess.subprocess.run", return_value=completed
+    ):
         return main(argv=argv)
 
 
