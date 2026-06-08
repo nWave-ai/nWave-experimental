@@ -153,6 +153,37 @@ class VerifyIntegrityComposition:
             ledger,
             verdict_hash="verify-integrity-mode-aware-verdict-hash",
         )
+        # The verified slice DEMANDS DDD-10 reconciliation. Make the deliver
+        # project a real git work-tree carrying the matching `Slice-Id: slice-01`
+        # commit so reconciliation reads `shipped == verified` and clears
+        # git-present. gate-trailer-read-git-port-extract slice-01 flipped
+        # `_shipped_slices` from a silent `return frozenset()` on git-absence to
+        # a LOUD cannot-evaluate refusal (exit 4); a verified-but-non-git tmp
+        # tree would now refuse before the verified verdict (intent here =
+        # mode-resolution / roadmap-only no-op, NOT git-absence). Making the
+        # fixture an honest git-present reconciling delivery preserves the
+        # verified (exit 0) verdict these scenarios assert.
+        self._make_git_present_with_slice("slice-01")
+
+    def _make_git_present_with_slice(self, slice_id: str) -> None:
+        """Real git work-tree whose history carries the matching Slice-Id trailer."""
+        import subprocess
+
+        run = lambda *a: subprocess.run(  # noqa: E731 -- terse local git driver
+            ["git", *a],
+            cwd=self.project_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        run("init", "-q")
+        run("config", "user.email", "t@t.com")
+        run("config", "user.name", "T")
+        (self.project_dir / "README.md").write_text(
+            f"reconciling delivery for {slice_id}\n", encoding="utf-8"
+        )
+        run("add", "-A")
+        run("commit", "-q", "-m", f"ship {slice_id}\n\nSlice-Id: {slice_id}")
 
     def _write_valid_roadmap(self) -> str:
         """Write a schema-valid roadmap.json via the production des-roadmap CLI.

@@ -5,7 +5,7 @@
 > preview only. It is **not** the beta, RC, or prod release, and there is
 > **no PyPI package** for this channel — you install **locally from this clone**.
 
-**Build:** atdd-pure preview `@ c47cda483` (source `feature/atdd-pure-staging` `c47cda483299411fc6e49ffdc35ee77150b07001`)
+**Build:** atdd-pure preview `@ d692dd544` (source `feature/atdd-pure-staging` `d692dd5443336e6da4e499392b722c8ff04eff41`)
 
 ## Install (local — there is no PyPI for this preview)
 

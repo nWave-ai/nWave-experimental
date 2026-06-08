@@ -7,8 +7,8 @@ blocking the wave (OSS hooks-only, non-halting -- an ACL over the SF
 Published-Language).
 
 Shape mirrors ``des.cli.walking_skeleton_gate`` (DESIGN R7): an importable
-``des.cli`` module run as a subprocess (``python -m des.cli.dormant_seam_gate``);
-``main(argv)`` entry; a single-line JSON ``DormantSeamVerdict`` on stdout; a loud
+``des.cli`` module run as a subprocess (the same shape ``des.cli.walking_skeleton_gate``
+uses); ``main(argv)`` entry; a single-line JSON ``DormantSeamVerdict`` on stdout; a loud
 human-readable warning on stderr; an exit-code contract.
 
 Arguments::

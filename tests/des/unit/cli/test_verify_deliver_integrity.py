@@ -1,5 +1,6 @@
 """Unit tests for verify_deliver_integrity CLI step extraction and log parsing."""
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -168,6 +169,31 @@ def _write_atdd_pure_config(project_dir: Path) -> None:
     (nwave_dir / "config.yaml").write_text("workflow:\n  mode: atdd_pure\n")
 
 
+def _make_git_work_tree(project_dir: Path) -> None:
+    """Make ``project_dir`` a real git work-tree with one trailer-less commit.
+
+    gate-trailer-read-git-port-extract slice-01 flipped `_shipped_slices` from
+    a silent `return frozenset()` on git-absence to a LOUD cannot-evaluate
+    refusal (exit 4). A reconciliation-demanding ledger (a `SliceCommitVerified`
+    record) in a NON-git tmp_path therefore now refuses LOUD before reaching the
+    feature-end check -- which masks the ledger-targeting guard this test
+    exercises. The single commit carries NO `Slice-Id:` trailer, so
+    `_shipped_slices` reads the (real, readable) history as an empty shipped set:
+    reconciliation is skipped and the verifier proceeds to the feature-end-cycle
+    check on the targeted feature -- the exact discriminating path the
+    ledger-targeting false-PASS guard pins.
+    """
+    run = lambda *a: subprocess.run(  # noqa: E731 -- terse local git driver
+        ["git", *a], cwd=project_dir, check=True, capture_output=True, text=True
+    )
+    run("init", "-q")
+    run("config", "user.email", "t@t.com")
+    run("config", "user.name", "T")
+    (project_dir / "README.md").write_text("ledger-targeting guard\n")
+    run("add", "-A")
+    run("commit", "-q", "-m", "base commit (no Slice-Id trailer)")
+
+
 def _complete_feature_end_ledger(project_dir: Path, feature_id: str) -> None:
     """Write a ledger whose feature-end cycle ran (every U4-required record).
 
@@ -236,6 +262,11 @@ class TestLedgerTargetingByFeatureId:
         silently verify aaa-shipped-feature and PASS.
         """
         _write_atdd_pure_config(tmp_path)
+        # git-present readable history (trailer-less) so the slice-01 silent->loud
+        # flip does not refuse before the ledger-targeting guard runs; see
+        # `_make_git_work_tree`. The guard under test is the wrong-feature
+        # false-PASS, exercised on the git-present feature-end-incomplete path.
+        _make_git_work_tree(tmp_path)
         # Alphabetically-first: a different, already-shipped feature -- complete.
         _complete_feature_end_ledger(tmp_path, "aaa-shipped-feature")
         # Target feature: ledger exists but feature-end cycle never ran.

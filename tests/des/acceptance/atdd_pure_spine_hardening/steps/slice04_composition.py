@@ -112,10 +112,36 @@ class FeatureEndInterceptComposition:
     # --- ledger provisioning ------------------------------------------------
 
     def seed_all_slices_verified(self) -> None:
-        """Append a `SliceCommitVerified` record for every planned slice."""
+        """Append a `SliceCommitVerified` record for every planned slice.
+
+        Each verified slice carries a matching `Slice-Id:` commit in the real
+        git history so the DDD-10 reconciliation reads `shipped == verified` and
+        clears. gate-trailer-read-git-port-extract slice-01 flipped
+        `_shipped_slices` from a silent `return frozenset()` on git-absence to a
+        LOUD cannot-evaluate refusal (exit 4); a verified-but-not-git-readable
+        history would now refuse before the feature-end check. The repo is a real
+        work-tree (``init_repo``) but had no commits, so `git log` raised on the
+        empty history -- committing the matching Slice-Id trailers makes the
+        history genuinely readable and reconciling (intent: a complete cycle runs
+        the integrity gate to ALLOW, preserved git-present).
+        """
         ledger = AtCompletionLedger(self._feature_id, self._repo)
         for sid in _PLANNED_SLICES:
             ledger.append_gate_event(event="SliceCommitVerified", slice_id=sid)
+            self._commit_with_slice_trailer(sid)
+
+    def _commit_with_slice_trailer(self, slice_id: str) -> None:
+        """Make one real commit whose body carries the `Slice-Id:` trailer."""
+        marker = self._repo / f".slice-{slice_id}"
+        marker.write_text(f"shipped {slice_id}\n", encoding="utf-8")
+        _git(self._repo, "add", "-A")
+        _git(
+            self._repo,
+            "commit",
+            "-q",
+            "-m",
+            f"ship {slice_id}\n\nSlice-Id: {slice_id}",
+        )
 
     def seed_feature_end_cycle_complete(self) -> None:
         """Record the feature-end cycle: refactor done + review verdict (F1).

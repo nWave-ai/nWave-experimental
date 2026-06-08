@@ -23,6 +23,7 @@ Exit codes:
     0 = All steps verified
     1 = Integrity violations found
     2 = Usage error
+    4 = cannot-evaluate (git absent / not a work-tree -- LOUD INDETERMINATE)
 """
 
 from __future__ import annotations
@@ -30,11 +31,13 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 from des.adapters.driven.config.des_config import DESConfig
+from des.adapters.driven.git.git_commit_trailer_read_adapter import (
+    GitCommitTrailerReadAdapter,
+)
 from des.application.workflow_mode import ATDD_PURE_MODE, resolve_workflow_mode
 from des.domain._roadmap_helpers import (
     extract_step_ids as _extract_step_ids,
@@ -43,6 +46,10 @@ from des.domain.deliver_integrity_verifier import DeliverIntegrityVerifier
 from des.domain.roadmap_schema import RoadmapSchemaLoader
 from des.domain.roadmap_validator import RoadmapValidator
 from des.domain.tdd_schema import TDDSchemaLoader
+from des.ports.driven_ports.commit_trailer_read_port import (
+    CommitTrailerReadPort,
+    Indeterminate,
+)
 
 
 __all__ = ["_extract_step_ids"]  # re-export for tests/des/unit/cli/
@@ -187,27 +194,38 @@ def _find_at_completion_ledger(
 # A `Slice-Id:`/`Step-Id:` commit trailer carrying a `slice-NN` identifier.
 _SLICE_ID_TRAILER_RE = re.compile(r"^(?:Slice-Id|Step-Id):\s*(slice-\d+)\s*$")
 
+# The single-line JSON `event` marker the LOUD cannot-evaluate verdict carries on
+# stdout when the commit-trailer history is unreadable (git absent / not a
+# work-tree). Distinct from `FeatureUnreconciled` (exit 1, history WAS read).
+INDETERMINATE_EVENT_NAME = "FeatureIndeterminate"
 
-def _shipped_slices(project_dir: Path) -> frozenset[str]:
+# The distinct cannot-evaluate non-pass exit code (D1): NOT one of the verifier's
+# existing 0/1/2 codes, so it is unambiguously distinct from the exit-1
+# FeatureUnreconciled verdict. Mirrors `gate_outcome.py:132 GateOutcome.indeterminate`.
+CANNOT_EVALUATE_EXIT = 4
+
+
+def _shipped_slices(
+    project_dir: Path, trailer_port: CommitTrailerReadPort
+) -> frozenset[str] | Indeterminate:
     """The set of `slice-NN` carried by `Slice-Id:` trailers in the git history.
 
     DDD-10: a slice is "shipped" when at least one commit's message carries its
-    `Slice-Id:`/`Step-Id:` trailer. Reads the whole history via `git log`. When
-    `project_dir` is not a git repository the set is empty -- there is then
-    nothing to reconcile and the caller falls through to the feature-end check.
+    `Slice-Id:`/`Step-Id:` trailer. Reads the whole history through the
+    `CommitTrailerReadPort` (git lives behind the adapter; this gate logic is
+    Python + filesystem only -- AD-21/24 genericita mandate).
+
+    When git is absent / `project_dir` is not a work-tree the port returns the
+    LOUD `Indeterminate`, which this function PROPAGATES unchanged -- the
+    done-gate then refuses with the cannot-evaluate verdict (exit 4) instead of
+    silently fabricating an empty set that masks git-absence as "nothing
+    shipped" (the AD-21/24 silent-fabrication this slice removes).
     """
-    try:
-        output = subprocess.run(
-            ["git", "log", "--format=%B%x1e"],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return frozenset()
+    result = trailer_port.commit_messages(project_dir)
+    if isinstance(result, Indeterminate):
+        return result
     shipped: set[str] = set()
-    for message in output.split("\x1e"):
+    for message in result.messages:
         for line in message.splitlines():
             match = _SLICE_ID_TRAILER_RE.match(line.strip())
             if match:
@@ -295,7 +313,10 @@ def _verify_common_audit_log(project_dir: Path, feature_id: str | None) -> int |
 
 
 def _verify_atdd_pure(
-    project_dir: Path, roadmap_path: Path, feature_id: str | None = None
+    project_dir: Path,
+    roadmap_path: Path,
+    feature_id: str | None = None,
+    trailer_port: CommitTrailerReadPort | None = None,
 ) -> int:
     """Verify deliver integrity for an atdd_pure feature (ADR-028 D4.2).
 
@@ -377,29 +398,70 @@ def _verify_atdd_pure(
     # trailer must have a matching `SliceCommitVerified` ledger record. When
     # the M-2 commit-time backstop was bypassed (--no-verify, a foreign commit
     # path), an unrecorded slice is caught here -- the authoritative
-    # feature-close sweep. Runs only when the history actually carries
-    # `Slice-Id:` commits; with none there is nothing to reconcile and the
-    # verdict falls through to the feature-end-cycle assertion below (the
-    # classic-era roadmap-free check, unchanged).
-    shipped = _shipped_slices(project_dir)
-    if shipped:
-        try:
-            verified = AtCompletionLedger(
-                resolved_feature_id, project_dir
-            ).verified_slices()
-        except LedgerIntegrityViolation as exc:
+    # feature-close sweep.
+    #
+    # The ledger's verified set is read FIRST: it is the reconciliation DEMAND.
+    # A ledger that records a `SliceCommitVerified` slice asserts that slice was
+    # committed, so its `Slice-Id:` trailer MUST be cross-checkable in the git
+    # history. If git is then unreadable, the demand cannot be satisfied and the
+    # gate refuses LOUD (D1). A ledger with NO verified slice demands nothing,
+    # so git-absence is harmless and the verdict falls through to the
+    # feature-end-cycle assertion below (a non-git ledger-only project stays
+    # evaluable -- git-present parity preserved byte-for-byte).
+    try:
+        verified = AtCompletionLedger(
+            resolved_feature_id, project_dir
+        ).verified_slices()
+    except LedgerIntegrityViolation as exc:
+        print(
+            json.dumps(
+                {
+                    "event": "LedgerIntegrityViolation",
+                    "error": (
+                        "the AT-completion ledger failed its M7 integrity "
+                        f"contract ({exc.detail}): {exc}"
+                    ),
+                }
+            )
+        )
+        return 1
+
+    # The done-gate reads the commit-trailer history through the port (git lives
+    # behind the adapter; this gate logic is git-free). On git-absence /
+    # not-a-work-tree the port returns the LOUD `Indeterminate`, NEVER the silent
+    # `frozenset()` that masked git-absence as "nothing shipped" (the AD-21/24
+    # silent-fabrication this slice removes).
+    port = trailer_port if trailer_port is not None else GitCommitTrailerReadAdapter()
+    shipped_or_indeterminate = _shipped_slices(project_dir, port)
+    if isinstance(shipped_or_indeterminate, Indeterminate):
+        # git is unreadable. Refuse with the distinct cannot-evaluate verdict
+        # (exit 4) ONLY when the ledger demands reconciliation it can no longer
+        # cross-check (D1 + DDD-G4: distinct from the exit-1 unreconciled). With
+        # no reconciliation demand there is nothing git could have told us, so a
+        # non-git project still falls through to the feature-end-cycle check.
+        if verified:
             print(
                 json.dumps(
                     {
-                        "event": "LedgerIntegrityViolation",
+                        "event": INDETERMINATE_EVENT_NAME,
+                        "feature_id": resolved_feature_id,
+                        "reason": shipped_or_indeterminate.reason,
                         "error": (
-                            "the AT-completion ledger failed its M7 integrity "
-                            f"contract ({exc.detail}): {exc}"
+                            f"cannot evaluate deliver integrity for "
+                            f"{resolved_feature_id!r}: the commit-trailer history "
+                            f"is unreadable ({shipped_or_indeterminate.reason}). "
+                            f"git is absent or {project_dir} is not a git "
+                            "work-tree -- the gate refuses LOUD rather than "
+                            "silently report the delivery as nothing-shipped."
                         ),
                     }
                 )
             )
-            return 1
+            return CANNOT_EVALUATE_EXIT
+        shipped: frozenset[str] = frozenset()
+    else:
+        shipped = shipped_or_indeterminate
+    if shipped:
         # F-DELIVER-INTEGRITY-LEDGER-TARGETING: start from the loud-safe
         # `shipped - verified` and SUBTRACT only slices POSITIVELY owned by
         # OTHER features' ledgers. A co-resident feature's slice shares this
@@ -573,7 +635,15 @@ def main(argv: list[str] | None = None) -> int:
     # atdd_pure the spine is roadmap-free -- a missing roadmap is the expected
     # state, not exit 2 -- so the mode branch MUST run above the roadmap check.
     if resolve_workflow_mode(project_dir) == ATDD_PURE_MODE:
-        return _verify_atdd_pure(project_dir, roadmap_path, args.feature_id)
+        # Composition root: default-wire the real git adapter and inject it down
+        # the call chain (main -> _verify_atdd_pure -> _shipped_slices). The gate
+        # logic stays git-free; git lives only behind GitCommitTrailerReadAdapter.
+        return _verify_atdd_pure(
+            project_dir,
+            roadmap_path,
+            args.feature_id,
+            trailer_port=GitCommitTrailerReadAdapter(),
+        )
 
     if not roadmap_path.exists():
         print(f"Error: roadmap.json not found at {roadmap_path}")
