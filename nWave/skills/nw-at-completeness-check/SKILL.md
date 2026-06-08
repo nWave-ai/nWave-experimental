@@ -18,7 +18,7 @@ Mechanical gate for acceptance-test completeness. Runs against any candidate AT 
 Reviewer runs **both** gates before issuing verdict; they are independent and additive:
 
 1. **Tier-1 Coverage Gate** (§§1-2) — the canonical 7-category C1-C7 taxonomy + 15-item mechanical checklist. Audits **what the AT set covers** of the SUT's input/state/mode/error/env space.
-2. **Tier-2 Structural Invariants Gate** (§2-bis) — the S-family (S1 step-text uniqueness, S2 driving-port-only boundary / no direct-domain testing per Mandate-13, future S3+). Audits **how the AT set itself is structured** — Mandate-12 + Mandate-13 SSOT/boundary invariants on the test code, not on SUT coverage. A Tier-2 failure is independent of the Tier-1 score and BLOCKS regardless of coverage band.
+2. **Tier-2 Structural Invariants Gate** (§2-bis) — the S-family (S1 step-text uniqueness, S2 driving-port-only boundary / no direct-domain testing per Mandate-13, S3 dormant-seam reconciliation per D11, future S4+). Audits **how the AT set itself is structured** — Mandate-12 + Mandate-13 SSOT/boundary invariants on the test code, plus the DESIGN driving-surface ↔ DISTILL AT-oracle reconciliation, not SUT coverage. A Tier-2 failure is independent of the Tier-1 score and BLOCKS regardless of coverage band.
 
 The 15-item count, IDs, and verdict thresholds in Tier-1 are **unchanged** by Tier-2 additions; the S-family lives in its own namespace.
 
@@ -133,7 +133,7 @@ The reviewer agent **computes the count mechanically**, not subjectively. Items 
 
 ## 2-bis. Tier-2 Structural Invariants Gate (S-family)
 
-Independent gate. S-family items audit **how the AT set itself is structured** — Mandate-12 SSOT invariants on test code, not coverage of SUT space. A Tier-2 failure BLOCKS regardless of the Tier-1 15-item score.
+Independent gate. S-family items audit **how the AT set itself is structured** — Mandate-12 SSOT invariants on test code (S1/S2) plus the DESIGN driving-surface ↔ DISTILL AT-oracle reconciliation (S3), not coverage of SUT space. A Tier-2 failure BLOCKS regardless of the Tier-1 15-item score.
 
 ### S1. Step-Text Uniqueness Within Feature Scope
 
@@ -256,22 +256,76 @@ def check_s2_driving_port_only(feature_steps_dir: Path, new_test_files: list[Pat
 
 **Remediation hint** (always emitted with finding): "relocate to tests/des/(?:acceptance|cli)/[feature-name]/ + restructure via driving port (Layer 3 subprocess / Layer 3 composition root / Layer 4 wiring_e2e)". Never recommend deletion — restructure preserves behavioral coverage at the right tier.
 
+### S3. Dormant-Seam Reconciliation — every net-new DESIGN driving-surface seam has a witnessing AT (D11, 2026-06-07)
+
+**Invariant**: for every net-new seam declared load-bearing in the DESIGN driving-surface for this slice — a net-new effectful parameter on an entry-point function (`clock=`), a net-new effectful call reached from the entry point (`absorb_ready_refs()`), a net-new param threaded into an existing seam — the slice's AT set names THAT exact seam as the port it drives, AND drives it through the **real entry point** while asserting an **observable effect** (state delta, emitted event, captured side effect). A declared net-new seam with no witnessing AT is a dormant-seam coverage gap.
+
+**Why**: per-feature Driving Adapter Verification (`nw-distill` § Driving Adapter Verification) is entry-point-protocol-shaped (CLI / HTTP / hook) — satisfied by ONE nominal walking skeleton, BLIND to intra-process load-bearing seams. The DISTILL AT-oracle re-deriving its target from "what's new in the slice" silently substitutes the COMPONENT for the SEAM — an intra-author / intra-commit contradiction with the DESIGN driving-surface table. A feature then passes every per-slice gate yet ships the seam DORMANT (no production call-site, never reached from the real entry point) and does not function e2e. Empirical anchor (2026-06-07): consolidation-loops `background-loops-hybrid-c` (slices 04/05/07/08) shipped absorb/clock/drain-selector/reaper uncalled from `handle_session_start`; ALL per-slice gates green; two independent RCAs converged on this shared-asset gap. Full methodology: `nw-distill` § Dormant-Seam Reconciliation legs (b) + (c).
+
+**Witnessing counts INDIRECT wiring (framing-attack — do NOT naive name/protocol match)**: "the seam has a witnessing AT driving it" MUST count indirect wiring — entry-point discovery, registry registration, dependency-injection — as valid coverage. A seam reached via registry / entry-point / DI is validly witnessed even with NO literal direct call-site or protocol call. Empirical anchor: `nwave.lang.adapter` entry-point discovery wires modules with no direct call-site **by design**. So "drives the declared seam" is NOT "a literal CLI / hook protocol call" nor "a bare-name function call" — a binding-resolved indirect reach (the symbol's registration value joined to its identity) counts. A naive name / protocol match reintroduces a false-positive class on every registry-dispatched symbol.
+
+**Detection mechanism** (per-slice, against the DESIGN driving-surface declaration):
+
+```python
+def check_s3_dormant_seam_reconciliation(
+    design_net_new_seams: list[Seam],   # from DESIGN driving-surface table, NOT slice diff
+    slice_ats: list[AcceptanceTest],
+) -> S3Verdict:
+    """For each net-new DESIGN-declared seam, require a witnessing AT that drives
+    it through the real entry point and asserts an observable effect. Witnessing
+    counts INDIRECT wiring (registry / entry-point / DI), never naive name match."""
+    gaps: list[Seam] = []
+    for seam in design_net_new_seams:
+        if not any(at_witnesses_seam(at, seam) for at in slice_ats):
+            gaps.append(seam)   # declared load-bearing, no witnessing AT
+    verdict = "PASS" if not gaps else "FAIL"
+    return S3Verdict(verdict=verdict, dormant_seams=gaps)
+
+def at_witnesses_seam(at: AcceptanceTest, seam: Seam) -> bool:
+    """True iff the AT drives the seam through the real entry point AND asserts an
+    observable effect. Reaching the seam via registry/entry-point/DI wiring counts
+    (binding-resolved), NOT only a direct call-site or protocol call."""
+    return at.drives_real_entry_point and at.reaches(seam, include_indirect_wiring=True) \
+        and at.asserts_observable_effect_of(seam)
+```
+
+**Output token**: `dormant_seam_reconciliation verdict={PASS|FAIL} dormant_seams=<list of (seam, design_ref)>`
+
+**Tolerable variants** (NOT flagged):
+
+| Pattern | Why NOT a gap |
+|---------|---------------|
+| Seam reached only via entry-point discovery / registry registration / DI (no direct call-site) | Indirect wiring is valid witnessing — binding-resolved reach counts (the `nwave.lang.adapter` shape, by design). |
+| A seam the DESIGN driving-surface does NOT declare net-new this slice | S3 audits the DESIGN declaration, not every symbol; pre-existing seams are out of scope. |
+| Owned residue cleared by a `# dormant-ok: <F-id>` marker (mirrors the mechanical backstop escape) | Auditable, never-silent suppression — the seam is acknowledged-dormant with an owning F-id, not an undeclared gap. |
+
+**Flagged (FAIL)**:
+
+| Pattern | Why a gap |
+|---------|----------|
+| DESIGN declares `clock=` load-bearing on the entry point; the slice AT exercises the new COMPONENT directly but no AT drives `clock=` through the real entry point | Component-not-seam substitution; the seam ships dormant. (background-loops-hybrid-c empirical anchor.) |
+| DESIGN declares `absorb_ready_refs()` reached from `handle_session_start`; no AT asserts its observable effect via the real entry point | Declared load-bearing, no witnessing AT — dormant seam. |
+
+**Mechanical backstop**: the shipped OSS gate `des dormant-seam-gate` (`src/des/cli/dormant_seam_gate.py`, leg-a) is the runtime net behind S3 — it warns **INDETERMINATE (non-halting)** when a net-new effectful `src/**` public symbol has no production call-site, counting registry / entry-point / DI wiring as a call-site (binding-resolved, never a naive grep), with two never-silent escapes (a real call-site including indirect wiring, OR a `# dormant-ok: <F-id>` marker). S3 is the AT-completeness-time first line of defense; the gate is the runtime backstop. Treat an INDETERMINATE warning as an S3 finding to resolve (witness the seam, or annotate the owned residue), not as noise.
+
 ### S-family checklist
 
 ```
 S1 — Step-text uniqueness within feature scope: zero literal-arg collisions across step files in same feature dir (parametrized templates and shared-import re-use excluded)
 S2 — Driving-Port-Only Boundary: zero direct-domain imports in step modules (composition.py / steps_*.py); zero NEW behavioral ATs under tests/des/unit/(domain|cli)/* (legacy + arch tests excluded)
+S3 — Dormant-Seam Reconciliation: every net-new DESIGN-declared driving-surface seam has a witnessing AT driving it through the real entry point + asserting an observable effect (indirect registry/entry-point/DI wiring counts; owned-residue marker excused)
 ```
 
 ### Tier-2 verdict
 
-| S1 result | S2 result | Tier-2 verdict | Action |
-|-----------|-----------|----------------|--------|
-| PASS | PASS | PASS | Proceed to Tier-1 verdict |
-| FAIL | * | **BLOCK** | Reject AT set regardless of Tier-1 score. Verdict token includes collision list. Route to `AT_GAP_IN_DELIVERY_SCOPE`. |
-| * | FAIL | **BLOCK** | Reject AT set regardless of Tier-1 score. Verdict token includes violation list (kind + file:line + remediation). Route to `AT_GAP_IN_DELIVERY_SCOPE` (S-family failures are always test-suite authoring defects, never upstream-wave specification gaps). |
+| S1 result | S2 result | S3 result | Tier-2 verdict | Action |
+|-----------|-----------|-----------|----------------|--------|
+| PASS | PASS | PASS | PASS | Proceed to Tier-1 verdict |
+| FAIL | * | * | **BLOCK** | Reject AT set regardless of Tier-1 score. Verdict token includes collision list. Route to `AT_GAP_IN_DELIVERY_SCOPE`. |
+| * | FAIL | * | **BLOCK** | Reject AT set regardless of Tier-1 score. Verdict token includes violation list (kind + file:line + remediation). Route to `AT_GAP_IN_DELIVERY_SCOPE`. |
+| * | * | FAIL | **BLOCK** | Reject AT set regardless of Tier-1 score. Verdict token includes the dormant-seam list (seam + design_ref). Route to `AT_GAP_IN_DELIVERY_SCOPE` (a declared seam without a witnessing AT is a test-suite coverage defect, never an upstream specification gap — DESIGN already declared the seam). |
 
-S-family items are MANDATORY by default; no falsifier-prune for S1/S2 (both have zero false-positive rate given the tolerable-variant filters).
+S-family items are MANDATORY by default; no falsifier-prune for S1/S2/S3 (S1/S2 have zero false-positive rate given the tolerable-variant filters; S3's indirect-wiring rule removes the registry/entry-point/DI false-positive class).
 
 ---
 
@@ -397,7 +451,7 @@ Telemetry per gate run: `(feature_id, category_id, finding_count, severity_max)`
 
 This makes the taxonomy itself empirically-falsifiable. Default state: all 7 C-categories active.
 
-**S-family exemption**: structural invariants (S1+) are NOT subject to the falsifier-prune rule. Zero collisions across N features is the goal state, not evidence the check is wasteful. S-family stays MANDATORY unconditionally.
+**S-family exemption**: structural invariants (S1/S2/S3) are NOT subject to the falsifier-prune rule. Zero collisions / zero dormant seams across N features is the goal state, not evidence the check is wasteful. S-family stays MANDATORY unconditionally.
 
 ---
 

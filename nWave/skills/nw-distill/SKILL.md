@@ -676,6 +676,33 @@ If the DESIGN document specifies a CLI entry point, HTTP endpoint, or hook adapt
 
 This section exists because of a systematic pattern (RCA `docs/analysis/rca-user-port-gap.md`): acceptance tests entered from application services instead of user-facing CLIs, shipping features with working pipelines but broken entry points.
 
+## Dormant-Seam Reconciliation (Mandatory — RCA fix, D11, 2026-06-07)
+
+The Driving Adapter Verification above is per-feature + entry-point-protocol-shaped (CLI / HTTP / hook). It is **necessary but not sufficient**: it is blind to **intra-process load-bearing seams** — a net-new effectful parameter (`clock=`), a net-new effectful call (`absorb_ready_refs()`) — declared load-bearing in the DESIGN driving-surface but never reached from the real entry point. A feature can pass every per-slice gate (ATs green, AT-review + code-review APPROVED, walking-skeleton, pre-commit) yet not function e2e because such a seam shipped **DORMANT** (no production call-site). Empirical anchor: consolidation-loops `background-loops-hybrid-c` (slices 04/05/07/08) shipped absorb/clock/drain-selector/reaper uncalled from `handle_session_start`. Two RCAs converged on a shared-asset defect — fix it here so OSS inherits the correction.
+
+### Leg (b) — Cross-table reconciliation (DESIGN driving-surface ↔ DISTILL AT-oracle)
+
+The DISTILL AT-oracle target for each slice MUST be the **DESIGN-declared driving-surface seam**, NOT "the new component the slice introduces". Re-deriving the AT target from "what's new in the slice" silently substitutes the COMPONENT for the SEAM — the intra-author / intra-commit contradiction that lets a dormant seam pass.
+
+1. **Enumerate net-new driving-surface seams** — From the DESIGN driving-surface table, list every net-new seam declared load-bearing this slice: a new parameter on an entry-point function, a new function call reached from the entry point, a new param threaded into an existing seam. Gate: seam list extracted from DESIGN (not from the slice diff).
+2. **Name the seam as the AT's driving port** — For EACH net-new declared seam, the slice AT MUST name THAT exact seam as the port it drives (the AT exercises the seam through the real entry point, observing the seam's effect). Gate: one witnessing AT per declared seam.
+3. **HARD reconciliation** — If a declared net-new seam has no witnessing AT driving it, reconciliation FAILS (block the slice). Do NOT accept "the component is tested" as coverage of the seam. Gate: zero declared seams without a witnessing AT.
+
+### Leg (c) — Walking-skeleton AT drives the REAL entry point and asserts an observable effect
+
+Generalize Driving Adapter Verification beyond protocol adapters (CLI / HTTP / hook) to intra-process load-bearing seams. The single per-feature walking skeleton proves the protocol path once — it does NOT prove every declared seam is reached.
+
+1. **Reach from the real entry point** — Each net-new declared seam needs observable-effect coverage reached from the **real entry point** (e.g. `handle_session_start`), not only from the one nominal walking-skeleton scenario. Gate: each seam exercised via the production entry path.
+2. **Assert an observable effect** — The AT MUST assert the seam's observable effect (a state delta, an emitted event, a captured side effect), not merely that the seam is importable or that the component returns. Gate: observable-effect assertion present per seam.
+
+### Witnessing-check counts INDIRECT wiring (framing-attack — do not naive-match)
+
+"The seam has a witnessing AT / a production call-site" MUST count **indirect wiring** as valid coverage: entry-point discovery, registry registration, dependency-injection wiring. A seam reached via registry / entry-point / DI is validly covered even with NO literal direct call-site or protocol call. Empirical anchor: `nwave.lang.adapter` entry-point discovery wires modules with no direct call-site **by design**. So "drives the declared seam" is NOT "a literal CLI / hook protocol call" nor "a bare-name function call" — a binding-resolved indirect reach (the symbol's registration value joined to its identity) counts. A naive name / protocol match reintroduces a false-positive class on every registry-dispatched symbol.
+
+### Mechanical backstop
+
+The shipped OSS gate `des dormant-seam-gate` (`src/des/cli/dormant_seam_gate.py`, leg-a) is the mechanical net behind this methodology: it warns **INDETERMINATE (non-halting)** when a net-new effectful `src/**` public symbol has no production call-site — counting registry / entry-point / DI wiring as a call-site (binding-resolved, never a naive grep), with two never-silent escapes (a real call-site including indirect wiring, OR a `# dormant-ok: <F-id>` owned-residue marker). Run it per feature; treat its INDETERMINATE warning as a reconciliation finding to resolve (wire the seam, or annotate the owned residue), not as noise.
+
 ## Adapter Scenario Coverage (Mandate 6 Enforcement)
 
 When designing adapter acceptance scenarios, EVERY driven adapter has at least one scenario with real I/O (or contract smoke for costly externals). This is not optional regardless of WS strategy. Tag adapter real-I/O scenarios with `@real-io @adapter-integration`.
@@ -712,6 +739,7 @@ Before handing off to reviewers, self-check each item:
 - [ ] 8. **Mandate 7**: All scaffold methods raise assertion error (not NotImplementedError)
 - [ ] 9. **Mandate 7**: Tests are RED (not BROKEN) when run against scaffolds
 - [ ] 11. **F-001**: At least one `@real-io @adapter-integration` scenario per driven adapter (synthetic data misses format mismatches)
+- [ ] 16. **D11 Dormant-Seam Reconciliation**: every net-new seam declared load-bearing in the DESIGN driving-surface for this slice (`clock=` param, `absorb_ready_refs()` call, param threaded into an existing seam) has a witnessing AT that names THAT exact seam as its driving port, drives it through the REAL entry point, and asserts an observable effect. Indirect registry/entry-point/DI wiring counts as witnessing (NOT a naive name/protocol match). See § Dormant-Seam Reconciliation legs (b)+(c); mechanically gated by `nw-at-completeness-check` S3.
 - [ ] 12. **F-002**: `capsys` used in `@when` step, NOT in `@then` step (capsys is step-scoped in pytest-bdd)
 - [ ] 13. **F-005**: `@when` steps import ONLY from `des.application.*` or `des.domain.*` — NEVER from `des.adapters.driven.*`. Run `python scripts/hooks/check_driving_port_boundary.py` to verify.
 - [ ] 14. **F-004**: Timing assertions in `.feature` files use budget >= 200ms (flaky under parallel load)

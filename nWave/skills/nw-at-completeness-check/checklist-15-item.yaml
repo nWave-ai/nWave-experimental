@@ -1,5 +1,5 @@
 # AT Completeness Check — 15-item mechanical checklist (Tier-1 coverage gate)
-#                          + S-family structural invariants (Tier-2 gate)
+#                          + S-family structural invariants (Tier-2 gate: S1/S2/S3)
 # Machine-readable form of nw-at-completeness-check SKILL.md §§2 + 2-bis.
 #
 # Tier-1 verdict thresholds (unchanged):
@@ -129,7 +129,7 @@ falsifier_gate:
   escalate_rule:
     description: "1 BLOCKER found via category X -> escalate X to MANDATORY"
 
-# Tier-2 — Structural Invariants Gate (independent of 15-item Tier-1).
+# Tier-2 — Structural Invariants Gate (independent of 15-item Tier-1): S1/S2/S3.
 # Failure here BLOCKS regardless of Tier-1 score. Always AT_GAP_IN_DELIVERY_SCOPE,
 # always BLOCKER severity. Not subject to falsifier-prune.
 structural_invariants:
@@ -211,3 +211,61 @@ structural_invariants:
     connects_to:
       - "F-ATDD-PURE-AT-DIRECT-DOMAIN-TESTING-ANTI-PATTERN (friction #32, docs/backlog.md 2026-05-25)"
       - "F-DIRECT-DOMAIN-TEST-RETRO-AUDIT (HIGH, separate retro audit of legacy violations)"
+
+  - id: S3
+    name: "Dormant-Seam Reconciliation — DESIGN driving-surface seam has a witnessing AT"
+    description: >
+      For every net-new seam declared load-bearing in the DESIGN driving-surface for
+      this slice (net-new effectful entry-point parameter like clock=, net-new
+      effectful call reached from the entry point like absorb_ready_refs(), net-new
+      param threaded into an existing seam), the slice AT set MUST name THAT exact
+      seam as the port it drives, drive it through the REAL entry point, and assert an
+      observable effect (state delta / emitted event / captured side effect). The AT
+      oracle target is the DESIGN-declared seam, NOT "the new component the slice
+      introduces". Tolerable variants: seam reached via registry / entry-point / DI
+      wiring (indirect witnessing counts, binding-resolved); seam not declared net-new
+      this slice (out of scope); owned residue cleared by a # dormant-ok: <F-id>
+      marker (auditable suppression).
+    detection: >
+      Per-slice, audit the DESIGN driving-surface declaration (NOT the slice diff).
+      For each net-new declared seam, require >=1 witnessing AT where
+      at.drives_real_entry_point AND at.reaches(seam, include_indirect_wiring=True)
+      AND at.asserts_observable_effect_of(seam). Indirect reach via
+      registry/entry-point/DI counts — never a naive name/protocol match. Output:
+      dormant_seam_reconciliation verdict={PASS|FAIL} dormant_seams=<list of
+      (seam, design_ref)>.
+    mandatory: true
+    failure_kind: AT_GAP_IN_DELIVERY_SCOPE
+    failure_severity: BLOCKER
+    rationale: >
+      Per-feature Driving Adapter Verification is entry-point-protocol-shaped
+      (CLI/HTTP/hook) — satisfied by ONE nominal walking skeleton, BLIND to
+      intra-process load-bearing seams. The DISTILL AT-oracle re-deriving its target
+      from "what's new in the slice" substitutes the COMPONENT for the SEAM (an
+      intra-author/intra-commit contradiction with the DESIGN driving-surface), so a
+      feature passes every per-slice gate yet ships the seam DORMANT (no production
+      call-site, never reached from the real entry point) and does not function e2e.
+    framing_attack: >
+      Witnessing MUST count INDIRECT wiring (entry-point discovery / registry / DI)
+      as valid coverage — a seam reached via registry/entry-point/DI is witnessed even
+      with NO literal direct call-site or protocol call (nwave.lang.adapter entry-point
+      discovery wires modules with no direct call-site by design). A naive
+      name/protocol match reintroduces a false-positive class on every
+      registry-dispatched symbol. Binding-resolved reach, never a grep.
+    mechanical_backstop: >
+      Shipped OSS runtime gate des dormant-seam-gate (src/des/cli/dormant_seam_gate.py,
+      leg-a, feature done at HEAD a410583bc) — warns INDETERMINATE (non-halting) when a
+      net-new effectful src/** public symbol has no production call-site, counting
+      registry/entry-point/DI wiring as a call-site (binding-resolved), with two
+      never-silent escapes (real call-site incl. indirect wiring, OR # dormant-ok:
+      <F-id> marker). S3 is the AT-completeness-time first line; the gate is the runtime
+      backstop. Treat an INDETERMINATE warning as an S3 finding, not noise.
+    empirical_anchor: >
+      2026-06-07 — consolidation-loops background-loops-hybrid-c (slices 04/05/07/08)
+      shipped absorb/clock/drain-selector/reaper uncalled from handle_session_start;
+      ALL per-slice gates green (ATs, AT-review + code-review APPROVED, walking-skeleton,
+      pre-commit) yet not functioning e2e. Two independent troubleshooter RCAs converged
+      on this shared-asset gap.
+    connects_to:
+      - "D11 F-OSS-UPSTREAM-WAVE-GATE-PAIRS (docs/backlog.md, DELTA 2026-06-07) legs (b)+(c)"
+      - "nw-distill SKILL.md § Dormant-Seam Reconciliation (Leg b cross-table + Leg c walking-skeleton-real-entry-point)"
