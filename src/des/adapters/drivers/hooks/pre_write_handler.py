@@ -9,6 +9,7 @@ Extracted from claude_code_hook_adapter.py as part of P4 decomposition.
 import contextlib
 import io
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -25,6 +26,7 @@ from des.adapters.drivers.hooks.hook_protocol import (
 )
 from des.domain.session_guard_policy import SessionGuardPolicy
 from des.ports.driven_ports.audit_log_writer import AuditEvent
+from des.runtime.interpreter import des_spawn
 
 
 def _log_pre_write_decision(
@@ -49,6 +51,69 @@ def _log_pre_write_decision(
         )
     except Exception:
         pass  # Diagnostic logging must never break the hook
+
+
+# --- Skill-normative gate intercept (ADR-SNCG-002 §Placement rule, H-1) ----
+
+_SKILLS_TREE_PARTS = ("nWave", "skills")
+_SKILL_GATE_MODULE = "des.cli.skill_normative_gate"
+_SKILL_GATE_TIMEOUT_S = 30
+_SKILL_GATE_FAULT_ENV = "NWAVE_SKILL_GATE_INJECT_FAULT"
+
+
+def _is_skill_tree_path(file_path: str) -> bool:
+    """True iff the edited path lies under the `nWave/skills/**` tree."""
+    parts = Path(file_path).parts
+    return any(parts[i : i + 2] == _SKILLS_TREE_PARTS for i in range(len(parts) - 1))
+
+
+def _run_skill_gate_subprocess() -> int:
+    """Run `des skill-normative-gate` over the repo; return its exit code.
+
+    Fail-stuck (timeout / signal-kill) maps to a non-zero exit (block) per the
+    ADR-030 D5 discipline. Honours `NWAVE_SKILL_GATE_INJECT_FAULT` so the AC-07
+    fault-injection AT can force the spawn to raise and prove the local
+    fail-closed except-arm is reached.
+    """
+    if os.environ.get(_SKILL_GATE_FAULT_ENV) == "1":
+        raise RuntimeError("forced gate-subprocess spawn failure (fault injection)")
+    completed = des_spawn(
+        None,
+        _SKILL_GATE_MODULE,
+        capture_output=True,
+        text=True,
+        timeout=_SKILL_GATE_TIMEOUT_S,
+    )
+    return completed.returncode
+
+
+def _evaluate_skill_normative_intercept(file_path: str) -> dict[str, str] | None:
+    """Guard a skill-tree edit, fail-closed (ADR-SNCG-002 §Placement rule, H-1).
+
+    Returns the `{decision:block}` body when the edit must be blocked, or None
+    when it is allowed / is not a `nWave/skills/**` edit. The body is wrapped in
+    its OWN try/except so a gate-subprocess spawn failure degrades LOUD to a
+    block — making the outer `handle_pre_write` fail-OPEN catch-all unreachable
+    from this intercept (no-silent-pass).
+    """
+    if not file_path or not _is_skill_tree_path(file_path):
+        return None
+    try:
+        gate_exit = _run_skill_gate_subprocess()
+        if gate_exit != 0:
+            return {
+                "decision": "block",
+                "reason": (
+                    "skill-normative gate vetoed the skill edit "
+                    f"(gate exit {gate_exit})"
+                ),
+            }
+        return None
+    except Exception as exc:
+        return {
+            "decision": "block",
+            "reason": f"skill-normative-gate intercept error: {exc!s}",
+        }
 
 
 def handle_pre_write() -> int:
@@ -84,6 +149,19 @@ def handle_pre_write() -> int:
             # Extract file path from tool_input
             tool_input = hook_input.get("tool_input", {})
             file_path = tool_input.get("file_path", "")
+
+            # --- Skill-normative gate intercept (ADR-SNCG-002 §Placement) ---
+            skill_block = _evaluate_skill_normative_intercept(file_path)
+            if skill_block is not None:
+                _log_pre_write_decision(
+                    hook_id=hook_id,
+                    event_type="HOOK_PRE_WRITE_BLOCKED",
+                    file_path=file_path,
+                    reason=skill_block["reason"],
+                )
+                print(json.dumps(skill_block))
+                exit_code = 2
+                return exit_code
 
             # --- Execution log guard: always block direct writes ---
             if file_path and file_path.endswith("execution-log.json"):

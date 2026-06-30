@@ -53,7 +53,7 @@ from pytest_bdd import scenarios, then
 
 # Shared step SSOT (S1 single-source re-use): the clean-scope Given + When + the
 # shared verdict Thens.
-from .common_steps import *  # noqa: F403
+from .common_steps import *
 from .composition_slice_02 import R3GateComposition2
 from .domain_types_slice_02 import (
     ARCH_SCOPE_ZERO_COLLECTED_REASON,

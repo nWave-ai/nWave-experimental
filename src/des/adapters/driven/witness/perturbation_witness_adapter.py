@@ -57,7 +57,7 @@ from des.ports.clause_witness_port import (
     ProbeReport,
     WitnessReport,
 )
-from des.runtime.interpreter import python_for
+from des.runtime.interpreter import des_spawn
 
 
 @dataclass(frozen=True)
@@ -354,8 +354,9 @@ class PerturbationWitnessAdapter:
         # the witness runner imports the AT module directly (no pytest needed),
         # so the no-capability resolution suffices.
         try:
-            completed = subprocess.run(
-                [python_for(None), "-c", runner],
+            completed = des_spawn(
+                None,
+                script=runner,
                 capture_output=True,
                 text=True,
                 timeout=_RUN_TIMEOUT_SECONDS,

@@ -109,3 +109,73 @@ class TestTDDPhaseValidatorSchemaV4Current:
 
         # THEN: Current schema is v4.0
         assert schema_version == "4.0"
+
+
+class TestTDDPhaseValidatorMissingContext:
+    """``_is_missing_context`` distinguishes a phase named in a missing-context.
+
+    The function decides whether a line mentions a phase ONLY in a "missing"
+    framing -- a parenthetical aside ``(missing COMMIT)``, descriptive text
+    ``without COMMIT``, or a ``# MISSING: COMMIT`` comment. When it returns
+    True the caller treats the phase as NOT present in the prompt.
+
+    Regression: the parenthetical branch was greedy on both sides
+    (``\\(.*\\bPHASE\\b.*\\)``) and spanned ACROSS unrelated groups -- on a line
+    carrying two parenthesised asides it matched from the first ``(`` to the
+    last ``)``, swallowing a phase that lives OUTSIDE parens and falsely
+    reporting it as missing-context. The fix anchors the phase inside a SINGLE
+    group with no nested parens (``\\([^()]*\\bPHASE\\b[^()]*\\)``).
+    """
+
+    @staticmethod
+    def _is_missing(phase: str, line: str) -> bool:
+        from des.application.validator import TDDPhaseValidator
+
+        return TDDPhaseValidator._is_missing_context(phase, line)
+
+    def test_phase_outside_parens_with_other_groups_is_not_missing_context(self):
+        """tsunami case: phase sits OUTSIDE parens that wrap unrelated text.
+
+        The greedy regex spanned ``(cucumber) ... (missing implementation)`` and
+        falsely classified COMMIT (which is outside both groups) as
+        missing-context. The non-greedy fix confines each group, so COMMIT --
+        present in the line proper -- is NOT missing-context.
+        """
+        line = (
+            "Given the feature file (cucumber) drives the COMMIT phase "
+            "(missing implementation)"
+        )
+        assert self._is_missing("COMMIT", line) is False
+
+    def test_phase_inside_its_own_group_with_other_groups_is_not_missing(self):
+        """A phase outside parens stays present even when another group exists.
+
+        ``setup (fixtures) then COMMIT`` -- COMMIT is bare; the lone group wraps
+        unrelated text. Non-greedy matching does not reach across to it.
+        """
+        assert self._is_missing("COMMIT", "setup (fixtures) then COMMIT") is False
+
+    def test_parenthesised_missing_phase_is_missing_context(self):
+        """The legitimate ``(missing COMMIT)`` aside still reads as missing."""
+        assert self._is_missing("COMMIT", "the prompt omits (missing COMMIT) here") is (
+            True
+        )
+
+    def test_nested_parens_missing_phase_is_missing_context(self):
+        """``((missing COMMIT))`` still reads as missing -- via the descriptive branch.
+
+        The new parenthetical regex deliberately rejects nested parens
+        (``[^()]`` excludes them), so it no longer matches this line. The
+        classification survives because the descriptive branch
+        ``\\b(without|missing|no)\\s+COMMIT\\b`` covers it -- pinning that the
+        two branches together keep nested-paren asides classified as missing.
+        """
+        assert self._is_missing("COMMIT", "the prompt has ((missing COMMIT))") is True
+
+    def test_descriptive_without_phase_is_missing_context(self):
+        """``without COMMIT`` descriptive framing reads as missing (unchanged)."""
+        assert self._is_missing("COMMIT", "the cycle proceeds without COMMIT") is True
+
+    def test_comment_missing_phase_is_missing_context(self):
+        """``# MISSING: COMMIT`` comment framing reads as missing (unchanged)."""
+        assert self._is_missing("COMMIT", "phases here  # MISSING: COMMIT") is True

@@ -34,10 +34,79 @@ the CLI logic the test actually asserts on, under freshness ACTIVE.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 
-__all__ = ["seed_dev_checkout_marker"]
+__all__ = ["seed_dev_checkout_marker", "seed_feature_delta_git_repo"]
+
+
+def seed_feature_delta_git_repo(
+    workspace_root: Path, *, ships_new_installable: bool
+) -> Path:
+    """Make ``workspace_root`` a REAL git repo whose ``master...HEAD`` delta is shaped.
+
+    ``seed_dev_checkout_marker`` seeds only an empty ``.git/`` for the freshness
+    autoskip — NOT a valid repo. The walking-skeleton gate computes its applicability
+    from ``git diff --diff-filter=A --name-only master...HEAD`` (GitFeatureDeltaAdapter,
+    base_ref defaults to ``master``): per ADR-098
+    (``fix-feature-end-ws-gate-applicability``) a delta that adds a NEW installable
+    (a ``pyproject.toml`` / ``setup.py`` root) with no walking-skeleton AT is a domain
+    FAIL ("a no-AT installer feature cannot dodge"), while a delta that adds NO new
+    installable is NOT_APPLICABLE (proceeds=True). Over an empty ``.git/`` the
+    ``git diff`` fails (exit 129) → INDETERMINATE → the cycle REFUSES.
+
+    A test that drives the cycle must therefore stage a repo where ``master...HEAD``
+    has the ADR-098-correct shape for its scenario:
+
+    - ``ships_new_installable=False`` (the gate-RUN / NA-pass path): commit every
+      staged file (including any installable already present) on the ``master``
+      baseline, then a single non-installable marker on the ``work`` branch →
+      ``master...HEAD`` adds NO new installable → NOT_APPLICABLE → the cycle proceeds
+      to the env-e2e / coverage-map legs (the SUT of slice-03 AT-1 / slice-04).
+    - ``ships_new_installable=True`` (the fail-closed path, slice-03 AT-3): commit
+      every staged file on ``master``, then ADD a new ``pyproject.toml`` root on
+      ``work`` → ``master...HEAD`` adds a new installable with no WS AT → domain FAIL
+      → the cycle reads the REAL gate FAIL and refuses (the anti-laundering SUT,
+      now exercised through the ADR-098 invariant instead of the pre-ADR-098
+      build-leg failure).
+
+    Call AFTER all staging, immediately before driving ``des feature-end run``.
+    Environment SETUP (a developer checkout IS a git repo with a delta), never
+    assertion-weakening. Returns the root for chaining.
+    """
+
+    def _git(*args: str) -> None:
+        subprocess.run(
+            ["git", *args],
+            cwd=workspace_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    _git("init")
+    _git("config", "user.email", "env-parity@nwave.test")
+    _git("config", "user.name", "nWave Env Parity")
+    # Baseline: every already-staged file (an ambient installable lands HERE, so it
+    # is NOT a new addition in the delta). Then the delta on a `work` branch.
+    _git("checkout", "-b", "master")
+    _git("add", "-A")
+    _git("commit", "--allow-empty", "--no-verify", "-m", "env-parity baseline")
+    _git("checkout", "-b", "work")
+    if ships_new_installable:
+        # A NEW installable root in the delta → ships_installer_artifact + no WS AT
+        # → domain FAIL (the ADR-098 "cannot dodge" invariant the AT-3 SUT pins).
+        (workspace_root / "pyproject.toml").write_text(
+            '[project]\nname = "env-parity-delta-installable"\nversion = "0.0.0"\n',
+            encoding="utf-8",
+        )
+    else:
+        # A non-installable marker → delta adds no new installable → NOT_APPLICABLE.
+        (workspace_root / ".env-parity-delta").write_text("delta\n", encoding="utf-8")
+    _git("add", "-A")
+    _git("commit", "--no-verify", "-m", "env-parity feature delta")
+    return workspace_root
 
 
 def seed_dev_checkout_marker(workspace_root: Path) -> Path:

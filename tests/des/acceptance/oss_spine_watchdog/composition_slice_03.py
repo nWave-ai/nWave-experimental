@@ -84,9 +84,7 @@ NOT PBT). Sad paths explicit (Mandate 11). No PBT machinery imported.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
-import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -98,6 +96,13 @@ import pytest
 # through the production writer" (slice-01 / slice-02 siblings).
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 
+# The REAL `handle_subagent_stop` SubagentStop hook handler, driven IN-PROCESS
+# over its stdin protocol (node-C enabler `run_hook_in_process`) —
+# behaviour-identical to the prior `python -c "... handle_subagent_stop()"`
+# subprocess fork, no fresh interpreter. No-argv, reads its JSON event from stdin.
+from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
+from tests.common.in_process_cli import run_hook_in_process
+
 from .steps.domain_types_slice_03 import (
     FeatureId,
     ProgressAge,
@@ -106,10 +111,6 @@ from .steps.domain_types_slice_03 import (
     TerminalPresence,
 )
 
-
-# Repo root = .../nWave-dev (this file lives 4 dirs deep under tests/des/...).
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-_REPO_SRC = _REPO_ROOT / "src"
 
 _HANDLER_MODULE = "des.adapters.drivers.hooks.subagent_stop_handler"
 
@@ -362,22 +363,16 @@ class StaleAgentFixture:
                 "permission_mode": "default",
             }
         )
-        runner = (
-            "import sys; "
-            f"sys.path.insert(0, {str(_REPO_SRC)!r}); "
-            f"from {_HANDLER_MODULE} import handle_subagent_stop; "
-            "sys.exit(handle_subagent_stop())"
-        )
-        env = dict(os.environ)
-        env["PYTHONPATH"] = str(_REPO_SRC)
-        return subprocess.run(
-            [sys.executable, "-c", runner],
-            input=hook_input,
-            capture_output=True,
-            text=True,
+        exit_code, stdout, stderr = run_hook_in_process(
+            handle_subagent_stop,
+            stdin_text=hook_input,
             cwd=str(self._repo),
-            env=env,
-            timeout=180,
+        )
+        return subprocess.CompletedProcess(
+            args=[_HANDLER_MODULE],
+            returncode=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
 
     def _read_stale_closed_count(self) -> int:

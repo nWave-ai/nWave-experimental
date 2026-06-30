@@ -122,7 +122,7 @@ SKILL_AGENT_DOC_PATHS: dict[SkillAgentDoc, str] = {
     SkillAgentDoc.NW_ACCEPTANCE_DESIGNER_REVIEWER: (
         "nWave/agents/nw-acceptance-designer-reviewer.md"
     ),
-    SkillAgentDoc.NW_TDD_METHODOLOGY: "nWave/skills/nw-tdd-methodology/SKILL.md",
+    SkillAgentDoc.NW_TDD_METHODOLOGY: "nWave/skills/nw-tdd-methodology-walking-skeleton/SKILL.md",
 }
 
 

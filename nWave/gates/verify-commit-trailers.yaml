@@ -6,31 +6,31 @@
 
 gate_id: verify-commit-trailers
 responsibility: |
-  Verify a commit message carries required Slice-Id and optional Reviewed-by HMAC trailers.
+  AT-completion-ledger audit window. Resolves the commit's Slice-Id trailer(s)
+  via des.domain.slice_id_trailer.extract_slice_ids, then for each slice audits
+  the AT-review ledger record reusing the carpaccio gate's check_at_review logic
+  (one check, one home). Pure-read: no file is written.
 module: des.cli.verify_commit_trailers
 entry_function: main
 language_neutral_contract: true
 
 cli_args:
   - name: --commit
-    required: true
-    type: string
-    help: "Commit-ish to inspect."
-  - name: --require-reviewed-by
     required: false
-    type: bool
-    help: "Fail if Reviewed-by trailer missing."
+    type: string
+    default: HEAD
+    help: "Target commit SHA or ref (default: HEAD)."
 
 log_events:
-  - CommitTrailersVerified
+  - SliceAuditCleared
 
 failure_modes:
-  - error_class: MalformedInput
-    exit_code: 2
-    remediation: "Provide --commit"
-  - error_class: MissingTrailer
-    exit_code: 1
-    remediation: "Add Slice-Id trailer to commit message"
+  - error_class: CannotEvaluate
+    exit_code: 7
+    remediation: "git absent, SHA unresolvable, or no Slice-Id trailer found -- nothing to audit."
+  - error_class: ATReviewNotApproved
+    exit_code: 45
+    remediation: "The slice's AT-review ledger record is absent, not-approved, or stale. Run des record-at-review-verdict."
 
 idempotency: idempotent
 

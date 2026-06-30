@@ -1,6 +1,6 @@
 """Backlog hygiene audit tool — acceptance tests as SSOT.
 
-Reconciles `docs/backlog.md` claims of resolution against the existence and
+Reconciles `docs/product/backlog.md` claims of resolution against the existence and
 GREEN status of acceptance tests. GitHub issue state is deliberately
 excluded (procedural, not empirical — see ADR-AUDIT-004 in
 `docs/analysis/backlog-audit-2026-05-03.md`).
@@ -30,7 +30,7 @@ from pathlib import Path
 # ─── Constants ──────────────────────────────────────────────────────────────
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_BACKLOG = REPO_ROOT / "docs" / "backlog.md"
+DEFAULT_BACKLOG = REPO_ROOT / "docs" / "product" / "backlog.md"
 DEFAULT_TESTS_ROOT = REPO_ROOT / "tests"
 
 # Discovery search order (most-canonical first)
@@ -723,7 +723,7 @@ def audit(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit docs/backlog.md against acceptance test SSOT. "
+            "Audit docs/product/backlog.md against acceptance test SSOT. "
             "Heuristic parser — every flag requires human review."
         ),
     )

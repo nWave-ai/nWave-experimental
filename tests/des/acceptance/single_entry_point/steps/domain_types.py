@@ -105,6 +105,20 @@ SUBCOMMAND_TABLE: tuple[SubcommandRow, ...] = (
     # commit-slice -- the mechanical correct-by-construction slice commit
     # (#67 facet-4 / AD-23 adjacent: committed-scope Gate-Scope: by construction).
     SubcommandRow("commit-slice", "des.cli.commit_slice", "main"),
+    SubcommandRow("validate-feature-delta", "des.cli.validate_feature_delta", "main"),
+    # record-discuss-review -- the O-4 keyless DISCUSS PO-review verdict
+    # producer (nwave-flow-v2-enforcement slice-07b veto-gate, writes BOTH
+    # approved + needs-revision).
+    SubcommandRow("record-discuss-review", "des.cli.discuss_review_verdict", "main"),
+    # record-at-review-verdict -- the AT-review verdict producer (D-register,
+    # oss-review-verdict-demotion S2). Symmetric with record-discuss-review;
+    # post-demotion the RECORD is the entire control so discoverability is
+    # load-bearing.
+    SubcommandRow("record-at-review-verdict", "des.cli.at_review_verdict", "main"),
+    # fix-wave-bypass-recovery-truthful slice-02: the `des wave-clear` operator
+    # subcommand is mirrored here so the single-entry-point AT verifies its
+    # reachability (DISCUSS/DESIGN Reuse Posture required this mirror).
+    SubcommandRow("wave-clear", "des.cli.wave_clear", "main"),
 )
 
 

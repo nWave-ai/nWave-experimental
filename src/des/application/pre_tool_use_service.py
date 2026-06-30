@@ -8,10 +8,13 @@ This service implements the PreToolUsePort driver port interface.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from des.domain.des_marker_parser import classify_atdd_pure_dispatch
+from des.domain.wave_active import NoWaveActive, WaveActiveRecord
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
+from des.ports.driven_ports.committed_scope_port import Indeterminate
 from des.ports.driver_ports.pre_tool_use_port import (
     HookDecision,
     PreToolUseInput,
@@ -20,10 +23,14 @@ from des.ports.driver_ports.pre_tool_use_port import (
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from des.domain.des_enforcement_policy import DesEnforcementPolicy
     from des.domain.des_marker_parser import DesMarkerParser
     from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
+    from des.ports.driven_ports.product_ssot_reader import ProductSsotReader
     from des.ports.driven_ports.time_provider_port import TimeProvider
+    from des.ports.driven_ports.wave_active_store import WaveActiveReader
     from des.ports.driver_ports.validator_port import ValidatorPort
 
 
@@ -34,6 +41,11 @@ class PreToolUseService(PreToolUsePort):
       1. Parse DES markers via DesMarkerParser
       2. Block step-id tasks without DES markers via DesEnforcementPolicy
          - If enforced: log HOOK_PRE_TOOL_USE_BLOCKED, return block
+      2.5. Whole-project exemption (ADR-PST-001): if deliverable_type is in
+         DesEnforcementPolicy.EXEMPT_DELIVERABLE_TYPES (plugin/skill), log
+         HOOK_PRE_TOOL_USE_ALLOWED and return allow immediately — a plugin/skill
+         project is not policed at all (no completeness/structure validation).
+         Unreachable for application/None (not in the exempt set).
       3. If not DES task: log HOOK_PRE_TOOL_USE_ALLOWED, return allow immediately
          (no prompt validation — non-DES tasks pass through)
       4. Validate marker completeness via MarkerCompletenessPolicy
@@ -53,6 +65,9 @@ class PreToolUseService(PreToolUsePort):
         enforcement_policy: DesEnforcementPolicy | None = None,
         completeness_policy: MarkerCompletenessPolicy | None = None,
         atdd_pure_validator: ValidatorPort | None = None,
+        wave_active_reader: WaveActiveReader | None = None,
+        product_ssot_reader: ProductSsotReader | None = None,
+        deliverable_type: str | None = None,
     ) -> None:
         self._marker_parser = marker_parser
         self._prompt_validator = prompt_validator
@@ -61,6 +76,12 @@ class PreToolUseService(PreToolUsePort):
         self._enforcement_policy = enforcement_policy
         self._completeness_policy = completeness_policy
         self._atdd_pure_validator = atdd_pure_validator
+        self._wave_active_reader = wave_active_reader
+        self._product_ssot_reader = product_ssot_reader
+        # ADR-PST-001 (feature plugin-skill-deliverable-type): resolved once per
+        # dispatch by the DESConfig adapter, threaded pure into policy.check().
+        # ``None`` keeps the app-code enforcement path byte-identical.
+        self._deliverable_type = deliverable_type
 
     def validate(
         self,
@@ -80,9 +101,62 @@ class PreToolUseService(PreToolUsePort):
         # Step 1: Parse DES markers
         markers = self._marker_parser.parse(input_data.prompt)
 
+        # Step 1b: Source the ACTIVE wave from the deterministic WaveActiveReader
+        # (NEVER self-reported from the prompt). NoWaveActive -> wave None (S1);
+        # a record -> the armed wave name; Indeterminate -> degrade-LOUD block.
+        wave_state = self._read_active_wave()
+        if isinstance(wave_state, Indeterminate):
+            reason = f"WAVE_ACTIVE_INDETERMINATE: {wave_state.reason}"
+            self._log_blocked(reason, hook_id=hook_id)
+            return HookDecision.block(
+                reason=reason,
+                recovery_suggestions=[
+                    "The wave-active floor .nwave/wave-active/active.json is "
+                    "unreadable or corrupt -- restore a valid floor: ensure the "
+                    "file holds a single well-formed JSON object describing the "
+                    "active wave state (or remove it if no wave is active).",
+                    "Re-derive the wave state by re-running the wave entry command "
+                    "so the floor is written cleanly, then retry the dispatch.",
+                ],
+            )
+        markers = replace(markers, wave=wave_state)
+
+        # Step 1c: DISCUSS gate-IN precondition (slice-07). When the ACTIVE wave
+        # is 'discuss', the wave-ENTERING dispatch must satisfy the DISCUSS entry
+        # preconditions (product migration-gate + the four SSOT docs, §8). The
+        # gate only VETOES (§22.0): a non-PASS DiscussGateIn token -> block; an
+        # unreadable root -> INDETERMINATE degrade-LOUD block (§17). Additive DI:
+        # no product_ssot_reader wired -> branch skipped (mirrors the slice-04
+        # wave_active_reader degrade -- the gate never breaks existing wiring).
+        #
+        # The discriminant keys on TWO deterministic signals (never prompt
+        # wording -- F3 NORMATIVO, slice-07c; the AD-66 keyword heuristic is
+        # DELETED): (1) the ACTIVE wave is 'discuss' (sourced from the
+        # WaveActiveReader floor, never self-reported) AND (2)
+        # input_data.wave_entering -- computed by OUR hook adapter from OUR
+        # floor's anchor-owned entry_pending flag
+        # (WaveActivationService.peek_entry), the STRUCTURAL wave-entering
+        # signal the COMMAND arm wrote. A later in-wave dispatch arrives with
+        # the flag cleared (clear-on-allow), so the entry preconditions run
+        # exactly once; an in-wave marked CHILD is honoured by the slice-04
+        # wave-aware hinge below (PRESERVED, DESIGN REMOVE-scope). An ad-hoc
+        # no-wave dispatch (markers.wave is None) never reaches here (K2).
+        if (
+            markers.wave == "discuss"
+            and self._product_ssot_reader is not None
+            and input_data.wave_entering
+        ):
+            gate_in_block = self._discuss_gate_in_declarative(
+                "discuss", hook_id=hook_id
+            )
+            if gate_in_block is not None:
+                return gate_in_block
+
         # Step 2: Enforce DES markers on step-id references (applies to all tasks)
         if self._enforcement_policy:
-            enforcement = self._enforcement_policy.check(input_data.prompt)
+            enforcement = self._enforcement_policy.check(
+                input_data.prompt, self._deliverable_type
+            )
             if enforcement.is_enforced:
                 self._log_blocked(
                     enforcement.reason or "DES_MARKERS_MISSING", hook_id=hook_id
@@ -92,9 +166,80 @@ class PreToolUseService(PreToolUsePort):
                     recovery_suggestions=enforcement.recovery_suggestions,
                 )
 
+            # Whole-project exemption (ADR-PST-001): declaring plugin/skill exempts
+            # ALL step dispatches for that project -- the policy has already
+            # certified is_enforced=False, so the service honors that verdict at
+            # whole-project granularity and allows immediately, without re-imposing
+            # discipline via marker-completeness/prompt-structure validation. The
+            # service only THREADS this context; the enforcement decision stays in
+            # the pure policy. App-code (None/application) is unaffected: it never
+            # enters this branch, so its path is byte-identical.
+            if (
+                self._deliverable_type
+                in self._enforcement_policy.EXEMPT_DELIVERABLE_TYPES
+            ):
+                self._log_allowed(context="deliverable_type_exempt", hook_id=hook_id)
+                return HookDecision.allow()
+
         if not markers.is_des_task:
-            # Non-DES task (no step-id enforcement triggered): allow immediately
-            # No max_turns check, no prompt validation for non-DES tasks
+            # Mode-aware routing BEFORE the classic WAVE_MARKER_BYPASS (spine
+            # friction, 2026-06-23): an atdd_pure dispatch carries the atdd_pure
+            # marker discipline (DES-MODE:atdd_pure + DES-PHASE + DES-SLICE), NOT
+            # the classic DES-VALIDATION the bypass below demands. Route it to
+            # atdd_pure validation so a still-armed wave floor does NOT deny an
+            # in-flight atdd_pure slice for lacking classic markers it never emits.
+            # Purely ADDITIVE: a 'defective' atdd_pure dispatch is still blocked
+            # loud by the atdd_pure validator (no silent bypass); a classic
+            # ('absent') dispatch falls through to the unchanged bypass below.
+            atdd_pure_classification = classify_atdd_pure_dispatch(markers)
+            if atdd_pure_classification != "absent":
+                return self._validate_atdd_pure_dispatch(
+                    input_data.prompt, atdd_pure_classification, hook_id=hook_id
+                )
+            # Wave-aware hinge (slice-04, relaxed by fix-wave-dispatch-marker-contract
+            # slice-01). Asymmetric authority (§22.0): the gate only VETOES; it
+            # never writes the authorizing wave-state. The veto is now EXEMPT for a
+            # wave-ENTERING dispatch (input_data.wave_entering=True) -- the exact
+            # DES-WAVE-only shape every command template ships (§22.7.A). The
+            # discriminant is the deterministic adapter-computed wave_entering
+            # signal, NEVER prompt wording.
+            if (
+                markers.wave is not None
+                and markers.carries_partial_wave_context
+                and not input_data.wave_entering
+            ):
+                # S2: a wave is active AND this dispatch carries PARTIAL wave context
+                # (a DES marker subset OR a DES-WAVE declaration) but MISSES the
+                # required DES-VALIDATION marker AND it is NOT entering the wave
+                # -> a positively-identified wave-owned child that dropped its
+                # required marker. The bypass is made LOUD (a DENY), never a silent
+                # allow that would let it slip past the gate (K1). A FULLY-MARKERLESS
+                # dispatch (carries_partial_wave_context=False) is an ad-hoc benign
+                # prompt allowed below (K2 -- floor-in-the-tree is NOT in-the-wave);
+                # a wave-ENTERING dispatch (wave_entering=True) is a legitimate entry
+                # exempted above (ADR-001 positive-bypass-signal).
+                reason = (
+                    f"WAVE_MARKER_BYPASS: the '{markers.wave}' wave is active but "
+                    "this in-wave sub-dispatch carries partial wave context and "
+                    "is missing the required DES-VALIDATION marker -- a wave-owned "
+                    "child that dropped its markers is a wave bypass, denied loud "
+                    "(it must carry the wave's DES markers to proceed)"
+                )
+                recovery_suggestions = [
+                    "Carry the wave's DES markers on this sub-dispatch: copy the "
+                    "<!-- DES-VALIDATION --> (and the wave's DES-MODE / DES-PHASE / "
+                    "DES-SLICE / DES-PROJECT-ID / DES-STEP-ID / DES-PROJECT-ROOT) "
+                    "markers from the parent wave dispatch onto this child prompt.",
+                    f"If the '{markers.wave}' wave floor is STALE (a days-old wave "
+                    "you are not actually in), clear it with the sanctioned command "
+                    '`des wave-clear --reason "<why>"` so the floor no longer '
+                    "blocks this dispatch.",
+                ]
+                self._log_blocked(reason, hook_id=hook_id)
+                return HookDecision.block(
+                    reason=reason, recovery_suggestions=recovery_suggestions
+                )
+            # S1: no wave active -> ad-hoc non-wave dispatch, allowed untouched (K2).
             self._log_allowed(context="non_des_task", hook_id=hook_id)
             return HookDecision.allow()
 
@@ -135,7 +280,17 @@ class PreToolUseService(PreToolUsePort):
         else:
             reason = "; ".join(validation_result.errors)
             self._log_blocked(reason, hook_id=hook_id)
-            return HookDecision.block(reason=reason)
+            return HookDecision.block(
+                reason=reason,
+                recovery_suggestions=[
+                    "The classic dispatch template is missing one or more of its 9 "
+                    "mandatory sections -- add the missing mandatory section(s) named "
+                    f"in the block reason ({reason}) to the dispatch prompt.",
+                    "Use the classic dispatch template as the source of truth: every "
+                    "one of the 9 mandatory sections must be present before the "
+                    "dispatch is allowed.",
+                ],
+            )
 
     def _validate_atdd_pure_dispatch(
         self,
@@ -153,7 +308,19 @@ class PreToolUseService(PreToolUsePort):
         if classification == "defective":
             reason = "ATDD_PURE_DISPATCH_DEFECTIVE: incomplete atdd_pure marker set"
             self._log_blocked(reason, hook_id=hook_id)
-            return HookDecision.block(reason=reason)
+            return HookDecision.block(
+                reason=reason,
+                recovery_suggestions=[
+                    "The atdd_pure DES markers are incoherent -- make the "
+                    "DES-MODE / DES-PHASE / DES-SLICE markers coherent: a per-slice "
+                    "phase (e.g. A_GREEN_ATS) must carry a per-slice DES-SLICE "
+                    "(e.g. slice-01), and a feature-end phase (e.g. G_COMMIT) must "
+                    "carry the feature-end scope -- do not pair a per-slice phase "
+                    "with a feature-end DES-SLICE.",
+                    "Re-emit the dispatch with a complete, coherent atdd_pure marker "
+                    "set (DES-MODE: atdd_pure + matching DES-PHASE + DES-SLICE).",
+                ],
+            )
 
         if self._atdd_pure_validator is None:
             self._log_allowed(context="atdd_pure_validated", hook_id=hook_id)
@@ -166,7 +333,156 @@ class PreToolUseService(PreToolUsePort):
 
         reason = "; ".join(validation_result.errors)
         self._log_blocked(reason, hook_id=hook_id)
-        return HookDecision.block(reason=reason)
+        return HookDecision.block(
+            reason=reason,
+            recovery_suggestions=[
+                "The atdd_pure markers are valid but the dispatch is missing one or "
+                "more of its atdd_pure mandatory sections -- add the missing "
+                f"atdd_pure section(s) named in the block reason ({reason}) to the "
+                "dispatch prompt.",
+                "Use the atdd_pure dispatch template as the source of truth: every "
+                "atdd_pure mandatory section must be present before the dispatch is "
+                "allowed.",
+            ],
+        )
+
+    def _discuss_gate_in_declarative(
+        self, wave: str, hook_id: str | None
+    ) -> HookDecision | None:
+        """Run the DISCUSS gate-IN stack DECLARATIVELY; return a block, or None.
+
+        f-declarative-gate-composition (OB-1): the DISCUSS gate-IN stack is
+        declared as DATA in ``wave_gate_stacks.discuss.gate-in``. This generic
+        path SELECTS that stack (off the active wave), ITERATES it via the
+        EXISTING ``dispatch_lifecycle_event`` (iterate-in-order,
+        halt-at-first-veto), and CARRIES the blocking gate's specific reason +
+        recovery through to the ``HookDecision`` (OB-2 parity). The gate stack is
+        editable as data, not as a hand-coded handler branch.
+
+        The per-gate behavior is the SAME pure core the imperative branch ran:
+        the ``validate-feature-delta`` gate-id, on the gate-IN boundary, is
+        routed to ``DiscussGateIn.evaluate`` over the product-SSOT presence read
+        via the injected capability reader. A non-PASS token is a named-LOUD
+        VETO (``DISCUSS_GATE_IN_<token>``); a clean iteration returns None so the
+        normal wave-aware flow proceeds (PASS = "no objection found", NOT a GO).
+        """
+        from des.application import wave_gate_stack_dispatch as wgs
+
+        assert self._product_ssot_reader is not None
+        stack = wgs.resolve_stack(wave, "gate-in")
+        if not stack:
+            return None
+
+        result = wgs.dispatch_wave_stack(
+            stack, "discuss.gate-in", self._discuss_gate_in_invoker()
+        )
+        return self._block_from_composition(result, hook_id=hook_id)
+
+    def _discuss_gate_in_invoker(
+        self,
+    ) -> Callable[[str, dict[str, str]], tuple[int, str]]:
+        """Build the gate-IN invoker routing catalog gate-ids to the pure core.
+
+        The invoker reads the product-SSOT presence ONCE and runs
+        ``DiscussGateIn.evaluate`` for the declared ``validate-feature-delta``
+        gate-id; an uncatalogued gate-id fails closed, named (reuse of the
+        ``_gate_invoker_for`` fail-closed shape).
+        """
+        from pathlib import Path
+
+        from des.application import wave_gate_stack_dispatch as wgs
+        from des.domain.discuss_gate import DiscussGateIn, DiscussGateInToken
+
+        assert self._product_ssot_reader is not None
+        reader = self._product_ssot_reader
+
+        def invoke(gate_id: str, _context: dict[str, str]) -> tuple[int, str]:
+            if gate_id != "validate-feature-delta":
+                return wgs.unknown_gate_stdout(gate_id)
+            presence = reader.ssot_present(Path.cwd())
+            gate_in = DiscussGateIn.evaluate(presence)
+            if gate_in.token is DiscussGateInToken.PASS:
+                return wgs.pass_stdout(gate_id)
+            reason = f"DISCUSS_GATE_IN_{gate_in.token.value}: {gate_in.detail}"
+            if gate_in.token is DiscussGateInToken.MIGRATION_UNMET:
+                # ADR-FLOW-002 Q4 (retired into slice-05): a greenfield entry
+                # (docs/product/ absent) is DECLASSED veto -> advisory. DIVERGE
+                # owns the greenfield bootstrap; DISCUSS proceeds via the
+                # soft-gate. Scope = MIGRATION_UNMET ONLY -- INDETERMINATE
+                # (unreadable root) and MISSING_SSOT still hard-veto (Invariant
+                # 2, §17 no-silent-pass; the degrade-LOUD veto is never coerced
+                # to a silent pass).
+                return wgs.advisory_stdout(
+                    gate_id,
+                    reason=reason,
+                    advice=[
+                        "This is a greenfield project (docs/product absent) -- "
+                        "DIVERGE owns the greenfield bootstrap. DISCUSS may "
+                        "proceed; the product-SSOT artifacts are populated "
+                        "through the canonical DISCOVER -> DIVERGE -> DISCUSS "
+                        "order, not as a DISCUSS precondition.",
+                    ],
+                )
+            return wgs.veto_stdout(
+                gate_id,
+                reason=reason,
+                recovery=[
+                    "The DISCUSS gate-IN product-SSOT precondition is unmet -- "
+                    "provide the docs/product SSOT artifacts the DISCUSS wave "
+                    "requires (vision, roadmap, glossary, backlog) before "
+                    "entering the wave.",
+                    "If this is a migration of an existing project, run the "
+                    "product migration so the docs/product SSOT exists, then "
+                    "retry the discuss entry.",
+                ],
+            )
+
+        return invoke
+
+    def _block_from_composition(
+        self, result: object, hook_id: str | None
+    ) -> HookDecision | None:
+        """Map a halted composition to a named-LOUD block, or None on clean pass.
+
+        Carries the blocking gate's specific reason + recovery_suggestions
+        through (OB-2 parity). A clean iteration (no halt) is "no objection
+        found" -> None (NOT an authorizing GO, Invariant 4).
+        """
+        from des.application import wave_gate_stack_dispatch as wgs
+        from des.application.flavor_dispatcher import CompositionResult
+
+        assert isinstance(result, CompositionResult)
+        if not result.halted or result.blocking_gate_id is None:
+            return None
+        blocking = next(
+            (r for r in result.gate_results if r.gate_id == result.blocking_gate_id),
+            None,
+        )
+        assert blocking is not None
+        reason = wgs.reason_from_stdout(blocking.stdout, blocking.gate_id)
+        self._log_blocked(reason, hook_id=hook_id)
+        return HookDecision.block(
+            reason=reason,
+            recovery_suggestions=list(blocking.recovery_suggestions),
+        )
+
+    def _read_active_wave(self) -> str | None | Indeterminate:
+        """Read the ACTIVE wave name via WaveActiveReader (None <=> NoWaveActive).
+
+        No reader wired -> None (S1): the wave-aware hinge degrades to the legacy
+        allow-ad-hoc behaviour. A record -> the armed wave name. Indeterminate ->
+        propagated so the hinge degrades LOUD (never silent-pass).
+        """
+        if self._wave_active_reader is None:
+            return None
+        from pathlib import Path
+
+        state = self._wave_active_reader.read(Path.cwd())
+        if isinstance(state, WaveActiveRecord):
+            return state.wave
+        if isinstance(state, NoWaveActive):
+            return None
+        return state
 
     def _log_allowed(self, context: str, hook_id: str | None = None) -> None:
         """Log an allowed invocation to the audit trail."""

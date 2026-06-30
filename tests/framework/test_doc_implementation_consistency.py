@@ -44,7 +44,7 @@ ADR_025_PATH = REPO_ROOT / "docs" / "architecture" / "ADR-025-3-phase-tdd-canon.
 ADR_025_BACKLINK_LOCATIONS: tuple[Path, ...] = (
     REPO_ROOT / "src" / "des" / "domain" / "tdd_schema.py",
     REPO_ROOT / "src" / "des" / "application" / "validator.py",
-    REPO_ROOT / "nWave" / "skills" / "nw-tdd-methodology" / "SKILL.md",
+    REPO_ROOT / "nWave" / "skills" / "nw-tdd-methodology-cycle" / "SKILL.md",
     REPO_ROOT / "nWave" / "skills" / "nw-deliver" / "SKILL.md",
     REPO_ROOT / "nWave" / "skills" / "nw-rigor" / "SKILL.md",
 )

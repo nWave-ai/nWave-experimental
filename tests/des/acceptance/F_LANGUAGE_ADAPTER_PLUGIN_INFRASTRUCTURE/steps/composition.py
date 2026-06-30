@@ -44,9 +44,11 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from scripts.cli.validate_language_adapter_catalog import main as _validate_catalog_main
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import (
     CatalogPresence,
@@ -57,9 +59,37 @@ from .domain_types import (
 
 
 # Repo root -- the SSOT catalog + schema + scripts live under here.
-# Composition reads them via subprocess so the SUT is the real install path,
-# not a direct Python import.
+# Composition drives the real CLI EDGE / discovery snippet IN-PROCESS
+# (corpus-migration-in-process) so the SUT is the real install path, not a
+# fresh-interpreter fork.
 _REPO_ROOT = Path(__file__).resolve().parents[5]
+
+
+# The entry-points discovery snippet the slice-01 walking-skeleton floor pins.
+# Driven in-process via ``_run_py_snippet_in_process`` -- ``entry_points`` reads
+# the same installed dist metadata in-process as a forked interpreter did.
+_ENTRY_POINT_DISCOVERY_SNIPPET = (
+    "import json\n"
+    "from importlib.metadata import entry_points\n"
+    "names = sorted(ep.name for ep in entry_points(group='nwave.lang.adapter'))\n"
+    "print(json.dumps(names))\n"
+)
+
+
+def _run_py_snippet_in_process(snippet: str, *, cwd: Path) -> tuple[int, str, str]:
+    """Drive a ``python -c <snippet>`` fork IN-PROCESS (corpus-migration-in-process).
+
+    Reuses ``run_cli_in_process`` to ``exec`` the IDENTICAL snippet under ``cwd``
+    with stdout/stderr captured and any ``sys.exit(n)`` mapped onto the exit
+    code -- behaviour-identical to the fresh-interpreter fork the corpus ran,
+    minus the interpreter spawn. Returns ``(exit_code, stdout, stderr)``.
+    """
+
+    def _exec_snippet(_argv: list[str]) -> int:
+        exec(compile(snippet, "<in-process-snippet>", "exec"), {"__name__": "__main__"})
+        return 0
+
+    return run_cli_in_process([], cwd=cwd, main=_exec_snippet)
 
 
 # --- Domain observation types ------------------------------------------------
@@ -232,29 +262,25 @@ class LanguageAdapterInfrastructureComposition:
     # --- When services -----------------------------------------------------
 
     def when_catalog_validator_runs(self) -> CatalogValidatorResult:
-        """Run the production catalog validator CLI as a subprocess.
+        """Run the production catalog validator CLI EDGE in-process.
 
-        Invokes ``python -m scripts.cli.validate_language_adapter_catalog``
-        against the SSOT catalog path. The CLI exits 0 when the catalog is
-        schema-valid AND every cited ``src/...`` path grep-finds; non-zero
-        otherwise. Slice-01 RED: CLI module does not exist, subprocess exits
-        with import-error / module-not-found (non-zero), so outcome=INVALID.
+        Drives ``scripts.cli.validate_language_adapter_catalog.main(argv)``
+        in-process (the in-process analogue of ``python -m
+        scripts.cli.validate_language_adapter_catalog`` -- corpus-migration-in-
+        process) against the SSOT catalog path. The CLI exits 0 when the catalog
+        is schema-valid AND every cited ``src/...`` path grep-finds; non-zero
+        otherwise. Slice-01 RED: CLI module does not exist, exits with
+        import-error / module-not-found (non-zero), so outcome=INVALID.
         Slice-01 GREEN (post-DELIVER): CLI exists + catalog exists + schema
         validates + paths grep-find, outcome=VALID.
         """
-        proc = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "scripts.cli.validate_language_adapter_catalog",
-                str(self._catalog_path),
-            ],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
+        exit_code, stdout, stderr = run_cli_in_process(
+            [str(self._catalog_path)],
+            cwd=_REPO_ROOT,
+            main=_validate_catalog_main,
         )
         result = CatalogValidatorResult(
-            exit_code=proc.returncode, stdout=proc.stdout, stderr=proc.stderr
+            exit_code=exit_code, stdout=stdout, stderr=stderr
         )
         self.validator_result = result
         return result
@@ -288,33 +314,22 @@ class LanguageAdapterInfrastructureComposition:
         return result
 
     def when_entry_point_discovery_runs(self) -> PluginDiscoveryResult:
-        """Run the production entry-points discovery query as a subprocess.
+        """Run the production entry-points discovery query in-process.
 
         Exercises the real Python ``importlib.metadata.entry_points`` against
         the canonical group ``nwave.lang.adapter`` (Option C discovery
-        substrate per DESIGN slice-01). Slice-01 RED: zero plugins registered
-        in the group (the ABC + first plugin land in slice-02 + slice-05a),
-        so the discovered list is empty -- the AT pins the empty-list shape
-        as the walking-skeleton floor.
+        substrate per DESIGN slice-01). The identical discovery snippet runs
+        in-process (corpus-migration-in-process) -- ``entry_points`` reads the
+        same installed dist metadata whether forked or not. Slice-01 RED: zero
+        plugins registered in the group (the ABC + first plugin land in
+        slice-02 + slice-05a), so the discovered list is empty -- the AT pins
+        the empty-list shape as the walking-skeleton floor.
         """
-        proc = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                (
-                    "import json\n"
-                    "from importlib.metadata import entry_points\n"
-                    "names = sorted(ep.name for ep in "
-                    "entry_points(group='nwave.lang.adapter'))\n"
-                    "print(json.dumps(names))\n"
-                ),
-            ],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
+        exit_code, stdout, stderr = _run_py_snippet_in_process(
+            _ENTRY_POINT_DISCOVERY_SNIPPET, cwd=_REPO_ROOT
         )
         result = PluginDiscoveryResult(
-            exit_code=proc.returncode, stdout=proc.stdout, stderr=proc.stderr
+            exit_code=exit_code, stdout=stdout, stderr=stderr
         )
         self.discovery_result = result
         return result

@@ -5,6 +5,8 @@ user-invocable: true
 argument-hint: "[feature-description] - Example: \"wave-matrix -- derive feature status from pytest + filesystem\""
 ---
 
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+
 # NW-SPIKE: Probe → Walking Skeleton
 
 **Wave**: SPIKE (between DISCUSS and DESIGN) | **Agent**: Attila (nw-software-crafter) | **Command**: `/nw-spike`

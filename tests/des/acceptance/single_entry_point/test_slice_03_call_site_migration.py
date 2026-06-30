@@ -17,8 +17,8 @@ Unparked 2026-05-24 (N2 night autonomous PRR push).
 
 from pytest_bdd import scenarios
 
-from .steps.steps_slice_01 import *  # noqa: F403 — reuse Background Given
-from .steps.steps_slice_03 import *  # noqa: F403
+from .steps.steps_slice_01 import *
+from .steps.steps_slice_03 import *
 
 
 scenarios("slice_03_call_site_migration.feature")

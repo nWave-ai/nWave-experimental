@@ -578,6 +578,24 @@ Lenses: `nw-solution-architect-reviewer` ×3 (vs brief+ADR / SSOT+duplication / 
 
 ---
 
+## Crafter-reviewer findings 2026-06-10 — flow-v2 slice-07 (DISCUSS gate wiring, APPROVED-with-debt)
+
+> Source: nw-software-crafter-reviewer adjudication of the two crafter-raised flags on slice-07 (`nwave-flow-v2-enforcement`). Both APPROVED for the slice as shipped; both carry a named structural follow-up. Evidence verified in working tree at commit time.
+
+### AD-65 — `des.cli.__init__` import-time freshness side-effect forces an importlib bypass in the domain
+
+- **Type**: boundary-violation (composition-root side-effect at import time) · **Severity**: medium · **Surfaced**: 2026-06-09/10 (slice-07 crafter flag 1, reviewer-adjudicated JUSTIFIED-band-aid) · **ToC-root**: R8 (consolidation)
+- **Finding**: `des.cli.__init__` fires the runtime-freshness gate at import time (`SystemExit 78` under a bare tmp_path with no `.git/` ancestry). `discuss_gate._validate_feature_delta()` therefore loads `validate_feature_delta.py` standalone via `importlib.util` (path resolved from the side-effect-free `des` package) to reuse `validate_slice_plan_content` without triggering the CLI composition-root. Hexagonally sound as a band-aid (domain must not trigger CLI side-effects) but it is an import-mechanism workaround, not a root fix.
+- **Fix direction**: extract the pure validator core (`validate_slice_plan_content` + verdict tokens + parsing helpers) to `des.domain` (or another side-effect-free module); `des.cli.validate_feature_delta` becomes a thin shell importing it; retire the importlib load in `discuss_gate`. Alternative (weaker): make `des.cli.__init__` side-effect-free and move the freshness gate into the dispatcher entry. Pairs naturally with the declarative wave→gate extraction (flow-design §15.A follow-on), which wants the gate logic CLI-independent anyway.
+
+### AD-66 — `_is_wave_entering_dispatch` is a keyword heuristic, not a deterministic signal
+
+- **Type**: drift-vs-design-intent (§22.7 determinism) · **Severity**: medium · **Surfaced**: 2026-06-09/10 (slice-07 crafter flag 2, self-flagged "somewhat brittle", reviewer-adjudicated ACCEPTABLE-for-slice) · **ToC-root**: flow-v2 follow-on (wave-migration)
+- **Finding**: the slice-04 marked-child prompt and the slice-07 wave-entering prompt parse to byte-identical DES markers; the only distinguishing signal available to the gate-IN branch is expressed entry intent in the prompt text (keywords "begin/enter/start the discuss wave") — `pre_tool_use_service._is_wave_entering_dispatch`. Failure asymmetry is safe (false-positive block is LOUD and retryable; false-negative skips the precondition gate but the SSOT violation surfaces at the next gate), but a keyword in an LLM-authored prompt is itself a self-report — weaker than the §22.7 bar the rest of the gate meets.
+- **Fix direction (DESIGN-owned)**: a deterministic wave-entering signal at the hook level — e.g. the `user_prompt_submit_handler` (which already deterministically sees the literal `/nw-discuss`) marks the FIRST in-wave Agent dispatch after arming (flag on the wave-active record or in `PreToolUseInput`), consumed by gate-IN instead of prompt keywords. Route into the slice-07c/strand-2 design session or the DESIGN-wave migration feature — same hook surface.
+
+---
+
 ## 🗄️ ARCHIVE — completed & historical (SKIP unless explicitly asked)
 
 > **Empty by design (2026-06-01).** This file is **append-only**: AD-rows are amended in place (status delta), never deleted, and the dated audit panels above are living historical records that feed the UNIFIED ToC. No AD-row currently carries an explicit terminal-close marker (GREEN/CLOSED/✅) — findings advanced by the night refactor (AD-22 committed-scope-port, AD-05 CLI-library inversion, AD-02 ledger-port DIP, AD-16 domain singletons, plus phase-identity/VALIDATION_COMMANDS consolidation) are tracked as *amended-in-place* status deltas within their audit panels, not as moved entries. **AD-04 is DISPROVED** (PhaseEvent VOs are load-bearing) — it awaits a row revision, not archival. When an AD-row reaches a verified terminal close, relocate it here verbatim (content preserved, never summarized).

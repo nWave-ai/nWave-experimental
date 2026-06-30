@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-from .slice02_common_steps import *  # noqa: F403 -- slice-02 step vocabulary
+from .slice02_common_steps import *
 
 
 scenarios("../slice-02-language-adapter-plugin-abc.feature")

@@ -7,7 +7,7 @@ slice-03 is a cross-artifact slice: the SUT is the relationship between three
 real repository assets --
 
   - the normative constants in
-    ``scripts/validation/validate_feature_delta.py``
+    ``src/des/cli/validate_feature_delta.py``
     (``REUSE_ANALYSIS_HEADING`` / ``REUSE_ANALYSIS_COLUMNS``),
   - the human-facing copy in ``nWave/skills/nw-design/SKILL.md``
     (the Reuse Analysis step + template), and
@@ -30,7 +30,7 @@ slice-03 crafter EXTENDS all three assets. The composition methods below read
 the live assets; the assertions FAIL on master (skill uses the space
 spelling; reviewer lacks the dimension) and PASS once slice-03 lands -- a
 deliberate missing-functionality RED. Imports resolve cleanly: the constants
-are themselves DISTILL scaffolds present in ``validate_feature_delta.py``.
+are themselves DISTILL scaffolds present in ``des/cli/validate_feature_delta.py``.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from pathlib import Path
 # Production normative source -- the canonical heading + column constant
 # (DDD-8 / R1). These are DISTILL scaffolds on master; slice-01 keeps them as
 # the ONE normative source the skill template must match.
-from scripts.validation.validate_feature_delta import (
+from des.cli.validate_feature_delta import (
     REUSE_ANALYSIS_COLUMNS,
     REUSE_ANALYSIS_HEADING,
 )

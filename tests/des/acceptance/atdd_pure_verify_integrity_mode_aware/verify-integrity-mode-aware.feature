@@ -68,27 +68,19 @@ Feature: des-verify-integrity respects the project's workflow mode
     And the diagnostic message names the missing AT-completion ledger
     And des-verify-integrity does not crash
 
-  @component @driving_port @contract-shape:bounded-change
-  Scenario: An ATDD-pure feature verified with --roadmap-only treats the flag as a no-op
-    Given a deliver project directory for feature "atdd-pure-demo"
-    And the project workflow mode is "atdd_pure"
-    And the AT-completion ledger is present with every slice shipped
-    When the operator runs des-verify-integrity with --roadmap-only for that feature
-    Then des-verify-integrity reports the feature verified
-    And des-verify-integrity does not fail for a missing roadmap
+  # f-finalize-verify-single-spine slice-01: the "--roadmap-only treats the flag
+  # as a no-op" scenario and the classic-mode Examples block were removed -- they
+  # pinned the now-deleted classic finalize leg (the `--roadmap-only` mode + the
+  # `workflow.mode == classic` roadmap/execution-log dispatch). The surviving
+  # unset row pins the DDD-7 absent-key default (unset resolves atdd_pure).
 
   @component @driving_port @contract-shape:bounded-change
-  Scenario Outline: A classic feature keeps the existing integrity verdict, with zero regression
+  Scenario Outline: An unset-mode feature resolves atdd_pure and is verified against its ledger
     Given a deliver project directory for feature "classic-demo"
     And the project workflow mode is "<workflow_mode>"
     And a classic deliver project with "<trace_completeness>"
     When the operator runs des-verify-integrity for that feature
     Then des-verify-integrity reports "<expected_verdict>"
-
-    Examples: classic mode -- the existing 0/1 contract
-      | workflow_mode | trace_completeness | expected_verdict       |
-      | classic       | complete traces    | the feature verified   |
-      | classic       | incomplete traces  | an integrity violation |
 
     Examples: unset mode resolves atdd_pure (DDD-7 absent-key default)
       # DDD-7: an unset workflow.mode now resolves atdd_pure, so the verifier

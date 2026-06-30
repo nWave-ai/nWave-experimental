@@ -28,7 +28,7 @@ _fixtures_path = Path(__file__).parent.parent / "fixtures"
 if str(_fixtures_path) not in sys.path:
     sys.path.insert(0, str(_fixtures_path))
 
-from baseline_snapshot import (  # noqa: E402
+from baseline_snapshot import (
     InstallationSnapshot,
     compare_snapshots,
     validate_installation_structure,

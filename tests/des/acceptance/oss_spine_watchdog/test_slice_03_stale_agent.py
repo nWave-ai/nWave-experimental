@@ -30,7 +30,7 @@ from .composition_slice_03 import (  # noqa: F401  -- pytest fixtures
     stale_agent_fixture,
     state_03,
 )
-from .steps.steps_slice_03_stale_agent import *  # noqa: F403  -- step vocabulary
+from .steps.steps_slice_03_stale_agent import *
 
 
 scenarios("slice-03-stale-agent-timeout.feature")

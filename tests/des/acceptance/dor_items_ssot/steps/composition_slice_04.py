@@ -66,10 +66,11 @@ the suite COLLECTS cleanly.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
+
+from scripts.cli import check_dor_items_drift
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types_slice_04 import (
     DRIFT_VERDICT_FAIL,
@@ -83,11 +84,6 @@ from .domain_types_slice_04 import (
 # tests/des/acceptance/dor_items_ssot/steps/composition_slice_04.py -> 5 parents
 # up is the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_REPO_SRC = _REPO_ROOT / "src"
-
-# The production driving port: the slice-04 drift-gate standalone (NO `des`
-# gate-catalog coupling, the same `scripts/cli/` home as its sibling gates).
-_GATE_RELPATH = "scripts/cli/check_dor_items_drift.py"
 
 # The closed verdict-token set the gate's stdout may carry. Anything else (or a
 # missing JSON object) is treated as the MALFORMED sentinel -- the today's-RED
@@ -146,12 +142,13 @@ class DorItemsDriftGateComposition:
     # --- internals ----------------------------------------------------------
 
     def _run_gate(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [sys.executable, _GATE_RELPATH, *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(self._repo_root),
-            env=_subprocess_env(),
+        exit_code, stdout, stderr = run_cli_in_process(
+            argv,
+            cwd=self._repo_root,
+            main=check_dor_items_drift.main,
+        )
+        return subprocess.CompletedProcess(
+            args=argv, returncode=exit_code, stdout=stdout, stderr=stderr
         )
 
 
@@ -219,12 +216,6 @@ def _extract_json_object(stdout: str) -> dict | None:
         if isinstance(payload, dict) and "verdict" in payload:
             return payload
     return None
-
-
-def _subprocess_env() -> dict[str, str]:
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(_REPO_SRC)
-    return env
 
 
 __all__ = [

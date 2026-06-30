@@ -35,14 +35,14 @@ _FEATURE_ROOT = Path(__file__).resolve().parent.parent
 if str(_FEATURE_ROOT) not in sys.path:
     sys.path.insert(0, str(_FEATURE_ROOT))
 
-from freshness_steps.domain_types import (  # noqa: E402
+from freshness_steps.domain_types import (
     ADJACENCY_BY_PHRASE,
     GateVerdict,
     StructuredEventName,
 )
-from pytest_bdd import given, parsers, then, when  # noqa: E402
+from pytest_bdd import given, parsers, then, when
 
-from tests.common.state_delta import (  # noqa: E402
+from tests.common.state_delta import (
     assert_state_delta,
     set_to,
 )

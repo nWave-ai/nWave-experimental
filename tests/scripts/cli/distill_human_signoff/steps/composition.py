@@ -832,7 +832,7 @@ class HumanSignoffComposition:
 
     def read_expected_digest_for_fixture(self, raw_path: Path) -> str:
         """Return the committed expected digest for a §5.3 G4 golden fixture."""
-        expected = raw_path.with_suffix("").with_suffix(".expected-digest")
+        raw_path.with_suffix("").with_suffix(".expected-digest")
         # NOTE: with_suffix logic does not chain reliably for ``.coverage-map.md``
         # tails; compute the sibling explicitly instead.
         sibling = raw_path.parent / (

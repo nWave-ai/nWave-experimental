@@ -20,7 +20,8 @@ import time
 import uuid
 from pathlib import Path
 
-from des.adapters.drivers.hooks import des_task_signal, service_factory
+from des.adapters.driven.time.system_time import SystemTimeProvider
+from des.adapters.drivers.hooks import des_task_signal, hook_protocol, service_factory
 from des.adapters.drivers.hooks.carpaccio_intercept import (
     InterceptDecision,
     intercept_atdd_pure_dispatch,
@@ -38,14 +39,24 @@ from des.adapters.drivers.hooks.hook_protocol import (
     read_and_parse_stdin,
 )
 from des.adapters.drivers.hooks.project_root_validator import validate_project_root
+from des.application.commit_attribution_service import CommitAttributionService
+from des.application.wave_activation_service import WaveActivationService
 from des.domain.atdd_pure_phases import ATDDPurePhase
 from des.domain.des_marker_parser import DesMarkerParser
+from des.ports.driven_ports.audit_log_writer import AuditEvent
+from des.ports.driven_ports.committed_scope_port import Indeterminate
 from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
 
 
 # Non-zero exit code paired with a `{decision:block}` body for an atdd_pure
 # U1 intercept block (matches the existing block path's exit_code convention).
 _ATDD_PURE_BLOCK_EXIT_CODE = 2
+
+# Tool names that constitute a DISPATCH (slice-07c): the wave-entering
+# peek -> validate(wave_entering=) -> clear-on-allow lifecycle applies to
+# agent dispatches only -- a Bash/Read tool-use is not the wave-entering
+# dispatch and must never consume the pending entry flag.
+_DISPATCH_TOOL_NAMES = ("Agent", "Task")
 
 # slice-02 (oss-hook-side-phase-injection -- G-DISTILL-PRE): the DISTILL-specific
 # block event the DISTILL dispatch marker-enforcement branch emits. It mirrors
@@ -126,7 +137,9 @@ def _evaluate_distill_dispatch_gate(prompt: str) -> tuple[str, dict[str, str] | 
     return ("allow", None)
 
 
-def _evaluate_u1_intercept(prompt: str) -> dict[str, str] | None:
+def _evaluate_u1_intercept(
+    prompt: str, subagent_type: str = ""
+) -> dict[str, str] | None:
     """Run the U1 carpaccio intercept, fail-closed (M1).
 
     Returns the `{decision:block}` body when the dispatch must be blocked, or
@@ -138,13 +151,19 @@ def _evaluate_u1_intercept(prompt: str) -> dict[str, str] | None:
     marker parsing or project-root resolution is also surfaced as an
     `AtddPureHookInternalError` block -- NEVER the bare `exit 1` /
     `{status:error}` path. An atdd_pure-branch exception is fail-closed.
+
+    slice-05 (DDD-8): `subagent_type` (from the Task tool_input) is threaded into
+    the intercept so the wave-dispatch guard composed on `dispatch.pre` can look
+    up the dispatched agent's wave->owner entry. It is best-effort + fail-OPEN: an
+    absent subagent_type makes the guard treat the dispatch as a non-owner ->
+    ALLOW, never a block.
     """
     try:
         markers = DesMarkerParser().parse(prompt)
         if markers.mode != "atdd_pure":
             return None
 
-        feature_id = markers.project_id
+        feature_id = markers.feature_id or markers.project_id
         if not feature_id:
             return {
                 "decision": "block",
@@ -165,6 +184,7 @@ def _evaluate_u1_intercept(prompt: str) -> dict[str, str] | None:
             prompt=prompt,
             feature_id=feature_id,
             project_root=project_root,
+            subagent_type=subagent_type,
         )
         if decision.is_block:
             return _atdd_pure_intercept_block(decision)
@@ -175,6 +195,166 @@ def _evaluate_u1_intercept(prompt: str) -> dict[str, str] | None:
             "event": "AtddPureHookInternalError",
             "reason": f"U1 carpaccio intercept raised: {exc!s}",
         }
+
+
+def _peek_wave_entering(
+    hook_input: dict[str, object], activation: WaveActivationService
+) -> tuple[bool, dict[str, str] | None]:
+    """Peek the STRUCTURAL wave-entering discriminant (slice-07c, F3 NORMATIVO).
+
+    Reads the anchor-owned ``entry_pending`` flag from the wave-active floor --
+    never prompt wording (AD-66 closed). Returns ``(wave_entering, block)``:
+
+      * ``(False, None)`` -- not a dispatch tool-use, or no entry pending.
+      * ``(True, None)``  -- this dispatch IS the wave-entering one.
+      * ``(False, {decision:block,...})`` -- corrupt floor = mechanism-absent
+        -> block degrade-LOUD (§17 N=0), never coerced to a bool.
+    """
+    if hook_input.get("tool_name") not in _DISPATCH_TOOL_NAMES:
+        return (False, None)
+    peeked = activation.peek_entry(Path.cwd())
+    if isinstance(peeked, Indeterminate):
+        return (
+            False,
+            {
+                "decision": "block",
+                "reason": f"WAVE_ENTRY_INDETERMINATE: {peeked.reason}",
+            },
+        )
+    return (peeked, None)
+
+
+def _arm_inferred_fallback(
+    hook_input: dict[str, object],
+    prompt: str,
+    activation: WaveActivationService,
+) -> tuple[bool, dict[str, str] | None]:
+    """The INFERRED fallback strand (slice-07d, F4 -- closes S2 cross-runtime).
+
+    A wave-DECLARING dispatch (`<!-- DES-WAVE: <wave> -->`) on an EMPTY floor
+    arms enforcement by itself -- the submission anchor never fired (observe-
+    only / missed-write runtime). The armed record is INFERRED (lower trust
+    class, I3-bounded) with ``entry_pending=False``: arm and gate-IN coincide
+    in this SAME pass (self-entry NORMATIVE), so the caller proceeds as
+    wave-entering immediately. Returns ``(wave_entering, block)``:
+
+      * ``(False, None)`` -- not a dispatch tool-use, no declaration, an
+        out-of-vocabulary declaration (treated absent -- no arm, no garbage
+        record, K2/S1), or a floor already armed (I3: INFERRED never clobbers
+        COMMAND -- the declaration can only ADD gating, never remove it).
+      * ``(True, None)``  -- the fallback armed; this dispatch IS wave-entering.
+      * ``(False, {decision:block,...})`` -- corrupt floor -> degrade-LOUD
+        block (S17), never armed over.
+    """
+    if hook_input.get("tool_name") not in _DISPATCH_TOOL_NAMES:
+        return (False, None)
+    declared_wave = DesMarkerParser().parse(prompt).declared_wave
+    if declared_wave is None:
+        return (False, None)
+    armed = activation.arm_inferred(Path.cwd(), declared_wave)
+    if isinstance(armed, Indeterminate):
+        return (
+            False,
+            {
+                "decision": "block",
+                "reason": f"WAVE_ARM_INDETERMINATE: {armed.reason}",
+            },
+        )
+    return (armed, None)
+
+
+def _log_wave_entry_clear_failed(exc: Exception, hook_id: str) -> None:
+    """LOUD audit event for a failed clear-on-allow (slice-07c).
+
+    The dispatch outcome stays UNCHANGED: a flag that could not clear fails
+    toward MORE enforcement (the next dispatch re-runs the idempotent entry
+    preconditions) -- never a silent pass.
+    """
+    try:
+        hook_protocol._audit_writer_factory().log_event(
+            AuditEvent(
+                event_type="WAVE_ENTRY_CLEAR_FAILED",
+                timestamp=SystemTimeProvider().now_utc().isoformat(),
+                hook_id=hook_id,
+                data={"reason": f"clear_entry raised: {exc!s}"},
+            )
+        )
+    except Exception:
+        pass  # the LOUD event must never change the dispatch outcome
+
+
+def emit_commit_attribution_mutation(tool_input: dict[str, object]) -> int | None:
+    """Net-new mutation branch: rewrite a Bash `git commit` to carry the trailer.
+
+    ADR-CA-006 D4 (Reuse row R4). On a Bash `git commit` command, asks
+    :class:`CommitAttributionService` for a :class:`CommitRewritePlan`. On a
+    mutate Plan, emits the protocol JSON
+    ``{"hookSpecificOutput":{"hookEventName":"PreToolUse",
+    "permissionDecision":"allow","updatedInput":{<full tool_input, command
+    rewritten>}}}`` on stdout and returns exit 0. On a passthrough Plan, returns
+    ``None`` so the caller falls through to the existing validation path
+    unchanged.
+
+    This is the ONLY net-new branch in the handler; the existing block/allow
+    validation path is not modified.
+
+    Args:
+        tool_input: the ``tool_input`` object from the PreToolUse payload. Its
+            ``command`` field is the Bash command to consider.
+
+    Returns:
+        ``0`` after emitting a mutation; ``None`` to fall through to the existing
+        validation path (passthrough / non-Bash / non-commit).
+    """
+    command = tool_input.get("command")
+    if not isinstance(command, str) or not command:
+        return None
+
+    # Fail-safe (ADR-CA-006): attribution is best-effort. ANY error here — a
+    # raising rewrite core, a JSON-serialization failure — must NOT propagate to
+    # the outer `handle_pre_tool_use` `except Exception`, which fail-closes to
+    # exit 1 and BLOCKS the commit. A missed trailer is recoverable; a blocked
+    # commit is not. On any failure, return None so the caller falls through to
+    # the existing validation path and the original command runs unchanged.
+    try:
+        plan = _commit_attribution_service.plan_rewrite(command)
+        if plan.action != "mutate" or plan.rewritten_command is None:
+            return None
+
+        updated_input = {**tool_input, "command": plan.rewritten_command}
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "updatedInput": updated_input,
+                    }
+                }
+            )
+        )
+        return 0
+    except Exception:
+        return None
+
+
+# Bound so step-composition / future wiring reference a single seam, not a free
+# constructor call. DELIVER injects the real service here.
+_commit_attribution_service = CommitAttributionService()
+
+
+def _resolve_deliverable_type() -> str | None:
+    """Resolve the project deliverable type for this dispatch (ADR-PST-001).
+
+    Reads ``DESConfig(cwd=Path.cwd()).deliverable_type`` over the dispatch's
+    working directory: a plugin/skill declaration on disk threads through
+    ``service_factory`` into ``PreToolUseService.validate`` and exempts the
+    step dispatch. An unresolved/absent/``application`` project returns ``None``
+    so enforcement stays ON (fail-safe by construction).
+    """
+    from des.adapters.driven.config.des_config import DESConfig
+
+    return DESConfig(cwd=Path.cwd()).deliverable_type
 
 
 def handle_pre_tool_use() -> int:
@@ -211,6 +391,30 @@ def handle_pre_tool_use() -> int:
 
             # Diagnostic: confirm hook was invoked
             tool_input = hook_input.get("tool_input", {})
+
+            # NET-NEW Bash-commit ordering (slice-04 fix + ADR-CA-006 D4). On a
+            # Bash event the earned-verdict commit gate is the FIRST authority on
+            # the git-commit path: a theater commit must be DENIED before the
+            # cosmetic attribution rewrite can run (deny-wins). Only on gate
+            # allow / abstain / non-commit Bash does the path fall through to the
+            # commit-attribution mutation unchanged.
+            if hook_input.get("tool_name") == "Bash":
+                command = tool_input.get("command", "")
+                if is_git_commit(command):
+                    commit_decision = evaluate_commit_gate(command)
+                    if (
+                        commit_decision is not None
+                        and commit_decision.get("decision") == "block"
+                    ):
+                        print(json.dumps(commit_decision))
+                        exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
+                        return exit_code
+                # gate allowed / abstained / non-commit Bash -> attribution may proceed
+                mutation_exit = emit_commit_attribution_mutation(tool_input)
+                if mutation_exit is not None:
+                    exit_code = mutation_exit
+                    return exit_code
+
             log_hook_invoked(
                 "pre_tool_use",
                 {
@@ -246,40 +450,72 @@ def handle_pre_tool_use() -> int:
             # slice, or an out-of-order slice blocks; the entire branch is
             # fail-closed (M1) -- any exception inside it is surfaced as an
             # AtddPureHookInternalError block, never the bare exit-1 path.
-            atdd_pure_block = _evaluate_u1_intercept(prompt)
+            atdd_pure_block = _evaluate_u1_intercept(
+                prompt, tool_input.get("subagent_type", "") or ""
+            )
             if atdd_pure_block is not None:
                 print(json.dumps(atdd_pure_block))
                 exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
                 return exit_code
 
-            # Earned-verdict commit gate (slice-04) -- fires on a Bash
-            # `git commit`. Runs the perturb-loop over the slice's acceptance
-            # tests through the shipped target-blind CORE and DENIES the commit
-            # when any AT is theater-held (held green against broken code). A
-            # commit out of nWave-generated-AT scope (no slice trailer) ABSTAINs
-            # and is allowed (fail-safe -- the gate never blocks a commit it
-            # cannot trustworthily judge).
-            command = tool_input.get("command", "")
-            if hook_input.get("tool_name") == "Bash" and is_git_commit(command):
-                commit_decision = evaluate_commit_gate(command)
-                if commit_decision is not None:
-                    print(json.dumps(commit_decision))
-                    denied = commit_decision.get("decision") == "block"
-                    exit_code = _ATDD_PURE_BLOCK_EXIT_CODE if denied else 0
+            # slice-07c (F3 NORMATIVO): this adapter is the composition seat of
+            # the wave-entry lifecycle:
+            #   peek_entry -> validate(wave_entering=...) -> clear-on-allow.
+            # The service itself stays writer-free (§22.0: the veto path never
+            # writes); a BLOCKED entry stays pending so the retry re-runs the
+            # entry preconditions.
+            activation = service_factory.create_wave_activation_service()
+            wave_entering, entry_block = _peek_wave_entering(hook_input, activation)
+            if entry_block is not None:
+                print(json.dumps(entry_block))
+                exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
+                return exit_code
+
+            # slice-07d (F4 NORMATIVO): INFERRED fallback strand. No pending
+            # entry (empty floor on a runtime whose submission anchor never
+            # fired) + the dispatch DECLARES its wave -> arm INFERRED and
+            # proceed as wave-entering in this SAME pass (self-entry). The
+            # armed record is written BEFORE service.validate runs, so the
+            # service's WaveActiveReader sees it in this same invocation
+            # (read-after-write ordering). I3 + vocabulary validation live in
+            # arm_inferred -- an armed floor or a garbage declaration leaves
+            # everything untouched.
+            if not wave_entering:
+                wave_entering, fallback_block = _arm_inferred_fallback(
+                    hook_input, prompt, activation
+                )
+                if fallback_block is not None:
+                    print(json.dumps(fallback_block))
+                    exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
                     return exit_code
+            # Resolve the project deliverable type (ADR-PST-001, feature
+            # plugin-skill-deliverable-type) and thread it into the service so
+            # the enforcement policy can exempt plugin/skill projects. This is
+            # the handler SEAM the driving-adapter acceptance scenario drives.
+            deliverable_type = _resolve_deliverable_type()
 
             # Delegate to application service
-            service = service_factory.create_pre_tool_use_service()
+            service = service_factory.create_pre_tool_use_service(
+                deliverable_type=deliverable_type
+            )
             decision = service.validate(
                 PreToolUseInput(
                     prompt=prompt,
                     subagent_type=tool_input.get("subagent_type"),
+                    wave_entering=wave_entering,
                 ),
                 hook_id=hook_id,
             )
 
             # Translate HookDecision to protocol response
             if decision.action == "allow":
+                if wave_entering:
+                    # Clear-on-allow (NORMATIVE): the entry check ran and the
+                    # gate allowed -- the flag clears, the wave stays armed.
+                    try:
+                        activation.clear_entry(Path.cwd())
+                    except Exception as clear_exc:
+                        _log_wave_entry_clear_failed(clear_exc, hook_id)
                 # Create DES task signal if this is a DES-validated task
                 if "DES-VALIDATION" in prompt:
                     # Extract step-id and project-id from DES markers

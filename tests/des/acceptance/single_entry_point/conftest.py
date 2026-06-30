@@ -15,7 +15,12 @@ here to the ``real_repo_scan`` xdist_group so they run on ONE worker
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+
+
+_SUITE_DIR = Path(__file__).parent
 
 
 def pytest_collection_modifyitems(
@@ -26,7 +31,22 @@ def pytest_collection_modifyitems(
     Prevents spurious cross-worker races on the shared real-repo-tree
     substrate under ``--dist loadgroup``. NOT masking -- the tests run
     honestly, just serialized within one worker.
+
+    Scoped to this suite via ``_belongs_to_this_suite``: a non-root
+    ``pytest_collection_modifyitems`` receives EVERY session item, not only
+    those under this directory. Without the guard this hook pinned the whole
+    suite onto one worker (a latent over-serialization). The root conftest's
+    generic detector handles every other cwd=<real repo> suite.
     """
     group = pytest.mark.xdist_group("real_repo_scan")
     for item in items:
-        item.add_marker(group)
+        if _belongs_to_this_suite(item):
+            item.add_marker(group)
+
+
+def _belongs_to_this_suite(item: pytest.Item) -> bool:
+    """Whether a collected item lives under this conftest's suite directory."""
+    item_path = getattr(item, "path", None)
+    if item_path is None:
+        return False
+    return _SUITE_DIR in Path(item_path).parents or Path(item_path) == _SUITE_DIR

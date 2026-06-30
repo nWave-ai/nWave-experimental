@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "clauses": [
+    {
+      "skill": "nw-test-design-mandates-composition-contract",
+      "clause_id": "protocol-driver:assert-shipped-artifact",
+      "marker": "artifact the SUT actually shipped"
+    },
+    {
+      "skill": "nw-at-completeness-check",
+      "clause_id": "zero-obligation:override",
+      "marker": "Absence of an explicit Zero scenario for any iterative surface"
+    },
+    {
+      "skill": "nw-distill",
+      "clause_id": "walking-skeleton:canonical-definition",
+      "marker": "thinnest slice of real functionality that runs end-to-end"
+    }
+  ]
+}

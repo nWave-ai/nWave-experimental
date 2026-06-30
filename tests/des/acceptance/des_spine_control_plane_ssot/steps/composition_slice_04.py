@@ -61,9 +61,11 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from des.adapters.drivers.hooks.hook_router import main as _hook_router_main
+from tests.common.in_process_cli import run_hook_in_process
 
 from .domain_types_slice_04 import (
     BLOCK_DECISION,
@@ -77,7 +79,6 @@ from .domain_types_slice_04 import (
 
 
 _FEATURE_ID = "demo-gate-composition-feature"
-_HOOK_MODULE = "des.adapters.drivers.hooks.claude_code_hook_adapter"
 _SUBAGENT_STOP_ARG = "subagent-stop"
 
 
@@ -122,6 +123,7 @@ class GateCompositionFixture:
         feature_dir = project_dir / "docs" / "feature" / _FEATURE_ID
         feature_dir.mkdir(parents=True, exist_ok=True)
         self._write_atdd_pure_config(project_dir)
+        self._activate_project(project_dir)
         self._write_shipped_slice_plan(feature_dir)
         transcript_path = self._write_feature_end_transcript(project_dir)
         flavors_dir = self._build_flavors_dir(flavor_composition)
@@ -156,14 +158,38 @@ class GateCompositionFixture:
         autoskip cannot mask the verdict (RCA #68 P1-B). The skip masks slice-01's
         gate ONLY — it has no bearing on the gate-composition answer slice-04 asserts.
         """
-        completed = subprocess.run(
-            [sys.executable, "-m", _HOOK_MODULE, _SUBAGENT_STOP_ARG],
-            input=self._hook_stdin(project),
-            capture_output=True,
-            text=True,
-            env=self._spine_env(project),
-            cwd=project.project_dir,
-            timeout=120,
+        # In-process analogue of `python -m claude_code_hook_adapter subagent-stop`
+        # with the JSON event on stdin: drive the REAL `hook_router.main(argv)`,
+        # preserving the ADR-AG-001 activation gate (apply_gate) the feature-end
+        # routing depends on while dropping the per-scenario interpreter fork. The
+        # three env vars this fixture mutates (NWAVE_FRESHNESS isolation, HOME
+        # sandbox, NWAVE_FLAVORS_DIR override) are applied to os.environ around the
+        # call and restored in finally (shared-process safe). The gate-composition
+        # dispatcher reads NWAVE_FLAVORS_DIR live from os.environ, so the override
+        # takes effect identically in-process. No timeout: there is no fork to bound.
+        target_env = self._spine_env(project)
+        managed_keys = ("NWAVE_FRESHNESS", "HOME", "NWAVE_FLAVORS_DIR")
+        priors = {key: os.environ.get(key) for key in managed_keys}
+        try:
+            for key in managed_keys:
+                if key in target_env:
+                    os.environ[key] = target_env[key]
+                else:
+                    os.environ.pop(key, None)
+            exit_code, stdout, stderr = run_hook_in_process(
+                _hook_router_main,
+                stdin_text=self._hook_stdin(project),
+                cwd=project.project_dir,
+                argv=["claude_code_hook_adapter", _SUBAGENT_STOP_ARG],
+            )
+        finally:
+            for key, value in priors.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=exit_code, stdout=stdout, stderr=stderr
         )
         return self._classify_boundary_run(completed)
 
@@ -273,6 +299,19 @@ class GateCompositionFixture:
         )
 
     # --- synthetic atdd_pure project artifacts (git-free filesystem) --------
+
+    @staticmethod
+    def _activate_project(project_dir: Path) -> None:
+        """ACTIVATE the synthetic project so the ADR-AG-001 activation gate
+        dispatches the SubagentStop handler. The canonical hook routes through
+        ``hook_router.main`` -> ``apply_gate``, which ``sys.exit(0)``s an INACTIVE
+        project BEFORE the feature-end-cycle missing-records gate ever runs (an
+        empty-stdout short-circuit -- a state production never produces). The gate
+        reads ``$HOME/.nwave/global-config.json``; ``_spine_env`` sandboxes HOME to
+        ``project_dir`` so this marker is the one resolved."""
+        gc = project_dir / ".nwave" / "global-config.json"
+        gc.parent.mkdir(parents=True, exist_ok=True)
+        gc.write_text(json.dumps({"activation": {"mode": "all"}}), encoding="utf-8")
 
     @staticmethod
     def _write_atdd_pure_config(project_dir: Path) -> None:
@@ -431,6 +470,9 @@ class GateCompositionFixture:
         """
         env = dict(os.environ)
         env["NWAVE_FRESHNESS"] = "skip"
+        # Sandbox HOME to the project so the activation gate resolves the
+        # marker written by _activate_project ($HOME/.nwave/global-config.json).
+        env["HOME"] = project.project_dir
         if project.flavors_dir is not None:
             env["NWAVE_FLAVORS_DIR"] = project.flavors_dir
         else:

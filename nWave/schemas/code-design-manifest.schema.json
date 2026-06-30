@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nwave.ai/schemas/code-design-manifest.schema.json",
+  "title": "CodeDesignManifest",
+  "description": "Validates docs/feature/{id}/design/code-design.manifest.yaml -- the broad DESIGN-OUT code-design contract (ADR-FLOW-003 D1 / DDD-1). It ABSORBS the existing component-manifest schema by $ref as a `component-manifest:` sub-object (ONE SSOT, no fork -- AT-A6), and adds the load-bearing `example-tables:` block (DDD-2). `signatures:`/`types:` are declared for forward-compatibility but NOT consumed by any gate yet (DDD-1 YAGNI).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema-version", "feature-id"],
+  "properties": {
+    "schema-version": {
+      "description": "Schema version -- pinned to the single legal value until an ADR authorises a major bump.",
+      "const": "1.0"
+    },
+    "feature-id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "component-manifest": {
+      "description": "The absorbed component-manifest contract (ONE SSOT -- referenced, never forked).",
+      "$ref": "https://nwave.ai/schemas/component-manifest.schema.json"
+    },
+    "example-tables": {
+      "description": "The load-bearing example-table rows (DDD-2). Each row is the join key gate-G diffs against the AT `@row:` tags.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/exampleTableRow" }
+    },
+    "signatures": {
+      "description": "Forward-declared signature contracts (DDD-1 YAGNI -- declared, not consumed).",
+      "type": "array",
+      "items": { "$ref": "#/$defs/signatureEntry" }
+    },
+    "types": {
+      "description": "Forward-declared type contracts (DDD-1 YAGNI -- declared, not consumed).",
+      "type": "array",
+      "items": { "$ref": "#/$defs/typeEntry" }
+    }
+  },
+  "$defs": {
+    "exampleTableRow": {
+      "type": "object",
+      "required": ["row-id", "sut", "description"],
+      "properties": {
+        "row-id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "sut": {
+          "type": "string",
+          "pattern": "^.+::.+$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "signatureEntry": {
+      "type": "object",
+      "required": ["sut"],
+      "properties": {
+        "sut": {
+          "type": "string",
+          "pattern": "^.+::.+$"
+        }
+      }
+    },
+    "typeEntry": {
+      "type": "object",
+      "required": ["sut"],
+      "properties": {
+        "sut": {
+          "type": "string",
+          "pattern": "^.+::.+$"
+        }
+      }
+    }
+  }
+}

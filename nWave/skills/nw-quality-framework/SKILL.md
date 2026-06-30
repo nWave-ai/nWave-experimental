@@ -120,39 +120,22 @@ For mutation testing integration, load the property-based-testing skill.
 
 ## Object Calisthenics (Application + Domain Layers)
 
-9 design constraints for clean OOP code in the hexagonal core (Jeff Bay,
-ThoughtWorks Anthology). Apply during GREEN and COMMIT phases.
+**SSOT cross-reference**: the 9 Object Calisthenics rules, the Rule 9 relaxation
+policy, and the in-hexagon scope are defined once in the curated OO code-design
+skill `nw-code-design-oo` (§Object Calisthenics). Do NOT duplicate that catalog
+here — load `nw-code-design-oo` for the WHAT-to-design definitions (rule table,
+Rule 9 relaxation, layer scope).
 
-### Rules
+This section records only the **quality-framework enforcement delta**: WHEN and
+WHERE Object Calisthenics conformance is checked as a commit gate.
 
-| # | Rule | Rationale | Layer |
-|---|------|-----------|-------|
-| 1 | One indentation level per method | Forces decomposition | Domain, Application |
-| 2 | No `else` keyword | Guard clauses, early returns | Domain, Application |
-| 3 | Wrap all primitives and strings | Value objects | Domain |
-| 4 | First-class collections | Domain collection types | Domain |
-| 5 | One dot per line | Law of Demeter | Domain, Application |
-| 6 | No abbreviations | Intention-revealing names | All |
-| 7 | Small entities (<50 LOC classes, <10 LOC methods) | SRP | Domain, Application |
-| 8 | Max 2 instance variables per class | Promotes decomposition | Domain |
-| 9 | No getters/setters | Tell, don't ask | Domain, Application |
-
-### Rule 9 Relaxation Policy
-
-Getters are acceptable in these cases:
-- DTOs/response objects at port boundaries (serialization needs)
-- CQRS read models (query-optimized projections)
-- Value objects with computed properties (e.g., Money.amount)
-- Framework requirements (ORM mapping, serialization)
-
-Rule 9 applies strictly to domain entities and application services.
-Behavior through commands, not data access.
-
-### Scope
-
-- Applies to: Domain layer, Application layer (inside the hexagon)
-- Does NOT apply to: Adapters, infrastructure, DTOs, configuration
-- Enforcement phase: GREEN (writing new code) + COMMIT (refactoring)
+- **Enforcement phase**: GREEN (writing new code) + COMMIT (refactoring). A
+  violation surviving into COMMIT is a quality-gate failure, not a style note.
+- **Enforcement layers**: domain + application only (per the `nw-code-design-oo`
+  scope) — adapters, infrastructure, DTOs, and configuration are exempt.
+- **Relation to the 11 commit-readiness gates**: Object Calisthenics conformance
+  is verified at Gate 6 (static analysis) and the COMMIT refactor pass; Rule 9
+  relaxations (per `nw-code-design-oo`) do not count as violations.
 
 ## Dimension 9: Environmental Realism
 

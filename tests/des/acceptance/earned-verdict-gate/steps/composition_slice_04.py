@@ -39,16 +39,16 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from des.adapters.drivers.hooks.pre_tool_use_handler import handle_pre_tool_use
+from tests.common.in_process_cli import run_hook_in_process
+
 from .domain_types import CommitGateDecision, SliceHealth, VerdictStatus
 
 
 # The production PreToolUse hook handler the commit gate lives in. The
 # earned-verdict commit gate is a NEW PreToolUse branch firing on a Bash
-# ``git commit`` -- DELIVER creates it (in pre_tool_use_handler or a dedicated
-# handler). Until then the subprocess emits no deny body, which is the
-# RIGHT-reason RED: missing functionality at the driving port. The exact module
-# is DESIGN-confirmed in DELIVER; this is the established handler entry point.
-_HANDLER_MODULE = "des.adapters.drivers.hooks.pre_tool_use_handler"
+# The PreToolUse handler EDGE driven in-process by ``attempt_commit`` is
+# ``handle_pre_tool_use`` (imported above) -- the established handler entry point.
 
 # The gate's self-test entry (AT-2). The gate perturbs its OWN verdict CORE and
 # demands its verdict flips RED. Per GAP-3(b) resolution (DESIGN, feature-delta)
@@ -124,25 +124,19 @@ class CommitGateComposition:
         self._self_test_core_perturbed = True
 
     def attempt_commit(self) -> CommitGateResult:
-        """Invoke the REAL PreToolUse hook over a ``git commit`` event.
+        """Invoke the REAL PreToolUse hook over a ``git commit`` event IN-PROCESS.
 
-        Runs the production hook exactly as Claude Code does -- a subprocess
-        reading the JSON event on stdin -- and parses the decision body. The
-        decision is the gate's; the composition only stages + transports.
+        Drives the production ``handle_pre_tool_use`` EDGE directly (the no-argv
+        stdin-protocol handler the ``python -c "... sys.exit(handle_pre_tool_use())"``
+        fork invoked), feeding the same JSON event on stdin. The decision is the
+        gate's; the composition only stages + transports.
         """
-        runner = (
-            "import sys; "
-            f"from {_HANDLER_MODULE} import handle_pre_tool_use; "
-            "sys.exit(handle_pre_tool_use())"
-        )
-        completed = subprocess.run(
-            [sys.executable, "-c", runner],
-            input=_commit_event(self._slice_health),
-            capture_output=True,
-            text=True,
+        exit_code, stdout, _stderr = run_hook_in_process(
+            handle_pre_tool_use,
+            stdin_text=_commit_event(self._slice_health),
             cwd=str(Path.cwd()),
         )
-        return self._decision_from_output(completed.stdout, completed.returncode)
+        return self._decision_from_output(stdout, exit_code)
 
     def run_self_test(self) -> CommitGateResult:
         """Run the gate's self-test over its perturbed verdict CORE (AT-2).

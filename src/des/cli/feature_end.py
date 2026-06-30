@@ -20,10 +20,10 @@ emitter goes through that entry, so ``des feature-end --help`` advertising
 back-compat contract.
 
 ANTI-THEATER (DDD-5): on a non-real verdict (no/empty agent, unknown/missing
-verdict) or an unresolvable signing key the use-case REFUSES; this shim prints
-the structured ``{"event": "SignRefused", ...}`` payload (the same shape
-slice-01's ``EmitRefused`` carries) and exits non-zero -- a real input-check
-refusal, never a silent unsigned hash, never a vacuous dispatcher miss.
+verdict) the use-case REFUSES; this shim prints the structured
+``{"event": "SignRefused", ...}`` payload (the same shape slice-01's
+``EmitRefused`` carries) and exits non-zero -- a real input-check refusal,
+never a silently minted hash, never a vacuous dispatcher miss.
 
 Exit codes:
     0 = a genuine verdict hash was produced over the real deep-review verdict.
@@ -59,27 +59,31 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="des feature-end",
         description=(
             "The consolidated feature-end command namespace. Verbs: sign "
-            "(produce a signed FeatureEndReviewVerdict hash from a real "
-            "deep-review verdict); run (run the feature-end cycle -- run the "
-            "gates, then sign + emit the feature-end records)."
+            "(produce a keyless content-seal FeatureEndReviewVerdict hash from "
+            "a real deep-review verdict); run (run the feature-end cycle -- run "
+            "the gates, then sign + emit the feature-end records)."
         ),
     )
     verbs = parser.add_subparsers(dest="verb", required=True)
 
     sign = verbs.add_parser(
         "sign",
-        help="Sign a real deep-review verdict into a verifiable verdict hash.",
+        help="Seal a real deep-review verdict into a verifiable verdict hash.",
         description=(
-            "HMAC a real reviewer deep-review verdict (agent + APPROVED/REJECTED "
-            "+ findings) into a verifiable verdict_hash that feeds "
-            "`des emit-feature-end --verdict-hash`. A non-real verdict or a "
-            "missing signing key is refused (anti-theater); no hash is minted."
+            "Produce a keyless content-seal verdict_hash from a real reviewer "
+            "deep-review verdict (agent + APPROVED/REJECTED + findings) that "
+            "feeds `des emit-feature-end --verdict-hash`. A non-real verdict "
+            "(no/empty agent, unknown/missing verdict) is refused "
+            "(anti-theater); no hash is minted."
         ),
     )
     sign.add_argument(
         "--repo",
         required=True,
-        help="Path to the project root the signing key resolves against.",
+        help=(
+            "Path to the project root (retained for API-stability; "
+            "sign reads no key post-demotion)."
+        ),
     )
     sign.add_argument(
         "--feature-id",

@@ -134,6 +134,18 @@ def _write_coverage_map_verified_at_deliver_exit(
     return ledger.append_coverage_map_verified_at_deliver_exit(feature_id=feature_id)
 
 
+def _write_full_suite_leg_ran(
+    ledger: AtCompletionLedger,
+    *,
+    feature_id: str | None = None,
+    verdict_hash: str | None,
+) -> dict[str, Any]:
+    """Emit the `FullSuiteLegRan` feature-end heartbeat (DDD-4)."""
+    if feature_id is None:
+        return ledger.append_full_suite_leg_ran()
+    return ledger.append_full_suite_leg_ran(feature_id=feature_id)
+
+
 # The registry mapping each required-record name to its writer wrapper.
 # Adding a new required record = extend the production frozenset AND add ONE
 # entry here. The arch test `test_required_record_writer_registry.py` is the
@@ -145,6 +157,7 @@ _RECORD_WRITERS: dict[str, Callable[..., dict[str, Any]]] = {
     "WalkingSkeletonGateRan": _write_walking_skeleton_gate_ran,
     "CoverageMapVerifiedAtDistillExit": _write_coverage_map_verified_at_distill_exit,
     "CoverageMapVerifiedAtDeliverExit": _write_coverage_map_verified_at_deliver_exit,
+    "FullSuiteLegRan": _write_full_suite_leg_ran,
 }
 
 

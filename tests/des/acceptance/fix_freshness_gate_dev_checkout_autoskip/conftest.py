@@ -44,7 +44,7 @@ _FEATURE_ROOT = Path(__file__).resolve().parent
 if str(_FEATURE_ROOT) not in sys.path:
     sys.path.insert(0, str(_FEATURE_ROOT))
 
-from freshness_steps.domain_types import (  # noqa: E402
+from freshness_steps.domain_types import (
     CheckoutAdjacency,
     CheckoutProbe,
     GateInvocationOutcome,

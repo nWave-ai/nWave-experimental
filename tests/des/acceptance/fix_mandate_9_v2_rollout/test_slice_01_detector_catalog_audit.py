@@ -9,7 +9,7 @@ in `conftest.py` is the single driving-port surface.
 
 from pytest_bdd import scenarios
 
-from .m9v2_rollout_steps.steps_slice_01 import *  # noqa: F403
+from .m9v2_rollout_steps.steps_slice_01 import *
 
 
 scenarios("slice-01-detector-catalog-audit.feature")

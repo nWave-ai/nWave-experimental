@@ -1,0 +1,59 @@
+# Gate-contract: record-design-review (f-design-devops-review-gate slice-01, O-4)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=record-design-review.
+
+gate_id: record-design-review
+responsibility: |
+  Record a DESIGN solution-architect review verdict (O-4 producer half of the
+  per-wave review-verdict gate carried to DESIGN). Appends one DesignReviewVerdict
+  record to the per-feature AT-completion ledger, carrying a keyless content seal
+  (feature_delta_hash = SHA-256 over the artefact bytes). Writes BOTH approved
+  AND needs-revision (a veto must be mechanically readable by the DESIGN gate-OUT
+  consumer); the agent never hands the gate a verdict, it only triggers the
+  recording.
+module: des.cli.design_review_verdict
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "Feature identifier; resolves the feature-delta artefact and the per-feature ledger."
+  - name: --verdict
+    required: true
+    type: choice
+    choices: [approved, needs-revision]
+    help: "The reviewer outcome to record. Both outcomes are written (O-4 both-outcomes policy)."
+  - name: --reviewer-agent-id
+    required: true
+    type: string
+    help: "Agent id of the solution-architect reviewer whose judgement is being recorded."
+  - name: --findings
+    required: false
+    type: string
+    help: "Optional findings summary entries (excluded from the signed input)."
+  - name: --repo-root
+    required: false
+    type: path
+    help: "Repository root override; defaults to the resolved current repo root."
+
+log_events: []
+
+failure_modes:
+  - error_class: MalformedArgs
+    exit_code: 2
+    remediation: "Pass --feature-id, --verdict (approved|needs-revision) and --reviewer-agent-id."
+  - error_class: FeatureDeltaNotReadable
+    exit_code: 1
+    remediation: "Verify docs/feature/{feature-id}/feature-delta.md exists and is readable -- a verdict cannot be sealed against an absent artefact."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

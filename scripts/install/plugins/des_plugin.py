@@ -9,6 +9,16 @@ import sys
 from pathlib import Path
 
 from scripts.shared import hook_definitions as shared_hooks
+from scripts.shared.skill_distribution import (
+    SCRIPTS_FAMILY_KEY,
+    UTILITIES_FAMILY_KEY,
+    FamilyRecord,
+    preserve_warning_message,
+    read_family_record,
+    sweep_retired_assets,
+    unaccounted_names,
+    write_family_record,
+)
 
 from .base import InstallationPlugin, InstallContext, PluginResult
 
@@ -147,6 +157,14 @@ class DESPlugin(InstallationPlugin):
     in settings.json (global config: permissions, other hooks, etc.).
     """
 
+    # Seconds allowed for the module-import verification subprocess. Sized for
+    # slow filesystems (WSL, especially Windows-mounted /mnt/c paths) where
+    # Python startup plus first-run .pyc compilation exceeds a tighter budget.
+    # A broken install fails fast with a non-zero return code, so a generous
+    # timeout only protects the slow-but-correct path — it cannot mask a real
+    # failure. See issue #73.
+    DES_VERIFY_IMPORT_TIMEOUT_SECONDS = 15
+
     # DES scripts installed to ~/.claude/scripts/
     DES_SCRIPTS = [
         "check_stale_phases.py",
@@ -166,7 +184,20 @@ class DESPlugin(InstallationPlugin):
         "spine_ledger_pre_commit_hook.py",
         "spine_ledger_subagent_stop_detector.py",
         "git_stash_guard.py",
+        # --no-verify reminder guard (Ale 2026-06-26): the lean PreToolUse/Bash
+        # hook (wired via hook_definitions._BASH_NO_VERIFY_REMINDER) that blocks
+        # a git verify-bypass with an imperative reminder to get human agreement.
+        "no_verify_reminder.py",
+        # f-nonbypassable-attestation slice-01 (DDD-2): the harness-neutral
+        # declare-done backstop. The pre-push git shim
+        # (`hook_definitions._GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP`) invokes this
+        # script, which delegates to the portable `verify_deliver_integrity`
+        # done-gate.
+        shared_hooks.GIT_PRE_PUSH_BACKSTOP_SCRIPT,
     ]
+    # Asset-family key for the DES scripts list in the shared
+    # .nwave-manifest.json mechanism (scripts/shared/skill_distribution.py).
+    SCRIPTS_MANIFEST_KEY = SCRIPTS_FAMILY_KEY
 
     # DES shims installed to ~/.claude/bin/
     DES_SHIMS = [
@@ -179,6 +210,7 @@ class DESPlugin(InstallationPlugin):
     # so the operator's PATH no longer advertises the legacy entry points.
     LEGACY_DES_SHIMS = (
         "des-log-phase",
+        "des-commit",
         "des-init-log",
         "des-verify-integrity",
         "des-roadmap",
@@ -369,6 +401,13 @@ class DESPlugin(InstallationPlugin):
             hook_scripts_result = self._install_des_hook_scripts(context)
             if not hook_scripts_result.success:
                 return hook_scripts_result
+
+            # Install the harness-neutral declare-done git pre-push backstop
+            # (f-nonbypassable-attestation slice-01, DDD-2). Runs AFTER the hook
+            # scripts so the backstop's Python entry exists at its target path.
+            backstop_result = self._install_git_pre_push_backstop(context)
+            if not backstop_result.success:
+                return backstop_result
 
             # Install DES templates
             templates_result = self._install_des_templates(context)
@@ -788,7 +827,15 @@ class DESPlugin(InstallationPlugin):
         return commit, dirty
 
     def _install_des_scripts(self, context: InstallContext) -> PluginResult:
-        """Install DES utility scripts."""
+        """Install DES utility scripts, sweeping manifest-tracked orphans.
+
+        On upgrade, scripts tracked by the shared manifest but absent from
+        the new source set are deleted BEFORE copying, and the manifest is
+        rewritten. Without a manifest (pre-record, 3.16.0-shaped target)
+        nothing is deleted: unrecorded scripts are preserved and the user
+        is warned (preserve-by-default hard contract). Under ``dry_run``
+        no file is deleted and no manifest is written.
+        """
         try:
             # Use framework source if available, fallback to nWave/scripts/des
             if context.framework_source:
@@ -802,6 +849,15 @@ class DESPlugin(InstallationPlugin):
             target_dir = context.claude_dir / "scripts"
             target_dir.mkdir(parents=True, exist_ok=True)
 
+            record = read_family_record(
+                target_dir,
+                key=self.SCRIPTS_MANIFEST_KEY,
+                sibling_keys=frozenset({UTILITIES_FAMILY_KEY}),
+                adopt_legacy=True,
+            )
+            if not context.dry_run:
+                self._sweep_retired_scripts(target_dir, record, context)
+
             installed = []
             for script_name in self.DES_SCRIPTS:
                 source = source_dir / script_name
@@ -812,6 +868,14 @@ class DESPlugin(InstallationPlugin):
                         shutil.copy2(source, target)
                         target.chmod(0o755)
                     installed.append(script_name)
+
+            if not context.dry_run:
+                write_family_record(
+                    target_dir,
+                    installed,
+                    key=self.SCRIPTS_MANIFEST_KEY,
+                    superseded_keys=record.superseded_keys,
+                )
 
             return PluginResult(
                 success=True,
@@ -879,6 +943,105 @@ class DESPlugin(InstallationPlugin):
                 plugin_name="des",
                 message=f"DES spine-ledger hook scripts install failed: {e}",
             )
+
+    def _install_git_pre_push_backstop(self, context: InstallContext) -> PluginResult:
+        """Install the harness-neutral declare-done git pre-push backstop (DDD-2).
+
+        f-nonbypassable-attestation slice-01: renders
+        `hook_definitions._GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP` into the shared
+        `.git/hooks/pre-push` so the terminal push auto-fires the portable
+        done-gate, INDEPENDENT of the Claude-Code F_FINAL_REVIEW SubagentStop. Any
+        pre-existing pre-push hook is chained (renamed to `pre-push.nwave-original`),
+        mirroring the `prepare-commit-msg` attribution-shim install.
+
+        Target-machine independence (AD-21/24): when the install target is not a
+        git work-tree, `resolve_hooks_dir` cannot resolve and the backstop is
+        SKIPPED (degrade-LOUD via the result message), never a hard failure -- the
+        SubagentStop done-gate surface remains.
+        """
+        try:
+            from scripts.shared.git_hooks_paths import resolve_hooks_dir
+
+            try:
+                hooks_dir = resolve_hooks_dir()
+            except Exception as exc:
+                return PluginResult(
+                    success=True,
+                    plugin_name="des",
+                    message=(
+                        "DES git pre-push backstop skipped: install target is not "
+                        f"a git work-tree ({exc})"
+                    ),
+                )
+
+            shim_path = hooks_dir / "pre-push"
+            script_path = (
+                context.claude_dir
+                / "scripts"
+                / shared_hooks.GIT_PRE_PUSH_BACKSTOP_SCRIPT
+            )
+            python_cmd = self._resolve_python_path()
+            shim = shared_hooks.render_pre_push_backstop_shim(
+                python_cmd=python_cmd, hook_script_path=str(script_path)
+            )
+
+            if not context.dry_run:
+                hooks_dir.mkdir(parents=True, exist_ok=True)
+                if (
+                    shim_path.exists()
+                    and "des-hook:pre-push" not in shim_path.read_text(encoding="utf-8")
+                ):
+                    shim_path.replace(hooks_dir / "pre-push.nwave-original")
+                shim_path.write_text(shim, encoding="utf-8")
+                shim_path.chmod(0o755)
+
+            return PluginResult(
+                success=True,
+                plugin_name="des",
+                message="Installed DES git pre-push declare-done backstop",
+            )
+
+        except Exception as e:
+            return PluginResult(
+                success=False,
+                plugin_name="des",
+                message=f"DES git pre-push backstop install failed: {e}",
+            )
+
+    def _sweep_retired_scripts(
+        self, target_dir: Path, record: FamilyRecord, context: InstallContext
+    ) -> None:
+        """Delete this family's tracked scripts the current version retired."""
+        if record.tracked is None:
+            self._warn_unrecorded_scripts(target_dir, record.accounted, context)
+            return
+        removed, blocked = sweep_retired_assets(
+            target_dir, record.tracked - set(self.DES_SCRIPTS)
+        )
+        for retired_name in removed:
+            context.logger.info(f"  🧹 Removed retired DES script: {retired_name}")
+        for blocked_name in blocked:
+            context.logger.warning(
+                f"  ⚠️ Cannot remove read-only retired DES script: {blocked_name}"
+            )
+
+    def _warn_unrecorded_scripts(
+        self, target_dir: Path, accounted: frozenset[str], context: InstallContext
+    ) -> None:
+        """Preserve-by-default: warn about scripts no record accounts for."""
+        unrecorded = unaccounted_names(
+            target_dir, accounted=accounted, expected=frozenset(self.DES_SCRIPTS)
+        )
+        if not unrecorded:
+            return
+        context.logger.warning(
+            preserve_warning_message(
+                target_dir,
+                unrecorded,
+                family_label="DES scripts manifest",
+                item_label="script",
+            )
+        )
 
     def _install_des_templates(self, context: InstallContext) -> PluginResult:
         """Install DES templates."""
@@ -1155,13 +1318,23 @@ class DESPlugin(InstallationPlugin):
     def _migrate_config(
         self, config_file: Path, context: InstallContext
     ) -> PluginResult:
-        """Add update_check to existing config that lacks it (migration path)."""
+        """Seed missing default blocks into an existing config (migration path).
+
+        Each seed is independent and idempotent: a block is added only when it is
+        absent, and an existing block is never overwritten. All pre-existing keys
+        are preserved (read-modify-write).
+        """
         existing = self._read_json_config(config_file)
 
         # Ensure .gitignore on every install/upgrade (migration for existing installs)
         self._ensure_gitignore(config_file.parent)
 
-        if "update_check" in existing:
+        added: list[str] = []
+        if "update_check" not in existing:
+            existing["update_check"] = self._DEFAULT_UPDATE_CHECK_CONFIG
+            added.append("update_check")
+
+        if not added:
             context.logger.info("  ✅ DES config already exists")
             return PluginResult(
                 success=True,
@@ -1169,16 +1342,16 @@ class DESPlugin(InstallationPlugin):
                 message="DES config already exists",
             )
 
-        existing["update_check"] = self._DEFAULT_UPDATE_CHECK_CONFIG
+        added_summary = ", ".join(added)
         if not context.dry_run:
             self._write_json_config(config_file, existing)
             context.logger.info(
-                f"  ✅ DES config migrated (update_check added): {config_file}"
+                f"  ✅ DES config migrated ({added_summary} added): {config_file}"
             )
         return PluginResult(
             success=True,
             plugin_name="des",
-            message=f"DES config migrated (update_check added) at {config_file}",
+            message=f"DES config migrated ({added_summary} added) at {config_file}",
         )
 
     @staticmethod
@@ -1328,7 +1501,7 @@ class DESPlugin(InstallationPlugin):
         context.logger.info(f"  ✅ Settings updated at {settings_file}")
 
     def _install_des_shims(self, context: InstallContext) -> PluginResult:
-        """Copy 5 DES CLI shims to ~/.claude/bin/ with mode 0o755.
+        """Copy the DES CLI shims to ~/.claude/bin/ with mode 0o755.
 
         Also prepends $HOME/.claude/bin to settings.json env.PATH so the
         shim command names are resolvable from the Bash tool without an
@@ -1646,7 +1819,7 @@ class DESPlugin(InstallationPlugin):
                 ],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=self.DES_VERIFY_IMPORT_TIMEOUT_SECONDS,
             )
             if result.returncode != 0:
                 errors.append(f"DES module import failed: {result.stderr}")

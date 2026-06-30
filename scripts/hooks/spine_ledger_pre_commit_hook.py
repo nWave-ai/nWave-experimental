@@ -97,6 +97,26 @@ _TELEMETRY_RELPATH = Path(".nwave") / "telemetry" / "atdd-pure"
 # word boundary after `commit` so `git committed` (hypothetical) does not match.
 _GIT_COMMIT_RE = re.compile(r"^\s*git\s+commit\b")
 
+# `--no-verify` / `-n` detection (f-nonbypassable-attestation slice-02, DDD-3).
+# `--no-verify` skips git's pre-commit/commit-msg hooks, so the Gate-Scope
+# stamping never runs and the bypass leaves no trace -- UNLESS this PreToolUse
+# hook (which fires BEFORE git, so `--no-verify` cannot skip it) records it. The
+# short alias `-n` is matched only as a standalone token (a word boundary on both
+# sides) so it does not false-match inside a `-m`-quoted message body.
+_NO_VERIFY_RE = re.compile(r"(?:^|\s)(?:--no-verify|-n)(?:\s|$)")
+
+# A `slice-NN` identifier carried by a `Slice-Id:`/`Step-Id:` commit trailer (the
+# canonical binding) used to scope the bypass-debt record to its slice.
+_SLICE_TRAILER_RE = re.compile(r"^(?:Slice-Id|Step-Id):\s*(slice-\d+[a-z]?)\s*$")
+# Fallback: a `slice-NN` token anywhere in the commit message (the conventional
+# `slice-NN: subject` form an LLM emits). Used only when no trailer is present.
+_SLICE_TOKEN_RE = re.compile(r"\bslice-\d+[a-z]?\b")
+
+# The spine telemetry directory (per-feature AT-completion ledgers) under a
+# target root, used to resolve the single in-flight feature whose slice is being
+# committed (mirrors `des_declare_done_pre_push._active_feature_id`).
+_TELEMETRY_DIR_RELPATH = Path(".nwave") / "telemetry" / "atdd-pure"
+
 # Commit-message-file source patterns parsed out of the bash command literal.
 # Order matters: `-F` / `--file` are explicit file flags; `-m` / `--message`
 # is an inline string; absent -> default `.git/COMMIT_EDITMSG`.
@@ -204,6 +224,81 @@ def _touch_invocation_marker() -> None:
     path.touch()
 
 
+def _is_no_verify(command: str) -> bool:
+    """True iff the git-commit command carries `--no-verify` or a standalone `-n`."""
+    return _NO_VERIFY_RE.search(command) is not None
+
+
+def _resolve_commit_slice_id(command: str, target_root: Path) -> str | None:
+    """Resolve the slice id the bypassed commit binds to (DDD-3).
+
+    Priority: a `Slice-Id:`/`Step-Id:` trailer in the resolved commit message
+    file (the canonical binding), else a `slice-NN` token anywhere in the
+    message (the conventional `slice-NN: subject` form). Returns None when the
+    commit names no slice -- a non-slice bypass leaves no slice-scoped debt.
+    """
+    try:
+        message = _resolve_commit_msg_file(command, target_root).read_text(
+            encoding="utf-8"
+        )
+    except OSError:
+        return None
+    for line in message.splitlines():
+        match = _SLICE_TRAILER_RE.match(line.strip())
+        if match:
+            return match.group(1)
+    token = _SLICE_TOKEN_RE.search(message)
+    return token.group(0) if token else None
+
+
+def _active_feature_id(target_root: Path) -> str | None:
+    """The id of the single in-flight feature whose slice is being committed.
+
+    Mirrors `des_declare_done_pre_push._active_feature_id`: the bypass-debt is
+    scoped to the one feature that carries an AT-completion ledger. Exactly one
+    present -> that feature; zero or more than one -> the hook cannot
+    disambiguate the feature here and does not guess (None).
+    """
+    telemetry = target_root / _TELEMETRY_DIR_RELPATH
+    if not telemetry.is_dir():
+        return None
+    ledgers = sorted(p.stem for p in telemetry.glob("*.jsonl"))
+    if len(ledgers) != 1:
+        return None
+    return ledgers[0]
+
+
+def _record_bypass_debt(command: str, target_root: Path) -> None:
+    """Append a `SliceCommitBypassed` debt record for a `--no-verify` commit (DDD-3).
+
+    Fires BEFORE git runs (so `--no-verify` cannot skip it). Resolves the bound
+    slice from the commit message and the in-flight feature from the telemetry
+    ledger, then appends via the EXISTING `AtCompletionLedger` M7 writer so the
+    record carries `seq` + `record_hash`. Fail-open on the write itself -- a
+    ledger-write error must not change the commit decision (the gate verdict
+    stands on its own).
+    """
+    slice_id = _resolve_commit_slice_id(command, target_root)
+    if slice_id is None:
+        return
+    feature_id = _active_feature_id(target_root)
+    if feature_id is None:
+        return
+    try:
+        src_dir = _REPO_ROOT / "src"
+        if str(src_dir) not in sys.path:
+            sys.path.insert(0, str(src_dir))
+        from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+
+        AtCompletionLedger(feature_id, target_root).append_slice_commit_bypassed(
+            slice_id
+        )
+    except Exception:
+        # Fail-open: the bypass record is audit; a write failure must not change
+        # the commit decision (mirrors the gate's fail-open ledger emission).
+        pass
+
+
 def _spawn_gate(
     commit_msg_file: Path, ledger_root: Path, target_root: Path
 ) -> subprocess.CompletedProcess[str]:
@@ -279,6 +374,14 @@ def _dispatch_commit_path(command: str) -> int:
     """
     _touch_invocation_marker()
     target_root = _target_root()
+    # f-nonbypassable-attestation slice-02 (DDD-3): observe `--no-verify`/`-n`
+    # BEFORE git runs (git's own hooks are skipped by --no-verify, so this is the
+    # only surface that can see it) and convert the silent bypass into an
+    # indelible, veto-able `SliceCommitBypassed` debt record. Pre-git so it
+    # happens regardless of git hooks being skipped; fail-open so it never
+    # changes the commit decision.
+    if _is_no_verify(command):
+        _record_bypass_debt(command, target_root)
     ledger_root = _ledger_root(target_root)
     commit_msg_file = _resolve_commit_msg_file(command, target_root)
     completed = _spawn_gate(commit_msg_file, ledger_root, target_root)

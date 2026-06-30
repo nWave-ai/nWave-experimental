@@ -16,7 +16,11 @@ Use cases:
 
 from __future__ import annotations
 
-from des.application.log_persistence import GateLogEvent
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from des.application.log_persistence import GateLogEvent
 
 
 class SilentLogAdapter:

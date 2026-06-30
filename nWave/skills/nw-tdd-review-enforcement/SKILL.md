@@ -92,7 +92,16 @@ Required: delete internal tests, consolidate via parametrize, re-submit
 
 In `classic` mode, verify TDD phases in execution-log.json. **Current canonical (ADR-025, 2026-05-07): 3-phase cycle — RED → GREEN → COMMIT.** RED absorbs the legacy PREPARE / RED_ACCEPTANCE / RED_UNIT phases — it unskips the AT scaffold authored by DISTILL, verifies fail-for-right-reason, and writes PBT unit tests ONLY when the AT requires them to reach GREEN.
 
-**Phase record by `workflow.mode`**: `execution-log.json` is the phase record of the `classic` spine only. Under `workflow.mode: atdd_pure` there is no `execution-log.json` — the roadmap-free 7-phase A→G sibling spine (ADR-028) records each slice's progress in the **AT-completion ledger** (`.nwave/telemetry/atdd-pure/{feature_id}.jsonl`). When reviewing an `atdd_pure` delivery, read the AT-completion ledger for phase outcomes; the `classic`-mode gates below apply to the legacy and 3-phase `execution-log.json` contracts, not to the AT-completion ledger.
+**Phase record by `workflow.mode`**: `execution-log.json` is the phase record of the `classic` spine only — per-mode audit substrate projected from the mode registry: <!-- mode-ref-ok -->
+
+<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
+- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
+  Deliver phase shape: `RED -> GREEN -> COMMIT`
+<!-- GENERATED:mode-descriptor END -->
+
+When reviewing a per-slice-spine delivery, read the AT-completion ledger (`.nwave/telemetry/atdd-pure/{feature_id}.jsonl`) for phase outcomes; the `classic`-mode gates below apply to the legacy and 3-phase `execution-log.json` contracts, not to the AT-completion ledger.
 
 **Legacy 5-phase contract (ADR-024 era, `classic` mode)**: PREPARE / RED_ACCEPTANCE / RED_UNIT / GREEN / COMMIT — preserved for audit-log replay of pre-2026-05-07 commits. Existing `classic`-mode execution-log.json files using the 5-phase contract remain valid; the gates below apply equivalently to merged phases under the 3-phase canon.
 
@@ -259,7 +268,7 @@ When a crafter gets stuck, the correct action is to escalate -- not to silently 
 
 ### What to Check
 
-1. **ESCALATION_NEEDED markers**: in `classic` mode the execution-log.json should contain `escalation_needed: true` with reason if the crafter hit a wall (under `workflow.mode: atdd_pure` the equivalent marker is recorded in the AT-completion ledger)
+1. **ESCALATION_NEEDED markers**: in `classic` mode the execution-log.json should contain `escalation_needed: true` with reason if the crafter hit a wall (under `workflow.mode: atdd_pure` the equivalent marker is recorded in the AT-completion ledger) <!-- mode-ref-ok -->
 2. **Three-attempt rule**: evidence of at least 3 distinct implementation attempts before any test change (check GREEN phase attempts in execution log)
 3. **Product owner approval**: any requirement-driven test change must reference explicit PO approval (e.g., `po_approved: true` or `requirement_change: {ticket}` in execution log)
 

@@ -1,0 +1,159 @@
+# Wave-contract schema (f-wave-contract-coherence slice-01, ADR-FLOW-006 D1/D2)
+#
+# JSON-Schema (Draft 2020-12) for a canonical wave-contract registry file living
+# at `nWave/waves/<wave>.yaml`. A wave-contract carries the two symmetric SSOTs:
+#
+#   gate_stack      (SSOT-A) — the wave's gate-in / gate-out ordered gate stacks,
+#                   reusing the SAME GateInvocation row schema the flavor's
+#                   wave_gate_stacks block uses (gate_id + on_failure + optional
+#                   args). Migrated verbatim from the flavor block (the MOVE).
+#   output_contract (SSOT-B) — what the wave must produce: the per-wave [REF]
+#                   section list (ref_sections) + the output files. The
+#                   feature-delta validator reads ref_sections for the per-wave
+#                   [REF] list (consumed slice-04).
+#   overrides       — RESERVED hook (ADR-FLOW-006): a flavor MAY later declare a
+#                   per-wave override of the registry default. Schema-valid but
+#                   unused today; the dispatcher reads the registry default. The
+#                   reserved block is declared so a future override is additive,
+#                   not a schema break.
+#
+# Per the OSS hook-only mandate: DATA only — no sequencer, no engine, no sixth
+# GateVerdict. The schema is validated against any Python-3.10+ target (stdlib).
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://nwave.dev/schemas/waves/_schema.yaml"
+title: "nWave Wave-Contract Schema"
+description: |
+  Schema for a canonical wave-contract registry file. One file per wave carries
+  the gate_stack (SSOT-A) + output_contract (SSOT-B) the wave prose points at
+  (gates-ref / outputs-ref) instead of restating inline.
+
+type: object
+required:
+  - wave
+  - gate_stack
+  - output_contract
+additionalProperties: false
+
+properties:
+  wave:
+    type: string
+    pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+    description: |
+      The wave this contract governs (e.g. `discuss`, `design`, `distill`,
+      `deliver`). Matches the registry file basename (`<wave>.yaml`).
+
+  gate_stack:
+    type: object
+    additionalProperties: false
+    description: |
+      SSOT-A — the wave's per-boundary gate stack. Each boundary is an ordered
+      GateInvocation list, reusing the flavor wave_gate_stacks row schema
+      verbatim. The dispatcher iterates these in declared order, halting at the
+      first on_failure=block veto.
+    properties:
+      gate-in:
+        type: array
+        description: "Ordered gates iterated on the wave-entering dispatch."
+        items:
+          $ref: "#/$defs/GateInvocation"
+      gate-out:
+        type: array
+        description: "Ordered gates iterated on the wave's SubagentStop return."
+        items:
+          $ref: "#/$defs/GateInvocation"
+
+  output_contract:
+    type: object
+    additionalProperties: false
+    description: |
+      SSOT-B — what the wave must produce. ref_sections is the per-wave [REF]
+      section list (the feature-delta validator's source); files is the output
+      file list. Authored once here; prose points at it via outputs-ref.
+    properties:
+      ref_sections:
+        type: array
+        description: "The per-wave [REF] sections the feature-delta must carry."
+        items:
+          $ref: "#/$defs/RefSection"
+      files:
+        type: array
+        description: "The output files the wave produces."
+        items:
+          $ref: "#/$defs/OutputFile"
+
+  overrides:
+    type: object
+    description: |
+      RESERVED (ADR-FLOW-006): a per-flavor override hook. Schema-valid but
+      unused today — the dispatcher reads the registry default. Declared so a
+      future flavor-specific override is additive, not a schema break.
+    additionalProperties: true
+
+$defs:
+  GateInvocation:
+    type: object
+    required: [gate_id, on_failure]
+    additionalProperties: false
+    description: |
+      One ordered gate in a stack. Reused verbatim from
+      nWave/flavors/_schema.yaml $defs/GateInvocation — NOT a new shape.
+    properties:
+      gate_id:
+        type: string
+        pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+        description: "Must match a gate_id in nWave/gates/_catalog.yaml."
+      args:
+        type: object
+        description: "Args passed to the gate CLI invocation."
+        additionalProperties: true
+      on_failure:
+        type: string
+        enum: [block, warn, log]
+        description: |
+          block: halt composition + propagate failure.
+          warn: continue composition + annotate result.
+          log: continue silently, log event for audit.
+
+  RefSection:
+    type: object
+    required: [id, grade]
+    additionalProperties: false
+    description: |
+      One [REF] section the wave must produce. A mandatory section that carries
+      a greenfield_degradation string satisfies a presence-check on a greenfield
+      feature by carrying the literal (honestly empty), not by absence.
+    properties:
+      id:
+        type: string
+        minLength: 1
+        description: "The [REF] section heading the feature-delta carries."
+      grade:
+        type: string
+        enum: [mandatory, optional]
+        description: "Whether the section is required or optional."
+      greenfield_degradation:
+        type: string
+        description: |
+          The literal a greenfield feature carries to satisfy presence when no
+          prior-wave corpus exists (the dissolution of mandatory-or-drop).
+
+  OutputFile:
+    type: object
+    required: [path, grade]
+    additionalProperties: false
+    description: "One output file the wave produces."
+    properties:
+      path:
+        type: string
+        minLength: 1
+        description: "The output path (may carry {feature_id} placeholders)."
+      grade:
+        type: string
+        enum: [mandatory, optional]
+        description: "Whether the file is required or optional."
+      inline_in_feature_delta:
+        type: boolean
+        description: |
+          True when the content lives inline in the feature-delta rather than
+          as a separate multi-file output (the legacy discuss/*.md retirement).

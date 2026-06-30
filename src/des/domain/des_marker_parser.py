@@ -73,6 +73,17 @@ _NORMALISED_PHASE_BY_TOKEN.update(
 # NOTHING else. `slice1` (no dash) and `slice-3-->` (garbled tail) fail.
 _SLICE_SHAPE = re.compile(r"slice-\d+")
 
+# Any DES marker KEY in either spelling -- the HTML-comment form
+# (``<!-- DES-VALIDATION : required -->``) the orchestrator emits, OR the plain
+# ``DES-VALIDATION: required`` line form a sub-dispatch may carry. Used by the
+# wave-aware §95 hinge to tell a *markerless* in-wave child (S2 DENY) from one
+# that *carries the wave's DES markers* (allowed): the discriminator is marker
+# PRESENCE, not the HTML-comment ``is_des_task`` flag alone. Stays a pure
+# prompt-parse concern (no I/O) -- the active wave is still never self-reported.
+_DES_MARKER_KEY = re.compile(
+    r"DES-(?:VALIDATION|MODE|PHASE|SLICE|PROJECT-ID|STEP-ID|PROJECT-ROOT)\s*:",
+)
+
 # The feature-end-cycle dispatch scope literal (ADR-028 D6, Option A). The
 # `DES-SLICE` marker carries either a `slice-\d+` per-slice scope or this exact
 # literal -- a closed two-member union, nothing else.
@@ -97,6 +108,10 @@ class DesMarkers:
         is_des_task: True if prompt contains DES-VALIDATION: required marker
         is_orchestrator_mode: True if the DES-MODE marker value is orchestrator
         project_id: Value of DES-PROJECT-ID marker, or None
+        feature_id: Value of DES-FEATURE-ID marker, or None. The feature being
+            delivered, distinct from DES-PROJECT-ID (the project-ROOT identity).
+            The carpaccio resolution prefers this marker and falls back to
+            project_id only when it is absent (AD-61).
         step_id: Value of DES-STEP-ID marker, or None
         project_root: Value of DES-PROJECT-ROOT marker, or None. Carries the
             worktree-rooted project path so hooks can resolve execution-log
@@ -113,17 +128,51 @@ class DesMarkers:
             literal -- else None (absent or malformed). Despite the field name,
             the value is a dispatch *scope*; use `is_feature_end` rather than
             string-matching the literal.
+        declared_wave: Raw DES-WAVE marker value, or None when absent
+            (slice-07d, nwave-flow-v2-enforcement -- F4 INFERRED fallback).
+            Pure prompt-parse: validated at the USE site against
+            ``WAVE_VOCABULARY`` (out-of-vocab == treated absent, no arm).
+            NEVER the active-wave source -- ``wave`` stays reader-sourced
+            (S22.7: the declaration is consumed ONLY to ARM enforcement,
+            never an authorization; it can only ADD gating).
     """
 
     is_des_task: bool
     is_orchestrator_mode: bool
     project_id: str | None = None
+    feature_id: str | None = None
     step_id: str | None = None
     project_root: str | None = None
     # --- atdd_pure dispatch marker set (U0 / ADR-030 D8 -- hg-slice-00) -------
     mode: str | None = None
     atdd_pure_phase: str | None = None
     slice_id: str | None = None
+    # has_des_markers: True when the prompt carries ANY DES marker key in EITHER
+    # spelling (HTML-comment or plain ``DES-KEY: value`` line). Broader than
+    # is_des_task (which keys only on the HTML-comment DES-VALIDATION marker): the
+    # wave-aware hinge needs to distinguish a markerless in-wave child (S2 DENY)
+    # from one that carries the wave's DES markers (allowed). A pure prompt-parse
+    # output -- no I/O, nothing self-reported about the active wave.
+    has_des_markers: bool = False
+    # carries_validation_marker: True when the prompt carries DES-VALIDATION in
+    # EITHER spelling -- the HTML-comment `<!-- DES-VALIDATION : required -->` OR
+    # the plain `DES-VALIDATION: required` line a sub-dispatch may carry. is_des_task
+    # keys ONLY on the HTML-comment form; this broader field backs the
+    # `carries_des_validation` property (ADR-001 Amendment 1) so a plain-line-validated
+    # dispatch is recognized as complete (not a partial-context bypass). Pure
+    # prompt-parse output -- no I/O.
+    carries_validation_marker: bool = False
+    # --- declared wave (slice-07d, nwave-flow-v2-enforcement) -----------------
+    # The raw `<!-- DES-WAVE: <wave> -->` value; vocabulary-validated at the
+    # USE site (WaveActivationService.arm_inferred), never trusted as the
+    # active wave.
+    declared_wave: str | None = None
+    # --- wave-active state (slice-04, nwave-flow-v2-enforcement) --------------
+    # The ACTIVE wave from WaveActiveReader; None <=> NoWaveActive (S1). This is
+    # NEVER set by DesMarkerParser.parse (the parser stays a pure prompt-parser
+    # with no I/O -- wave is never self-reported). PreToolUseService reads the
+    # WaveActiveReader port and composes this field onto the parsed markers.
+    wave: str | None = None
 
     @property
     def is_feature_end(self) -> bool:
@@ -135,6 +184,40 @@ class DesMarkers:
         """
         return self.slice_id == _FEATURE_END_SCOPE
 
+    @property
+    def carries_des_validation(self) -> bool:
+        """True when the dispatch carries the required DES-VALIDATION marker in
+        EITHER form -- the HTML-comment ``<!-- DES-VALIDATION : required -->`` OR the
+        plain ``DES-VALIDATION: required`` line (ADR-001 Amendment 1).
+
+        ``is_des_task`` keys only on the HTML-comment form; OR-ing it here keeps the
+        invariant ``is_des_task ⟹ carries_des_validation`` even for ``DesMarkers``
+        instances constructed directly (where ``carries_validation_marker`` defaults
+        False). A complete dispatch -- validated in either spelling -- is excluded
+        from ``carries_partial_wave_context`` so a legitimate plain-line-validated
+        child is NOT false-positive-flagged as a wave-bypass. Pure derived property.
+        """
+        return self.is_des_task or self.carries_validation_marker
+
+    @property
+    def carries_partial_wave_context(self) -> bool:
+        """True when the prompt positively signals a wave-owned child that dropped
+        its required marker (ADR-001 positive-bypass-signal predicate).
+
+        The prompt carries at least one DES-family marker -- any ``DES-*`` key
+        INCLUDING ``DES-WAVE`` -- but NOT the required ``DES-VALIDATION`` marker in
+        EITHER form. OR-ing ``declared_wave`` counts a ``DES-WAVE``-only child as wave
+        context (closing the ``_DES_MARKER_KEY`` collision with no regex change); the
+        ``not carries_des_validation`` clause (ADR-001 Amendment 1, superseding the
+        HTML-comment-only ``not is_des_task``) excludes a complete DES dispatch
+        validated in EITHER spelling. Pure derived property -- no I/O, the active
+        wave is never read here (it still comes only from the floor reader). Mirrors
+        ``is_feature_end``.
+        """
+        return (
+            self.has_des_markers or self.declared_wave is not None
+        ) and not self.carries_des_validation
+
 
 class DesMarkerParser:
     """Parses DES HTML comment markers from Task prompts.
@@ -144,12 +227,19 @@ class DesMarkerParser:
     """
 
     _VALIDATION_PATTERN = re.compile(r"<!--\s*DES-VALIDATION\s*:\s*required\s*-->")
+    # ADR-001 Amendment 1: DES-VALIDATION presence in EITHER spelling -- the
+    # HTML-comment form (matched as a substring) OR the plain `DES-VALIDATION:
+    # required` line a sub-dispatch may carry. Backs `carries_des_validation`.
+    _VALIDATION_PRESENCE_PATTERN = re.compile(r"DES-VALIDATION\s*:\s*required")
     _MODE_PATTERN = re.compile(r"<!--\s*DES-MODE\s*:\s*(\S+)\s*-->")
     _PHASE_PATTERN = re.compile(r"<!--\s*DES-PHASE\s*:\s*(\S+)\s*-->")
     _SLICE_PATTERN = re.compile(r"<!--\s*DES-SLICE\s*:\s*(\S+)\s*-->")
     _PROJECT_ID_PATTERN = re.compile(r"<!--\s*DES-PROJECT-ID\s*:\s*(\S+)\s*-->")
+    _FEATURE_ID_PATTERN = re.compile(r"<!--\s*DES-FEATURE-ID\s*:\s*(\S+)\s*-->")
     _STEP_ID_PATTERN = re.compile(r"<!--\s*DES-STEP-ID\s*:\s*(\S+)\s*-->")
     _PROJECT_ROOT_PATTERN = re.compile(r"<!--\s*DES-PROJECT-ROOT\s*:\s*(\S+)\s*-->")
+    # slice-07d (F4): the wave-bearing declaration a dispatch may carry.
+    _WAVE_PATTERN = re.compile(r"<!--\s*DES-WAVE\s*:\s*(\S+)\s*-->")
 
     def parse(self, prompt: str) -> DesMarkers:
         """Parse DES markers from a Task prompt string.
@@ -161,11 +251,17 @@ class DesMarkerParser:
             DesMarkers with detected marker values
         """
         is_des_task = bool(self._VALIDATION_PATTERN.search(prompt))
+        carries_validation_marker = bool(
+            self._VALIDATION_PRESENCE_PATTERN.search(prompt)
+        )
 
         mode = self._parse_mode(prompt)
 
         project_id_match = self._PROJECT_ID_PATTERN.search(prompt)
         project_id = project_id_match.group(1) if project_id_match else None
+
+        feature_id_match = self._FEATURE_ID_PATTERN.search(prompt)
+        feature_id = feature_id_match.group(1) if feature_id_match else None
 
         step_id_match = self._STEP_ID_PATTERN.search(prompt)
         step_id = step_id_match.group(1) if step_id_match else None
@@ -173,15 +269,22 @@ class DesMarkerParser:
         project_root_match = self._PROJECT_ROOT_PATTERN.search(prompt)
         project_root = project_root_match.group(1) if project_root_match else None
 
+        declared_wave_match = self._WAVE_PATTERN.search(prompt)
+        declared_wave = declared_wave_match.group(1) if declared_wave_match else None
+
         return DesMarkers(
             is_des_task=is_des_task,
             is_orchestrator_mode=mode == "orchestrator",
             project_id=project_id,
+            feature_id=feature_id,
             step_id=step_id,
             project_root=project_root,
             mode=mode,
             atdd_pure_phase=self._parse_phase(prompt),
             slice_id=self._parse_slice(prompt),
+            has_des_markers=bool(_DES_MARKER_KEY.search(prompt)),
+            carries_validation_marker=carries_validation_marker,
+            declared_wave=declared_wave,
         )
 
     def _parse_mode(self, prompt: str) -> str | None:

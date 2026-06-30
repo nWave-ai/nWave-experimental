@@ -18,12 +18,14 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
+
+from des.adapters.drivers.hooks import claude_code_hook_adapter
+from tests.common.in_process_cli import run_hook_in_process
 
 
 # Link to feature file
@@ -51,21 +53,30 @@ def _invoke_hook(command: str, stdin_json: str) -> subprocess.CompletedProcess:
     Returns:
         CompletedProcess with stdout, stderr, and returncode.
     """
-    env = os.environ.copy()
-    env["PYTHONPATH"] = SRC_PATH + os.pathsep + env.get("PYTHONPATH", "")
-
-    return subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "des.adapters.drivers.hooks.claude_code_hook_adapter",
-            command,
-        ],
-        input=stdin_json,
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=30,
+    # In-process analogue of the former
+    # ``subprocess.run([sys.executable, "-m", "...claude_code_hook_adapter", command],
+    # input=stdin_json)`` fork: drive the real adapter EDGE (``hook_router.main``)
+    # directly, routed by argv exactly as the module invocation was, feeding the
+    # SAME JSON on stdin. PYTHONPATH=src is set on os.environ (restored after).
+    prior_pythonpath = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = SRC_PATH + os.pathsep + (prior_pythonpath or "")
+    try:
+        exit_code, out, err = run_hook_in_process(
+            claude_code_hook_adapter.main,
+            stdin_text=stdin_json,
+            cwd=PROJECT_ROOT,
+            argv=["claude_code_hook_adapter", command],
+        )
+    finally:
+        if prior_pythonpath is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = prior_pythonpath
+    return subprocess.CompletedProcess(
+        args=["claude_code_hook_adapter", command],
+        returncode=exit_code,
+        stdout=out,
+        stderr=err,
     )
 
 
@@ -205,6 +216,13 @@ def given_des_agent_validation_failure(ctx: dict[str, Any], tmp_path: Path) -> N
         "events": [],
     }
     execution_log_path.write_text(json.dumps(execution_log))
+
+    # Activation gate (nwave-project-activation-gating): hooks only run in an
+    # activated project. A project mid-DELIVER is, by definition, active — mark
+    # it so the SubagentStop validation runs (the block assertion is unchanged).
+    marker = tmp_path / ".nwave" / "local-config.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"enabled_for_repo": True}))
 
     ctx["hook_command"] = "subagent-stop"
     ctx["stdin"] = json.dumps(

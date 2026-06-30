@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-from .steps.steps_slice_01_collection_precheck import *  # noqa: F403  -- step vocabulary
+from .steps.steps_slice_01_collection_precheck import *
 
 
 scenarios("slice-01-collection-health-precheck.feature")

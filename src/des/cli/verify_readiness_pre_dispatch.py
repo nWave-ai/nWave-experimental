@@ -4,12 +4,12 @@ D4 Phase 3 slice-03 (per `docs/analysis/d4-schema-spec-2026-05-26.md`
 § 5 Phase 3 slice-03 + DDD analysis `docs/analysis/ddd-workflow-change-difficulty-2026-05-26.md`
 D1 design direction).
 
-Single-invocation aggregate gate that checks all 5 cascading invariants
-catalogued in `docs/backlog.md` friction #57 (`F-NEW-FEATURE-FIRST-DISPATCH-FRICTION-STACK`)
+Single-invocation aggregate gate that checks all 7 cascading invariants
+catalogued in `docs/product/backlog.md` friction #57 (`F-NEW-FEATURE-FIRST-DISPATCH-FRICTION-STACK`)
 BEFORE a NEW feature first crafter dispatches. Cascade-debug reduced from
-5 friction roundtrips to 1 combined diagnostic.
+several friction roundtrips to 1 combined diagnostic.
 
-The 5 invariants verified:
+The 7 invariants verified:
   1. SLICE_PLAN_SECTION -- `## Wave: DISCUSS / [REF] Slice Plan` heading
      present in `docs/feature/{feature_id}/feature-delta.md`.
   2. SCENARIO_SLICE_TAGS -- every scenario in the feature's .feature files
@@ -20,9 +20,20 @@ The 5 invariants verified:
      (freshness gate compatible per friction #16 fix shape).
   5. PRE_COMMIT_SCOPE -- no RED scaffolds in pre-commit pytest scope
      without `@skip` markers.
+  6. REUSE_FIRST -- a `## Reuse Analysis` section (or exemption marker) OR an
+     explicit `## Wave: DESIGN / [REF] Design Skipped` witness with a non-empty
+     rationale is present in `docs/feature/{feature_id}/feature-delta.md`. A
+     feature that skips the optional DESIGN wave cannot slip past the
+     reuse-first guarantee.
+  7. SUSTAINABILITY -- a well-formed Test Reuse & Consolidation Analysis section
+     (or accepted exemption: methodology-exempt / no-new-tests) is present in
+     `docs/feature/{feature_id}/feature-delta.md`. Wires the SHIPPED slice-03
+     `validate_sustainability_content` parser into the aggregate so the
+     sustainable-test-suite content gate FIRES before dispatch. A
+     declared-but-missing or malformed section cannot slip past the gate.
 
 Exit codes:
-  0 -- all 5 invariants PASS; dispatcher proceeds to next gate.
+  0 -- all 7 invariants PASS; dispatcher proceeds to next gate.
   1 -- at least one invariant FAILS; diagnostic enumerates each invariant's
        status + remediation.
   2 -- malformed input (argparse failure on required --feature-id/--slice-id).
@@ -41,6 +52,27 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from des.cli.axis_b_levers import (
+    LayoutRoots,
+    check_contract_per_port,
+    check_integration_per_adapter,
+    check_non_ws_spawn,
+    check_undefined_name,
+    check_unwired_entry,
+    resolve_layout,
+)
+from des.cli.validate_feature_delta import (
+    _SUSTAINABILITY_ACCEPTED_VERDICTS,
+    VERDICT_MALFORMED_REUSE_ANALYSIS,
+    VERDICT_METHODOLOGY_EXEMPT,
+    VERDICT_MISSING_REUSE_ANALYSIS,
+    VERDICT_NO_OVERLAP_DECLARED,
+    VERDICT_STRUCTURALLY_ACCEPTED,
+    VERDICT_UNJUSTIFIED_CREATE_NEW,
+    validate_reuse_analysis_content,
+    validate_sustainability_content,
+)
+
 
 # --- Invariant identifiers (mirrors test domain_types.FirstDispatchInvariantId) ---
 
@@ -49,6 +81,8 @@ _INV_SCENARIO_TAGS = "scenario_slice_tags"
 _INV_AT_VERDICT = "at_review_verdict"
 _INV_GATE_OUTPUT = "gate_output_produceable"
 _INV_PRE_COMMIT = "pre_commit_scope"
+_INV_REUSE_FIRST = "reuse_first_or_design_skip"
+_INV_SUSTAINABILITY = "sustainability"
 
 _ALL_INVARIANTS = (
     _INV_SLICE_PLAN,
@@ -56,9 +90,32 @@ _ALL_INVARIANTS = (
     _INV_AT_VERDICT,
     _INV_GATE_OUTPUT,
     _INV_PRE_COMMIT,
+    _INV_REUSE_FIRST,
+    _INV_SUSTAINABILITY,
+)
+
+# --- RC4-b bugfix lane (lane-keyed, ADD-not-mutate) -----------------------
+#
+# A `DES-LANE: bugfix` dispatch skips the 5 disproportionate feature-readiness
+# invariants and enforces ONLY the 2 mechanical safety guards. The skipped
+# invariant ids are NAMED via the existing `_INV_*` constants (no hardcoded
+# strings) so the LOUD lane audit record stays in lock-step with the gate.
+_BUGFIX_LANE = "bugfix"
+
+_BUGFIX_LANE_SKIPPED: tuple[str, ...] = (
+    _INV_SLICE_PLAN,
+    _INV_SCENARIO_TAGS,
+    _INV_AT_VERDICT,
+    _INV_REUSE_FIRST,
+    _INV_SUSTAINABILITY,
 )
 
 _SLICE_PLAN_HEADING = "## Wave: DISCUSS / [REF] Slice Plan"
+
+# The canonical DESIGN-skip witness heading (O-1 opt-a). A feature that skips
+# the optional DESIGN wave acknowledges the skip with this heading PLUS a
+# non-empty rationale body; a bare heading is not a valid witness.
+_DESIGN_SKIP_HEADING = "## Wave: DESIGN / [REF] Design Skipped"
 
 # Remediation strings (mirror the per-gate yaml failure_modes).
 _REMEDIATIONS: dict[str, str] = {
@@ -77,6 +134,16 @@ _REMEDIATIONS: dict[str, str] = {
     _INV_PRE_COMMIT: (
         "Add `@skip @pending` markers to RED scaffolds within pre-commit pytest scope"
     ),
+    _INV_REUSE_FIRST: (
+        "Add a `## Reuse Analysis` section (DDD-8 / nw-design SKILL.md step 5) OR, "
+        "if DESIGN was deliberately skipped, a "
+        "`## Wave: DESIGN / [REF] Design Skipped` witness with a non-empty rationale"
+    ),
+    _INV_SUSTAINABILITY: (
+        "Add a well-formed `## Test Reuse & Consolidation Analysis` section "
+        "(nw-distill sustainability section) OR a `Test-Reuse-Analysis: "
+        "methodology-exempt` marker to feature-delta.md"
+    ),
 }
 
 
@@ -87,6 +154,9 @@ class _InvariantResult:
     invariant_id: str
     satisfied: bool
     remediation: str | None = None
+    # The CodeFactPort confidence label carried with the lever-1 wiring flag
+    # (degrade-LOUD, ADR-LA-001). Empty for invariants that carry no code-fact.
+    confidence: str = ""
 
 
 @dataclass
@@ -96,6 +166,14 @@ class _ReadinessReport:
     feature_id: str
     slice_id: str
     invariants: list[_InvariantResult] = field(default_factory=list)
+    # The resolved (or unresolvable) target-project layout (slice-04 PATH-
+    # genericity). None when --enforce-axis-b is off (no layout discovery
+    # performed); surfaced as the structured ``layout`` record otherwise.
+    layout: LayoutRoots | None = None
+    # The LOUD, durable bugfix-lane audit record (RC4-b). None on the default
+    # path; set to {"lane", "justification", "skipped"} when the bugfix lane
+    # fires, naming the skipped feature-readiness invariants for the audit trail.
+    lane: dict[str, object] | None = None
 
     @property
     def verdict(self) -> str:
@@ -119,7 +197,17 @@ def _check_slice_plan_section(workspace: Path) -> _InvariantResult:
             satisfied=False,
             remediation=_REMEDIATIONS[_INV_SLICE_PLAN],
         )
-    text = delta.read_text()
+    try:
+        text = delta.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        # An undecodable feature-delta carries no slice-plan heading. Report
+        # FAILED rather than crashing the aggregate so every invariant -- in
+        # particular the reuse-first degrade-LOUD diagnostic -- still emits.
+        return _InvariantResult(
+            invariant_id=_INV_SLICE_PLAN,
+            satisfied=False,
+            remediation=_REMEDIATIONS[_INV_SLICE_PLAN],
+        )
     if _SLICE_PLAN_HEADING not in text:
         return _InvariantResult(
             invariant_id=_INV_SLICE_PLAN,
@@ -284,6 +372,251 @@ def _check_pre_commit_scope(repo_root: Path, feature_id: str) -> _InvariantResul
     return _InvariantResult(invariant_id=_INV_PRE_COMMIT, satisfied=True)
 
 
+# The reuse-analysis verdicts that satisfy the reuse leg (DDD-9): a present,
+# well-formed Reuse Analysis OR an explicit exemption marker.
+_REUSE_LEG_PRESENT_VERDICTS = frozenset(
+    {
+        VERDICT_STRUCTURALLY_ACCEPTED,
+        VERDICT_METHODOLOGY_EXEMPT,
+        VERDICT_NO_OVERLAP_DECLARED,
+    }
+)
+
+
+def _design_skip_witness_present(content: str) -> bool:
+    """True iff a `## Wave: DESIGN / [REF] Design Skipped` heading carries a
+    non-empty rationale body (O-1 opt-a witness leg).
+
+    The witness is valid only when the canonical heading is followed by at least
+    one non-blank, non-`##` line before the next `##` heading. A bare heading
+    (immediately followed by another `##` heading or end-of-file) is NOT a valid
+    witness -- the rationale is empty.
+    """
+    lines = content.splitlines()
+    for idx, line in enumerate(lines):
+        if line.strip() != _DESIGN_SKIP_HEADING:
+            continue
+        for body in lines[idx + 1 :]:
+            stripped = body.strip()
+            if stripped.startswith("##"):
+                break
+            if stripped:
+                return True
+        return False
+    return False
+
+
+def _check_reuse_first_or_design_skip(
+    repo_root: Path, feature_id: str
+) -> _InvariantResult:
+    """Invariant 6: the feature carries a reuse-first analysis OR a DESIGN-skip
+    witness.
+
+    A feature that skips the optional DESIGN wave must not reach its first
+    crafter dispatch carrying NO reuse-first analysis. The invariant is
+    satisfied iff EITHER a valid Reuse Analysis is present (reuse leg) OR an
+    explicit `## Wave: DESIGN / [REF] Design Skipped` witness with a non-empty
+    rationale is present (witness leg).
+
+    Reuses the SHIPPED `validate_reuse_analysis_content` parser (DDD-8) -- no
+    second reuse parser. Degrades LOUD on an unreadable feature-delta: the
+    diagnostic names the unreadable source rather than silent-passing or
+    crashing.
+    """
+    delta = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    try:
+        content = delta.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return _InvariantResult(
+            invariant_id=_INV_REUSE_FIRST,
+            satisfied=False,
+            remediation=(
+                f"feature-delta could not be read as UTF-8 text at {delta}; "
+                f"the reuse-first invariant cannot be evaluated (degrade-LOUD)"
+            ),
+        )
+
+    result = validate_reuse_analysis_content(content)
+    if result.verdict in _REUSE_LEG_PRESENT_VERDICTS:
+        return _InvariantResult(invariant_id=_INV_REUSE_FIRST, satisfied=True)
+
+    if result.verdict == VERDICT_MISSING_REUSE_ANALYSIS:
+        if _design_skip_witness_present(content):
+            return _InvariantResult(invariant_id=_INV_REUSE_FIRST, satisfied=True)
+        return _InvariantResult(
+            invariant_id=_INV_REUSE_FIRST,
+            satisfied=False,
+            remediation=_REMEDIATIONS[_INV_REUSE_FIRST],
+        )
+
+    if result.verdict in (
+        VERDICT_MALFORMED_REUSE_ANALYSIS,
+        VERDICT_UNJUSTIFIED_CREATE_NEW,
+    ):
+        # fix-readiness-gate-reuse-first-invariant (O-1 ALLOW path, DESIGN spec):
+        # a malformed/unjustified Reuse Analysis ALONGSIDE a valid Design-Skipped
+        # witness CLEARS -- the witness is the authorizing act, so the
+        # malformed-table detail is suppressed in the cleared case. Only refuse
+        # when the witness is ALSO absent (controls-only-veto: emit a NO only when
+        # NO authorizing act is present, never ignore a present valid witness).
+        if _design_skip_witness_present(content):
+            return _InvariantResult(invariant_id=_INV_REUSE_FIRST, satisfied=True)
+        return _InvariantResult(
+            invariant_id=_INV_REUSE_FIRST,
+            satisfied=False,
+            remediation=f"{result.detail} -- {_REMEDIATIONS[_INV_REUSE_FIRST]}",
+        )
+
+    return _InvariantResult(
+        invariant_id=_INV_REUSE_FIRST,
+        satisfied=False,
+        remediation=_REMEDIATIONS[_INV_REUSE_FIRST],
+    )
+
+
+def _check_sustainability(repo_root: Path, feature_id: str) -> _InvariantResult:
+    """Invariant 7: the feature carries a well-formed Test Reuse & Consolidation
+    Analysis section (the sustainable-test-suite content gate FIRES here).
+
+    Slices 02-04 shipped `des validate-feature-delta --require-sustainability` as a
+    working CLI, but NO wave gate-stack invoked it ("catalogued != wired"). This
+    invariant wires the SHIPPED `validate_sustainability_content` (the slice-03
+    pure-core function) into the readiness aggregate so the gate fires
+    automatically before dispatch -- mirroring invariant 6 EXACTLY.
+
+    Satisfied iff the parser returns an accepted verdict (the SSOT
+    `_SUSTAINABILITY_ACCEPTED_VERDICTS`: structurally-accepted / methodology-exempt
+    / no-new-tests). A declared-but-missing or malformed section FAILS.
+
+    Reuses the SHIPPED parser -- no second sustainability parser. Degrades LOUD on
+    an unreadable feature-delta: the diagnostic names the unreadable source rather
+    than silent-passing or crashing.
+    """
+    delta = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    try:
+        content = delta.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return _InvariantResult(
+            invariant_id=_INV_SUSTAINABILITY,
+            satisfied=False,
+            remediation=(
+                f"feature-delta could not be read as UTF-8 text at {delta}; "
+                f"the sustainability invariant cannot be evaluated (degrade-LOUD)"
+            ),
+        )
+
+    result = validate_sustainability_content(content)
+    if result.verdict in _SUSTAINABILITY_ACCEPTED_VERDICTS:
+        return _InvariantResult(invariant_id=_INV_SUSTAINABILITY, satisfied=True)
+
+    return _InvariantResult(
+        invariant_id=_INV_SUSTAINABILITY,
+        satisfied=False,
+        remediation=f"{result.detail} -- {_REMEDIATIONS[_INV_SUSTAINABILITY]}",
+    )
+
+
+# --- AXIS-B enforcement levers (at-in-process-port-default slice-03) --------
+
+
+def _lever_to_invariant(lever) -> _InvariantResult:
+    """Translate a shared ``LeverResult`` into a readiness ``_InvariantResult``.
+
+    A flagged lever is a FAILED invariant carrying its remediation + (for the
+    wiring lever) its CodeFactPort confidence label; a clean lever is satisfied.
+    """
+    return _InvariantResult(
+        invariant_id=lever.invariant_id,
+        satisfied=not lever.flagged,
+        remediation=lever.remediation or None,
+        confidence=lever.confidence,
+    )
+
+
+def _check_axis_b_levers(
+    target_language: str, layout: LayoutRoots
+) -> list[_InvariantResult]:
+    """The five AXIS-B enforcement levers as readiness invariants (slice-03).
+
+    Each lever scans the TARGET project's resolved source + tests roots for real
+    wiring / coverage-obligation / sad-path drift; the levers are git-free,
+    per-language, and degrade-LOUD. Appended only when ``--enforce-axis-b`` is
+    set, so existing callers see the 7 invariants byte-identical.
+
+    ``layout`` carries the RESOLVED target roots (slice-04 PATH-genericity). When
+    the layout is ``not-resolvable`` the levers degrade LOUD: each falls back to
+    no-scan (the resolver already named the loud reason on the ``layout`` record),
+    never scanning the host nWave tree as if it were the target's.
+    """
+    source_root = layout.source_root
+    tests_root = layout.tests_root
+    return [
+        _lever_to_invariant(check_unwired_entry(source_root=source_root)),
+        _lever_to_invariant(check_integration_per_adapter(source_root, tests_root)),
+        _lever_to_invariant(check_contract_per_port(source_root, tests_root)),
+        _lever_to_invariant(check_non_ws_spawn(tests_root)),
+        _lever_to_invariant(check_undefined_name(target_language)),
+    ]
+
+
+# --- RC4-b bugfix lane logic ----------------------------------------------
+
+
+def _lane_justification_names_defect_and_test(justification: str) -> bool:
+    """True iff a bugfix-lane justification is non-vacuous AND names a regression
+    test (the ``test_<name>`` token).
+
+    The strict shape is the anti-abuse SAFETY mechanism for the one skipped
+    quality gate (``at_review_verdict``, Tsunami Q-10): a real bugfix references
+    its regression test -- a NEW test it pins RED->GREEN, OR an EXISTING test
+    that covers the behavior -- so it carries a ``test_<name>`` token (the
+    predicate does not distinguish new-vs-existing, it only requires that ONE
+    ``test_`` name appears). An empty or vague justification ("just fixing a
+    thing") names none and is refused fail-closed -- the lane cannot become the
+    shortcut that skips AT review on a real feature mislabeled as a bugfix.
+    """
+    return (
+        bool(justification.strip())
+        and re.search(r"\btest_\w+", justification) is not None
+    )
+
+
+def _run_bugfix_lane(
+    repo_root: Path, feature_id: str, slice_id: str, justification: str
+) -> _ReadinessReport:
+    """Build the readiness report for a declared ``DES-LANE: bugfix`` dispatch.
+
+    Invalid justification (no defect + regression-test named) -> REFUSED
+    fail-closed: a single named anti-abuse invariant, none of the feature-
+    readiness checks run. Valid justification -> run ONLY the 2 mechanical
+    guards, SKIP the 5 feature-readiness invariants, and attach the LOUD lane
+    audit record naming the skip.
+    """
+    report = _ReadinessReport(feature_id=feature_id, slice_id=slice_id)
+    if not _lane_justification_names_defect_and_test(justification):
+        report.invariants.append(
+            _InvariantResult(
+                invariant_id="bugfix_lane_justification",
+                satisfied=False,
+                remediation=(
+                    "DES-LANE: bugfix requires a justification naming the defect + "
+                    "a regression test test_<name> (a NEW test, or an EXISTING "
+                    "test that covers the behavior)"
+                ),
+            )
+        )
+        return report
+
+    report.invariants.append(_check_gate_output_produceable(repo_root))
+    report.invariants.append(_check_pre_commit_scope(repo_root, feature_id))
+    report.lane = {
+        "lane": _BUGFIX_LANE,
+        "justification": justification,
+        "skipped": list(_BUGFIX_LANE_SKIPPED),
+    }
+    return report
+
+
 # --- CLI driver ------------------------------------------------------------
 
 
@@ -291,7 +624,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="des verify-readiness-pre-dispatch",
         description=(
-            "Verify the 5 first-dispatch invariants before a NEW feature "
+            "Verify the 6 first-dispatch invariants before a NEW feature "
             "first crafter dispatch (closes friction #57)."
         ),
     )
@@ -311,12 +644,75 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Repo root path. Defaults to CWD.",
     )
+    parser.add_argument(
+        "--lane",
+        default=None,
+        help=(
+            "Declare a dispatch lane (RC4-b). `bugfix` skips the 5 "
+            "feature-readiness invariants (slice-plan, scenario-tags, "
+            "AT-review, reuse-first, sustainability) and enforces ONLY the 2 "
+            "mechanical safety guards — gated by a strict --lane-justification "
+            "(anti-abuse). Absent/not `bugfix`: all 7 invariants enforced "
+            "byte-identical."
+        ),
+    )
+    parser.add_argument(
+        "--lane-justification",
+        default="",
+        help=(
+            "Justification for a `--lane bugfix` dispatch. Must NAME the defect "
+            "+ a regression test `test_<name>` (a NEW test, OR an EXISTING test "
+            "that covers the behavior) — the safety mechanism for the skipped "
+            "at_review_verdict gate. Vacuous justifications are REFUSED fail-closed."
+        ),
+    )
+    parser.add_argument(
+        "--enforce-axis-b",
+        action="store_true",
+        help=(
+            "Append the AXIS-B enforcement levers (lever-1 wiring, "
+            "integration-per-adapter, contract-per-port, non-WS spawn, "
+            "undefined-name) to the invariant chain (at-in-process-port-default "
+            "slice-03). Off by default — existing callers see the 7 invariants "
+            "byte-identical."
+        ),
+    )
+    parser.add_argument(
+        "--target-language",
+        default="python",
+        help=(
+            "The target project's language. Drives the target-aware F821 "
+            "NOT_APPLICABLE projection (DDD-2b). Defaults to python."
+        ),
+    )
+    parser.add_argument(
+        "--source-dir",
+        default=None,
+        help=(
+            "The target project's source root (relative to --repo-root). "
+            "Highest-precedence layout-discovery input (slice-04 PATH-genericity) "
+            "— threads the RESOLVED source root into the AXIS-B levers, replacing "
+            "the hardcoded nWave src/des. Absent, the gate discovers the layout "
+            "from pyproject testpaths / .nwave config / conventional src|lib."
+        ),
+    )
+    parser.add_argument(
+        "--tests-dir",
+        default=None,
+        help=(
+            "The target project's tests root (relative to --repo-root). "
+            "Highest-precedence layout-discovery input (slice-04 PATH-genericity) "
+            "— threads the RESOLVED tests root into the AXIS-B levers, replacing "
+            "the hardcoded nWave tests/. Absent, the gate discovers the layout "
+            "from pyproject [tool.pytest.ini_options] testpaths / .nwave config."
+        ),
+    )
     return parser
 
 
 def _emit_report(report: _ReadinessReport) -> None:
     """Emit one JSON line on stdout summarising the readiness verdict."""
-    payload = {
+    payload: dict[str, object] = {
         "event": (
             "ReadinessVerified" if report.verdict == "cleared" else "ReadinessRefused"
         ),
@@ -328,11 +724,31 @@ def _emit_report(report: _ReadinessReport) -> None:
                 "id": inv.invariant_id,
                 "status": "satisfied" if inv.satisfied else "failed",
                 "remediation": inv.remediation,
+                "confidence": inv.confidence,
             }
             for inv in report.invariants
         ],
     }
+    if report.layout is not None:
+        payload["layout"] = _layout_record(report.layout)
+    if report.lane is not None:
+        payload["lane"] = report.lane
     print(json.dumps(payload))
+
+
+def _layout_record(layout: LayoutRoots) -> dict[str, str]:
+    """The structured ``layout`` discovery record (slice-04 PATH-genericity).
+
+    Surfaces the RESOLVED target source + tests roots (so a Then can assert the
+    levers scanned the RIGHT dirs, not the host nWave tree), or the degrade-LOUD
+    ``not-resolvable`` + named ``reason`` when no layout resolves.
+    """
+    return {
+        "resolution": layout.resolution,
+        "tests_root": str(layout.tests_root) if layout.tests_root else "",
+        "source_root": str(layout.source_root) if layout.source_root else "",
+        "reason": layout.reason,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -348,12 +764,34 @@ def main(argv: list[str] | None = None) -> int:
     slice_id = args.slice_id
     workspace = repo_root / "docs" / "feature" / feature_id
 
+    if getattr(args, "lane", None) == _BUGFIX_LANE:
+        # RC4-b: a declared bugfix lane skips the heavy feature-readiness
+        # ceremony (gated by a strict anti-abuse justification). The default
+        # 7-invariant path below stays byte-identical (ADD-not-mutate).
+        report = _run_bugfix_lane(
+            repo_root, feature_id, slice_id, args.lane_justification
+        )
+        _emit_report(report)
+        return 0 if report.verdict == "cleared" else 1
+
     report = _ReadinessReport(feature_id=feature_id, slice_id=slice_id)
     report.invariants.append(_check_slice_plan_section(workspace))
     report.invariants.append(_check_scenario_slice_tags(repo_root, feature_id))
     report.invariants.append(_check_at_review_verdict(repo_root, feature_id, slice_id))
     report.invariants.append(_check_gate_output_produceable(repo_root))
     report.invariants.append(_check_pre_commit_scope(repo_root, feature_id))
+    report.invariants.append(_check_reuse_first_or_design_skip(repo_root, feature_id))
+    report.invariants.append(_check_sustainability(repo_root, feature_id))
+
+    if getattr(args, "enforce_axis_b", False):
+        # slice-04 PATH-genericity: DISCOVER the target project's source + tests
+        # roots (explicit args -> pyproject testpaths -> .nwave config) and thread
+        # the RESOLVED roots into the levers, replacing the hardcoded nWave globals.
+        # Degrades LOUD (not-resolvable + a named reason) when no layout resolves.
+        report.layout = resolve_layout(repo_root, args.source_dir, args.tests_dir)
+        report.invariants.extend(
+            _check_axis_b_levers(args.target_language, report.layout)
+        )
 
     _emit_report(report)
     return 0 if report.verdict == "cleared" else 1

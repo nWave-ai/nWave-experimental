@@ -33,10 +33,9 @@ scenarios("../slice-01-gate-refusal-real-reason.feature")
 
 
 # A staged-feature shape per the Gherkin phrase that stages it. The DSL emerges
-# from the typed StagedFeature enum (Mandate-12): two Given phrases map to two
-# enum values via this single table, not two hard-coded staging bodies.
+# from the typed StagedFeature enum (Mandate-12): the Given phrase maps to its
+# enum value via this single table, not a hard-coded staging body.
 _FEATURE_SHAPE_BY_PHRASE: dict[str, StagedFeature] = {
-    "has no manifest to check": StagedFeature.NO_MANIFEST,
     "is missing its feature root": StagedFeature.MANIFEST_NO_ROOT,
 }
 
@@ -69,15 +68,6 @@ def _given_operator_on_dev_checkout(
     assert isinstance(composition, FeatureEndGateRefusalComposition)
 
 
-@given(parsers.parse("a feature whose walking-skeleton floor {phrase}"))
-def _given_feature_floor_shape(
-    composition: FeatureEndGateRefusalComposition,
-    staged: dict[str, Path],
-    phrase: str,
-) -> None:
-    staged["feature_dir"] = composition.stage_feature(_FEATURE_SHAPE_BY_PHRASE[phrase])
-
-
 @given(parsers.parse("a feature whose walking-skeleton manifest {phrase}"))
 def _given_feature_manifest_shape(
     composition: FeatureEndGateRefusalComposition,
@@ -105,13 +95,6 @@ def _when_run_cycle(
 @then("the feature-end cycle refuses to certify the feature done")
 def _then_cycle_refuses(observed: dict[str, CycleRefusalObserved]) -> None:
     assert observed["result"].outcome == CycleOutcome.REFUSED
-
-
-@then("the reported reason names the missing walking-skeleton manifest")
-def _then_reason_names_missing_manifest(
-    observed: dict[str, CycleRefusalObserved],
-) -> None:
-    assert ReasonMarker.MISSING_MANIFEST.value in observed["result"].reported_reason
 
 
 @then("the reported reason names the missing feature root")

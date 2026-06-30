@@ -3,6 +3,7 @@ description: "Bug fix workflow: root cause analysis → user review → regressi
 argument-hint: "[bug-description] - Describe the defect observed"
 ---
 
+
 # NW-BUGFIX: Defect Resolution Workflow
 
 **Wave**: CROSS_WAVE

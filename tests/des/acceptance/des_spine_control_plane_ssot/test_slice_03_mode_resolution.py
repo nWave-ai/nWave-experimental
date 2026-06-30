@@ -20,7 +20,7 @@ import pytest
 from pytest_bdd import scenarios
 
 from .steps.composition_slice_03 import ModeResolutionFixture
-from .steps.steps_slice_03_mode_resolution import *  # noqa: F403  -- vocab
+from .steps.steps_slice_03_mode_resolution import *
 
 
 @pytest.fixture

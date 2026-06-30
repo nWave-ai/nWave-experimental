@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-from .freshness_steps.steps_freshness import *  # noqa: F403  -- step vocabulary
+from .freshness_steps.steps_freshness import *
 
 
 scenarios("walking-skeleton.feature")

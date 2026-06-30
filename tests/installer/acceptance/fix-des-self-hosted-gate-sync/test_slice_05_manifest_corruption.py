@@ -27,7 +27,7 @@ _FEATURE_ROOT = Path(__file__).resolve().parent
 if str(_FEATURE_ROOT) not in sys.path:
     sys.path.insert(0, str(_FEATURE_ROOT))
 
-from pytest_bdd import scenario  # noqa: E402
+from pytest_bdd import scenario
 
 # Register the step decorators by importing the steps module. The name
 # `_slice_05_steps` keeps the import non-discardable by linters and signals

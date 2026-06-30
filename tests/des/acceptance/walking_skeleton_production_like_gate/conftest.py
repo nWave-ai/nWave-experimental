@@ -42,24 +42,11 @@ _SUITE_DIR = Path(__file__).parent
 # slice-01 production implementation, so the slice-01 ATs are genuinely GREEN
 # already. DELIVER reconciles that pre-existing code against this DISTILL
 # contract; slices 02-16 are author-ahead RED scaffolds.
-_RED_SCAFFOLD_SLICES = frozenset(
-    {
-        "slice-03",
-        "slice-04",
-        "slice-05",
-        "slice-06",
-        "slice-07",
-        "slice-08",
-        "slice-09",
-        "slice-10",
-        "slice-11",
-        "slice-12",
-        "slice-13",
-        "slice-14",
-        "slice-15",
-        "slice-16",
-    }
-)
+# Empty under F-CONSOLIDATION-FUTURE-SLICE-CANON (ratified A, future-absent):
+# advanced slices 03-16 removed off disk (deferred to backlog, re-authored JIT
+# per the canonical sequence). Only delivered cores slice-01/02 remain — no
+# author-ahead RED scaffold to xfail.
+_RED_SCAFFOLD_SLICES = frozenset()
 
 
 def pytest_collection_modifyitems(

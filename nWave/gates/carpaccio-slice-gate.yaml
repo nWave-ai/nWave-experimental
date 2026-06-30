@@ -39,7 +39,7 @@ failure_modes:
     remediation: "Re-slice to ≤ carpaccio_slice_max OR tag @coupled"
   - error_class: AT_REVIEW_NOT_APPROVED
     exit_code: 45
-    remediation: "Run at_review_verdict CLI to record APPROVED + HMAC"
+    remediation: "Run des record-at-review-verdict to record an APPROVED verdict for the entering slice."
   - error_class: SlicePlanSectionMissing
     exit_code: 1
     remediation: "Add `## Wave: DISCUSS / [REF] Slice Plan` section"

@@ -7,12 +7,12 @@
 gate_id: feature-end
 responsibility: |
   Consolidated feature-end command namespace (DDD-7, single entry point).
-  Verb `sign` HMACs a real reviewer deep-review verdict (agent +
-  APPROVED/REJECTED + findings) into a verifiable verdict_hash through the
+  Verb `sign` produces a keyless content-seal verdict_hash from a real reviewer
+  deep-review verdict (agent + APPROVED/REJECTED + findings) via the
   at_review_signing SSOT -- the hex that feeds `des emit-feature-end
   --record FeatureEndReviewVerdict --verdict-hash`. A non-real verdict
-  (no/empty agent, unknown/missing verdict) or an unresolvable signing key
-  is refused (anti-theater); no hash is minted.
+  (no/empty agent, unknown/missing verdict) is refused (anti-theater); no hash
+  is minted.
 module: des.cli.feature_end
 entry_function: main
 language_neutral_contract: true
@@ -21,7 +21,7 @@ cli_args:
   - name: --repo
     required: true
     type: path
-    help: "Path to the project root the signing key resolves against."
+    help: "Path to the project root (retained for API-stability; sign reads no key post-demotion)."
   - name: --feature-id
     required: true
     type: string
@@ -46,7 +46,7 @@ log_events:
 failure_modes:
   - error_class: SignRefused
     exit_code: 2
-    remediation: "Supply a real deep-review verdict (non-empty reviewer agent + APPROVED|REJECTED verdict) and a resolvable NWAVE_REVIEWER_SIGNING_KEY."
+    remediation: "Supply a real deep-review verdict (non-empty reviewer agent + APPROVED|REJECTED verdict)."
 
 idempotency: idempotent
 

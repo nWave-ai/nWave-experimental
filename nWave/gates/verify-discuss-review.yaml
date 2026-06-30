@@ -1,0 +1,54 @@
+# Gate-contract: verify-discuss-review (f-declarative-gate-composition, OB-2)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-discuss-review.
+
+gate_id: verify-discuss-review
+responsibility: |
+  DISCUSS PO-review CONSUMER veto gate (the OB-2 consumer half of the
+  slice-07b PO-review veto, promoted to its own catalog gate_id so the
+  declarative DISCUSS gate-out stack is the readable 2-row list
+  [validate-feature-delta, verify-discuss-review]). A THIN wrapper over the
+  pure DiscussReviewGate.evaluate core: reads the latest DiscussReviewVerdict
+  ledger record, seals the feature-delta content (SHA-256 over the artefact
+  bytes), and projects the verdict (PASS / VETOED / INDETERMINATE) onto an
+  exit code plus a JSON-stdout recovery the generic gate-out iteration carries
+  through (OB-2 parity). Asymmetric authority (§22.0): a NEEDS_REVISION is a
+  mechanically-honored VETO; an artefact-current APPROVED is "no objection
+  found" (PASS), never an authorizing GO; absent / stale / schema-unknown ->
+  INDETERMINATE degrade-LOUD (§17), never a silent pass.
+module: des.cli.verify_discuss_review
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "Feature identifier; resolves the feature-delta artefact and the per-feature ledger."
+  - name: --repo-root
+    required: false
+    type: path
+    help: "Repository root override; defaults to the resolved current repo root."
+
+log_events: []
+
+failure_modes:
+  - error_class: MalformedArgs
+    exit_code: 2
+    remediation: "Pass --feature-id."
+  - error_class: DiscussReviewVetoed
+    exit_code: 1
+    remediation: "The PO-review returned NEEDS_REVISION -- address the reviewer findings in docs/feature/{feature-id}/feature-delta.md, then record a fresh APPROVED verdict whose artefact hash matches the updated feature-delta before retrying the return."
+  - error_class: DiscussReviewIndeterminate
+    exit_code: 1
+    remediation: "No artefact-current APPROVED verdict exists (absent / stale / unknown schema, or the feature-delta is unreadable) -- record a current APPROVED PO-review verdict via `des record-discuss-review` whose hash matches the feature-delta, then retry."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

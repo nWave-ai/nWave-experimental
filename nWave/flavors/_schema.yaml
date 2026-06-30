@@ -17,7 +17,23 @@ description: |
   no customer-defined flavors per Ale ratification 2026-05-26.
 
 type: object
-required: [flavor_id, description, lifecycle_events]
+# mode-registry-single-locus slice-05 (Layer B): the registry is the single,
+# COMPLETE home for the mode 4-tuple. The schema-required set is extended from
+# {flavor_id, description, lifecycle_events} to additionally require the
+# asset-facing 4-tuple fields (display_name, default, selection, skill_load_set,
+# descriptor, deliver_phase_shape) so a half-declared mode is refused by the
+# schema itself (the mode_registry_completeness gate enforces the cross-flavor
+# invariants the schema cannot — exactly-one default, agent existence).
+required:
+  - flavor_id
+  - display_name
+  - description
+  - default
+  - selection
+  - skill_load_set
+  - descriptor
+  - deliver_phase_shape
+  - lifecycle_events
 additionalProperties: false
 
 properties:
@@ -26,6 +42,34 @@ properties:
     pattern: "^[a-z][a-z0-9_]*$"
     description: |
       Kebab/snake-case identifier (e.g. `atdd_pure`, `classic`).
+
+  display_name:
+    type: string
+    minLength: 3
+    description: |
+      mode-registry-single-locus slice-05 (face (d) of the mode 4-tuple): the
+      human-readable mode name. The single locus the 16-skill / 7-agent inline
+      prose copies are retired into; assets reference it, never re-state it.
+
+  default:
+    type: boolean
+    description: |
+      mode-registry-single-locus slice-05 (face (b) of the mode 4-tuple):
+      whether this flavor is the absent-config default. EXACTLY ONE flavor
+      across the registry declares `default: true` (cross-flavor invariant
+      enforced by the mode_registry_completeness gate); it MUST equal
+      `workflow_mode.resolve_workflow_mode`'s absent-config default (enforced
+      by the docgen --check resolver↔registry agreement leg, Layer C).
+
+  selection:
+    type: string
+    enum: [deterministic-config]
+    description: |
+      mode-registry-single-locus slice-05: how the mode is selected. ALWAYS
+      `deterministic-config` (read from `.nwave/config.yaml` by the resolver),
+      NEVER an LLM prompt to the user — this closes the §1.4 leak that turned
+      mode selection into asset prose. No conflicting `selection` across
+      flavors (enforced by the mode_registry_completeness gate).
 
   description:
     type: string
@@ -42,6 +86,49 @@ properties:
       type: string
       pattern: "^[a-zA-Z.][a-zA-Z0-9_./*{}-]*$"
     uniqueItems: true
+
+  skill_load_set:
+    type: object
+    description: |
+      mode-registry-single-locus slice-01 (face (c) of the mode 4-tuple):
+      per-agent conditional skill-load declarations — the single locus the
+      agent specs' inline per-mode tables are retired into. The dispatch
+      path resolves `skill_load_set[<agent>].conditional` for the active
+      flavor via `flavor_dispatcher.resolve_skill_load_set` (D-inject).
+      A declared-empty `conditional: []` is a real answer, distinct from
+      an absent agent row (refused fail-closed by the resolver).
+    additionalProperties: false
+    patternProperties:
+      "^[a-z][a-z0-9-]*[a-z0-9]$":
+        type: object
+        required: [conditional]
+        additionalProperties: false
+        properties:
+          conditional:
+            type: array
+            description: "Skill names loaded iff this flavor is active."
+            items:
+              type: string
+              pattern: "^[a-z][a-z0-9-]*[a-z0-9]$"
+            uniqueItems: true
+
+  descriptor:
+    type: string
+    minLength: 20
+    description: |
+      mode-registry-single-locus slice-02 (face (d) of the mode 4-tuple):
+      the mode's one-line human-readable descriptor — the factual core of
+      the prose docgen projects into `GENERATED:mode-descriptor` regions.
+      The registry is the sole author; assets carry projections, never
+      hand-written copies.
+
+  deliver_phase_shape:
+    type: string
+    minLength: 5
+    description: |
+      Face (d) companion (slice-02): the DELIVER-wave phase shape rendered
+      beside the descriptor in `GENERATED:mode-descriptor` regions (e.g.
+      "A_GREEN_ATS -> B_COVERAGE_CLEANUP -> (feature-end) E_BATCH_REFACTOR").
 
   lifecycle_events:
     type: object

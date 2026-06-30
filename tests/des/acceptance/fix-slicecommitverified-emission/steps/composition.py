@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,6 +45,8 @@ from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.drivers.hooks.carpaccio_intercept import (
     intercept_atdd_pure_dispatch,
 )
+from des.cli import run_contract_gate
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import (
     EntryGateVerdict,
@@ -57,8 +58,6 @@ from .domain_types import (
 
 
 _FEATURE_ID = FeatureId("slicecommit-backfill-demo")
-_VERIFY_CLI = "des.cli.verify_slice_commit_completeness"
-_CONTRACT_GATE_CLI = "des.cli.run_contract_gate"
 _STALE_DIGEST = "0" * 64
 
 
@@ -78,23 +77,31 @@ def _fresh_gate_scope_digest(repo: Path) -> str:
     ``--verify-gate-scope`` recomputes a fresh digest from, so the seeded
     trailer is guaranteed byte-identical to the fresh recomputation. The bare
     digest is printed on stdout (the JSON event goes to stderr).
+
+    Driven in-process via ``run_cli_in_process`` against the in-process-ready
+    ``run_contract_gate.main`` EDGE -- the analogue of the former
+    ``des.cli.run_contract_gate --collect-only --print-digest`` module-form
+    subprocess. The gate isolates its pytest collection in its OWN short-lived
+    worker subprocess (``run_contract_gate._collect_scope``), so driving ``main``
+    in-process never nests a pytest session in the outer one. ``check=True``
+    parity: a non-zero exit raises (the digest seed must succeed).
     """
-    completed = subprocess.run(
+    exit_code, stdout, stderr = run_cli_in_process(
         [
-            sys.executable,
-            "-m",
-            _CONTRACT_GATE_CLI,
             "--collect-only",
             "--print-digest",
             "--repo",
             str(repo),
         ],
         cwd=repo,
-        capture_output=True,
-        text=True,
-        check=True,
+        main=run_contract_gate.main,
     )
-    return completed.stdout.strip().splitlines()[-1].strip()
+    if exit_code != 0:
+        raise RuntimeError(
+            "run_contract_gate --collect-only --print-digest exited "
+            f"{exit_code} for repo {repo}: {stderr.strip()}"
+        )
+    return stdout.strip().splitlines()[-1].strip()
 
 
 def _dispatch_prompt(slice_id: str) -> str:

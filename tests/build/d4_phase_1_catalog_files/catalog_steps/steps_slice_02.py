@@ -130,10 +130,28 @@ def when_enumerate_bound(per_gate_comp) -> None:
     per_gate_comp.enumerate_language_bound()
 
 
-@then("exactly 22 per-gate files exist (one per catalog entry)")
-def then_count_21(per_gate_comp) -> None:
-    assert per_gate_comp.file_count == 22, (
-        f"Found {per_gate_comp.file_count} per-gate files, expected 22"
+# Count re-baseline 28 -> 30 (2026-06-15, f-declarative-gate-composition slice-01
+# + retroactive wave-clear catalog reconcile): per-gate files for the two new
+# subcommands verify-discuss-review + wave-clear (each 1:1 with its catalog entry).
+# Count re-baseline 30 -> 33 (2026-06-16, f-coherence-and-attestation slice-06):
+# per-gate files for gate-g + self-attest + verify-test-runner (each 1:1 catalog).
+# Count 33 -> 34 (2026-06-16, f-nonbypassable-attestation slice-05): per-gate file
+# for verify-wave-dispatch (1:1 with its catalog entry).
+# Count 34 -> 35 (2026-06-16, f-spine-runs-tests-not-git-hooks slice-01): per-gate
+# Count 35 -> 36 (2026-06-17, f-wave-contract-coherence slice-02): adds verify-wave-contract-coherence
+# file for run-slice-ats (the slice-scoped EXECUTOR), 1:1 with its catalog entry.
+# Count 36 -> 38 (2026-06-18, f-design-devops-review-gate slice-01): per-gate files
+# for the DESIGN review-verdict pair (record/verify-design-review), 1:1 with catalog.
+# Count 38 -> 40 (2026-06-19, f-design-devops-review-gate slice-02): per-gate files
+# for the DEVOPS review-verdict pair (record/verify-devops-review), 1:1 with catalog.
+# Count 40 -> 41 (2026-06-19, f-deliver-entry-contract-freeze slice-01): per-gate file
+# for the DELIVER-entry contract-freeze gate (verify-deliver-entry-contract).
+# Count 41 -> 42 (2026-06-20, f-attest-bundled-slice slice-01): per-gate file for the
+# bundled-slice attestation command (attest-bundled-slice), 1:1 with its catalog entry.
+@then("exactly 42 per-gate files exist (one per catalog entry)")
+def then_per_gate_file_count(per_gate_comp) -> None:
+    assert per_gate_comp.file_count == 43, (
+        f"Found {per_gate_comp.file_count} per-gate files, expected 43"
     )
 
 

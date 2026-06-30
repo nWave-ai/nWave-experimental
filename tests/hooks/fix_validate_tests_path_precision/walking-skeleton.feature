@@ -9,7 +9,7 @@ Feature: Pre-commit test scoping isolates a staged test file to its own feature 
     and the daily backup-move workaround disappears
 
   # Carpaccio slice-01 (single slice — small-fix shape per nw-bugfix Phase 3).
-  # RCA in docs/backlog.md friction #15: scripts/hooks/validate_tests.py line 113-118
+  # RCA in docs/product/backlog.md friction #15: scripts/hooks/validate_tests.py line 113-118
   # uses parts[1] (2-level path = top-level test dir), so staging a file under
   # tests/des/cli/foo/test_x.py expands scope to tests/des/ and runs the entire
   # tests/des/ tree (3000+ tests). When any sibling RED scaffold exists under a

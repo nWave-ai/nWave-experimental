@@ -2,7 +2,7 @@
 
 from pytest_bdd import scenarios
 
-from .flavor_steps.steps_flavor import *  # noqa: F403
+from .flavor_steps.steps_flavor import *
 
 
 scenarios("walking-skeleton.feature")

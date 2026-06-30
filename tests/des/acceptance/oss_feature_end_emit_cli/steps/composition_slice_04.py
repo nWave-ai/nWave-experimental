@@ -79,12 +79,12 @@ import hashlib
 import json
 import os
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
-from tests.env_parity import seed_dev_checkout_marker
+from tests.common.in_process_cli import run_cli_in_process
+from tests.env_parity import seed_dev_checkout_marker, seed_feature_delta_git_repo
 
 from .domain_types_slice_04 import (
     CoverageMapDefect,
@@ -100,16 +100,11 @@ from .signed_coverage_map import (
 
 # THIS file lives at
 # tests/des/acceptance/oss_feature_end_emit_cli/steps/composition_slice_04.py ->
-# 5 parents up is the repo root; repo-`src/` is the absolute PYTHONPATH the `des`
-# subprocess imports `des` from when launched with cwd=tmp workspace (F21).
-_REPO_SRC = Path(__file__).resolve().parents[5] / "src"
+# 5 parents up is the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[5]
 
 _FEATURE_ID = FeatureId("oss-feature-end-cycle-demo")
 
-# The reviewer signing key the cycle's sign-leg resolves (reuse slice-02/03's
-# external-secret port).
-_SIGNING_KEY = "test-reviewer-signing-key-slice-04"
 _REVIEWER_AGENT = "nw-software-crafter-reviewer"
 _DEEP_REVIEW_VERDICT = "APPROVED"
 
@@ -251,6 +246,12 @@ class FeatureEndCoverageMapComposition:
         verdict is injected -- the verdict is the ported verify core's, derived
         from the staged artifact.
         """
+        # The WS gate computes its applicability from `git diff --diff-filter=A
+        # master...HEAD` (ADR-098). Stage a real repo whose delta adds NO new
+        # installable -> WS NOT_APPLICABLE -> the cycle proceeds to the coverage-map
+        # leg (this slice's SUT). The empty `.git/` freshness marker is not a valid
+        # repo, so without this the git diff fails -> INDETERMINATE -> REFUSE.
+        seed_feature_delta_git_repo(self._project_root, ships_new_installable=False)
         completed = self._dispatch(
             [
                 "feature-end",
@@ -490,13 +491,18 @@ class FeatureEndCoverageMapComposition:
 
     def _dispatch(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
         """Dispatch `des <argv>` through the real `des.cli.__main__` entry point."""
-        return subprocess.run(
-            [sys.executable, "-m", "des.cli.__main__", *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(self._project_root),
-            env=_subprocess_env(),
-        )
+        # Keyless post-demotion (oss-review-verdict-demotion S4): scrub any
+        # ambient signing key so the cycle's sign-leg runs entirely keyless.
+        # Restored in `finally` -- shared-process safe.
+        prior_key = os.environ.pop("NWAVE_REVIEWER_SIGNING_KEY", None)
+        try:
+            exit_code, stdout, stderr = run_cli_in_process(
+                list(argv), cwd=str(self._project_root)
+            )
+        finally:
+            if prior_key is not None:
+                os.environ["NWAVE_REVIEWER_SIGNING_KEY"] = prior_key
+        return subprocess.CompletedProcess(argv, exit_code, stdout, stderr)
 
 
 def _carries_cycle_refusal(stdout: str, stderr: str) -> bool:
@@ -553,13 +559,6 @@ def _extract_missing_records(stdout: str) -> frozenset[str]:
 # the same builder writes the GENUINE digest into the honest-signed fixture, so
 # the fixture's digest matches its body by construction. ``_compute_canonical_digest``
 # is imported (test infrastructure staging a genuinely-signed artifact, not the SUT).
-
-
-def _subprocess_env() -> dict[str, str]:
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(_REPO_SRC)
-    env["NWAVE_REVIEWER_SIGNING_KEY"] = _SIGNING_KEY
-    return env
 
 
 __all__ = [

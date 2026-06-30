@@ -69,10 +69,12 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from des.cli import run_contract_gate
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import (
     FEATURE_SCOPE_MALFORMED_EVENT,
@@ -89,8 +91,52 @@ from .domain_types import (
 #   parents[5] = REPO_ROOT
 REPO_ROOT = Path(__file__).resolve().parents[5]
 
-# The production CLI module under test.
-CONTRACT_GATE_MODULE = "des.cli.run_contract_gate"
+
+def _run_contract_gate_in_process(
+    feature_id: FeatureId, entering_slice: SliceTag, repo: Path
+) -> tuple[int, str, str]:
+    """Drive `des run-contract-gate --feature-id` in-process under ``repo``.
+
+    The in-process analogue of the former
+    ``subprocess.run([sys.executable, "-m", "des.cli.run_contract_gate", ...])``
+    fork: it calls the production CLI EDGE ``run_contract_gate.main`` directly.
+
+    Env-parity (load-bearing, restored in finally): ``NWAVE_FRESHNESS=skip`` +
+    ``PIPENV_DONT_LOAD_ENV=1`` so the freshness wrapper does not refuse before
+    gate logic runs, and ``PYTHONPATH=<repo>/src`` so any pytest subprocess the
+    gate ITSELF forks (collect-only / arch-invariant worker) resolves ``des``.
+    These are set on ``os.environ`` precisely so the gate's inner subprocesses
+    inherit them — identical to what the outer subprocess passed via ``env=``.
+    """
+    overrides = {
+        "NWAVE_FRESHNESS": "skip",
+        "PIPENV_DONT_LOAD_ENV": "1",
+        "PYTHONPATH": str(REPO_ROOT / "src")
+        + os.pathsep
+        + os.environ.get("PYTHONPATH", ""),
+    }
+    prior = {key: os.environ.get(key) for key in overrides}
+    os.environ.update(overrides)
+    try:
+        return run_cli_in_process(
+            [
+                "--feature-id",
+                str(feature_id),
+                "--entering-slice",
+                str(entering_slice),
+                "--repo",
+                str(repo),
+            ],
+            cwd=str(repo),
+            main=run_contract_gate.main,
+        )
+    finally:
+        for key, value in prior.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
 
 # Synthetic feature-id and slice tag used across all slice-01 substrates.
 _SYNTHETIC_FEATURE_ID = FeatureId("explain-guide-at-substrate")
@@ -200,29 +246,14 @@ class ExplainGuideComposition:
         tmp = self._require_tmp()
         self._universe_before = self.capture_universe()
 
-        env = dict(os.environ)
-        env["NWAVE_FRESHNESS"] = "skip"
-        env["PIPENV_DONT_LOAD_ENV"] = "1"
-        env["PYTHONPATH"] = (
-            str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+        exit_code, out, err = _run_contract_gate_in_process(
+            self._feature_id, self._entering_slice, tmp
         )
-
-        self._completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                CONTRACT_GATE_MODULE,
-                "--feature-id",
-                str(self._feature_id),
-                "--entering-slice",
-                str(self._entering_slice),
-                "--repo",
-                str(tmp),
-            ],
-            capture_output=True,
-            text=True,
-            cwd=str(tmp),
-            env=env,
+        self._completed = subprocess.CompletedProcess(
+            args=["des", "run-contract-gate"],
+            returncode=exit_code,
+            stdout=out,
+            stderr=err,
         )
 
         # Parse the stdout JSON (one line per _emit() call).

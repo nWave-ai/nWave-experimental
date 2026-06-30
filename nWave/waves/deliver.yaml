@@ -1,0 +1,56 @@
+# DELIVER wave-contract — canonical, flavor-independent registry entry.
+#
+# f-deliver-entry-contract-freeze (ADR-FLOW-004) wires the DELIVER gate-IN
+# contract-freeze gate; the registry is the SOLE gate-stack source the spine
+# resolves (ADR-FLOW-006 D6 — `wave_gate_stack_dispatch.resolve_stack` reads THIS
+# file, mirroring discuss/design/devops/distill.yaml). OSS hook-only: DATA only,
+# no sequencer, no engine, no sixth GateVerdict.
+#
+# Row schema = the EXISTING GateInvocation (nWave/flavors/_schema.yaml
+# $defs/GateInvocation), reused verbatim — NOT a new shape.
+
+wave: deliver
+
+# gate_stack (SSOT-A).
+#
+# gate-in: the DELIVER-entry contract-freeze gate (ADR-FLOW-004 D1). At the FIRST
+# DELIVER gate-IN it asserts the contract (TESTS + FEATURE-DELTA SSOT) is
+# STRUCTURALLY complete and writes ONE ContractFrozen ledger record on PASS;
+# subsequent per-slice DELIVER gate-INs RE-VERIFY against that frozen baseline.
+# on_failure: block — a structurally-incomplete / drifted contract HALTs DELIVER
+# entry (a missing locked [REF] section, a malformed Slice Plan, a planned slice
+# with no authored AT module, or post-freeze drift). An unreadable feature-delta
+# degrades LOUD to INDETERMINATE (Invariant 2), never a false freeze.
+#
+# gate-out: EMPTY. DELIVER's exit attestation is NOT a wave gate-out stack — it is
+# the feature-end cycle (`des feature-end run` → walking-skeleton + env-e2e +
+# coverage + full-suite + FullSuiteLegRan + FeatureEnd records). The per-slice
+# acceptance-test RUN (f-spine-runs-tests-not-git-hooks / ADR-FLOW-005) fires on
+# the COMMIT path (a pre-commit hook firing surface), NOT on a wave SubagentStop
+# return — so it is not a DELIVER gate-out row.
+gate_stack:
+  gate-in:
+    - gate_id: verify-deliver-entry-contract
+      on_failure: block
+  gate-out: []
+
+# PROVISIONAL — DELIVER output_contract is cross-tier co-owned vocabulary pending
+# SF ADR-093 OQ2; per ADR-FLOW-006 byte-form PROVISIONAL. Unlike the upstream
+# waves (DISCUSS/DESIGN/DEVOPS/DISTILL author [REF] sections INTO the
+# feature-delta), DELIVER does NOT author feature-delta sections — it CONSUMES the
+# frozen contract and produces working code + slice commits + feature-end records.
+# This minimal best-guess names what DELIVER actually produces; the byte-form
+# freeze (exact ref_section ids / file paths) is settled later cross-tier.
+output_contract:
+  ref_sections:
+    # The DELIVER execution record the crafter leaves in the feature-delta after a
+    # slice ships (status-flip to "shipped" — the one post-freeze mutation
+    # ADR-FLOW-002 D8 permits). PROVISIONAL id.
+    - id: Slice Plan
+      grade: mandatory
+  files:
+    # Working code is the primary DELIVER output but lives in the target tree (not
+    # enumerable here as a fixed path). What DELIVER mechanically attests:
+    - path: "docs/feature/{feature_id}/feature-delta.md"
+      grade: mandatory
+      inline_in_feature_delta: true

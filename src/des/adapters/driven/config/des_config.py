@@ -7,6 +7,10 @@ Falls back to safe defaults (audit logging ON) when file is missing or invalid.
 Rigor cascade: project config -> global config -> standard defaults.
 When a project has a "rigor" key, the entire global rigor block is ignored.
 
+update_check state (frequency, last_checked, skipped_versions) is machine-scoped
+and read from / written to the GLOBAL config only -- it is NOT per-project. See
+``_update_check`` and ``save_update_check_state``.
+
 Hexagonal Architecture:
 - DRIVEN ADAPTER: Implements configuration port (driven by business logic)
 - ON BY DEFAULT: Audit logging enabled unless explicitly disabled in config
@@ -22,6 +26,15 @@ from des.domain.nwave_dir_gitignore import ensure_nwave_gitignore
 
 if TYPE_CHECKING:
     from des.domain.pending_update_flag import PendingUpdateFlag
+
+
+# Closed set of declarable deliverable types (ADR-PST-002). A declared value
+# outside this set is treated as absent -> safe default (``None``).
+_KNOWN_DELIVERABLE_TYPES = frozenset({"application", "plugin", "skill"})
+
+# Positive deliverable markers from FS detection. ``"application"`` is the
+# absence of a marker, so it resolves to the ``None`` sentinel, NOT itself.
+_POSITIVE_DELIVERABLE_MARKERS = frozenset({"plugin", "skill"})
 
 
 class DESConfig:
@@ -61,12 +74,12 @@ class DESConfig:
         self._config_path = config_path
         self._config_data = self._load_json_file(self._config_path)
 
-        effective_global_path = (
+        self._global_config_path = (
             global_config_path
             if global_config_path is not None
             else self._DEFAULT_GLOBAL_CONFIG_PATH
         )
-        self._global_config_data = self._load_json_file(effective_global_path)
+        self._global_config_data = self._load_json_file(self._global_config_path)
 
     @staticmethod
     def _load_json_file(path: Path) -> dict[str, Any]:
@@ -86,9 +99,13 @@ class DESConfig:
             return {}
 
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            parsed = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return {}
+        # Valid JSON that is not an object (``null``, ``[]``, ``123``, ``"x"``)
+        # would crash every ``.get(...)`` caller. Coerce to ``{}`` so callers
+        # fail open to safe defaults rather than raising on a malformed config.
+        return parsed if isinstance(parsed, dict) else {}
 
     @property
     def skill_tracking_enabled(self) -> bool:
@@ -176,6 +193,138 @@ class DESConfig:
             return env_override.lower() in ("true", "1", "yes")
         return self._config_data.get("audit_logging_enabled", True)
 
+    # ------------------------------------------------------------------
+    # Activation gating (EXTEND, ADR-AG-002 / DDD-3).
+    # ``activation_mode`` reads ``activation.mode`` from the GLOBAL config
+    # (default ``"opt-in"``). ``enabled_for_repo`` reads ``enabled_for_repo``
+    # from the per-project MARKER file ``.nwave/local-config.json`` (NOT
+    # ``des-config.json``), returning ``None`` when absent/keyless/corrupt.
+    # Both fail-to-default; neither mutates.
+    # ------------------------------------------------------------------
+
+    @property
+    def activation_mode(self) -> str:
+        """Global ``activation.mode`` (``"opt-in"`` | ``"all"``); default ``"opt-in"``."""
+        activation = self._global_config_data.get("activation", {})
+        if not isinstance(activation, dict):
+            return "opt-in"
+        mode = activation.get("mode", "opt-in")
+        return mode if mode in ("opt-in", "all") else "opt-in"
+
+    @property
+    def enabled_for_repo(self) -> bool | None:
+        """Per-project marker ``enabled_for_repo`` from ``.nwave/local-config.json``.
+
+        Walk-up resolution (ADR-AG-002, amended 2026-06-18): ascend parent dirs
+        from the project dir and use the NEAREST ``.nwave/local-config.json``
+        (nearer-wins), stopping at ``$HOME`` — ``$HOME/.nwave/`` is the global
+        config home, never a project marker. ``None`` when no marker is found,
+        or the nearest marker is key-missing / corrupt.
+        """
+        marker_path = self._nearest_marker()
+        if marker_path is None:
+            return None
+        marker_data = self._load_json_file(marker_path)
+        value = marker_data.get("enabled_for_repo")
+        return value if isinstance(value, bool) else None
+
+    @property
+    def deliverable_type(self) -> str | None:
+        """Resolved project deliverable type (ADR-PST-002) -- RED scaffold.
+
+        DISTILL scaffold (feature plugin-skill-deliverable-type, issue #66).
+        Resolution precedence (first match wins), implemented by DELIVER:
+          1. declared ``.nwave/des-config.json`` -> ``deliverable_type`` (if in
+             the known set ``{application, plugin, skill}``);
+          2. declared global ``~/.nwave/global-config.json`` ->
+             ``defaults.deliverable_type``;
+          3. root-only FS detection (``deliverable_type_detector``) -- fallback
+             ONLY when the declaration is FULLY ABSENT;
+          4. unknown / typo'd declared value (present-but-bad, project OR global)
+             -> SAFE DEFAULT (enforcement ON; returns ``None``) + a config-load
+             warning. It does NOT fall through to detection (revised 2026-06-26,
+             review non-blocker 2). Mirrors the ``activation_mode`` pattern
+             (``des_config.py``: bad value -> hardcoded safe default, no detection
+             fallback). A typo'd repo with a root ``skills/`` dir therefore stays
+             enforced -- detection must not silently rescue a malformed declaration.
+
+        Returns ``None`` (NOT ``"application"``) when nothing resolves -- the
+        unresolved state is distinguishable from a positive ``application``
+        declaration (HIGH-1 adapter contract). The enforcement fail-safe does NOT
+        depend on this return value: the policy's closed exempt set
+        (ADR-PST-001) is the load-bearing guarantee.
+
+        Pure read over a bounded universe ``{declared_project, declared_global,
+        ROOT-ONLY dir_listing}`` -- never mutates, never recurses nested dirs.
+
+        Implemented to date (steps 01-01 + 01-03 -- positive resolution path):
+          - project declaration in the known set -> that value (authoritative);
+          - project declaration PRESENT-but-bad (typo'd) -> safe default ``None``,
+            WITHOUT falling through (a malformed declaration is never silently
+            rescued -- the typo fail-safe edge is finalised in step 03-02);
+          - project declaration ABSENT -> fall through to the global
+            ``defaults.deliverable_type`` (machine-wide default);
+          - global default in the known set -> that value;
+          - nothing resolves -> ``None``.
+        Root-only FS detection (precedence step 3) is phase 02 -- the seam is the
+        fall-through that currently terminates at ``None`` once the global default
+        is exhausted; detection slots in there without disturbing the declared
+        branches above.
+        """
+        declared = self._config_data.get("deliverable_type")
+        if declared is not None:
+            # Present -> the project's word is authoritative (good or typo'd);
+            # a typo'd value never falls through to the global default.
+            return declared if declared in _KNOWN_DELIVERABLE_TYPES else None
+        # Project silent: the machine-wide default stands in (precedence step 2).
+        defaults = self._global_config_data.get("defaults", {})
+        global_default = (
+            defaults.get("deliverable_type") if isinstance(defaults, dict) else None
+        )
+        if global_default in _KNOWN_DELIVERABLE_TYPES:
+            return global_default
+        # Nothing declared (project or global): fall through to root-only FS
+        # detection (precedence step 3, ADR-PST-002). Reached ONLY when the
+        # declaration is FULLY ABSENT -- a present-but-typo'd value short-circuits
+        # to ``None`` above and never arrives here.
+        return self._detect_deliverable_type()
+
+    def _detect_deliverable_type(self) -> str | None:
+        """Root-only FS detection rung; ``None`` for an unmarked (application) tree.
+
+        Delegates to ``deliverable_type_detector`` over the project root (the
+        ``.nwave/des-config.json``'s grandparent). An ``"application"`` detection
+        means "no positive marker" -> ``None`` (HIGH-1: the unresolved sentinel,
+        distinguishable from a declared ``application``). A positive
+        ``plugin``/``skill`` marker resolves to that type.
+        """
+        from des.adapters.driven.config.deliverable_type_detector import (
+            detect_deliverable_type,
+        )
+
+        detected = detect_deliverable_type(self._config_path.parent.parent)
+        # Only a POSITIVE marker resolves; an ``"application"`` detection means
+        # "no positive marker" -> ``None`` (HIGH-1 sentinel). Using
+        # ``_KNOWN_DELIVERABLE_TYPES`` here would wrongly return ``"application"``.
+        return detected if detected in _POSITIVE_DELIVERABLE_MARKERS else None
+
+    def _nearest_marker(self) -> Path | None:
+        """Nearest ``.nwave/local-config.json`` at or above the project dir.
+
+        Starts at the project dir (``.nwave/des-config.json``'s grandparent) and
+        ascends while ``dir != Path.home()`` and ``dir != dir.parent``. The first
+        directory carrying a ``.nwave/local-config.json`` wins (nearer-wins).
+        ``$HOME`` is the stop boundary and is never inspected as a project root.
+        """
+        home = Path.home()
+        current = self._config_path.parent.parent
+        while current not in (home, current.parent):
+            candidate = current / ".nwave" / "local-config.json"
+            if candidate.exists():
+                return candidate
+            current = current.parent
+        return None
+
     def _rigor(self) -> dict:
         """Return rigor sub-config via cascade: project -> global -> empty dict.
 
@@ -187,8 +336,16 @@ class DESConfig:
         return self._global_config_data.get("rigor", {})
 
     def _update_check(self) -> dict:
-        """Return update_check sub-config dict, defaulting to empty dict."""
-        return self._config_data.get("update_check", {})
+        """Return update_check sub-config from the GLOBAL config.
+
+        Update-check cadence/state (frequency, last_checked, skipped_versions)
+        is a per-machine concern -- "has this machine asked PyPI recently?" --
+        not a per-project one. It therefore lives in
+        ``~/.nwave/global-config.json``, independent of the working directory.
+        Storing it per-project caused sibling folders to gate independently and
+        a folder with a same-day timestamp to self-suppress the update banner.
+        """
+        return self._global_config_data.get("update_check", {})
 
     def _housekeeping(self) -> dict:
         """Return housekeeping sub-config dict, defaulting to empty dict."""
@@ -225,6 +382,21 @@ class DESConfig:
         return tuple(phases)
 
     @property
+    def rigor_feature_total_at_advisory_threshold(self) -> int:
+        """Get the whole-feature AT-volume advisory threshold.
+
+        Read from the rigor cascade (project -> global -> @property default).
+        When a feature's total AT count exceeds this threshold, the DISTILL
+        Total-AT trigger emits a (never-blocking) advisory proposing
+        ``/nw-discuss`` (elephant-carpaccio split). Default: 12 (DD-3 -- the
+        default lives in this fallback, NOT hard-wired elsewhere; per-profile
+        numbers are a rigor-profile build detail). Distinct locus from
+        ``carpaccio_slice_max`` (``config.yaml`` ``atdd_pure.``) so the two
+        thresholds never collapse onto one knob (C3).
+        """
+        return self._rigor().get("feature_total_at_advisory_threshold", 12)
+
+    @property
     def rigor_review_enabled(self) -> bool:
         """Check if peer review is enabled. Default: True."""
         return self._rigor().get("review_enabled", True)
@@ -248,14 +420,28 @@ class DESConfig:
     def update_check_frequency(self) -> str | None:
         """Get update check frequency.
 
-        Returns None when the update_check key is entirely absent from config
-        (indicates first run — no config bootstrapped yet). Returns 'daily'
-        when the update_check key exists but frequency sub-key is absent.
+        Read from the GLOBAL config (machine-scoped; see ``_update_check``).
+        Returns None when the update_check key is entirely absent from the
+        global config (indicates first run — no config bootstrapped yet).
+        Returns 'daily' when the update_check key exists but frequency sub-key
+        is absent.
         """
-        update_check = self._config_data.get("update_check")
+        update_check = self._global_config_data.get("update_check")
         if update_check is None:
-            return None  # key absent = first run, no config yet
+            return None  # key absent = first run, no global config yet
         return update_check.get("frequency", "daily")
+
+    @property
+    def installed_package_manager(self) -> str | None:
+        """PM recorded at install time, from the GLOBAL config (machine-scoped).
+
+        ``~/.nwave/global-config.json`` -> ``install.package_manager``. Recorded
+        by ``nwave-ai install`` from its own interpreter, where detection is
+        reliable; consumed by ``/nw-update`` whose ambient interpreter is not.
+        Returns None when unrecorded (installed before this existed, or a pip
+        install with no PM marker).
+        """
+        return self._global_config_data.get("install", {}).get("package_manager")
 
     @property
     def update_check_last_checked(self) -> str | None:
@@ -266,6 +452,15 @@ class DESConfig:
     def update_check_skipped_versions(self) -> list[str]:
         """Get list of versions skipped by user. Default: empty list."""
         return self._update_check().get("skipped_versions", [])
+
+    @property
+    def update_check_latest_available(self) -> str | None:
+        """Latest version discovered by the last successful update check.
+
+        Recorded in the GLOBAL config update_check block and consumed by
+        ``/nw-update`` to resolve the upgrade target. None when never recorded.
+        """
+        return self._update_check().get("latest_available")
 
     @property
     def housekeeping_enabled(self) -> bool:
@@ -310,22 +505,30 @@ class DESConfig:
         last_checked: str,
         skipped_versions: list[str],
         frequency: str | None = None,
+        latest_available: str | None = None,
     ) -> None:
         """
-        Persist update check state to config file.
+        Persist update check state to the GLOBAL config file.
 
-        Read-modify-write: preserves all other config keys.
+        Update-check state is machine-scoped (see ``_update_check``), so it is
+        written to ``~/.nwave/global-config.json`` rather than the project
+        config. Read-modify-write: preserves all other global config keys.
         Creates update_check key when absent.
 
         Args:
             last_checked: ISO 8601 UTC timestamp of last check
             skipped_versions: list of version strings user has skipped
             frequency: if None, preserves existing frequency (or leaves default)
+            latest_available: latest version discovered by the check; when None,
+                any previously stored value is preserved. Consumed by
+                ``/nw-update`` to resolve the upgrade target without re-querying.
         """
         current_data: dict[str, Any] = {}
-        if self._config_path.exists():
+        if self._global_config_path.exists():
             try:
-                current_data = json.loads(self._config_path.read_text(encoding="utf-8"))
+                current_data = json.loads(
+                    self._global_config_path.read_text(encoding="utf-8")
+                )
             except (json.JSONDecodeError, OSError):
                 current_data = {}
 
@@ -337,12 +540,14 @@ class DESConfig:
         elif "frequency" not in update_check:
             # Bootstrap default on first save (e.g. after first-run check)
             update_check["frequency"] = "daily"
+        if latest_available is not None:
+            update_check["latest_available"] = latest_available
 
         current_data["update_check"] = update_check
 
-        self._config_path.parent.mkdir(parents=True, exist_ok=True)
-        ensure_nwave_gitignore(self._config_path.parent)
-        self._config_path.write_text(
+        self._global_config_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_nwave_gitignore(self._global_config_path.parent)
+        self._global_config_path.write_text(
             json.dumps(current_data, indent=2), encoding="utf-8"
         )
 

@@ -25,6 +25,7 @@ docs/feature/fix-des-runtime-interpreter-boundary/feature-delta.md §1.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -61,15 +62,15 @@ def _candidates() -> list[str]:
     """The fallback ladder of interpreter paths, in priority order.
 
     1. ``sys.executable`` — the running interpreter (zero-cost common path).
-    2. ``pipenv run python`` — the repo venv interpreter (dev checkout).
+    2. ``uv run python`` — the repo venv interpreter (dev checkout).
     3. a sibling interpreter adjacent to ``sys.executable`` (installed layout
-       with a venv python but no pipenv).
+       with a venv python but no uv).
     """
     ladder = [sys.executable]
 
-    pipenv_python = _pipenv_python()
-    if pipenv_python:
-        ladder.append(pipenv_python)
+    uv_python = _uv_python()
+    if uv_python:
+        ladder.append(uv_python)
 
     here = Path(sys.executable)
     for sibling_name in ("python", "python3"):
@@ -80,12 +81,45 @@ def _candidates() -> list[str]:
     return ladder
 
 
-def _pipenv_python() -> str | None:
-    """Resolve ``pipenv run python``'s ``sys.executable``, or None if pipenv is
-    absent or the resolution probe times out."""
+def _project_root() -> Path | None:
+    """Walk up from this module to the nearest ancestor with a ``pyproject.toml``.
+
+    The dev checkout lives under ``<root>/src/des/runtime/interpreter.py`` with
+    ``<root>/pyproject.toml`` + ``<root>/.venv``. Returns None in the installed
+    standalone layout (no ``pyproject.toml`` ancestor), where rung 2 does not
+    apply and the ladder advances to the sibling rung.
+    """
+    for ancestor in Path(__file__).resolve().parents:
+        if (ancestor / "pyproject.toml").is_file():
+            return ancestor
+    return None
+
+
+def _uv_python() -> str | None:
+    """Resolve the repo venv interpreter via ``uv run``, or None if uv is absent,
+    the probe times out, or no project root is found.
+
+    NO-LITTER CONTRACT: the probe runs ``uv run --project <root>`` so it resolves
+    the repo's ``.venv`` regardless of the caller's cwd, and writes nothing into
+    the caller's cwd. (The predecessor ``pipenv run`` auto-created an empty
+    ``Pipfile`` in cwd — when the gate ran with ``cwd=<tmp-repo>`` that littered
+    the repo under test. ``--project`` makes resolution cwd-independent, so no
+    file is ever dropped into the probe's cwd.)
+    """
+    root = _project_root()
+    if root is None:
+        return None
     try:
         resolved = subprocess.run(
-            ["pipenv", "run", "python", "-c", "import sys; print(sys.executable)"],
+            [
+                "uv",
+                "run",
+                "--project",
+                str(root),
+                "python",
+                "-c",
+                "import sys; print(sys.executable)",
+            ],
             capture_output=True,
             text=True,
             timeout=_PROBE_TIMEOUT_SECONDS,
@@ -166,3 +200,74 @@ def python_for(capability: Capability | None) -> str:
             return candidate
 
     raise InterpreterUnavailable(capability, probed)
+
+
+def _des_root() -> str:
+    """The directory CONTAINING the ``des`` package (so ``import des`` resolves).
+
+    ``interpreter.py`` lives at ``<root>/des/runtime/interpreter.py`` -- in the dev
+    checkout ``<root>`` is ``src/``; in the installed standalone layout it is
+    ``~/.claude/lib/python``. ``parents[2]`` is that containing dir either way.
+    """
+    return str(Path(__file__).resolve().parents[2])
+
+
+def des_subprocess_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Env for a ``des.cli`` subprocess spawn, with ``des`` guaranteed on PYTHONPATH.
+
+    F-DES-SUBPROCESS-PYTHONPATH-PROPAGATION: ``python_for(None)`` returns the
+    running interpreter, but a child subprocess does NOT inherit the parent's
+    *runtime* ``sys.path`` -- e.g. the installed shim's ``sys.path.insert`` of
+    ``~/.claude/lib/python`` is a runtime insertion, not an env var. So a spawned
+    ``des.cli`` child process raises ``ModuleNotFoundError: des`` unless ``des``'s
+    containing directory is on ``PYTHONPATH`` -- an env var children DO inherit.
+    This prepends ``_des_root()`` to PYTHONPATH (de-duplicated, order-preserving)
+    so every des subprocess can import des regardless of how the parent acquired
+    it (shim sys.path.insert, dev `src` layout, or installed site).
+    """
+    env = dict(os.environ if base is None else base)
+    existing = env.get("PYTHONPATH", "")
+    parts = [_des_root(), *(existing.split(os.pathsep) if existing else [])]
+    seen: set[str] = set()
+    deduped = [p for p in parts if p and not (p in seen or seen.add(p))]
+    env["PYTHONPATH"] = os.pathsep.join(deduped)
+    return env
+
+
+def des_spawn(
+    capability: Capability | None,
+    *module_args: str,
+    script: str | None = None,
+    **kw: object,
+) -> subprocess.CompletedProcess:
+    """The single boundary that spawns a ``des`` Python subprocess.
+
+    Composes the two interpreter primitives BY CONSTRUCTION so no caller can
+    forget either: argv[0] is ``python_for(capability)`` (the probed, never
+    name-trusted interpreter) and ``env`` is ``des_subprocess_env(base=...)``
+    (``des`` guaranteed on the child ``PYTHONPATH``). Every ``des``-module
+    subprocess spawn in ``src/des/**`` routes through here — the
+    ``test_no_inline_des_module_spawn`` arch-ban makes a bypassing inline spawn
+    fail the build, so the F-DES-SUBPROCESS-PYTHONPATH null-``Gate-Scope``
+    false-DONE (a child that lost ``des`` from its path) cannot recur.
+
+    By default the child runs ``-m <module> <args...>``
+    (``des_spawn(cap, "des.cli.roadmap", "--help")`` ->
+    ``[python_for(cap), "-m", "des.cli.roadmap", "--help"]``). Pass ``script=``
+    for the ``-c <inline-script>`` form (``module_args`` must then be empty).
+
+    Caller kwargs (``cwd``, ``capture_output``, ``text``, ``timeout``,
+    ``input``, ``check``, ...) are forwarded unchanged to ``subprocess.run``. A
+    caller-supplied ``env`` is MERGED through ``des_subprocess_env(base=env)``
+    so the caller's entries are preserved alongside the des root, never dropped.
+    """
+    base_env = kw.pop("env", None)
+    if script is not None:
+        argv = [python_for(capability), "-c", script]
+    else:
+        argv = [python_for(capability), "-m", *module_args]
+    return subprocess.run(
+        argv,
+        env=des_subprocess_env(base=base_env),  # type: ignore[arg-type]
+        **kw,  # type: ignore[arg-type]
+    )

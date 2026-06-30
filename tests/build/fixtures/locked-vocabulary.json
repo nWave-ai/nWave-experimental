@@ -1,0 +1,23 @@
+{
+  "capability_ids": [
+    "query.adr-section",
+    "query.atoms-in-file",
+    "query.callers-of",
+    "query.never-wired",
+    "query.reads-of"
+  ],
+  "providers": [
+    "ast",
+    "textsearch",
+    "tsunami"
+  ],
+  "confidences": [
+    "approx",
+    "binding-resolved",
+    "noisy"
+  ],
+  "reason_codes": [
+    "absent",
+    "live-non-callable"
+  ]
+}

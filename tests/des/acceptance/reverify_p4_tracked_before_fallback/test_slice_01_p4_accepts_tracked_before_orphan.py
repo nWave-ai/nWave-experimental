@@ -13,7 +13,7 @@ DELIVER's A_GREEN_ATS turns it green.
 from pytest_bdd import scenarios
 
 # Step definitions -- shared vocabulary (Mandate 10 / Mandate-12).
-from .steps.steps_reverify_p4 import *  # noqa: F403
+from .steps.steps_reverify_p4 import *
 
 
 scenarios("slice_01_p4_accepts_tracked_before_orphan.feature")

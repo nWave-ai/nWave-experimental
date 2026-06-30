@@ -30,19 +30,18 @@ FeatureId = NewType("FeatureId", str)
 class StagedFeature(str, Enum):
     """The shape of the staged feature the walking-skeleton floor checks.
 
-    Each value stages a feature directory whose walking-skeleton floor refuses
-    for a DISTINCT, REAL reason -- so a single filter that surfaces the real
-    reason is proven to surface DIFFERENT real reasons (anti-over-filtering),
-    not one hard-coded string.
+    The surviving value stages a feature directory whose walking-skeleton floor
+    refuses for a REAL reason that ADR-098 leaves intact -- a malformed manifest
+    (present but missing its ``feature_root``). The ``NO_MANIFEST`` shape was
+    RETIRED (ADR-098, 2026-06-24): an absent manifest no longer fail-closes with a
+    "missing manifest" reason; it computes applicability from the git-delta, a
+    contract covered by the C6 ATs in
+    ``tests/des/acceptance/ws_gate_manifest_optional/``.
 
-    NO_MANIFEST       -- the floor has no ``walking-skeleton.json`` manifest to
-                         check; the floor's real reason names the missing
-                         manifest.
     MANIFEST_NO_ROOT  -- the manifest is present but omits its ``feature_root``;
                          the floor's real reason names the missing feature root.
     """
 
-    NO_MANIFEST = "no_manifest"
     MANIFEST_NO_ROOT = "manifest_missing_feature_root"
 
 
@@ -64,8 +63,10 @@ class ReasonMarker(str, Enum):
     Used to assert the reported refusal reason carries the REAL gate reason and
     NOT the runtime freshness notice -- the whole point of the slice.
 
-    MISSING_MANIFEST     -- token of the floor's missing-manifest reason
-                            (``walking_skeleton_gate.py:96`` usage error).
+    (The ``MISSING_MANIFEST`` marker was RETIRED with the absent-manifest scenario
+    per ADR-098, 2026-06-24 -- an absent manifest no longer reports a
+    "missing manifest" refusal reason.)
+
     MISSING_FEATURE_ROOT -- token of the floor's missing-feature-root reason
                             (``walking_skeleton_gate.py:112`` usage error).
     RUNTIME_FRESHNESS     -- the runtime freshness-notice event prefix
@@ -73,6 +74,5 @@ class ReasonMarker(str, Enum):
                             the reported reason.
     """
 
-    MISSING_MANIFEST = "walking-skeleton.json"
     MISSING_FEATURE_ROOT = "feature_root"
     RUNTIME_FRESHNESS = "des.runtime.freshness"

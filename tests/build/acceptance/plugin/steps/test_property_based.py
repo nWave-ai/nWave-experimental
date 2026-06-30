@@ -80,15 +80,16 @@ def test_property_rewrite_preserves_non_des_imports(content: str):
 
 
 def test_property_hook_config_always_five_events():
-    """generate_hook_config always produces exactly 5 event keys with expected names."""
+    """generate_hook_config always produces exactly 6 event keys with expected names."""
     config = generate_hook_config()
-    assert len(config) == 5
+    assert len(config) == 6
     assert set(config.keys()) == {
         "PreToolUse",
         "PostToolUse",
         "SubagentStop",
         "SessionStart",
         "SubagentStart",
+        "UserPromptSubmit",
     }
     # Every event must have at least one entry with a non-empty command
     for event, entries in config.items():

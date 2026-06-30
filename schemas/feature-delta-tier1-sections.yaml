@@ -2,7 +2,6 @@
 # Single source of truth for the Tier-1 [REF] sections required per wave in
 # feature-delta.md. Consumed by:
 #   - validate_feature_delta_consistency.py  (R3 enforcement)
-#   - nWave/skills/nw-discuss/SKILL.md       (Tier-1 list reference, no longer redeclared)
 #   - nWave/skills/nw-design/SKILL.md        (idem)
 #   - nWave/skills/nw-devops/SKILL.md        (idem)
 #   - nWave/skills/nw-distill/SKILL.md       (idem)
@@ -11,22 +10,12 @@
 # Provenance: empirical spikes (2026-05-01) ruled out formatting/token rules;
 # this file enforces only identifier-uniqueness, reference-integrity, and
 # required-section presence.
-schema_version: 1.0
+schema_version: 1.1
 
 waves:
 
-  DISCUSS:
-    required_sections:
-      - "Persona ID"
-      - "JTBD One-Liner"
-      - "Locked Decisions"
-      - "User Stories with Elevator Pitches"
-      - "Acceptance Criteria"
-      - "Definition of Done"
-      - "Out-of-Scope"
-      - "WS Strategy"
-      - "Driving Ports"
-      - "Pre-requisites"
+  # DISCUSS sections MOVED to nWave/waves/discuss.yaml output_contract (the SSOT,
+  # ADR-FLOW-006 D3 / f-wave-contract-coherence slice-04). No longer authored here.
 
   DESIGN:
     required_sections:
@@ -60,6 +49,28 @@ waves:
       - "Test Placement"
       - "Driving Adapter Coverage"
       - "Pre-requisites"
+
+# ---------------------------------------------------------------------------
+# Section column requirements (provisional; NEW features only)
+# ---------------------------------------------------------------------------
+# Per-column obligations inside a Tier-1 [REF] section. Backward-compatible:
+# enforced only for features whose maturity rule (below) is registered + active.
+# Existing features without the column still validate (rule status: pending).
+section_column_requirements:
+  - wave: DISTILL
+    section: "Scenario List with Tags"
+    column: "Real-Surface Binding"
+    rule_id: R4
+    applies_to: "new_features_only"
+    required: true
+    description: >
+      Each scenario declares the shipped artifact or real entry point it touches:
+      a repo file path (nWave/...), a subprocess invocation (des <subcommand>), or
+      the production composition root. Declarative today; AST-detector-verifiable
+      tomorrow (the detector reads this column to confirm the AT asserts a shipped
+      artifact / observed effect, never a test-fabricated oracle — Mandate 13
+      protocol-driver contract, SSOT in nw-test-design-mandates).
+    citation: "docs/research/walking-skeleton-atdd-best-practices-2026-06-12.md (Farley four-layer ATDD)"
 
 # ---------------------------------------------------------------------------
 # Identifier patterns (R1 + R2 enforcement)

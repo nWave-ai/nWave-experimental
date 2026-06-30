@@ -5,6 +5,15 @@ user-invocable: true
 argument-hint: '[feature-description] - Example: "Implement user authentication with JWT"'
 ---
 
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+
+<!-- gates-ref: deliver -->
+<!-- outputs-ref: deliver -->
+
+The DELIVER gate stack and output contract live ONCE in the wave-contract registry
+`nWave/waves/deliver.yaml` — the `gates-ref` / `outputs-ref` pointers above name it.
+This skill does not re-enumerate the gate stack inline; it POINTS at the registry.
+
 # NW-DELIVER: Complete DELIVER Wave Orchestrator
 
 **Wave**: DELIVER (wave 6 of 6)|**Agent**: Main Instance (orchestrator)|**Command**: `/nw-deliver "{feature-description}"`
@@ -76,26 +85,30 @@ Wave-specific signal: a DELIVER wave recording `choice = "expand"` for `retrospe
 
 **DES monitoring is non-negotiable.** Circumventing DES — faking step IDs, omitting markers, or writing log entries manually — is a **violation that invalidates the delivery**. DES detects unmonitored steps and flags them; finalize **blocks** until every flagged step is re-executed through a properly instrumented Task. There is no workaround: unverified steps cannot pass integrity verification, and the delivery cannot be finalized. Without DES monitoring, nWave cannot **verify** TDD phase compliance. For non-deliver tasks (docs, research, one-off edits): `<!-- DES-ENFORCEMENT : exempt -->`.
 
-## Workflow Mode Dispatch (classic vs atdd_pure)
+## Workflow Mode Dispatch (classic vs atdd_pure) <!-- mode-ref-ok -->
 
-Before any phase work, read `.nwave/config.yaml` key `workflow.mode`. The DELIVER wave has **two sibling top-level workflows** — not one workflow with an inner swap. `workflow.mode` branches the **entire orchestration flow** at this single dispatch point, so the orchestrator cannot fall through from one spine into the other:
+Before any phase work, read `.nwave/config.yaml` key `workflow.mode`. The DELIVER wave has **two sibling top-level workflows** — not one workflow with an inner swap. `workflow.mode` branches the **entire orchestration flow** at this single dispatch point, so the orchestrator cannot fall through from one spine into the other. <!-- mode-ref-ok -->
 
-| mode | Spine | Reference |
-|------|-------|-----------|
-| `classic` (default) | the ADR-025 roadmap-based DELIVER spine — `roadmap.json` + per-step `execution-log.json` + 3-phase `RED → GREEN → COMMIT` | §Orchestration Flow (the classic spine, below) |
-| `atdd_pure` (opt-in) | the ADR-028 roadmap-free, execution-log-free spine — per-slice carpaccio loop + 3-phase per-slice DELIVER sequence + AT-completion ledger | §ATDD-Pure Roadmap-Free Spine, below |
+Read precedence: `.nwave/config.yaml:workflow.mode` → if missing, fall back to `classic`. Mid-feature mode switch is forbidden. <!-- mode-ref-ok -->
 
-Read precedence: `.nwave/config.yaml:workflow.mode` → if missing, fall back to `classic`. Mid-feature mode switch is forbidden.
+Per-mode descriptor + DELIVER phase shape — projected from the mode registry (`nWave/flavors/*.yaml`), never hand-edited (`classic` routes to §Orchestration Flow below; the per-slice spine routes to §ATDD-Pure Roadmap-Free Spine below):
 
-**The classic spine (§Orchestration Flow) is a sibling top-level workflow, preserved byte-for-byte unchanged** — ADR-028 adds the `atdd_pure` spine ALONGSIDE it, never modifying the classic roadmap path. When `workflow.mode = classic` (or absent), run §Orchestration Flow exactly as written. When `workflow.mode = atdd_pure`, run §ATDD-Pure Roadmap-Free Spine instead — do NOT enter §Orchestration Flow Phase 1, and do NOT run step 1.a `des init-log`.
+<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
+- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
+  Deliver phase shape: `RED -> GREEN -> COMMIT`
+<!-- GENERATED:mode-descriptor END -->
 
-## ATDD-Pure Roadmap-Free Spine (workflow.mode = atdd_pure)
+**The classic spine (§Orchestration Flow) is a sibling top-level workflow, preserved byte-for-byte unchanged** — ADR-028 adds the `atdd_pure` spine ALONGSIDE it, never modifying the classic roadmap path. When `workflow.mode = classic` (or absent), run §Orchestration Flow exactly as written. When `workflow.mode = atdd_pure`, run §ATDD-Pure Roadmap-Free Spine instead — do NOT enter §Orchestration Flow Phase 1, and do NOT run step 1.a `des init-log`. <!-- mode-ref-ok -->
+
+## ATDD-Pure Roadmap-Free Spine (workflow.mode = atdd_pure) <!-- mode-ref-ok -->
 
 Reference: ADR-028 D1/D2/D3/D5 · ADR-027 per-slice DELIVER sequence (carried forward, reduced to the 3 canonical phases) · rollout feature-delta `docs/feature/atdd-pure-roadmap-free-rollout/feature-delta.md`.
 
 This spine is roadmap-free and execution-log-free. It creates **no roadmap.json** and **no execution-log.json** — step 1.a (`des init-log`) and Phase 1 (Roadmap Creation + Review) of the classic spine are SKIPPED entirely, not run-then-discarded. Decomposition is carried by the feature-delta `## Wave: DISCUSS / [REF] Slice Plan` table; audit is carried by the AT-completion ledger + commit trailers.
 
-**Setup (atdd_pure).** Parse input, derive `feature-id`. In place of the skipped `des init-log` step, provision the AT-completion ledger directory:
+**Setup (atdd_pure).** Parse input, derive `feature-id`. In place of the skipped `des init-log` step, provision the AT-completion ledger directory: <!-- mode-ref-ok -->
 
 ```
 mkdir -p .nwave/telemetry/atdd-pure/
@@ -112,9 +125,9 @@ The DES sequencer creates `.nwave/telemetry/atdd-pure/{feature-id}.jsonl` on fir
 3. **`Class = P`** — the carpaccio entry_gate is SKIPPED; the spine runs the coherence check for the slice instead (see slice-04 spine routing note at the carpaccio entry_gate), then a single D_REFACTOR_COMMIT commit.
 4. At the slice's D_REFACTOR_COMMIT commit, flip the slice plan row `pending → shipped`; advance to the next slice. The feature is complete when every slice row is `shipped`.
 
-**Phase 6 — Deliver Integrity Verification (atdd_pure).** Under `atdd_pure`, Phase 6 verifies the AT-completion ledger + the slice-plan (every row `shipped`) + the commit-trailer chain — NOT roadmap/execution-log integrity. Run `des verify-integrity` (mode-aware): a missing roadmap is the expected state; an absent ledger is a verification failure with a diagnostic. Refactor, review, and mutation phases run as written in §Orchestration Flow.
+**Phase 6 — Deliver Integrity Verification (atdd_pure).** Under `atdd_pure`, Phase 6 verifies the AT-completion ledger + the slice-plan (every row `shipped`) + the commit-trailer chain — NOT roadmap/execution-log integrity. Run `des verify-integrity` (mode-aware): a missing roadmap is the expected state; an absent ledger is a verification failure with a diagnostic. Refactor, review, and mutation phases run as written in §Orchestration Flow. <!-- mode-ref-ok -->
 
-### Feature-End Cycle (atdd_pure) — runs ONCE after the last slice
+### Feature-End Cycle (atdd_pure) — runs ONCE after the last slice <!-- mode-ref-ok -->
 
 Reference: ADR-028 D6 (ratified 2026-05-20).
 
@@ -123,32 +136,34 @@ The per-slice carpaccio loop keeps each slice's cycle lean — a slice ships thr
 `/nw-deliver` therefore runs ONE **feature-end cycle** after the last slice's `D_REFACTOR_COMMIT` commit — once the slice-plan loop is exhausted (every `[REF] Slice Plan` row `shipped`) and the coherent feature exists on disk. The feature-end cycle has three steps, in order:
 
 1. **`D_REFACTOR_COMMIT` (feature scope)** — L1-L6 refactoring across the WHOLE feature's code, batch-then-verify: all edits batched, ONE test run after the batch. Refactoring the finished, no-longer-changing feature once replaces N per-slice refactor passes.
-2. **Deep feature-end review** — collapses the per-slice `C_REVIEWER_AUDIT` and the `D_REFACTOR_COMMIT` review into ONE adversarial review of the coherent finished feature: full AT-completeness audit, residuality / RPP stress, cross-slice architecture coherence. Because the code no longer changes, the review sees the whole and a cross-cutting gap can be diagnosed. The verdict carries the same HMAC `Reviewed-by:` verdict-hash trailer as a per-slice D_REFACTOR_COMMIT review; the verdict-hash chain terminates here.
+2. **Deep feature-end review** — collapses the per-slice `C_REVIEWER_AUDIT` and the `D_REFACTOR_COMMIT` review into ONE adversarial review of the coherent finished feature: full AT-completeness audit, residuality / RPP stress, cross-slice architecture coherence. Because the code no longer changes, the review sees the whole and a cross-cutting gap can be diagnosed. The verdict carries the same `Reviewed-by:` verdict-hash trailer as a per-slice D_REFACTOR_COMMIT review; the verdict-hash chain terminates here.
 3. **Final integrity verification** — one final integrity pass. FIRST, the whole-tree full contract run, run once here: `run_contract_gate --repo .` (the full whole-tree run that per-slice `D_REFACTOR_COMMIT` no longer runs); fix any cross-slice or cross-feature regression before the feature is declared done. THEN the integrity pass via `des verify-integrity` (mode-aware, D4): the AT-completion ledger (every `.feature` scenario greened), the slice plan (every row `shipped`), the commit-trailer chain. As part of this step the DES sequencer runs `verify_environmental_e2e --mode run` (the cross-tree environmental-e2e gate floor — `des verify-environmental-e2e` console script, fix-oss-environmental-e2e-gate) and appends its `EnvironmentalE2eGateRan` heartbeat + `EnvironmentalE2eVerified` verdict to the AT-completion ledger; the done-gate blocks declaring the feature done unless both records are present (residuality RM-1 / R10).
 
 The carpaccio `entry_gate` and the `D_REFACTOR_COMMIT` `exit_gate` stay strictly per-slice — the feature-end cycle is a final pass *after* the last slice's exit gate; it adds no per-slice gate and removes none.
 
 **Feature-end-cycle checkpoint — `/nw-continue` resume cue.** A `/nw-deliver` run can be interrupted either *in the slice loop* (some slice rows still `pending` — `/nw-continue` restarts the `/nw-execute` loop at the first un-`shipped` slice) or *inside the multi-step feature-end cycle*, where ALL slice rows are already `shipped` and the Status column gives no signal. For the second case the resume cue is the **feature-end-cycle checkpoint**: at each feature-end-cycle step boundary the DES sequencer appends a `{"event": "FeatureEndCheckpoint", "step": ..., "status": ...}` record to the AT-completion ledger `.nwave/telemetry/atdd-pure/{feature-id}.jsonl`, with `step ∈ {D_REFACTOR_COMMIT, DEEP_REVIEW, FINAL_INTEGRITY}` and `status ∈ {started, completed}`. `/nw-continue`, finding all slices `shipped`, reads the latest `FeatureEndCheckpoint`: no checkpoint → start the feature-end cycle at `D_REFACTOR_COMMIT`; `<step> started` → resume at `<step>`; `<step> completed` → resume at the next step; `FINAL_INTEGRITY completed` → the feature is done. The checkpoint is the feature-end-cycle analogue of the slice-plan Status column — a mechanical resume signal, never agent memory.
 
-## ATDD-Pure DELIVER Sequence — invoked when workflow.mode = atdd_pure
+## ATDD-Pure DELIVER Sequence — invoked when workflow.mode = atdd_pure <!-- mode-ref-ok -->
 
 Reference: ADR-027 §Decision · plan v3 §4 §7 · domain types `src/des/domain/atdd_pure_phases.py`.
 
 Replace per-step `RED→GREEN→COMMIT` dispatch with this per-slice A_GREEN→C_REVIEWER_AUDIT→D_REFACTOR_COMMIT sequence. One Agent invocation per phase per slice.
 
-### atdd_pure crafter dispatch markers (U0 / ADR-030 D8)
+### atdd_pure crafter dispatch markers (U0 / ADR-030 D8) <!-- mode-ref-ok -->
 
-Every atdd_pure crafter dispatch prompt MUST carry the three DES dispatch markers — they are the recognition substrate the PreToolUse / SubagentStop hooks (U1-U4) key on. The orchestrator renders them verbatim into the rendered prompt for every phase dispatch, alongside the classic `DES-VALIDATION` / `DES-PROJECT-ID` markers:
+Every atdd_pure crafter dispatch prompt MUST carry the three DES dispatch markers — they are the recognition substrate the PreToolUse / SubagentStop hooks (U1-U4) key on. The orchestrator renders them verbatim into the rendered prompt for every phase dispatch, alongside the classic `DES-VALIDATION` / `DES-PROJECT-ID` markers: <!-- mode-ref-ok -->
 
 ```
-<!-- DES-MODE : atdd_pure -->
+<!-- DES-MODE : atdd_pure --> <!-- mode-ref-ok -->
 <!-- DES-PHASE : A_GREEN -->
 <!-- DES-SLICE : slice-01 -->
+<!-- DES-WAVE: deliver -->
 ```
 
-- `DES-MODE : atdd_pure` — the mode discriminator. Distinguishes an atdd_pure dispatch from a classic (`orchestrator`) one.
+- `DES-MODE : atdd_pure` — the mode discriminator. Distinguishes an atdd_pure dispatch from a classic (`orchestrator`) one. <!-- mode-ref-ok -->
 - `DES-PHASE : {phase}` — the current ATDD-pure phase; `{phase}` is one of the canonical `ATDDPurePhase` members (`A_GREEN`, `C_REVIEWER_AUDIT`, `D_REFACTOR_COMMIT`).
 - `DES-SLICE : slice-NN` — the carpaccio slice id, anchored `slice-\d+` shape.
+- `DES-WAVE: deliver` — the wave declaration. Include it verbatim in every dispatch prompt — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
 
 **Verified-emission assertion (phase-entry diagnostic).** Before dispatching the crafter into any phase, the orchestrator runs the phase-entry diagnostic over the rendered prompt: it parses the prompt via `des.domain.des_marker_parser.DesMarkerParser` and classifies it with `classify_atdd_pure_dispatch`. The dispatch is REFUSED — never sent — if the classification is `defective`, i.e. the rendered prompt is missing or malforms any of the three markers; `atdd_pure_missing_marker` names the offending marker (`des-mode` / `des-phase` / `des-slice`) in the refusal.
 
@@ -158,13 +173,13 @@ Every atdd_pure crafter dispatch prompt MUST carry the three DES dispatch marker
 des carpaccio-slice-gate --feature-id {feature-id} --entering-slice {slice-NN}
 ```
 
-The gate is a pure-function CLI (no filesystem mutation) implementing ADR-028 D2-bis (carpaccio decomposition assertions 1-4: slice size ≤ `.nwave/config.yaml:atdd_pure.carpaccio_slice_max`, incremental total coverage, walking-skeleton-first ordering, value-annotation) + ADR-029 D5 (assertion 5: the AT-review verdict for the entering slice is present, `APPROVED`, HMAC-verified, and not stale). Exit `0` → dispatch the crafter into `A_GREEN`; exit `1` (missing slice plan) / `2` (malformed input) / `44` (`CARPACCIO_SLICE_TOO_LARGE`) / `45` (`AT_REVIEW_NOT_APPROVED`) → crafter dispatch REFUSED, halt with the gate's JSON payload. For a `Class = P` slice the carpaccio `entry_gate` is SKIPPED — the coherence check runs instead (see slice-04 spine routing).
+The gate is a pure-function CLI (no filesystem mutation) implementing ADR-028 D2-bis (carpaccio decomposition assertions 1-4: slice size ≤ `.nwave/config.yaml:atdd_pure.carpaccio_slice_max`, incremental total coverage, walking-skeleton-first ordering, value-annotation) + ADR-029 D5 (assertion 5: the AT-review verdict for the entering slice is present, `APPROVED`, content-seal valid, and not stale). Exit `0` → dispatch the crafter into `A_GREEN`; exit `1` (missing slice plan) / `2` (malformed input) / `44` (`CARPACCIO_SLICE_TOO_LARGE`) / `45` (`AT_REVIEW_NOT_APPROVED`) → crafter dispatch REFUSED, halt with the gate's JSON payload. For a `Class = P` slice the carpaccio `entry_gate` is SKIPPED — the coherence check runs instead (see slice-04 spine routing). <!-- mode-ref-ok -->
 
 | Phase | Owner | Action | Gate |
 |-------|-------|--------|------|
 | A_GREEN | crafter (instance #1) | Make all DISTILL ATs pass with NO defensive code beyond AT-driven need, then coverage-driven dead-code elimination (the prior coverage-cleanup step is absorbed here) | Carpaccio `entry_gate` exit 0 (above); all ATs green; ≥90% line+branch OR justified misses in commit body |
 | C_REVIEWER_AUDIT | reviewer | 15-item AT-completeness audit via `nw-at-completeness-check`; gap routing decided as a seam (route per `ATGapKind`, see §Phase D Routing below) | `PhaseCReviewerVerdict` emitted; one Routing decision recorded |
-| D_REFACTOR_COMMIT | **crafter-B (separate instance)** then reviewer then crafter | L1-L6 batch refactor per `feedback_refactor_batch_when_test_suite_slow_2026_05_19`; final code review + refactor green check; conventional commit with `Step-Id:`/`Slice-Id:` + `Gate-Scope:` + `Reviewed-by:` (verdict_hash) trailers | Tests stay green; reviewer verdict with MANDATORY verdict_hash; HMAC trailer verified; `D_REFACTOR_COMMIT` `exit_gate` exit 0 (below) |
+| D_REFACTOR_COMMIT | **crafter-B (separate instance)** then reviewer then crafter | L1-L6 batch refactor per `feedback_refactor_batch_when_test_suite_slow_2026_05_19`; final code review + refactor green check; conventional commit with `Step-Id:`/`Slice-Id:` + `Gate-Scope:` + `Reviewed-by:` (verdict_hash) trailers | Tests stay green; reviewer verdict with MANDATORY verdict_hash; `D_REFACTOR_COMMIT` `exit_gate` exit 0 (below) |
 
 ### D_REFACTOR_COMMIT exit gate (after the commit, per slice)
 
@@ -226,11 +241,9 @@ The D_REFACTOR_COMMIT refactor dispatch MUST use a SEPARATE crafter instance fro
 2. Pre-flight: refuse a D_REFACTOR_COMMIT dispatch sharing `agent_instance_id` with the A_GREEN entry in `execution-log.json`.
 3. Rationale: review independence — refactor by original implementer rubber-stamps their own bias.
 
-### HMAC-SHA256 Verdict-Hash Trailer (D_REFACTOR_COMMIT review → commit)
+### Verdict-Hash Trailer (D_REFACTOR_COMMIT review → commit)
 
-Plan v3 §8. The D_REFACTOR_COMMIT reviewer verdict pairs with a mechanical `Reviewed-by: <agent>:<hmac-sha256>` trailer; the D_REFACTOR_COMMIT commit embeds it verbatim.
-
-Canonical serialization: JSON sorted keys, no whitespace, UTF-8, fields `{verdict, timestamp, reviewer_agent_id, findings_summary}`. HMAC key precedence: env `NWAVE_REVIEWER_SIGNING_KEY` → file `.nwave/secrets/reviewer-signing.key`. Verification: `src/des/cli/verify_commit_trailers.py` (exit 4 on mismatch).
+Plan v3 §8. The D_REFACTOR_COMMIT reviewer verdict pairs with a `Reviewed-by: <agent>:<verdict-hash>` trailer; the D_REFACTOR_COMMIT commit embeds it verbatim. The verdict-hash is the keyless content seal produced by `des.domain.at_review_signing.canonical_at_review_json`. Verification: `src/des/cli/verify_commit_trailers.py` audits the slice's ledger record (exit 45 on refusal).
 
 ### Telemetry per Phase Boundary
 
@@ -259,19 +272,18 @@ Each canonical phase (A_GREEN → C_REVIEWER_AUDIT → D_REFACTOR_COMMIT) emits 
 After the D_REFACTOR_COMMIT commit completes, invoke `python scripts/automation/atdd_pure_falsifier_gate.py` (plan v3 §4.5 Phase 5 deliverable):
 
 - Reads N=3 latest pilot JSONL records.
-- ANY breach (median wall-clock > 1.3× target | findings median > 12 | defect rate > 2× classic | Phase D cycle rate median ≥ 2.0) → patch `.nwave/config.yaml:workflow.mode = classic`, emit `FalsifierGateTripped`, exit 42.
+- ANY breach (median wall-clock > 1.3× target | findings median > 12 | defect rate > 2× classic | Phase D cycle rate median ≥ 2.0) → patch `.nwave/config.yaml:workflow.mode = classic`, emit `FalsifierGateTripped`, exit 42. <!-- mode-ref-ok -->
 - Otherwise → emit `FalsifierGateHealthy`, exit 0.
 
 Exit 42 blocks subsequent CI release steps; operator review required before next pilot feature.
 
 ## Skill Loading (ATDD-pure additions)
 
-When `workflow.mode = atdd_pure`, orchestrator MUST embed skill-load directives in every dispatch prompt:
+When `workflow.mode = atdd_pure`, orchestrator MUST embed skill-load directives in every dispatch prompt. <!-- mode-ref-ok -->
+The mode-conditional skill set per agent is declared by the mode registry `skill_load_set` (projected into each agent spec's GENERATED skill-load region — the registry, never this guide, is the author): embed a directive to load every skill the registry declares for the dispatched agent at its phase entry. Phase-specific additions that are not mode-conditional:
 
 | Phase | Skill | Path |
 |-------|-------|------|
-| A_GREEN, D_REFACTOR_COMMIT | `nw-crafter-discipline-atdd-pure` | `~/.claude/skills/nw-crafter-discipline-atdd-pure/SKILL.md` |
-| C_REVIEWER_AUDIT | `nw-at-completeness-check` | `~/.claude/skills/nw-at-completeness-check/SKILL.md` |
 | D_REFACTOR_COMMIT (refactor) | `nw-refactor` | `~/.claude/skills/nw-refactor/SKILL.md` |
 | D_REFACTOR_COMMIT (review) | `nw-review` | `~/.claude/skills/nw-review/SKILL.md` |
 
@@ -309,13 +321,13 @@ Before beginning DELIVER work, read prior wave content. With lean v3.14, all wav
 
 1. **DISCOVER** (skip): Synthesized into DISCUSS sections of `feature-delta.md`.
 2. **DISCUSS** (read on demand): in `docs/feature/{feature-id}/feature-delta.md` under `## Wave: DISCUSS / [REF] ...` sections. Already encoded as acceptance scenarios — read for elevator pitch extraction (Phase 3.5) and clarification only.
-3. **DESIGN** (structural context, MANDATORY): Read `docs/product/architecture/brief.md` (cross-feature SSOT — component boundaries, driving ports, C4 diagrams). PLUS read `docs/feature/{feature-id}/feature-delta.md` filtered to `## Wave: DESIGN / [REF] ...` sections — DDD list, component decomposition, driving/driven ports, technology choices, decisions table, reuse analysis.
+3. **DESIGN** (structural context, read-if-present; degrade loud if absent): Read `docs/product/architecture/brief.md` (cross-feature SSOT — component boundaries, driving ports, C4 diagrams) when present; DESIGN is optional, so a DESIGN-skipped feature has no brief.md — proceed without it (degrade loud, never hard-fail). PLUS read `docs/feature/{feature-id}/feature-delta.md` filtered to `## Wave: DESIGN / [REF] ...` sections — DDD list, component decomposition, driving/driven ports, technology choices, decisions table, reuse analysis.
 4. **DEVOPS** (read on demand): in `feature-delta.md` under `## Wave: DEVOPS / [REF] ...` sections. Read only if test environment issues arise.
 5. **DISTILL** (primary input, MANDATORY): TWO sources:
    - `feature-delta.md` `## Wave: DISTILL / [REF] ...` sections — scenario list with tags, walking skeleton strategy, adapter coverage, scaffold inventory, test placement, driving adapter coverage, pre-requisites
    - Executable `.feature` files at the test placement path declared in DISTILL (e.g. `tests/{feature-id-or-bounded-context}/acceptance/*.feature`) — these are the authoritative specification
 
-**READING ENFORCEMENT**: You MUST read `feature-delta.md` (full file) AND `docs/product/architecture/brief.md` AND every `.feature` file referenced in the DISTILL Test Placement section before proceeding. After reading, output a confirmation checklist (`✓ {file}` for each read, `⊘ {file} (not found)` for missing). Do NOT skip files that exist — skipping causes implementation disconnected from architecture and acceptance tests.
+**READING ENFORCEMENT**: You MUST read `feature-delta.md` (full file) AND every `.feature` file referenced in the DISTILL Test Placement section before proceeding. Additionally, read `docs/product/architecture/brief.md` if present — DESIGN is optional, so when it is absent emit `⊘ brief.md (not found) — proceeding without architecture context` and continue (never hard-fail on the missing DESIGN artifact). After reading, output a confirmation checklist (`✓ {file}` for each read, `⊘ {file} (not found)` for missing). Do NOT skip files that exist — skipping causes implementation disconnected from architecture and acceptance tests.
 
 **Migration fallback for legacy features**: If `docs/feature/{feature-id}/feature-delta.md` does NOT exist BUT legacy multi-file directories (`discuss/`, `design/`, `devops/`, `distill/`) DO exist, treat the legacy layout as authoritative for THIS feature only. Read all files in those directories. Future waves should consolidate to `feature-delta.md` per lean v3.14.
 
@@ -357,6 +369,12 @@ At the start of execution, create these tasks using TaskCreate and follow them i
    - Log strategy for traceability. Note: strategy locks at deliver start; `CLAUDE.md` edits during delivery take effect next run.
    - Gate: strategy recorded.
 
+1.7. **Detect Deliverable Type** (ADR-PST-003 / DDD-6) — Read `deliverable_type` from the SAME `.nwave/des-config.json` the runtime gate uses — this is the single source of truth (`DESConfig.deliverable_type` precedence, ADR-PST-002): (1) declared project `.nwave/des-config.json` key `deliverable_type` if in the known set `{application, plugin, skill}`; (2) else global `~/.nwave/global-config.json` `defaults.deliverable_type`; (3) else root-only FS detection; (4) a present-but-typo'd value resolves to the safe default (treated as `application`). Do NOT re-detect independently — read what the gate reads so the verification plan and the enforcement gate never diverge.
+   - `application` (or unresolved) → store `application`. Verification plan UNCHANGED (pytest / Hypothesis routing, `@nw-software-crafter-reviewer`).
+   - `plugin` → store `plugin`. The Phase 4 verification plan branches (see Phase 4).
+   - `skill` → store `skill`. The Phase 4 verification plan branches (see Phase 4).
+   - Gate: deliverable type read from `.nwave/des-config.json` and stored for Phase 4 routing.
+
 2. **Phase 1 — Roadmap Creation + Review** — Gate: roadmap created, integrity verified, reviewer approved.
    - a. Skip if `docs/feature/{feature-id}/deliver/roadmap.json` exists with `validation.status == "approved"`. If found in `design/` instead, move to `deliver/` and log warning.
    - b. Dispatch `@nw-solution-architect` to create `roadmap.json` (load `~/.claude/skills/nw-roadmap/SKILL.md`). Step IDs MUST match `NN-NN` format (01-01, 01-02). If `distill/` exists, architect MUST populate `test_file` and `scenario_name` per step.
@@ -392,13 +410,20 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 
 4. **Phase 3 — Complete Refactoring (L1-L6)** — [SKIP if `rigor.refactor_pass = false`]. Gate: all tests green after each module refactored.
    - a. Collect modified files: `git diff --name-only {base-commit}..HEAD -- '*.py' | sort -u`. Split into PRODUCTION_FILES (`src/`) and TEST_FILES (`tests/`).
-   - b. Run `/nw-refactor {files} --levels L1-L6` via selected crafter with DES orchestrator markers: `<!-- DES-VALIDATION : required -->`, `<!-- DES-PROJECT-ID : {feature-id} -->`, `<!-- DES-MODE : orchestrator -->`.
+   - b. Run `/nw-refactor {files} --levels L1-L6` via selected crafter with DES orchestrator markers: `<!-- DES-VALIDATION : required -->`, `<!-- DES-PROJECT-ID : {feature-id} -->`, `<!-- DES-MODE : orchestrator -->`, `<!-- DES-WAVE: deliver -->`.
 
-5. **Phase 4 — Adversarial Review** — [SKIP if `rigor.review_enabled = false` or `rigor.reviewer_model = "skip"`]. Gate: review passed or one revision complete.
+5. **Phase 4 — Adversarial Review** — [SKIP if `rigor.review_enabled = false` or `rigor.reviewer_model = "skip"`]. Gate: review passed or one revision complete. **Reviewer routing branches on the deliverable type stored in step 1.7** (ADR-PST-003 / DDD-6):
+   **`application` (or unresolved)** — UNCHANGED:
    - a. Dispatch `/nw-review @nw-software-crafter-reviewer implementation "{execution-log-path}"` with `model=rigor.reviewer_model` and DES orchestrator markers.
    - b. If `rigor.double_review = true` → run review a second time with different scope focus.
    - c. Scope: ALL files modified during feature; includes Testing Theater 7-pattern detection.
    - d. One revision pass on rejection → proceed.
+
+   **`plugin`** — dispatch `@nw-plugin-validator` (Claude Code plugin structure/schema) AND `@nw-skill-reviewer` (SKILL.md quality), both on Haiku, plus `@nw-software-crafter-reviewer` for any application-layer code in the same feature. Verification evidence is behavioral Gherkin + example-interaction evidence (the plugin demonstrated through its real invocation path), with optional `bats`/`shellcheck` for any shell. NOT pytest/Hypothesis-centric. One revision pass on rejection → proceed.
+
+   **`skill`** — dispatch `@nw-skill-reviewer` (SKILL.md quality, Haiku). Do NOT dispatch `@nw-plugin-validator` (no plugin structure to validate). Verification evidence is behavioral Gherkin. One revision pass on rejection → proceed.
+
+   **Authoring stays with `@nw-agent-builder`**: when a plugin/skill review finds content to author or rewrite, route the fix to `@nw-agent-builder` — the validators/reviewers are read-only. The four `*-development` specialist agents remain DEFERRED.
 
 6. **Phase 5 — Mutation Testing** — [SKIP if `rigor.mutation_enabled = false`]. Gate: ≥80% kill rate or strategy skip logged.
    - `per-feature` → gate ≥80% kill rate (load `~/.claude/skills/nw-mutation-test/SKILL.md`).
@@ -450,6 +475,7 @@ Task(
 <!-- DES-VALIDATION : required -->
 <!-- DES-PROJECT-ID : {project_id} -->
 <!-- DES-STEP-ID : {step_id} -->
+<!-- DES-WAVE: deliver -->
 
 # DES_METADATA
 Step: {step_id}

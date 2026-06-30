@@ -49,7 +49,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 _GATE_CLI = _REPO_ROOT / "scripts" / "cli" / "carpaccio_slice_gate.py"
 _VERDICT_CLI = _REPO_ROOT / "src" / "des" / "cli" / "at_review_verdict.py"
 
-_SIGNING_KEY = "wiring-e2e-dev-key"
+# Keyless spine (oss-review-verdict-demotion S2): the producer writes no
+# hmac_sha256 and resolves no signing key; the gate reads present fields only.
 
 # A realistic feature-delta slice plan: the canonical 5-column [REF] Slice Plan
 # table the real fix-installer-private-skill-leak feature carries.
@@ -110,7 +111,6 @@ Feature: The public package excludes private work
 def _run(cli: Path, *args: str, repo: Path) -> subprocess.CompletedProcess[str]:
     """Invoke a spine CLI as a real subprocess (not an in-process call)."""
     env = {
-        "NWAVE_REVIEWER_SIGNING_KEY": _SIGNING_KEY,
         "NWAVE_REPO_ROOT": str(repo),
         "PATH": _path_env(),
         # Bypass the freshness gate: the spine CLIs invoke `des.cli.*`-adjacent
@@ -148,9 +148,9 @@ def _build_tmp_project(
 
     Mirrors the real layout: a feature-delta with a 5-column slice-plan table,
     one ``.feature`` file placed at ``feature_file_dir`` (a path the test
-    chooses — to exercise the F-04 out-of-hardcoded-path case), a
-    ``.nwave/config.yaml`` with ``workflow.mode: atdd_pure``, and the reviewer
-    signing key file.
+    chooses — to exercise the F-04 out-of-hardcoded-path case), and a
+    ``.nwave/config.yaml`` with ``workflow.mode: atdd_pure``. No signing key
+    is provisioned: the spine is keyless (oss-review-verdict-demotion).
     """
     delta = root / "docs" / "feature" / feature_id / "feature-delta.md"
     delta.parent.mkdir(parents=True, exist_ok=True)
@@ -166,10 +166,6 @@ def _build_tmp_project(
         "workflow:\n  mode: atdd_pure\natdd_pure:\n  carpaccio_slice_max: 3\n",
         encoding="utf-8",
     )
-
-    key = root / ".nwave" / "secrets" / "reviewer-signing.key"
-    key.parent.mkdir(parents=True, exist_ok=True)
-    key.write_text(_SIGNING_KEY, encoding="utf-8")
 
 
 def test_carpaccio_entry_path_clears_a_well_formed_slice(tmp_path: Path) -> None:
@@ -236,7 +232,15 @@ def test_carpaccio_entry_path_fails_loud_on_malformed_and_missing_inputs(
       * an entering slice with NO matching scenarios → ``no-scenarios-for-slice``
         (the F-03/F-04 vacuous-pass class — must be a loud exit-45 rejection),
       * an AT verdict that was never recorded → ``absent`` rejection,
-      * a slice-plan table with the wrong column count → exit-2 malformed input.
+      * a slice-plan table whose data row carries no ``slice-NN`` identifier →
+        exit-2 malformed input.
+
+    Note on the malformed case: ``parse_slice_plan_rows`` is intentionally
+    column-count-tolerant (C10 — it unified the former 3-column hook contract
+    and 5-column CLI contract, so "a 3-column plan and a 5-column plan both
+    parse"). A wrong column COUNT is therefore no longer malformed; the
+    genuinely-malformed shape that still raises exit-2 ``MalformedInput`` /
+    cause ``the slice-plan table`` is a data row with no ``slice-NN`` id cell.
     """
     feature_id = "demo-privacy-leak"
 
@@ -290,12 +294,14 @@ def test_carpaccio_entry_path_fails_loud_on_malformed_and_missing_inputs(
     assert payload_b["reason"] == "absent"
 
     # --- Case C: a malformed slice-plan table is exit-2 malformed input ---
+    # A data row with NO ``slice-NN`` identifier cell is the genuinely-malformed
+    # shape (column COUNT alone is tolerated by C10 — see the method docstring).
     malformed_root = tmp_path / "malformed"
     bad_delta = _FEATURE_DELTA.replace(
         "| slice-01 | A customer installing the public wheel receives only "
         "public work | pending | @walking-skeleton | First end-to-end "
         "vertical: strip runs before the wheel build. |",
-        "| slice-01 | only three columns |",
+        "| a row carrying no slice identifier | bogus | pending | | n/a |",
     )
     _build_tmp_project(
         malformed_root,

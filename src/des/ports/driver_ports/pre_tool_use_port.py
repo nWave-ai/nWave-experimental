@@ -20,10 +20,16 @@ class PreToolUseInput:
     Attributes:
         prompt: Full Agent tool prompt text
         subagent_type: Type of subagent being created
+        wave_entering: True iff this dispatch is the wave-ENTERING dispatch
+            (slice-07c F3 NORMATIVO). Computed by the HOOK ADAPTER from the
+            anchor-owned ``entry_pending`` flag on the wave-active floor
+            (``WaveActivationService.peek_entry``) -- deterministic,
+            never derived from prompt wording (AD-66 closed).
     """
 
     prompt: str
     subagent_type: str = ""
+    wave_entering: bool = False
 
 
 @dataclass(frozen=True)

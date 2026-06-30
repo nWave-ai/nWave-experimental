@@ -45,8 +45,11 @@ SKILLS_DIR = _REPO_ROOT / "nWave" / "skills"
 PREAMBLE_LINES = [
     "## Skill Loading -- MANDATORY",
     "",
-    "Your FIRST action before any other work: load skills using the Read tool.",
-    "Each skill MUST be loaded by reading its exact file path.",
+    "Your FIRST action before any other work: read the Skill Loading Strategy table below and load —",
+    "with the Read tool, by exact file path — ONLY the skill(s) whose Trigger matches your CURRENT",
+    "phase/task. Load every other skill ON-DEMAND the moment its Trigger fires; do NOT preload skills",
+    'whose trigger has not fired (rows marked "ALWAYS at start" load now; all others are conditional —',
+    "preloading the whole set wastes the context budget every turn).",
     "After loading each skill, output: `[SKILL LOADED] {skill-name}`",
     "If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.",
 ]

@@ -38,15 +38,15 @@ scenarios as ``xfail`` (non-strict). Removing the tag in GREEN flips XFAIL→PAS
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 from nwave_ai.state_delta import assert_state_delta, set_to
 from pytest_bdd import given, parsers, scenarios, then, when
+
+from tests.cli_resolve import resolve_des_cli_cmd
 
 
 _FEATURE = Path(__file__).resolve().parents[1] / "test_roadmap_schema_contract.feature"
@@ -85,14 +85,13 @@ def scenario_state() -> _ScenarioState:
 def _resolve_des_roadmap_cmd() -> list[str]:
     """Resolve the `des-roadmap` driving port.
 
-    Prefer the installed console-script when available, else fall back to
-    `python -m des.cli.roadmap` so the test runs in a fresh checkout that has
-    not yet been `pip install -e .`'d.
+    Prefer the installed console-script ONLY when a `--help` probe proves it
+    runs, else fall back to `python -m des.cli.roadmap` so the test runs in a
+    fresh checkout that has not yet been `pip install -e .`'d. The probe stops a
+    stale/broken global shim (wrong interpreter, cannot `import des`) from
+    shadowing the working `python -m` fallback.
     """
-    bin_path = shutil.which("des-roadmap")
-    if bin_path:
-        return [bin_path]
-    return [sys.executable, "-m", "des.cli.roadmap"]
+    return resolve_des_cli_cmd("des-roadmap", "des.cli.roadmap")
 
 
 # ---------------------------------------------------------------------------

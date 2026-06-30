@@ -1,0 +1,37 @@
+# Gate-contract: mode-locus-gate (mode-registry-single-locus slice-05, Layer A)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=mode-locus-gate.
+
+gate_id: mode-locus-gate
+responsibility: |
+  Refuse any naked mode literal (atdd_pure / workflow.mode unconditional;
+  classic in a declaration shape per BARE_CLASSIC_RULE) in
+  nWave/{skills,agents,tasks} outside a GENERATED region or a
+  <!-- mode-ref-ok --> allow-marker, naming each offender file+line.
+module: des.cli.mode_locus_gate
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --root
+    required: false
+    type: path
+    help: "Root of the asset tree to scan (default: this repository)."
+
+log_events: []
+
+failure_modes:
+  - error_class: NakedModeLiteral
+    exit_code: 2
+    remediation: "Reference the registry (GENERATED region / <!-- mode-ref-ok -->) instead of re-stating the mode by hand."
+  - error_class: RootNotFound
+    exit_code: 1
+    remediation: "Provide a --root containing an nWave/ asset tree."
+
+idempotency: idempotent
+
+host_visibility:
+  - cli
+  - git-hook

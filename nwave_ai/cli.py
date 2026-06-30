@@ -1,8 +1,10 @@
 """nwave-ai CLI: thin wrapper around nWave install/uninstall scripts."""
 
+import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -10,14 +12,81 @@ from nwave_ai.doctor.context import DoctorContext
 from nwave_ai.doctor.formatter import render_human, render_json
 from nwave_ai.doctor.runner import run_doctor
 from scripts.install.attribution_utils import (
-    install_attribution_hook,
+    migrate_legacy_hook,
+    migrate_legacy_settings_attribution,
     read_attribution_preference,
     read_global_config,
-    remove_attribution_hook,
+    register_attribution_hook,
+    unregister_attribution_hook,
     write_attribution_preference,
     write_global_config,
 )
 from scripts.shared.install_paths import GLOBAL_CONFIG_FILENAME
+
+
+# ---------------------------------------------------------------------------
+# DES module bootstrap.
+#
+# The published wheel ships the ``des`` package at
+# ``site-packages/nWave/lib/python/des/`` (a Hatch force-include destination),
+# NOT as a top-level ``des/`` package — so a bare ``import des`` fails unless
+# that directory is on ``sys.path``. Several CLI verbs import ``des``: some
+# unguarded (``project``, ``status``, ``plugin install`` → hard crash) and some
+# guarded (``install`` PM-recording, ``doctor`` activation → silent degrade).
+# ``main()`` dispatches most verbs WITHOUT going through ``main_with_argv``, so
+# this bootstrap runs at import time to cover every entry point at once.
+#
+# No-op in the dev tree / editable install, where ``des`` already resolves from
+# ``src/des``.
+# ---------------------------------------------------------------------------
+
+
+def _bundled_des_paths(pkg_dir: Path, home: Path) -> list[Path]:
+    """Existing directories that may contain an importable ``des`` package.
+
+    ``pkg_dir`` is the installed ``nwave_ai`` package dir; in the wheel its
+    parent is ``site-packages`` where ``nWave/lib/python`` sits beside it. The
+    installer's copy under ``~/.claude/lib/python`` is the fallback. Returned in
+    priority order, existing-only.
+    """
+    candidates = [
+        pkg_dir.parent / "nWave" / "lib" / "python",  # wheel-bundled (self-contained)
+        home / ".claude" / "lib" / "python",  # installer copy
+    ]
+    return [p for p in candidates if (p / "des").is_dir()]
+
+
+def _ensure_des_importable(
+    pkg_dir: Path | None = None,
+    home: Path | None = None,
+    *,
+    is_importable: Callable[[], bool] | None = None,
+) -> Path | None:
+    """Prepend the bundled ``des`` location to ``sys.path`` when ``des`` is missing.
+
+    No-op (returns ``None``) when ``des`` already resolves. Otherwise prepends
+    the first existing bundled location and returns it. Idempotent.
+    """
+    if is_importable is None:
+        import importlib.util
+
+        importable = importlib.util.find_spec("des") is not None
+    else:
+        importable = is_importable()
+    if importable:
+        return None
+
+    pkg_dir = pkg_dir if pkg_dir is not None else Path(__file__).resolve().parent
+    home = home if home is not None else Path.home()
+    for path in _bundled_des_paths(pkg_dir, home):
+        entry = str(path)
+        if entry not in sys.path:
+            sys.path.insert(0, entry)
+        return path
+    return None
+
+
+_ensure_des_importable()
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +228,32 @@ def _get_config_dir() -> Path:
     return Path.home() / ".nwave"
 
 
+def _record_package_manager(config_dir: Path) -> None:
+    """Persist the detected package manager into global config after install.
+
+    Runs inside the nwave-ai process, so ``sys.executable`` is the install
+    interpreter and ``detect_pm`` is reliable here -- unlike at ``/nw-update``
+    time, where the skill shells out via an unrelated ambient ``python3``.
+    Recording it now lets ``/nw-update`` read a trustworthy value later
+    (via ``resolve_nwave_pm``).
+
+    Best-effort: a detection/write failure must never fail the install.
+    """
+    try:
+        from des.adapters.driven.package_managers.package_manager_detector import (
+            detect_pm,
+        )
+
+        pm = detect_pm(Path(sys.executable))
+        config = read_global_config(config_dir)
+        install_block = config.get("install", {})
+        install_block["package_manager"] = pm
+        config["install"] = install_block
+        write_global_config(config_dir, config)
+    except Exception:
+        pass  # Never block install on PM recording.
+
+
 def _extract_target_flag(
     args: list[str],
 ) -> tuple[Path | None, list[str], str | None]:
@@ -215,6 +310,11 @@ def _handle_install(args: list[str]) -> int:
     install on failure — at worst the CI default ("lean") is written.
 
     Flags handled here:
+        --platform <tool>  target agentic tool to provision for
+                           (claude-code / codex / opencode). Forwarded
+                           unchanged to install_nwave.py; this is the
+                           entry point the cross-OS RC smoke matrix depends
+                           on (ADR-PLAT-007).
         --target <path>    install into <path> instead of ~/.claude/
                            (sets CLAUDE_CONFIG_DIR for the subprocess; see
                            ADR-001). $HOME is refused with exit 2.
@@ -222,7 +322,7 @@ def _handle_install(args: list[str]) -> int:
         --density-only     run ONLY the density prompt and exit (test driving
                            port for acceptance tests; never a user flag)
 
-    All other args pass through to install_nwave.py.
+    All other args (including --platform) pass through to install_nwave.py.
     """
     target, args, error = _extract_target_flag(args)
     if error is not None:
@@ -264,7 +364,10 @@ def _handle_install(args: list[str]) -> int:
     if density_only:
         return 0
 
-    return _run_script("install_nwave.py", pass_through_args)
+    result = _run_script("install_nwave.py", pass_through_args)
+    if result == 0:
+        _record_package_manager(config_dir)
+    return result
 
 
 def _handle_uninstall(args: list[str]) -> int:
@@ -304,22 +407,74 @@ def _handle_attribution(args: list[str]) -> int:
 
     if action == "on":
         write_attribution_preference(config_dir, enabled=True)
-        install_attribution_hook(config_dir)
-        print("Attribution enabled. Your commits will include the nWave credit line.")
+        # ADR-CA-007: the settings.json credit write surface is retired. The
+        # activation-gated PreToolUse commit-attribution hook is the SOLE
+        # attribution mechanism, so enabling registers it (and only it).
+        # Ensure ~/.claude exists so the hook has a home, then register it
+        # idempotently. Contained so a registration fault never fails the
+        # toggle (belt-and-suspenders).
+        claude_dir = Path.home() / ".claude"
+        registered = False
+        try:
+            claude_dir.mkdir(parents=True, exist_ok=True)
+            registered = register_attribution_hook(enabled=True)
+        except Exception:
+            pass
+        if registered:
+            print(
+                "Attribution enabled. New Claude commits will carry the nWave "
+                "credit via the commit-attribution hook. Restart Claude (don't "
+                "/resume older sessions) for this to take effect."
+            )
+        else:
+            print(
+                "Attribution enabled, but the commit-attribution hook could not "
+                "be registered (Claude Code config absent or user-modified)."
+            )
         return 0
 
     if action == "off":
         write_attribution_preference(config_dir, enabled=False)
-        remove_attribution_hook(config_dir)
+        # ADR-CA-007 DDD-3: clean any legacy nWave-managed settings credit,
+        # preserving a user-modified value. Route through the claude_dir seam
+        # explicitly so the sandbox injection holds (fail-open: never raises).
+        migrate_legacy_settings_attribution(
+            config_dir, claude_dir=Path.home() / ".claude"
+        )
+        # ADR-CA-006: disabling removes ONLY the commit-attribution hook entry,
+        # leaving the DES guards intact. Contained so it never breaks the toggle.
+        try:
+            unregister_attribution_hook()
+        except Exception:
+            pass
+        # Root cause C: 'off' is the remediation affordance, so it must also
+        # remove the orphaned legacy prepare-commit-msg git shim (hardened in
+        # migrate_legacy_hook to scan every candidate hooks dir). Without this,
+        # a machine already broken by an orphaned shim cannot recover with the
+        # obvious command. Contained so it never breaks the toggle (fail-open).
+        try:
+            migrate_legacy_hook(config_dir=config_dir)
+        except Exception:
+            pass
         print(
-            "Attribution disabled. Your commits will not include the nWave credit line."
+            "Attribution disabled. New Claude sessions will not carry the nWave "
+            "credit line. Restart Claude (don't /resume older sessions) for this "
+            "to take effect."
         )
         return 0
 
     if action == "status":
+        # ADR-CA-007: the EFFECTIVE attribution scope is the preference
+        # (attribution.enabled) AND this repo's resolved activation. Report
+        # BOTH so a user can tell on+active from on+inactive. Reuse the
+        # canonical resolve_activation policy over the marker + global mode —
+        # never re-derive it here (DDD discipline, mirrors the doctor check).
         preference = read_attribution_preference(config_dir)
         if preference is True:
             print("Attribution is currently on.")
+            active = _repo_attribution_active()
+            scope = "active" if active else "inactive"
+            print(f"Attribution is {scope} for this repo.")
         else:
             print("Attribution is currently off.")
         return 0
@@ -327,6 +482,28 @@ def _handle_attribution(args: list[str]) -> int:
     print(f"Unknown attribution action: {action}", file=sys.stderr)
     print("Usage: nwave-ai attribution <on|off|status>", file=sys.stderr)
     return 1
+
+
+def _repo_attribution_active() -> bool:
+    """Resolve THIS repo's activation, failing to INACTIVE on a read error.
+
+    Reuses the canonical ``resolve_activation`` policy over the two scalars the
+    ``DESConfig`` reader exposes (marker ``enabled_for_repo`` + global
+    ``activation.mode``) — the policy is NOT re-derived here (mirrors the
+    activation-aware doctor check).
+
+    On a config-read exception we fail to INACTIVE (return False), matching the
+    activation gate's fail-to-inactive-under-opt-in semantics: a diagnostic must
+    never be more optimistic than the enforcement gate.
+    """
+    try:
+        from des.adapters.driven.config.des_config import DESConfig
+        from des.domain.activation_policy import resolve_activation
+
+        config = DESConfig(cwd=Path.cwd())
+        return resolve_activation(config.enabled_for_repo, config.activation_mode)
+    except Exception:
+        return False
 
 
 def _handle_doctor(args: list[str]) -> int:
@@ -693,9 +870,14 @@ def _print_usage() -> int:
     print("  attribution    Toggle commit attribution (on/off/status)")
     print("  outcomes       Register / check shipped outcomes (Tier-1 collision)")
     print("  plugin         Manage tool plugins (install/uninstall/list)")
+    print("  project        Enable or disable nWave activation for this project")
+    print("  mode           Set the global activation mode (all/opt-in)")
+    print("  status         Show global mode and this project's resolved state")
+    print("  completion     Print a shell-completion script (bash/zsh)")
     print("  version        Show nwave-ai version")
     print()
     print("Install options:")
+    print("  --platform <tool>  Target agentic tool: claude-code, codex, opencode")
     print("  --dry-run       Preview without making changes")
     print("  --backup-only   Create backup only")
     print("  --restore       Restore from backup")
@@ -703,6 +885,196 @@ def _print_usage() -> int:
     print("Example:")
     print("  nwave-ai install")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Activation gating verbs (EXTEND, DDD-12). `project enable|disable`,
+# `mode all|opt-in`, `status`. `main_with_argv(argv)` is the testable entry
+# that dispatches the same way `main()` does but takes argv explicitly (so
+# acceptance tests need not patch sys.argv). `status` is read-only (no write
+# surface, Principle 12).
+# ---------------------------------------------------------------------------
+
+
+def _sync_project_claude_section(
+    action: str, project_root: Path, *, assume_yes: bool
+) -> None:
+    """Inject (enable) or remove (disable) the managed beta section in CLAUDE.md.
+
+    Modifying the user's project CLAUDE.md is a durable, user-facing change, so
+    `enable` asks for consent first (Ale 2026-06-30: "ci vuole la richiesta
+    all'utente"). `--yes` (or any non-interactive context with `--yes`) bypasses
+    the prompt; a non-interactive context WITHOUT `--yes` skips injection and
+    prints how to add it. Removal of our own marker-bounded block on `disable`
+    needs no prompt. Fail-open throughout: a section fault never breaks the
+    activation toggle.
+    """
+    from scripts.install.project_claude_section import (
+        inject_managed_section,
+        load_section_content,
+        remove_managed_section,
+    )
+
+    claude_md = project_root / "CLAUDE.md"
+
+    if action == "disable":
+        try:
+            outcome = remove_managed_section(claude_md)
+        except OSError as exc:
+            print(f"  (could not update {claude_md}: {exc})", file=sys.stderr)
+            return
+        if outcome == "removed-file":
+            print(
+                f"Removed the nWave beta section (and the now-empty {claude_md.name})."
+            )
+        elif outcome == "removed-section":
+            print(f"Removed the nWave beta section from {claude_md.name}.")
+        return
+
+    # action == "enable"
+    try:
+        content = load_section_content(_get_project_root())
+    except OSError:
+        # Template missing (unusual) — never block the toggle on it.
+        return
+
+    if assume_yes:
+        consent = True
+    elif sys.stdin.isatty():
+        answer = input(
+            f"Add the nWave beta-feedback guidance section to ./{claude_md.name}? "
+            "(removable later with `nwave-ai project disable`) [Y/n] "
+        )
+        consent = answer.strip().lower() in ("", "y", "yes")
+    else:
+        consent = False
+
+    if not consent:
+        print(
+            "Skipped the CLAUDE.md beta section. Add it anytime with "
+            "`nwave-ai project enable --yes` from this project."
+        )
+        return
+
+    try:
+        outcome = inject_managed_section(claude_md, content)
+    except OSError as exc:
+        print(f"  (could not update {claude_md}: {exc})", file=sys.stderr)
+        return
+    verb = {"created": "Created", "appended": "Added", "updated": "Refreshed"}[outcome]
+    print(f"{verb} the nWave beta section in {claude_md.name}.")
+
+
+def _handle_project(args: list[str]) -> int:
+    """Handle 'project enable|disable' — write the marker + fix gitignore.
+
+    On `enable`, also offers to inject the managed beta-feedback section into the
+    project's CLAUDE.md (consent-gated; `--yes` bypasses). On `disable`, removes it.
+    """
+    assume_yes = "--yes" in args
+    positional = [a for a in args if a != "--yes"]
+    if not positional or positional[0] not in ("enable", "disable"):
+        print("Usage: nwave-ai project <enable|disable> [--yes]", file=sys.stderr)
+        return 1
+    from des.application.auto_marking_service import AutoMarkingService
+
+    action = positional[0]
+    project_root = Path.cwd()
+    _write_marker(project_root, enabled=action == "enable")
+    AutoMarkingService().fix_gitignore(project_root=project_root)
+    state = "enabled" if action == "enable" else "disabled (sticky opt-out)"
+    print(f"nWave activation for this project: {state}.")
+    _sync_project_claude_section(action, project_root, assume_yes=assume_yes)
+    return 0
+
+
+def _handle_mode(args: list[str]) -> int:
+    """Handle 'mode all|opt-in' — set the global activation mode."""
+    if not args or args[0] not in ("all", "opt-in"):
+        print("Usage: nwave-ai mode <all|opt-in>", file=sys.stderr)
+        return 1
+    config_dir = _get_config_dir()
+    config = read_global_config(config_dir)
+    activation = config.get("activation", {})
+    if not isinstance(activation, dict):
+        activation = {}
+    activation["mode"] = args[0]
+    config["activation"] = activation
+    write_global_config(config_dir, config)
+    print(f"Global nWave activation mode set to '{args[0]}'.")
+    return 0
+
+
+def _handle_status(args: list[str]) -> int:
+    """Handle 'status' — print global mode + resolved state (read-only)."""
+    from des.adapters.driven.config.des_config import DESConfig
+    from des.domain.activation_policy import resolve_activation
+
+    config = DESConfig(cwd=Path.cwd())
+    mode = config.activation_mode
+    active = resolve_activation(config.enabled_for_repo, mode)
+    state = "active" if active else "inactive"
+    print(f"Global activation mode: {mode}")
+    print(f"This project is {state}.")
+    return 0
+
+
+def _handle_completion(args: list[str]) -> int:
+    """Handle 'completion <bash|zsh>' — print the generated shell-completion script.
+
+    Reaches the spec-driven generator (``nwave_ai.completion.generate_completion``)
+    that was otherwise unreachable from the CLI. A missing or unsupported shell
+    prints usage to stderr and exits nonzero.
+    """
+    from nwave_ai.completion import generate_completion
+
+    if not args or args[0] in ("--help", "-h"):
+        print("Usage: nwave-ai completion <bash|zsh>", file=sys.stderr)
+        return 1
+    try:
+        print(generate_completion(args[0]))
+    except ValueError:
+        print(f"Unsupported completion shell: {args[0]!r}", file=sys.stderr)
+        print("Usage: nwave-ai completion <bash|zsh>", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _write_marker(project_root: Path, *, enabled: bool) -> None:
+    """Write the version-controlled activation marker .nwave/local-config.json."""
+    marker = project_root / ".nwave" / "local-config.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        json.dumps({"enabled_for_repo": enabled}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+_ACTIVATION_HANDLERS = {
+    "project": _handle_project,
+    "mode": _handle_mode,
+    "status": _handle_status,
+    "completion": _handle_completion,
+}
+
+
+def main_with_argv(argv: list[str]) -> int:
+    """Dispatch a CLI invocation from an explicit argv (testable entry).
+
+    ``argv`` excludes the program name, e.g. ``["project", "enable"]`` or
+    ``["mode", "opt-in"]`` or ``["status"]`` or ``["completion", "bash"]``.
+    Returns the process exit code (0 on success; nonzero + usage text on stderr
+    for bad args).
+    """
+    if not argv:
+        print("Usage: nwave-ai <project|mode|status|completion> ...", file=sys.stderr)
+        return 1
+    handler = _ACTIVATION_HANDLERS.get(argv[0])
+    if handler is None:
+        print(f"Unknown command: {argv[0]}", file=sys.stderr)
+        print("Run 'nwave-ai --help' for usage.", file=sys.stderr)
+        return 1
+    return handler(argv[1:])
 
 
 def main() -> int:
@@ -738,6 +1110,8 @@ def main() -> int:
         return handle_outcomes(sys.argv[2:])
     elif command == "plugin":
         return _handle_plugin(sys.argv[2:])
+    elif command in ("project", "mode", "status", "completion"):
+        return main_with_argv(sys.argv[1:])
     elif command == "version":
         print(f"nwave-ai {_get_version()}")
         return 0

@@ -13,7 +13,7 @@ which step bodies never touch).
 
 from pytest_bdd import scenarios
 
-from .dispatcher_steps.steps_multi_gate_wire import *  # noqa: F403
+from .dispatcher_steps.steps_multi_gate_wire import *
 
 
 scenarios("slice-05-multi-gate-wire.feature")

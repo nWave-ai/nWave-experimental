@@ -120,6 +120,10 @@ class Logger:
         """Log warning message."""
         self._log("WARN", message, self._YELLOW)
 
+    def warning(self, message: str):
+        """Log warning message (stdlib logging.Logger-compatible name)."""
+        self.warn(message)
+
     def error(self, message: str):
         """Log error message."""
         self._log("ERROR", message, self._RED)
@@ -375,16 +379,29 @@ class BackupManager:
         self.logger.info(f"  💾 Backup at {self.backup_dir}")
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
-        # Backup agents
+        # Backup agents. ignore_dangling_symlinks: a prior uninstall could
+        # leave orphan flat nw-*.md symlinks whose target was removed; copytree
+        # follows symlinks by default and raises on broken ones, aborting the
+        # whole install. Suppress the broken-symlink error so backup is robust.
         if agents_dir.exists():
             backup_agents = self.backup_dir / "agents"
-            shutil.copytree(agents_dir, backup_agents, dirs_exist_ok=True)
+            shutil.copytree(
+                agents_dir,
+                backup_agents,
+                dirs_exist_ok=True,
+                ignore_dangling_symlinks=True,
+            )
             self.logger.info("  ✅ Agents backed up")
 
         # Backup commands
         if commands_dir.exists():
             backup_commands = self.backup_dir / "commands"
-            shutil.copytree(commands_dir, backup_commands, dirs_exist_ok=True)
+            shutil.copytree(
+                commands_dir,
+                backup_commands,
+                dirs_exist_ok=True,
+                ignore_dangling_symlinks=True,
+            )
             self.logger.info("  ✅ Commands backed up")
 
         # Backup config files

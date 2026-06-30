@@ -1,0 +1,70 @@
+# Gate-contract: record-at-review-verdict (oss-review-verdict-demotion S2, D-register)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=record-at-review-verdict.
+
+gate_id: record-at-review-verdict
+responsibility: |
+  Record a keyless AT-review verdict (ADR-029 D5 producer half). On APPROVED
+  appends one ATReviewVerdict record to the per-feature AT-completion ledger
+  carrying the reviewer identity, the AT-set binding (at_ids derived from the
+  entering slice's scenarios) and the content seal (at_content_hash, SHA-256
+  over sorted scenario bodies). No hmac_sha256 field is written and no signing
+  key is resolved -- key absence is a non-event (OSS demotion). On
+  NEEDS_REVISION nothing is written; the slice loops back to the
+  acceptance-designer. The carpaccio slice gate is the consumer that reads
+  this record at the DELIVER entry gate.
+module: des.cli.at_review_verdict
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "Feature identifier; resolves the slice's .feature scenarios and the per-feature ledger."
+  - name: --slice-id
+    required: true
+    type: string
+    help: "The entering slice whose reviewed AT set is being recorded."
+  - name: --verdict
+    required: true
+    type: choice
+    choices: [APPROVED, NEEDS_REVISION]
+    help: "The reviewer outcome. APPROVED appends a verdict record; NEEDS_REVISION writes nothing."
+  - name: --reviewer-agent-id
+    required: true
+    type: string
+    help: "Agent id of the acceptance-designer reviewer whose judgement is being recorded."
+  - name: --findings
+    required: false
+    type: string
+    help: "Optional findings summary entries (recorded alongside the verdict fields)."
+  - name: --repo-root
+    required: false
+    type: path
+    help: "Repository root override; defaults to the resolved current repo root."
+  - name: --robustness-declaration
+    required: false
+    type: path
+    help: "Optional robustness unbounded-domains.yaml projection; with --robustness-at-scope, consults the robustness density gate before the APPROVED write."
+  - name: --robustness-at-scope
+    required: false
+    type: path
+    help: "Optional staged AT-scope directory the robustness gate walks; required alongside --robustness-declaration."
+
+log_events: []
+
+failure_modes:
+  - error_class: MalformedArgs
+    exit_code: 2
+    remediation: "Pass --feature-id, --slice-id, --verdict (APPROVED|NEEDS_REVISION) and --reviewer-agent-id."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

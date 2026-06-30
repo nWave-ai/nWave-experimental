@@ -14,7 +14,7 @@ DELIVER's A_GREEN_ATS turns them green.
 
 from pytest_bdd import scenarios
 
-from .steps.steps_reverify_e1 import *  # noqa: F403
+from .steps.steps_reverify_e1 import *
 
 
 scenarios("slice_01_ssot_extraction_and_wrapper.feature")

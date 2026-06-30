@@ -11,7 +11,7 @@ nWave supports two directory layouts for feature documentation: **legacy** (mult
 | **Section typing** | No explicit type labels | `## Wave: <WAVE> / [REF\|WHY\|HOW] <Section>` headings |
 | **Concurrent waves** | Manual conflict resolution | Git auto-resolves via wave-owned section ownership |
 | **Density control** | Not applicable | `lean` (refs only) or `full` (all sections) |
-| **Tooling** | Existing scripts, agents familiar | Validator: `scripts/validation/validate_feature_delta.py` |
+| **Tooling** | Existing scripts, agents familiar | Validator: `des validate-feature-delta` |
 | **Status** | In-place; no migration required | Greenfield new features; opt-in migration available |
 
 ---
@@ -291,7 +291,7 @@ nWave provides a validator to ensure lean L7 files conform to the heading schema
 ### Running the validator
 
 ```bash
-python scripts/validation/validate_feature_delta.py docs/feature/my-feature/feature-delta.md
+des validate-feature-delta docs/feature/my-feature/feature-delta.md
 ```
 
 **Exit codes**:

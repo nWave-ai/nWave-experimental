@@ -1,0 +1,5 @@
+des:allow-module-form: this acceptance suite drives registered `des` subcommands via the module form (`python -m des.cli.<X>`) as its hermetic
+Layer-3 AT driving port -- nw-distill-sanctioned: PATH lookup of the installed binary is not hermetic, the module form binds the repo
+code-under-test. Dir-level P3 sanction per the rescoped single-entry-point migration gate (docs/feature/single-entry-point/feature-delta.md
+slice-04, predicate P1 concrete AND P2 registered-subcommand AND P3 not-sanctioned). Delete this marker and the AT-07 gate re-reports every
+module-form callsite beneath this directory (mutation-checkable).

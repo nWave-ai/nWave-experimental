@@ -22,7 +22,7 @@ two scenarios assert the success outcome (``ReverifyE1Outcome.SUCCESS``).
 
 from pytest_bdd import scenarios
 
-from .steps.steps_reverify_e1 import *  # noqa: F403
+from .steps.steps_reverify_e1 import *
 
 
 scenarios("slice_02_reverify_uses_scoped_wrapper.feature")

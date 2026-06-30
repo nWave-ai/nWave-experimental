@@ -52,10 +52,10 @@ observed JSON envelope. NEVER import the production module here.
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from tests.common.in_process_cli import run_cli_in_process
 
 from .slice02_domain_types import (
     AbcContractMember,
@@ -64,12 +64,28 @@ from .slice02_domain_types import (
 )
 
 
-# Repo root -- the subprocess runs ``python -c ...`` with cwd=repo so the
-# production module resolves through the package (post-DELIVER, the module
-# at ``src/des/ports/language_adapter_plugin.py`` will be importable as
+# Repo root -- the in-process snippet runs with cwd=repo so the production
+# module resolves through the package (post-DELIVER, the module at
+# ``src/des/ports/language_adapter_plugin.py`` is importable as
 # ``des.ports.language_adapter_plugin`` via the installed package path or
 # directly via the in-repo src layout).
 _REPO_ROOT = Path(__file__).resolve().parents[5]
+
+
+def _run_py_snippet_in_process(snippet: str, *, cwd: Path) -> tuple[int, str, str]:
+    """Drive a ``python -c <snippet>`` fork IN-PROCESS (corpus-migration-in-process).
+
+    Reuses ``run_cli_in_process`` to ``exec`` the IDENTICAL snippet under ``cwd``
+    with stdout/stderr captured and the snippet's ``sys.exit(n)`` mapped onto the
+    exit code -- behaviour-identical to the fresh-interpreter fork the corpus
+    ran, minus the interpreter spawn. Returns ``(exit_code, stdout, stderr)``.
+    """
+
+    def _exec_snippet(_argv: list[str]) -> int:
+        exec(compile(snippet, "<in-process-snippet>", "exec"), {"__name__": "__main__"})
+        return 0
+
+    return run_cli_in_process([], cwd=cwd, main=_exec_snippet)
 
 
 # Subprocess snippets -- live as module-level constants so they are
@@ -325,45 +341,41 @@ class LanguageAdapterAbcComposition:
     # --- When services -----------------------------------------------------
 
     def when_abc_introspection_runs(self) -> AbcIntrospectionResult:
-        """Run the production ABC introspection as a subprocess.
+        """Run the production ABC introspection IN-PROCESS.
 
-        Invokes ``python -c <snippet>`` with cwd=repo. The snippet imports
-        ``des.ports.language_adapter_plugin.LanguageAdapterPlugin`` and
-        ``scripts.install.plugins.base.InstallationPlugin``, performs the
-        introspection (is_abstract, issubclass, declared-member presence),
-        and prints a JSON envelope. Exits 0 on success, 2 on ImportError.
+        Drives the IDENTICAL ``<snippet>`` (formerly ``python -c <snippet>``,
+        cwd=repo) in-process (corpus-migration-in-process). The snippet imports
+        ``des.ports.language_adapter_plugin.LanguageAdapterPlugin``, performs the
+        introspection (is_abstract, declared-member presence), and prints a JSON
+        envelope. Exits 0 on success, 2 on ImportError (mapped from the
+        snippet's ``sys.exit`` -- behaviour-identical to the fork).
         """
         assert self._abc_query_staged, "abc query not staged"
-        proc = subprocess.run(
-            [sys.executable, "-c", _ABC_INTROSPECTION_SNIPPET],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
+        exit_code, stdout, stderr = _run_py_snippet_in_process(
+            _ABC_INTROSPECTION_SNIPPET, cwd=_REPO_ROOT
         )
         result = AbcIntrospectionResult(
-            exit_code=proc.returncode, stdout=proc.stdout, stderr=proc.stderr
+            exit_code=exit_code, stdout=stdout, stderr=stderr
         )
         self.abc_result = result
         return result
 
     def when_entry_point_conformance_runs(self) -> EntryPointConformanceResult:
-        """Run the production entry-point conformance check as a subprocess.
+        """Run the production entry-point conformance check IN-PROCESS.
 
-        Invokes ``python -c <snippet>`` with cwd=repo. The snippet queries
-        ``importlib.metadata.entry_points(group='nwave.lang.adapter')``,
-        loads each discovered entry-point's class, and verifies each is-a
-        ``LanguageAdapterPlugin`` subclass. Prints a JSON envelope and
-        exits 0 on success, 2 on ImportError.
+        Drives the IDENTICAL ``<snippet>`` (formerly ``python -c <snippet>``,
+        cwd=repo) in-process (corpus-migration-in-process). The snippet queries
+        ``importlib.metadata.entry_points(group='nwave.lang.adapter')``, loads
+        each discovered entry-point's class, and verifies each is-a
+        ``LanguageAdapterPlugin`` subclass. Prints a JSON envelope and exits 0
+        on success, 2 on ImportError (mapped from the snippet's ``sys.exit``).
         """
         assert self._conformance_query_staged, "conformance query not staged"
-        proc = subprocess.run(
-            [sys.executable, "-c", _ENTRY_POINT_CONFORMANCE_SNIPPET],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
+        exit_code, stdout, stderr = _run_py_snippet_in_process(
+            _ENTRY_POINT_CONFORMANCE_SNIPPET, cwd=_REPO_ROOT
         )
         result = EntryPointConformanceResult(
-            exit_code=proc.returncode, stdout=proc.stdout, stderr=proc.stderr
+            exit_code=exit_code, stdout=stdout, stderr=stderr
         )
         self.conformance_result = result
         return result

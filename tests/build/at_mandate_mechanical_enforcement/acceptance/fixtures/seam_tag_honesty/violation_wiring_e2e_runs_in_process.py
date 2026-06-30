@@ -24,7 +24,7 @@ def main(argv):  # stand-in in-process CLI entry so the corpus parses.
     return 0
 
 
-import pytest  # noqa: E402
+import pytest
 
 
 @pytest.mark.wiring_e2e

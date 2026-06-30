@@ -35,6 +35,7 @@ import json
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -133,15 +134,43 @@ _SELF_EXCLUSION_PATHS: tuple[str, ...] = (
     "tests/des/acceptance/fix_oss_environmental_e2e_gate",
 )
 
-# AT-07 pattern: `python -m des.cli.X` in any whitespace variation. Mirrors
-# the regression test's three patterns into one tolerant matcher.
-_PATTERN_MODULE_FORM: re.Pattern[str] = re.compile(r"python3?\s*-m\s+des\.cli\.")
+# AT-07 / AT-10 — P1 (concrete) capture: `python -m des.cli.<module>` where
+# <module> is a real importable module id (lower-snake), NOT a `<glob>`/`*`
+# template. The capture group IS the concrete module suffix; a glob template
+# (`des.cli.<gate>`) fails the `[a-z_]` lookahead and is therefore P1-excluded.
+_CONCRETE_MODULE_FORM: re.Pattern[str] = re.compile(
+    r"python3?\s*-m\s+des\.cli\.([a-z_][a-z0-9_]*)"
+)
 
 # AT-08 pattern: the five legacy `des-{shim}` console-script names. Word-
 # boundary anchored so `des-cli` and `des-roadmap-foo` do NOT match.
 _PATTERN_DES_PREFIXED: re.Pattern[str] = re.compile(
     r"\bdes-(log-phase|init-log|verify-integrity|roadmap|health-check)\b"
 )
+
+# P2 — registry SSOT oracle. Every `module_path` literal declared in the
+# dispatcher's `_REGISTRY` (src/des/cli/__main__.py). Read LIVE from source on
+# every scan (no hardcoded list) so a module that LATER gains a subcommand
+# becomes a migration candidate automatically. `__main__` is the dispatcher,
+# never a registry row, so it can never satisfy P2.
+_REGISTRY_MODULE_LITERAL: re.Pattern[str] = re.compile(
+    r'"(des\.cli\.[a-z_][a-z0-9_]*)"'
+)
+
+# P3 — sanction sentinel. A line, file, or ancestor dir-marker carrying this
+# token sanctions the deliberate-SUT / hermetic-AT module-form callsites the
+# `nw-distill` skill itself prescribes (`python -m des.cli.<gate>` is THE
+# Layer-3 hermetic AT driving port; PATH lookup of the installed binary is not
+# hermetic). The token is greppable + mutation-checkable: delete it and the
+# hit re-appears → the gate bites again (AT-10 is the non-vacuity control).
+_SENTINEL_TOKEN: str = "des:allow-module-form"
+
+# P3 dir-level mechanism: a `.des-allow-module-form` marker file in the hit
+# file's directory or any ancestor (up to the scan base root) sanctions every
+# module-form callsite beneath it. One marker covers a whole deliberate-SUT
+# feature suite without hand-marking each callsite (the file/dir-level rule the
+# feature-delta P3 mechanism sanctions). The marker file carries its own reason.
+_DIR_MARKER_NAME: str = ".des-allow-module-form"
 
 # Extensions scanned. Skill prose (`.md`), test code (`.py`), feature files
 # (`.feature`), shim scripts (no extension, bash + python), config files.
@@ -157,39 +186,89 @@ _SCANNED_EXTENSIONS: tuple[str, ...] = (
 )
 
 
-def _scan_trees_for_patterns(
-    patterns: tuple[re.Pattern[str], ...],
-    exclusions: tuple[str, ...],
-) -> tuple[tuple[str, int, str], ...]:
-    """Recursively scan the runtime-authoring trees and return all hits.
+def _registered_module_paths() -> frozenset[str]:
+    """P2 oracle — the set of registered `des.cli.<X>` module paths (live).
 
-    Returns a tuple of (relpath, lineno, line_text) for every line matching
-    any of the given regex patterns, excluding files under any of the
-    exclusion path prefixes (relpath-prefixed match).
+    Parses the dispatcher source (`src/des/cli/__main__.py`) for every
+    ``"des.cli.<module>"`` registry-row literal. Read from source on each call
+    so the predicate auto-corrects as the registry grows. Returns an empty set
+    only if the dispatcher is unreadable (the scan then reports nothing as a
+    registered-subcommand violation — a loud absence, never a silent pass; the
+    bundle-scan / AT-06 path already guards dispatcher integrity).
     """
-    hits: list[tuple[str, int, str]] = []
-    for tree in _AUTHORING_TREES:
-        tree_root = _REPO_ROOT / tree
+    try:
+        source = _DISPATCHER_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return frozenset()
+    return frozenset(_REGISTRY_MODULE_LITERAL.findall(source))
+
+
+def _ancestor_dir_sanctions(path: Path, base_root: Path) -> bool:
+    """True iff `path`'s directory or an ancestor (up to `base_root`) carries a
+    ``.des-allow-module-form`` marker (P3 dir-level sanction).
+
+    The walk is bounded by `base_root` (inclusive) so a synthetic scan rooted
+    in a tmp dir (AT-10) never reaches a repo-tree marker — preserving the
+    non-vacuity control: an unmarked planted hit stays a violation.
+    """
+    directory = path.parent
+    while True:
+        if (directory / _DIR_MARKER_NAME).is_file():
+            return True
+        if directory == base_root:
+            return False
+        directory = directory.parent
+
+
+def _concrete_registered_module_form(line: str, registered: frozenset[str]) -> bool:
+    """P1 ∧ P2 for one line: a CONCRETE `python -m des.cli.<X>` whose `<X>` is
+    a REGISTERED subcommand module. False for glob templates (P1) or
+    no-subcommand modules (P2)."""
+    match = _CONCRETE_MODULE_FORM.search(line)
+    if match is None:
+        return False
+    return f"des.cli.{match.group(1)}" in registered
+
+
+def _scan_with_predicate(
+    roots: tuple[Path, ...],
+    base_root: Path,
+    exclusions: tuple[str, ...],
+    line_is_candidate: Callable[[str], bool],
+) -> tuple[tuple[str, int, str], ...]:
+    """Scan `roots` for candidate lines that are GENUINE violations.
+
+    A line is a violation iff it is a candidate (caller's predicate) AND it is
+    NOT P3-sanctioned at any granularity: no sentinel token on the line, no
+    sentinel anywhere in the file, no ancestor dir-marker, and the file is not
+    under a path exclusion. Returns `(relpath, lineno, line)` for each
+    violation; relpaths are relative to `base_root`.
+    """
+    violations: list[tuple[str, int, str]] = []
+    for tree_root in roots:
         if not tree_root.exists():
             continue
         for path in sorted(tree_root.rglob("*")):
-            if not path.is_file():
+            if not path.is_file() or path.suffix not in _SCANNED_EXTENSIONS:
                 continue
-            if path.suffix not in _SCANNED_EXTENSIONS:
-                continue
-            relpath = path.relative_to(_REPO_ROOT).as_posix()
+            relpath = path.relative_to(base_root).as_posix()
             if any(relpath == ex or relpath.startswith(ex + "/") for ex in exclusions):
                 continue
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
+            if _SENTINEL_TOKEN in text:  # P3 file-level (covers dir-marker too)
+                continue
+            if _ancestor_dir_sanctions(path, base_root):  # P3 dir-level
+                continue
             for lineno, line in enumerate(text.splitlines(), start=1):
-                for pattern in patterns:
-                    if pattern.search(line):
-                        hits.append((relpath, lineno, line.strip()))
-                        break
-    return tuple(hits)
+                if not line_is_candidate(line):
+                    continue
+                if _SENTINEL_TOKEN in line:  # P3 line-level (redundant w/ file)
+                    continue
+                violations.append((relpath, lineno, line.strip()))
+    return tuple(violations)
 
 
 @dataclass(frozen=True)
@@ -382,31 +461,51 @@ class DesCliComposition:
     def scan_runtime_authoring_trees_for_module_form() -> tuple[
         tuple[str, int, str], ...
     ]:
-        """Return every (relpath, lineno, line) occurrence of `python -m des.cli.X`.
+        """Return every GENUINE `python -m des.cli.X` migration violation.
 
-        AT-07 contract surface. Scans the four runtime-authoring trees
-        (`src/`, `scripts/`, `nWave/`, `tests/`) for the legacy module-form
-        invocation pattern, applying the OQ-3 self-exclusion list.
-        Returns empty tuple on PASS (every callsite migrated).
+        AT-07 contract surface (RESCOPED, slice-04). Scans the four runtime-
+        authoring trees (`src/`, `scripts/`, `nWave/`, `tests/`) and reports a
+        hit only when the rescoped P1∧P2∧P3 predicate holds: P1 the invocation
+        is CONCRETE (a real `des.cli.<module>`, not a `<glob>`/`*` template),
+        P2 `<module>` is a REGISTERED subcommand in the `_REGISTRY` SSOT, and
+        P3 the line/file/ancestor-dir carries NO `# des:allow-module-form`
+        sanction sentinel. No-subcommand modules (P2) and the deliberate-SUT /
+        hermetic-AT driving ports (P3) are therefore NOT violations. The
+        `_SELF_EXCLUSION_PATHS` pre-filter is retained for the self-reference +
+        shim-name-SSOT paths. Returns empty tuple on PASS.
         """
-        return _scan_trees_for_patterns(
-            patterns=(_PATTERN_MODULE_FORM,),
+        registered = _registered_module_paths()
+        return _scan_with_predicate(
+            roots=tuple(_REPO_ROOT / tree for tree in _AUTHORING_TREES),
+            base_root=_REPO_ROOT,
             exclusions=_SELF_EXCLUSION_PATHS,
+            line_is_candidate=lambda line: _concrete_registered_module_form(
+                line, registered
+            ),
         )
 
     @staticmethod
     def scan_runtime_authoring_trees_for_des_prefixed_shims() -> tuple[
         tuple[str, int, str], ...
     ]:
-        """Return every (relpath, lineno, line) occurrence of `des-{shim}` tokens.
+        """Return every GENUINE legacy `des-{shim}` migration violation.
 
-        AT-08 contract surface. Scans the four runtime-authoring trees for
-        the five legacy `des-*` console-script names. Returns empty tuple
-        on PASS (every callsite migrated).
+        AT-08 contract surface (RESCOPED, slice-04). Scans the four runtime-
+        authoring trees for the five legacy `des-*` console-script names. A
+        `des-{shim}` token is a violation only when it carries NO
+        `# des:allow-module-form` sanction sentinel (P3, at line / file /
+        ancestor-dir granularity) and is not under a `_SELF_EXCLUSION_PATHS`
+        prefix — so a shim NAME referenced in prose/docstring/comment for
+        history or the shim-resolver's own parameter domain is NOT a violation.
+        Returns empty tuple on PASS.
         """
-        return _scan_trees_for_patterns(
-            patterns=(_PATTERN_DES_PREFIXED,),
+        return _scan_with_predicate(
+            roots=tuple(_REPO_ROOT / tree for tree in _AUTHORING_TREES),
+            base_root=_REPO_ROOT,
             exclusions=_SELF_EXCLUSION_PATHS,
+            line_is_candidate=lambda line: (
+                _PATTERN_DES_PREFIXED.search(line) is not None
+            ),
         )
 
     @staticmethod
@@ -418,6 +517,75 @@ class DesCliComposition:
         in the scan would self-defeat the gate.
         """
         return _SELF_EXCLUSION_PATHS
+
+    # ---- slice-04 negative-control port (AT-10 non-vacuity) --------------
+
+    @staticmethod
+    def plant_unmarked_module_form_invocation(
+        root: Path, subcommand_module: str
+    ) -> Path:
+        """Write a synthetic NON-test authoring file under ``root`` carrying one
+        UNMARKED module-form invocation of a registered subcommand.
+
+        AT-10 precondition setup (slice-04). The written file is a synthetic
+        runtime-authoring emit — NOT a test, and it carries NO
+        ``# des:allow-module-form`` sanction sentinel — so under the rescoped
+        rule it is P1✓ concrete, P2✓ registered (caller passes a registered
+        ``des.cli.<X>`` module suffix), P3✗ unmarked → a genuine violation the
+        rescoped scan MUST still report. This is pure INPUT-STATE setup: it
+        plants the violation the negative control detects; NO production
+        classification logic lives here. Returns ``root``.
+
+        The module-form token is assembled from parts so this composition
+        source file never holds the contiguous ``python -m des.cli.`` literal
+        (defence-in-depth; the suite directory is already self-excluded).
+        """
+        authoring_file = root / "generated_authoring" / "emit_invocation.py"
+        authoring_file.parent.mkdir(parents=True, exist_ok=True)
+        invocation = " ".join(
+            ("python", "-m", "des.cli." + subcommand_module, "--help")
+        )
+        authoring_file.write_text(
+            "# synthetic runtime-authoring emit -- NOT a test, NO sanction sentinel\n"
+            f"INVOCATION = {invocation!r}\n",
+            encoding="utf-8",
+        )
+        return root
+
+    @staticmethod
+    def scan_directory_for_unmarked_registered_module_form(
+        root: Path,
+    ) -> tuple[tuple[str, int, str], ...]:
+        """Apply the rescoped P1∧P2∧P3 migration-violation predicate under ``root``.
+
+        AT-10 contract surface (slice-04 negative control / Earned-Trust probe).
+        Returns every ``(relpath, lineno, line)`` under ``root`` that is a
+        GENUINE migration violation under the rescoped rule:
+
+          P1 — concrete ``des.cli.<module>`` (not a ``<glob>``/``*`` template),
+          P2 — ``des.cli.<module>`` is a registered subcommand in ``_REGISTRY``
+               (read from ``src/des/cli/__main__.py``; ``__main__`` excluded),
+          P3 — the line carries NO ``# des:allow-module-form: <reason>`` sentinel.
+
+        Non-empty == the rescoped gate STILL bites (mutation-checkable
+        non-vacuity). Empty against a planted unmarked-registered hit would
+        prove the rescope went vacuously green.
+
+        Applies the SAME rescoped P1∧P2∧P3 predicate as the AT-07 scan, but
+        rooted at ``root`` (a synthetic tmp fixture) with NO path exclusions
+        and the dir-marker walk bounded by ``root`` — so a planted, unmarked,
+        concrete, registered-subcommand module-form invocation is reported,
+        proving the rescope is not vacuously green.
+        """
+        registered = _registered_module_paths()
+        return _scan_with_predicate(
+            roots=(root,),
+            base_root=root,
+            exclusions=(),
+            line_is_candidate=lambda line: _concrete_registered_module_form(
+                line, registered
+            ),
+        )
 
     # ---- slice-03 package-surface port (AT-09 pyproject scripts) --------
 

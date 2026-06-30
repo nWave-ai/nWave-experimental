@@ -1,19 +1,43 @@
 ---
 name: nw-distill
-description: "Acceptance test creation methodology for the DISTILL wave. Domain knowledge for the acceptance designer agent: port-to-port principle, prior wave reading, wave-decision reconciliation, graceful degradation, and document back-propagation."
+description: "Acceptance test creation methodology for the DISTILL wave (recomposing core). DISTILL identity + induction map + gate-G design↔AT coherence rubric + the mandatory final wave review gate. Lean core that COMPOSES the narrow nw-distill-* modules and the nw-test-design-mandates-* family; deep domain knowledge lives in those modules, not re-inlined here."
 user-invocable: true
 argument-hint: '[story-id] - Optional: --test-framework=[cucumber|specflow|pytest-bdd] --integration=[real-services|mocks]'
 ---
 
-# DISTILL Methodology: Acceptance Test Creation
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
 
-This skill provides the acceptance designer's methodology for creating acceptance tests. The orchestrator controls the overall flow (agent dispatch, review gate, handoff) -- this skill focuses on HOW to create good acceptance tests.
+<!-- gates-ref: distill -->
+<!-- outputs-ref: distill -->
 
-## LANGUAGE CONVENTION FRAME (read FIRST — overrides all examples below)
+The DISTILL gate stack and output contract live ONCE in the wave-contract registry
+`nWave/waves/distill.yaml` — the `gates-ref` / `outputs-ref` pointers above name it.
+This skill does not re-enumerate the gate stack inline; it POINTS at the registry.
 
-**Code examples in this skill use Python syntax for illustration only.** They are NOT prescriptive about target language. nWave is language-agnostic per the "genericity and agnosticism" mandate (2026-05-24).
+# DISTILL Methodology: Acceptance Test Creation (recomposing core)
 
-**Before authoring ATs**, detect the target project's language from these manifest files (in order):
+Acceptance-designer methodology. Orchestrator owns flow (agent dispatch, review gate, handoff); this skill owns the DISTILL-specific orchestration knowledge and ROUTES the deep domain knowledge to narrow modules.
+
+This core holds the cross-cutting DISTILL concerns — identity (ADR-025 authorship, language frame), the density-aware output contract, the 3-source induction map, the gate-G coherence rubric, and the mandatory final wave review gate — and COMPOSES the narrow `nw-distill-*` modules plus the `nw-test-design-mandates-*` family. The canonical definitions of test mechanics (Mandates 8-15, PBT/Universe, two-tier, polyglot, DSL, dormant-seam) live in the mandate family — this core does not re-inline them.
+
+## Composition (load by trigger)
+
+| Module | Kind | Trigger — load when... | Covers |
+|---|---|---|---|
+| `nw-distill-prior-wave-reading` | PROCEDURE | BEFORE writing any scenario — reconciling prior-wave SSOT + feature-delta | Prior Wave Reading, Wave-Decision Reconciliation HARD GATE, Graceful Degradation, Advisory-Skip-Gate Pattern + DESIGN-absent/Total-AT advisories, back-propagation |
+| `nw-distill-feature-delta-schema` | KNOWLEDGE | authoring or validating a `feature-delta.md` section's TABLE FORMAT / scaffold | Feature-Delta Schema (US-01/02), canonical 4-column commitments table, E1+E2 validator rules, incremental authoring |
+| `nw-distill-port-treatment-policy` | KNOWLEDGE | classifying a port → test treatment + concrete mechanism for THIS codebase | Port-to-Port AC, Architecture of Reference, Project Infrastructure Policy, Walking Skeleton Strategy + canonical WS definition |
+| `nw-distill-red-scaffolding` | PROCEDURE | making ATs RED-ready + classifying RED-vs-BROKEN before DELIVER | Mandate-7 RED-Ready Scaffolding, per-language scaffold recipes, Pre-DELIVER fail-for-right-reason gate, lazy expansion templates |
+| `nw-distill-coverage-obligations` | PROCEDURE | verifying adapter / driving-port / dormant-seam / outcome coverage at gate-OUT | Driving Adapter Verification, Adapter Scenario Coverage, Adapter Integration Slice, Register Outcomes, Self-Review Checklist, scenario-writing guidelines |
+| `nw-test-design-mandates` (+ `-scenario-design` / `-layered-mechanics` / `-composition-contract`) | KNOWLEDGE | choosing scenario SHAPE, test MECHANICS, or the AT's driving-surface CONTRACT | Mandates 1-15, 3 Pillars, Universe/PBT mode, two-tier, polyglot matrix, SSOT-via-types DSL, dormant-seam — the canonical SSOT for all test-design mandates |
+
+Load path: `~/.claude/skills/nw-{module}/SKILL.md`. Load the module whose trigger matches your current moment; the triggers partition the DISTILL knowledge-space — every section lives in exactly one module. Do NOT re-inline a module's content into this core.
+
+## LANGUAGE CONVENTION FRAME (read FIRST — overrides all examples in the modules)
+
+**Code examples in nw-distill modules: target-language-illustration ONLY.** NOT prescriptive about target language. nWave is language-agnostic per the "genericity and agnosticism" mandate (2026-05-24).
+
+**Before authoring ATs**, detect target project language from these manifest files (in order):
 - `package.json` → TypeScript / JavaScript (jest, vitest, cucumber-js, playwright)
 - `Cargo.toml` → Rust (cargo test, proptest, cucumber-rust)
 - `go.mod` → Go (testing, ginkgo, godog)
@@ -23,40 +47,45 @@ This skill provides the acceptance designer's methodology for creating acceptanc
 - `Gemfile` → Ruby (RSpec, Cucumber-Ruby)
 - `Package.swift` → Swift (XCTest, swift-testing)
 
-**When the target language is NOT Python**:
-1. Adapt EVERY code example to the target language's conventions (naming, imports, type system, test-framework idioms, file extensions).
-2. Replace Python-specific imports (`from pytest_bdd import ...`, `from hypothesis import ...`, `import dataclasses`) with target-language equivalents (`import { Given, When, Then } from '@cucumber/cucumber'`, `import * as fc from 'fast-check'`, etc.).
-3. Replace Python type hints (`def f(x: int) -> str`) with target-language type syntax.
-4. Replace Python directory conventions (`tests/`, `__init__.py`) with target conventions (`test/`, `__tests__/`, no init files for TS/JS).
-5. Replace Python class/function syntax (`class Customer:`, `def given_port():`) with target equivalents.
+**Target language NOT Python** — adapt EVERY code example to target-language conventions (naming, imports, type system, test-framework idioms, file extensions, directory conventions). **Project conventions ALWAYS WIN** over module examples: a repo with 50 TS files and zero Python files → ATs MUST be TypeScript, never Python pytest-bdd, however authoritative a module example looks.
 
-**Project conventions ALWAYS WIN** over examples below. If the user's repo has 50 TS files using `describe()/it()` blocks and zero Python files, ATs MUST be TypeScript with `describe()/it()` — never Python pytest-bdd regardless of how authoritative this skill's examples look.
+**Empirical anchor**: Python-only examples once caused the LLM to infer Python conventions universal, emitting Python code in a greenfield TS project. Connects [[feedback_language_adapter_plugin_architecture_2026_05_24]] (genericity mandate) + F-LANGUAGE-ADAPTER-PLUGIN-INFRASTRUCTURE epic.
 
-**Empirical anchor**: skill examples being Python-only caused LLM to infer Python conventions universal, leading to Python code emitted in greenfield TS project. Connects [[feedback_language_adapter_plugin_architecture_2026_05_24]] (genericity mandate) + F-LANGUAGE-ADAPTER-PLUGIN-INFRASTRUCTURE epic.
+## Reasoning Mandate (Caveman)
+
+Verdict-first, tables over prose, evidence-dense, zero narrative. Depth comes from rigor, not padding. State the conclusion, then the supporting evidence; never bury the verdict under exposition.
+
+Acceptance-designer working prose + reports = caveman: verdict-first, tables, zero narrative. Depth modulated by `rigor` profile, never by padding (D-caveman, Ale 2026-06-10).
 
 ## ADR-025 (2026-05-07) — DISTILL is canonical AT author
 
-DISTILL produces ALL acceptance tests as scaffolded RED (skip/pending markers). DELIVER's 3-phase cycle (RED / GREEN / COMMIT, per ADR-025) does NOT re-author ATs in RED — it only unskips the scaffolds and writes PBT unit tests. Wave separation: DISTILL = "what should the system do" (ATs), DELIVER = "how" (PBT unit + impl). The pre-DELIVER fail-for-right-reason gate (described in this skill) becomes the RED phase entry/exit gate in DELIVER per ADR-025 D2.
+DISTILL produces ALL ATs as **active-RED scaffolds** — RUN + raise `AssertionError` (impl missing), NOT `@skip`/`@pending` (per ADR-GV-001 D6). DELIVER 3-phase cycle (RED / GREEN / COMMIT, ADR-025) does NOT re-author ATs in RED — makes active-RED scaffolds GREEN via production code. Wave separation: DISTILL = "what should the system do" (ATs) · DELIVER = "how" (PBT unit + impl).
+
+**atdd_pure (the path)**: per-slice JIT — current slice scenarios active-RED (run + raise `AssertionError`); future-slice scenarios ABSENT from disk. No `@skip` ever: absent (future slice) or active-RED (current slice). <!-- mode-ref-ok -->
+
+Pre-DELIVER fail-for-right-reason gate (`nw-distill-red-scaffolding`) = DELIVER RED-phase entry/exit gate per ADR-025 D2.
 
 ## Output Tiers (per D2)
 
-Provenance: feature `lean-wave-documentation` — D2 (schema-typed sections), D10 (one-line expansion descriptions). Tier-1 [REF] sections (always emitted) + Tier-2 EXPANSION CATALOG items (lazy, on-demand) are the two output bands. The `.feature` file remains the SSOT for scenarios; the wave-delta sections are pointers + structured summaries. Full contract: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
+Provenance: feature `lean-wave-documentation` — D2 (schema-typed sections), D10 (one-line expansion descriptions). Two output bands: Tier-1 [REF] sections (always emitted) + Tier-2 EXPANSION CATALOG items (lazy, on-demand). `.feature` file = scenario SSOT; wave-delta sections = pointers + structured summaries. Full contract: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
 
 ### Tier-1 [REF] — always emitted
 
 Under `## Wave: DISTILL / [REF] <Section>` headings:
 
-- Scenario list with tags — table of scenario titles + tags (`@walking_skeleton`, `@US-N`, `@real-io`, `@in-memory`, `@error`, `@property`)
-- WS strategy — A/B/C/D selection per Mandate 5 with one-line justification
-- Adapter coverage table — per Mandate 6, every driven adapter mapped to at least one `@real-io` scenario
-- Scaffolds — list of RED-ready scaffold files created (per Mandate 7) with `__SCAFFOLD__` markers
-- Test placement — `tests/{path}/` directory choice with one-line precedent justification
-- Driving Adapter coverage — every CLI/endpoint/hook in DESIGN mapped to at least one subprocess/HTTP/hook scenario
-- Pre-requisites — DESIGN driving ports + DEVOPS environment matrix the scenarios depend on
+| Section | Content |
+|---|---|
+| Scenario list | titles + tags (`@walking_skeleton`, `@US-N`, `@real-io`, `@in-memory`, `@error`, `@property`) + **Real-Surface Binding** column (NEW features): each scenario names the shipped artifact / real entry point it touches — repo file path (`nWave/...`), subprocess (`des <subcommand>`), or production composition root. Declarative now, AST-detector-verifiable later; ties the assertion to a shipped artifact / observed effect per the Driving-Port-Only mandate (SSOT: `nw-test-design-mandates-composition-contract`). Schema: `schemas/feature-delta-tier1-sections.yaml` (rule R4, provisional). |
+| WS strategy | port-class treatment per `nw-distill-port-treatment-policy`, one-line justification |
+| Adapter coverage table | every driven adapter → ≥1 `@real-io` scenario (`nw-distill-coverage-obligations`) |
+| Scaffolds | RED-ready files (`nw-distill-red-scaffolding`) with `__SCAFFOLD__` markers |
+| Test placement | `tests/{path}/` choice, one-line precedent justification |
+| Driving Adapter coverage | every CLI/endpoint/hook in DESIGN → ≥1 subprocess/HTTP/hook scenario |
+| Pre-requisites | DESIGN driving ports + DEVOPS environment matrix dependencies |
 
 ### Tier-2 EXPANSION CATALOG — lazy, on-demand (per D10)
 
-Rendered under `## Wave: DISTILL / [WHY|HOW] <Section>` only when requested via `--expand <id>` (DDD-2), the wave-end menu (`expansion_prompt = "ask"`), `mode = "full"` auto-expansion, or an ad-hoc user request mid-session.
+Rendered under `## Wave: DISTILL / [WHY|HOW] <Section>` only when requested via `--expand <id>` (DDD-2), wave-end menu (`expansion_prompt = "ask"`), `mode = "full"` auto-expansion, or ad-hoc user request mid-session.
 
 | Expansion ID | Tier label | One-line description |
 |---|---|---|
@@ -65,973 +94,253 @@ Rendered under `## Wave: DISTILL / [WHY|HOW] <Section>` only when requested via 
 | `edge-case-enumeration` | [WHY] | Full edge-case taxonomy: empty/null/boundary/concurrency/timeout/permission |
 | `error-path-rationale` | [WHY] | Why each `@error` scenario was chosen and what failure mode it surfaces |
 | `tagging-cookbook` | [HOW] | Cookbook for tag application: `@property`, `@requires_external`, `@walking_skeleton` |
-| `scaffold-authoring-recipes` | [HOW] | Per-language scaffold recipes (Python, TS, Go, Rust, Java) with marker conventions |
+| `scaffold-authoring-recipes` | [HOW] | Per-language scaffold recipes — defined in `nw-distill-red-scaffolding` |
 | `pbt-strategy-notes` | [WHY] | Property-based testing strategies for invariants surfaced by the feature |
 | `expansion-catalog-rationale` | [WHY] | Why this set of expansions, why these defaults, why D10 enforces one-line descriptions |
-| `domain-language-fact-to-step-table` | [HOW] | Soft gate: agent proposes fact→step-name pairs for user review before committing step-method names to code |
-| `policy-bootstrap-template` | [HOW] | `docs/architecture/atdd-infrastructure-policy.md` bootstrap snippet emitted on first DISTILL in a project |
-| `tier-b-state-machine-template` | [HOW] | State-machine PBT skeleton for Tier B in-memory journey testing (Mandate 10) |
+| `domain-language-fact-to-step-table` | [HOW] | Soft gate: agent proposes fact→step-name pairs for user review before committing step-method names to code (`nw-distill-red-scaffolding`) |
+| `policy-bootstrap-template` | [HOW] | `docs/architecture/atdd-infrastructure-policy.md` bootstrap snippet — defined in `nw-distill-port-treatment-policy` |
+| `tier-b-state-machine-template` | [HOW] | State-machine PBT skeleton for Tier B in-memory journey testing (Mandate 10, `nw-test-design-mandates-layered-mechanics`) |
 
 ## Density resolution (per D12)
 
-Call `resolve_density(global_config)` from `scripts/shared/density_config.py` after reading `~/.nwave/global-config.json` (missing/malformed = empty dict). Returns `mode` (`"lean"` | `"full"`) + `expansion_prompt` (`"ask"` | `"always-skip"` | `"always-expand"` | `"smart"`) per the D12 cascade (resolver-internal, DDD-5 — do NOT replicate locally). Branch on `density.mode` for what to emit; branch on `density.expansion_prompt` at wave end for menu behaviour. Full cascade detail, branch semantics, ad-hoc override workflow: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
+Call `resolve_density(global_config)` from `scripts/shared/density_config.py` after reading `~/.nwave/global-config.json` (missing/malformed = empty dict). Returns `mode` (`"lean"` | `"full"`) + `expansion_prompt` (`"ask"` | `"always-skip"` | `"always-expand"` | `"smart"`) per D12 cascade (resolver-internal, DDD-5 — do NOT replicate locally). Branch on `density.mode` for emission; on `density.expansion_prompt` at wave end for menu. Full cascade, branch semantics, ad-hoc override: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
 
 ## Telemetry (per D4 + DDD-6)
 
-Every expansion choice emits a `DocumentationDensityEvent` (dataclass at `src/des/domain/telemetry/documentation_density_event.py`) via `event.to_audit_event()` → `JsonlAuditLogWriter().log_event(...)`. Schema fields per D4: `feature_id`, `wave`, `expansion_id`, `choice`, `timestamp`. For this wave the schema declares `"wave": "DISTILL"`. Use helper `scripts/shared/telemetry.py:write_density_event(...)` — do NOT write JSONL directly.
+Every expansion choice → `DocumentationDensityEvent` (dataclass `src/des/domain/telemetry/documentation_density_event.py`) via `event.to_audit_event()` → `JsonlAuditLogWriter().log_event(...)`. D4 schema fields: `feature_id`, `wave`, `expansion_id`, `choice`, `timestamp`. This wave: `"wave": "DISTILL"`. Use helper `scripts/shared/telemetry.py:write_density_event(...)` — do NOT write JSONL directly.
 
-Wave-specific signal: DELIVER consuming a lean DISTILL feature-delta — downstream `--expand` for fixture-design or edge-case enumeration indicates the `[REF]` baseline plus the `.feature` file was insufficient for the crafter. Full emission rules: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
+Wave-specific signal: DELIVER consuming a lean DISTILL feature-delta — downstream `--expand` for fixture-design or edge-case enumeration = `[REF]` baseline + `.feature` file insufficient for the crafter. Full emission rules: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
 
-## Feature-Delta Schema (US-01, US-02)
+## Induce, do not reinvent — the 3-source induction map (JOB-025)
 
-Provenance: `unified-feature-delta` US-01 (scaffold command) and US-02 (E1+E2 validator rules).
+Once `nw-distill-prior-wave-reading` has consumed the design's code-design contract (the
+code-design section read during prior-wave reading), the acceptance tests are not authored from
+intuition — **the acceptance-designer induces the acceptance tests from the design
+contract**. The AT structure is a function of the contract, derived through a
+fixed 3-source induction map rather than reinvented per feature. Each source row
+of the contract induces a specific AT obligation:
 
-Every `feature-delta.md` is a Markdown document with `## Wave: <NAME>` sections. The canonical table format must be used in every `### [REF] Inherited commitments` block.
-
-### Scaffold command
-
-```
-nwave-ai init-scaffold --feature <feature-name>
-```
-
-Creates `docs/feature/<feature-name>/feature-delta.md` with three pre-populated wave sections (DISCUSS, DESIGN, DISTILL), each containing a ready-to-fill commitments table. The scaffold passes the E1+E2 validator immediately.
-
-### Canonical table format
-
-Every `### [REF] Inherited commitments` block MUST have exactly four columns in this order:
-
-```markdown
-## Wave: DISCUSS
-
-### [REF] Inherited commitments
-
-| Origin | Commitment | DDD | Impact |
-|--------|------------|-----|--------|
-| n/a | <commitment text> | n/a | <impact text> |
-```
-
-Column semantics:
-- **Origin**: wave and row reference of the upstream commitment (e.g., `DISCUSS#row1`) or `n/a` for root commitments
-- **Commitment**: the specific commitment inherited or newly introduced in this wave
-- **DDD**: Design Decision Document reference that authorizes any change (e.g., `DDD-3`) or `n/a` / `(none)` when not applicable
-- **Impact**: substantive description (>=10 words or a consequence verb from the verb list) of the commitment's effect on the system
-
-### Validator rules (E1+E2)
-
-- **E1 (SectionPresent)**: every `## Wave: <NAME>` heading must match the canonical pattern. Known wave names: DISCOVER, DISCUSS, DESIGN, DEVOPS, DISTILL, DELIVER. Near-misses get a did-you-mean suggestion.
-- **E2 (ColumnsPresent)**: every `### [REF] Inherited commitments` block must have a header row with the four required columns (Origin, Commitment, DDD, Impact) in any order, case-insensitive.
-
-### Incremental authoring
-
-Sections for waves not yet authored may be omitted entirely. The validator does not require all six wave sections to be present. An incremental feature-delta with only DISCUSS is valid. Missing future-wave sections are never flagged.
-
-## Acceptance Criteria: Port-to-Port Principle
-
-Every AC MUST name the driving port (entry point) through which the behavior is exercised. This enables port-to-port acceptance tests that make TBU (Tested But Unwired) defects structurally impossible.
-
-Each AC includes:
-1. **Observable outcome**: what the user/system sees
-2. **Driving port**: the entry point that triggers the behavior (service, handler, endpoint, CLI command)
-
-Without the driving port, a crafter can write correct code that is never wired into the system.
-
-**Features**: "When user {action} via {driving_port}, {observable_outcome}"
-**Bug fixes**: "When {trigger}, {modified_code_path} produces {correct_outcome} instead of {current_broken_behavior}"
-
-## Translating Gherkin to Property-Based Tests (state-delta + Universe)
-
-**Layer constraint** (per `nw-test-design-mandates` Mandate 9): this recipe applies ONLY to layers 1-2 (unit, in-memory acceptance with in-memory doubles). For subprocess / FS acceptance and integration tests (layers 3+), use example-only with `assert_state_delta` for the universe guard (Mandate 8) — sad paths stay enumerated, never PBT-generated (Mandate 11).
-
-Per the Paradigm Mandate (PBT + state-delta is the default for unit + in-memory acceptance), DISTILL outputs `Property:` framings, not classic `Scenario:` examples, whenever the spec is quantifiable AND the test runs at layer 1-2. Single-example `Scenario:` is FALLBACK — use when the property cannot be expressed (one-off regression repro) OR when the scenario runs at layer 3+ (real adapter, subprocess, integration, WS).
-
-### Recipe
-
-1. **Take the `Scenario:`**: identify pre-condition, action, post-condition.
-2. **Identify the Universe** (layer-specific — see `nw-tdd-methodology` Layered test discipline matrix):
-   - Acceptance: use-case observable outcomes at driving port (events emitted, state on driven-port double, error class)
-   - Walking Skeleton: user-visible end-to-end output (stdout, exit code, FS side-effects)
-3. **Quantify the precondition**: from "a feature task exists" → `forall task in tasks where task.type in {feature, fix}` via Hypothesis `@given(strategy)`.
-4. **Express the invariant**: instead of "the row's DELIVER cell shows `[in-progress] phase: GREEN`", state "for every task entered into DELIVER GREEN phase, the row's DELIVER cell renders status=in-progress with phase name visible".
-5. **Frame as `Property:`** in the `.feature` file:
-   ```gherkin
-   @property @driving_port @us-XX
-   Property: Operator sees in-progress phase for every task entered into a wave
-     Given a workflow definition with named phases
-     When for every task that emits PhaseEntered with phase=P, wave=W via the driving port
-     Then the operator sees a row whose W cell renders status=in-progress with phase=P
-     And the cell shape is invariant across {feature, fix, spike} task types
-   ```
-6. **Build the step-defs** with `@given` Hypothesis strategies + `assert_state_delta(before, after, universe, expected)` — universe entries are port-exposed names, never internal fields.
-
-### Example (good vs bad Universe)
-
-```python
-# GOOD — port-exposed observable Universe
-universe = {
-    "events.PhaseEntered.emitted_count",
-    "board.rows[task_id].cells[wave].status",
-    "board.rows[task_id].cells[wave].phase",
-}
-
-# BAD — internal-field Universe (refactor breaks)
-universe = {
-    "BoardProjection._rows_cells_dict",
-    "BoardProjection._rows_workflow_columns",
-}
-```
-
-The bad Universe couples the test to private mutation details. Renaming `_rows_cells_dict` to `_cells_by_task` reds the test for an implementation rename — a refactoring-hostile signal.
-
-### Walking Skeleton vs general acceptance
-
-- 1-2 `@walking_skeleton @wiring_e2e` scenarios per slice, via subprocess + real I/O, prove wiring once.
-- The rest of `Property:` scenarios run via driving-port direct invocation with in-memory doubles for driven ports (~10ms each). Fast feedback for the use-case logic.
-
-### State-machine PBT trigger (Hebert ch.11)
-
-State machine properties are for when the **model itself** is a state machine, not the system. If you can describe the SUT's behaviour by a state machine model with command/postcondition pairs, use stateful PBT. If not, use regular `FORALL` with property-based assertions.
-
-This sharpens the earlier heuristic ("users perceive distinct states"): the trigger is about the *model shape* you can write, not the user's perception. A circuit-breaker policy is a state-machine model (ok / tripped / blocked + transitions); a sort function is not, even if its internal state has phases.
-
-### Negative testing workflow (Hebert ch.6)
-
-Hebert ch.6 — to surface under-specification, deliberately RELAX assumptions in the test (e.g., remove a precondition, widen the input domain). If the property still holds, you've over-specified. If it fails on inputs you'd expect to be valid, the spec is incomplete. Apply when an existing property never fails — the property may be vacuously true.
-
-Workflow:
-1. Start with a happy-path property suite (positive tests).
-2. Pick one assumption the suite relies on (e.g. "prices are numeric", "items list is non-empty").
-3. Write a new property that relaxes that assumption.
-4. Run. A crash signals (a) a real bug, (b) an under-specified contract that should fail deliberately with a clear error, or (c) a place the spec needs tightening.
-5. Repeat per assumption.
-
-The negative-testing pattern is the property-level instrument for the "inputs validated at boundaries" mandate from the production-grade quality bar.
-
-## Architecture of Reference (ports & adapters — project-level defaults)
-
-Three classes of ports, each with a default test treatment. This table is PROJECT-LEVEL, decided once per project (typically during DESIGN of the first feature, or at framework adoption time). It is NOT renegotiated per feature. The agent applies these defaults; the per-feature decision is the MECHANISM (see Project Infrastructure Policy below), not the treatment.
-
-| Port type | Examples | Default in test |
+| Contract source | Induces | Correspondence |
 |---|---|---|
-| **Driving** (entry point) | HTTP API, CLI, in-process call, hook | Real adapter (test host, CLI runner, app via DI container) |
-| **Driven internal** (shared state) | Repository, read model, application cache | Real adapter via the mechanism declared in the project Infrastructure Policy |
-| **Driven external / non-deterministic** | Clock, email, SMS, push, payment, LLM, third-party API | Fake/stub with output capture (so a `Then` can observe the side effect) |
+| **Slice Plan** (`[REF] Slice Plan` rows) | the AT scaffold per slice | ATs are scaffolded per-slice per the Slice Plan enumeration, active-RED never skipped |
+| **Example tables** (the scenario examples carried in the contract) | the Given-When-Then scenarios | every example-table row maps to exactly one Given-When-Then scenario |
+| **Contract shape** (declared laws + error-encodings on each component) | the property tests + sad-path scenarios | a declared law induces at least one property test; a declared error-encoding induces a sad-path scenario |
 
-This table replaces the earlier per-feature Walking Skeleton Strategy A/B/C/D choice. The decision is structural — port CLASS implies port TREATMENT — and the per-project Infrastructure Policy specializes the mechanism for each treatment.
+Reading the map:
 
-If a port cannot be classified by the agent, ask the user with a soft prompt — do not improvise the classification.
+- **Slice Plan → AT scaffold.** The contract's Slice Plan enumeration is the
+  authority for which scenarios exist on disk in the current slice. ATs are
+  scaffolded per-slice per the Slice Plan enumeration, active-RED never skipped —
+  the current slice's scenarios run and fail for the right reason; future-slice
+  scenarios are absent, never `@skip`'d into dormancy.
+- **Example table → scenario (1:1).** every example-table row maps to exactly one
+  Given-When-Then scenario. The bijection forbids both dropping a row (silent
+  coverage loss) and fabricating a scenario the contract never authored.
+- **Contract shape → treatment.** The design's code-design contract declares each
+  component's contract shape (pure-function, bounded-change,
+  unbounded-preservation) with its laws and error-encodings. a declared law
+  induces at least one property test; a declared error-encoding induces a sad-path
+  scenario. The treatment is induced, not guessed: a law without a property test,
+  or an error-encoding without a sad path, is an induction gap.
 
-## Project Infrastructure Policy
+This is the gate-IN consume discipline: the design contract is the input, the AT
+set is the induced output, and the correspondence above is the witness that no AT
+was reinvented and no contract obligation was dropped.
 
-The Architecture of Reference fixes the **port class → test treatment** defaults. The Project Infrastructure Policy specializes those defaults with the **concrete mechanism** used in THIS codebase (Testcontainers vs dedicated env vs in-memory; which fake class). The decision is made **once per project, not per feature**.
+## The gate-G review-rubric — design↔AT coherence at DISTILL gate-OUT (JOB-025)
 
-### File location and structure
+Gate-IN induces the AT set from the contract; gate-OUT proves the induced set is
+coherent with it. The rubric named here is the witness: the gate-G review-rubric
+witnesses the design to AT coherence at DISTILL gate-OUT. It is the
+reviewer-facing checklist (Sentinel runs it on the
+DISTILL output before the DELIVER handoff) that walks the induction map backwards:
+for every obligation the design's code-design contract declared, the rubric asks
+"is there exactly one corresponding AT, and does that AT trace to a real contract
+row?". The rubric witnesses coherence; it never re-authors the AT set and it never
+emits an authorizing YES — a clean run is "no incoherence found", and the human GO
+is still required.
 
-Lives at `docs/architecture/atdd-infrastructure-policy.md` (project-local). Three tables, one per port class, columns: `Port | Mechanism | Note`.
+The gate-G rubric is a SKILL-normative checklist, not a second AST parser. The
+mechanical fact-queries it leans on (which contract rows exist, which scenarios
+exist, which property declarations carry a verdict) are delegated to the shared
+code-fact provider rather than re-implemented here — the rubric describes WHAT
+coherence means; the provider answers the factual sub-questions. The rubric's job
+is the judgement: matching obligations to ATs and emitting one of the verdicts
+below.
 
-```markdown
-# ATDD Infrastructure Policy
+### DEVOPS-induced scenarios are first-class
 
-## Driving
-| Port | Mechanism | Note |
+The induction map's three sources (Slice Plan, Example tables, Contract shape) are
+not the only legitimate origin for a scenario. **DEVOPS-induced scenarios are
+first-class and trace to the DEVOPS status, not to a missing design row** — a
+scenario that exists because the DEVOPS wave declared an infrastructure constraint
+is fully coherent even though no `[REF]`-prefixed design row induced it. The gate-G
+rubric therefore tests provenance, not bare presence: an AT with no inducing design
+row is NOT automatically an over-author finding — first check whether it traces to
+the DEVOPS status. Only a scenario that traces to neither a design obligation nor
+the DEVOPS status is a fabrication.
+
+### No-coupling — an ambiguous port-shaped coupling is UNVERIFIED, never a silent pass
+
+Coherence is symmetric: as the rubric forbids dropping a contract obligation, it
+also forbids an AT reaching past the contract. The rule is that an AT coupling to a
+port-shaped surface not yet on the contract is UNVERIFIED, never a silent pass —
+when a
+scenario drives or asserts against a port the design contract has not yet declared,
+the rubric cannot confirm the coupling is intended, so it must surface UNVERIFIED
+and route the ambiguity back into the wave for resolution (extend the contract, or
+retarget the AT). The forbidden outcome is treating an un-contracted coupling as
+incidentally fine and letting it pass green; suspected-incompleteness of the
+contract is the same class — UNVERIFIED, not pass.
+
+### §17 — the gate-G verdict mapping (five verdicts, never a sixth)
+
+The gate-G rubric encodes each coherence outcome to exactly one of five verdicts.
+This closed set is the §17 error-encoding mapping the design contract declares for
+this gate:
+
+| Verdict | When the rubric emits it | Routing |
 |---|---|---|
-| HTTP API | WebApplicationFactory<Program> | |
-| CLI | subprocess from tmp_path | |
+| **PASS** | every contract obligation has its one inducing AT, every AT traces to a contract row or the DEVOPS status | no objection — proceed to the human GO |
+| **FAIL** | an un-covered contract row (a declared obligation with no inducing AT) | redo-in-wave: author the missing AT, re-run the rubric |
+| **UNVERIFIED** | an AT coupling to a port-shaped surface not yet on the contract, OR suspected-incompleteness of the contract | route the ambiguity back into the wave; never a silent pass |
+| **INDETERMINATE** | the coherence mechanism cannot run (asset unreadable, fact provider unavailable) | degrade-LOUD; never a false green |
+| **N/A** | the gate does not apply to this feature (e.g. no design contract was authored — the gate-IN advisory already fired) | recorded explicitly, never inferred as PASS |
 
-## Driven internal (real)
-| Port | Mechanism | Note |
-|---|---|---|
-| IUserRepository (MongoDB) | Testcontainers.MongoDb, fresh db per test class | |
+A FAIL on an un-covered row means **redo-in-wave**: the missing AT is authored and
+the rubric re-run, the deficiency is fixed inside DISTILL rather than deferred to
+DELIVER. The N/A branch is first-class and recorded honestly — the absence of a
+design contract is N/A, not PASS, so a feature that skipped DESIGN never earns a
+coherence green it did not pass.
 
-## Driven external / non-deterministic (fake)
-| Port | Fake | Note |
-|---|---|---|
-| IClock | FakeClock | manual advance |
-| IEmailSender | FakeEmailSender | in-memory capture |
-```
+### Degrade-LOUD — INDETERMINATE when the mechanism cannot run
 
-The `Note` column is optional — use only when the mechanism needs a one-line clarification.
+The rubric is a mechanical witness, so it can itself fail to execute: the cited
+asset may be absent or undecodable, or the code-fact provider may be unavailable on
+the target machine. The discipline is that when the coherence mechanism cannot run
+the verdict is INDETERMINATE, degrade-LOUD, never a false green. The rubric must
+announce the
+non-execution explicitly (which asset, why it could not be read) and emit
+INDETERMINATE — it must never silently assume PASS, and it must never silently
+assume FAIL. This is the gate-out twin of the gate-IN degrade-loud discipline (the
+`⊘` notice): an absent witness is a loud INDETERMINATE, not an inferred outcome.
 
-### Apply-if-exists / write-if-absent
+## Prior-Wave Reading + Advisories (pinned cross-cutting summary — procedure in `nw-distill-prior-wave-reading`)
 
-1. **File exists** (default mode `--policy=inherit`): read the policy and apply recorded decisions. No port-by-port negotiation for ports already in the table.
-2. **Port in scope is missing from the policy**: ask the user with a soft prompt (one row per missing port: `which mechanism for {port}?`), then **append the row to the policy** before generating scenarios. The policy grows by accretion.
-3. **File is absent**: create an empty skeleton with the three section headers (use the `policy-bootstrap-template` expansion below), then treat every port in scope as missing (case 2).
+Before writing any scenario, `nw-distill-prior-wave-reading` reads all prior-wave SSOT + feature-delta, runs the Wave-Decision Reconciliation HARD GATE, and fires two Tier-A advisories. The full procedure + tables live in that module; the pinned advisory + degradation contract is summarized here.
 
-The file is edited in place. No per-row versioning — git history is the audit trail.
+### Row 7b — DESIGN-absent advisory (gate-IN soft-gate)
 
-### `--policy=fresh` flag
+After the brief.md read and before Wave-Decision Reconciliation, inspect the active `docs/feature/{feature-id}/feature-delta.md` for the literal heading `## Wave: DESIGN / [REF] Code-Design`. This row keys a Tier-A advisory off that section's presence — it NEVER blocks: on ANY answer the flow continues to DISTILL.
 
-When the user passes `--policy=fresh`:
-- Ignore the existing file for this run.
-- Treat every port in scope as missing (soft prompt per port).
-- On completion, rewrite the file from scratch with the newly agreed decisions.
+| Step | Action |
+|---|---|
+| **Observe** | Read the feature-delta. Test for the `[REF] Code-Design` section the DESIGN wave authors. |
+| **Branch** | DESIGN-artifact **present** → **silent** (no advisory; the feature ran DESIGN). DESIGN-artifact **absent** → emit the advisory: NAME the evidence ("no `[REF] Code-Design` section in feature-delta"), state the RISK ("duplication + incoherent architecture"), PROPOSE `/nw-design`, ASK the closed option set {run `/nw-design` · proceed without it}. |
+| **Proceed** | On ANY answer, **continue to DISTILL** — the advisory has no veto power. The DESIGN-present branch is silent; the DESIGN-absent branch advises then proceeds. Either way the flow continues to DISTILL; row 7b never blocks. |
 
-Use `fresh` for major refactors (stack swap, test strategy overhaul). In all other cases, `inherit` is the default.
+Degrade-loud: if the feature-delta is unreadable, emit `⊘ feature-delta unreadable — cannot evaluate DESIGN-absent advisory; proceeding` and continue (never block, never assume present). Row 7b is an instantiation of the Advisory-Skip-Gate Pattern (Tier-A) — full pattern + slot binding in `nw-distill-prior-wave-reading`.
 
-### Relationship to the Architecture of Reference
+### Row 7c — Total-AT advisory (gate-IN soft-gate)
 
-The Architecture of Reference answers: "what kind of treatment does this port class get?" (real vs fake).
-The Project Policy answers: "and which concrete implementation does this project use for that treatment?" (Testcontainers vs dedicated env, which fake class).
+After row 7b and before Wave-Decision Reconciliation, key a second Tier-A advisory off the feature's **total** acceptance-test volume. Like row 7b it NEVER blocks. NAME the evidence ("total AT {N} > threshold {M}"), state the RISK ("too big for one iteration"), PROPOSE `/nw-discuss`, ASK {run `/nw-discuss` · proceed without it}; on ANY answer continue to DISTILL. Branch: total AT **over** the threshold → fire the advisory (propose `/nw-discuss`); at-or-under → stay **silent** (no false advisory on a right-sized feature). Threshold key `feature_total_at_advisory_threshold` (rigor cascade) — distinct from the per-slice `carpaccio_slice_max` ceiling. Full table in `nw-distill-prior-wave-reading`.
 
-The policy CANNOT override the port class defaults: a driven-internal port cannot become a fake through the policy (that requires an explicit waiver documented in `distill/wave-decisions.md`). The policy only records the **mechanism** for each default treatment.
+### Graceful Degradation Matrix (warn vs block)
 
-## Wave-Decision Reconciliation HARD GATE (pre-scenario)
-
-This is the ONLY hard gate before scenario writing. Execute it BEFORE any other DISTILL work:
-
-1. Read all `wave-decisions.md` from prior waves: `docs/feature/{feature-id}/discuss/wave-decisions.md`, `docs/feature/{feature-id}/design/wave-decisions.md`, `docs/feature/{feature-id}/devops/wave-decisions.md`.
-2. For each DISCUSS decision, check whether DESIGN or DEVOPS contradicts. Examples: DISCUSS "email notifications" but DESIGN "in-app only" = CONTRADICTION; DISCUSS "REST API" but DESIGN "gRPC" = CONTRADICTION; DISCUSS "single-tenant" but DEVOPS "multi-tenant" = CONTRADICTION.
-3. If ANY contradiction → return `{CLARIFICATION_NEEDED: true, questions: [{file, contradicting-decisions, ask-which-stands}]}` and BLOCK.
-4. If zero contradictions → log "Reconciliation passed — 0 contradictions" and proceed.
-
-Do NOT silently pick one side of a contradiction. Do NOT write scenarios against ambiguous specifications. The cost of blocking is minutes; the cost of implementing the wrong behavior is hours.
-
-## Graceful Degradation Matrix (warn vs block)
+Missing artifacts → warnings, not failures; DESIGN-absence is surfaced via the advisory soft-gate, never a block.
 
 | Missing artifact | Action | Reason |
 |---|---|---|
-| `docs/feature/{id}/devops/` directory | **WARN**, use project default infra (from Project Infrastructure Policy or sensible defaults) | tests can proceed without env spec |
+| `docs/feature/{id}/devops/` directory | **WARN**, use project default infra | tests can proceed without env spec |
 | `docs/feature/{id}/discuss/` directory | **WARN**, derive ACs from DESIGN, skip story-to-scenario traceability | story traceability lost, scenarios still coherent |
-| `docs/feature/{id}/design/` directory | **BLOCK** — ask user to identify driving ports before writing any scenario | driving ports unknown, hexagonal boundary unverifiable |
+| `docs/feature/{id}/design/` directory | **WARN** — proceed (advisory): emit the DESIGN-absent soft-gate, derive driving ports from DISCUSS/feature-delta if present | DESIGN is optional; absence is surfaced advisorily, never blocks |
 
-Missing artifacts trigger warnings, not failures — EXCEPT when the missing artifact makes a design mandate unverifiable (DESIGN for hexagonal boundary). In that case, BLOCK.
+### Graceful Degradation for Missing Upstream Artifacts
 
-## Two-Tier Acceptance Composition (Mandate 10 expanded for DISTILL)
-
-Per `nw-test-design-mandates` Mandate 10, acceptance tests come in two tiers. DISTILL decides which tiers apply per feature.
-
-**Default — Tier A only**: most features need only Tier A (Gojko-style, production composition root, 1-2 scenarios per journey).
-
-**Add Tier B when both conditions hold**:
-- Feature has a journey of ≥3 chained scenarios (Pillar 2 active — the `Given` of N reuses N-1's `Given + When`), AND
-- Input space is domain-rich (emails, dates, payloads, free-text, IDs from a large set).
-
-**Skip Tier B when**:
-- Feature is config-shaped (single-shot installer config, schema validation, one-off CLI), OR
-- Journey has 1-2 scenarios (Tier A example covers the space), OR
-- The only observable is "did it crash" (no state mutation to model).
-
-### File layout when both tiers are emitted
-
-```
-tests/{test-type-path}/{feature-id}/acceptance/
-  {feature}.feature                       # Tier A — Gherkin scenarios (production DI)
-  steps/
-    conftest.py
-    steps_{feature}.py                    # Tier A step-methods (production composition root)
-  tier_b/
-    test_{feature}_state_machine.py       # Tier B — RuleBasedStateMachine
-    in_memory_composition.py              # InMemoryComposition (same interfaces, in-memory doubles)
-```
-
-### Shared vocabulary contract
-
-Both tiers invoke the same step-method names (`Given_<precondition>`, `When_<action>`, `Then_<outcome>`). Tier A wires them through the production composition root; Tier B wires them through `InMemoryComposition`. The step-method NAMES are the contract — DRY across tiers.
-
-When DISTILL emits Tier B, it MUST verify each `@rule`-decorated method invokes a step-method that already exists in the Tier A `steps_{feature}.py`. New step-method names introduced only in Tier B are a smell — they hint the journey was modeled differently for in-memory exploration than for production wiring.
-
-## Wave: DISTILL / [HOW] Expansion Templates (lazy)
-
-These templates are inline so the skill ships with the bootstrap snippets. They are emitted into the wave's `feature-delta.md` only when rendered as Tier-2 expansions (per the Density Resolution + Expansion Catalog above).
-
-### Expansion `policy-bootstrap-template`
-
-Emitted on first DISTILL in a project (file absent at `docs/architecture/atdd-infrastructure-policy.md`):
-
-```markdown
-# ATDD Infrastructure Policy
-
-Per `nw-distill` § Project Infrastructure Policy. One file per project. Apply-if-exists; write-if-absent; rewrite with `--policy=fresh`. Git history is the audit trail.
-
-## Driving
-| Port | Mechanism | Note |
+| Missing | Action | Block? |
 |---|---|---|
-
-## Driven internal (real)
-| Port | Mechanism | Note |
-|---|---|---|
-
-## Driven external / non-deterministic (fake)
-| Port | Fake | Note |
-|---|---|---|
-```
-
-### Expansion `tier-b-state-machine-template` (Python pilot)
-
-Reference shape for `tests/{feature-id}/acceptance/tier_b/test_{feature}_state_machine.py`. Other host languages add their own template lazily.
-
-```python
-# tests/<path>/tier_b/test_<feature>_state_machine.py
-import hypothesis.strategies as st
-from hypothesis.stateful import RuleBasedStateMachine, rule, precondition, invariant, initialize
-
-from nwave_ai.state_delta import assert_state_delta, set_to, unchanged, appended_with
-
-# Import shared step-method vocabulary (same as Tier A .feature steps)
-from tests.<path>.acceptance.steps.steps_<feature> import (
-    Given_<precondition>,
-    When_<action>,
-    Then_<outcome>,
-    # ...
-)
-
-# In-memory composition root (Tier B difference from Tier A's production DI)
-from tests.<path>.acceptance.tier_b.in_memory_composition import InMemoryComposition
-
-
-class <Feature>Journey(RuleBasedStateMachine):
-    @initialize()
-    def setup(self):
-        self.composition = InMemoryComposition()
-        Given_<precondition>(self.composition)
-        # ... initial state flags as instance attributes for @precondition use
-
-    @rule(<input_strategies>)
-    def <action>(self, ...):
-        before = self.composition.capture_universe()
-        When_<action>(self.composition, ...)  # SAME step-method as Tier A
-        after = self.composition.capture_universe()
-        assert_state_delta(
-            before=before,
-            after=after,
-            universe={
-                "<port_exposed_name_1>",
-                "<port_exposed_name_2>",
-            },
-            expected={
-                "<port_exposed_name_1>": set_to(<value>),
-                "<port_exposed_name_2>": unchanged(),
-            },
-        )
-
-    @invariant()
-    def <invariant_name>(self):
-        # universe-bound cross-rule invariant
-        Then_<outcome>(self.composition)
-
-
-Test<Feature>Journey = <Feature>Journey.TestCase
-```
-
-`InMemoryComposition.capture_universe()` returns a dict whose keys are the port-exposed observable names declared in the `universe` set. Tier A `steps_*.py` and Tier B `@rule` methods agree on these names — they are the shared contract.
-
-### Expansion `domain-language-fact-to-step-table`
-
-Soft-gate table proposed to the user BEFORE step-methods are generated. One row per Given/When/Then surface used in the planned scenarios. User approval is a quick exchange, not a formal blocking gate — but renaming an established step-method is expensive, so the agent surfaces the names early.
-
-| Fact / observation | Step name (snake_case for Python; PascalCase per host language) |
-|---|---|
-| no user is registered | `Given_no_user_is_registered` |
-| user signs up with a valid email | `When_the_user_signs_up_with_a_valid_email` |
-| user receives magic link | `Then_the_user_should_have_received_a_magic_link` |
-| order is rejected | `Then_the_order_is_rejected` |
-
-The table is emitted into `feature-delta.md` under `## Wave: DISTILL / [HOW] Domain language` when the user requests this expansion (or when `density.mode = "full"`).
-
-## DSL Emergence + SSOT via Types + Services (Mandate-12)
-
-**Mandate-12 — SSOT + Zero Duplication via Types + Services + DSL (2026-05-18, identity-essential; refined Opt 3 same day)**: domain concepts are expressed once via the type system; logic lives in services (composition root or driving-port methods) as single source of truth; step definitions, code, and tests reuse types and services to eliminate duplication. The DSL emerges from typed domain concepts — parameterized templates over enum-typed parameters, not 200+ unique step decorators. Domain types live in `tests/{path}/acceptance/steps/domain_types.py` (Python pilot); step methods invoke composition-root service methods, never inline business logic.
-
-### Four-criteria mechanical evidence (refined 2026-05-18)
-
-Compliance is mechanical, not ratio-based:
-
-1. **Domain types module exists** at `tests/{path}/acceptance/steps/domain_types.py` with typed enums / dataclasses / NewTypes for every domain noun used in Gherkin.
-2. **Composition methods consume typed parameters** — service signatures use the enums from `domain_types.py`; no raw `str` parameters where a domain enum already exists.
-3. **No business logic in step bodies** — AST mechanical check: each step function body has ≤2 statements, the final statement is `composition.<service>.<method>(...)`, and the body contains no control flow (`if`/`for`/`while`/`try`).
-4. **Step-reuse-ratio reported as informational** — `total_step_invocations / unique_step_decorators` measured per feature for natural-ceiling discovery. NOT a gate.
-
-**Natural-ceiling discovery (criterion 4)**: run the measurement formula below per feature and document the ratio in `distill/wave-decisions.md` alongside the feature shape. Config-shaped features (single-shot installer, schema validation) naturally cap below 4×; journey-rich features may exceed it. There is no target ratio — the empirical ceiling per feature is the data point. Substance is criteria (1)–(3); ratio is a symptom heuristic.
-
-**Empirical anchor**: F-ENTERPRISE-RELEASE-READINESS DISTILL pre-refactor 1.13× (227 occurrences / 201 decorators) → post-refactor 1.43× natural ceiling with all four mechanical criteria met (14 typed enums, 45 composition methods, zero step-body logic). The 1.43× MISS vs the original ≥4× hard target concealed the substantive SUBSTANCE WIN — refined per source-vs-symptom discipline (memory `feedback_lyra_failure_modes_2026_05_05`).
-
-### Refactor pattern — parameterized templates over enum-typed parameters
-
-```python
-# tests/{path}/acceptance/steps/domain_types.py
-from enum import Enum
-from dataclasses import dataclass
-
-class PortClass(Enum):
-    DRIVING = "driving"
-    DRIVEN_INTERNAL = "driven_internal"
-    DRIVEN_EXTERNAL = "driven_external"
-
-class CommitStatus(Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
-@dataclass(frozen=True)
-class Customer:
-    id: int
-    email: str
-
-# tests/{path}/acceptance/steps/steps_<feature>.py
-from pytest_bdd import given, when, then, parsers
-from tests.<path>.acceptance.steps.domain_types import PortClass, CommitStatus, Customer
-from src.<your_app>.composition_root import build_app
-
-@given(parsers.parse('a {port_class:PortClass} port for {port_name}'))
-def given_port(port_class: PortClass, port_name: str):
-    # Single decorator handles ALL port-class scenarios — no decorator-per-class duplication.
-    # Body delegates to composition-root service method, NEVER inline business logic.
-    app = build_app()
-    app.register_port(port_class, port_name)
-
-@when(parsers.parse('the operator submits a commit with status {status:CommitStatus}'))
-def when_submit(status: CommitStatus):
-    app = build_app()
-    app.commit_service.submit(status)
-
-@then(parsers.parse('the commit status becomes {status:CommitStatus}'))
-def then_status(status: CommitStatus):
-    app = build_app()
-    assert app.commit_service.current_status() == status
-```
-
-Three Given/When/Then decorators cover the entire `port_class × status` cartesian — instead of 9 decorators (3 ports × 3 statuses), the DSL emerges from enum typing.
-
-### Anti-pattern — hard-coded literals + decorator proliferation
-
-```python
-# BAD — one decorator per literal value (200+ decorators when scaled across the feature)
-@given('a driving port for HTTP API')
-def given_http_api(): ...
-
-@given('a driving port for CLI')
-def given_cli(): ...
-
-@given('a driven_internal port for IUserRepository')
-def given_user_repo(): ...
-
-# BAD — step methods with inline business logic (logic SSOT violation)
-@when('the operator submits a commit with status approved')
-def when_submit_approved():
-    # business logic inlined in step — duplicates production code,
-    # diverges under refactor, breaks SSOT contract
-    audit_log = []
-    audit_log.append({"status": "approved", "timestamp": time.time()})
-    assert audit_log[-1]["status"] == "approved"
-```
-
-### Service consolidation guidance
-
-- **Composition-root service methods**: business logic lives in `src/<your_app>/<service>.py` (or `composition_root.py`), invoked by step methods via the production DI container (Pillar 3).
-- **Step decorators delegate, never inline**: the decorator body is ≤3 lines — fetch composition root, call service method, optionally capture observable for assertion.
-- **Domain types as decorator parameter coercers**: `parsers.parse` (pytest-bdd) with an enum type converts the literal token to the typed value at parse time. The decorator's body sees `port_class: PortClass`, not a string.
-- **Tier B reuse**: state-machine `@rule` methods import the SAME step methods from `steps_<feature>.py` — the domain types and service invocations are shared across Tier A (production composition) and Tier B (`InMemoryComposition`). Shared vocabulary contract per Mandate 10.
-
-### Empirical measurement (bash) — informational only
-
-Used for criterion (4) above. The output is recorded as the per-feature natural ceiling, NOT compared against a target threshold.
-
-```bash
-TOTAL_OCCURRENCES=$(grep -cE '^\s*(Given|When|Then|And|But) ' tests/<path>/acceptance/*.feature | awk -F: '{sum+=$2} END {print sum}')
-UNIQUE_DECORATORS=$(grep -cE '^@(given|when|then|step|when_then)' tests/<path>/acceptance/steps/steps_*.py)
-RATIO=$(echo "scale=2; $TOTAL_OCCURRENCES / $UNIQUE_DECORATORS" | bc)
-echo "step-reuse-ratio (informational): ${RATIO}x — natural ceiling for this feature shape"
-```
-
-Compliance is determined by criteria (1)–(3) (types module, typed signatures, no-logic-in-steps). The ratio informs natural-ceiling discovery; a low ratio on a config-shaped feature is expected and not a redesign signal.
-
-### Anti-pattern — forcing the ratio at the cost of Pillar 1
-
-Collapsing readable Gherkin into one parameterized step that sacrifices domain coherence purely to raise the ratio. Example: merging `Given the policy is approved` and `Given the artifact is published` into `Given the {noun:Object} is {verb:Action}` to gain reuse — the resulting Gherkin is harder for a stakeholder to read and the domain language is degraded. Pillar 1 (Gherkin readability) outranks the ratio. If criteria (1)–(3) are met and the ratio is below 4×, the feature is compliant — that is the calibrated outcome.
-
-### Scope guard
-
-Per [[feedback_target_machine_independence_2026_05_15]]: Mandate-12 applies to acceptance test infrastructure. Production code invariants live in core + plugin (`src/des/`, `scripts/install/plugins/`) and are out of scope for the step-reuse-ratio metric — they have their own SSOT discipline via hexagonal layering. Mandate-12 governs how tests EXPRESS contracts, not how production code STRUCTURES logic.
-
-### Retrofit scope
-
-- **Forward-only on new features**: every new DISTILL session MUST meet the four mechanical criteria (types module, typed signatures, no-logic-in-steps, ratio measured + documented).
-- **Retrofit on slow tests**: dogfooding scope per Ale 2026-05-18 — drastic suite-execution-time reduction goal. See backlog `F-ATDD-MANDATE-12-SSOT-DUPLICATION` + ADR-026.
-- **No retroactive enforcement** on existing tests beyond the hot-path slow-test set. Audit logs of pre-2026-05-18 features remain valid; the mandate is a forward-looking quality bar.
-
-## Pre-DELIVER fail-for-the-right-reason gate
-
-Before handing acceptance scenarios to DELIVER, run them once and verify each scenario fails for the **right reason** — the implementation is missing — not for setup error, fixture bug, import error, or test infrastructure problem.
-
-### Procedure
-
-1. Run the suite: `pytest tests/{feature}/acceptance/`. Capture failure output per scenario.
-2. For each FAIL, classify the failure mode:
-   - `MISSING_FUNCTIONALITY`: the assertion fires because behaviour is unimplemented (✅ correct RED)
-   - `IMPORT_ERROR` / `FIXTURE_BROKEN` / `SETUP_FAILURE`: the test never reaches the assertion (❌ wrong RED — test bug)
-   - `WRONG_ASSERTION` / `OBSERVABLE_NOT_AT_PORT`: assertion couples to internal struct (❌ wrong shape — fix Universe)
-3. If any scenario is in category 2 or 3 → BLOCK handoff to DELIVER. Fix the test before crafter starts.
-
-### Why this gate matters
-
-A scenario that fails for the wrong reason gives a false signal at GREEN: the crafter "fixes" the import error and the test goes green, but the feature was never tested. We have observed this class on 2026-05-06 (`feedback_fixture_only_acceptance_hides_wiring_2026_05_06.md` + `feedback_layered_test_discipline_universe_per_layer_2026_05_06.md`): a fixture-shape acceptance scenario passes against a wired-but-broken bridge because it never exercises the seam.
-
-The gate output is a one-line classification per failing scenario, written to `docs/feature/{feature-id}/distill/red-classification.md`. DELIVER reads this file at PREPARE phase to confirm RED is genuine.
-
-## Prior Wave Reading
-
-Before writing any scenario, read SSOT and feature delta artifacts.
-
-**READING ENFORCEMENT**: You MUST read every file listed in steps 1-6 below using the Read tool before proceeding. After reading, output a confirmation checklist (`+ {file}` for each read, `- {file} (not found)` for missing). Do NOT skip files that exist.
-
-1. **Read Journeys** — Read `docs/product/journeys/{name}.yaml`. Extract embedded Gherkin as starting scenarios, identify integration checkpoints and `failure_modes` per step. Gate: file read or marked missing.
-2. **Read Architecture Brief** — Read `docs/product/architecture/brief.md`. Identify driving ports (from `## For Acceptance Designer` section) for `@driving_port` tagged scenarios. Gate: file read or marked missing.
-3. **Read KPI Contracts** — Read `docs/product/kpi-contracts.yaml`. Identify behaviors needing `@kpi` tagged scenarios (soft gate — warn if missing, proceed). Gate: file read or marked missing.
-4. **Read DISCUSS Artifacts** — Read `docs/feature/{feature-id}/discuss/user-stories.md` (scope boundary and embedded acceptance criteria), `story-map.md` (walking skeleton priority and release slicing), and `wave-decisions.md` (quick check for upstream changes). Gate: files read or marked missing.
-5. **Read SPIKE Findings** (if spike was run) — Read `docs/feature/{feature-id}/spike/findings.md` and `docs/feature/{feature-id}/spike/wave-decisions.md`. Check what assumptions were validated, what failed, performance measurements, and the **promotion decision** (PROMOTE / DISCARD / PIVOT). Update acceptance criteria if spike findings contradict DISCUSS. Gate: files read if present, marked as not found if absent.
-5b. **Read Walking Skeleton** (only if SPIKE promoted a walking skeleton) — Read the existing `tests/{test-type-path}/{feature-id}/acceptance/walking-skeleton.feature` and the `src/` modules it exercises. The walking skeleton is **already committed and green** — your job in DISTILL is to build **additional** scenarios and integration tests on top of it, not to rewrite it. Identify the driving adapter it uses, the e2e path it exercises, and the scenarios it does NOT yet cover (happy-path variants, error paths, adapter integration). Gate: walking-skeleton.feature read, scenario tagged `@walking_skeleton` confirmed green, or marked as not found.
-6. **Read DEVOPS Artifacts** — Read `docs/feature/{feature-id}/devops/wave-decisions.md`. Check for infrastructure constraints affecting tests. Gate: file read or marked missing.
-7. **Check Migration Gate** — If `docs/product/` does not exist but `docs/feature/` has existing features, STOP. Guide the user to `docs/guides/migrating-to-ssot-model/README.md`. If greenfield, prior waves should have bootstrapped `docs/product/` already. Gate: migration confirmed or greenfield confirmed.
-8. **Reconcile Assumptions** — Check whether any acceptance test assumptions contradict prior wave decisions or SPIKE findings. Use `wave-decisions.md` and `spike/findings.md` files to detect upstream changes. Gate: zero contradictions or contradictions listed for user resolution.
-
-DISTILL is the conjunction point — it reads all three SSOT dimensions plus the feature delta to translate prior wave knowledge into executable acceptance tests.
-
-## Wave-Decision Reconciliation (Pre-Scenario Gate)
-
-BEFORE writing any scenario, execute this reconciliation procedure:
-
-1. **Read All Wave Decisions** — Read ALL wave-decisions.md files from prior waves: `docs/feature/{feature-id}/discuss/wave-decisions.md`, `docs/feature/{feature-id}/design/wave-decisions.md`, `docs/feature/{feature-id}/devops/wave-decisions.md`. Gate: all files read or marked missing.
-2. **Check Each DISCUSS Decision** — For EACH decision in DISCUSS, check whether DESIGN or DEVOPS contradicts it. Examples: DISCUSS says "email notifications" but DESIGN says "in-app only" = CONTRADICTION; DISCUSS says "REST API" but DESIGN says "gRPC" = CONTRADICTION; DISCUSS says "single-tenant" but DEVOPS says "multi-tenant" = CONTRADICTION. Gate: all decisions checked.
-3. **Handle Contradictions** — If ANY contradiction is found: (a) list ALL contradictions with exact file paths and decision text, (b) BLOCK scenario writing until the user resolves each contradiction, (c) return `{CLARIFICATION_NEEDED: true, questions: [{contradiction details}]}`. Gate: zero contradictions, or user resolution received.
-4. **Log Reconciliation Result** — If zero contradictions: log "Reconciliation passed -- 0 contradictions" and proceed. Gate: log entry written.
-
-Do NOT silently pick one side of a contradiction. Do NOT write scenarios against ambiguous specifications. The cost of blocking is minutes; the cost of implementing the wrong behavior is hours.
-
-## Graceful Degradation for Missing Upstream Artifacts
-
-**DEVOPS missing** (no `docs/feature/{feature-id}/devops/` directory):
-1. **Log Warning** — Log: "DEVOPS artifacts missing -- using default environment matrix". Gate: warning logged.
-2. **Apply Default Matrix** — Use default environment matrix: clean | with-pre-commit | with-stale-config. Gate: matrix applied.
-3. **Proceed** — Continue with scenario writing. Do NOT block.
-
-**DISCUSS missing** (no `docs/feature/{feature-id}/discuss/` directory):
-1. **Log Warning** — Log: "DISCUSS artifacts missing -- using DESIGN only". Gate: warning logged.
-2. **Derive from DESIGN** — Derive acceptance criteria from DESIGN architecture documents. Gate: criteria derived.
-3. **Skip Traceability** — Skip story-to-scenario traceability -- no stories to trace. Gate: traceability skipped.
-4. **Proceed** — Continue with scenario writing. Do NOT block.
-
-**DESIGN missing** (no `docs/feature/{feature-id}/design/` directory):
-1. **Log Warning** — Log: "DESIGN artifacts missing -- driving ports unknown". Gate: warning logged.
-2. **BLOCK for Driving Ports** — Ask user to identify driving ports before writing any scenario. BLOCK until driving ports are identified -- without them, hexagonal boundary is unverifiable. Gate: user provides driving ports.
-
-Missing artifacts trigger warnings, not failures -- EXCEPT when the missing artifact makes a design mandate unverifiable (DESIGN for hexagonal boundary). In that case, BLOCK.
-
-## Document Update (Back-Propagation)
-
-When DISTILL work reveals gaps or contradictions in prior waves:
-
-1. **Document Findings** — Write findings in `docs/feature/{feature-id}/distill/upstream-issues.md`. Reference the original prior-wave document and describe the gap. Gate: file written.
-2. **Flag Untestable Criteria** — If acceptance criteria from DISCUSS are untestable as written, note the specific criteria and explain why. Gate: all untestable criteria flagged.
-3. **Resolve Before Writing** — Resolve contradictions with user before writing tests against ambiguous or contradictory requirements. Gate: user resolution received.
-
-## Walking Skeleton Strategy (RETIRED — see Architecture of Reference + Project Infrastructure Policy)
-
-**Retired**: the 4-way per-feature choice (Strategy A Full InMemory / B Real local + fake costly / C Real local / D Configurable) is REPLACED by two structural decisions made elsewhere:
-
-1. **Architecture of Reference** (see section above) decides — once per project — what KIND of treatment each port class gets (real adapter for driving and driven-internal; fake for driven-external/non-deterministic).
-2. **Project Infrastructure Policy** (see section above) decides — once per project — the CONCRETE MECHANISM for each port (Testcontainers vs in-memory vs Fake<X>).
-
-Per-feature, DISTILL no longer negotiates strategies. It reads the policy (`--policy=inherit`, default), appends missing rows by asking the user, or rewrites from scratch (`--policy=fresh`).
-
-What survives from the old section:
-
-- **The walking-skeleton SCENARIO**: still required. One scenario per feature, tagged `@walking_skeleton @driving_port`, that closes the end-to-end loop through the production composition root. Litmus test: a non-technical stakeholder confirms "yes, that is what users need." This is the demo proof — independent of which mechanism each port uses.
-- **Tagging convention** (unchanged):
-  - `@real-io` — scenario uses real adapters (driving + driven-internal per Architecture of Reference)
-  - `@in-memory` — scenario uses in-memory doubles (Tier B state-machine PBT, or in-memory acceptance per Mandate 10)
-  - `@requires_external` — scenario needs an external system not in the project policy; skip if absent
-  - Walking-skeleton scenarios MUST carry `@walking_skeleton @driving_port` and use the production composition root.
-
-**Migration note**: existing features with a `wave-decisions.md` entry naming Strategy A/B/C/D continue to validate — the strategy named there is treated as historical record. NEW features express the same intent via the Architecture of Reference defaults + the project policy entry per port.
-
-## Register Outcomes (per DISCUSS#D-5 grain)
-
-Provenance: feature `outcomes-registry` — DISCUSS#D-2 (lean Tier-1 + Tier-2 default), D-5 (per-typed-contract grain), D-6 (gate-scoping: code-feature pipelines only).
-
-**Trigger**: feature has a new typed contract surface — a rule module, CLI subcommand, public service operation, or system-wide invariant. Each such surface is one OUT-N row in the registry.
-
-**Skip when**: the feature is methodology-only (skill propagation, prose changes, documentation updates, no new typed contract). Per D-6 gate-scoping, the registry tracks code-feature pipelines only; methodology features are explicitly OUT of scope.
-
-**Procedure** — for every new contract surface introduced by the scenarios in this DISTILL session:
-
-1. **Determine `kind`**: one of
-   - `specification` — a rule (e.g. a guard, a validation predicate, a policy)
-   - `operation` — a function/method exposed at a driving port (CLI subcommand, service method, endpoint)
-   - `invariant` — a system-wide constraint that must always hold
-2. **Run** `nwave-ai outcomes register --id OUT-N --kind {kind} --input-shape "..." --output-shape "..." --keywords "k1,k2,k3"`
-3. **Handle exit codes**: exit `0` on successful registration; exit `2` on duplicate id (re-id the candidate and retry — typically because the OUT-N number is already taken).
-
-The registry at `docs/product/outcomes/registry.yaml` becomes the SSOT for "what we promise the system does." Subsequent waves (DESIGN of later features) consult it to detect outcome collisions before introducing duplicate contracts.
-
-Gate: every new typed contract introduced in the scenarios is registered with one OUT-N row, OR the feature is documented as methodology-only and registration is correctly skipped.
-
-## Driving Adapter Verification (Mandatory — RCA fix P1, 2026-04-10)
-
-If the DESIGN document specifies a CLI entry point, HTTP endpoint, or hook adapter:
-
-1. **At least ONE walking skeleton scenario MUST invoke it via its protocol** — subprocess for CLI, HTTP request for API, hook JSON payload for hooks. Tag: `@driving_adapter @walking_skeleton`. Gate: scenario exists and exercises the user's actual invocation path.
-2. **The scenario MUST verify**: exit code (or HTTP status), output format (stdout/response body), and basic argument handling. Gate: all three verified.
-3. **Pipeline/service-level tests do NOT replace driving adapter tests.** A test that calls `generate_matrix()` directly proves the pipeline works but NOT that the CLI parses arguments, resolves PYTHONPATH, wires adapters, and produces correct exit codes. Both are needed.
-4. **Scan DESIGN for entry points**: grep design docs for `python -m`, `cli`, `endpoint`, `hook adapter`. Each match needs at least one subprocess/HTTP/hook scenario. Gate: zero uncovered entry points.
-
-This section exists because of a systematic pattern (RCA `docs/analysis/rca-user-port-gap.md`): acceptance tests entered from application services instead of user-facing CLIs, shipping features with working pipelines but broken entry points.
-
-## Dormant-Seam Reconciliation (Mandatory — RCA fix, D11, 2026-06-07)
-
-The Driving Adapter Verification above is per-feature + entry-point-protocol-shaped (CLI / HTTP / hook). It is **necessary but not sufficient**: it is blind to **intra-process load-bearing seams** — a net-new effectful parameter (`clock=`), a net-new effectful call (`absorb_ready_refs()`) — declared load-bearing in the DESIGN driving-surface but never reached from the real entry point. A feature can pass every per-slice gate (ATs green, AT-review + code-review APPROVED, walking-skeleton, pre-commit) yet not function e2e because such a seam shipped **DORMANT** (no production call-site). Empirical anchor: consolidation-loops `background-loops-hybrid-c` (slices 04/05/07/08) shipped absorb/clock/drain-selector/reaper uncalled from `handle_session_start`. Two RCAs converged on a shared-asset defect — fix it here so OSS inherits the correction.
-
-### Leg (b) — Cross-table reconciliation (DESIGN driving-surface ↔ DISTILL AT-oracle)
-
-The DISTILL AT-oracle target for each slice MUST be the **DESIGN-declared driving-surface seam**, NOT "the new component the slice introduces". Re-deriving the AT target from "what's new in the slice" silently substitutes the COMPONENT for the SEAM — the intra-author / intra-commit contradiction that lets a dormant seam pass.
-
-1. **Enumerate net-new driving-surface seams** — From the DESIGN driving-surface table, list every net-new seam declared load-bearing this slice: a new parameter on an entry-point function, a new function call reached from the entry point, a new param threaded into an existing seam. Gate: seam list extracted from DESIGN (not from the slice diff).
-2. **Name the seam as the AT's driving port** — For EACH net-new declared seam, the slice AT MUST name THAT exact seam as the port it drives (the AT exercises the seam through the real entry point, observing the seam's effect). Gate: one witnessing AT per declared seam.
-3. **HARD reconciliation** — If a declared net-new seam has no witnessing AT driving it, reconciliation FAILS (block the slice). Do NOT accept "the component is tested" as coverage of the seam. Gate: zero declared seams without a witnessing AT.
-
-### Leg (c) — Walking-skeleton AT drives the REAL entry point and asserts an observable effect
-
-Generalize Driving Adapter Verification beyond protocol adapters (CLI / HTTP / hook) to intra-process load-bearing seams. The single per-feature walking skeleton proves the protocol path once — it does NOT prove every declared seam is reached.
-
-1. **Reach from the real entry point** — Each net-new declared seam needs observable-effect coverage reached from the **real entry point** (e.g. `handle_session_start`), not only from the one nominal walking-skeleton scenario. Gate: each seam exercised via the production entry path.
-2. **Assert an observable effect** — The AT MUST assert the seam's observable effect (a state delta, an emitted event, a captured side effect), not merely that the seam is importable or that the component returns. Gate: observable-effect assertion present per seam.
-
-### Witnessing-check counts INDIRECT wiring (framing-attack — do not naive-match)
-
-"The seam has a witnessing AT / a production call-site" MUST count **indirect wiring** as valid coverage: entry-point discovery, registry registration, dependency-injection wiring. A seam reached via registry / entry-point / DI is validly covered even with NO literal direct call-site or protocol call. Empirical anchor: `nwave.lang.adapter` entry-point discovery wires modules with no direct call-site **by design**. So "drives the declared seam" is NOT "a literal CLI / hook protocol call" nor "a bare-name function call" — a binding-resolved indirect reach (the symbol's registration value joined to its identity) counts. A naive name / protocol match reintroduces a false-positive class on every registry-dispatched symbol.
-
-### Mechanical backstop
-
-The shipped OSS gate `des dormant-seam-gate` (`src/des/cli/dormant_seam_gate.py`, leg-a) is the mechanical net behind this methodology: it warns **INDETERMINATE (non-halting)** when a net-new effectful `src/**` public symbol has no production call-site — counting registry / entry-point / DI wiring as a call-site (binding-resolved, never a naive grep), with two never-silent escapes (a real call-site including indirect wiring, OR a `# dormant-ok: <F-id>` owned-residue marker). Run it per feature; treat its INDETERMINATE warning as a reconciliation finding to resolve (wire the seam, or annotate the owned residue), not as noise.
-
-## Adapter Scenario Coverage (Mandate 6 Enforcement)
-
-When designing adapter acceptance scenarios, EVERY driven adapter has at least one scenario with real I/O (or contract smoke for costly externals). This is not optional regardless of WS strategy. Tag adapter real-I/O scenarios with `@real-io @adapter-integration`.
-
-1. **Inventory Adapters** — List all driven adapters in the feature. Gate: adapter list complete.
-2. **Map Scenarios to Adapters** — For each adapter, identify existing scenarios that exercise it with real I/O. Gate: mapping complete.
-3. **Produce Coverage Table** — Output the adapter coverage table before completing Phase 2:
-
-```
-| Adapter | @real-io scenario | Covered by |
-|---------|-------------------|------------|
-| YamlWorkflowLoader | YES | WS (real YAML from tmp_path) |
-| FilesystemSkillReader | YES | WS (real skill files from tmp_path) |
-| SubprocessGitVerifier | NO — MISSING | Add: "Git verifier reads real git log" |
-| RuffLintRunner | NO — MISSING | Add: "Lint runner checks real ruff output" |
-```
-
-4. **Add Missing Scenarios** — Every row with "NO — MISSING" MUST have a scenario added. If the adapter is for a costly external (claude -p), a `@requires_external` contract smoke test is acceptable instead. Gate: zero "NO — MISSING" rows remain.
-
-Cross-references: nw-tdd-methodology Mandate 5 (Walking Skeleton) and Mandate 6 (Real I/O), nw-quality-framework Dimension 9 (Walking Skeleton Integrity).
-
-## Self-Review Checklist (Dimension 9 + Mandate 7)
-
-Before handing off to reviewers, self-check each item:
-
-- [ ] 1. WS strategy declared in wave-decisions.md
-- [ ] 2. WS scenarios tagged correctly (@real-io / @in-memory per strategy)
-- [ ] 3. Every driven adapter has at least one @real-io scenario
-- [ ] 4. For InMemory doubles: documented what they CANNOT model
-- [ ] 5. Container preference documented if applicable
-- [ ] 6. **Mandate 7**: All production modules imported by tests have scaffold files
-- [ ] 10. **Driving Adapter**: Every CLI/endpoint/hook in DESIGN has at least one WS scenario exercising it via subprocess/HTTP/hook protocol (not just calling the service function)
-- [ ] 7. **Mandate 7**: All scaffolds include `__SCAFFOLD__` marker (or language equivalent)
-- [ ] 8. **Mandate 7**: All scaffold methods raise assertion error (not NotImplementedError)
-- [ ] 9. **Mandate 7**: Tests are RED (not BROKEN) when run against scaffolds
-- [ ] 11. **F-001**: At least one `@real-io @adapter-integration` scenario per driven adapter (synthetic data misses format mismatches)
-- [ ] 16. **D11 Dormant-Seam Reconciliation**: every net-new seam declared load-bearing in the DESIGN driving-surface for this slice (`clock=` param, `absorb_ready_refs()` call, param threaded into an existing seam) has a witnessing AT that names THAT exact seam as its driving port, drives it through the REAL entry point, and asserts an observable effect. Indirect registry/entry-point/DI wiring counts as witnessing (NOT a naive name/protocol match). See § Dormant-Seam Reconciliation legs (b)+(c); mechanically gated by `nw-at-completeness-check` S3.
-- [ ] 12. **F-002**: `capsys` used in `@when` step, NOT in `@then` step (capsys is step-scoped in pytest-bdd)
-- [ ] 13. **F-005**: `@when` steps import ONLY from `des.application.*` or `des.domain.*` — NEVER from `des.adapters.driven.*`. Run `python scripts/hooks/check_driving_port_boundary.py` to verify.
-- [ ] 14. **F-004**: Timing assertions in `.feature` files use budget >= 200ms (flaky under parallel load)
-- [ ] 15. **F-003**: BDD imports after `sys.path` manipulation have `# noqa` markers (ruff strips them otherwise)
-
-## Scenario Writing Guidelines
-
-### Walking Skeleton First (or inherited from SPIKE)
-
-If SPIKE ran and **PROMOTED** a walking skeleton, DISTILL inherits it: do NOT rewrite it, do NOT add duplicate scenarios, do NOT change its `@walking_skeleton` tag. Your job is to add the next layer of scenarios (additional happy paths, error paths, adapter integration) that build on the skeleton's established driving adapter and e2e path.
-
-If SPIKE was skipped or did not promote, DISTILL creates the walking skeleton scenarios itself, before milestone features. Walking skeleton scenarios exercise the end-to-end path through driving adapters (real user-facing entry → real driven adapters → real user-visible output) with minimal business logic. Features only; optional for bugs.
-
-Either way, there is exactly ONE walking skeleton scenario per feature marked `@walking_skeleton`, and it must be green before DISTILL hand-off.
-
-### Unskip granularity — mode-aware (classic = per-scenario · atdd_pure = per-slice)
-
-The DELIVER unskip+green unit depends on `workflow.mode` (`.nwave/config.yaml`):
-
-- **classic (ADR-024/025)**: DISTILL authors ALL scenarios upfront; tag non-skeleton scenarios with `@skip`/`@pending` for one-at-a-time implementation. Each scenario maps to one TDD cycle in DELIVER; the crafter enables **one scenario at a time**.
-- **atdd_pure (ADR-028)**: DISTILL authors **only the CURRENT slice's** scenarios, JIT, when the slice enters — un-skipped (the whole slice is greened together by `A_GREEN`). Future slices are **JIT-not-on-disk** (the `.feature` file is simply absent until that slice enters — file-absence is the clean state, NOT a `@skip`-tagged scaffold). Do **NOT** emit per-AT `@skip`/`@pending` in atdd_pure — the **slice** is the unskip+green granularity, never a single AT. (Where a file-head `@skip`/`@pending` per-slice `.feature` scaffold is used, DELIVER removes the tag one **slice** at a time — still slice-granular, never per-AT.)
-
-### Business Language Purity
-Feature files use business language only. No technical terms (API, database, endpoint, schema) in scenario names or Given/When/Then steps. Technical details live in step definitions, not feature files.
-
-### Error Path Coverage
-Target at least 40% error/edge case scenarios. Pure happy-path test suites miss the most common production failures. For every happy path, ask: "What happens when this input is invalid? When the dependency is unavailable? When the user cancels midway?"
-
-### Environment-Aware Scenarios
-When DEVOPS provides environment inventory, create at least one walking skeleton scenario per environment. Each environment has different preconditions (clean install vs. upgrade vs. stale config) that affect behavior.
-
-## Mandate 7: RED-Ready Scaffolding
-
-**Every acceptance test MUST be RED, not BROKEN, when first created.**
-
-When DISTILL writes acceptance tests that import production modules not yet implemented, it MUST also create minimal stub files so that:
-1. All imports succeed (no ImportError -- no BROKEN classification)
-2. Method calls raise AssertionError (-- RED classification)
-3. The Red Gate Snapshot classifies the test as RED, enabling the DELIVER TDD cycle
-
-### What to scaffold
-
-For each production module imported in step definitions:
-1. **Create Module File** — Create the module file at the correct path (e.g., `src/app/plugin/installer.py`). Gate: file created.
-2. **Add Scaffold Marker** — Include the scaffold marker (`__SCAFFOLD__ = True` or language equivalent) for machine detection. Gate: marker present.
-3. **Define Signatures** — Define the class/function with the correct parameter signature. Gate: signatures match what step definitions expect.
-4. **Raise Assertion Error** — Method bodies MUST raise an assertion error with the scaffold marker message. Gate: all methods raise AssertionError (not NotImplementedError).
-5. **Verify RED Classification** — Confirm the test runner classifies tests as RED, not BROKEN. Gate: RED confirmed.
-
-### Language-specific scaffolding
-
-The principle is universal: **raise an exception classified as assertion failure (RED), not infrastructure error (BROKEN).**
-
-**Python**:
-```python
-# src/app/plugin/installer.py
-"""Plugin installer -- RED scaffold (created by DISTILL)."""
-__SCAFFOLD__ = True
-
-class PluginInstaller:
-    def __init__(self, **kwargs):
-        pass
-
-    def install(self, ctx):
-        raise AssertionError("Not yet implemented -- RED scaffold")
-```
-
-**Rust**:
-```rust
-// src/plugin/installer.rs
-// SCAFFOLD: true
-pub struct PluginInstaller;
-
-impl PluginInstaller {
-    pub fn install(&self) -> Result<(), Box<dyn std::error::Error>> {
-        panic!("Not yet implemented -- RED scaffold")
-    }
-}
-```
-
-**Go**:
-```go
-// plugin/installer.go
-// SCAFFOLD: true
-package plugin
-
-func Install() error {
-    panic("not yet implemented -- RED scaffold")
-}
-```
-
-**TypeScript/JavaScript**:
-```typescript
-// src/plugin/installer.ts
-export const __SCAFFOLD__ = true;
-
-export class PluginInstaller {
-    install(): never {
-        throw new Error("Not yet implemented -- RED scaffold");
-    }
-}
-```
-
-**Java**:
-```java
-// src/plugin/PluginInstaller.java
-// SCAFFOLD: true
-public class PluginInstaller {
-    public void install() {
-        throw new AssertionError("Not yet implemented -- RED scaffold");
-    }
-}
-```
-
-### Scaffold detection
-
-DELIVER uses the scaffold marker to track progress:
-- `grep -r "__SCAFFOLD__" src/` (Python, TypeScript)
-- `grep -r "SCAFFOLD: true" src/` (Rust, Go, Java)
-
-After all DELIVER steps complete, zero scaffold markers should remain.
-
-### Why assertion errors (not NotImplementedError)
-
-The Red Gate Snapshot (`src/des/application/red_gate_snapshot.py`) classifies failures by error type:
-- `AssertionError` / `panic!` / `throw Error` -- **RED** (implementation missing, test correct)
-- `NotImplementedError` -- **BROKEN** (infrastructure issue)
-- `ImportError` / `ModuleNotFoundError` -- **BROKEN** (module missing)
-
-Only RED tests proceed to the DELIVER TDD cycle. BROKEN tests block the upstream gate.
-
-### Scaffolding lifecycle
-
-1. **DISTILL** creates the scaffold (RED-ready stubs)
-2. **Snapshot** classifies the test as RED
-3. **DELIVER** replaces the scaffold with real implementation (GREEN)
-
-The scaffold is never committed to production -- it exists only between DISTILL approval and DELIVER completion for each step.
+| `docs/feature/{feature-id}/devops/` | apply default environment matrix: clean, with-pre-commit, with-stale-config | NO — proceed |
+| `docs/feature/{feature-id}/discuss/` | derive acceptance criteria from DESIGN architecture documents; skip story-to-scenario traceability | NO — proceed |
+| `docs/feature/{feature-id}/design/` | derive driving ports from DISCUSS/feature-delta if present; emit the DESIGN-absent advisory and continue | NO — proceed (advisory) |
+
+Missing artifacts → warnings, not failures; DESIGN-absence is surfaced via the advisory soft-gate, never a block.
 
 ## Final Wave Review Gate (Mandatory — covers DISCUSS+DESIGN+DEVOPS+DISTILL)
 
-AFTER all DISTILL Tier-1 [REF] sections are appended to `feature-delta.md` and acceptance scenarios + scaffolds are written, dispatch FOUR reviewers in parallel against the full `feature-delta.md`. This is the consolidated mandatory review that replaces per-wave reviews (per-wave is now opt-in only — see DISCUSS/DESIGN/DEVOPS skills). All four reviewers see the entire 4-wave chain in one file, enabling cross-wave consistency checks that per-wave review misses.
+AFTER all DISTILL Tier-1 [REF] sections are appended to `feature-delta.md` and acceptance scenarios + scaffolds written: dispatch FOUR reviewers in parallel against the full `feature-delta.md`. Consolidated mandatory review — replaces per-wave reviews (per-wave now opt-in only — see DISCUSS/DESIGN/DEVOPS skills). All four see the entire 4-wave chain in one file → cross-wave consistency checks per-wave review misses.
 
-1. **Dispatch four reviewers in parallel** (single message, multiple Agent tool uses, all on Haiku for cost efficiency):
-   - `@nw-product-owner-reviewer` (Eclipse) — reviews DISCUSS sections (lines 1 to first `## Wave: DESIGN` heading)
-   - `@nw-solution-architect-reviewer` (Architect) — reviews DESIGN sections (between `## Wave: DESIGN` and `## Wave: DEVOPS`)
-   - `@nw-platform-architect-reviewer` (Forge) — reviews DEVOPS sections (between `## Wave: DEVOPS` and `## Wave: DISTILL`)
-   - `@nw-acceptance-designer-reviewer` (Sentinel) — reviews DISTILL sections + executable `.feature` files + scaffolds
-   Gate: all four reviewers dispatched concurrently.
+1. **Dispatch four reviewers in parallel** (single message, multiple Agent tool uses, all Haiku for cost):
+   - `@nw-product-owner-reviewer` (Eclipse) — DISCUSS sections (lines 1 to first `## Wave: DESIGN` heading)
+   - `@nw-solution-architect-reviewer` (Architect) — DESIGN sections (between `## Wave: DESIGN` and `## Wave: DEVOPS`)
+   - `@nw-platform-architect-reviewer` (Forge) — DEVOPS sections (between `## Wave: DEVOPS` and `## Wave: DISTILL`)
+   - `@nw-acceptance-designer-reviewer` (Sentinel) — DISTILL sections + executable `.feature` files + scaffolds
+   Gate: all four dispatched concurrently.
 
-2. **Each reviewer outputs YAML verdict** with: `approval_status` ∈ {approved, conditionally_approved, needs_revision, rejected}, `blocker_count`, `high_count`, `low_count`, `findings_list`. Gate: structured verdict received from each.
+   <!-- DES-WAVE: distill -->
 
-3. **Cross-wave consistency check** — if Eclipse APPROVES DISCUSS but Architect's findings reveal DISCUSS contradictions (e.g. story claims X, ADR assumes Y), surface as cross-wave blocker. Gate: contradictions flagged.
+   Include the `<!-- DES-WAVE: distill -->` marker line above verbatim in EACH of the four reviewer Agent dispatch prompts — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
 
-4. **Blocker handling** — for each NEEDS_REVISION verdict: dispatch fix to the corresponding wave's primary agent (Luna for DISCUSS, Morgan for DESIGN, platform-architect for DEVOPS, acceptance-designer for DISTILL). Re-run only the affected reviewer after fix. Gate: 2 revision cycles max per wave; escalate to user if not resolved.
-
-5. **Block DELIVER handoff** — do not hand off to DELIVER until all four verdicts are APPROVED or CONDITIONALLY_APPROVED with documented action items in DELIVER scope. Gate: zero blockers, zero high (or accepted-with-conditions).
-
-**Cost**: 4 Haiku reviewers in parallel ≈ $0.05-0.20 per feature. Trades small cost for late-feedback-blast-radius reduction (full chain visible).
-
-**Structural-correctness reviewer never skips**: `rigor.reviewer_model: "skip"` applies to the three scale-sensitive cost-driven reviewers (Eclipse / Architect / Forge) only. Sentinel (`@nw-acceptance-designer-reviewer`) ALWAYS dispatches regardless of rigor cascade or scenario count fast-path — it is the structural-correctness reviewer (Gherkin antipatterns, hexagonal boundary, scaffold integrity), and silent skip masks the bug class issue #52 fixed.
-
-**Per-wave review trigger override**: even with this final gate, a wave-skill may have triggered its own per-wave review (DoR ambiguity, contested ADR, novel deployment target, etc.). Per-wave reviewer outputs are PR-ephemeral, not committed; they inform the wave's primary agent in real time but don't substitute for this final gate.
-
-## Polyglot Adapter Matrix
-
-Contract layer (3 Pillars + Mandates 8-11) is language-agnostic. Implementation
-bindings per language are documented in the matrix below. Python ships ready;
-other languages are bootstrap-on-demand templates (Epic 3+).
-
-| Lang | PBT lib | xunit equiv | Skip marker | Step composition idiom |
-|---|---|---|---|---|
-| Python | hypothesis | pytest | `pytest.mark.skip(reason="pending")` | pytest-bdd `.feature` + `steps_*.py` |
-| TypeScript | fast-check | Vitest/Jest | `it.skip(...)` | `*.scenarios.ts` + `*.specifications.ts` |
-| C# | FsCheck | xUnit | `[Fact(Skip="pending")]` | partial class `*Scenarios.cs` + `*Specifications.cs` |
-| Java | jqwik | JUnit | `@Disabled("pending")` | companion test class |
-| Kotlin | kotest-property | Kotest | `@Disabled` | extension functions split |
-| Rust | proptest | std `#[test]` | `#[ignore]` | `<feature>_scenarios.rs` + `<feature>_specifications.rs` (same module) |
-| Go | rapid o gopter | testing | `t.Skip("pending")` | `*_scenarios_test.go` + `*_specifications_test.go` |
-
-**State-delta port** per language lives at the project-local path
-`tests/common/state_delta.<ext>` (apply-if-absent on first DISTILL in the
-project). Python port is canonical at `nwave_ai/state_delta/`. Other-language
-ports are templated bootstraps from the per-lang Tier-2 expansion catalogs.
-
-**Universe assertion contract** is identical across languages: every
-state-mutating test at layers 1-3 calls `assert_state_delta(before, after,
-universe, expected)` (Python signature; idiomatic translations preserve the
-same four parameters). Universe declares observable port-exposed names;
-expected maps each declared key to a predicate. Anything in universe not in
-expected MUST remain unchanged — fail-closed.
-
-**Per-lang predicate library** mirrors the Python set: `set_to`, `unchanged`,
-`appended_with`, `containing`, `normalized_to`, `idempotent_after`,
-`legacy_healed`, `prepended_with`. Each language port implements all eight
-with the same semantic contract.
-
-### Polyglot bootstrap (apply-if-absent)
-
-On first DISTILL invocation in a project, the agent:
-1. Detects target language via the canonical project marker file (Phase 0 of nw-acceptance-designer).
-2. Looks up the matrix row.
-3. Checks for `tests/common/state_delta.<ext>` in the project.
-4. If absent: applies the per-lang Tier-2 expansion template (lazy load) and commits.
-5. If present: inherits (no re-bootstrap).
-
-The template applies once per project. Subsequent DISTILL runs inherit the existing port.
-
-<!-- SCAFFOLD-MARKER section start — DISTILL slice-02 of fix-mandate-9-v2-rollout.
-     This section is intentionally empty; A_GREEN_ATS populates the matrix
-     rows + per-row verdict vocabulary per the spike. Source spec:
-     docs/feature/fix-mandate-9-v2-rollout/spike/spike-v2.md sections 5 + 6. -->
-
-## Adapter Integration Slice Authoring
-
-When the in-scope feature ships a CRITICAL (Port, Adapter) pair per the Adapter Criticality classification (framework-catalog row OR project-local `atdd-infrastructure-policy.md` row), DISTILL MUST author an adapter-integration slice in addition to the acceptance slice. The adapter is the SUT, not the feature. The slice plan declares per-property applicability as one of three verdicts so the reviewer can verify mechanically.
-
-Reference: design spike v2 `docs/analysis/adapter-integration-slice-design-2026-05-27.md` §5 (10-property matrix + EXERCISED/N/A/DEFERRED declaration + AUTH-1/2/3 ownership and ceiling rules) + §7 (walking-skeleton-second ordering — behavioral change ships against the slice-01 detector).
-
-### 10-property matrix (per spike v2 §5 expanded matrix)
-
-| # | Property | Description |
+| Step | Rule | Gate |
 |---|---|---|
-| 1 | Error class taxonomy | Enumerated OSError subclasses, IOError, decoding errors, typed exceptions — per ENOENT / EACCES / EISDIR / ENOSPC test |
-| 2 | Concurrency | Multiple writers atomic; race absence; ordering invariant under concurrent invocation — per 2+ writer race test |
-| 3 | Atomicity | Crash mid-write leaves state consistent; fsync semantics; partial-failure containment — per simulated crash test |
-| 4 | Idempotency | Re-invocation has well-defined semantics (append or no-op per contract) — per re-invocation test |
-| 5 | Recovery | Partial-failure recoverable on next attempt; no orphan state — per resume-from-partial test |
-| 6 | Edge cases | Unicode surrogates, NaN/Inf in payload, very-large payload, file rotation, encoding boundary — per boundary input test |
-| 7 | Observability | Structured diagnostic emission on every failure-mode branch; stderr-event shape contract verified — per stderr event-shape test |
-| 8 | Fail-mode contract | Fail-OPEN vs fail-CLOSED vs fail-LOUD declared and tested; behavior under perturbation matches declared mode — per declared fail-mode test |
-| 9 | Resource-leak absence | File descriptors / subprocesses / network sockets released across success+failure paths; no orphan processes/pipes — per lsof / proc-tree test |
-| 10 | Driving-port purity | Adapter does NOT call back into driving port (no reverse coupling) — per static grep + test boundary scan |
+| 2 | Each reviewer outputs YAML verdict: `approval_status` ∈ {approved, conditionally_approved, needs_revision, rejected} + `blocker_count`, `high_count`, `low_count`, `findings_list` | structured verdict received from each |
+| 3 | Cross-wave consistency: Eclipse APPROVES DISCUSS but Architect's findings reveal DISCUSS contradictions (e.g. story claims X, ADR assumes Y) → surface as cross-wave blocker | contradictions flagged |
+| 4 | Per NEEDS_REVISION verdict: dispatch fix to the wave's primary agent (Luna DISCUSS · Morgan DESIGN · platform-architect DEVOPS · acceptance-designer DISTILL); re-run only the affected reviewer after fix | 2 revision cycles max per wave; escalate to user if unresolved |
+| 5 | Block DELIVER handoff until all four verdicts APPROVED or CONDITIONALLY_APPROVED with documented action items in DELIVER scope | zero blockers, zero high (or accepted-with-conditions) |
 
-### Per-property verdict vocabulary (spike v2 §5 ADD-M4)
+**Cost**: 4 Haiku reviewers in parallel ≈ $0.05-0.20 per feature. Small cost vs late-feedback-blast-radius reduction (full chain visible).
 
-The slice plan MUST declare each of the 10 properties as one of:
+**Structural-correctness reviewer never skips**: `rigor.reviewer_model: "skip"` applies ONLY to the three scale-sensitive cost-driven reviewers (Eclipse / Architect / Forge). Sentinel (`@nw-acceptance-designer-reviewer`) ALWAYS dispatches regardless of rigor cascade or scenario count fast-path — structural-correctness reviewer (Gherkin antipatterns, hexagonal boundary, scaffold integrity); silent skip masks the bug class issue #52 fixed.
 
-- **EXERCISED** — cited by AT name (one AT per row minimum). The reviewer verifies the AT path + line citation mechanically (file exists, line matches expected step body).
-- **N/A** — cited by Port-contract excerpt that excludes the property (example: "JsonlLogAdapter is fail-OPEN by INV-3; concurrency irrelevant because adapter does not promise atomic ordering"). The reviewer greps the adapter source for the excerpt; absence is a BLOCKER.
-- **DEFERRED** — cited by backlog friction ID (example: "Resource-leak coverage deferred to F-ADAPTER-INTEGRATION-RESOURCE-LEAK"). The reviewer verifies the friction exists in `docs/backlog.md`.
+**Per-wave review trigger override**: a wave-skill may still trigger its own per-wave review (DoR ambiguity, contested ADR, novel deployment target, etc.). Per-wave reviewer outputs = PR-ephemeral, not committed; they inform the wave's primary agent in real time, never substitute this final gate.
 
-**Empty / omitted property declaration is a REVIEWER BLOCKER**. Every row MUST carry a verdict + citation; silence is a verdict-omission failure, not a default-pass.
+## Deliverable-Type Verification Routing (ADR-PST-003 / DDD-6)
 
-### Ownership (spike v2 §5 AUTH-1)
+The verification plan branches on the `deliverable_type` resolved in Prior Wave Reading step 1b (`nw-distill-prior-wave-reading`) — read from the SAME `.nwave/des-config.json` the DES runtime gate uses (single source of truth, `DESConfig.deliverable_type` precedence). The four-reviewer Final Wave Review Gate above ALWAYS runs; this section declares the ADDITIONAL, type-specific verification.
 
-- **DISTILL (nw-acceptance-designer)** proposes per-property applicability + EXERCISED / N/A / DEFERRED verdict per row.
-- **Sentinel (nw-acceptance-designer-reviewer)** mechanically verifies citations against actual adapter source + Port contract docstring + AT file paths (4-step checklist documented in `nw-acceptance-designer-reviewer.md` Critique Vector S3 and Adapter Coverage Check section).
+| Deliverable type | Verification plan |
+|---|---|
+| **`application`** (or unresolved) | UNCHANGED — pytest / Hypothesis routing. No plugin or skill reviewer. The four-reviewer gate (Sentinel reviews the scenarios/scaffolds) is the verification. |
+| **`plugin`** | `@nw-plugin-validator` (Claude Code plugin structure/schema) + `@nw-skill-reviewer` (SKILL.md quality) + **behavioral Gherkin** scenarios + **example-interaction evidence** (the plugin demonstrated through its real invocation path) + optional `bats`/`shellcheck` for any shell. NOT pytest/Hypothesis-centric. |
+| **`skill`** | `@nw-skill-reviewer` (SKILL.md quality) + **behavioral Gherkin** scenarios. Do NOT dispatch `@nw-plugin-validator` (no plugin structure to validate). |
 
-### Carpaccio ceiling escape (spike v2 §5 AUTH-3)
+**Mixed plugin/skill features** (a plugin that also bundles application-layer code) get `@nw-software-crafter-reviewer` on that code at **DELIVER Phase 4**, not here — DISTILL has no execution log to review, so the crafter-reviewer is intentionally absent from this DISTILL table (see `nw-deliver` Phase 4 for the symmetric DELIVER routing).
 
-Adapter-integration coverage matrices often yield 10-15 ATs which exceeds the standard `carpaccio_slice_max: 3` ceiling. Resolution:
+**Authoring routing**: plugin/skill AUTHORING (writing the plugin manifest, hooks, commands, agents, or SKILL.md content) routes to `@nw-agent-builder`. `@nw-plugin-validator` and `@nw-skill-reviewer` are read-only verification agents — they review, they do not author. The four `*-development` specialist agents remain DEFERRED (not created).
 
-- **Option B (preferred)**: split coverage across N carpaccio slices grouped by property (one slice = "JsonlLogAdapter error taxonomy", next slice = "JsonlLogAdapter concurrency", and so on). Per-slice ≤3 ATs preserved; carpaccio discipline intact.
-- **Option A (fallback)**: adapter-integration slices use `@adapter-integration @coupled` tags with the adapter contract closure as the coupling justification — all ATs in the slice are coupled by the single adapter contract.
-- **Option C (deferred)**: raise ceiling for `@adapter-integration` slices to 5. Requires `carpaccio_slice_gate` update; avoid ceiling-creep.
-
-### Slice-plan template
-
-```markdown
-## Adapter Integration Slice — {AdapterName}
-
-Adapter under test: {AdapterName} ({Port}, criticality: CRITICAL per {table source})
-
-| # | Property | Verdict | Citation |
-|---|---|---|---|
-| 1 | Error class taxonomy | EXERCISED | tests/.../adapter_integration_{adapter}_taxonomy.feature:12 |
-| 2 | Concurrency | EXERCISED | tests/.../adapter_integration_{adapter}_concurrency.feature:8 |
-| 3 | Atomicity | EXERCISED | tests/.../adapter_integration_{adapter}_atomicity.feature:14 |
-| 4 | Idempotency | N/A | adapter docstring INV-2 ("each emit appends; no compaction promise") |
-| 5 | Recovery | DEFERRED | F-ADAPTER-INTEGRATION-{adapter}-RECOVERY (docs/backlog.md) |
-| 6 | Edge cases | EXERCISED | tests/.../adapter_integration_{adapter}_boundary.feature:10 |
-| 7 | Observability | EXERCISED | tests/.../adapter_integration_{adapter}_stderr_shape.feature:9 |
-| 8 | Fail-mode contract | EXERCISED | tests/.../adapter_integration_{adapter}_fail_mode.feature:11 |
-| 9 | Resource-leak absence | DEFERRED | F-ADAPTER-INTEGRATION-RESOURCE-LEAK (docs/backlog.md) |
-| 10 | Driving-port purity | EXERCISED | static grep step + tests/.../adapter_integration_{adapter}_purity.feature:7 |
-```
+**Single-source-of-truth invariant**: the routing here and the DES enforcement gate both read `deliverable_type` from `.nwave/des-config.json` via `DESConfig.deliverable_type`. Never re-detect the type independently — divergence between the verification plan and the enforcement gate is the failure this routing prevents.
 
 ## Outputs
 
-**Single narrative file**: `docs/feature/{feature-id}/feature-delta.md` — scenario list with tags, WS strategy, adapter coverage table, scaffolds list, test placement, driving adapter coverage, pre-requisites all become `## Wave: DISTILL / [REF|WHY|HOW] <Section>` headings. The `.feature` file (below) remains the SSOT for executable scenarios; the wave-delta sections are pointers + structured summaries.
+**Single narrative file**: `docs/feature/{feature-id}/feature-delta.md` — scenario list with tags, WS strategy, adapter coverage table, scaffolds list, test placement, driving adapter coverage, pre-requisites all become `## Wave: DISTILL / [REF|WHY|HOW] <Section>` headings. `.feature` file (below) = SSOT for executable scenarios; wave-delta sections = pointers + structured summaries. Table format: `nw-distill-feature-delta-schema`.
 
-**Machine artifacts** (declared, parseable by downstream — the `.feature` files ARE the scenario SSOT, executable by pytest-bdd):
+**Machine artifacts** (declared, parseable by downstream — `.feature` files ARE the scenario SSOT, executable by pytest-bdd):
 - `tests/{test-type-path}/{feature-id}/acceptance/walking-skeleton.feature`
 - `tests/{test-type-path}/{feature-id}/acceptance/milestone-{N}-{description}.feature`
 - `tests/{test-type-path}/{feature-id}/acceptance/integration-checkpoints.feature`
 - `tests/{test-type-path}/{feature-id}/acceptance/steps/conftest.py` + `{domain}_steps.py`
-- `src/{production-path}/{module}.py` — RED scaffold stubs (Mandate 7)
+- `src/{production-path}/{module}.py` — RED scaffold stubs (`nw-distill-red-scaffolding`)
+
+> **`.feature` tag contract (the carpaccio gate finds files + scenarios by tag).** Source of truth:
+> `src/des/application/feature_at_files.py` (`wanted = f"@feature-{feature_id}"`) +
+> `src/des/cli/carpaccio_format.py` (`_SLICE_TAG_RE = @(slice-\d+)`, `_parse_scenarios_in_text`).
+> Consumed by `des carpaccio-slice-gate`. Two MANDATORY tags, or the gate reports
+> `no-scenarios-for-slice`:
+> - **File-level `@feature-{feature-id}`** — placed at the top of every slice `.feature` file,
+>   on the line(s) preceding the `Feature:` header. This is how the gate DISCOVERS the file
+>   (`feature_tag_files` rglobs `tests/**/*.feature` and keeps only files self-identifying with
+>   this tag). Omit it → the gate finds ZERO files → `no-scenarios-for-slice`.
+> - **Per-scenario `@slice-NN`** — placed on EACH scenario. Feature-level tags do NOT inherit:
+>   `_parse_scenarios_in_text` clears pending tags at the `Feature:` line, so a `@slice-NN`
+>   sitting only above `Feature:` binds to ZERO scenarios → `no-scenarios-for-slice`. Tag every
+>   scenario the slice owns individually.
+> - **Hermetic subprocess driving port** — ATs drive the in-tree DES runtime via
+>   `python -m des.cli.<gate>` (Layer 3 subprocess). NO `expanduser("~/.claude")` / no personal-hook
+>   paths in step composition — the `tests/meta/test_acceptance_hermeticity.py` guard rejects
+>   `Path.home() / ".claude"` and `expanduser("~/.claude")` at collection.
 
 For bug fix regression tests: `tests/regression/{component-or-module}/bug-{ticket-or-description}.feature` + matching `tests/unit/{component-or-module}/test_{module}_bug_{ticket-or-description}.py`.
 
 **SSOT updates** (per Recommendation 3 / back-propagation contract):
-- `docs/product/kpi-contracts.yaml` — refine acceptance metrics: per-KPI scenario tag (`@kpi`) link, expected measurement window, soft-vs-hard gate classification. DISTILL inherits the contract from DEVOPS and tightens it as scenarios are written.
+- `docs/product/kpi-contracts.yaml` — refine acceptance metrics: per-KPI scenario tag (`@kpi`) link, expected measurement window, soft-vs-hard gate classification. DISTILL inherits the contract from DEVOPS, tightens it as scenarios are written.
 
-Legacy multi-file outputs (`walking-skeleton.md`, `wave-decisions.md`, `test-scenarios.md`, `acceptance-review.md` as separate files in `docs/feature/{id}/distill/`) are NOT produced — that content lives in `feature-delta.md`, and the executable `.feature` files are the scenario SSOT. Reviewer output is ephemeral (PR comments / retrospective, not committed). Validator: `scripts/validation/validate_feature_layout.py`.
+Legacy multi-file outputs (`walking-skeleton.md`, `wave-decisions.md`, `test-scenarios.md`, `acceptance-review.md` as separate files in `docs/feature/{id}/distill/`) NOT produced — content lives in `feature-delta.md`; executable `.feature` files = scenario SSOT. Reviewer output ephemeral (PR comments / retrospective, not committed). Validator: `scripts/validation/validate_feature_layout.py`.

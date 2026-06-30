@@ -385,9 +385,9 @@ def codex_container():
 # and failed on it).  Both consumer tests now share this local-built wheel.
 # ---------------------------------------------------------------------------
 
-import shutil  # noqa: E402
-import subprocess  # noqa: E402
-import sys  # noqa: E402
+import shutil
+import subprocess
+import sys
 
 
 _REPO_ROOT_FOR_WHEEL: Path = Path(__file__).resolve().parent.parent.parent

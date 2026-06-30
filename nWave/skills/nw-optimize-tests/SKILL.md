@@ -5,6 +5,8 @@ user-invocable: true
 argument-hint: '[scope] - Optional: a path (e.g. tests/des/unit/), a feature-id (auto-resolves to tests/<id>/), or omit for full unit suite. --reviewer to chain reviewer agent.'
 ---
 
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+
 # NW-OPTIMIZE-TESTS: Test Suite Optimization
 
 **Wave**: CROSS_WAVE
@@ -20,12 +22,19 @@ Dispatches Trim to inventory a test scope, detect duplication and anti-patterns,
 - The scope path (passed as argument or auto-detected)
 - `~/.claude/skills/nw-test-optimization/SKILL.md` — methodology (loaded by agent)
 
-## Timing Baseline by `workflow.mode`
+## Timing Baseline by `workflow.mode` <!-- mode-ref-ok -->
 
-The timing baseline Trim compares against depends on `workflow.mode`:
+The timing baseline Trim compares against depends on `workflow.mode` — per-mode audit substrate projected from the mode registry: <!-- mode-ref-ok -->
+
+<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
+- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
+  Deliver phase shape: `RED -> GREEN -> COMMIT`
+<!-- GENERATED:mode-descriptor END -->
 
 - **classic mode** — wall-clock figures recorded in the classic-mode execution-log.json.
-- **atdd_pure mode** — under `atdd_pure` there is no step log; use the **AT-completion ledger** phase-boundary timestamps as the timing baseline. Each ledger slice records a phase-boundary timestamp per phase transition, and the deltas between consecutive phase-boundary marks give the per-slice timing baseline Trim measures improvement against.
+- **atdd_pure mode** — use the **AT-completion ledger** phase-boundary timestamps as the timing baseline. <!-- mode-ref-ok --> Each ledger slice records a phase-boundary timestamp per phase transition, and the deltas between consecutive phase-boundary marks give the per-slice timing baseline Trim measures improvement against.
 
 ## Agent Invocation
 
@@ -82,7 +91,7 @@ Trim inventories the unit suite, runs md5sum cross-check, scans for anti-pattern
 ```
 /nw-optimize-tests lean-wave-documentation
 ```
-Trim resolves to `tests/<feature-id>/` paths from the classic-mode execution-log.json if available (or, in atdd_pure mode, from the ledger's recorded test paths), otherwise scopes to test files referencing the feature-id.
+Trim resolves to `tests/<feature-id>/` paths from the classic-mode execution-log.json if available (or, in atdd_pure mode, from the ledger's recorded test paths), otherwise scopes to test files referencing the feature-id. <!-- mode-ref-ok -->
 
 ### Example 3: Single fat file
 ```

@@ -76,7 +76,17 @@ from des.domain.slice_id_trailer import (
     extract_slice_id,
     extract_slice_ids,
 )
-from des.runtime.interpreter import python_for
+from des.runtime.interpreter import InterpreterUnavailable, des_spawn
+
+
+# The contract gate's dedicated INDETERMINATE exit code (DDD-2): the E2 gate
+# could not resolve a usable interpreter on this machine and degraded LOUD
+# INDETERMINATE-and-proceed rather than hard-refusing. Mirrors
+# ``run_contract_gate._GATE_INDETERMINATE_EXIT_CODE`` -- distinct from 0
+# (cleared), 1 (refused), 2 (hard-refuse / malformed). On this outcome the
+# exit gate mints an honest ``SliceCommitIndeterminate``, never a fabricated
+# ``SliceCommitVerified`` and never a bare refusal.
+_GATE_INDETERMINATE_EXIT_CODE = 3
 
 
 # DDD-3 identity guarantee: re-export the pure-function SSOT symbols so the
@@ -249,11 +259,19 @@ def _run_contract_gate(repo: Path, feature_id: str, slice_id: str) -> int:
     test-runner seam stays inside `run_contract_gate`; this CLI adds no pytest
     call site of its own). Returns the contract gate's exit code -- 0 when the
     feature-scoped suite cleared, non-zero on a refusal or a malformed scope.
+
+    DDD-1/DDD-2 degrade-LOUD: when ``des_spawn`` itself cannot resolve a usable
+    interpreter on this machine it raises ``InterpreterUnavailable`` (the spawn
+    boundary, not the child). That is the same non-Python-target interpreter
+    absence the gate's own collection path degrades on -- map it to the
+    dedicated ``_GATE_INDETERMINATE_EXIT_CODE`` so the caller records an honest
+    ``SliceCommitIndeterminate`` instead of crashing. INDETERMINATE is never
+    coerced to 0 (a pass) -- a runnable-but-failing gate returns its own
+    non-zero code unchanged.
     """
-    completed = subprocess.run(
-        [
-            python_for(None),
-            "-m",
+    try:
+        completed = des_spawn(
+            None,
             "des.cli.run_contract_gate",
             "--repo",
             str(repo),
@@ -261,10 +279,11 @@ def _run_contract_gate(repo: Path, feature_id: str, slice_id: str) -> int:
             feature_id,
             "--entering-slice",
             slice_id,
-        ],
-        capture_output=True,
-        text=True,
-    )
+            capture_output=True,
+            text=True,
+        )
+    except InterpreterUnavailable:
+        return _GATE_INDETERMINATE_EXIT_CODE
     return completed.returncode
 
 
@@ -291,6 +310,32 @@ def _append_slice_commit_verified(
     ledger = AtCompletionLedger(feature_id, repo)
     for slice_id in slice_ids:
         ledger.append_gate_event("SliceCommitVerified", slice_id)
+
+
+def _append_slice_commit_indeterminate(
+    repo: Path,
+    feature_id: str,
+    slice_ids: list[str],
+    reason: str = "contract_gate_interpreter_unavailable",
+) -> None:
+    """Record one honest `SliceCommitIndeterminate` event per slice (DDD-2 / DDD-6).
+
+    The non-Python-target degrade record: the E2 contract gate could not resolve
+    a usable interpreter on this machine and degraded LOUD INDETERMINATE, so the
+    ledger states "unverified on this machine" truthfully -- NEVER a fabricated
+    `SliceCommitVerified` (no-silent-pass) and never a bare refusal that wedges
+    the slice chain. Written through the SSOT mint
+    ``AtCompletionLedger.append_slice_commit_indeterminate`` (DDD-6 reuse -- the
+    SAME writer ``des commit-slice``'s committed-scope-digest degrade routes
+    through), so the record carries the free-text ``reason`` plus the honesty
+    fields (`gate_scope == "INDETERMINATE"`, `at_verified == False`) and lands on
+    the carpaccio chain's read substrate. The in-order guard's
+    predecessor-satisfied predicate (which accepts an INDETERMINATE predecessor)
+    then lets the successor slice dispatch.
+    """
+    ledger = AtCompletionLedger(feature_id, repo)
+    for slice_id in slice_ids:
+        ledger.append_slice_commit_indeterminate(slice_id, reason)
 
 
 def _resolve_slice_ids(repo: Path, commit: str) -> tuple[list[str], str, int | None]:
@@ -461,6 +506,14 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
     # E2 -- the feature-scoped contract gate, one run per listed slice.
     for slice_id in slice_ids:
         contract_code = _run_contract_gate(repo, feature_id, slice_id)
+        # DDD-2 degrade-LOUD: an INDETERMINATE gate (no usable interpreter on
+        # this machine) is NOT a refusal -- record the honest
+        # SliceCommitIndeterminate (never a fabricated SliceCommitVerified) and
+        # let the slice chain progress, distinct from both the verified mint and
+        # a genuine refusal. Reachable only on interpreter-absence; a
+        # runnable-but-failing gate returns its own non-zero code and refuses.
+        if contract_code == _GATE_INDETERMINATE_EXIT_CODE:
+            return _record_indeterminate_outcome(repo, args, feature_id, slice_ids)
         if contract_code != 0:
             _emit_with_human_surface(
                 {
@@ -489,6 +542,38 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
         }
     )
     return 0
+
+
+def _record_indeterminate_outcome(
+    repo: Path,
+    args: argparse.Namespace,
+    feature_id: str,
+    slice_ids: list[str],
+) -> int:
+    """Mint the honest INDETERMINATE outcome for the listed slices (DDD-2).
+
+    The E2 contract gate degraded LOUD INDETERMINATE (no usable interpreter on
+    this machine). The exit gate records one `SliceCommitIndeterminate` per slice
+    -- never a fabricated `SliceCommitVerified` (no-silent-pass) and never a bare
+    refusal that wedges the chain -- and emits the honest event so the operator
+    sees the gate could not verify here. Returns the dedicated INDETERMINATE exit
+    code (distinct from 0 verified, 1 refused, 2 malformed).
+    """
+    _append_slice_commit_indeterminate(repo, feature_id, slice_ids)
+    _emit_with_human_surface(
+        {
+            "event": "SliceCommitIndeterminate",
+            "slice_ids": slice_ids,
+            "commit": args.commit,
+            "error": (
+                "the feature-scoped contract gate could not resolve a usable "
+                "interpreter on this machine -- recorded an honest "
+                "SliceCommitIndeterminate (unverified here), never a fabricated "
+                "pass"
+            ),
+        }
+    )
+    return _GATE_INDETERMINATE_EXIT_CODE
 
 
 def main(argv: list[str] | None = None) -> int:

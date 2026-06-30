@@ -1,10 +1,20 @@
 # nWave Reference
 
-Auto-generated documentation for 46 agents, 28 commands, 207 skills, and 9 templates.
+Auto-generated documentation for 50 agents, 28 commands, 263 skills, and 9 templates.
 
 ## Contents
 
-- [Agents](agents/index.md) (46)
+- [Agents](agents/index.md) (50)
 - [Commands](commands/index.md) (28)
-- [Skills](skills/index.md) (207)
+- [Skills](skills/index.md) (263)
 - [Templates](templates/index.md) (9)
+
+## CLI & configuration references
+
+Hand-authored reference for the CLI and configuration files:
+
+- [CLI Reference](cli.md) — the `nwave-ai` command and its subcommands
+- [Global Config Reference](global-config.md) — `~/.nwave/global-config.json` keys
+- [Outcomes CLI Reference](outcomes-cli.md) — `nwave-ai outcomes …`
+- [DES Markers Reference](des-markers.md) — DES task-prompt markers
+- [Feature-delta Format](feature-format.md) — feature-delta.md schema

@@ -26,6 +26,8 @@ from des.ports.driver_ports.subagent_stop_port import (
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from des.domain.log_integrity_validator import (
         CorrectableEntry,
         LogIntegrityValidator,
@@ -35,8 +37,30 @@ if TYPE_CHECKING:
         CommitVerificationResult,
         CommitVerifier,
     )
+    from des.ports.driven_ports.discuss_review_reader import DiscussReviewReader
+    from des.ports.driven_ports.feature_delta_reader import FeatureDeltaReader
     from des.ports.driven_ports.scope_checker import ScopeChecker
     from des.ports.driven_ports.time_provider_port import TimeProvider
+    from des.ports.driven_ports.wave_active_store import (
+        WaveActiveReader,
+        WaveActiveWriter,
+    )
+
+
+# f-design-devops-review-gate slice-02 (the literal-lift): the closed set of
+# waves whose gate-out stack carries a review-verdict gate. The live SubagentStop
+# gate-out dispatch keys on the ACTIVE wave being in this set (lifted from the
+# hardcoded "discuss" literal). DISCUSS keeps its structural + PO-review pair;
+# DESIGN / DEVOPS each carry a single review-verdict consumer row.
+_REVIEW_GATE_OUT_WAVES: frozenset[str] = frozenset({"discuss", "design", "devops"})
+
+# The wave-parametric review-verdict consumer gate-ids the gate-out invoker routes
+# to the SAME generic ReviewVerdictGate.evaluate core (the SSOT-reuse proof). The
+# DISCUSS PO-review (verify-discuss-review) keeps its dedicated DiscussReviewGate
+# branch -- its stack also carries the structural validate-feature-delta row.
+_REVIEW_VERDICT_GATE_IDS: frozenset[str] = frozenset(
+    {"verify-design-review", "verify-devops-review"}
+)
 
 
 class SubagentStopService(SubagentStopPort):
@@ -66,6 +90,11 @@ class SubagentStopService(SubagentStopPort):
         time_provider: TimeProvider,
         commit_verifier: CommitVerifier | None = None,
         integrity_validator: LogIntegrityValidator | None = None,
+        wave_active_reader: WaveActiveReader | None = None,
+        feature_delta_reader: FeatureDeltaReader | None = None,
+        discuss_review_reader: DiscussReviewReader | None = None,
+        review_readers: dict[str, DiscussReviewReader] | None = None,
+        wave_active_writer: WaveActiveWriter | None = None,
     ) -> None:
         self._log_reader = log_reader
         self._completion_validator = completion_validator
@@ -74,6 +103,24 @@ class SubagentStopService(SubagentStopPort):
         self._time_provider = time_provider
         self._commit_verifier = commit_verifier
         self._integrity_validator = integrity_validator
+        self._wave_active_reader = wave_active_reader
+        self._feature_delta_reader = feature_delta_reader
+        self._discuss_review_reader = discuss_review_reader
+        # fix-floor-auto-close-cross-wave: the WRITER capability the cross-wave
+        # auto-close needs (clear() of the wave-active floor). Additive DI: an
+        # unwired writer (None) makes the auto-close a no-op (the floor stays
+        # armed -- the pre-feature behaviour), so the close fires ONLY on the
+        # production-wired path.
+        self._wave_active_writer = wave_active_writer
+        # f-design-devops-review-gate slice-02 (the literal-lift): per-wave
+        # review-verdict readers for the DESIGN / DEVOPS gate-out consumer rows
+        # (verify-design-review / verify-devops-review). The DISCUSS PO-review
+        # keeps its own dedicated reader (above) -- its gate-out stack also
+        # carries the structural validate-feature-delta row, so it is not a plain
+        # review-verdict consumer. degrade-LOUD: a wave with no wired reader makes
+        # its review-verdict row a clean pass (the additive-DI skip-when-unwired
+        # behavior preserved verbatim from the DISCUSS branch).
+        self._review_readers: dict[str, DiscussReviewReader] = review_readers or {}
 
     def validate(
         self,
@@ -90,6 +137,45 @@ class SubagentStopService(SubagentStopPort):
         Returns:
             HookDecision indicating allow or block
         """
+        # Step -1: DISCUSS gate-OUT (slice-07). A discuss-wave RETURN must carry a
+        # value-bearing slice plan (structural 5-column + slice-06 cohesion-MECC,
+        # ONE call). The gate only VETOES (§22.0): a non-PASS DiscussGateOut token
+        # -> block; an unreadable feature-delta -> INDETERMINATE degrade-LOUD
+        # block (§17). It runs BEFORE the mode branch so it gates an atdd_pure
+        # discuss return as well as a classic one. Additive DI: no
+        # feature_delta_reader / wave_active_reader wired -> branch skipped (never
+        # breaks existing wiring). The discriminant keys on the ACTIVE wave being
+        # 'discuss' (read from the WaveActiveReader floor at cwd, never
+        # self-reported); a non-discuss return falls through untouched.
+        gate_out_block = self._discuss_gate_out_declarative(context, hook_id=hook_id)
+        if gate_out_block is not None:
+            return gate_out_block
+
+        # Step -0.5: wave-only Agent()-dispatch guard (WGO-001, ADD-not-mutate).
+        # A wave-only return is execution-log-free AND step-free (a DES-WAVE
+        # marker + a project id, no execution-log step id -- the Agent()
+        # orchestration return shape). The wave review-verdict gate-out above is
+        # the ONLY decision such a return needs: if it found no objection (None),
+        # the return is allowed; it must NEVER fall into the classic Step-1
+        # execution-log read (which would block on LogFileNotFound for a context
+        # that has no execution log by construction). Keyed on the wave-only
+        # shape; the classic and atdd_pure entries are byte-stable (atdd_pure is
+        # routed by the mode branch at Step 0; a classic context always carries
+        # a non-empty execution_log_path + step_id).
+        if context.step_id == "" and context.execution_log_path == "":
+            if context.mode == "atdd_pure":
+                return self._validate_atdd_pure(context, hook_id)
+            # fix-floor-auto-close-cross-wave (Option A): the attested gate-OUT
+            # above found no objection (a PASS). When this wave-only return is the
+            # ACTIVE wave's OWNER's terminal return, close the wave-active floor so
+            # the next cross-wave dispatch is not falsely blocked as a stale
+            # in-wave bypass. In-wave sub-dispatches never reach here (they are
+            # PreToolUse events), so in-wave persistence is preserved by
+            # construction (I3/I4 untouched). The close is ADDITIVE -- the gate-OUT
+            # ALLOW decision is unchanged.
+            self._maybe_close_owner_floor(context)
+            return HookDecision.allow()
+
         # Step 0: Mode branch (T-C / F-DES-ATDD-PURE-DISPATCH-LIFECYCLE).
         # An atdd_pure dispatch is roadmap-free and produces no
         # execution-log.json -- the classic step-1..3.5 pipeline (which reads
@@ -239,6 +325,342 @@ class SubagentStopService(SubagentStopPort):
             tokens_used=context.tokens_used,
         )
         return HookDecision.allow()
+
+    def _maybe_close_owner_floor(self, context: SubagentStopContext) -> None:
+        """Close the wave-active floor on the wave OWNER's terminal gate-OUT PASS.
+
+        fix-floor-auto-close-cross-wave (Option A, Ale 2026-06-23): the
+        cross-wave auto-close. Reached ONLY on the wave-only return PASS path
+        (an execution-log-free, step-free return whose attested gate-OUT found
+        no objection). Clears the floor IFF the returning ``subagent_type`` OWNS
+        the ACTIVE wave -- ``WAVE_OWNERS[subagent_type] == active wave``, OR (the
+        dual-ownership superset, slice-02) the returner is the platform-architect
+        and the active wave is one of its two owned waves
+        ``_PLATFORM_ARCHITECT_WAVES = {"design", "devops"}`` (mirrors
+        ``wave_dispatch_guard_policy._marker_is_on_spine``). The un-gameable
+        terminal "wave is over" signal. The active wave is read from the floor at
+        cwd (never self-reported).
+
+        A non-owner return (a reviewer / anything outside WAVE_OWNERS) does NOT
+        close (AC-3): ``WAVE_OWNERS.get`` returns None, never equal to the active
+        wave. A veto never reaches here (the gate-OUT blocked first, AC-4). An
+        in-wave sub-dispatch never reaches here (PreToolUse, AC-2).
+
+        Additive DI / fail-safe: an unwired reader or writer, no cwd, no floor,
+        or a non-owner return -> no-op (the floor stays armed). The close only
+        ever REMOVES a floor whose owner just terminally returned; it never arms.
+        """
+        if self._wave_active_reader is None or self._wave_active_writer is None:
+            return
+        if not context.cwd or not context.subagent_type:
+            return
+
+        from des.domain.wave_active import WaveActiveRecord
+        from des.domain.wave_dispatch_guard_policy import (
+            _PLATFORM_ARCHITECT,
+            _PLATFORM_ARCHITECT_WAVES,
+            WAVE_OWNERS,
+        )
+
+        project_root = Path(context.cwd)
+        wave_state = self._wave_active_reader.read(project_root)
+        if not isinstance(wave_state, WaveActiveRecord):
+            return
+        owner_wave = WAVE_OWNERS.get(context.subagent_type)
+        if owner_wave is None:
+            return
+        if owner_wave == wave_state.wave:
+            pass  # standard single-owner match (AC-6 design close preserved)
+        elif (
+            context.subagent_type == _PLATFORM_ARCHITECT
+            and wave_state.wave in _PLATFORM_ARCHITECT_WAVES
+        ):
+            pass  # dual-owner closing its devops wave (AC-5)
+        else:
+            return
+        self._wave_active_writer.clear(project_root)
+
+    def _discuss_gate_out_declarative(
+        self,
+        context: SubagentStopContext,
+        hook_id: str | None,
+    ) -> HookDecision | None:
+        """Run the DISCUSS gate-OUT stack DECLARATIVELY; return a block, or None.
+
+        f-declarative-gate-composition (OB-1): the DISCUSS gate-OUT stack is
+        declared as DATA in ``wave_gate_stacks.discuss.gate-out`` -- the readable
+        2-row list ``[validate-feature-delta, verify-discuss-review]`` the
+        imperative branch carried as two hand-coded sub-calls (the structural
+        cohesion-MECC veto THEN the PO-review consumer veto). This generic path
+        SELECTS that stack (off the active wave), ITERATES it via the EXISTING
+        dispatcher core (iterate-in-order, halt-at-first-veto), and CARRIES each
+        gate's specific reason + recovery through (OB-2 parity). The ordering
+        (structural before PO-review) is now VISIBLE in the list, not buried in
+        branch control-flow.
+
+        Returns None (fall through) when: no reader/wave-reader wired, no cwd, the
+        active wave is not 'discuss', or the declared stack is empty/clean. A
+        non-PASS gate is a named-LOUD VETO; the per-gate decision is the SAME pure
+        core the imperative branch ran (``DiscussGateOut.evaluate`` /
+        ``DiscussReviewGate.evaluate``), keyed by gate-id.
+
+        IDEMPOTENT: it reads only the sealed feature-delta artefact + the ledger
+        record -- re-running on identical content re-earns the identical verdict
+        (§21.2.4).
+        """
+        if self._feature_delta_reader is None or self._wave_active_reader is None:
+            return None
+        if not context.cwd:
+            return None
+
+        from des.application import wave_gate_stack_dispatch as wgs
+        from des.domain.wave_active import WaveActiveRecord
+
+        project_root = Path(context.cwd)
+        wave_state = self._wave_active_reader.read(project_root)
+        # f-design-devops-review-gate slice-02 (the literal-lift): the gate-out
+        # dispatch keys on the ACTIVE wave, not the hardcoded "discuss" literal.
+        # The closed set of waves carrying a review-verdict gate-out stack is the
+        # discriminant; a wave outside it (or no floor) falls through untouched.
+        # DISCUSS behavior is identical when the active wave == "discuss"
+        # (resolve_stack("discuss", "gate-out") + the same invoker routing).
+        if not isinstance(wave_state, WaveActiveRecord):
+            return None
+        active_wave = wave_state.wave
+        if active_wave not in _REVIEW_GATE_OUT_WAVES:
+            return None
+
+        stack = wgs.resolve_stack(active_wave, "gate-out")
+        if not stack:
+            return None
+
+        content = self._feature_delta_reader.read(project_root, context.project_id)
+        invoker = self._discuss_gate_out_invoker(
+            context, project_root, content, active_wave
+        )
+        result = wgs.dispatch_wave_stack(stack, f"{active_wave}.gate-out", invoker)
+        return self._block_from_gate_out_composition(result, context, hook_id=hook_id)
+
+    def _discuss_gate_out_invoker(
+        self,
+        context: SubagentStopContext,
+        project_root: Path,
+        content: str | None,
+        active_wave: str,
+    ) -> Callable[[str, dict[str, str]], tuple[int, str]]:
+        """Build the gate-OUT invoker routing catalog gate-ids to the pure cores.
+
+        The structural row (``validate-feature-delta``) routes to
+        ``DiscussGateOut.evaluate`` over the already-read feature-delta content;
+        the DISCUSS PO-review row (``verify-discuss-review``) routes to
+        ``DiscussReviewGate.evaluate`` over the ledger record + the content seal.
+
+        f-design-devops-review-gate slice-02 (the literal-lift): the DESIGN /
+        DEVOPS review-verdict consumer rows (``verify-design-review`` /
+        ``verify-devops-review``) route to the wave-parametric
+        ``ReviewVerdictGate.evaluate`` over the per-wave ledger record + the SAME
+        content seal -- the SSOT-reuse proof (zero new verdict logic, only the
+        wave name changes). An uncatalogued gate-id fails closed, named. The pure
+        cores' verdicts and the tailored recovery are PRESERVED verbatim from the
+        imperative branch.
+        """
+        from des.application import wave_gate_stack_dispatch as wgs
+
+        def invoke(gate_id: str, _ctx: dict[str, str]) -> tuple[int, str]:
+            if gate_id == "validate-feature-delta":
+                return self._gate_out_structural(content)
+            if gate_id == "verify-discuss-review":
+                return self._gate_out_po_review(context, project_root, content)
+            if gate_id in _REVIEW_VERDICT_GATE_IDS:
+                return self._gate_out_review_verdict(
+                    context, project_root, content, active_wave, gate_id
+                )
+            return wgs.unknown_gate_stdout(gate_id)
+
+        return invoke
+
+    def _gate_out_review_verdict(
+        self,
+        context: SubagentStopContext,
+        project_root: Path,
+        content: str | None,
+        active_wave: str,
+        gate_id: str,
+    ) -> tuple[int, str]:
+        """The wave-parametric review-verdict consumer veto (DESIGN / DEVOPS).
+
+        The SSOT-reuse proof: the SAME generic ``ReviewVerdictGate.evaluate`` core
+        the DESIGN / DEVOPS verify CLIs delegate to, driven here from the live
+        SubagentStop gate-out dispatch. Reads the latest per-wave review verdict
+        via the wired per-wave reader + seals the feature-delta content, then
+        projects PASS -> pass / VETOED -> veto / INDETERMINATE -> veto (absence
+        reads as a named-LOUD veto, never a silent pass -- DDD-7 / K1).
+
+        Additive DI (skip-when-unwired, preserved verbatim from the DISCUSS
+        PO-review branch): no per-wave reader wired -> a clean pass.
+        """
+        import hashlib
+
+        from des.application import wave_gate_stack_dispatch as wgs
+        from des.domain.review_verdict_gate import ReviewGateToken, ReviewVerdictGate
+
+        reader = self._review_readers.get(active_wave)
+        if reader is None:
+            return wgs.pass_stdout(gate_id)
+        assert content is not None
+        record = reader.latest(project_root, context.project_id)
+        expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        review = ReviewVerdictGate.evaluate(record, expected_hash)
+        if review.token is ReviewGateToken.PASS:
+            return wgs.pass_stdout(gate_id)
+        reason = (
+            f"{active_wave.upper()}_REVIEW_{review.token.value}: "
+            f"{active_wave} review verdict {review.detail}"
+        )
+        return wgs.veto_stdout(
+            gate_id,
+            reason=reason,
+            recovery=[
+                f"The {active_wave.upper()} review verdict is "
+                f"{review.token.value} ({review.detail}) -- record a fresh "
+                f"APPROVED review verdict via `des record-{active_wave}-review` "
+                "whose artefact hash matches the current "
+                "docs/feature/<id>/feature-delta.md, then retry the return.",
+                "If the verdict is stale (its sealed hash no longer matches the "
+                f"current feature-delta), re-run the {active_wave} review against "
+                "the latest feature-delta so the artefact-currency seal is "
+                "current.",
+            ],
+        )
+
+    def _gate_out_structural(self, content: str | None) -> tuple[int, str]:
+        """The structural cohesion-MECC veto (DiscussGateOut.evaluate, gate-OUT row 1)."""
+        from des.application import wave_gate_stack_dispatch as wgs
+        from des.domain.discuss_gate import DiscussGateOut, DiscussGateOutToken
+
+        gate_out = DiscussGateOut.evaluate(content)
+        if gate_out.token is DiscussGateOutToken.PASS:
+            return wgs.pass_stdout("validate-feature-delta")
+        reason = f"DISCUSS_GATE_OUT_{gate_out.token.value}: {gate_out.detail}"
+        return wgs.veto_stdout(
+            "validate-feature-delta",
+            reason=reason,
+            recovery=[
+                "The DISCUSS return was rejected -- the feature-delta slice plan is "
+                "not value-bearing (e.g. every slice is pure infrastructure). "
+                "Rewrite the slice plan in docs/feature/<id>/feature-delta.md so "
+                "each slice delivers observable user value, then re-run the review.",
+                "Ensure the feature-delta slice plan passes the DISCUSS gate-OUT "
+                "review (value-bearing slices, current artefact hash), then retry "
+                "the discuss return.",
+            ],
+        )
+
+    def _gate_out_po_review(
+        self,
+        context: SubagentStopContext,
+        project_root: Path,
+        content: str | None,
+    ) -> tuple[int, str]:
+        """The PO-review consumer veto (DiscussReviewGate.evaluate, gate-OUT row 2).
+
+        Reaches this row ONLY after the structural row passed (halt-at-first-veto),
+        so ``content`` is guaranteed readable. Additive DI: no
+        ``discuss_review_reader`` wired -> the row is a clean pass (the imperative
+        branch's skip-when-unwired behavior, preserved).
+        """
+        import hashlib
+
+        from des.application import wave_gate_stack_dispatch as wgs
+        from des.domain.discuss_review_gate import (
+            DiscussReviewGate,
+            DiscussReviewGateToken,
+        )
+
+        if self._discuss_review_reader is None:
+            return wgs.pass_stdout("verify-discuss-review")
+        assert content is not None
+        record = self._discuss_review_reader.latest(project_root, context.project_id)
+        expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        review = DiscussReviewGate.evaluate(record, expected_hash)
+        if review.token is DiscussReviewGateToken.PASS:
+            return wgs.pass_stdout("verify-discuss-review")
+        reason = f"DISCUSS_PO_REVIEW_{review.token.value}: {review.detail}"
+        return wgs.veto_stdout(
+            "verify-discuss-review",
+            reason=reason,
+            recovery=[
+                "The DISCUSS PO-review returned NEEDS_REVISION -- address the "
+                "reviewer's findings in docs/feature/<id>/feature-delta.md, then "
+                "record a fresh APPROVED PO-review verdict whose artefact hash "
+                "matches the updated feature-delta before retrying the return.",
+                "If the verdict is stale (its sealed hash no longer matches the "
+                "current feature-delta), re-run the PO-review against the latest "
+                "feature-delta so the artefact-currency seal is current.",
+            ],
+        )
+
+    def _block_from_gate_out_composition(
+        self,
+        result: object,
+        context: SubagentStopContext,
+        hook_id: str | None,
+    ) -> HookDecision | None:
+        """Map a halted gate-OUT composition to a named-LOUD block, or None.
+
+        Carries the blocking gate's specific reason + recovery (OB-2 parity) and
+        emits the SAME ``HOOK_SUBAGENT_STOP_FAILED`` audit event the imperative
+        branch emitted. A clean iteration is "no objection found" -> None
+        (Invariant 4 -- never an authorizing GO).
+        """
+        from des.application import wave_gate_stack_dispatch as wgs
+        from des.application.flavor_dispatcher import CompositionResult
+
+        assert isinstance(result, CompositionResult)
+        if not result.halted or result.blocking_gate_id is None:
+            return None
+        blocking = next(
+            (r for r in result.gate_results if r.gate_id == result.blocking_gate_id),
+            None,
+        )
+        assert blocking is not None
+        reason = wgs.reason_from_stdout(blocking.stdout, blocking.gate_id)
+        return self._discuss_gate_block(
+            context,
+            reason=reason,
+            gate_data={"discuss_gate_out": blocking.gate_id},
+            recovery_suggestions=list(blocking.recovery_suggestions),
+            hook_id=hook_id,
+        )
+
+    def _discuss_gate_block(
+        self,
+        context: SubagentStopContext,
+        *,
+        reason: str,
+        gate_data: dict[str, str],
+        recovery_suggestions: list[str],
+        hook_id: str | None,
+    ) -> HookDecision:
+        """Emit the named-LOUD DISCUSS gate-OUT block (audit event + decision).
+
+        Per-caller recovery (DESIGN O-1): the sink does NOT author the recovery
+        list and does NOT parse the reason token -- each caller passes its own
+        targeted recovery_suggestions naming the fix for its specific veto.
+        """
+        self._audit_writer.log_event(
+            AuditEvent(
+                event_type="HOOK_SUBAGENT_STOP_FAILED",
+                timestamp=self._time_provider.now_utc().isoformat(),
+                feature_name=context.project_id,
+                step_id=context.slice_id or "",
+                hook_id=hook_id,
+                data={"reason": reason, **gate_data},
+            )
+        )
+        return HookDecision.block(
+            reason=reason, recovery_suggestions=recovery_suggestions
+        )
 
     def _validate_atdd_pure(
         self,

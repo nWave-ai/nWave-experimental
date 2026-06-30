@@ -31,6 +31,7 @@ from scripts.shared.skill_distribution import (
     enumerate_skills,
     filter_public_skills,
 )
+from scripts.shared.skill_path_rewrite import rewrite_host_paths
 
 
 _MANIFEST_FILENAME = ".nwave-manifest.json"
@@ -300,6 +301,7 @@ class OpenCodeSkillsPlugin(InstallationPlugin):
                 content = _strip_forbidden_fields(content)
                 if resolved_name != entry.name:
                     content = _rewrite_frontmatter_name(content, resolved_name)
+                content = rewrite_host_paths(content, "opencode")
                 target_file.write_text(content, encoding="utf-8")
 
                 installed_names.append(resolved_name)

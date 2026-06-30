@@ -23,6 +23,50 @@ if TYPE_CHECKING:
     from des.ports.driven_ports.time_provider_port import TimeProvider
 
 
+def extract_tool_call(entry: dict) -> dict | None:
+    """Extract a tool_use dict from a transcript entry.
+
+    Stateless parse of the captured-trace JSONL shape. Supports two formats:
+    - Direct: {"type": "tool_use", "name": "Read", "input": {...}}
+    - Content block: {"type": "content_block", "content_block": {"type": "tool_use", ...}}
+
+    Returns the tool_use dict (with 'name' and 'input' keys), or None.
+
+    Module-level so any consumer of the trace-JSONL shape (the skill tracker, the
+    nw-agent-evals deterministic graders) reuses ONE parser — no parallel parser.
+    """
+    entry_type = entry.get("type", "")
+    if entry_type == "tool_use":
+        return entry
+    if entry_type == "content_block":
+        block = entry.get("content_block", {})
+        if block.get("type") == "tool_use":
+            return block
+    return None
+
+
+def read_transcript_tool_calls(transcript_path: str) -> list[dict]:
+    """Read a JSONL transcript and extract its tool_use entries.
+
+    Stateless reuse surface for the captured-trace JSONL shape. Malformed lines are
+    silently skipped. Shared by SkillTrackingService and the nw-agent-evals graders.
+    """
+    tool_calls: list[dict] = []
+    with open(transcript_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            tool_call = extract_tool_call(entry)
+            if tool_call is not None:
+                tool_calls.append(tool_call)
+    return tool_calls
+
+
 class SkillTrackingService:
     """Tracks skill file loads for observability.
 
@@ -179,40 +223,17 @@ class SkillTrackingService:
     def _read_transcript_tool_calls(self, transcript_path: str) -> list[dict]:
         """Read JSONL transcript and extract tool_use entries.
 
-        Supports two formats:
-        - Direct: {"type": "tool_use", "name": "Read", "input": {...}}
-        - Content block: {"type": "content_block", "content_block": {"type": "tool_use", ...}}
-
-        Malformed lines are silently skipped.
+        Delegates to the module-level shared parser (one home for the trace-JSONL
+        parse idiom). Malformed lines are silently skipped.
         """
-        tool_calls: list[dict] = []
-        with open(transcript_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                tool_call = self._extract_tool_call(entry)
-                if tool_call is not None:
-                    tool_calls.append(tool_call)
-        return tool_calls
+        return read_transcript_tool_calls(transcript_path)
 
     def _extract_tool_call(self, entry: dict) -> dict | None:
         """Extract tool_use dict from a transcript entry.
 
-        Returns dict with 'name' and 'input' keys, or None.
+        Delegates to the module-level shared parser.
         """
-        entry_type = entry.get("type", "")
-        if entry_type == "tool_use":
-            return entry
-        if entry_type == "content_block":
-            block = entry.get("content_block", {})
-            if block.get("type") == "tool_use":
-                return block
-        return None
+        return extract_tool_call(entry)
 
     def _filter_skill_reads(self, tool_calls: list[dict]) -> list[dict]:
         """Filter to only Read calls targeting skill files."""

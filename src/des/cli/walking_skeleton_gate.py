@@ -99,15 +99,17 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_manifest(feature_dir: Path) -> dict[str, object]:
+def _load_manifest(feature_dir: Path) -> dict[str, object] | None:
     """Read and parse the walking-skeleton manifest from the feature dir.
 
-    Raises `ValueError` (mapped to usage exit 2) when the manifest is absent
-    or unparseable.
+    Returns `None` when the manifest is ABSENT (manifest-optional: applicability
+    is computed from the git delta instead of fail-closing -- ADR-098). Still
+    raises `ValueError` (mapped to usage exit 2) when a manifest IS present but
+    unparseable or not a JSON object -- a malformed manifest is a real error.
     """
     manifest_path = feature_dir / _MANIFEST_NAME
     if not manifest_path.is_file():
-        raise ValueError(f"no {_MANIFEST_NAME} manifest under {feature_dir}")
+        return None
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -157,22 +159,32 @@ def _resolved_feature_root(manifest: dict[str, object], feature_dir: Path) -> Pa
 
 
 def _feature_under_gate(
-    manifest: dict[str, object],
+    manifest: dict[str, object] | None,
     feature_dir: Path,
     delta_port: FeatureDeltaPort,
     repo_root: Path,
     base_ref: str,
 ) -> FeatureUnderGate:
-    """Build the `FeatureUnderGate` value object from the manifest.
+    """Build the `FeatureUnderGate` value object from the manifest (or its absence).
 
-    When the manifest EXPLICITLY declares `walking_skeleton_applicable: false`,
-    require a non-empty `not_applicable_rationale` (else USAGE exit 2) and freeze
-    the DELTA-DETECTED installability into the VO (slice-03) -- the domain decides
-    NOT_APPLICABLE / FAIL / INDETERMINATE purely over the carried bool + nullable
-    string. When the feature's git delta cannot be established, the LOUD
-    `Indeterminate` reason is carried as `delta_indeterminate`. Otherwise the
-    slice-01 installable path holds (`feature_root` + `entry_points`).
+    When the manifest is ABSENT (`None`, manifest-optional -- ADR-098), COMPUTE
+    applicability from the feature's git delta via the SAME un-gameable
+    `_feature_ships_new_installable` cross-check the empty-`entry_points` branch
+    uses (NO duplicate logic) -- `feature_root` = the feature dir, no
+    `entry_points`. When the manifest EXPLICITLY declares
+    `walking_skeleton_applicable: false`, require a non-empty
+    `not_applicable_rationale` (else USAGE exit 2) and freeze the DELTA-DETECTED
+    installability into the VO (slice-03) -- the domain decides NOT_APPLICABLE /
+    FAIL / INDETERMINATE purely over the carried bool + nullable string. When the
+    feature's git delta cannot be established, the LOUD `Indeterminate` reason is
+    carried as `delta_indeterminate`. Otherwise the slice-01 installable path holds
+    (`feature_root` + `entry_points`).
     """
+    if manifest is None:
+        return _delta_derived_feature_under_gate(
+            feature_dir, delta_port, repo_root, base_ref
+        )
+
     root = _resolved_feature_root(manifest, feature_dir)
 
     if manifest.get("walking_skeleton_applicable") is False:
@@ -203,9 +215,58 @@ def _feature_under_gate(
     entry_points = manifest.get("entry_points")
     if not isinstance(entry_points, list):
         raise ValueError(f"{_MANIFEST_NAME} missing list 'entry_points'")
+    if entry_points:
+        # The feature authored a @walking-skeleton AT -> the installable path
+        # (slice-01): build/install + facet-1 + run the AT (unchanged).
+        return FeatureUnderGate(
+            feature_root=root,
+            entry_points=tuple(str(entry) for entry in entry_points),
+        )
+    # Empty entry_points = no @walking-skeleton AT. COMPUTE applicability from the
+    # declarative git delta instead of falling through to a build/install that
+    # spuriously FAILs a non-installer feature (F-FEATURE-END-WS-GATE-APPLICABILITY;
+    # "validation DERIVES from the declarative flow, no per-feature artifact"). Reuses
+    # the SAME un-gameable delta cross-check the explicit-flag branch uses (:185) --
+    # NO duplicate logic. delta-adds-no-installable -> NOT_APPLICABLE; delta-adds-an-
+    # installable -> ships_installer_artifact=True -> domain FAILs (a no-AT installer
+    # feature cannot dodge -- invariant preserved); git Indeterminate -> degrade-LOUD.
+    return _delta_derived_feature_under_gate(root, delta_port, repo_root, base_ref)
+
+
+def _delta_derived_feature_under_gate(
+    feature_root: Path,
+    delta_port: FeatureDeltaPort,
+    repo_root: Path,
+    base_ref: str,
+) -> FeatureUnderGate:
+    """Build the VO by COMPUTING applicability from the feature's git delta.
+
+    The shared delta-compute path: the empty-`entry_points` branch and the
+    manifest-ABSENT branch (manifest-optional, ADR-098) both reach the SAME
+    `_feature_ships_new_installable` cross-check -- NO duplicate logic.
+    delta-adds-no-installable -> NOT_APPLICABLE; delta-adds-an-installable ->
+    ships_installer_artifact=True -> domain FAILs (a no-AT installer feature cannot
+    dodge -- invariant preserved); git Indeterminate -> degrade-LOUD.
+    """
+    ships = _feature_ships_new_installable(delta_port, repo_root, base_ref)
+    if isinstance(ships, Indeterminate):
+        return FeatureUnderGate(
+            feature_root=feature_root,
+            entry_points=(),
+            walking_skeleton_applicable=False,
+            not_applicable_rationale="(delta-derived: applicability undecidable)",
+            delta_indeterminate=ships.reason,
+        )
     return FeatureUnderGate(
-        feature_root=root,
-        entry_points=tuple(str(entry) for entry in entry_points),
+        feature_root=feature_root,
+        entry_points=(),
+        ships_installer_artifact=bool(ships),
+        walking_skeleton_applicable=False,
+        not_applicable_rationale=(
+            "no @walking-skeleton AT and the feature delta adds no installable root "
+            "-- the production-like gate does not apply (derived from declarative flow)"
+        ),
+        added_installable_paths=ships,
     )
 
 
@@ -262,7 +323,11 @@ def main(argv: list[str] | None = None) -> int:
         _emit_usage_error(str(exc))
         return 2
 
-    feature_id = str(manifest.get("feature_id", feature_dir.name))
+    feature_id = str(
+        manifest.get("feature_id", feature_dir.name)
+        if manifest is not None
+        else feature_dir.name
+    )
 
     # RM-1 -- emit the heartbeat BEFORE the verdict is known. "The gate was
     # reached" is now an attestation; its absence is a representable FAIL.

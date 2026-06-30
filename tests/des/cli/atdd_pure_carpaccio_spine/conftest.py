@@ -164,6 +164,12 @@ def pytest_collection_modifyitems(
     for item in items:
         if not _belongs_to_this_suite(item):
             continue
+        # Serialize these cwd=_REPO_ROOT dogfood tests into the shared real-repo
+        # xdist group so (under `--dist=loadgroup`) they never run on a worker
+        # concurrent with another test mutating the repo's `.nwave/telemetry`
+        # substrate. Fixes the order-dependent slice-04 "refuses unverified slice"
+        # failure exposed when test-suite deletions redistributed the xdist load.
+        item.add_marker(pytest.mark.xdist_group("real_repo_scan"))
         keywords = set(item.keywords)
         if keywords & _RED_SCAFFOLD_SLICES:
             item.add_marker(xfail_slice)

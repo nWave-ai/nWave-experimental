@@ -39,7 +39,6 @@ from .domain_types import (
     IntegrityVerdict,
     LedgerState,
     LeftoverRoadmap,
-    VerifyInvocation,
     WorkflowMode,
 )
 
@@ -248,17 +247,13 @@ class VerifyIntegrityComposition:
             return
         self._write_valid_roadmap()
 
-    def run_verify_integrity(
-        self, invocation: VerifyInvocation = VerifyInvocation.FULL
-    ) -> VerifyIntegrityResult:
+    def run_verify_integrity(self) -> VerifyIntegrityResult:
         """Invoke the production des-verify-integrity CLI via its argv entry point.
 
-        `invocation` selects the default (full) cross-reference or the
-        `--roadmap-only` flag path.
+        f-finalize-verify-single-spine slice-01: the verifier carries exactly one
+        atdd_pure spine; the `--roadmap-only` invocation path was removed.
         """
         argv = [str(self.project_dir)]
-        if invocation is VerifyInvocation.ROADMAP_ONLY:
-            argv.append("--roadmap-only")
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
             exit_code = verify_integrity_main(argv)

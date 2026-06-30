@@ -27,7 +27,7 @@ from .composition_slice_02 import (  # noqa: F401  -- pytest fixtures
     bounded_block_fixture,
     state_02,
 )
-from .steps.steps_slice_02_bounded_block import *  # noqa: F403  -- step vocabulary
+from .steps.steps_slice_02_bounded_block import *
 
 
 scenarios("slice-02-bounded-block-terminal.feature")

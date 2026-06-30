@@ -30,11 +30,12 @@ emitted verdict's port-exposed fields (``status``, ``reason``, echoed
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from des.cli.earned_verdict import main as _earned_verdict_main
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import (
     AtId,
@@ -51,11 +52,10 @@ from .domain_types import (
 TEST_RESULT_SCHEMA = "nwave.test_result.v1"
 EARNED_VERDICT_SCHEMA = "nwave.earned_verdict.v1"
 
-# The production driving port: the ``earned-verdict`` CLI module, invoked as a
-# subprocess (``python -m``). This module does NOT exist yet -- DELIVER creates
-# it. Until then the subprocess exits non-zero (ModuleNotFoundError), which is
-# the RIGHT-reason RED: missing functionality at the driving port.
-_CLI_MODULE = "des.cli.earned_verdict"
+# The production driving port: the ``earned-verdict`` CLI EDGE ``main(argv)``,
+# driven IN-PROCESS via the shared ``run_cli_in_process`` driver (the in-process
+# analogue of ``python -m des.cli.earned_verdict``). The CORE is never imported;
+# only the CLI EDGE is crossed, exactly as the prior subprocess fork did.
 
 # A neutral opaque runner label. The CORE must NOT branch on this -- it is
 # carried only because ``runner`` is a frozen field of ``test_result.v1``.
@@ -152,11 +152,8 @@ class EarnedVerdictComposition:
         perturbed_path.write_text(
             json.dumps(_test_result_envelope(self._perturbed)), encoding="utf-8"
         )
-        completed = subprocess.run(
+        exit_code, _stdout, _stderr = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                _CLI_MODULE,
                 "--baseline",
                 str(baseline_path),
                 "--perturbed",
@@ -168,10 +165,10 @@ class EarnedVerdictComposition:
                 "--out",
                 str(out_path),
             ],
-            capture_output=True,
-            text=True,
+            cwd=workspace,
+            main=_earned_verdict_main,
         )
-        return self._result_from_emission(out_path, completed.returncode)
+        return self._result_from_emission(out_path, exit_code)
 
     def _result_from_emission(self, out_path: Path, exit_code: int) -> VerdictResult:
         """Parse the emitted ``earned_verdict.v1`` JSON into a ``VerdictResult``.

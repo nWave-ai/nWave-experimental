@@ -14,7 +14,6 @@ Real I/O: a real `pip install --target` subprocess against a real prefix.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from des.ports.driven_ports.staged_installer import (
@@ -22,7 +21,7 @@ from des.ports.driven_ports.staged_installer import (
     StagedInstaller,
     StagedInstallError,
 )
-from des.runtime.interpreter import python_for
+from des.runtime.interpreter import des_spawn
 
 
 class PipTargetInstaller(StagedInstaller):
@@ -39,18 +38,15 @@ class PipTargetInstaller(StagedInstaller):
         if not artifact.is_file():
             raise StagedInstallError(f"artifact does not exist: {artifact}")
         prefix.mkdir(parents=True, exist_ok=True)
-        result = subprocess.run(
-            [
-                python_for(None),
-                "-m",
-                "pip",
-                "install",
-                "--no-deps",
-                "--no-index",
-                "--target",
-                str(prefix),
-                str(artifact),
-            ],
+        result = des_spawn(
+            None,
+            "pip",
+            "install",
+            "--no-deps",
+            "--no-index",
+            "--target",
+            str(prefix),
+            str(artifact),
             capture_output=True,
             text=True,
         )

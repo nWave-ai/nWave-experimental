@@ -2,8 +2,8 @@
 
 from pytest_bdd import scenarios
 
-from .flavor_steps.steps_flavor import *  # noqa: F403 — Background step
-from .flavor_steps.steps_slice_02 import *  # noqa: F403
+from .flavor_steps.steps_flavor import *
+from .flavor_steps.steps_slice_02 import *
 
 
 scenarios("slice-02-classic-flavor.feature")

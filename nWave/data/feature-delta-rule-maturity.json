@@ -39,6 +39,10 @@
     "R3": {
       "status": "pending",
       "reason": "i18n config-extensible patterns not yet implemented (US-13, step 01-10)."
+    },
+    "R4": {
+      "status": "pending",
+      "reason": "Real-Surface Binding column on DISTILL 'Scenario List with Tags' — declarative provisional (new features only). AST detector not yet implemented; declared in schemas/feature-delta-tier1-sections.yaml section_column_requirements. Source: docs/research/walking-skeleton-atdd-best-practices-2026-06-12.md."
     }
   },
   "enforce_eligibility": {

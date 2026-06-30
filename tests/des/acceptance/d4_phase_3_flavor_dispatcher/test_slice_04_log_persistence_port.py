@@ -13,7 +13,7 @@ driven-internal ledger contract per the Architecture of Reference).
 
 from pytest_bdd import scenarios
 
-from .dispatcher_steps.steps_log_persistence import *  # noqa: F403
+from .dispatcher_steps.steps_log_persistence import *
 
 
 scenarios("slice-04-log-persistence-port.feature")

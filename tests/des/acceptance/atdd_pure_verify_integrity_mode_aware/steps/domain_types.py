@@ -71,21 +71,6 @@ class ClassicProjectShape(str, Enum):
     INCOMPLETE_TRACES = "incomplete_traces"
 
 
-class VerifyInvocation(str, Enum):
-    """How the operator invokes des-verify-integrity.
-
-    FULL          -- the default invocation: roadmap.json + execution-log.json
-                     cross-reference.
-    ROADMAP_ONLY  -- the `--roadmap-only` flag. Classic mode validates roadmap.json
-                     alone (exit 2 if absent); under atdd_pure the flag is a no-op
-                     and resolves to the same ledger-based verdict as FULL
-                     (ADR-028 D4.2).
-    """
-
-    FULL = "full"
-    ROADMAP_ONLY = "roadmap_only"
-
-
 class LeftoverRoadmap(str, Enum):
     """Whether a leftover roadmap.json sits in an atdd_pure deliver project.
 

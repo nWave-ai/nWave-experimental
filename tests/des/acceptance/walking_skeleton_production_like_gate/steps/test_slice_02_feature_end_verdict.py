@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-from .common_steps import *  # noqa: F403 -- shared step vocabulary
+from .common_steps import *
 
 
 scenarios("../slice-02-feature-end-verdict.feature")

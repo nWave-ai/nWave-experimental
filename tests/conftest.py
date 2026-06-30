@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import re
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,105 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _PROJECT_ROOT = Path(__file__).parent.parent
+
+
+# ---------------------------------------------------------------------------
+# Per-test `.nwave` ROOT isolation (DDD-15, slice-05 of sustainable-test-suite).
+#
+# PARALLELISM RESTORATION. Production `.nwave`-path lookups resolve their root via
+# `des.domain.nwave_root.resolve_nwave_root`, which prefers a `DES_PROJECT_DIR`
+# override over the shared `Path.cwd()`. Under `-n auto` xdist workers share the
+# repo cwd, so a test that writes `.nwave` state via the cwd root contaminates a
+# sibling worker's wave-aware read (the masked interference serial `-n0` hid).
+#
+# This autouse fixture gives EVERY test its own fresh per-test `.nwave` root: it
+# sets `DES_PROJECT_DIR` to a unique tmp dir for the test's duration and restores
+# the prior value on teardown (monkeypatch). STRICTLY ADDITIVE to the
+# `_clean_wave_active_floor` guard below — it does NOT touch the real repo
+# `.nwave`; it redirects the resolver away from it.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolate_nwave_root(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Root each test's `.nwave` state under a fresh per-test tmp dir.
+
+    Sets ``DES_PROJECT_DIR`` to a unique tmp dir so ``resolve_nwave_root`` returns
+    a per-test isolated root, never the shared repo ``Path.cwd()``. ``monkeypatch``
+    restores the prior environment after the test, so the real-repo fallback path
+    (and any subprocess that sets its own ``DES_PROJECT_DIR``) is untouched.
+    """
+    per_test_root = tmp_path_factory.mktemp("nwave_root")
+    monkeypatch.setenv("DES_PROJECT_DIR", str(per_test_root))
+
+
+# ---------------------------------------------------------------------------
+# Per-test git-hooks-dir isolation (F-INSTALLER-TEST-POLLUTES-TRACKED-HOOKS).
+#
+# In-process installs (the installer/uninstaller acceptance fixtures and any
+# plugin install) call `scripts.shared.git_hooks_paths.resolve_hooks_dir` with
+# the real repo as cwd. That resolver runs `git rev-parse --git-common-dir` from
+# cwd and takes NO target argument, so it resolves the REAL repo's hooks dir.
+# When a fixture also mocks `subprocess.run` to empty stdout it degenerates to
+# `Path("") / "hooks"` == `<repo>/hooks` -- a TRACKED path -- and the DES pre-push
+# backstop overwrites the committed `hooks/pre-push` with a machine-specific
+# `/tmp/pytest-...` shim. With a real subprocess it instead clobbers the
+# developer's live `<repo>/.git/hooks/pre-push`. Either way an in-process install
+# must never write the real repo's hook tree.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_git_hooks_dir(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[None]:
+    """Redirect installer git-hooks resolution away from the real repo tree.
+
+    Wraps ``resolve_hooks_dir`` so that whenever resolution would land inside the
+    real repo tree it returns a throwaway session-tmp hooks dir instead; a test
+    that has built (and chdir'd into) its own sandbox git repo resolves OUTSIDE
+    the repo tree and is deferred to untouched. Patches BOTH installer-facing
+    bindings: ``des_plugin`` re-imports the source module function-locally
+    (covered by patching the source module), while ``attribution_utils`` holds a
+    module-level binding copy. The unit test
+    ``tests/installer/unit/shared/test_git_hooks_paths.py`` holds its own import
+    binding and exercises the real function, so it is unaffected.
+
+    SESSION-scoped (not function-scoped) because the polluting installs are
+    driven by MODULE-scoped fixtures (``installer_result`` / ``uninstaller_result``)
+    that pytest instantiates BEFORE any function-scoped autouse fixture -- a
+    function-scoped patch would apply too late. Session scope also patches once
+    per xdist worker process, covering ``-n auto`` runs.
+    """
+    from scripts.shared import git_hooks_paths as _ghp
+
+    sandbox_hooks = tmp_path_factory.mktemp("git_hooks") / "hooks"
+    original_resolve = _ghp.resolve_hooks_dir
+    project_root = _PROJECT_ROOT.resolve()
+
+    def _sandboxed_resolve_hooks_dir() -> Path:
+        try:
+            resolved = original_resolve().resolve()
+        except Exception:
+            return sandbox_hooks
+        if resolved == project_root or project_root in resolved.parents:
+            return sandbox_hooks
+        return resolved
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(_ghp, "resolve_hooks_dir", _sandboxed_resolve_hooks_dir)
+    try:
+        import scripts.install.attribution_utils as _attr_utils
+
+        mp.setattr(_attr_utils, "resolve_hooks_dir", _sandboxed_resolve_hooks_dir)
+    except Exception:
+        pass
+    try:
+        yield
+    finally:
+        mp.undo()
 
 
 @pytest.fixture(autouse=True)
@@ -39,6 +140,39 @@ def restore_working_directory():
 
 
 # ---------------------------------------------------------------------------
+# Test-isolation guard: the real-repo wave-active floor.
+#
+# cwd=real-repo subprocess tests read the wave floor
+# `.nwave/wave-active/active.json` off `Path.cwd()` (production
+# `WaveActiveReader`/`pre_tool_use_handler`). A floor left in the real repo by
+# the live dev/Claude session (a real `/nw-*` dispatch arms `{"wave": ...}`) —
+# or in principle a leaked one — makes any wave-aware test lacking the matching
+# marker trip `WAVE_MARKER_BYPASS` (exit 2) and FAIL order-dependently. The
+# xdist `real_repo_scan` pin only prevents PARALLEL collision; under `-n0` it is
+# inert, so the floor must be cleaned explicitly. Tests that need a floor seed
+# their OWN under `tmp_path` (different path) — untouched here.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clean_wave_active_floor():
+    """Each test runs with NO real-repo wave-active floor.
+
+    Remove the floor before AND after every test. Deliberately does NOT
+    snapshot-and-restore: under ``-n>1`` the workers share this one on-disk
+    file, so a write-back would race (one worker restoring a floor another
+    worker's wave-aware test then reads). Tests must run floorless; a live
+    dev's floor is session state the next ``/nw-*`` dispatch re-arms.
+    """
+    floor = _PROJECT_ROOT / ".nwave" / "wave-active" / "active.json"
+    floor.unlink(missing_ok=True)
+    try:
+        yield
+    finally:
+        floor.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
 # Test-isolation guard: PR-22 (bootstrap_dev + git-hook templates) sets
 # `git config --global init.templateDir = ~/.nwave/git-template/` so any
 # subsequent `git init` (including in test tmp repos) inherits the project's
@@ -60,6 +194,42 @@ def restore_working_directory():
 def _isolate_git_template(monkeypatch):
     """Skip the user-global git template for every test's subprocess git calls."""
     monkeypatch.setenv("GIT_TEMPLATE_DIR", "")
+
+
+# ---------------------------------------------------------------------------
+# Test-isolation guard: scrub git's repository-override environment variables
+# (RCA Branch C, pre-push hook repair 2026-06-11 — evidence:
+# /tmp/rca-evidence/branch-c-gitdir-repro.txt).
+#
+# git(1) env-override semantics: when GIT_DIR / GIT_COMMON_DIR / GIT_WORK_TREE /
+# GIT_INDEX_FILE / GIT_OBJECT_DIRECTORY are set, EVERY git subprocess targets
+# the repository they name — repo discovery from cwd is bypassed entirely. On
+# a linked worktree, git's pre-push hook runner exports an ABSOLUTE GIT_DIR
+# into the hook environment; pytest (and its git-spawning fixtures) inherits
+# it, so an un-scrubbed `git init` in a tmp_path repo silently operates on the
+# REAL shared repository (empirically: flipped shared core.bare=true).
+#
+# Mirror of pre-commit's own `no_git_env` scrub. Session-scoped so the vars
+# are gone before any fixture or test spawns git; per-call `env=` scrubs in
+# the git-fixture helpers are belt-and-braces for direct invocation paths.
+# ---------------------------------------------------------------------------
+
+GIT_REPO_OVERRIDE_VARS = (
+    "GIT_DIR",
+    "GIT_COMMON_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _scrub_git_repo_override_env():
+    """Delete git repo-override env vars for the whole test session."""
+    with pytest.MonkeyPatch.context() as mp:
+        for var in GIT_REPO_OVERRIDE_VARS:
+            mp.delenv(var, raising=False)
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -701,11 +871,68 @@ def pytest_html_report_title(report):
     report.title = "nWave Test Report"
 
 
+# ---------------------------------------------------------------------------
+# pytest-bdd gherkin tag handling (root scope)
+#
+# pytest 9.1.0 (changelog #14442) re-enabled --strict-markers / --strict-config
+# declared via addopts after they were silently ignored through 9.0.x. The suite
+# carries pytest-bdd gherkin traceability tags (@US-3, @real-io,
+# @contract-shape:bounded-change …) that are NOT registered markers. Without a
+# pytest_bdd_apply_tag hook these surface as collection errors under the now-real
+# strict-markers gate.
+#
+# This root hook applies a tag as a mark iff it is a registered marker, and
+# otherwise consumes it (returns the function unchanged) so the gherkin metadata
+# stays grep-able without generating strict-markers noise. Real
+# @pytest.mark.<typo> mistakes remain rejected — only gherkin tags are consumed.
+#
+# The registered marker set is read live from the markers ini SSOT at hook-call
+# time (no hard-coded duplicate list), so markers other conftests register
+# dynamically via config.addinivalue_line are honoured too. Mirrors the per-track
+# pattern in tests/installer/acceptance/installer_orphan_sweep/conftest.py.
+#
+# pytest_bdd_apply_tag is firstresult, and per-directory conftest hooks fire
+# before the root conftest (pytest scope-precedence rule). The four existing
+# per-track hooks always return non-None, so they win for their dirs via that
+# ordering. This root hook only fires for tracks without a local hook.
+# ---------------------------------------------------------------------------
+
+_pytest_config = None
+
+
 def pytest_configure(config):
-    """Add project metadata to HTML report header."""
+    """Add project metadata to HTML report header; capture config for tag lookup."""
+    global _pytest_config
+    _pytest_config = config
+
     if hasattr(config, "_metadata"):
         config._metadata["Project"] = "nwave"
         config._metadata["Framework"] = "nWave"
+
+
+def _registered_marker_names() -> set[str]:
+    """Registered marker names from the markers ini (SSOT), read live.
+
+    Resolved at hook-call time (during collection, after every conftest's
+    pytest_configure has run) rather than snapshotted once — so markers
+    registered dynamically via config.addinivalue_line in sub-conftests
+    (e.g. the bug-track "failing" marker) are included. Snapshotting in
+    pytest_configure raced that dynamic registration and could consume a
+    marker another conftest depended on. Each entry is "name: description"
+    → take the token before the first ":" or whitespace.
+    """
+    if _pytest_config is None:
+        return set()
+    return {
+        entry.split(":", 1)[0].split()[0] for entry in _pytest_config.getini("markers")
+    }
+
+
+def pytest_bdd_apply_tag(tag, function):
+    """Apply registered markers; consume gherkin metadata tags without marking."""
+    if tag in _registered_marker_names():
+        return getattr(pytest.mark, tag)(function)
+    return function
 
 
 def pytest_html_results_summary(prefix, summary, postfix):
@@ -756,6 +983,7 @@ TIER_MAP = {
     "tests/build/unit/": "unit",
     "tests/build/": "unit",
     # Release train tests
+    "tests/release/rc_smoke/acceptance/": "acceptance",
     "tests/release/": "unit",
     # Outcomes registry tiers
     "tests/outcomes/unit/": "unit",
@@ -799,6 +1027,7 @@ DOMAIN_MAP = {
     "tests/build/unit/": ("Build", "Unit Tests"),
     "tests/build/": ("Build", "Build Tests"),
     "tests/bugs/": ("Bugs", "Regression"),
+    "tests/release/rc_smoke/acceptance/": ("Release Train", "RC Smoke Acceptance"),
     "tests/release/": ("Release Train", "Unit Tests"),
 }
 
@@ -864,12 +1093,143 @@ def _is_offending_top_level_test(rel_path: str) -> bool:
     return name not in _TOP_LEVEL_TEST_ALLOWLIST
 
 
+# ---------------------------------------------------------------------------
+# Shared-state serialization guard: pin every test that drives a subprocess
+# with cwd=<real repo> onto one xdist worker group (2026-06-21).
+#
+# Symptom: under the pre-push leg
+#   pytest -m "unit or integration or acceptance" -n 2 --dist=loadgroup
+# tests pass in isolation but fail ORDER-DEPENDENTLY in-suite (e.g.
+# slice-04 carpaccio, feature_delta slice-02/03 cascade).
+#
+# Root cause: ~40+ test suites spawn `des`/CLI subprocesses with
+# ``cwd=_REPO_ROOT`` (the real repo). Those subprocesses read/write the
+# repo's SHARED .nwave state — ``.nwave/wave-active/active.json`` (the wave
+# floor read by pre_tool_use_handler via Path.cwd()) and the
+# ``.nwave/telemetry/...`` event logs. Two such tests landing on the SAME
+# worker collide on that shared on-disk state.
+#
+# Fix (test-infra only, no production change): detect cwd=real-repo
+# dependence by scanning the item's own test module AND its sibling
+# ``composition*.py`` / ``*steps*/`` modules for a ``cwd=<real repo>``
+# subprocess call (most suites keep the call in a composition / step module
+# the test imports, not in the test file itself), then pin the item to the
+# ``real_repo_scan`` xdist group. Under ``--dist=loadgroup`` every member of
+# that group runs on one worker — serialized, never concurrent. This mirrors
+# the manual pin already present in four suite-local conftests (e.g.
+# tests/des/acceptance/atdd_pure_common_audit_log_ssot/conftest.py),
+# generalised so new suites are covered automatically without a hardcoded
+# path list.
+# ---------------------------------------------------------------------------
+
+# A subprocess ``cwd=`` argument that resolves to the REAL repo checkout is
+# the load-bearing signal — NOT the anchor variable's name (suites spell it
+# ``_REPO_ROOT``, ``REPO_ROOT``, ``PROJECT_ROOT``, ``_repo_root()``,
+# ``Path.cwd()`` interchangeably). We match the ``cwd=`` keyword immediately
+# followed by such an anchor. ``cwd=tmp_path`` / ``cwd=sandbox`` /
+# ``cwd=tmp_repo`` etc. deliberately do NOT match: those subprocesses run in
+# an isolated tmp dir and never touch the shared .nwave state.
+_REAL_REPO_CWD_RE = re.compile(
+    r"""cwd \s* = \s*                # the cwd keyword argument
+        (?: str \s* \( \s* )?        # optional str( wrapper
+        (?:
+            _? REPO_ROOT             # _REPO_ROOT / REPO_ROOT
+          | _? PROJECT_ROOT          # _PROJECT_ROOT / PROJECT_ROOT
+          | _repo_root \s* \(        # _repo_root()
+          | Path \s* \. \s* cwd \s* \(  # Path.cwd()
+        )
+    """,
+    re.VERBOSE,
+)
+
+# Per-FILE cache: a single source file -> does it drive a cwd=<real repo>
+# subprocess? Per-file (not per-directory) granularity matters: a directory
+# may hold one cwd=repo test next to dozens of pure unit tests; pinning the
+# whole directory would over-serialize the innocent ones onto the single
+# worker and inflate the suite wall-time. We scan the item's OWN test module
+# plus the directory's ``composition*.py`` and ``*steps*/`` modules (which
+# BDD suites import), but NOT sibling ``test_*.py`` modules (tests do not
+# import one another).
+_real_repo_file_cache: dict[Path, bool] = {}
+
+
+def _file_drives_real_repo_cwd(path: Path) -> bool:
+    """True iff ``path``'s source contains a ``cwd=<real repo>`` subprocess call.
+
+    Cached per file. Read errors are treated as "no" (worst case is a missed
+    pin, never a false abort).
+    """
+    cached = _real_repo_file_cache.get(path)
+    if cached is not None:
+        return cached
+    try:
+        found = bool(_REAL_REPO_CWD_RE.search(path.read_text(encoding="utf-8")))
+    except (OSError, UnicodeDecodeError):
+        found = False
+    _real_repo_file_cache[path] = found
+    return found
+
+
+def _iter_step_modules(test_dir: Path):
+    """Yield .py modules under any ``steps``-named subdirectory of ``test_dir``.
+
+    pytest-bdd suites name their step package ``steps/`` but also
+    ``<feature>_steps/`` / ``gate_steps/`` / ``acceptance/steps/`` etc., so
+    match any immediate subdirectory whose name contains ``steps`` plus a
+    nested ``acceptance/steps`` layout. One level deep is enough for the
+    conventions in this tree.
+    """
+    for child in test_dir.iterdir():
+        if not child.is_dir():
+            continue
+        if "steps" in child.name:
+            yield from child.glob("*.py")
+        else:
+            nested = child / "steps"
+            if nested.is_dir():
+                yield from nested.glob("*.py")
+
+
+def _item_depends_on_real_repo(test_file: Path) -> bool:
+    """True iff this test item drives a cwd=<real repo> subprocess.
+
+    Scans, at per-file granularity:
+
+    1. The item's OWN test module — direct ``cwd=<real repo>`` usage.
+    2. The directory's ``composition*.py`` modules — BDD suites keep the
+       subprocess-spawning steps in a composition module the test imports.
+    3. Modules under any ``*steps*`` subdirectory — pytest-bdd step
+       definitions (named ``steps/``, ``<feature>_steps/``, ``gate_steps/``,
+       or ``acceptance/steps/``).
+
+    Sibling ``test_*.py`` modules are deliberately NOT scanned: pytest test
+    modules do not import one another, so a cwd=repo test does not implicate
+    its innocent unit-test neighbours. This keeps the ``real_repo_scan``
+    worker group tight and the suite parallel where it safely can be.
+    """
+    if _file_drives_real_repo_cwd(test_file):
+        return True
+    test_dir = test_file.parent
+    for path in sorted(test_dir.glob("composition*.py")):
+        if _file_drives_real_repo_cwd(path):
+            return True
+    try:
+        step_modules = sorted(_iter_step_modules(test_dir))
+    except OSError:
+        step_modules = []
+    return any(_file_drives_real_repo_cwd(path) for path in step_modules)
+
+
 def pytest_collection_modifyitems(config, items):
     """Auto-label tests with Allure labels and tier markers from file paths.
 
     Also enforces the top-level test-module guard (RCA Branch B): any
     ``tests/test_*.py`` not on the allowlist aborts collection with a
     descriptive error.
+
+    Finally pins every test whose suite drives a cwd=<real repo> subprocess
+    onto the ``real_repo_scan`` xdist group so they serialize on one worker
+    (shared .nwave state isolation — see the block above).
     """
     # --- Top-level module guard (fail-fast before any other work) ---
     tests_root = Path(__file__).parent
@@ -932,6 +1292,14 @@ def pytest_collection_modifyitems(config, items):
                 tier = TIER_MAP[prefix]
                 item.add_marker(getattr(pytest.mark, tier))
                 break
+
+        # --- Shared-state serialization pin (always runs) ---
+        # If this item's suite drives a cwd=<real repo> subprocess (touching
+        # the shared .nwave state), pin it to one xdist worker group so the
+        # loadgroup scheduler never races two such tests across workers.
+        item_path = getattr(item, "path", None)
+        if item_path is not None and _item_depends_on_real_repo(Path(item_path)):
+            item.add_marker(pytest.mark.xdist_group("real_repo_scan"))
 
 
 # ---------------------------------------------------------------------------

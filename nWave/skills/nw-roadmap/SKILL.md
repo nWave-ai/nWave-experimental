@@ -5,6 +5,8 @@ user-invocable: false
 argument-hint: '[agent] [goal-description] - Example: @solution-architect "Migrate to microservices"'
 ---
 
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+
 # NW-ROADMAP: Goal Planning
 
 **Wave**: CROSS_WAVE
@@ -16,7 +18,7 @@ Dispatches expert agent to fill a pre-scaffolded YAML roadmap skeleton. CLI tool
 
 Output: `docs/feature/{feature-id}/deliver/roadmap.json`
 
-> **Scope (ADR-028):** `roadmap.json` is a classic mode only artifact. The classic ADR-025 roadmap-driven DELIVER spine consumes it; the `atdd_pure` workflow mode never reads or writes it (it is mechanically unreachable there, replaced by the feature-delta `[REF] Slice Plan` section + per-slice ATs). Use `nw-roadmap` only when `.nwave/config.yaml:workflow.mode` is `classic`.
+> **Scope (ADR-028):** `roadmap.json` is a classic mode only artifact. The classic ADR-025 roadmap-driven DELIVER spine consumes it; the `atdd_pure` workflow mode never reads or writes it (it is mechanically unreachable there, replaced by the feature-delta `[REF] Slice Plan` section + per-slice ATs). Use `nw-roadmap` only when `.nwave/config.yaml:workflow.mode` is `classic`. <!-- mode-ref-ok -->
 
 ## Usage
 
@@ -58,8 +60,21 @@ Goal: {goal-description}
 
 # Test paradigm mandate (STANDING 2026-05-05) — apply per test level
 
-For EVERY step's `implementation_notes`, include this directive verbatim
-unless the step is documented as exempt:
+GUARD — emit by deliverable_type (ADR-PST-003 / OPEN-5-A): the mandate
+block below applies ONLY when `deliverable_type == application` (or when
+deliverable_type is unset — application is the default). For a plugin/skill
+deliverable, do NOT emit the mandate; instead include this one-line directive
+in each step's `implementation_notes`:
+
+  STRUCTURAL VERIFICATION (mandatory, plugin/skill): This step ships prompt
+  text / config / docs, not application code, so the Hypothesis + state-delta
+  unit mandate does not apply. Verify the deliverable structurally — a golden
+  assertion (skill-lint) over the changed markdown/config asserting the
+  required block is present and correctly shaped — gated at CI + pre-push.
+
+When `deliverable_type == application` (or unset), for EVERY step's
+`implementation_notes`, include this directive verbatim unless the step is
+documented as exempt:
 
   TEST PARADIGM (mandatory): Unit tests for this step MUST be written as
   property-based tests using Hypothesis @given strategies + state-delta

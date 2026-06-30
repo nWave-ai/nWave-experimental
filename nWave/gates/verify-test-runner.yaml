@@ -1,0 +1,56 @@
+# Gate-contract: verify-test-runner (f-coherence-and-attestation slice-06, JOB-028)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-test-runner.
+#
+# Source of truth for the contract: src/des/cli/run_tests.py (the TestRunnerPort
+# CLI composition root, slice-05). slice-06 wires the EXISTING `main` into the
+# dispatcher as the `verify-test-runner` subcommand -- no new code in run_tests.py;
+# only the registry row + this catalog/per-gate mirror are net-new.
+
+gate_id: verify-test-runner
+responsibility: |
+  Per-language test-runner port driver: run a REAL test invocation over a target
+  directory and emit one nwave.test_result.v1 envelope whose passed/failed/
+  collected/exit_code counts are byte-faithful to what actually ran (a failing
+  target surfaces failed>0 -- the anti-theater witness, counts cannot be a
+  hard-coded green template). When the named runner cannot be invoked, emit a
+  fail-safe nwave.earned_verdict.v1 ABSTAIN (reason: runner-absent) IN PLACE of a
+  run -- never a fabricated passing result for a run that never happened.
+module: des.cli.run_tests
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --target
+    required: true
+    type: path
+    help: "The target directory whose tests are run through the test-runner port."
+  - name: --runner
+    required: false
+    type: string
+    default: pytest
+    help: "The named test runner this adapter invokes; a runner this adapter cannot invoke yields the fail-safe ABSTAIN envelope."
+  - name: --out
+    required: true
+    type: path
+    help: "Path the emitted JSON envelope (nwave.test_result.v1 on a real run, nwave.earned_verdict.v1 ABSTAIN on an un-invokable runner) is written to."
+
+log_events: []
+
+failure_modes:
+  - error_class: UsageError
+    exit_code: 2
+    remediation: "Pass --target <dir> and --out <path>; the runner needs a target to run and an envelope path to emit to."
+  - error_class: RunnerAbsent
+    exit_code: 2
+    remediation: "The named runner is not invokable in this interpreter; the port emits a fail-safe ABSTAIN envelope rather than fabricate a green. Install/select an invokable runner and retry."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

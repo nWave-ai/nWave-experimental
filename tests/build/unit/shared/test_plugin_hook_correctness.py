@@ -40,20 +40,30 @@ class TestPluginHookCorrectness:
         assert set(hook_config.keys()) == HOOK_EVENT_TYPES
 
     def test_pretooluse_has_agent_write_edit_bash_matchers(self, hook_config: dict):
-        """PreToolUse has exactly 7 entries: Agent, Write, Edit, Bash x 4 (not Task).
+        """PreToolUse has exactly 8 entries: Agent, Write, Edit, Bash x 5 (not Task).
 
         slice-02 of atdd-spine-ledger-enforcement-gate-v2 added a NEW Bash
         entry (spine-ledger pre-commit hook, dev-mode form) adjacent to the
         execution-log guard. slice-04 added a SECOND spine-ledger Bash entry
         (gate-installed form). slice-01 of
         fix-crafter-stash-structural-mitigation added a FOURTH Bash entry
-        (git-stash guard). Claude Code permits multiple entries per
-        (event, matcher).
+        (git-stash guard). 817a7b21e wired a FIFTH Bash entry (the --no-verify
+        reminder guard, ``pre-bash-no-verify-reminder``). Claude Code permits
+        multiple entries per (event, matcher).
         """
         pre_tool_use = hook_config["PreToolUse"]
-        assert len(pre_tool_use) == 7
+        assert len(pre_tool_use) == 8
         matchers = [e.get("matcher") for e in pre_tool_use]
-        assert matchers == ["Agent", "Write", "Edit", "Bash", "Bash", "Bash", "Bash"]
+        assert matchers == [
+            "Agent",
+            "Write",
+            "Edit",
+            "Bash",
+            "Bash",
+            "Bash",
+            "Bash",
+            "Bash",
+        ]
 
     @pytest.mark.parametrize("matcher", ["Write", "Edit"])
     def test_guard_hooks_contain_session_check(self, hook_config: dict, matcher: str):

@@ -85,22 +85,33 @@ class TestHookParityPluginVsInstaller:
     def test_both_paths_produce_six_pretooluse_entries(
         self, plugin_config: dict, installer_config: dict
     ):
-        """Both paths produce 7 PreToolUse entries: Agent, Write, Edit, Bash x 4.
+        """Both paths produce 8 PreToolUse entries: Agent, Write, Edit, Bash x 5.
 
         slice-02 of atdd-spine-ledger-enforcement-gate-v2 added a NEW Bash
         entry (spine-ledger PreToolUse hook, dev-mode form) adjacent to the
         execution-log guard. slice-04 added a SECOND spine-ledger Bash entry
         (gate-installed form, calling the gate script directly). slice-01 of
         fix-crafter-stash-structural-mitigation added a FOURTH Bash entry
-        (git-stash guard). Claude Code's PreToolUse protocol permits multiple
-        registrations per (event, matcher) tuple; execution is
-        registration-ordered; "any block wins" semantic. All four Bash entries
-        appear in registration order: execution-log guard, spine-ledger
-        dev-mode, spine-ledger gate-installed, git-stash guard.
+        (git-stash guard). 817a7b21e wired a FIFTH Bash entry (the --no-verify
+        reminder guard, ``pre-bash-no-verify-reminder``). Claude Code's
+        PreToolUse protocol permits multiple registrations per (event, matcher)
+        tuple; execution is registration-ordered; "any block wins" semantic. All
+        five Bash entries appear in registration order: execution-log guard,
+        spine-ledger dev-mode, spine-ledger gate-installed, git-stash guard,
+        no-verify reminder.
         """
         plugin_matchers = [e.get("matcher") for e in plugin_config["PreToolUse"]]
         installer_matchers = [e.get("matcher") for e in installer_config["PreToolUse"]]
-        expected = ["Agent", "Write", "Edit", "Bash", "Bash", "Bash", "Bash"]
+        expected = [
+            "Agent",
+            "Write",
+            "Edit",
+            "Bash",
+            "Bash",
+            "Bash",
+            "Bash",
+            "Bash",
+        ]
         assert plugin_matchers == expected
         assert installer_matchers == expected
 

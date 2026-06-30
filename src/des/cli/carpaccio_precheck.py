@@ -6,11 +6,11 @@ ONE pass (collect-ALL), so the author fixes them all in a single round trip.
 
 WHY-NEW-FILE: src/des/cli/carpaccio_precheck.py
   CLOSEST-EXISTING: src/des/cli/carpaccio_slice_gate.py
-  EXTENSION-COST: the gate is the ENFORCING boundary (assertion-5 HMAC, exit
-    44/45, ledger read) with a frozen machine contract hooks/CI depend on;
+  EXTENSION-COST: the gate is the ENFORCING boundary (assertion-5 record-presence,
+    exit 44/45, ledger read) with a frozen machine contract hooks/CI depend on;
     overloading it with an advisory ``--precheck`` mode muddies that contract.
   PARALLEL-RATIONALE: Principle 12 read/write driving-port split -- the advisory
-    surface MUST NOT expose the enforcing path (no ledger write, no HMAC verdict
+    surface MUST NOT expose the enforcing path (no ledger write, no verdict
     record). It is a separate driving port with a different lifecycle (designer
     runs it pre-verdict, the gate runs mid-spine post-verdict). Both REUSE the
     SAME predicates from ``carpaccio_format`` (ADR-001 single-SSOT, NO second
@@ -196,8 +196,8 @@ def _emit(feature_id: str, violations: list[str]) -> int:
     """Emit the machine JSON event + human summary; return the advisory exit code.
 
     Read-only courtesy surface: exit 0 when clean, non-zero (advisory) when
-    violations are found. The pre-check NEVER records a verdict and NEVER touches
-    the HMAC ledger -- it only reads and reports.
+    violations are found. The pre-check NEVER records a verdict and NEVER writes
+    to the ledger -- it only reads and reports.
     """
     if not violations:
         print(

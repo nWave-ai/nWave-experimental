@@ -5,6 +5,8 @@ user-invocable: true
 argument-hint: '[component-name] - Optional: --residuality --paradigm=[auto|oop|fp]'
 ---
 
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+
 # NW-DESIGN: Architecture Design
 
 **Wave**: DESIGN (wave 3 of 6) | **Agents**: Morgan (nw-solution-architect), nw-system-designer, nw-ddd-architect | **Command**: `*design-architecture`
@@ -108,9 +110,24 @@ Architecture decisions are driven by quality attributes, not pattern shopping. E
 ### Reuse-first DESIGN exit gate
 
 Every DESIGN wave that introduces ≥1 NEW component MUST author a
-`## Reuse Analysis` (or `## Wave: DESIGN / [REF] Reuse Analysis`)
-section in the feature-delta. The section is a GFM table with columns:
+`## Reuse Analysis` section in the feature-delta. The section is a GFM table with columns:
 | Existing Component | File | Overlap | Decision | Justification |
+
+> **Gate contract (the readiness gate REJECTS any other form).** Source of truth:
+> `src/des/cli/validate_feature_delta.py` — `REUSE_ANALYSIS_HEADING`,
+> `REUSE_ANALYSIS_COLUMNS`, `_REUSE_DECISION_TOKENS`. Consumed by
+> `des verify-readiness-pre-dispatch` (invariant 6) and `des validate-feature-delta
+> --require-reuse-analysis`. Emit EXACTLY:
+> - **Heading**: `## Reuse Analysis` — the bare canonical heading. NOT
+>   `## Wave: DESIGN / [REF] Reuse Analysis` (the gate greps `^## Reuse Analysis$`;
+>   the Wave-form heading is parsed as MISSING and DELIVER is refused).
+> - **Columns**: exactly these 5, in this order — `Existing Component | File |
+>   Overlap | Decision | Justification`. A 4-column table or a re-order is
+>   `malformed-reuse-analysis`.
+> - **Decision cell**: a BARE token, EXACTLY `EXTEND` or `CREATE_NEW`. No
+>   parenthetical — `CREATE_NEW (schema, not src/des/**)` is REJECTED. Put any
+>   qualifier in the Overlap or Justification cell, never in Decision.
+> - **Justification**: non-empty on every `CREATE_NEW` row (empty → `unjustified-create-new`).
 
 For each NEW class declared under the feature's scoped-path
 (default `src/`), the table MUST contain ≥1 row where:
@@ -257,6 +274,10 @@ All agents write to `docs/product/architecture/` (SSOT). Each architect owns its
 For **Full stack** mode, each agent reads the prior architect's output before starting its own work.
 
 ### Agent Dispatch (after Decision 0 — no default)
+
+<!-- DES-WAVE: design -->
+
+Include the `<!-- DES-WAVE: design -->` marker line above verbatim in EVERY architect Agent dispatch prompt — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
 
 Based on Decision 0 answer, invoke the corresponding agent. Do NOT default to application scope without asking.
 

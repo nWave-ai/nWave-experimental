@@ -12,20 +12,44 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
+
+import yaml
 
 
 # Ensure project root is in sys.path when invoked as standalone script
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+# Also expose src/ so `des` resolves under bare python3 (pre-push hooks run
+# `language: system` outside the uv venv). Guarded: src/ exists only in the
+# dev repo — docgen.py never ships (absent from build_dist.py UTILITY_SCRIPTS
+# and both wheel force-include maps), so installed layouts are unaffected.
+_project_src = str(Path(_project_root) / "src")
+if Path(_project_src).is_dir() and _project_src not in sys.path:
+    sys.path.insert(0, _project_src)
 
+from des._internal import subset_parser  # noqa: E402
+from des.application.flavor_dispatcher import (  # noqa: E402
+    resolve_mode_descriptor,
+    resolve_skill_load_set,
+)
+from des.application.workflow_mode import resolve_workflow_mode  # noqa: E402
+from des.domain.atdd_pure_phases import CANONICAL_PHASES  # noqa: E402
 from scripts.shared.agent_catalog import (  # noqa: E402
+    build_ownership_map,
+    detect_command_skills,
     is_public_agent,
     is_public_skill,
     load_public_agents,
 )
+
+
+# Public source repo, for linking released skills to browsable source.
+GITHUB_REPO = "https://github.com/nWave-ai/nWave"
 
 
 class DocgenError(Exception):
@@ -411,6 +435,94 @@ def _skills_for_agent(agent: Agent, skills: list[Skill]) -> list[Skill]:
     return result
 
 
+def released_skill_dirs(root: Path | None) -> set[str] | None:
+    """Skill directory names that survive the public release (the "released" set).
+
+    Consults the SAME catalog logic the release pipeline's strip_private_agents
+    uses (public agents + frontmatter ownership map + command skills). Returns
+    ``None`` when no catalog is available (e.g. a synthetic test tree), meaning
+    "treat every skill as released".
+    """
+    if root is None:
+        return None
+    nwave = root / "nWave"
+    public_agents = load_public_agents(nwave, strict=False)
+    if not public_agents:
+        return None  # catalog absent — caller treats all as released
+    ownership = build_ownership_map(nwave / "agents")
+    command_skills = detect_command_skills(nwave / "skills")
+    dirs: set[str] = set()
+    for d in (nwave / "skills").iterdir() if (nwave / "skills").is_dir() else []:
+        if d.is_dir() and is_public_skill(
+            d.name, public_agents, ownership, command_skills
+        ):
+            dirs.add(d.name)
+    return dirs
+
+
+def skill_slug(skill: Skill) -> str:
+    """Stable, unique in-site slug for a skill page (under reference/skills/).
+
+    nWave/skills/nw-divio-framework/SKILL.md -> "nw-divio-framework"
+    nWave/skills/crafter/tdd.md              -> "crafter-tdd"
+    """
+    parts = Path(skill["source_path"]).with_suffix("").parts
+    if "skills" in parts:
+        sub = list(parts[parts.index("skills") + 1 :])
+    else:
+        sub = [skill["agent_dir"], Path(skill["source_path"]).stem]
+    if sub and sub[-1] == "SKILL":
+        sub = sub[:-1] or [skill["agent_dir"]]
+    return "-".join(sub)
+
+
+def _skill_source_url(skill: Skill) -> str:
+    """Browsable GitHub blob URL (at main) for a skill's source file."""
+    parts = Path(skill["source_path"]).parts
+    if "nWave" in parts:
+        rel = "/".join(parts[parts.index("nWave") :])
+    else:
+        rel = f"nWave/skills/{skill['agent_dir']}/{Path(skill['source_path']).name}"
+    return f"{GITHUB_REPO}/blob/main/{rel}"
+
+
+def _is_released(skill: Skill, released: set[str] | None) -> bool:
+    """A skill is released when no catalog is loaded (None) or its dir is public."""
+    return released is None or skill["agent_dir"] in released
+
+
+def skill_ref(skill: Skill, released: set[str] | None, *, in_skills_dir: bool) -> str:
+    """Link target for a skill from an agent page or the skills index.
+
+    Released skills get an in-site reference page (resolves on the published
+    site). Private skills — whose referencing agent page is itself stripped
+    from the public repo — link to source instead, so no private skill page is
+    ever emitted into the public-synced docs/reference tree.
+    """
+    if _is_released(skill, released):
+        return (
+            f"{skill_slug(skill)}.md"
+            if in_skills_dir
+            else f"../skills/{skill_slug(skill)}.md"
+        )
+    name = "SKILL" if skill["agent_dir"].startswith("nw-") else skill["name"]
+    return f"../../../nWave/skills/{skill['agent_dir']}/{name}.md"
+
+
+def render_skill_detail(skill: Skill, used_by: list[str]) -> str:
+    """Render a per-skill reference page (emitted only for released skills)."""
+    lines = [f"# {skill['name']}", "", skill["description"], ""]
+    if used_by:
+        agent_links = ", ".join(f"[{a}](../agents/{a}.md)" for a in sorted(used_by))
+        lines += [f"**Used by:** {agent_links}", ""]
+    lines += [
+        f"**Source:** [{Path(skill['source_path']).name} on GitHub]"
+        f"({_skill_source_url(skill)})",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def render_master_index(data: dict[str, list]) -> str:
     return "\n".join(
         [
@@ -426,6 +538,17 @@ def render_master_index(data: dict[str, list]) -> str:
             f"- [Commands](commands/index.md) ({len(data['commands'])})",
             f"- [Skills](skills/index.md) ({len(data['skills'])})",
             f"- [Templates](templates/index.md) ({len(data['templates'])})",
+            "",
+            "## CLI & configuration references",
+            "",
+            "Hand-authored reference for the CLI and configuration files:",
+            "",
+            "- [CLI Reference](cli.md) — the `nwave-ai` command and its subcommands",
+            "- [Global Config Reference](global-config.md) — "
+            "`~/.nwave/global-config.json` keys",
+            "- [Outcomes CLI Reference](outcomes-cli.md) — `nwave-ai outcomes …`",
+            "- [DES Markers Reference](des-markers.md) — DES task-prompt markers",
+            "- [Feature-delta Format](feature-format.md) — feature-delta.md schema",
             "",
         ]
     )
@@ -464,7 +587,9 @@ def render_agents_index(agents: list[Agent], skills: list[Skill]) -> str:
     return "\n".join(lines)
 
 
-def render_agent_detail(agent: Agent, skills: list[Skill]) -> str:
+def render_agent_detail(
+    agent: Agent, skills: list[Skill], released: set[str] | None = None
+) -> str:
     agent_skills = _skills_for_agent(agent, skills)
     wave = agent.get("wave", "Other")
     commands = agent.get("commands", [])
@@ -489,10 +614,7 @@ def render_agent_detail(agent: Agent, skills: list[Skill]) -> str:
         lines.append("## Skills")
         lines.append("")
         for s in sorted(agent_skills, key=lambda x: x["name"]):
-            if s["agent_dir"].startswith("nw-"):
-                skill_path = f"../../../nWave/skills/{s['agent_dir']}/SKILL.md"
-            else:
-                skill_path = f"../../../nWave/skills/{s['agent_dir']}/{s['name']}.md"
+            skill_path = skill_ref(s, released, in_skills_dir=False)
             lines.append(f"- [{s['name']}]({skill_path}) — {s['description']}")
         lines.append("")
     return "\n".join(lines)
@@ -509,11 +631,14 @@ def render_commands_index(commands: list[Command]) -> str:
     return f"# Commands\n\n{table}\n"
 
 
-def render_skills_index(skills: list[Skill]) -> str:
+def render_skills_index(skills: list[Skill], released: set[str] | None = None) -> str:
     lines = ["# Skills", ""]
     by_agent: dict[str, list[Skill]] = {}
+    # List released skills only — private skill names/descriptions must not
+    # reach the public-synced docs/reference tree.
     for s in skills:
-        by_agent.setdefault(s["agent_dir"], []).append(s)
+        if _is_released(s, released):
+            by_agent.setdefault(s["agent_dir"], []).append(s)
     for agent_dir in sorted(by_agent):
         if agent_dir == "common":
             lines.append("## Shared Skills")
@@ -526,12 +651,7 @@ def render_skills_index(skills: list[Skill]) -> str:
             lines.append(f"## {display_name}")
         lines.append("")
         for s in sorted(by_agent[agent_dir], key=lambda x: x["name"]):
-            if s["agent_dir"].startswith("nw-"):
-                # Flat layout: nw-{skill}/SKILL.md
-                skill_path = f"../../../nWave/skills/{s['agent_dir']}/SKILL.md"
-            else:
-                # Old layout: {agent}/{skill}.md
-                skill_path = f"../../../nWave/skills/{s['agent_dir']}/{s['name']}.md"
+            skill_path = skill_ref(s, released, in_skills_dir=True)
             lines.append(f"- [{s['name']}]({skill_path}) — {s['description']}")
         lines.append("")
     return "\n".join(lines)
@@ -545,18 +665,41 @@ def render_templates_index(templates: list[Template]) -> str:
     return f"# Templates\n\n{table}\n"
 
 
-def render(data: dict[str, list]) -> dict[str, str]:
+def render(data: dict[str, list], *, root: Path | None = None) -> dict[str, str]:
     """Render all pages. Returns {relative_path: content}."""
+    # The "released" (public) skill set drives which skills get an in-site page.
+    # Released skills are linked in-site (so links resolve on the published
+    # site); private skills link to source and get NO page — keeping private
+    # skill names/descriptions out of the public-synced docs/reference tree.
+    released = released_skill_dirs(root)
+    # Public agent names, to keep private agent names off public skill pages.
+    public_agents = load_public_agents(root / "nWave", strict=False) if root else set()
+
     pages: dict[str, str] = {}
     pages["index.md"] = render_master_index(data)
     pages["agents/index.md"] = render_agents_index(data["agents"], data["skills"])
     pages["commands/index.md"] = render_commands_index(data["commands"])
-    pages["skills/index.md"] = render_skills_index(data["skills"])
+    pages["skills/index.md"] = render_skills_index(data["skills"], released)
     pages["templates/index.md"] = render_templates_index(data["templates"])
 
     for agent in data["agents"]:
         filename = f"agents/{agent['name']}.md"
-        pages[filename] = render_agent_detail(agent, data["skills"])
+        pages[filename] = render_agent_detail(agent, data["skills"], released)
+
+    # Per-skill reference pages — released skills only. "Used by" lists public
+    # agents only: a released skill page ships to the public repo, so naming a
+    # private agent there would leak it (and link to a stripped agent page).
+    used_by: dict[str, list[str]] = {}
+    for agent in data["agents"]:
+        if public_agents and not is_public_agent(f"{agent['name']}.md", public_agents):
+            continue
+        for s in _skills_for_agent(agent, data["skills"]):
+            used_by.setdefault(skill_slug(s), []).append(agent["name"])
+    for s in data["skills"]:
+        if not _is_released(s, released):
+            continue
+        slug = skill_slug(s)
+        pages[f"skills/{slug}.md"] = render_skill_detail(s, used_by.get(slug, []))
 
     return pages
 
@@ -593,6 +736,355 @@ def check_pages(pages: dict[str, str], output_dir: Path) -> list[str]:
         elif full_path.read_text(encoding="utf-8") != content:
             stale.append(f"stale: {rel_path}")
     return stale
+
+
+# ---------------------------------------------------------------------------
+# GENERATED region projection (mode-registry-single-locus slice-02)
+#
+# Marker grammar per the DESIGN SSOT (analysis §2.3.2):
+#   <!-- GENERATED:<region-id> START ... --> body <!-- GENERATED:<region-id> END -->
+#
+# The mode registry (`nWave/flavors/*.yaml`) is the sole author of every
+# region body; assets carry projections only. Region read APIs are the
+# flavor_dispatcher seams (`resolve_skill_load_set`, `resolve_mode_descriptor`)
+# — one registry-read SSOT, two consumers: gates + docgen.
+# ---------------------------------------------------------------------------
+_GENERATED_REGION_RE = re.compile(
+    r"<!--\s*GENERATED:(?P<region_id>[a-z][a-z0-9-]*)\s+START[^>]*-->\n"
+    r"(?P<body>.*?)"
+    r"<!--\s*GENERATED:(?P=region_id)\s+END\s*-->",
+    re.DOTALL,
+)
+
+
+@dataclass(frozen=True)
+class AssetProjection:
+    """One asset's re-rendered GENERATED-region state vs what is on disk."""
+
+    path: Path
+    current_text: str
+    projected_text: str
+
+    @property
+    def stale(self) -> bool:
+        return self.current_text != self.projected_text
+
+
+def _declared_flavor_ids(flavors_dir: Path) -> list[str]:
+    """Every declared mode, one per flavor file (schema file excluded)."""
+    return sorted(
+        p.stem for p in flavors_dir.glob("*.yaml") if not p.name.startswith("_")
+    )
+
+
+def _generated_region(region_id: str, body: str) -> str:
+    """The canonical full region text (markers + body) docgen owns."""
+    return (
+        f"<!-- GENERATED:{region_id} START — source of truth: "
+        "nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->\n"
+        f"{body}\n"
+        f"<!-- GENERATED:{region_id} END -->"
+    )
+
+
+def _skill_load_set_body(agent_id: str, flavors_dir: Path) -> str:
+    """Render the per-mode conditional-skill directive for one agent.
+
+    Body content comes from the slice-01 registry-read seam
+    `resolve_skill_load_set` — never a second YAML read, never a baked table.
+    """
+    lines = [
+        "Conditional skills by active workflow mode — projected from the mode",
+        "registry `skill_load_set` via `flavor_dispatcher.resolve_skill_load_set`;",
+        "re-render with `python scripts/docgen.py`:",
+        "",
+    ]
+    for flavor_id in _declared_flavor_ids(flavors_dir):
+        skills = resolve_skill_load_set(agent_id, flavor_id, flavors_dir=flavors_dir)
+        rendered = ", ".join(f"`{skill}`" for skill in skills) or "(none)"
+        lines.append(f"- `{flavor_id}`: {rendered}")
+    return "\n".join(lines)
+
+
+def _mode_descriptor_body(flavors_dir: Path) -> str:
+    """Render one descriptor + DELIVER phase shape per declared mode."""
+    lines: list[str] = []
+    for flavor_id in _declared_flavor_ids(flavors_dir):
+        mode = resolve_mode_descriptor(flavor_id, flavors_dir=flavors_dir)
+        lines.append(f"- `{flavor_id}` — {mode.descriptor}")
+        lines.append(f"  Deliver phase shape: `{mode.deliver_phase_shape}`")
+    return "\n".join(lines)
+
+
+def _render_region_body(region_id: str, asset_path: Path, flavors_dir: Path) -> str:
+    if region_id == "skill-load-set":
+        return _skill_load_set_body(asset_path.stem, flavors_dir)
+    if region_id == "mode-descriptor":
+        return _mode_descriptor_body(flavors_dir)
+    raise DocgenError(
+        f"Unknown GENERATED region id '{region_id}' in {asset_path} — "
+        "refusing to serve a region no renderer owns"
+    )
+
+
+def _project_asset(path: Path, text: str, flavors_dir: Path) -> AssetProjection:
+    def _replace(match: re.Match[str]) -> str:
+        region_id = match.group("region_id")
+        return _generated_region(
+            region_id, _render_region_body(region_id, path, flavors_dir)
+        )
+
+    return AssetProjection(
+        path=path,
+        current_text=text,
+        projected_text=_GENERATED_REGION_RE.sub(_replace, text),
+    )
+
+
+def project_generated_regions(
+    root: Path, asset_paths: dict[str, list[Path]]
+) -> list[AssetProjection]:
+    """Re-render every GENERATED region across the scanned asset tree."""
+    flavors_dir = root / "nWave" / "flavors"
+    files = [
+        *asset_paths["agents"],
+        *asset_paths["commands"],
+        *asset_paths["skills"],
+    ]
+    projections: list[AssetProjection] = []
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        if not _GENERATED_REGION_RE.search(text):
+            continue
+        projections.append(_project_asset(path, text, flavors_dir))
+    return projections
+
+
+def write_generated_regions(projections: list[AssetProjection]) -> None:
+    """Write re-rendered regions in place (bounded change: regions only)."""
+    for projection in projections:
+        if projection.stale:
+            projection.path.write_text(projection.projected_text, encoding="utf-8")
+
+
+def check_generated_regions(
+    root: Path, projections: list[AssetProjection]
+) -> list[str]:
+    """Stale-asset list, each entry NAMING the drifted asset. Empty = fresh."""
+    return [
+        f"stale generated region: {projection.path.relative_to(root)}"
+        for projection in projections
+        if projection.stale
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Command front-matter projection (mode-registry-single-locus slice-03)
+#
+# The framework catalog (`commands:` in nWave/framework-catalog.yaml) is the
+# sole author of every command guide's `description:` / `argument-hint:`
+# front-matter values; the guides carry projections only. A catalog entry's
+# existence IS the projection declaration — GENERATED markers cannot live
+# inside YAML front-matter without corrupting the host's parse. Key↔file
+# rule: catalog key underscores become filename hyphens. Equality contract:
+# YAML-parsed value equality (quoting style belongs to the renderer; the
+# parsed value is what the host consumes). Catalog entries with no guide
+# file are skipped; guide files outside the catalog keep hand-authored
+# front-matter, still guarded by extract_command's missing-description
+# refusal.
+# ---------------------------------------------------------------------------
+_COMMAND_GUIDES_REL = Path("nWave") / "tasks" / "nw"
+
+# (catalog field, front-matter field) pairs the catalog projects into guides.
+_PROJECTED_COMMAND_FIELDS: tuple[tuple[str, str], ...] = (
+    ("description", "description"),
+    ("argument_hint", "argument-hint"),
+)
+
+_TOP_LEVEL_KEY_RE = re.compile(r"^\w[\w-]*:")
+
+
+def _catalog_command_declarations(root: Path) -> dict:
+    """The `commands:` section of the framework catalog, fully YAML-parsed."""
+    catalog_path = root / "nWave" / "framework-catalog.yaml"
+    catalog = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+    return catalog.get("commands", {})
+
+
+def _front_matter_line(field: str, value: str) -> str:
+    """One single-line front-matter entry whose YAML-parsed value is *value*."""
+    return yaml.safe_dump(
+        {field: value},
+        default_flow_style=False,
+        width=sys.maxsize,
+        allow_unicode=True,
+    ).strip()
+
+
+def _replace_front_matter_field(
+    lines: list[str], field: str, rendered: str
+) -> list[str]:
+    """Replace *field*'s line span (key line plus continuation lines) with
+    *rendered*; append the entry when the guide does not carry the field yet."""
+    span = _field_line_span(lines, field)
+    if span is None:
+        return [*lines, rendered]
+    start, end = span
+    return [*lines[:start], rendered, *lines[end:]]
+
+
+def _field_line_span(lines: list[str], field: str) -> tuple[int, int] | None:
+    for index, line in enumerate(lines):
+        if not line.startswith(f"{field}:"):
+            continue
+        end = index + 1
+        while end < len(lines) and not _TOP_LEVEL_KEY_RE.match(lines[end]):
+            end += 1
+        return index, end
+    return None
+
+
+def _project_guide_front_matter(
+    path: Path, text: str, declared: dict
+) -> AssetProjection:
+    match = _FRONT_MATTER_RE.match(text)
+    if match is None:
+        raise DocgenError(f"Missing YAML front-matter in {path}")
+    block = match.group(1)
+    values = yaml.safe_load(block) or {}
+    lines = block.splitlines()
+    for catalog_field, front_matter_field in _PROJECTED_COMMAND_FIELDS:
+        if catalog_field not in declared:
+            continue
+        if values.get(front_matter_field) == declared[catalog_field]:
+            continue
+        lines = _replace_front_matter_field(
+            lines,
+            front_matter_field,
+            _front_matter_line(front_matter_field, declared[catalog_field]),
+        )
+    projected_block = "\n".join(lines) + "\n"
+    projected = text[: match.start(1)] + projected_block + text[match.end(1) :]
+    return AssetProjection(path=path, current_text=text, projected_text=projected)
+
+
+def project_command_front_matter(root: Path) -> list[AssetProjection]:
+    """Re-render catalog-authored front-matter for every declared command guide."""
+    projections: list[AssetProjection] = []
+    for command_key, declared in sorted(_catalog_command_declarations(root).items()):
+        guide_path = root / _COMMAND_GUIDES_REL / f"{command_key.replace('_', '-')}.md"
+        if not guide_path.exists():
+            continue  # declared command without a guide file (e.g. update)
+        text = guide_path.read_text(encoding="utf-8")
+        projections.append(_project_guide_front_matter(guide_path, text, declared))
+    return projections
+
+
+def check_command_front_matter(
+    root: Path, projections: list[AssetProjection]
+) -> list[str]:
+    """Stale-guide list, each entry NAMING the drifted guide. Empty = fresh."""
+    return [
+        f"stale command front-matter (catalog is the sole author): "
+        f"{projection.path.relative_to(root)}"
+        for projection in projections
+        if projection.stale
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Resolver↔registry + registry↔runtime agreement (mode-registry-single-locus
+# slice-05, Layer C / analysis §3.3)
+#
+# The elevated `docgen --check` leg: beyond "projection == source", it asserts
+# the registry AGREES with the running system:
+#   (1) the flavor declaring `default: true` equals
+#       `workflow_mode.resolve_workflow_mode`'s absent-config default — closing
+#       the historic two-default divergence mechanically;
+#   (2) the default flavor's `deliver_phase_shape` names exactly the runtime
+#       canonical DELIVER phases (`atdd_pure_phases.CANONICAL_PHASES`) in order
+#       — closing the KEEP-row-10 registry↔runtime parity open leg.
+# Refuses on drift, NAMING the disagreement (each entry carries the drifted
+# field name so the operator can act). The write pass never invokes this — it
+# is a `--check`-only agreement assertion, so a clean copy still writes/exits 0.
+# ---------------------------------------------------------------------------
+def _resolver_absent_config_default() -> str:
+    """The mode the resolver returns for a project with no `.nwave/config.yaml`.
+
+    Derived from the REAL resolver behaviour (a throwaway empty dir has no
+    config), never a hand-restated constant — so the agreement leg cannot drift
+    from the resolver.
+    """
+    with tempfile.TemporaryDirectory() as empty:
+        return resolve_workflow_mode(Path(empty))
+
+
+def _declared_phase_tokens(shape: str) -> tuple[str, ...]:
+    """The ordered phase tokens a `deliver_phase_shape` string names."""
+    return tuple(token.strip() for token in shape.split("->") if token.strip())
+
+
+_DELIVER_PHASE_SHAPE_RE = re.compile(r"^deliver_phase_shape:\s*(.+)$", re.MULTILINE)
+
+
+def _authoritative_phase_shape(flavor_file: Path) -> str | None:
+    """The flavor's FIRST `deliver_phase_shape` declaration.
+
+    A well-formed registry declares the field EXACTLY ONCE — that invariant
+    is enforced fail-closed by the Layer-B gate (`mode_registry_completeness`
+    refuses any flavor carrying a duplicate top-level mode-field declaration).
+    Under that invariant first == only == the effective value the runtime
+    reads, so this read names the registry's authoritative phase shape and an
+    in-place drift is caught here. The duplicate-shadowing state (an appended
+    second declaration that a last-wins parser would silently prefer) is NOT
+    this leg's territory: it is refused by Layer B — the §3.4 orthogonality
+    property (a one-layer bypass is caught by ≥1 of the other gates).
+    """
+    match = _DELIVER_PHASE_SHAPE_RE.search(flavor_file.read_text(encoding="utf-8"))
+    if match is None:
+        return None
+    return match.group(1).strip().strip("'\"")
+
+
+def check_registry_runtime_agreement(root: Path) -> list[str]:
+    """Disagreement list (each NAMING the drifted field). Empty = in agreement.
+
+    The Layer-C agreement leg (mode-registry-single-locus slice-05, analysis
+    §3.3): asserts the registry AGREES with the running system —
+      (1) the flavor declaring `default: true` equals the resolver's
+          absent-config default;
+      (2) that default flavor's authoritative `deliver_phase_shape` names
+          exactly the runtime canonical DELIVER phases, in order.
+    Pure read; never invoked by the write pass.
+    """
+    flavors_dir = root / "nWave" / "flavors"
+    flavor_ids = _declared_flavor_ids(flavors_dir)
+    disagreements: list[str] = []
+
+    resolver_default = _resolver_absent_config_default()
+    defaulting = [
+        flavor_id
+        for flavor_id in flavor_ids
+        if subset_parser.load_file(flavors_dir / f"{flavor_id}.yaml").get("default")
+        is True
+    ]
+    if defaulting != [resolver_default]:
+        disagreements.append(
+            "resolver↔registry disagreement: the resolver's absent-config "
+            f"default is {resolver_default!r} but the flavor(s) declaring "
+            f"`default: true` are {defaulting!r}"
+        )
+
+    if resolver_default in flavor_ids:
+        shape = _authoritative_phase_shape(flavors_dir / f"{resolver_default}.yaml")
+        declared = _declared_phase_tokens(shape or "")
+        if declared != tuple(CANONICAL_PHASES):
+            disagreements.append(
+                "registry↔runtime disagreement: the default flavor's "
+                f"`deliver_phase_shape` names {list(declared)} but the running "
+                f"system's canonical DELIVER phases are {list(CANONICAL_PHASES)}"
+            )
+    return disagreements
 
 
 # ---------------------------------------------------------------------------
@@ -643,7 +1135,7 @@ def run_pipeline(
     paths = scan(root, public_only=public_only)
     data = extract_all(paths)
     data = enrich(data)
-    return render(data)
+    return render(data, root=root)
 
 
 # ---------------------------------------------------------------------------
@@ -652,6 +1144,12 @@ def run_pipeline(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Generate nWave reference documentation"
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=None,
+        help=("Root of the asset tree to scan and project (default: this repository)"),
     )
     parser.add_argument(
         "--output-dir",
@@ -676,17 +1174,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    root = Path(__file__).resolve().parent.parent
+    root = args.root or Path(__file__).resolve().parent.parent
     output_dir = args.output_dir or root / "docs" / "reference"
 
     try:
+        asset_paths = scan(root, public_only=args.public_only)
+        projections = project_generated_regions(root, asset_paths)
+        if not args.check:
+            write_generated_regions(projections)
+        front_matter_projections = project_command_front_matter(root)
+        if not args.check:
+            write_generated_regions(front_matter_projections)
         pages = run_pipeline(root, output_dir, public_only=args.public_only)
     except DocgenError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
 
     if args.check:
-        stale = check_pages(pages, output_dir)
+        stale = (
+            check_generated_regions(root, projections)
+            + check_command_front_matter(root, front_matter_projections)
+            + check_registry_runtime_agreement(root)
+            + check_pages(pages, output_dir)
+        )
         if stale:
             print("Documentation is out of date:", file=sys.stderr)
             for s in stale:

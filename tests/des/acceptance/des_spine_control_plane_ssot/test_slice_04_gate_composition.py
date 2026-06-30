@@ -22,7 +22,7 @@ import pytest
 from pytest_bdd import scenarios
 
 from .steps.composition_slice_04 import GateCompositionFixture
-from .steps.steps_slice_04_gate_composition import *  # noqa: F403  -- vocab
+from .steps.steps_slice_04_gate_composition import *
 
 
 @pytest.fixture

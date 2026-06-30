@@ -2,7 +2,7 @@
 
 from pytest_bdd import scenarios
 
-from .slice_id_regex_steps.steps_slice_id_regex import *  # noqa: F403
+from .slice_id_regex_steps.steps_slice_id_regex import *
 
 
 scenarios("walking-skeleton.feature")

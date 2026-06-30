@@ -29,11 +29,19 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+from nwave_ai.cli import _handle_install, _handle_uninstall
+from tests.common.in_process_cli import run_cli_in_process, run_hook_in_process
+
+from scripts.hooks import (
+    spine_ledger_gate,
+    spine_ledger_pre_commit_hook,
+    spine_ledger_subagent_stop_detector,
+)
 
 
 # Repo root: tests/installer/acceptance/<feature>/steps/composition.py -> up five levels.
@@ -151,11 +159,13 @@ class KillSwitchFixture:
         SpineBypassUsed events (Mandate 8 universe-bound state delta).
         """
         before_events = self._read_audit_log_events()
-        completed = subprocess.run(
+        # In-process analogue of `python -m scripts.hooks.spine_ledger_gate`
+        # (corpus-migration): drive the production CLI EDGE `main(argv)` under
+        # the repo root, capturing stdout/stderr. The original fork passed
+        # `env={**os.environ}` (an unmodified copy) -- in-process os.environ is
+        # already that same env, so no env juggling is needed here.
+        exit_code, stdout, stderr = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                _GATE_MODULE,
                 "--commit-msg-file",
                 str(self._commit_msg_path),
                 "--ledger-root",
@@ -163,18 +173,14 @@ class KillSwitchFixture:
                 "--target-root",
                 str(self._target_root),
             ],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-            env={**os.environ},
+            cwd=_REPO_ROOT,
+            main=spine_ledger_gate.main,
         )
         after_events = self._read_audit_log_events()
         return GateInvocation(
-            exit_code=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
             audit_events_before=before_events,
             audit_events_after=after_events,
         )
@@ -819,32 +825,37 @@ class PreToolUseHookFixture(LedgerEvidenceFixture):
         stdin_payload = json.dumps(self._prepared_hook_event)
         from time import perf_counter_ns
 
-        start_ns = perf_counter_ns()
-        completed = subprocess.run(
-            [sys.executable, "-m", _PRE_COMMIT_HOOK_MODULE],
-            cwd=str(_REPO_ROOT),
-            input=stdin_payload,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-            env={
-                **os.environ,
-                "NWAVE_SPINE_LEDGER_GATE_TARGET_ROOT": str(self._target_root),
-                "NWAVE_SPINE_LEDGER_GATE_LEDGER_ROOT": str(
-                    self._target_root / _TELEMETRY_RELPATH
-                ),
-                "NWAVE_SPINE_LEDGER_GATE_INVOCATION_MARKER_FILE": str(
-                    self._gate_invocation_marker_file
-                ),
-            },
+        # In-process analogue of the stdin-protocol fork
+        # `python -m scripts.hooks.spine_ledger_pre_commit_hook` (corpus-
+        # migration): the production hook EDGE `main()` reads the event JSON
+        # from sys.stdin, so the driver replaces stdin with the SAME payload the
+        # subprocess piped in. The 3 NWAVE_* env vars the original fork passed
+        # via `env=` are set on os.environ around the call (save/restore in
+        # finally so the shared test process is never left mutated).
+        saved_env = dict(os.environ)
+        os.environ["NWAVE_SPINE_LEDGER_GATE_TARGET_ROOT"] = str(self._target_root)
+        os.environ["NWAVE_SPINE_LEDGER_GATE_LEDGER_ROOT"] = str(
+            self._target_root / _TELEMETRY_RELPATH
         )
+        os.environ["NWAVE_SPINE_LEDGER_GATE_INVOCATION_MARKER_FILE"] = str(
+            self._gate_invocation_marker_file
+        )
+        start_ns = perf_counter_ns()
+        try:
+            exit_code, stdout, stderr = run_hook_in_process(
+                spine_ledger_pre_commit_hook.main,
+                stdin_text=stdin_payload,
+                cwd=_REPO_ROOT,
+            )
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
         duration_ms = (perf_counter_ns() - start_ns) / 1_000_000
         after_events = self._read_audit_log_events()
         return HookInvocation(
-            exit_code=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
             duration_ms=duration_ms,
             audit_events_before=before_events,
             audit_events_after=after_events,
@@ -1299,29 +1310,32 @@ class SubagentStopDetectorFixture(PreToolUseHookFixture):
         stdin_payload = json.dumps(self._prepared_subagent_stop_event)
         from time import perf_counter_ns
 
-        start_ns = perf_counter_ns()
-        completed = subprocess.run(
-            [sys.executable, "-m", _SUBAGENT_STOP_DETECTOR_MODULE],
-            cwd=str(_REPO_ROOT),
-            input=stdin_payload,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-            env={
-                **os.environ,
-                "NWAVE_SPINE_LEDGER_GATE_TARGET_ROOT": str(self._target_root),
-                "NWAVE_SPINE_LEDGER_GATE_LEDGER_ROOT": str(
-                    self._target_root / _TELEMETRY_RELPATH
-                ),
-            },
+        # In-process analogue of the stdin-protocol fork
+        # `python -m scripts.hooks.spine_ledger_subagent_stop_detector` (corpus-
+        # migration): the production hook EDGE `main()` reads the SubagentStop
+        # event JSON from sys.stdin. The 2 NWAVE_* env vars are set on os.environ
+        # around the call (save/restore in finally).
+        saved_env = dict(os.environ)
+        os.environ["NWAVE_SPINE_LEDGER_GATE_TARGET_ROOT"] = str(self._target_root)
+        os.environ["NWAVE_SPINE_LEDGER_GATE_LEDGER_ROOT"] = str(
+            self._target_root / _TELEMETRY_RELPATH
         )
+        start_ns = perf_counter_ns()
+        try:
+            exit_code, stdout, stderr = run_hook_in_process(
+                spine_ledger_subagent_stop_detector.main,
+                stdin_text=stdin_payload,
+                cwd=_REPO_ROOT,
+            )
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
         duration_ms = (perf_counter_ns() - start_ns) / 1_000_000
         after_events = self._read_audit_log_events()
         return SubagentStopInvocation(
-            exit_code=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
             duration_ms=duration_ms,
             audit_events_before=before_events,
             audit_events_after=after_events,
@@ -1539,12 +1553,16 @@ _PRE_SLICE_04_SUBAGENT_STOP_COUNT = 2
 # Post-slice-04 live-registry totals. slice-04 itself lifted these from the
 # pre-state baseline (10/5/2) by +2/+1/+1 -> 12/6/3. A LATER orthogonal
 # feature (fix-crafter-stash-structural-mitigation slice-01) added a 4th
-# PreToolUse/Bash entry (the git-stash guard), so the LIVE registry now
-# carries 13/7/3. The slice-04 behavioural claim (every spine-ledger entry
-# carries the `# des-hook:` marker) is unaffected by the git-stash addition;
-# only the absolute live-count pins shift.
-_POST_SLICE_04_HOOK_EVENTS_COUNT = 13
-_POST_SLICE_04_PRE_TOOL_USE_COUNT = 7
+# PreToolUse/Bash entry (the git-stash guard), so the LIVE registry carried
+# 13/7/3; a further orthogonal addition (nwave-flow-v2-enforcement slice-04
+# amendment) registered the UserPromptSubmit wave-active anchor entry, so
+# the LIVE registry now carries 14/7/3. A further orthogonal addition (the
+# --no-verify reminder guard, Ale 2026-06-26) registered a 5th PreToolUse/Bash
+# entry, so the LIVE registry now carries 15/8/3. The slice-04 behavioural
+# claim (every spine-ledger entry carries the `# des-hook:` marker) is
+# unaffected by any addition; only the absolute live-count pins shift.
+_POST_SLICE_04_HOOK_EVENTS_COUNT = 15
+_POST_SLICE_04_PRE_TOOL_USE_COUNT = 8
 _POST_SLICE_04_SUBAGENT_STOP_COUNT = 3
 
 
@@ -1783,27 +1801,30 @@ class InstallWiringFixture(SubagentStopDetectorFixture):
         """
         before_settings = self._read_settings_json_or_empty()
         before_scripts = self._read_scripts_dir_listing()
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                _NWAVE_AI_CLI_MODULE,
-                "install",
-                "--target",
-                str(self._installer_target),
-            ],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
+        # In-process analogue of `python -m nwave_ai.cli install --target <p>`
+        # (corpus-migration): drive the production install entry chain
+        # `_handle_install(argv)` -- the SUT named in this fixture's class
+        # docstring (it fans into the plugin registry + DESPlugin.install()).
+        # `_handle_install` mutates os.environ["CLAUDE_CONFIG_DIR"] (consumed by
+        # its nested install_nwave.py subprocess), so os.environ is saved and
+        # restored around the call. Filesystem observables (settings.json +
+        # scripts dir delta on the isolated target) are identical to the fork.
+        saved_env = dict(os.environ)
+        try:
+            exit_code, stdout, stderr = run_cli_in_process(
+                ["--target", str(self._installer_target)],
+                cwd=_REPO_ROOT,
+                main=_handle_install,
+            )
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
         after_settings = self._read_settings_json_or_empty()
         after_scripts = self._read_scripts_dir_listing()
         return InstallerInvocation(
-            exit_code=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
             settings_json_before=before_settings,
             settings_json_after=after_settings,
             scripts_dir_listing_before=before_scripts,
@@ -1814,27 +1835,27 @@ class InstallWiringFixture(SubagentStopDetectorFixture):
         """Invoke `nwave-ai uninstall --target <claude-home>` as a real subprocess."""
         before_settings = self._read_settings_json_or_empty()
         before_scripts = self._read_scripts_dir_listing()
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                _NWAVE_AI_CLI_MODULE,
-                "uninstall",
-                "--target",
-                str(self._installer_target),
-            ],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
+        # In-process analogue of `python -m nwave_ai.cli uninstall --target <p>`
+        # (corpus-migration): drive the production uninstall entry chain
+        # `_handle_uninstall(argv)`. Like install, it mutates
+        # os.environ["CLAUDE_CONFIG_DIR"] (and implies --force for an explicit
+        # target), so os.environ is saved/restored around the call.
+        saved_env = dict(os.environ)
+        try:
+            exit_code, stdout, stderr = run_cli_in_process(
+                ["--target", str(self._installer_target)],
+                cwd=_REPO_ROOT,
+                main=_handle_uninstall,
+            )
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
         after_settings = self._read_settings_json_or_empty()
         after_scripts = self._read_scripts_dir_listing()
         return InstallerInvocation(
-            exit_code=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
             settings_json_before=before_settings,
             settings_json_after=after_settings,
             scripts_dir_listing_before=before_scripts,
@@ -1843,29 +1864,25 @@ class InstallWiringFixture(SubagentStopDetectorFixture):
 
     def run_aggregator_subcommand(self, since: str) -> AggregatorInvocation:
         """Invoke `des verify-slice-ledger-evidence --report --since=<date>`."""
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                _DES_CLI_MODULE,
-                _AGGREGATOR_SUBCOMMAND,
-                "--report",
-                f"--since={since}",
-            ],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-            env={
-                **os.environ,
-                "NWAVE_SPINE_LEDGER_GATE_TARGET_ROOT": str(self._target_root),
-            },
-        )
+        # In-process analogue of `python -m des verify-slice-ledger-evidence
+        # --report --since=<date>` (corpus-migration): drive the production des
+        # CLI dispatcher EDGE (the run_cli_in_process default `main`), the same
+        # entry `python -m des` reaches. The single NWAVE_* env var is set on
+        # os.environ around the call (save/restore in finally).
+        saved_env = dict(os.environ)
+        os.environ["NWAVE_SPINE_LEDGER_GATE_TARGET_ROOT"] = str(self._target_root)
+        try:
+            exit_code, stdout, stderr = run_cli_in_process(
+                [_AGGREGATOR_SUBCOMMAND, "--report", f"--since={since}"],
+                cwd=_REPO_ROOT,
+            )
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
         return AggregatorInvocation(
-            exit_code=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
 
     def snapshot_hook_events(self) -> HookEventsSnapshot:
@@ -2076,7 +2093,7 @@ class InstallWiringFixture(SubagentStopDetectorFixture):
     def assert_post_slice_04_hook_events_count(
         self, snapshot: HookEventsSnapshot
     ) -> None:
-        """Universe-bound: post-slice-04 HOOK_EVENTS count == 13 (10 +2 slice-04 +1 git-stash guard)."""
+        """Universe-bound: post-slice-04 HOOK_EVENTS count == 14 (10 +2 slice-04 +1 git-stash guard +1 UserPromptSubmit anchor)."""
         assert snapshot.total_count == _POST_SLICE_04_HOOK_EVENTS_COUNT, (
             f"Expected post-slice-04 HOOK_EVENTS count == "
             f"{_POST_SLICE_04_HOOK_EVENTS_COUNT}; got {snapshot.total_count}."

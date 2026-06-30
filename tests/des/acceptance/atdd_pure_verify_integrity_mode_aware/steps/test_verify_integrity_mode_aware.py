@@ -36,7 +36,6 @@ from .domain_types import (
     IntegrityVerdict,
     LedgerState,
     LeftoverRoadmap,
-    VerifyInvocation,
     WorkflowMode,
 )
 
@@ -102,19 +101,7 @@ def when_run_verify_integrity(
     result_box: dict[str, VerifyIntegrityResult],
 ) -> None:
     before = composition.capture_universe()
-    result_box["result"] = composition.run_verify_integrity(VerifyInvocation.FULL)
-    _assert_pure_read(composition, before)
-
-
-@when("the operator runs des-verify-integrity with --roadmap-only for that feature")
-def when_run_verify_integrity_roadmap_only(
-    composition: VerifyIntegrityComposition,
-    result_box: dict[str, VerifyIntegrityResult],
-) -> None:
-    before = composition.capture_universe()
-    result_box["result"] = composition.run_verify_integrity(
-        VerifyInvocation.ROADMAP_ONLY
-    )
+    result_box["result"] = composition.run_verify_integrity()
     _assert_pure_read(composition, before)
 
 
@@ -179,18 +166,6 @@ def then_no_crash(result_box: dict[str, VerifyIntegrityResult]) -> None:
     result = result_box["result"]
     assert result.verdict is not IntegrityVerdict.USAGE_ERROR
     assert result.output.strip() != ""
-
-
-@then("des-verify-integrity does not fail for a missing roadmap")
-def then_no_missing_roadmap_failure(
-    result_box: dict[str, VerifyIntegrityResult],
-) -> None:
-    # On master, --roadmap-only with no roadmap returns exit 2 (USAGE_ERROR)
-    # with a "roadmap.json not found" message. Under atdd_pure the flag is a
-    # no-op: neither the usage-error verdict nor the missing-roadmap message.
-    result = result_box["result"]
-    assert result.verdict is not IntegrityVerdict.USAGE_ERROR
-    assert "not found" not in result.output.lower()
 
 
 def _assert_roadmap_reported_as_warning(

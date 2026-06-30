@@ -20,7 +20,7 @@ import json
 import sys
 from pathlib import Path  # used in fixture bodies and runtime calls
 
-import pytest  # noqa: TC002  # used at runtime via pytest.CaptureFixture
+import pytest  # used at runtime via pytest.CaptureFixture
 
 
 # ---------------------------------------------------------------------------

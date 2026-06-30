@@ -13,19 +13,6 @@ the sibling suite gate-trailer-read-git-port-extract. This routes the scenario
 @tags through pytest-bdd's tag-to-dynamic-mark pipeline, which the project's
 filterwarnings makes --strict-markers-safe. Each step decorator's literal text
 is unique within this feature directory (S1 step-text-uniqueness invariant).
-
-RED scaffold (empirically confirmed at authorship HEAD):
-  * GIT_BINARY_ABSENT scenario: FileNotFoundError propagates uncaught from
-    subprocess.run at line 132 of verify_commit_trailers.py -> Python emits a
-    raw traceback to stderr and exits with code 1. The Then-step asserts
-    exit 7 + a structured reason on stderr -> fails with AssertionError (wrong
-    exit code, raw traceback present).
-  * SHA_UNRESOLVABLE scenario: RuntimeError caught at line 181-183 -> exit 6.
-    The Then-step asserts exit 7 -> fails with AssertionError (got exit 6, the
-    malformed-trailer code -- wrong severity class).
-  * REAL_WORK_TREE_SIGNED scenario (parity control): already exits 0 at HEAD
-    for a correctly signed commit -> this scenario is GREEN-on-author (expected;
-    it proves the seam-A re-point does not regress the happy path).
 """
 
 from __future__ import annotations
@@ -61,11 +48,6 @@ def given_unresolvable_sha(composition: TrailerVerifierComposition) -> None:
     composition.given_unresolvable_sha_in_work_tree()
 
 
-@given("a real git work-tree with a commit carrying a correctly signed trailer")
-def given_signed_commit(composition: TrailerVerifierComposition) -> None:
-    composition.given_real_work_tree_with_signed_commit()
-
-
 # --- When --------------------------------------------------------------------
 
 
@@ -76,11 +58,6 @@ def when_runs_verifier_git_absent(composition: TrailerVerifierComposition) -> No
 
 @when("the operator runs des verify-commit-trailers on that unresolvable SHA")
 def when_runs_verifier_unresolvable(composition: TrailerVerifierComposition) -> None:
-    composition.when_operator_runs_verifier()
-
-
-@when("the operator runs des verify-commit-trailers on that signed commit")
-def when_runs_verifier_signed(composition: TrailerVerifierComposition) -> None:
     composition.when_operator_runs_verifier()
 
 
@@ -115,8 +92,3 @@ def then_distinct_from_tampering(composition: TrailerVerifierComposition) -> Non
 @then("the cannot-evaluate verdict is distinct from the malformed-trailer verdict")
 def then_distinct_from_malformed(composition: TrailerVerifierComposition) -> None:
     composition.then_cannot_evaluate_distinct_from_malformed()
-
-
-@then("the verifier produces the verified verdict")
-def then_verified(composition: TrailerVerifierComposition) -> None:
-    composition.then_verifier_produces_verified_verdict()

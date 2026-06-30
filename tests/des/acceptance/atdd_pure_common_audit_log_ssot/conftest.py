@@ -49,9 +49,12 @@ _SUITE_DIR = Path(__file__).parent
 # organic pass once the slice-02c-A A_GREEN_ATS crafter ships the 6-
 # production-callsite + 16-fixture-fanout atomic bundle (per M51 H3
 # SUBSTRATE-AFFINITY decomposition).
-_RED_SCAFFOLD_SLICES: frozenset[str] = frozenset(
-    {"slice-02", "slice-02b", "slice-02c-A"}
-)
+# Empty under F-CONSOLIDATION-FUTURE-SLICE-CANON (ratified A, future-absent):
+# slice-02/02b/02c-A migration scaffolds removed off disk (deferred to backlog,
+# re-authored JIT via nw-refactor). Only the delivered slice-01 core remains —
+# no author-ahead RED scaffold to xfail. Hook is now a no-op for xfail (xdist
+# group pinning below still applies).
+_RED_SCAFFOLD_SLICES: frozenset[str] = frozenset()
 
 
 def pytest_collection_modifyitems(

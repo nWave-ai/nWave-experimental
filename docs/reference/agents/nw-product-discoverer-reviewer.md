@@ -4,9 +4,9 @@ Use as peer reviewer for product-discoverer outputs -- validates evidence qualit
 
 **Wave:** Other
 **Model:** haiku
-**Max turns:** 0
+**Max turns:** 25
 **Tools:** Read, Glob, Grep, Task
 
 ## Skills
 
-- [nw-pdr-review-criteria](../../../nWave/skills/nw-pdr-review-criteria/SKILL.md) — Evidence quality validation and decision gate criteria for product discovery reviews
+- [nw-pdr-review-criteria](../skills/nw-pdr-review-criteria.md) — Evidence quality validation and decision gate criteria for product discovery reviews

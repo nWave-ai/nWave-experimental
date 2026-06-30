@@ -2,7 +2,7 @@
 
 ADR-028 D2 + ADR-029 D3 / slice-06 (Mandate-12, Pillar 3). Wires the PRODUCTION
 validate-feature-delta CLI entry point
-(``scripts.validation.validate_feature_delta.main``) against a tmp_path
+(``des.cli.validate_feature_delta.main``) against a tmp_path
 feature-delta fixture. Business logic lives here as the single source of truth;
 step bodies delegate to ``SlicePlanValidationComposition`` methods and never
 inline logic.
@@ -55,7 +55,7 @@ from pathlib import Path
 
 # Production driving port -- the validate-feature-delta CLI. The module exists
 # on master; slice-06 EXTENDS its `main` with the --require-slice-plan flag.
-from scripts.validation.validate_feature_delta import (
+from des.cli.validate_feature_delta import (
     main as validate_feature_delta_main,
 )
 

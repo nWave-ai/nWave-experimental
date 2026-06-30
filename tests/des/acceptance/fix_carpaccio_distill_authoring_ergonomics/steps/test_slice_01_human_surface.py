@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-from .steps_shared import *  # noqa: F403 -- shared step registry (S1 SSOT)
+from .steps_shared import *
 
 
 scenarios("../slice-01-human-surface-pass-class.feature")

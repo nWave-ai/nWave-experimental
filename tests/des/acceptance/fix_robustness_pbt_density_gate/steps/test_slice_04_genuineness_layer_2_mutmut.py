@@ -23,7 +23,7 @@ from pathlib import Path
 
 from pytest_bdd import scenarios
 
-from .common_steps import *  # noqa: F403 -- shared step vocabulary
+from .common_steps import *
 
 
 scenarios("../slice-04-genuineness-layer-2-mutmut.feature")

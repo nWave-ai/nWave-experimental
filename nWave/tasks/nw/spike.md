@@ -1,7 +1,8 @@
 ---
-description: "Runs a timeboxed spike to validate one core assumption before DESIGN. Use after DISCUSS when the feature involves a new mechanism, performance requirement, or external integration."
+description: '[DEPRECATED — use /nw-design with analysis focus instead] Runs a timeboxed spike to validate one core assumption before DESIGN. Use after DISCUSS when the feature involves a new mechanism, performance requirement, or external integration.'
 argument-hint: "[feature-description] - Example: \"wave-matrix -- derive feature status from pytest + filesystem\""
 ---
+
 
 # NW-SPIKE: Timeboxed Assumption Validation
 

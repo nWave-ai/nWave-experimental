@@ -127,7 +127,7 @@ Use `[HOW]` for steps, procedures, integration guides, and operational tasks.
 2. Run the migration script: `python scripts/migrate_to_l7.py docs/feature/my-feature`
 3. Review the generated `feature-delta.md` for accuracy
 4. Commit: `git add docs/feature/my-feature/feature-delta.md && git commit -m "..."`
-5. Verify: `python scripts/validation/validate_feature_delta.py docs/feature/my-feature/feature-delta.md`
+5. Verify: `des validate-feature-delta docs/feature/my-feature/feature-delta.md`
 ```
 
 ---
@@ -170,7 +170,7 @@ If you see `<!-- review-needed -->` comments, sections with unclear classificati
 ### Step 4: Validate
 
 ```bash
-python scripts/validation/validate_feature_delta.py docs/feature/my-feature/feature-delta.md
+des validate-feature-delta docs/feature/my-feature/feature-delta.md
 ```
 
 Exit code `0` = valid. Exit code `1` = malformed headings (see error details).
@@ -281,7 +281,7 @@ As each wave executes, add its sections under the appropriate `## Wave: ...` hea
 After each wave, validate the file:
 
 ```bash
-python scripts/validation/validate_feature_delta.py docs/feature/my-new-feature/feature-delta.md
+des validate-feature-delta docs/feature/my-new-feature/feature-delta.md
 ```
 
 ### Step 5: Commit
@@ -439,7 +439,7 @@ Each wave lists available expansions in an `[REF]` section called `Expansion cat
 
 1. Add the expansion section to `feature-delta.md` (e.g., `## Wave: DISCUSS / [WHY] JTBD narrative`)
 2. Register it in the Expansion catalog table with a one-line description
-3. Test with the validator: `python scripts/validation/validate_feature_delta.py ...`
+3. Test with the validator: `des validate-feature-delta ...`
 
 ---
 

@@ -6,32 +6,24 @@ subprocess black box (Mandate-13 driving-port-only, Layer 3 subprocess),
 mirroring the proven pattern of the sibling suite
 ``tests/des/acceptance/gate-trailer-read-git-port-extract/steps/composition.py``.
 
-DRIVING PORT (load-bearing): ``_get_commit_message``, the future
-``CommitTrailerReadPort.commit_message``, and ``GitCommitTrailerReadAdapter``
-are NEVER imported-and-called at the step boundary -- the SUT is exercised only
-through the CLI subprocess
+DRIVING PORT (load-bearing): ``CommitTrailerReadPort.commit_message`` and
+``GitCommitTrailerReadAdapter`` are NEVER imported-and-called at the step
+boundary -- the SUT is exercised only through the CLI subprocess
 ``python -m des.cli.verify_commit_trailers --commit <sha>``.
 The observable surface is the process exit code and the structured INDETERMINATE
 reason on stderr -- nothing else.
 
 SYNTHETIC SUBSTRATE (precondition state, NOT the SUT): a tmp directory with one
-of three git environments:
+of two git environments:
 
   * GIT_BINARY_ABSENT: a non-work-tree tmp directory; the subprocess runs with
     a PATH that contains no ``git`` binary -> subprocess.run raises
-    FileNotFoundError -> today: raw stack-trace, exit ~1 (RED); post-GREEN:
-    LOUD INDETERMINATE, exit 7.
+    FileNotFoundError -> LOUD INDETERMINATE, exit 7.
 
   * SHA_UNRESOLVABLE: a real git work-tree (``git init``-ed) where the requested
     SHA (``"deadbeef0000000000000000000000000000000000000000000000000000dead"``)
-    does not exist in the repo history. ``git show`` returns non-zero -> today:
-    RuntimeError caught -> exit 6 (WRONG -- malformed-trailer code); post-GREEN:
+    does not exist in the repo history. ``git show`` returns non-zero ->
     LOUD INDETERMINATE, exit 7.
-
-  * REAL_WORK_TREE_SIGNED: a real ``git init`` work-tree with a commit whose body
-    carries a correctly signed ``Reviewed-by:`` trailer (HMAC-SHA256 over the
-    canonical verdict JSON, signed with the test key). The seam-A re-point must
-    not regress this path -> exit 0, the non-vacuity control.
 
 PURE-READ CONTRACT (Mandate 8, layer-3 universe guard): des verify-commit-trailers
 is a pure observer -- it MUST NOT mutate the target directory (no ``.git/``
@@ -40,20 +32,9 @@ port-exposed filesystem observables; the When-step asserts every entry is
 ``unchanged`` across the invocation.
 
 EXIT-CODE LOCKED DECISION (DESIGN authority): exit 7 = INDETERMINATE
-(cannot-evaluate). Exit 4 = HMAC mismatch (tampering, UNCHANGED). Exit 6 =
-malformed-trailer (UNCHANGED). The non-conflation scenario asserts this
-explicitly: exit 7 != exit 4 != exit 6.
-
-RED-for-right-reason (empirically confirmed at authorship HEAD):
-  * GIT_BINARY_ABSENT: subprocess.run(["git","show",...]) at line 132 raises
-    FileNotFoundError (unhandled) -> Python prints raw traceback to stderr,
-    exits with code 1. The Then-step asserts exit 7 + structured reason ->
-    fails with AssertionError (wrong exit code + no structured reason).
-  * SHA_UNRESOLVABLE: RuntimeError raised at line 141 caught at line 181-183
-    -> exit 6. Then-step asserts exit 7 -> fails with AssertionError (got 6).
-  * REAL_WORK_TREE_SIGNED: already exits 0 at HEAD for a correctly signed
-    commit -> the CONTROL is GREEN-on-author (desired; it proves the parity AT
-    is not a new red).
+(cannot-evaluate). Exit 45 = ATReviewGateRejected (UNCHANGED). Exit 6 =
+malformed-trailer (UNCHANGED). The non-conflation scenario asserts exit 7 is
+distinct from both exit 4 (legacy tampering slot) and exit 6.
 
 State lives on the instance; every ``given_/when_/then_`` method mutates or
 reads that state. Step functions in ``test_slice_01_*.py`` are thin delegations
@@ -62,13 +43,9 @@ to these methods (Mandate-12 criterion 3: no business logic in step bodies).
 
 from __future__ import annotations
 
-import hashlib
-import hmac
-import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -79,7 +56,6 @@ from .domain_types import (
     TAMPERING_EXIT,
     CommitEnvironment,
     CommitSha,
-    SigningKey,
     VerifierVerdict,
 )
 
@@ -91,24 +67,10 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 # The production CLI module under test.
 VERIFY_MODULE = "des.cli.verify_commit_trailers"
 
-# Test HMAC signing key (arbitrary; used only for the REAL_WORK_TREE_SIGNED
-# substrate to produce a correctly-signed trailer so the CLI reaches exit 0).
-_TEST_KEY = SigningKey(b"test-signing-key-for-slice-01-parity")
-
 # A SHA that cannot exist in any freshly-init-ed git repo.
 _UNRESOLVABLE_SHA = CommitSha(
     "deadbeef0000000000000000000000000000000000000000000000000000dead"
 )
-
-
-def _canonical_verdict_json(verdict: dict[str, object]) -> bytes:
-    """Canonical JSON bytes for HMAC computation (mirrors the CLI's function)."""
-    return json.dumps(verdict, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
-
-def _compute_hmac(verdict: dict[str, object], key: bytes) -> str:
-    """HMAC-SHA256 hex over canonical verdict JSON."""
-    return hmac.new(key, _canonical_verdict_json(verdict), hashlib.sha256).hexdigest()
 
 
 @dataclass
@@ -133,11 +95,6 @@ class TrailerVerifierComposition:
         """Real git work-tree where the requested SHA does not exist in history."""
         self._env = CommitEnvironment.SHA_UNRESOLVABLE
         self._build_substrate(CommitEnvironment.SHA_UNRESOLVABLE)
-
-    def given_real_work_tree_with_signed_commit(self) -> None:
-        """Real git work-tree with a commit carrying a correctly signed trailer."""
-        self._env = CommitEnvironment.REAL_WORK_TREE_SIGNED
-        self._build_substrate(CommitEnvironment.REAL_WORK_TREE_SIGNED)
 
     # ---- when ------------------------------------------------------------------
 
@@ -242,24 +199,14 @@ class TrailerVerifierComposition:
             f"not MALFORMED (exit {MALFORMED_EXIT}). {self._observed()}"
         )
 
-    def then_verifier_produces_verified_verdict(self) -> None:
-        """Non-vacuity control: a signed commit in a real work-tree verifies (exit 0)."""
-        self._require_completed()
-        assert self.verdict() is VerifierVerdict.VERIFIED, (
-            "a real git work-tree with a correctly signed Reviewed-by trailer must "
-            "produce the verified verdict (exit 0); the cannot-evaluate refusal is "
-            "bound to git-UNreadability and must not fire here. "
-            f"{self._observed()}"
-        )
-
     # ---- observable-verdict parsing --------------------------------------------
 
     def verdict(self) -> VerifierVerdict:
         """Map the observable subprocess surface onto the user verdict.
 
-        Reads the exit code. Exit 7 -> CANNOT_EVALUATE; exit 4 -> TAMPERING;
-        exit 5 -> MISSING_KEY; exit 6 -> MALFORMED; exit 0 -> VERIFIED;
-        anything else (incl. today's raw-exception exit ~1) -> OTHER.
+        Reads the exit code. Exit 7 -> CANNOT_EVALUATE; exit 4 -> TAMPERING
+        (legacy tampering slot, used for non-conflation assertion); exit 6 ->
+        MALFORMED; anything else -> OTHER.
         """
         completed = self._require_completed()
         rc = completed.returncode
@@ -267,12 +214,8 @@ class TrailerVerifierComposition:
             return VerifierVerdict.CANNOT_EVALUATE
         if rc == TAMPERING_EXIT:
             return VerifierVerdict.TAMPERING
-        if rc == 5:
-            return VerifierVerdict.MISSING_KEY
         if rc == MALFORMED_EXIT:
             return VerifierVerdict.MALFORMED
-        if rc == 0:
-            return VerifierVerdict.VERIFIED
         return VerifierVerdict.OTHER
 
     def _observed(self) -> str:
@@ -337,11 +280,6 @@ class TrailerVerifierComposition:
             self._init_empty_git_repo()
             self._target_sha = _UNRESOLVABLE_SHA
 
-        elif env is CommitEnvironment.REAL_WORK_TREE_SIGNED:
-            # Real git work-tree with a signed commit; the verifier must reach exit 0.
-            sha = self._init_git_repo_with_signed_commit()
-            self._target_sha = sha
-
     def _init_empty_git_repo(self) -> None:
         """``git init`` + one empty commit (so HEAD exists but has no user commits)."""
         work_dir = self._require_work_dir()
@@ -357,56 +295,6 @@ class TrailerVerifierComposition:
         run("git", "add", "-A")
         run("git", "commit", "-q", "-m", "initial placeholder")
 
-    def _init_git_repo_with_signed_commit(self) -> CommitSha:
-        """Real git repo with a commit carrying a correctly signed Reviewed-by trailer.
-
-        Builds a minimal verdict JSON, computes its HMAC-SHA256 with _TEST_KEY,
-        and embeds a ``Reviewed-by:`` + ``Verdict-Payload:`` trailer pair in the
-        commit body. The CLI will read this commit, parse the trailers, recompute
-        the HMAC, and emit exit 0 (verified).
-        """
-        work_dir = self._require_work_dir()
-        run = lambda *a: subprocess.run(  # noqa: E731
-            list(a), cwd=work_dir, check=True, capture_output=True, text=True
-        )
-        run("git", "init", "-q")
-        run("git", "config", "user.email", "at@example.com")
-        run("git", "config", "user.name", "at")
-        (work_dir / "README.md").write_text(
-            "seam-a-indeterminate control\n", encoding="utf-8"
-        )
-        run("git", "add", "-A")
-
-        # Build the verdict payload and sign it.
-        verdict_payload: dict[str, object] = {
-            "findings_summary": [],
-            "reviewer_agent_id": "test-agent",
-            "timestamp": "2026-01-01T00:00:00Z",
-            "verdict": "approved",
-        }
-        hmac_hex = _compute_hmac(verdict_payload, bytes(_TEST_KEY))
-        verdict_json = json.dumps(
-            verdict_payload, sort_keys=True, separators=(",", ":")
-        )
-
-        commit_body = (
-            "ship the parity control for slice-01\n"
-            "\n"
-            f"Reviewed-by: test-agent:{hmac_hex}\n"
-            f"Verdict-Payload: {verdict_json}\n"
-        )
-        run("git", "commit", "-q", "-m", commit_body)
-
-        # Resolve HEAD to the concrete SHA for the --commit argument.
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=work_dir,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return CommitSha(result.stdout.strip())
-
     def _run_verifier(self) -> None:
         """Run ``python -m des.cli.verify_commit_trailers`` as a subprocess black box.
 
@@ -419,12 +307,6 @@ class TrailerVerifierComposition:
         For GIT_BINARY_ABSENT the PATH is narrowed to a git-free tmp directory
         so the subprocess's git resolution raises FileNotFoundError -- the
         genuine binary-absent degrade.
-
-        The signing key is injected via env for the REAL_WORK_TREE_SIGNED
-        substrate (so the CLI can find and verify the trailer). For all other
-        substrates the key env is left unset and no key file exists -- the CLI
-        will hit the git-absence degrade before it even reaches the key-loading
-        step.
         """
         work_dir = self._require_work_dir()
         assert self._target_sha is not None, (
@@ -445,22 +327,21 @@ class TrailerVerifierComposition:
             )
             env["PATH"] = str(self._git_free_path)
 
-        if self._env is CommitEnvironment.REAL_WORK_TREE_SIGNED:
-            # Inject the test signing key so the HMAC verification succeeds.
-            env["NWAVE_REVIEWER_SIGNING_KEY"] = _TEST_KEY.decode("utf-8")
+        from des.cli import verify_commit_trailers
+        from tests.common.in_process_cli import run_cli_in_process
 
-        self._completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                VERIFY_MODULE,
-                "--commit",
-                str(self._target_sha),
-            ],
-            capture_output=True,
-            text=True,
+        exit_code, stdout, stderr = run_cli_in_process(
+            ["--commit", str(self._target_sha)],
             cwd=str(work_dir),
+            main=verify_commit_trailers.main,
             env=env,
+            catch_all=True,
+        )
+        self._completed = subprocess.CompletedProcess(
+            args=["python", "-m", VERIFY_MODULE, "--commit", str(self._target_sha)],
+            returncode=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
 
     def _require_work_dir(self) -> Path:

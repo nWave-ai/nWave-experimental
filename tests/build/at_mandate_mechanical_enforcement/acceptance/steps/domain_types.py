@@ -92,8 +92,8 @@ CLEAN_CORPUS: Path = _FIXTURES_DIR / "clean_when_uses_driving_port.py"
 #     actually consume (the reference Python adapter must cover at least these);
 #   * the *missing capability* the verdict names when an adapter is incomplete.
 
-from des.testarch.capabilities import _REGISTRY, Capability  # noqa: E402
-from des.testarch.rules import (  # noqa: E402, F401  (import-for-side-effect: register)
+from des.testarch.capabilities import _REGISTRY, Capability
+from des.testarch.rules import (  # noqa: F401  (import-for-side-effect: register)
     assert_state_delta,
     composition_root,
     driving_port_boundary,
@@ -500,11 +500,11 @@ EXPECTED_MAIN_MISSING_ROW: SubcommandRowName = SubcommandRowName("main-missing")
 # coverage half flags a ``failure_modes`` entry declared in a component manifest
 # that no named test covers — a declared-but-untested failure mode.
 
-from des.testarch.rules.sad_path_pbt import (  # noqa: E402
+from des.testarch.rules.sad_path_pbt import (
     PBT_IN_LAYER3_SAD_PATH_BREACH,
     UNCOVERED_FAILURE_MODE_BREACH,
 )
-from des.testarch.rules.technical_call_smell import (  # noqa: E402
+from des.testarch.rules.technical_call_smell import (
     TECHNICAL_CALL_IN_STEP_BODY as TECHNICAL_CALL_IN_STEP_BODY_BREACH,
 )
 
@@ -780,7 +780,7 @@ CLEAN_DOMAIN_CORPUS: Path = (
 # (Capability.ASSIGNMENTS_CONSTRUCTING_TYPE) cross-checked against the
 # presence/absence of a composition-root entry call (Capability.CALLS_IN_FUNCTION).
 
-from des.testarch.rules.composition_root import (  # noqa: E402
+from des.testarch.rules.composition_root import (
     HAND_WIRED_SUT_IN_STEP_BODY as HAND_WIRED_SUT_IN_STEP_BODY_BREACH,
 )
 

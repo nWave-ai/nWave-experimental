@@ -36,7 +36,7 @@ from .composition_slice_05 import (  # noqa: F401  -- pytest fixtures
     collection_precheck_gate_fixture,
     state_05,
 )
-from .steps.steps_slice_05_collection_precheck_gate import *  # noqa: F403  -- step vocab
+from .steps.steps_slice_05_collection_precheck_gate import *
 
 
 scenarios("slice-05-collection-precheck-gate.feature")

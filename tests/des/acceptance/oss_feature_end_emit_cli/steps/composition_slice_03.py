@@ -97,12 +97,12 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
-from tests.env_parity import seed_dev_checkout_marker
+from tests.common.in_process_cli import run_cli_in_process
+from tests.env_parity import seed_dev_checkout_marker, seed_feature_delta_git_repo
 
 from .domain_types_slice_03 import (
     CoverageMapRecord,
@@ -118,20 +118,7 @@ from .signed_coverage_map import (
 )
 
 
-# The absolute repo-`src/` path, derived from THIS file's location rather than a
-# cwd-relative `Path("src")` -- the `des` CLI subprocess is launched with
-# `cwd=project_root` (the per-test tmp workspace), so a cwd-relative PYTHONPATH
-# would resolve under the tmp tree and fail to import `des`. THIS file lives at
-# tests/des/acceptance/oss_feature_end_emit_cli/steps/composition_slice_03.py ->
-# 5 parents up is the repo root.
-_REPO_SRC = Path(__file__).resolve().parents[5] / "src"
-
 _FEATURE_ID = FeatureId("oss-feature-end-cycle-demo")
-
-# The reviewer signing key the cycle's sign-leg resolves (reuse slice-02's
-# external-secret port). The cycle signs a REAL deep-review verdict under this
-# key; the produced FeatureEndReviewVerdict record binds the genuine hash.
-_SIGNING_KEY = "test-reviewer-signing-key-slice-03"
 
 # The reviewer agent + verdict the cycle's deep-review-sign leg signs.
 _REVIEWER_AGENT = "nw-software-crafter-reviewer"
@@ -170,6 +157,11 @@ class FeatureEndCycleComposition:
         # customer-install REFUSAL (exit 78). Same honest fix as slice-01/02 --
         # NOT a NWAVE_FRESHNESS=skip mask. See tests/env_parity.py.
         seed_dev_checkout_marker(self._project_root)
+        # The WS-gate fail-closed scenario (AT-3) stages its FAIL through the
+        # ADR-098 invariant (a NEW installable in the delta with no WS AT cannot
+        # dodge), set by stage_walking_skeleton_failing_feature. Passing scenarios
+        # leave this False -> their delta adds no new installable -> NOT_APPLICABLE.
+        self._ships_new_installable = False
 
     # --- environment SETUP (what makes the REAL gate pass or fail) -----------
 
@@ -195,20 +187,27 @@ class FeatureEndCycleComposition:
     def stage_walking_skeleton_failing_feature(self) -> None:
         """Stage a real feature whose REAL walking-skeleton gate genuinely FAILS.
 
-        The feature root carries NO `pyproject.toml`, so the REAL
-        `des walking-skeleton-gate` build leg raises `ArtifactBuildError` and the
-        gate returns `GateOutcome.at_failure` (exit 1) -- a GENUINE real-gate
-        FAIL reached BEFORE any wheel build or network access (cheap + hermetic).
-        The cycle must read this real FAIL verdict and fail-close, NOT certify
-        complete.
+        ADR-098 (`fix-feature-end-ws-gate-applicability`) made the WS floor's
+        applicability DELTA-DERIVED: a feature that adds a NEW installable root in
+        its `master...HEAD` delta while declaring no walking-skeleton AT
+        (`entry_points: []`) is `ships_installer_artifact=True` -> a domain FAIL
+        (the un-gameable "a no-AT installer feature cannot dodge" invariant,
+        guardrail in ADR-098). That is the REAL gate FAIL the cycle must read and
+        fail-close on. `seed_feature_delta_git_repo(ships_new_installable=True)`
+        (driven from run_cycle) ADDS the new installable in the delta.
 
-        This drops the old `--walking-skeleton-outcome=fails` injection: the
-        FAIL now comes from the real gate running against a real broken feature,
-        the only way an AT can prove the cycle reads a real verdict.
+        This SUPERSEDES the pre-ADR-098 staging (NO `pyproject.toml` -> build-leg
+        `ArtifactBuildError`): under ADR-098 a no-installable feature is
+        NOT_APPLICABLE (proceeds), not a FAIL, so the old staging no longer fails
+        the gate. The anti-laundering purpose is preserved: the FAIL still comes
+        from the real gate running against a real workspace, never an injected
+        verdict -- only the FAIL TRIGGER moved to the ADR-098 invariant.
         """
         self._write_feature_delta_with_e2e_block()
-        # No pyproject.toml under the feature root -> real build leg fails.
         self._write_walking_skeleton_manifest(entry_points=[])
+        # Drive the ADR-098 fail-closed path: the delta ships a NEW installable
+        # with no WS AT -> domain FAIL (see seed_feature_delta_git_repo).
+        self._ships_new_installable = True
 
     def stage_passing_signed_feature(self) -> None:
         """Stage a passing-gate feature THAT ALSO carries a genuinely-signed map.
@@ -268,6 +267,14 @@ class FeatureEndCycleComposition:
             "--verdict",
             _DEEP_REVIEW_VERDICT,
         ]
+        # The WS gate computes applicability from `git diff --diff-filter=A
+        # master...HEAD` (ADR-098). Stage a real repo whose delta has the scenario's
+        # ADR-098-correct shape: passing -> no new installable -> NOT_APPLICABLE;
+        # failing -> a new installable with no WS AT -> domain FAIL. Without a real
+        # repo the git diff fails -> INDETERMINATE -> REFUSE for the wrong reason.
+        seed_feature_delta_git_repo(
+            self._project_root, ships_new_installable=self._ships_new_installable
+        )
         completed = self._dispatch(argv)
         return self._cycle_result(completed)
 
@@ -489,13 +496,18 @@ class FeatureEndCycleComposition:
 
     def _dispatch(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
         """Dispatch `des <argv>` through the real `des.cli.__main__` entry point."""
-        return subprocess.run(
-            [sys.executable, "-m", "des.cli.__main__", *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(self._project_root),
-            env=_subprocess_env(),
-        )
+        # Keyless post-demotion (oss-review-verdict-demotion S4): scrub any
+        # ambient signing key so the cycle's sign-leg runs entirely keyless.
+        # Restored in `finally` -- shared-process safe.
+        prior_key = os.environ.pop("NWAVE_REVIEWER_SIGNING_KEY", None)
+        try:
+            exit_code, stdout, stderr = run_cli_in_process(
+                list(argv), cwd=str(self._project_root)
+            )
+        finally:
+            if prior_key is not None:
+                os.environ["NWAVE_REVIEWER_SIGNING_KEY"] = prior_key
+        return subprocess.CompletedProcess(argv, exit_code, stdout, stderr)
 
     # --- typed expectations (Mandate-12 typed-parameter accessors) -----------
 
@@ -591,14 +603,6 @@ def _extract_missing_records(stdout: str) -> frozenset[str]:
         if isinstance(missing, list):
             return frozenset(str(record) for record in missing)
     return frozenset()
-
-
-def _subprocess_env() -> dict[str, str]:
-    env = dict(os.environ)
-    # ABSOLUTE repo-`src/` path so the subprocess can import `des` from a tmp cwd.
-    env["PYTHONPATH"] = str(_REPO_SRC)
-    env["NWAVE_REVIEWER_SIGNING_KEY"] = _SIGNING_KEY
-    return env
 
 
 __all__ = [

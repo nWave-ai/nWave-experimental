@@ -483,7 +483,7 @@ def then_every_seeded_record_carries_feature_id(
 # Mandate-12 criterion 3 preserved: every body <=2 statements ending in a
 # composition delegation, no control flow.
 
-from .domain_types import SLICE_02C_A_CALLSITE_BY_PHRASE  # noqa: E402
+from .domain_types import SLICE_02C_A_CALLSITE_BY_PHRASE
 
 
 @when(

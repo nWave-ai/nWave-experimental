@@ -1,20 +1,31 @@
 """SessionStart hook handler for nWave update checks and housekeeping.
 
 Reads hook input JSON from stdin, runs housekeeping, invokes UpdateCheckService,
-and writes additionalContext JSON to stdout when UPDATE_AVAILABLE.
+and writes the update notice JSON to stdout when UPDATE_AVAILABLE.
 
 Fail-open: any exception exits 0 so session is never blocked.
 Housekeeping and update check run in independent try/except blocks.
 Housekeeping runs before update check; DESConfig is shared between both.
 
-Output format when UPDATE_AVAILABLE:
-    {"additionalContext": "nWave update available: {local} → {latest}. Changes: {changelog_or_empty}"}
+Output format when UPDATE_AVAILABLE (see ``_build_update_output``):
+    {
+      "systemMessage": "nWave update available: {local} → {latest}. Run /nw-update to update.",
+      "hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": "nWave update available: {local} → {latest}. Changes: {changelog_or_empty}"
+      }
+    }
+
+``systemMessage`` is shown to the user; ``additionalContext`` is injected into
+the model context. The wrapped ``hookSpecificOutput`` form is required -- the
+bare ``{"additionalContext": ...}`` form is not honored by current Claude Code.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.adapters.drivers.hooks.substrate_probe import run_probe
@@ -22,6 +33,7 @@ from des.adapters.drivers.hooks.substrate_probe import run_probe
 
 if TYPE_CHECKING:
     from des.adapters.driven.config.des_config import DESConfig
+    from des.application.update_check_service import UpdateCheckService
     from des.ports.driven_ports.package_manager_port import PackageManagerPort
 
 
@@ -90,7 +102,43 @@ def _apply_pending_update_if_any(des_config: DESConfig, current_version: str) ->
         sys.stderr.write(f"[nwave] pending-update apply error (fail-open): {e}\n")
 
 
-def _run_housekeeping(des_config) -> None:
+def _adopt_prior_use_if_warranted(stdin_text: str) -> None:
+    """Trigger-1: silently adopt a prior-use project at SessionStart (DDD-7).
+
+    SessionStart is gate-exempt (always runs), so this is the wiring point for
+    prior-use adoption. Resolves the project root from the hook stdin ``cwd``
+    (same envelope shape every handler reads), then asks ``AutoMarkingService``
+    to write the marker IFF prior-use evidence warrants it. Silent and fail-open:
+    any parse/IO error is swallowed so SessionStart's update-notice and
+    housekeeping are never disturbed.
+    """
+    try:
+        project_root = _parse_cwd(stdin_text)
+        if project_root is None:
+            return
+        from des.application.auto_marking_service import (
+            AdoptionTrigger,
+            AutoMarkingService,
+        )
+
+        AutoMarkingService().adopt_if_warranted(
+            project_root=project_root, trigger=AdoptionTrigger.PRIOR_USE
+        )
+    except Exception as e:
+        sys.stderr.write(f"[nwave] prior-use adoption error (fail-open): {e}\n")
+
+
+def _parse_cwd(stdin_text: str) -> Path | None:
+    """Resolve the project root from the hook stdin envelope's ``cwd`` field."""
+    try:
+        data = json.loads(stdin_text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    cwd = data.get("cwd") if isinstance(data, dict) else None
+    return Path(cwd) if cwd else None
+
+
+def _run_housekeeping(des_config: DESConfig) -> None:
     """Run housekeeping using configuration from DESConfig.
 
     Builds HousekeepingConfig from des_config properties and delegates to
@@ -111,15 +159,15 @@ def _run_housekeeping(des_config) -> None:
     HousekeepingService.run_housekeeping(config, SystemTimeProvider())
 
 
-def _build_update_check_service(des_config):
+def _build_update_check_service(des_config: DESConfig) -> UpdateCheckService:
     """Build UpdateCheckService with a shared DESConfig for frequency gating."""
-    from des.application.update_check_service import UpdateCheckService
+    from des.application import update_check_service
 
-    return UpdateCheckService(des_config=des_config)
+    return update_check_service.UpdateCheckService(des_config=des_config)
 
 
 def _build_update_message(local: str, latest: str, changelog: str | None) -> str:
-    """Format the additionalContext message for an available update."""
+    """Format the model-facing additionalContext message for an available update."""
     changes = changelog or ""
     return f"nWave update available: {local} \u2192 {latest}. Changes: {changes}"
 
@@ -258,6 +306,32 @@ def _emit_hook_version_skew_finding(cwd: str | None) -> None:
         pass
 
 
+def _build_visible_message(local: str, latest: str) -> str:
+    """Format the user-visible systemMessage shown on screen at session start."""
+    return f"nWave update available: {local} \u2192 {latest}. Run /nw-update to update."
+
+
+def _build_update_output(local: str, latest: str, changelog: str | None) -> dict:
+    """Build the SessionStart hook JSON payload for an available update.
+
+    Emits BOTH:
+    - ``systemMessage`` (top-level) -- rendered visibly to the user at session
+      start. ``additionalContext`` alone is injected silently and never shown,
+      so a visible notice requires this field.
+    - ``hookSpecificOutput.additionalContext`` -- the canonical wrapped form for
+      context injection. The bare ``{"additionalContext": ...}`` form is dropped
+      by current Claude Code versions, so the wrapper is required for the model
+      to actually receive the update context.
+    """
+    return {
+        "systemMessage": _build_visible_message(local, latest),
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": _build_update_message(local, latest, changelog),
+        },
+    }
+
+
 def handle_session_start() -> int:
     """Handle session-start hook: run housekeeping then check for nWave updates.
 
@@ -268,6 +342,9 @@ def handle_session_start() -> int:
     Returns:
         0 always (fail-open: session must never be blocked).
     """
+    # Read stdin ONCE; both the cwd-parse (skew detector) and the prior-use
+    # adoption consume the same payload (a second sys.stdin.read() would return
+    # empty after the first).
     raw_stdin = sys.stdin.read()
     session_cwd: str | None = None
     try:
@@ -277,6 +354,11 @@ def handle_session_start() -> int:
             session_cwd = cwd_value if isinstance(cwd_value, str) else None
     except json.JSONDecodeError:
         session_cwd = None
+
+    # Trigger-1 (prior-use adoption): SessionStart is gate-exempt, so this is
+    # where an unmarked project with prior nWave use is silently adopted. Runs
+    # first and fail-open so it never disturbs the update-notice / housekeeping.
+    _adopt_prior_use_if_warranted(raw_stdin)
 
     from des.adapters.driven.config.des_config import DESConfig
 
@@ -299,12 +381,12 @@ def handle_session_start() -> int:
         from des.application.update_check_service import UpdateStatus
 
         if result.status == UpdateStatus.UPDATE_AVAILABLE:
-            message = _build_update_message(
+            output = _build_update_output(
                 local=_get_local_version(),
                 latest=result.latest or "",
                 changelog=result.changelog,
             )
-            print(json.dumps({"additionalContext": message}))
+            print(json.dumps(output))
 
     except Exception:
         pass

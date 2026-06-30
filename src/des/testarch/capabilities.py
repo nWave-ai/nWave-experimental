@@ -173,3 +173,95 @@ class CapabilityRegistry:
 def build_registry() -> CapabilityRegistry:
     """Composition-root entry — the SSOT catalog the gates and adapters read."""
     return CapabilityRegistry()
+
+
+# ===========================================================================
+# CodeFactPort two-axis floor (ADR-LA-001 §1/§4, OB-CFP L1 → EXTEND-in-place)
+# ===========================================================================
+#
+# The ``CodeFactPort`` capability protocol (ADR-LA-001) negotiates a TWO-axis
+# floor per consuming gate: ``stability >= required`` AND
+# ``contract_version >= floor``. This EXTENDS the shipped ``CapabilityRegistry``
+# idiom IN PLACE (OB-CFP resolution, ADR-LA-001 L1 default) — additive value
+# objects + a query method, the slice-01 genericità single-checklist surface
+# above preserved verbatim (a sibling registry was the fallback ONLY if EXTEND
+# distorted the shipped surface; it does not — these are purely additive).
+
+
+@dataclass(frozen=True)
+class CapabilityFloor:
+    """The two-axis floor a consuming gate requires (ADR-LA-001 §4).
+
+    ``min_stability`` — a ``spike`` capability MUST NEVER be silently consumed by
+    a BLOCKING gate (``stable`` floor); an advisory assertion accepts ``spike``.
+    ``min_contract_version`` — the I/O-schema floor (semver string, compared
+    component-wise).
+    """
+
+    min_stability: str = "stable"
+    min_contract_version: str = "1.0.0"
+
+
+@dataclass(frozen=True)
+class FloorVerdict:
+    """The port-exposed result of negotiating a descriptor against a floor.
+
+    ``meets_floor`` — True iff the descriptor satisfies BOTH axes. ``reason`` names
+    the failing axis (empty when it meets the floor) so a consumer sees exactly why
+    a capability was rejected at the floor.
+    """
+
+    meets_floor: bool
+    reason: str = ""
+
+
+# The stability axis ordering: a higher rank dominates (``stable`` >= ``spike``).
+_STABILITY_RANK: dict[str, int] = {"spike": 0, "stable": 1}
+
+
+def negotiate_capability_floor(
+    *,
+    descriptor_stability: str,
+    descriptor_contract_version: str,
+    floor: CapabilityFloor,
+) -> FloorVerdict:
+    """Negotiate a capability descriptor against a consuming gate's two-axis floor.
+
+    Pure function (return-only). A capability meets the floor iff its stability
+    rank is at least the floor's AND its contract version is >= the floor's
+    (component-wise semver). The structural-conformance idiom of
+    ``CapabilityRegistry.check_conformance`` is mirrored: a verdict that NAMES the
+    failing axis, fail-closed (an unknown stability token never meets the floor).
+    """
+    descriptor_rank = _STABILITY_RANK.get(descriptor_stability, -1)
+    floor_rank = _STABILITY_RANK.get(floor.min_stability, len(_STABILITY_RANK))
+    if descriptor_rank < floor_rank:
+        return FloorVerdict(
+            meets_floor=False,
+            reason=(
+                f"stability {descriptor_stability!r} is below the required floor "
+                f"{floor.min_stability!r}"
+            ),
+        )
+    if _semver_below(descriptor_contract_version, floor.min_contract_version):
+        return FloorVerdict(
+            meets_floor=False,
+            reason=(
+                f"contract_version {descriptor_contract_version!r} is below the "
+                f"required floor {floor.min_contract_version!r}"
+            ),
+        )
+    return FloorVerdict(meets_floor=True)
+
+
+def _semver_below(candidate: str, floor: str) -> bool:
+    """True iff the ``candidate`` semver is strictly below the ``floor`` semver."""
+    return _semver_tuple(candidate) < _semver_tuple(floor)
+
+
+def _semver_tuple(version: str) -> tuple[int, ...]:
+    """Parse a dotted version into a comparable tuple (non-numeric parts → 0)."""
+    parts: list[int] = []
+    for component in version.split("."):
+        parts.append(int(component) if component.isdigit() else 0)
+    return tuple(parts)

@@ -3,6 +3,7 @@ description: "Applies the Refactoring Priority Premise (RPP) levels L1-L6 for sy
 argument-hint: "[target-class-or-module] - Optional: --level=[1-6] --method=[extract|inline|rename|move] --scope=[method|class|module]"
 ---
 
+
 # NW-REFACTOR: Systematic Code Refactoring
 
 **Wave**: CROSS_WAVE

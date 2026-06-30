@@ -25,11 +25,11 @@ fresh checkout.
 from __future__ import annotations
 
 import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from tests.common.in_process_cli import run_python_snippet_in_process
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -77,6 +77,19 @@ def test_dry_run_preview_is_side_effect_free_and_exits_zero(tmp_path):
 
     Hermetic isolation: HOME env is overridden to point at a tmp-controlled
     fake home; the real dev-machine ~/.claude is never touched or read.
+
+    In-process drive: the staged installer script is executed in-process via
+    ``run_python_snippet_in_process`` (program = the staged script source,
+    ``__file__`` = the staged path) instead of forking a fresh interpreter. The
+    installer self-locates ``project_root`` from the UNRESOLVED
+    ``Path(__file__).parent.parent.parent`` (``install_nwave.py:266`` →
+    ``PathUtils.get_project_root``), so passing ``filename`` = the staged
+    ``tmp_path/scripts/install/install_nwave.py`` faithfully reproduces the
+    production-failure self-location (``project_root`` == tmp_path, no
+    ``.nwave/``) the subprocess imposed — while the swapped ``os.environ``
+    (isolated ``HOME``) + ``cwd`` keep the exact hermetic isolation. The
+    ``--dry-run`` exit semantics (``SystemExit`` → code; any other escape →
+    code 1 + traceback to captured stderr) match the forked interpreter.
     """
     # GIVEN: fake project root with no .nwave/ (production-failure condition)
     fake_installer = _stage_installer_in_fake_root(tmp_path)
@@ -85,7 +98,8 @@ def test_dry_run_preview_is_side_effect_free_and_exits_zero(tmp_path):
     assert not (tmp_path / ".nwave").exists(), "precondition: fake root is clean"
     assert not (fake_home / ".claude").exists(), "precondition: fake home is clean"
 
-    # WHEN: invoke installer with --dry-run as real subprocess (HOME isolated)
+    # WHEN: invoke installer with --dry-run in-process (HOME isolated, staged
+    # __file__ so project_root self-locates to the fake root)
     sandboxed_env = {
         k: v
         for k, v in os.environ.items()
@@ -93,20 +107,19 @@ def test_dry_run_preview_is_side_effect_free_and_exits_zero(tmp_path):
     }
     sandboxed_env["HOME"] = str(fake_home)
     sandboxed_env["PYTHONDONTWRITEBYTECODE"] = "1"
-    result = subprocess.run(
-        [sys.executable, str(fake_installer), "--dry-run"],
+    returncode, stdout, stderr = run_python_snippet_in_process(
+        fake_installer.read_text(encoding="utf-8"),
         cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        timeout=120,
         env=sandboxed_env,
+        argv=[str(fake_installer), "--dry-run"],
+        filename=str(fake_installer),
     )
 
     # THEN: exit 0
-    assert result.returncode == 0, (
-        f"--dry-run must exit 0, got {result.returncode}.\n"
-        f"stdout tail:\n{chr(10).join(result.stdout.splitlines()[-30:])}\n"
-        f"stderr tail:\n{chr(10).join(result.stderr.splitlines()[-30:])}"
+    assert returncode == 0, (
+        f"--dry-run must exit 0, got {returncode}.\n"
+        f"stdout tail:\n{chr(10).join(stdout.splitlines()[-30:])}\n"
+        f"stderr tail:\n{chr(10).join(stderr.splitlines()[-30:])}"
     )
 
     # AND: no .nwave/ side effect in fake root

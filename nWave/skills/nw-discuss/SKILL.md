@@ -2,7 +2,7 @@
 name: nw-discuss
 description: "Conducts Jobs-to-be-Done analysis, UX journey design, and requirements gathering through interactive discovery. Use when starting feature analysis, defining user stories, or creating acceptance criteria."
 user-invocable: true
-argument-hint: '[feature-name] - Optional: --phase=[jtbd|journey|requirements] --interactive=[high|moderate] --output-format=[md|yaml]'
+argument-hint: '[feature-name] - Optional: --epic=[epic-id] --phase=[jtbd|journey|requirements] --interactive=[high|moderate] --output-format=[md|yaml]'
 ---
 
 # NW-DISCUSS: Jobs-to-be-Done Analysis, UX Journey Design, and Requirements Gathering
@@ -14,6 +14,10 @@ argument-hint: '[feature-name] - Optional: --phase=[jtbd|journey|requirements] -
 Execute DISCUSS wave through Luna's integrated workflow: JTBD analysis|UX journey discovery|emotional arc design|shared artifact tracking|requirements gathering|user story creation|acceptance criteria definition. Luna uncovers jobs users accomplish, maps to journeys and requirements, handles complete lifecycle from user motivations through DoR-validated stories ready for DESIGN. Establishes ATDD foundation.
 
 For greenfield projects (no src/ code, no docs/feature/ history), Luna proposes Walking Skeleton as Feature 0.
+
+## Reasoning mandate (D-caveman, Ale 2026-06-10)
+
+Discuss-wave working prose + reports = caveman: verdict-first, tables over prose, zero narrative. Depth modulated by `rigor` profile, never by padding.
 
 ## Output Tiers (per D2)
 
@@ -27,13 +31,13 @@ Under `## Wave: DISCUSS / [REF] <Section>` headings:
 - JTBD one-liner — single-sentence Job-to-be-Done statement
 - Locked decisions — D-numbered design decisions with verdicts
 - User stories with elevator pitches — every story has Before/After/Decision-enabled triplet
-- Slice Plan — `## Wave: DISCUSS / [REF] Slice Plan`, a five-column fixed-order carpaccio table (Slice, Value statement, Status, Annotation, Justification). Emitted when `workflow.mode == atdd_pure` (ADR-028 D2 / ADR-029 D3); the PO authors it in place of UAT-scenario user stories, and it replaces the user-story + AC sections as the decomposition + value SSOT. Structurally checked by `validate_feature_delta.py --require-slice-plan` (verdict `accepted`).
-- Acceptance criteria (ACs) — testable, embedded per story (classic mode; under `atdd_pure` the per-slice `.feature` ATs are the AC SSOT, authored downstream in DISTILL)
+- Slice Plan — `## Wave: DISCUSS / [REF] Slice Plan`, a five-column fixed-order carpaccio table (Slice, Value statement, Status, Annotation, Justification). Emitted when `workflow.mode == atdd_pure` (ADR-028 D2 / ADR-029 D3); the PO authors it in place of UAT-scenario user stories, and it replaces the user-story + AC sections as the decomposition + value SSOT. Structurally checked by the feature-delta validator (gate-id in `nWave/gates/_catalog.yaml`) with `--require-slice-plan` (verdict `accepted`). <!-- mode-ref-ok -->
+- Acceptance criteria (ACs) — testable, embedded per story (classic mode; under `atdd_pure` the per-slice `.feature` ATs are the AC SSOT, authored downstream in DISTILL) <!-- mode-ref-ok -->
 - Definition of Done (DoD) — 9-item checklist
 - Out-of-scope — explicit non-goals
 - WS strategy — A/B/C/D per Mandate 5
-- Driving ports — inbound surfaces (CLI, skill, HTTP)
 - Pre-requisites — dependencies on prior waves or features
+- Epic-mode — when the request is bigger than one feature, `/nw-discuss --epic <id>` authors an epic-delta (epic-JTBD + Feature Plan) instead of a feature-delta; see §Epic Mode below. Discoverable here as a Tier-1 capability and surfaced by the Phase 1.5 escalation (slice-04).
 
 ### Tier-2 EXPANSION CATALOG — lazy, on-demand (per D10)
 
@@ -119,7 +123,7 @@ Before beginning DISCUSS work, read SSOT and prior wave artifacts:
 3. **DISCOVER artifacts**: Read `docs/feature/{feature-id}/discover/` (if present)
 4. **DIVERGE artifacts**: Read `docs/feature/{feature-id}/diverge/recommendation.md` and `job-analysis.md` (if present — job is already validated, do not re-run JTBD)
 
-**Migration gate**: If `docs/product/` does not exist but `docs/feature/` has existing features, STOP. The project has old-model features that should be migrated to SSOT before new waves run. Guide the user to `docs/guides/migrating-to-ssot-model/README.md` and complete the migration first. If `docs/product/` does not exist and no old features exist (greenfield), DISCUSS will bootstrap it.
+**Migration gate**: If `docs/product/` does not exist but `docs/feature/` has existing features, STOP. The project has old-model features that should be migrated to SSOT before new waves run. Guide the user to `docs/guides/migrating-to-ssot-model/README.md` and complete the migration first. If `docs/product/` does not exist and no old features exist (greenfield), DIVERGE owns the greenfield bootstrap — in the canonical DISCOVER → DIVERGE → DISCUSS order, DIVERGE initializes `docs/product/` (via `jobs.yaml`) before DISCUSS runs. DISCUSS does not bootstrap it; the gate-IN MIGRATION_UNMET signal is advisory (soft-gate), so DISCUSS proceeds and updates the SSOT it finds.
 
 DISCUSS follows DISCOVER and optionally DIVERGE — reading SSOT first ensures continuity with prior features, then prior wave artifacts ground requirements in evidence.
 
@@ -139,6 +143,18 @@ When DISCUSS decisions change assumptions established in DISCOVER:
 ## Agent Invocation
 
 @nw-product-owner
+
+<!-- DES-WAVE: discuss -->
+<!-- gates-ref: discuss -->
+<!-- outputs-ref: discuss -->
+
+The DISCUSS gate stack and output contract live ONCE in the wave-contract registry
+`nWave/waves/discuss.yaml` — the `gates-ref` / `outputs-ref` pointers above name it.
+This skill narrates DISCUSS intent (it produces a slice plan the architect consumes)
+but does NOT enumerate gate-ids or the [REF]-section list inline; consult the registry
+for the authoritative gate stack + output contract.
+
+Include the `<!-- DES-WAVE: discuss -->` marker line above verbatim in the Agent dispatch prompt — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
 
 IF Decision 4 = Yes (default): Execute *jtbd-analysis for {feature-id}, then *journey informed by JTBD artifacts, then *story-map, then *gather-requirements with outcome KPIs. Every user story must include a `job_id` field traceable to `docs/product/jobs.yaml`.
 IF Decision 4 = No (infrastructure-only escape valve): Execute *journey for {feature-id}, then *story-map, then *gather-requirements with outcome KPIs. Every story must use `job_id: infrastructure-only` AND include an `infrastructure_rationale` field. Reviewer rejects this branch for any user-facing feature.
@@ -174,7 +190,77 @@ Grounds all subsequent artifacts in real user motivations. Mandatory unless Deci
 
 ### Phase 1.5: Scope Assessment (Elephant Carpaccio early gate)
 
-**Per Decision 3 (2026-04-28)**: scope assessment runs BEFORE journey visualization investment to detect oversized features early and save rework. The agent (`nw-product-owner`) runs this as workflow Phase 2 (between Discovery and Journey Visualization). Heuristics: oversized signals (any 2+) = >10 user stories | >3 bounded contexts or modules | walking skeleton requires >5 integration points | estimated effort >2 weeks | multiple independent user outcomes that could ship separately. If oversized: propose splitting into independent thin end-to-end slices, ask user to confirm split before continuing. If right-sized: note `## Scope Assessment: PASS` in `wave-decisions.md`. Deeper Elephant Carpaccio slicing happens later in Phase 2.5 (User Story Mapping). Gate: scope assessed; right-sized OR user-approved split confirmed.
+**Per Decision 3 (2026-04-28)**: scope assessment runs BEFORE journey visualization investment to detect oversized features early and save rework. The agent (`nw-product-owner`) runs this as workflow Phase 2 (between Discovery and Journey Visualization).
+
+Oversized signals (closed list — ESC-1, NO new heuristics): >10 user stories · >3 bounded contexts or modules · walking skeleton requires >5 integration points · estimated effort >2 weeks · multiple independent user outcomes that could ship separately.
+
+**Escalation contract (ESC-1..ESC-6)** — when 2+ signals fire, the request is bigger than one feature. The detection ESCALATES to epic-mode:
+
+- **Explain** (ESC-2): NAME each fired signal with its observed evidence — never a generic "this looks big".
+- **Propose** (ESC-3): propose epic-mode and NAME the literal `--epic` flag (discoverability floor — the user discovers the capability at the moment of need).
+- **Ask** (ESC-4): ASK confirmation with closed options (switch to epic-mode / continue feature-level). NEVER auto-switch — the tool proposes, the human decides (§22.0-coherent).
+- **Decline** (ESC-5): the user declines → standard feature-level DISCUSS continues, zero epic artifacts.
+- **Right-sized** (ESC-6): fewer than 2 signals fire → zero escalation, zero new prompts. Note `## Scope Assessment: PASS` in `wave-decisions.md`.
+
+On confirmation the run switches to epic-mode (§Epic Mode below). Deeper Elephant Carpaccio slicing of a right-sized feature happens later in Phase 2.5 (User Story Mapping). Gate: scope assessed; right-sized (zero prompts) OR escalation raised (named signals + `--epic` proposal + confirmation ask) and the user's decision honored.
+
+## Epic Mode (`--epic`)
+
+The hierarchy is epic → feature → slice. `feature → slice` has full discipline (Slice Plan, carpaccio taste tests, cohesion-MECC). `epic → feature` is epic-mode: same DISCUSS wave, one level up. Invoked when a request spans multiple independently-shippable features.
+
+### Invocation
+
+- Explicit: `/nw-discuss --epic <epic-id>` (`<epic-id>` kebab-case).
+- Escalated: Phase 1.5 oversized-detection proposes `--epic` and asks confirmation (slice-04 ESC contract). The tool proposes, the human decides — never auto-switches.
+
+Epic-mode runs under the SAME DISCUSS gates as feature-level (wave-active anchor · gate-IN/OUT · PO-review veto) — UNCHANGED. The only difference is the artifact and its decomposition granularity.
+
+### What it produces (fractal JIT)
+
+Epic-mode produces ONLY the plan — `docs/epic/{id}/epic-delta.md`. It does NOT create any `docs/feature/{id}/` workspace, feature-delta, or downstream artifact. Each feature's full DISCUSS runs just-in-time when that feature is picked up (its row flips `pending` → `in-flight` and gains its `docs/feature/{id}/` link at that moment). Generating N feature-deltas upfront is a fractal-JIT violation by definition.
+
+### Epic-delta contract (EDC — what the `--epic` procedure authors)
+
+| # | Contract |
+|---|----------|
+| EDC-1 | Path `docs/epic/{epic-id}/epic-delta.md`, kebab-case id |
+| EDC-2 | Title line `# Epic Delta: {epic-id}` |
+| EDC-3 | Epic-JTBD section under `## Wave: DISCUSS / [REF] Epic Job & Intent` (When-I-want-so-that + persona) |
+| EDC-4 | Feature Plan under the EXACT heading `## Wave: DISCUSS / [REF] Feature Plan`, five fixed columns `Feature \| Value statement \| Status \| Annotation \| Justification` (the Slice Plan grammar reused at feature granularity) |
+| EDC-5 | Keystone = exactly ONE row annotated `@walking-skeleton` (Slice Plan annotation token reused — no new token) |
+| EDC-6 | Dependency order = ROW ORDER, backward-only (row K depends only on rows < K); optional explicit `depends-on {feature-id}` in Annotation for a non-adjacent dependency, referencing an earlier row only |
+| EDC-7 | Status tokens = closed set `pending \| in-flight \| shipped`; authored rows start `pending` |
+| EDC-8 | Gate-OUT: the run ends with the feature-delta validator (gate-id in `nWave/gates/_catalog.yaml`) run `--require-feature-plan --format=json` over `docs/epic/{id}/epic-delta.md`, verdict `accepted` (slice-01 keystone validator) |
+| EDC-9 | JIT: the run produces ONLY `epic-delta.md` — zero `docs/feature/{id}/` workspaces |
+
+### Feature right-sizing (D-granularity)
+
+A feature is right-sized when it is independently shippable + walking-skeleton-able + single JTBD outcome + ≈≤2 weeks. Carpaccio taste tests scale up to feature granularity:
+
+- Keystone-abstraction-first: the `@walking-skeleton` feature ships the thinnest end-to-end vertical every later feature hangs on.
+- Merge-if-identical-except-scale: two Feature Plan rows that differ only by scale → merge into one (name the merge in that row's Justification).
+- A Feature Plan whose every row is `@infrastructure` carries no user value → `rejected-infra-only` (cohesion-MECC, slice-03). Mechanically non-representable.
+
+### Gate-OUT (the mechanical exit)
+
+The authored epic-delta MUST clear the slice-01 keystone validator before handoff:
+run the feature-delta validator (gate-id in `nWave/gates/_catalog.yaml`) with
+`--require-feature-plan --format=json` over `docs/epic/{id}/epic-delta.md`.
+
+Exit 0 ⇔ verdict `accepted`. Closed verdict set: `accepted · malformed-wave-heading · missing-feature-plan · malformed-feature-plan · rejected-infra-only`. A non-`accepted` verdict blocks the epic-mode run — fix the Feature Plan and re-validate.
+
+### Epic-delta maintenance (LSC — keeping the plan live)
+
+The epic-delta is a LIVE tracker, not a write-once artifact. As features are picked up and finalized, the maintainer edits the Feature Plan rows in place so the plan always shows current progress — the next pickup is decided from the plan, not from memory.
+
+- **Pick-up** (LSC-1) — when a feature's own DISCUSS starts, its row is ONE atomic edit: flip `pending` → `in-flight` AND change the Feature cell to a `docs/feature/{id}/` link. The link and the flip land together — never one without the other.
+- **Finalize** (LSC-2) — at feature completion, flip the row `in-flight` → `shipped`.
+- **Forward-only** (LSC-5) — status moves `pending` → `in-flight` → `shipped`, monotone. Never flip a row backward (`shipped` → `in-flight`, `in-flight` → `pending`) or skip ahead.
+- **Closed token set** (LSC-6) — the only legal Status tokens are `pending | in-flight | shipped` (EDC-7). The maintenance procedure REJECTS any other token (e.g. `done`, `wip`, `blocked`) — the keystone validator does NOT validate Status cells (DC-1), so the procedure owns this rejection. A garbage token is a maintenance error to fix, not a state to record.
+- **Fractal JIT on pick-up** (LSC-3) — ONLY the picked-up feature gets a `docs/feature/{id}/` workspace. A row still `pending` has NO workspace. Creating workspaces for not-yet-picked-up features is a fractal-JIT violation (it re-introduces the upfront-N-feature-deltas anti-pattern epic-mode exists to prevent).
+- **Citation** (LSC-4) — the picked-up feature's own artifacts cite the epic BY NAME, and the backlog entry cites the epic by name (one home for the feature list — the epic-delta — never duplicated lists elsewhere).
+
+A flip edits only the Status cell (and, on pick-up, the Feature cell link), so the document's structure is untouched and it still clears the slice-01 keystone gate (`accepted`) after every flip. Re-validate (Gate-OUT) after maintenance edits to confirm structural validity held.
 
 ### Phase 2: Journey Design
 
@@ -238,7 +324,7 @@ Rules:
 - The "Decision enabled" line is the Job-to-be-Done connection: if the user cannot make any decision with the output, the story is infrastructure, not value — merge it into the story that DOES enable a decision
 - If a story legitimately has no user-visible output (pure infra migration), it MUST be labelled `@infrastructure` and BLOCK the slice — a slice containing only `@infrastructure` stories cannot be released
 
-**Slice composition hard gate (per Decision 2)**: any slice that contains ONLY `@infrastructure` stories (zero user-visible value stories) is a structural failure. The reviewer (`nw-product-owner-reviewer`) will REJECT the story-map and set verdict to `rejected_pending_revisions`. The PO must either (a) merge the slice with an adjacent value-bearing slice, or (b) split the `@infrastructure` work to land BEFORE the slice as a precursor commit (not a separately-shipped slice). This is hard-blocking: structural failure, not nit.
+**Slice composition hard gate (per Decision 2)**: any slice that contains ONLY `@infrastructure` stories (zero user-visible value stories) is a structural failure. The BLOCKING verdict is MECHANICAL: the feature-delta validator (gate-id in `nWave/gates/_catalog.yaml`) run `--require-slice-plan` returns `rejected-infra-only` (cohesion-MECC, non-zero exit) on an all-`@infrastructure` slice plan. The reviewer (`nw-product-owner-reviewer`) flags slice cohesion as advisory veto feedback — it is not the blocking authority for this check. The PO must either (a) merge the slice with an adjacent value-bearing slice, or (b) split the `@infrastructure` work to land BEFORE the slice as a precursor commit (not a separately-shipped slice). This is hard-blocking: structural failure, not nit.
 
 Gate: every non-`@infrastructure` story has a complete Elevator Pitch. Every slice contains at least one user-visible value story (slice composition hard gate).
 
@@ -315,7 +401,7 @@ This summary enables DESIGN to quickly assess DISCUSS outcomes. DESIGN reads thi
 **Single narrative file**: `docs/feature/{feature-id}/feature-delta.md` — all DISCUSS findings (Tier-1 [REF] sections + any rendered Tier-2 expansions) live here. User stories with embedded AC, story map, DoR validation, outcome KPIs, wave-decisions all become `## Wave: DISCUSS / [REF|WHY|HOW] <Section>` headings.
 
 **Machine artifacts** (declared, parseable by downstream waves):
-- `docs/feature/{feature-id}/slices/slice-NN-*.md` — slice briefs (one per elephant-carpaccio slice; consumed by DELIVER for roadmap step decomposition)
+- `docs/feature/{feature-id}/slices/slice-NN-*.md` — slice briefs (one per elephant-carpaccio slice; consumed by DELIVER for roadmap-step decomposition)
 
 **SSOT updates** (per Recommendation 3 / back-propagation contract):
 - `docs/product/jobs.yaml` — add validated job stories (functional/emotional/social dimensions, four forces, opportunity score)

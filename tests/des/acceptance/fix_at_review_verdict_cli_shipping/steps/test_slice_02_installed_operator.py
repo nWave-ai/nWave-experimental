@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-from .steps_slice_02_installed_operator import *  # noqa: F403 -- step vocabulary
+from .steps_slice_02_installed_operator import *
 
 
 scenarios("../slice-02-installed-operator-clears-gate.feature")

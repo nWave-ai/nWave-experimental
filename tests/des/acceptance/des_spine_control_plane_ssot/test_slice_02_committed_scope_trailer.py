@@ -21,7 +21,7 @@ import pytest
 from pytest_bdd import scenarios
 
 from .steps.composition_slice_02 import ContractGateFixture
-from .steps.steps_slice_02_committed_scope_trailer import *  # noqa: F403  -- vocab
+from .steps.steps_slice_02_committed_scope_trailer import *
 
 
 @pytest.fixture

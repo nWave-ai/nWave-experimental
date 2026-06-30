@@ -41,7 +41,7 @@ from hypothesis import strategies as st
 from pytest_bdd import given as bdd_given
 from pytest_bdd import parsers, scenarios, then
 
-from .common_steps import *  # noqa: F403 (shared step SSOT -- S1 single-source re-use)
+from .common_steps import *
 from .composition_slice_01 import R3GateComposition
 from .domain_types_slice_01 import (
     ARCH_INVARIANT_FAILED_REASON,

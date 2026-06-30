@@ -89,9 +89,7 @@ Feature: Carpaccio slice gate clears or blocks a slice at the DELIVER entry gate
 
     Examples: the closed AT-review rejection reason set
       | at-review condition                                          | reason           |
-      | the reviewer signing key is unavailable                      | key-absent       |
       | no AT-review verdict was recorded for the slice              | absent           |
       | the AT-review verdict is not an approval                     | not-approved     |
-      | the AT-review verdict signature does not verify              | hmac-mismatch    |
       | the reviewed scenario set no longer matches the slice        | stale-at-set     |
       | a reviewed scenario body was rewritten after approval        | stale-at-content |

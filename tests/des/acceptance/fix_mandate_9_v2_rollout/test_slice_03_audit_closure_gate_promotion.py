@@ -12,7 +12,7 @@ new BLOCKING-mode detector symbol, and the project policy doc's new
 
 from pytest_bdd import scenarios
 
-from .m9v2_rollout_steps.steps_slice_03 import *  # noqa: F403
+from .m9v2_rollout_steps.steps_slice_03 import *
 
 
 scenarios("slice-03-audit-closure-gate-promotion.feature")

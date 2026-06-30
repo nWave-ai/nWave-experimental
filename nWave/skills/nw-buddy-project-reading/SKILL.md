@@ -90,20 +90,28 @@ When reading a feature to answer "what's next?", check for these wave artifacts 
 | DEVOPS | `docs/feature/{id}/devops/wave-decisions.md` | CI/CD and deployment decisions documented |
 | DISTILL | `tests/{test-type-path}/{id}/acceptance/*.feature` | BDD test scenarios written (the .feature file is the SSOT) |
 | DELIVER (classic mode) | `docs/feature/{id}/deliver/roadmap.json` | All implementation steps at COMMIT/PASS |
-| DELIVER (atdd_pure mode) | `.nwave/telemetry/atdd-pure/{id}.jsonl` | Every slice plan row `shipped`; ledger present |
+| DELIVER (atdd_pure mode) | `.nwave/telemetry/atdd-pure/{id}.jsonl` | Every slice plan row `shipped`; ledger present | <!-- mode-ref-ok -->
 
 Stop at the first missing artifact — that's where the feature currently is. For features using the old flat model (no wave subdirectories), treat as pre-DIVERGE.
 
-The DELIVER row above is **mode-scoped**: `roadmap.json` is the DELIVER artifact only for `classic` mode. Check `.nwave/config.yaml:workflow.mode` first (see "Project mode detection" below) — an `atdd_pure` feature produces no `roadmap.json` at all, so its absence is the expected state and DELIVER progress is read instead from the AT-completion ledger and the feature-delta slice plan.
+The DELIVER row above is **mode-scoped**: `roadmap.json` is the DELIVER artifact only for `classic` mode. Check the mode key first (see "Project mode detection" below) — a per-slice-spine feature produces no `roadmap.json` at all, so its absence is the expected state and DELIVER progress is read instead from the AT-completion ledger and the feature-delta slice plan.
 
 ## Project mode detection
 
-Before reasoning about DELIVER artifacts, detect the project's workflow mode. The mode is declared in `.nwave/config.yaml` under the key `workflow.mode`, which takes one of two values:
+Before reasoning about DELIVER artifacts, detect the project's workflow mode. The mode is declared in `.nwave/config.yaml` under the key `workflow.mode`. <!-- mode-ref-ok -->
+The declared modes — descriptor + DELIVER phase shape — are projected from the mode registry (never hand-written here):
 
-- `classic` (the default) — DELIVER produces `roadmap.json` and a per-step execution-log; wave-progress detection follows the classic table above.
-- `atdd_pure` — when `workflow.mode` is `atdd_pure`, DELIVER is the roadmap-free spine (ADR-028): unlike `classic`, it writes no `roadmap.json` and no execution-log. Decomposition lives in the feature-delta `[REF] Slice Plan` section, audit lives in the AT-completion ledger at `.nwave/telemetry/atdd-pure/{id}.jsonl`.
+<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
+- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
+  Deliver phase shape: `RED -> GREEN -> COMMIT`
+<!-- GENERATED:mode-descriptor END -->
 
-Detect the mode by **reading `.nwave/config.yaml:workflow.mode`** — never by the presence or absence of `roadmap.json`. Inferring `classic` from a `roadmap.json` on disk, or `atdd_pure` from its absence, is the inversion the mode key exists to prevent: an interrupted classic DELIVER also lacks a finished `roadmap.json`. The `workflow.mode` config key is the single source of truth for which DELIVER spine — and therefore which progress-detection artifacts — apply.
+Under `classic` (the default) wave-progress detection follows the classic table above. Under the per-slice spine, decomposition lives in the feature-delta `[REF] Slice Plan` section and audit lives in the AT-completion ledger at `.nwave/telemetry/atdd-pure/{id}.jsonl`.
+
+Detect the mode by **reading `.nwave/config.yaml:workflow.mode`** — never by the presence or absence of `roadmap.json`. <!-- mode-ref-ok -->
+Inferring `classic` from a `roadmap.json` on disk, or the per-slice spine from its absence, is the inversion the mode key exists to prevent: an interrupted classic DELIVER also lacks a finished `roadmap.json`. The mode config key is the single source of truth for which DELIVER spine — and therefore which progress-detection artifacts — apply.
 
 ## Citation discipline
 

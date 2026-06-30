@@ -61,7 +61,7 @@ _PREFIX_BY_VERDICT: dict[Verdict, str] = {
 def print_human_summary(
     verdict: Verdict,
     summary: str,
-    file: IO[str] = sys.stderr,
+    file: IO[str] | None = None,
 ) -> None:
     """Emit one human-readable verdict line, ANSI-colored when ``file`` is a TTY.
 
@@ -69,7 +69,16 @@ def print_human_summary(
     ``✅ PASS`` / ``❌ FAIL`` / ⚠️ DEGRADED``. When ``file.isatty()`` returns
     True the prefix is wrapped in the verdict-matching ANSI CSI color escape;
     otherwise the line is plain text.
+
+    ``file`` LATE-BINDS ``sys.stderr``: the default is ``None`` and the live
+    ``sys.stderr`` is resolved HERE, at CALL-time, not captured at DEF-time.
+    Production behaviour is identical (the same stream the def-time default
+    pointed at), but an in-process ``contextlib.redirect_stderr`` patched AFTER
+    this module is imported now wraps THIS call — so a test can capture the loud
+    advisory diagnostic in-process instead of forking a subprocess.
     """
+    if file is None:
+        file = sys.stderr
     prefix = _PREFIX_BY_VERDICT[verdict]
     if file.isatty():
         color = _COLOR_BY_VERDICT[verdict]

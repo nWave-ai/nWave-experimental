@@ -40,6 +40,11 @@ class SubagentStopContext:
             for atdd_pure dispatches; None for classic.
         atdd_pure_phase: The ATDD-pure phase value (A_GREEN..D_REFACTOR_COMMIT).
             Populated for atdd_pure dispatches; None for classic.
+        subagent_type: The returning agent's subagent_type (e.g. "nw-product-owner").
+            The owner identity the cross-wave floor auto-close gates on: the
+            wave-active floor closes on a terminal gate-OUT PASS ONLY when this
+            returning agent is the ACTIVE wave's OWNER (WAVE_OWNERS[subagent_type]
+            == active wave). Empty when the return is not a wave-owner dispatch.
     """
 
     execution_log_path: str
@@ -54,6 +59,8 @@ class SubagentStopContext:
     mode: str = "classic"
     slice_id: str | None = None
     atdd_pure_phase: str | None = None
+    # --- cross-wave floor auto-close owner identity (fix-floor-auto-close-cross-wave)
+    subagent_type: str = ""
 
 
 class SubagentStopPort(ABC):

@@ -43,8 +43,6 @@ production install plugin + stdlib).
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import os
 import subprocess
@@ -66,29 +64,19 @@ from .domain_types import (
 )
 
 
-# Repo-root pointer + signing-key precedence the production recorder + gate
-# honour (mirrors src/des/cli/carpaccio_slice_gate.py and the recorder).
+# Repo-root pointer the production recorder + gate honour (mirrors
+# src/des/cli/carpaccio_slice_gate.py and the recorder).
 _REPO_ROOT_ENV = "NWAVE_REPO_ROOT"
-_SIGNING_KEY_ENV = "NWAVE_REVIEWER_SIGNING_KEY"
 _FRESHNESS_ENV = "NWAVE_FRESHNESS"
-_SIGNING_KEY_FILE = ".nwave/secrets/reviewer-signing.key"
-_FIXTURE_SIGNING_KEY = b"shipping-slice-acceptance-fixture-signing-key"
+
+# The signing-key env var — referenced ONLY to SCRUB it from the subprocess
+# environment. Post-demotion (oss-review-verdict-demotion S2) the recorder
+# resolves no key: this suite runs the installed-operator journey genuinely
+# keyless, even on a developer machine that exports the legacy var.
+_LEGACY_SIGNING_KEY_ENV = "NWAVE_REVIEWER_SIGNING_KEY"
 
 # Canonical source tree the installer ships canonical recorder modules from.
 _CANONICAL_RECORDER_SOURCE = Path("src/des/cli")
-
-# The seven HMAC-signed fields of a verdict record (mirrors the producer +
-# consumer). Used to recompute the signature for the verifies-against-key
-# observation without importing production code.
-_SIGNED_FIELDS = (
-    "schema_version",
-    "slice_id",
-    "verdict",
-    "reviewer_agent_id",
-    "at_ids",
-    "at_content_hash",
-    "timestamp",
-)
 
 # A minimal feature-delta + one-scenario .feature the recorder + gate parse to
 # derive at_ids / at_content_hash for the entering slice. The single scenario
@@ -181,9 +169,10 @@ class ShippingComposition:
         """Create the installed-shape layout + an empty working-repo ledger.
 
         The working repository has the feature-delta + one-scenario .feature
-        the recorder + gate parse, an empty AT-completion ledger, and the
-        reviewer signing key — but NO ``.git`` and NO enclosing repository
-        above it, so file-relative root deduction would fail.
+        the recorder + gate parse and an empty AT-completion ledger — but NO
+        ``.git``, NO enclosing repository above it (so file-relative root
+        deduction would fail), and NO reviewer signing key anywhere (the
+        post-demotion recorder never resolves one).
         """
         delta = (
             self._working_repo
@@ -214,9 +203,6 @@ class ShippingComposition:
         feature.write_text(_FEATURE_FILE, encoding="utf-8")
         self._ledger_path.parent.mkdir(parents=True, exist_ok=True)
         self._ledger_path.write_text("", encoding="utf-8")
-        key_file = self._working_repo / _SIGNING_KEY_FILE
-        key_file.parent.mkdir(parents=True, exist_ok=True)
-        key_file.write_bytes(_FIXTURE_SIGNING_KEY)
 
     def record_verdict_from_installed_instance(
         self, outcome: ReviewOutcome
@@ -262,8 +248,8 @@ class ShippingComposition:
         ``Path.cwd()`` (the F-11 final branch). If the recorder instead used the
         ``__file__``-relative branch the feature dropped, it would resolve into
         the installed ``des.cli`` package (which has no working-repo ledger), so
-        the at-derivation + signed write would NOT land in this working repo --
-        no ledger line appears. The signed line appears ONLY when ``Path.cwd()``
+        the at-derivation + verdict write would NOT land in this working repo --
+        no ledger line appears. The verdict line appears ONLY when ``Path.cwd()``
         resolution worked.
         """
         return self._run(
@@ -325,21 +311,38 @@ class ShippingComposition:
                 records.append(record)
         return records
 
-    def recorded_verdict_verifies(self) -> bool:
-        """True iff the latest recorded verdict's HMAC verifies against the key."""
+    def latest_record_binds_reviewer_and_seal(self) -> bool:
+        """True iff the latest record carries the veto-relevant present fields.
+
+        Keyless equal-or-stronger replacement for the superseded
+        HMAC-verifies observation (oss-review-verdict-demotion S2; reference
+        shape: tests/des/acceptance/oss_review_verdict_demotion/steps/
+        composition_slice_02.py). The record's PRESENT fields are the whole
+        control: APPROVED verdict, named reviewer, AT-set binding, content
+        seal, timestamp.
+        """
         verdicts = self.verdicts_for_entering_slice()
         if not verdicts:
             return False
         record = verdicts[-1]
-        payload = {field: record[field] for field in _SIGNED_FIELDS if field in record}
-        signed_bytes = json.dumps(
-            payload, sort_keys=True, separators=(",", ":")
-        ).encode("utf-8")
-        recomputed = hmac.new(
-            _FIXTURE_SIGNING_KEY, signed_bytes, hashlib.sha256
-        ).hexdigest()
-        signature = record.get("hmac_sha256")
-        return isinstance(signature, str) and hmac.compare_digest(recomputed, signature)
+        return (
+            record.get("verdict") == "APPROVED"
+            and bool(record.get("reviewer_agent_id"))
+            and isinstance(record.get("at_ids"), list)
+            and bool(record.get("at_content_hash"))
+            and bool(record.get("timestamp"))
+        )
+
+    def latest_record_carries_signature_field(self) -> bool:
+        """True iff the latest recorded verdict still carries ``hmac_sha256``.
+
+        The post-demotion recorder drops the field entirely; the suite asserts
+        this returns False — the field is ABSENT, not empty.
+        """
+        verdicts = self.verdicts_for_entering_slice()
+        if not verdicts:
+            return False
+        return "hmac_sha256" in verdicts[-1]
 
     # --- Internals ----------------------------------------------------------
 
@@ -356,7 +359,9 @@ class ShippingComposition:
     def _installed_env(self) -> dict[str, str]:
         env = dict(os.environ)
         env[_REPO_ROOT_ENV] = str(self._working_repo)
-        env[_SIGNING_KEY_ENV] = _FIXTURE_SIGNING_KEY.decode("utf-8")
+        # Keyless contract: scrub any legacy signing-key var so the journey is
+        # genuinely keyless even on a machine that still exports it.
+        env.pop(_LEGACY_SIGNING_KEY_ENV, None)
         # The relocated recorder now lives under ``des.cli`` whose package
         # ``__init__`` fires the runtime freshness gate at import time. The
         # installed-shape sandbox is a tmp_path tree with no install manifest,
@@ -375,7 +380,7 @@ class ShippingComposition:
     def _installed_env_without_pointer(self) -> dict[str, str]:
         """``_installed_env`` with the NWAVE_REPO_ROOT pointer REMOVED.
 
-        Keeps the freshness-skip + signing-key + PYTHONPATH the crafter wired,
+        Keeps the freshness-skip + PYTHONPATH the crafter wired,
         but drops the repo-root env pointer so resolution cannot short-circuit
         at the env branch -- it must reach ``Path.cwd()``. Used only by the
         cwd-only PRR keystone witness.

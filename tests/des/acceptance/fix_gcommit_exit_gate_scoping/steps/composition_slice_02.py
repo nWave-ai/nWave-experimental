@@ -31,9 +31,11 @@ dependency of the test harness), never as production code the AT imports.
 from __future__ import annotations
 
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from des.cli.run_contract_gate import main as _run_contract_gate_main
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types_slice_02 import (
     CommittedSuiteShape,
@@ -198,24 +200,21 @@ class GcommitVerifyComposition:
         the committed tree at the pinned commit.
         """
         assert self.pinned_commit is not None, "no commit pinned for verify"
-        completed = subprocess.run(
+        exit_code, stdout, stderr = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                "des.cli.run_contract_gate",
                 "--repo",
                 str(repo),
                 "--commit",
                 self.pinned_commit,
                 "--verify-gate-scope",
             ],
-            capture_output=True,
-            text=True,
+            cwd=repo,
+            main=_run_contract_gate_main,
         )
         self.last_run = VerifyRun(
-            exit_code=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
         return self.last_run
 
@@ -230,25 +229,22 @@ class GcommitVerifyComposition:
         through the shipped `--committed-scope-digest` CLI (subprocess), not an
         import.
         """
-        completed = subprocess.run(
+        exit_code, stdout, stderr = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                "des.cli.run_contract_gate",
                 "--repo",
                 str(repo),
                 "--committed-scope-digest",
             ],
-            capture_output=True,
-            text=True,
+            cwd=repo,
+            main=_run_contract_gate_main,
         )
-        for line in (ln.strip() for ln in completed.stdout.splitlines()):
+        for line in (ln.strip() for ln in stdout.splitlines()):
             if len(line) == 64 and all(c in "0123456789abcdef" for c in line):
                 return line
         raise AssertionError(
             "could not derive a committed-scope digest to build the trailer "
-            f"(exit {completed.returncode}); stdout={completed.stdout!r} "
-            f"stderr={completed.stderr!r}"
+            f"(exit {exit_code}); stdout={stdout!r} "
+            f"stderr={stderr!r}"
         )
 
     # --- git as a test-harness dependency (NOT production import) ---

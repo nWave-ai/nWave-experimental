@@ -17,6 +17,7 @@ not warranted — example-based per-rung is the right shape.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -26,6 +27,7 @@ from des.runtime.interpreter import (
     _PROBE_TIMEOUT_SECONDS,
     InterpreterUnavailable,
     can_import,
+    des_subprocess_env,
     python_for,
 )
 
@@ -178,3 +180,51 @@ def test_can_import_false_on_probe_timeout(monkeypatch):
 
     monkeypatch.setattr("des.runtime.interpreter.subprocess.run", _wedged)
     assert can_import(sys.executable, "sys") is False
+
+
+# --------------------------------------------------------------------------
+# F-DES-SUBPROCESS-PYTHONPATH-PROPAGATION — des_subprocess_env() guarantees a
+# spawned des.cli subprocess can import des even on an interpreter without des
+# natively (the installed-shim /usr/bin/python3 case: des reached only via the
+# parent's runtime sys.path.insert, which children do NOT inherit).
+# --------------------------------------------------------------------------
+def test_des_subprocess_env_prepends_des_root_to_pythonpath(monkeypatch):
+    """des_subprocess_env puts des's containing dir FIRST on PYTHONPATH, de-duped."""
+
+    from des.runtime.interpreter import _des_root
+
+    monkeypatch.setenv("PYTHONPATH", f"/existing/a{os.pathsep}{_des_root()}")
+    env = des_subprocess_env()
+    parts = env["PYTHONPATH"].split(os.pathsep)
+    assert parts[0] == _des_root()  # des root wins
+    assert parts.count(_des_root()) == 1  # de-duped
+    assert "/existing/a" in parts  # existing entries preserved
+
+
+def test_des_subprocess_env_makes_des_importable_under_pytestless_site():
+    """REGRESSION: a `-S` interpreter (no site-packages, simulating the shim's
+    /usr/bin/python3 where des is not natively installed) cannot import des with
+    a cleared PYTHONPATH, but CAN with des_subprocess_env() — proving the env
+    propagation fixes the ModuleNotFoundError: des the gate subprocesses hit."""
+
+    # Reproduce the bug: -S disables site (so the .pth editable des is invisible),
+    # cleared PYTHONPATH -> des unreachable.
+    clean = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    broken = subprocess.run(
+        [sys.executable, "-S", "-c", "import des"],
+        env=clean,
+        capture_output=True,
+        text=True,
+    )
+    assert broken.returncode != 0, "guard: -S + no PYTHONPATH must NOT find des"
+
+    # The fix: des_subprocess_env() restores des-visibility via PYTHONPATH.
+    fixed = subprocess.run(
+        [sys.executable, "-S", "-c", "import des"],
+        env=des_subprocess_env(clean),
+        capture_output=True,
+        text=True,
+    )
+    assert fixed.returncode == 0, (
+        f"des_subprocess_env must make des importable: {fixed.stderr}"
+    )

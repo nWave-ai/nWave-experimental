@@ -85,6 +85,15 @@ $defs:
           adapters per INV-6).
           false: gate is bound to a specific language ecosystem (e.g.
           `check-robustness-density` is Python-pytest-mutmut-bound).
+      dormant:
+        type: string
+        minLength: 10
+        description: |
+          Optional explicit dormancy rationale (f-nonbypassable slice-04, DDD-6 /
+          CRITICAL-2). A catalogued gate not wired into any live firing surface is
+          FLAGGED by the catalog↔hook-wiring coherence check UNLESS it carries this
+          `dormant:` rationale explicitly excusing it. The escape requires a real
+          rationale (minLength 10) — an empty/whitespace value is still flagged.
 
   # Per-gate file schema (slice-02): one YAML file per gate at
   # `nWave/gates/<gate-id>.yaml` carrying full GateContract per M76 §3.1.

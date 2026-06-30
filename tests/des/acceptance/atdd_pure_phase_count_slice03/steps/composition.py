@@ -19,9 +19,10 @@ these service methods and never inline business logic.
 from __future__ import annotations
 
 import re
-import subprocess
-import sys
 from pathlib import Path
+
+from des.cli.phases import main as _phases_main
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import (
     DeliverySkill,
@@ -103,20 +104,22 @@ class ParityComposition:
 
     def runtime_phase_model(self) -> RuntimePhaseModel:
         """Project the canonical phase model through the shipped CLI."""
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "des.cli.phases",
-                "--format",
-                PhaseFormat.JSON.value,
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
+        # In-process analogue of `python -m des.cli.phases --format json`: drive
+        # the real CLI EDGE `main(argv)` via the shared driver instead of forking
+        # a fresh interpreter. The non-zero guard preserves the former
+        # `check=True` fail-loud contract (a broken CLI surfaces here, not as an
+        # opaque JSON parse error downstream).
+        exit_code, stdout, stderr = run_cli_in_process(
+            ["--format", PhaseFormat.JSON.value],
             cwd=_REPO_ROOT,
+            main=_phases_main,
         )
-        return RuntimePhaseModel.from_cli_json(result.stdout)
+        if exit_code != 0:
+            raise AssertionError(
+                f"des.cli.phases exited {exit_code} (expected 0); "
+                f"stdout={stdout!r} stderr={stderr!r}"
+            )
+        return RuntimePhaseModel.from_cli_json(stdout)
 
     def documented_phase_model(self, skill: DeliverySkill) -> DocumentedPhaseModel:
         """Read the real skill prose artifact."""

@@ -21,7 +21,7 @@ import pytest
 from pytest_bdd import scenarios
 
 from .steps.composition_slice_05 import ConfigDriftFixture
-from .steps.steps_slice_05_config_drift import *  # noqa: F403  -- vocab
+from .steps.steps_slice_05_config_drift import *
 
 
 @pytest.fixture

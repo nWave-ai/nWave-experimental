@@ -57,7 +57,7 @@ from des.domain.environmental_e2e import (
     serialize_results_record,
     write_deferral_marker,
 )
-from des.runtime.interpreter import python_for
+from des.runtime.interpreter import des_spawn, python_for
 
 
 _CLI_VERSION = "1.0.0"
@@ -202,18 +202,15 @@ def _install_into_prefix(wheel: Path, prefix: Path) -> None:
 
     Raises `RuntimeError` (mapped to exit 2) on install failure.
     """
-    result = subprocess.run(
-        [
-            python_for(None),
-            "-m",
-            "pip",
-            "install",
-            "--no-deps",
-            "--no-index",
-            "--target",
-            str(prefix),
-            str(wheel),
-        ],
+    result = des_spawn(
+        None,
+        "pip",
+        "install",
+        "--no-deps",
+        "--no-index",
+        "--target",
+        str(prefix),
+        str(wheel),
         capture_output=True,
         text=True,
     )

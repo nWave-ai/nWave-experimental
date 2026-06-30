@@ -47,6 +47,7 @@ from des.testarch.ports import (
     ImportInfo,
     Layer,
     SpawnShape,
+    StepShapeCorpus,
 )
 
 
@@ -68,6 +69,20 @@ _REAL_SUBPROCESS_CALLEES: frozenset[str] = frozenset(
         "check_output",
     }
 )
+
+# The pytest-bdd step-definition decorator base names (sustainable-test-suite slice-09
+# ``step_shapes_in_module``). A function decorated with one of these is a step definition
+# whose step-text literal (the decorator's first string argument) is the near-duplicate-step
+# similarity signal the existing-base ratio counts.
+_STEP_DECORATOR_NAMES: frozenset[str] = frozenset({"given", "when", "then"})
+
+# A trailing numeric token of a normalized step-text key (sustainable-test-suite slice-09).
+# Stripping the trailing index collapses the per-variant suffix ("... variant 0" / "...
+# variant 1") so the two variants of one near-duplicate cluster share a normalized shape.
+_TRAILING_INDEX_RE = re.compile(r"\s+\d+$")
+
+# Collapse every run of whitespace to a single space (step-text normalization).
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
 
 # The in-process CLI-entry callee name a ``main(argv)`` body drives (slice-05
 # CM-I). A ``main`` / ``*.main`` callee with no real-subprocess spawn is the
@@ -126,6 +141,22 @@ class PythonAstAdapter:
                     FunctionInfo(name=node.name, lineno=node.lineno, node_ref=node)
                 )
         return found
+
+    def functions_in_module(self, tree: object) -> list[FunctionInfo]:
+        """Return every function/method defined in ``tree`` (slice-02 CodeFact).
+
+        Walks the whole module for ``ast.FunctionDef`` / ``ast.AsyncFunctionDef``
+        nodes — at any nesting depth, so a class method is reported as well as a
+        top-level function — and reports each as a ``FunctionInfo`` (name + 1-based
+        line + the ``ast`` node as the opaque handle). The unfiltered "every
+        function" surface the ``AstAdapter`` consumes for atoms / call-site walks.
+        """
+        module = self._as_module(tree)
+        return [
+            FunctionInfo(name=node.name, lineno=node.lineno, node_ref=node)
+            for node in ast.walk(module)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
 
     def imports_in_function(self, tree: object, fn: FunctionInfo) -> list[ImportInfo]:
         """Return every import statement inside ``fn``'s body.
@@ -256,6 +287,64 @@ class PythonAstAdapter:
             if not any(mode_id in test_name for test_name in test_names)
         )
         return FailureModeCoverage(uncovered=uncovered)
+
+    def step_shapes_in_module(self, tree: object) -> StepShapeCorpus:
+        """Census the step-shape corpus of a test module (sustainable-test-suite slice-09).
+
+        Finds every pytest-bdd step definition (a function decorated ``@given`` / ``@when``
+        / ``@then``), normalizes each one's step-text literal into a similarity key (lower-
+        case, whitespace-collapsed, trailing per-variant index stripped), groups by that key,
+        and reports ``total_step_definitions`` + the number of groups holding more than one
+        step (each a collapsible near-duplicate cluster). A module with no step definitions
+        reports a zero census — never a crash.
+        """
+        module = self._as_module(tree)
+        keys: list[str] = [
+            self._normalize_step_text(text)
+            for node in ast.walk(module)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and (text := self._step_text_of(node)) is not None
+        ]
+        groups: dict[str, int] = {}
+        for key in keys:
+            groups[key] = groups.get(key, 0) + 1
+        near_duplicate_groups = sum(1 for count in groups.values() if count > 1)
+        return StepShapeCorpus(
+            near_duplicate_groups=near_duplicate_groups,
+            total_step_definitions=len(keys),
+        )
+
+    @classmethod
+    def _step_text_of(cls, node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+        """The step-text literal of a pytest-bdd step definition, else None.
+
+        A step definition is decorated with ``@given`` / ``@when`` / ``@then`` (bare,
+        called with a string, or attribute-accessed). The step text is the first string
+        argument of the decorator call (``@given("a maintainer ...")``); a bare decorator
+        with no call has no step text and yields the empty string (still a step definition).
+        A function decorated with none of the step decorators is not a step definition.
+        """
+        for decorator in node.decorator_list:
+            base = cls._decorator_base_name(decorator)
+            if base not in _STEP_DECORATOR_NAMES:
+                continue
+            if isinstance(decorator, ast.Call) and decorator.args:
+                first = decorator.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    return first.value
+            return ""
+        return None
+
+    @staticmethod
+    def _normalize_step_text(text: str) -> str:
+        """Normalize a step-text literal into a near-duplicate similarity key.
+
+        Lowercase, collapse internal whitespace to single spaces, strip a single trailing
+        numeric index (the per-variant suffix), so the two variants of one near-duplicate
+        cluster ("... variant 0" / "... variant 1") share a normalized key.
+        """
+        collapsed = _WHITESPACE_RUN_RE.sub(" ", text.strip().lower())
+        return _TRAILING_INDEX_RE.sub("", collapsed)
 
     def assignments_constructing_type(
         self, tree: object, fn: FunctionInfo, type_names: frozenset[str]

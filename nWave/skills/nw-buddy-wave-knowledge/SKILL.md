@@ -69,7 +69,7 @@ Each wave has a slash command (`/nw-<wave>`) and a primary agent. Waves run top-
 - **Purpose**: translate stories and acceptance criteria into executable BDD test scenarios — the specification the crafter will implement against.
 - **Primary agent**: acceptance-designer.
 - **Inputs**: DISCUSS stories and DESIGN architecture.
-- **Outputs**: `tests/acceptance/` files with Given-When-Then scenarios, tagged with `@skip` initially, plus a roadmap of delivery steps.
+- **Outputs**: `tests/acceptance/` files with Given-When-Then scenarios as active-RED scaffolds (run + raise AssertionError — no @skip, per ADR-GV-001 D6; atdd_pure: current slice only, future slices absent from disk), plus a delivery slice plan. <!-- mode-ref-ok -->
 - **Typical artifacts**: feature files or test classes with BDD scenarios, a delivery roadmap in `docs/feature/<name>/roadmap.md`.
 - **Common questions**: "what are the test scenarios?", "what's the delivery plan?"
 

@@ -149,7 +149,7 @@
         "verdict_hash": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
-          "description": "HMAC-SHA256 hex (64 chars). Mandatory on F, optional on C."
+          "description": "SHA-256 content-seal hex (64 chars). Mandatory on F, optional on C."
         },
         "cycle_n": {
           "type": "integer",
@@ -168,7 +168,7 @@
         "reviewer_agent_id"
       ],
       "properties": {
-        "algorithm": { "type": "string", "const": "HMAC-SHA256" },
+        "algorithm": { "type": "string", "const": "SHA-256" },
         "verdict_hash": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"

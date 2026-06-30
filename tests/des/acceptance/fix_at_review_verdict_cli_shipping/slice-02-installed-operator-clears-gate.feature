@@ -26,8 +26,16 @@ Feature: An installed operator records a verdict that clears the carpaccio gate
   # absent/present, run-from directory) is covered example-based across the
   # three scenarios, not Hypothesis-generated.
   #
-  # Observable surface = exit code + ledger record (signed line present/absent)
+  # Observable surface = exit code + ledger record (verdict line present/absent)
   # + gate decision (cleared / blocked). Never an internal call.
+  #
+  # KEYLESS re-authoring (oss-review-verdict-demotion S2, 2026-06-11): the
+  # producer no longer writes an hmac_sha256 field and resolves no signing key
+  # (key absence is a non-event). The signed-verdict assertion this suite
+  # carried is superseded by the keyless equal-or-stronger pair: the record
+  # binds the reviewer identity + content seal, and carries no signature field.
+  # The installed-operator routing, ledger append, cwd-resolution keystone and
+  # gate round-trip survive unchanged — they never depended on the key.
   #
   # ADR-028 RED scaffold: these scenarios are UNSKIPPED and FAIL on current
   # master for the RIGHT reason — the recorder is not importable from the
@@ -39,11 +47,12 @@ Feature: An installed operator records a verdict that clears the carpaccio gate
     Given an installed instance with no enclosing repository and an empty AT-completion ledger
 
   @slice-02 @driving_port @walking_skeleton @real-io @contract-shape:bounded-change @coupled
-  Scenario: The installed recorder appends a signed approval the gate can trust
+  Scenario: The installed recorder appends an approval the gate can trust
     Given the operator points the recorder at the working repository explicitly
     When the operator records an approved AT-review verdict from the installed instance
-    Then the working repository's ledger gains one signed AT-review verdict for the slice
-    And the recorded verdict verifies against the reviewer signing key
+    Then the working repository's ledger gains one AT-review verdict for the slice
+    And the recorded verdict binds the reviewer identity and the content seal it was reviewed under
+    And the recorded verdict carries no signature field and needed no key
 
   @slice-02 @driving_port @real-io @contract-shape:bounded-change @coupled
   Scenario: The carpaccio gate clears for a slice the installed operator approved
@@ -70,4 +79,4 @@ Feature: An installed operator records a verdict that clears the carpaccio gate
   @slice-02 @driving_port @real-io @contract-shape:bounded-change @coupled
   Scenario: The recorder resolves the working repository from where the operator stands
     When the operator records an approved AT-review verdict standing in the working repository with no repository pointer
-    Then the working repository's ledger gains one signed AT-review verdict for the slice
+    Then the working repository's ledger gains one AT-review verdict for the slice

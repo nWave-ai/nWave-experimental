@@ -19,6 +19,17 @@
 
 flavor_id: atdd_pure
 
+# Face (b) + (d) of the mode 4-tuple (mode-registry-single-locus slice-05,
+# analysis §2.2 / §3.2): the asset-facing registry fields. `default: true`
+# marks atdd_pure as the absent-config default — it MUST equal
+# `workflow_mode.resolve_workflow_mode`'s absent-config default (Layer C
+# agreement). EXACTLY ONE flavor declares `default: true` (Layer B). Selection
+# is ALWAYS deterministic-config (read from .nwave/config.yaml), never an LLM
+# prompt — closing the §1.4 leak.
+display_name: ATDD-Pure
+default: true
+selection: deterministic-config
+
 description: |
   Carpaccio-driven workflow with per-slice atomic delivery.
   Each slice = ≤3 ATs authored in DISTILL, GREENed in DELIVER, committed
@@ -32,6 +43,40 @@ required_artifacts:
   - docs/feature/{feature_id}/feature-delta.md
   - tests/**/{feature_id}/**/*.feature
   - .nwave/telemetry/atdd-pure/{feature_id}.jsonl
+
+# Face (c) of the mode 4-tuple (mode-registry-single-locus slice-01, analysis
+# §2.2): the per-agent conditional skill-load declarations. This block is the
+# ONLY place the mapping exists — the dispatch path resolves
+# `skill_load_set[<agent>].conditional` via
+# `flavor_dispatcher.resolve_skill_load_set`; agent specs reference this
+# registry instead of inlining a per-mode table.
+skill_load_set:
+  nw-software-crafter:
+    conditional:
+      - nw-crafter-discipline-atdd-pure
+  nw-functional-software-crafter:
+    conditional:
+      - nw-crafter-discipline-atdd-pure
+  nw-software-crafter-reviewer:
+    conditional:
+      - nw-at-completeness-check
+  nw-acceptance-designer:
+    conditional: []
+  nw-acceptance-designer-reviewer:
+    conditional: []
+  nw-product-owner:
+    conditional: []
+  nw-product-owner-reviewer:
+    conditional: []
+
+# Face (d) of the mode 4-tuple (mode-registry-single-locus slice-02, analysis
+# §2.2): the one-line descriptor + DELIVER phase shape — the factual core of
+# the mode prose. docgen projects these into `GENERATED:mode-descriptor`
+# regions; the registry is the sole author, assets carry projections only.
+descriptor: >
+  Per-slice carpaccio loop; no roadmap.json / execution-log.json;
+  AT-completion ledger + commit trailers are the audit.
+deliver_phase_shape: "A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT"
 
 lifecycle_events:
 
@@ -47,7 +92,21 @@ lifecycle_events:
   # data). Reordering / adding a third gate on dispatch.pre is now a YAML
   # edit + a new runner kwarg on `evaluate_atdd_pure_dispatch` -- zero
   # change to the dispatch loop itself.
+  # f-nonbypassable-attestation slice-05 (DDD-8): the wave-dispatch guard
+  # (`verify-wave-dispatch`) is composed ahead of the readiness + carpaccio
+  # gates so it auto-fires on every Agent/Task dispatch the PreToolUse intercept
+  # sees. A wave-OWNER dispatched off-spine (no matching DES-WAVE marker, no
+  # form-valid skip witness, no valid pre-grant) is BLOCKED (warn+ask). The gate
+  # is fail-OPEN on malformed/missing input (exit 2 / empty owner-match -> allow)
+  # so a guard error never bricks the dispatch flow. Adding this row is the SAME
+  # composition pattern the readiness gate uses (INV-2 composable, INV-12 future
+  # workflow change = reconfiguration); the dispatch loop itself never changes.
   dispatch.pre:
+    - gate_id: verify-wave-dispatch
+      args:
+        subagent_type: "{subagent_type}"
+        prompt_path: "{prompt_path}"
+      on_failure: block
     - gate_id: verify-readiness-pre-dispatch
       args:
         feature_id: "{feature_id}"
@@ -58,6 +117,22 @@ lifecycle_events:
         feature_id: "{feature_id}"
         entering_slice: "{slice_id}"
       on_failure: block
+    # f-design-devops-review-gate slice-03 (CT-9 / DDD-5): the DELIVER-entry
+    # BACKSTOP for the EXISTING completeness CLI (`check-slice-at-completeness`,
+    # zero new gate logic). The PRIMARY placement is the DISTILL gate-out
+    # (nWave/waves/distill.yaml); this complementary backstop (Alt 2, ADR-NB-002)
+    # ensures an incomplete slice cannot ENTER DELIVER even if the DISTILL
+    # gate-out was bypassed — the slice context (feature_id + slice_id) is in hand
+    # at dispatch.pre, so a thin runner maps it to the CLI's argv. `on_failure:
+    # warn` mirrors the spine's other advisory dispatch.pre/co-tenant gates (the
+    # PRIMARY block is the DISTILL gate-out); adding this row is the SAME
+    # composition pattern the prior gates use (INV-2 composable, INV-12 future
+    # workflow change = reconfiguration) — the dispatch loop never changes.
+    - gate_id: check-slice-at-completeness
+      args:
+        feature_id: "{feature_id}"
+        slice_id: "{slice_id}"
+      on_failure: warn
 
   # SubagentStop (Claude Code) / dispatch.post (Codex/OpenCode) —
   # fires when dispatched subagent returns. Verify slice commit + emit
@@ -75,16 +150,20 @@ lifecycle_events:
       # `subagent_stop_handler._REQUIRED_FEATURE_END_RECORDS` frozenset used to
       # hardcode (representation 3 -> 1) — adding/removing a feature-end record
       # is now one readable row here, not a hand-edit of the Python frozenset.
+      # f-nonbypassable-attestation slice-01 (DDD-4): FullSuiteLegRan is held
+      # EQUAL to the verify_deliver_integrity.py `required` set (AT-A6) so a
+      # single-location edit cannot silently re-open the half-wired hole.
       feature_end_required_records:
         - CoverageMapVerifiedAtDeliverExit
         - CoverageMapVerifiedAtDistillExit
         - EBatchRefactorCompleted
         - EnvironmentalE2eGateRan
         - FeatureEndReviewVerdict
+        - FullSuiteLegRan
         - WalkingSkeletonGateRan
 
   # Commit lifecycle (git-hook prepare-commit-msg) — closes friction #35
-  # mechanical HMAC trailer derivation. Phase 5 wiring; today the trailer
+  # mechanical trailer derivation. Phase 5 wiring; today the trailer
   # is operator-typed (cosmetic per friction #35 standing).
   commit.pre:
     - gate_id: verify-commit-trailers
@@ -98,3 +177,14 @@ lifecycle_events:
   session.init:
     - gate_id: health-check
       on_failure: log
+
+# f-distill-wiring-to-registry slice-01 (DDD-3, MOVE-completion): the dormant
+# ``wave_gate_stacks`` block is REMOVED. Its last co-tenant -- the ``distill``
+# gate-out stack -- was the false-credit source: the spine NEVER resolved it
+# (the canonical wave-contract registry nWave/waves/<wave>.yaml is the SOLE
+# gate-stack source, ADR-FLOW-006 D6), yet its mere presence false-credited the
+# closure scorecard via a flavor-string regex. self-attest + verify-test-runner
+# are now wired LIVE into nWave/waves/distill.yaml gate-out (DDD-1); the discuss
+# stack was MOVED to nWave/waves/discuss.yaml by f-wave-contract-coherence
+# slice-06. With both waves resolved from the registry there is no flavor-private
+# wave_gate_stacks co-tenant left -- git is the archive (Ale bloat-removal).

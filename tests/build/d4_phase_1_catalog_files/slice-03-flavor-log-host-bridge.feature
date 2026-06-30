@@ -17,7 +17,7 @@ Feature: Flavor schema + log defaults + host-bridge events (slice-03)
     Given the flavor schema file at "nWave/flavors/_schema.yaml"
     When the schema is parsed
     Then the schema has a top-level $schema declaring draft/2020-12
-    And the schema requires flavor_id, description, lifecycle_events fields
+    And the schema requires the mode 4-tuple plus flavor_id and lifecycle_events
     And the schema defines a GateInvocation $def with gate_id + on_failure
 
   @driving_port @in-process @real-io @slice-03 @contract-shape:pure-function

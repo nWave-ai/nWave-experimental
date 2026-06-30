@@ -7,7 +7,7 @@ This test verifies the test infrastructure works before running bug-specific tes
 from pytest_bdd import scenarios
 
 # Import step definitions - must use star imports for pytest-bdd registration
-from .steps.common_steps import *  # noqa: F403
+from .steps.common_steps import *
 
 
 # Collect all scenarios from the feature file

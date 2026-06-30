@@ -9,7 +9,7 @@ in `conftest.py` is the single driving-port surface.
 
 from pytest_bdd import scenarios
 
-from .dispatcher_steps.steps_carpaccio_refactor import *  # noqa: F403
+from .dispatcher_steps.steps_carpaccio_refactor import *
 
 
 scenarios("slice-02-carpaccio-refactor.feature")

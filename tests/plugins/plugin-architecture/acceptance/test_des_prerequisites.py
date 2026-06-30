@@ -12,12 +12,49 @@ Acceptance Criteria (from roadmap.yaml):
 5. All scripts pass syntax validation (python3 -m py_compile)
 """
 
-import subprocess
-import sys
+import py_compile
 from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, scenario, then, when
+
+from tests.common.in_process_cli import run_python_snippet_in_process
+
+
+# Repo root: tests/plugins/plugin-architecture/acceptance/<file> -> 4 parents up.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _py_compile_in_process(script: Path) -> tuple[int, str]:
+    """In-process analogue of ``python -m py_compile <script>``.
+
+    Faithful to the subprocess syntax check: returns ``(0, "")`` when the file
+    compiles, ``(1, <error>)`` on a ``SyntaxError`` (the only non-zero the
+    forked ``py_compile`` produced). No interpreter fork.
+    """
+    try:
+        py_compile.compile(str(script), doraise=True)
+    except py_compile.PyCompileError as exc:
+        return 1, str(exc)
+    return 0, ""
+
+
+def _run_script_in_process(script: Path) -> tuple[int, str, str]:
+    """In-process analogue of ``python <script>`` run from the repo root.
+
+    Reads the script source and execs it under ``__name__ == "__main__"`` with
+    ``cwd`` = repo root (the cwd the forked interpreter inherited from pytest),
+    capturing ``(exit_code, stdout, stderr)``. Faithful to the fork's exit
+    semantics: a ``SystemExit`` maps onto its code, any other exception maps to
+    exit 1 with the traceback on the captured stderr.
+    """
+    source = script.read_text(encoding="utf-8")
+    return run_python_snippet_in_process(
+        source,
+        cwd=_REPO_ROOT,
+        argv=[str(script)],
+        filename=str(script),
+    )
 
 
 @scenario(
@@ -148,30 +185,20 @@ def both_scripts_have_executable_permissions():
 def both_scripts_can_be_executed():
     """Verify scripts can be executed with Python."""
     for script in [pytest.stale_phases_script, pytest.scope_boundary_script]:
-        # Run syntax check (py_compile)
-        result = subprocess.run(
-            [sys.executable, "-m", "py_compile", str(script)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, f"Syntax error in {script.name}: {result.stderr}"
+        # Run syntax check (py_compile) in-process
+        returncode, stderr = _py_compile_in_process(script)
+        assert returncode == 0, f"Syntax error in {script.name}: {stderr}"
 
 
 @then("scripts execute without import errors")
 def scripts_execute_without_import_errors():
     """Verify scripts can be imported without errors."""
     for script in [pytest.stale_phases_script, pytest.scope_boundary_script]:
-        # Run with --help or just import check
-        # Scripts gracefully skip if DES module not available
-        result = subprocess.run(
-            [sys.executable, str(script)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        # Run in-process; scripts gracefully skip if DES module not available
+        returncode, stdout, stderr = _run_script_in_process(script)
         # Scripts should return 0 (success) or print warning if DES not available
-        assert result.returncode == 0 or "DES module not available" in result.stdout, (
-            f"Script {script.name} failed: {result.stderr}"
+        assert returncode == 0 or "DES module not available" in stdout, (
+            f"Script {script.name} failed: {stderr}"
         )
 
 
@@ -179,14 +206,9 @@ def scripts_execute_without_import_errors():
 def scripts_output_help_or_status_messages():
     """Verify scripts output meaningful messages."""
     for script in [pytest.stale_phases_script, pytest.scope_boundary_script]:
-        result = subprocess.run(
-            [sys.executable, str(script)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        _returncode, stdout, stderr = _run_script_in_process(script)
         # Should have some output
-        output = result.stdout + result.stderr
+        output = stdout + stderr
         assert len(output) > 0, f"Script {script.name} produced no output"
         # Should contain a status indicator
         assert any(
@@ -237,24 +259,16 @@ class TestDESPrerequisiteSyntaxValidation:
         script_path = (
             project_root / "nWave" / "scripts" / "des" / "check_stale_phases.py"
         )
-        result = subprocess.run(
-            [sys.executable, "-m", "py_compile", str(script_path)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, f"Syntax error: {result.stderr}"
+        returncode, stderr = _py_compile_in_process(script_path)
+        assert returncode == 0, f"Syntax error: {stderr}"
 
     def test_scope_boundary_check_passes_syntax_validation(self, project_root: Path):
         """scope_boundary_check.py passes python3 -m py_compile."""
         script_path = (
             project_root / "nWave" / "scripts" / "des" / "scope_boundary_check.py"
         )
-        result = subprocess.run(
-            [sys.executable, "-m", "py_compile", str(script_path)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, f"Syntax error: {result.stderr}"
+        returncode, stderr = _py_compile_in_process(script_path)
+        assert returncode == 0, f"Syntax error: {stderr}"
 
 
 class TestDESPrerequisiteContent:

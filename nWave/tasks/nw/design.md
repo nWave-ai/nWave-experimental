@@ -3,6 +3,7 @@ description: "Designs system architecture with C4 diagrams and technology select
 argument-hint: "[component-name] - Optional: --residuality --paradigm=[auto|oop|fp]"
 ---
 
+
 # NW-DESIGN: Architecture Design
 
 **Wave**: DESIGN (wave 3 of 6) | **Agents**: Morgan (nw-solution-architect), nw-system-designer, nw-ddd-architect | **Command**: `*design-architecture`
@@ -157,6 +158,12 @@ All agents write to `docs/product/architecture/` (SSOT). Each architect owns its
 Each agent reads `docs/product/architecture/brief.md` at start. If prior architects' sections exist, build on them without contradicting. If absent, proceed normally.
 
 ### Agent Dispatch (after Decision 0)
+
+<!-- DES-WAVE: design -->
+
+**Wave-entry dispatch marker contract.** Include the `<!-- DES-WAVE: design -->` marker line above verbatim in EVERY architect Agent dispatch prompt. For a wave-ENTERING dispatch this single marker is the COMPLETE and SUFFICIENT contract — it both declares the wave (so the PreToolUse hook arms enforcement via the INFERRED fallback even on runtimes whose prompt-submission anchor never fired) and is recognized by the spine as a legitimate entry that is EXEMPT from the WAVE_MARKER_BYPASS veto. Do not add `DES-VALIDATION`/`DES-PROJECT-ID`/`DES-STEP-ID` to the architect entry dispatch; the DES-WAVE marker can only ADD gating, never remove it.
+
+**In-wave child dispatch (non-entering).** If you dispatch a FURTHER sub-agent while the wave is already active (not the entry dispatch), that child is NOT exempt. A child carrying no DES markers is DENIED loud as a wave bypass. Such a child MUST carry the wave's DES marker set — copy `<!-- DES-WAVE: design -->` plus the wave's `DES-*` markers from the parent dispatch onto the child prompt.
 
 Based on Decision 0 answer, invoke the corresponding agent:
 

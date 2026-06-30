@@ -185,6 +185,9 @@ def stamp_experimental_version(target: Path, sha: str) -> None:
         print("  ! no version line matched — skipping version stamp")
 
 
+README_TEMPLATE = REPO_ROOT / "nWave" / "templates" / "experimental-readme.md"
+
+
 def write_experimental_readme(target: Path, sha: str, full_sha: str) -> None:
     """Overwrite the target README with experimental-channel install docs.
 
@@ -193,59 +196,17 @@ def write_experimental_readme(target: Path, sha: str, full_sha: str) -> None:
     LOCALLY from this clone. We replace README.md in the TARGET only (never the
     source repo's README, which prod legitimately ships with PyPI instructions),
     keeping the channel segregated and accurate.
+
+    The content is authored as a template (`nWave/templates/experimental-readme.md`,
+    nw-documentarist-owned) with three literal placeholders bound here. `.replace`
+    (not `.format`) so any stray brace in the markdown is harmless.
     """
-    readme = f"""# nWave — atdd_pure Preview (Experimental Channel)
-
-> **Private, access-controlled preview.** This repository is a snapshot of the
-> nWave `feature/atdd-pure-staging` branch (the atdd_pure version), published for
-> preview only. It is **not** the beta, RC, or prod release, and there is
-> **no PyPI package** for this channel — you install **locally from this clone**.
-
-**Build:** atdd-pure preview `@ {sha}` (source `feature/atdd-pure-staging` `{full_sha}`)
-
-## Install (local — there is no PyPI for this preview)
-
-```bash
-git clone https://github.com/{TARGET_SLUG}.git
-cd nWave-experimental
-uv run python -m nwave_ai.cli install
-```
-
-`uv run` provisions the environment automatically. **Restart Claude Code** when
-it finishes.
-
-- No `uv`? Install it: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-  (or see https://docs.astral.sh/uv/getting-started/installation/).
-- **pip alternative** (Python 3.10+): `pip install -e . && nwave-ai install`
-- **Windows**: use WSL (`wsl --install`).
-
-## Update to the latest preview
-
-```bash
-cd nWave-experimental && git pull && uv run python -m nwave_ai.cli install
-```
-
-## Uninstall
-
-```bash
-uv run python -m nwave_ai.cli uninstall
-```
-
-## Notes
-
-- **Use the local CLI install above.** The Claude plugin-marketplace path does
-  **not** enable DES enforcement (upstream Claude Code limitation) — without the
-  CLI install you lose phase enforcement, TDD validation, and audit logging,
-  which are the core of nWave.
-- This preview tracks `feature/atdd-pure-staging` and is refreshed by
-  `scripts/release/publish_experimental.py`; the build SHA above identifies the
-  exact source commit.
-- User-facing docs are under `docs/guides/` and `docs/reference/` in this tree.
-
----
-*Experimental channel — segregated from beta/rc/prod, no PyPI. Access is limited
-to collaborators on this private repository.*
-"""
+    readme = (
+        README_TEMPLATE.read_text(encoding="utf-8")
+        .replace("{sha}", sha)
+        .replace("{full_sha}", full_sha)
+        .replace("{target_slug}", TARGET_SLUG)
+    )
     (target / "README.md").write_text(readme, encoding="utf-8")
     print("  • wrote experimental README.md (local-install, no PyPI)")
 

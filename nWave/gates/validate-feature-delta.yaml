@@ -1,0 +1,59 @@
+# Gate-contract: validate-feature-delta (D4 Phase 1 slice-02)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=validate-feature-delta.
+
+gate_id: validate-feature-delta
+responsibility: |
+  Structural feature-delta.md validator. Takes one positional feature-delta
+  path. Plain mode: heading-form check (every `## Wave:` heading carries a
+  [REF|WHY|HOW] token). --require-slice-plan: closed verdict set (accepted,
+  missing/malformed-slice-plan, malformed-wave-heading, rejected-infra-only
+  cohesion-MECC floor). --require-reuse-analysis: DESIGN reuse-first verdict
+  set. Exit 0 iff valid/accepted.
+module: des.cli.validate_feature_delta
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --require-slice-plan
+    required: false
+    type: bool
+    help: "Additionally assert the DISCUSS slice-plan section is present, well-formed, and cohesion-MECC-clean."
+  - name: --require-reuse-analysis
+    required: false
+    type: bool
+    help: "Additionally assert the DESIGN Reuse Analysis section is present and justified (reuse-first gate)."
+  - name: --format
+    required: false
+    type: choice
+    choices: [json]
+    help: "Emit a single JSON object carrying the closed verdict token to stdout."
+
+log_events: []
+
+failure_modes:
+  - error_class: MalformedArgs
+    exit_code: 1
+    remediation: "Pass exactly one feature-delta path plus optional flags (--require-slice-plan, --require-reuse-analysis, --format=json)"
+  - error_class: FileNotReadable
+    exit_code: 1
+    remediation: "Verify the feature-delta path exists and is readable"
+  - error_class: RejectedSlicePlan
+    exit_code: 1
+    remediation: "Repair the slice-plan section per the emitted verdict (add section, fix 5-column table, or add user-value to an all-@infrastructure plan)"
+  - error_class: RejectedReuseAnalysis
+    exit_code: 1
+    remediation: "Add or justify the DESIGN Reuse Analysis section per the emitted verdict"
+  - error_class: MalformedWaveHeading
+    exit_code: 1
+    remediation: "Add a [REF|WHY|HOW] token to each `## Wave:` heading"
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

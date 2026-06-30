@@ -11,7 +11,7 @@ the driving surface for documentation contracts).
 
 from pytest_bdd import scenarios
 
-from .m9v2_rollout_steps.steps_slice_02 import *  # noqa: F403
+from .m9v2_rollout_steps.steps_slice_02 import *
 
 
 scenarios("slice-02-behavior-reviewer-skill-expansion.feature")

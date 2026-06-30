@@ -44,11 +44,12 @@ passes ``validate_no_data_refs.py`` by construction.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
-import sys
 from pathlib import Path
+
+from scripts.cli import read_dor_items
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import CanonicalReadinessSet, ReadinessItem
 from .domain_types_slice_02 import (
@@ -67,14 +68,9 @@ from .domain_types_slice_02 import (
 # tests/des/acceptance/dor_items_ssot/steps/composition_slice_02.py -> 5 parents
 # up is the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_REPO_SRC = _REPO_ROOT / "src"
 
 # The reviewer-loaded skill -- the cross-artifact SUT.
 _DOR_SKILL_RELPATH = Path("nWave") / "skills" / "nw-dor-validation" / "SKILL.md"
-
-# The production driving port for the coherence leg: the slice-01 standalone
-# reader (NO `des` gate-catalog coupling, stdlib-only, hook-invocable).
-_READER_RELPATH = "scripts/cli/read_dor_items.py"
 
 # The DoR-checklist section heading the skill carries. The readiness-item
 # enumeration the reviewer checks lives under THIS heading -- it is parsed
@@ -143,12 +139,13 @@ class LoadedSkillComposition:
         return self._skill_path.read_text(encoding="utf-8")
 
     def _run_reader(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [sys.executable, _READER_RELPATH, *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(self._repo_root),
-            env=_subprocess_env(),
+        exit_code, stdout, stderr = run_cli_in_process(
+            argv,
+            cwd=self._repo_root,
+            main=read_dor_items.main,
+        )
+        return subprocess.CompletedProcess(
+            args=argv, returncode=exit_code, stdout=stdout, stderr=stderr
         )
 
 
@@ -222,12 +219,6 @@ def _parse_ssot_set(stdout: str, returncode: int) -> CanonicalReadinessSet:
         items=tuple(ReadinessItem(name=str(name)) for name in item_names),
         separate_hard_gates=tuple(str(gate) for gate in hard_gates),
     )
-
-
-def _subprocess_env() -> dict[str, str]:
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(_REPO_SRC)
-    return env
 
 
 __all__ = [

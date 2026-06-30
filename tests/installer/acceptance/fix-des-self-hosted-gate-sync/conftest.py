@@ -30,7 +30,7 @@ _FEATURE_ROOT = Path(__file__).resolve().parent
 if str(_FEATURE_ROOT) not in sys.path:
     sys.path.insert(0, str(_FEATURE_ROOT))
 
-from steps.domain_types import (  # noqa: E402  (sys.path manipulation above)
+from steps.domain_types import (
     CorruptionKind,
     FreshnessOptOut,
     GateInvocationOutcome,
@@ -629,7 +629,7 @@ def parse_install_manifest(manifest_path: Path) -> InstallManifest | None:
 # attributes into THIS conftest's globals so pytest-bdd's discovery (which
 # searches the conftest's namespace) finds the @given/@when/@then decorators.
 
-import importlib.util as _importlib_util  # noqa: E402
+import importlib.util as _importlib_util
 
 
 _steps_dir = _FEATURE_ROOT / "steps"

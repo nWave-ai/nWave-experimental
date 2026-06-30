@@ -13,8 +13,8 @@ dispatcher stays stdlib-only at import time.
 
 from pytest_bdd import scenarios
 
-from .steps.steps_slice_01 import *  # noqa: F403 — reuse Background Given
-from .steps.steps_slice_02 import *  # noqa: F403
+from .steps.steps_slice_01 import *
+from .steps.steps_slice_02 import *
 
 
 scenarios("slice_02_all_subcommands_wired.feature")

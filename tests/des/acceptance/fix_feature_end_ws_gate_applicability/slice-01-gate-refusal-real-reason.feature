@@ -21,13 +21,16 @@ Feature: The feature-end gate reports its real refusal reason
   Background:
     Given an operator on a developer checkout running the feature-end cycle
 
-  @ws-floor @slice-01
-  Scenario: A refusal reports the missing-manifest reason, not the freshness notice
-    Given a feature whose walking-skeleton floor has no manifest to check
-    When the operator runs the feature-end cycle on that feature
-    Then the feature-end cycle refuses to certify the feature done
-    And the reported reason names the missing walking-skeleton manifest
-    And the reported reason is not the runtime freshness notice
+  # RETIRED (ADR-098, 2026-06-24): the "missing-manifest reason" scenario asserted
+  # the WS floor REFUSES naming `walking-skeleton.json` when no manifest is present.
+  # ADR-098 reverses that fail-close-on-absence contract: an absent manifest now
+  # COMPUTES applicability from the git-delta (NOT_APPLICABLE / FAIL / INDETERMINATE),
+  # so a manifest-less feature is no longer refused for a "missing manifest" reason.
+  # The new contract is covered comprehensively by the C6 ATs in
+  # tests/des/acceptance/ws_gate_manifest_optional/. The surviving scenario below
+  # keeps the slice's real-reason-not-freshness-notice assertion via a DIFFERENT
+  # still-valid refusal cause (a malformed manifest missing its feature_root, which
+  # ADR-098 leaves raising -- only ABSENCE computes).
 
   @ws-floor @anti-vacuity @slice-01
   Scenario: A different real refusal reason is reported unchanged

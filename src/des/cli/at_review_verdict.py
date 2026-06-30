@@ -1,15 +1,16 @@
-"""AT-review verdict producer (ADR-029 D5 -- PRODUCER half, slice-07).
+"""AT-review verdict producer (ADR-029 D5 -- PRODUCER half).
 
 After the acceptance-designer reviewer APPROVES a slice's AT set, the atdd_pure
-DISTILL step records the approval as a tamper-evident ``ATReviewVerdict`` record
-appended to the AT-completion ledger ``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``.
+DISTILL step records the approval as an ``ATReviewVerdict`` record appended to
+the AT-completion ledger ``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``.
 
-slice-03's ``carpaccio_slice_gate.py`` is the CONSUMER (assertion 5) that reads
-this record at the DELIVER entry gate; this module is the PRODUCER that writes
-it. The HMAC signs EXACTLY the seven fields ``schema_version``, ``slice_id``,
-``verdict``, ``reviewer_agent_id``, ``at_ids``, ``at_content_hash``,
-``timestamp`` via ``canonical_at_review_json()``; ``event``, ``hmac_sha256`` and
-``findings_summary`` are excluded from the signed input.
+``carpaccio_slice_gate.py`` is the CONSUMER (assertion 5) that reads this record
+at the DELIVER entry gate; this module is the PRODUCER that writes it. The
+record carries the veto-relevant fields (reviewer_agent_id, slice_id, verdict,
+at_ids, at_content_hash, timestamp) and the content seal (at_content_hash is a
+SHA-256 over sorted scenario bodies). No ``hmac_sha256`` field is written; key
+absence is a non-event (OSS threat model: key holder and would-be forger are the
+same person -- keyed signing adds friction without adding a guarantee).
 
 Stdlib-only (no third-party imports) so the module is bundle-safe.
 """
@@ -24,24 +25,12 @@ from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli.human_surface import Verdict, print_human_summary
-from des.domain.at_review_signing import (
-    canonical_at_review_json,
-    compute_verdict_hmac,
-    require_signing_key,
-)
 from des.domain.repo_path_resolver import (
     resolve_repo_root as _resolve_repo_root,
 )
 
 
-# ``canonical_at_review_json`` / ``compute_verdict_hmac`` now live in the
-# ``des.domain.at_review_signing`` SSOT (ADR-029 D5, AD-05) and are re-exported
-# here (``__all__``) so existing importers of this PRODUCER module keep
-# resolving them. The signed-field set + key resolution are sourced from the
-# same SSOT.
 __all__ = [
-    "canonical_at_review_json",
-    "compute_verdict_hmac",
     "main",
     "record_at_review_verdict",
     "record_review_outcome",
@@ -74,12 +63,13 @@ def record_at_review_verdict(
     timestamp: str,
     findings_summary: list[object],
 ) -> None:
-    """Append one signed ATReviewVerdict record to the AT-completion ledger.
+    """Append a keyless ATReviewVerdict record to the AT-completion ledger.
 
     Writes a single JSONL line to ``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``
-    carrying the eight-field record (the seven signed fields + ``event``) plus
-    the ``hmac_sha256`` signature and ``findings_summary``. Earlier ledger
-    records are never altered (append-only).
+    carrying the record fields (event, schema_version, slice_id, verdict,
+    reviewer_agent_id, at_ids, at_content_hash, timestamp, findings_summary).
+    No ``hmac_sha256`` field is written; key absence is a non-event.
+    Earlier ledger records are never altered (append-only).
     """
     record: dict[str, object] = {
         "event": _EVENT,
@@ -92,7 +82,6 @@ def record_at_review_verdict(
         "timestamp": timestamp,
         "findings_summary": list(findings_summary),
     }
-    record["hmac_sha256"] = compute_verdict_hmac(record, require_signing_key(repo_root))
 
     # F-13 closure: append through the M7 `AtCompletionLedger` API rather than
     # a hand-written JSONL line. The M7 critical section assigns the monotonic
@@ -100,8 +89,8 @@ def record_at_review_verdict(
     # record shares ONE uniform schema with the rest of the ledger -- the M8
     # carpaccio-order read (`AtCompletionLedger.read_records`) no longer
     # rejects a verdict record interleaved among gate events. The producer's
-    # own `timestamp` and `hmac_sha256` are preserved (the HMAC signs that
-    # timestamp); the ledger only adds `seq` + `feature_id` + `record_hash`.
+    # own `timestamp` is preserved (the critical section honours a timestamp
+    # already present); the ledger adds only `seq` + `feature_id` + `record_hash`.
     ledger = AtCompletionLedger(feature_id=feature_id, project_root=repo_root)
     verdict_fields = {
         key: value for key, value in record.items() if key not in ("slice_id", "event")
@@ -123,20 +112,15 @@ def _consult_robustness_gate(
     discriminating diagnostic token (e.g. ``RobustnessCoverageMiss``) that
     the verdict producer forwards on its own stderr.
     """
-    import subprocess  # local import keeps the import surface minimal
+    from des.runtime.interpreter import des_spawn
 
-    from des.runtime.interpreter import python_for
-
-    completed = subprocess.run(
-        [
-            python_for(None),
-            "-m",
-            _ROBUSTNESS_GATE_MODULE,
-            "--declaration",
-            str(declaration_path),
-            "--at-scope",
-            str(at_scope_dir),
-        ],
+    completed = des_spawn(
+        None,
+        _ROBUSTNESS_GATE_MODULE,
+        "--declaration",
+        str(declaration_path),
+        "--at-scope",
+        str(at_scope_dir),
         cwd=str(repo_root),
         capture_output=True,
         text=True,
@@ -161,7 +145,7 @@ def record_review_outcome(
     """Record a reviewer outcome; return whether a verdict was written.
 
     ADR-029 D5 producer half: on an ``APPROVED`` verdict the producer appends a
-    signed ``ATReviewVerdict`` record (via :func:`record_at_review_verdict`) and
+    keyless ``ATReviewVerdict`` record (via :func:`record_at_review_verdict`) and
     returns ``True``. On ``NEEDS_REVISION`` it writes NOTHING -- the slice loops
     back to the acceptance-designer -- and returns ``False``. The
     APPROVED-writes / NEEDS_REVISION-skips decision is the producer's, not the
@@ -236,7 +220,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         prog="at_review_verdict",
         description=(
             "Record an AT-review verdict (ADR-029 D5 producer). On APPROVED a "
-            "signed ATReviewVerdict record is appended to the AT-completion "
+            "keyless ATReviewVerdict record is appended to the AT-completion "
             "ledger; on NEEDS_REVISION nothing is written."
         ),
     )
@@ -276,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
 
     Computes ``at_ids`` + ``at_content_hash`` itself from the entering slice's
     scenarios -- the operator supplies only the feature id, slice id, verdict
-    and reviewer id. On APPROVED a signed record is appended to the ledger; on
+    and reviewer id. On APPROVED a keyless record is appended to the ledger; on
     NEEDS_REVISION nothing is written. Returns 0 on success.
     """
     args = _parse_args(argv)

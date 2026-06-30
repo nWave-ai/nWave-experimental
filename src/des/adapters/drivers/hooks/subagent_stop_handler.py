@@ -55,8 +55,9 @@ from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.repo_path_resolver import (
     feature_delta_path as _feature_delta_path,
 )
+from des.domain.wave_active import WAVE_VOCABULARY
 from des.ports.driven_ports.audit_log_writer import AuditEvent
-from des.runtime.interpreter import python_for
+from des.runtime.interpreter import des_spawn
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,27 @@ def _normalize_message_content(content: object) -> str:
             if isinstance(block, dict) and block.get("type") == "text"
         )
     return content if isinstance(content, str) else ""
+
+
+# A triple-backtick fenced block (``` ... ```, including ```lang fences) and an
+# inline `backtick` span. A DES marker that lives ONLY inside one of these is
+# documentation a read-only agent quoted, NOT a dispatch directive — so it must
+# be removed before the marker parse, else it false-blocks the return (C8).
+_FENCED_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`]*`")
+
+
+def _strip_fenced_regions(text: str) -> str:
+    """Remove fenced + inline-code spans, returning the residual prose.
+
+    A DES marker documented inside a ``` fenced block or an inline `backtick`
+    span is read-only documentation, not a directive; stripping these regions
+    before the marker parse stops a documented marker from false-blocking the
+    SubagentStop return. A REAL marker OUTSIDE any fence stays in the residual
+    and still resolves (unbounded-preservation).
+    """
+    without_fences = _FENCED_BLOCK_RE.sub("", text)
+    return _INLINE_CODE_RE.sub("", without_fences)
 
 
 def _log_transcript_audit(
@@ -140,7 +162,13 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
                 if not isinstance(message, dict):
                     continue
 
-                content = _normalize_message_content(message.get("content", ""))
+                # Strip fenced / inline-code regions ONCE so BOTH the
+                # DES-VALIDATION presence check and the marker parse see the same
+                # residual: a marker quoted inside a ``` fence or `backtick` span
+                # is documentation, not a directive (C8 false-block fix).
+                content = _strip_fenced_regions(
+                    _normalize_message_content(message.get("content", ""))
+                )
                 if "DES-VALIDATION" not in content:
                     continue
 
@@ -206,11 +234,65 @@ class _AtddPureResolvedContext:
     effective_cwd: str
 
 
+@dataclass(frozen=True)
+class _WaveOnlyResolvedContext:
+    """Resolved DES context for a wave-only Agent()-dispatch return (WGO-001).
+
+    The shape an ``Agent()``-dispatched wave-agent (e.g. a DESIGN architect)
+    return carries: a ``DES-WAVE`` marker + a ``DES-PROJECT-ID`` marker, but NO
+    classic execution-log step identifier and NO atdd_pure markers. Unlike the
+    classic 5-tuple it carries NO execution_log_path and NO step_id -- wave-only
+    is execution-log-free (like atdd_pure). It routes straight into
+    ``SubagentStopService.validate`` so the EXISTING wave review-verdict gate-out
+    (which runs at validate Step -1, before any execution-log read) fires. The
+    feature_id comes from the marker (the floor carries no project_id).
+    """
+
+    declared_wave: str
+    project_id: str
+    effective_cwd: str
+    # fix-floor-auto-close-cross-wave: the returning agent's subagent_type (the
+    # Claude Code SubagentStop ``agent_type``). The owner identity the cross-wave
+    # auto-close gates on -- threaded into SubagentStopContext so the close fires
+    # on the LIVE hook path when WAVE_OWNERS[subagent_type] == active wave.
+    subagent_type: str = ""
+
+
+@dataclass(frozen=True)
+class _WaveOnlyUnresolved:
+    """A DES-WAVE-bearing return the wave-only resolver could not resolve (DDD-6).
+
+    The fail-closed boundary (WGO-001 slice-06). A return whose transcript carries
+    a ``DES-WAVE`` marker -- so it IS a DES return -- that the resolver cannot map
+    to a governed wave context: the wave is OUT-OF-VOCABULARY, OR the
+    ``DES-PROJECT-ID`` is absent. This is INDETERMINATE: a DES-WAVE was clearly
+    declared but its context is unresolvable, which degrades LOUD to a refusal --
+    NEVER the silent passthrough-allow.
+
+    This is the THIRD outcome the resolver distinguishes, and it exists precisely
+    to break the conflation the slice-06 ATs name: today the resolver returns
+    ``None`` for BOTH "a DES-WAVE marker is present but unresolvable" AND "no
+    DES-WAVE marker at all", and the caller maps ``None`` to the silent allow. A
+    genuinely non-DES return (no ``DES-WAVE`` marker anywhere) still resolves to
+    ``None`` and keeps the existing passthrough-allow (AT-15 byte-stable); only a
+    marker-present-but-unresolvable return projects this fail-closed signal.
+
+    ``reason`` names which unresolvability fired (out-of-vocab wave / missing
+    project id) -- the LOUD half of the degrade, surfaced in the block body.
+    """
+
+    reason: str
+    declared_wave: str | None
+    project_id: str | None
+
+
 def _resolve_des_context(
     hook_input: dict,
 ) -> (
     tuple[str, str, str, str | None, str]
     | _AtddPureResolvedContext
+    | _WaveOnlyResolvedContext
+    | _WaveOnlyUnresolved
     | tuple[None, dict, int]
 ):
     """Resolve DES context from hook input.
@@ -272,6 +354,23 @@ def _resolve_des_context(
         des_context = extract_des_context_from_transcript(agent_transcript_path)
 
     if des_context is None:
+        # WGO-001 wave-only reachability route (ADD-not-mutate): the classic +
+        # atdd_pure extractor returned None for a return carrying NEITHER marker
+        # set. Before the passthrough-allow, re-parse the transcript for a
+        # wave-only Agent()-dispatch shape. Three outcomes (slice-06 DDD-6):
+        #   * _WaveOnlyResolvedContext -- a DES-WAVE declaration (in the wave
+        #     vocabulary) + a DES-PROJECT-ID: route it into validate so the
+        #     EXISTING wave review-verdict gate-out fires.
+        #   * _WaveOnlyUnresolved -- a DES-WAVE marker IS present but cannot be
+        #     resolved (out-of-vocab wave / missing project id): degrade LOUD to
+        #     a fail-closed refusal, NEVER the silent allow.
+        #   * None -- NO DES-WAVE marker at all (a genuinely non-DES return):
+        #     keep the existing passthrough-allow (byte-stable, AT-15).
+        wave_only = _resolve_wave_only_context(
+            agent_transcript_path, cwd, hook_input.get("agent_type") or ""
+        )
+        if wave_only is not None:
+            return wave_only
         return None, {"decision": "allow"}, 0
 
     raw_marker = des_context.get("project_root")
@@ -311,7 +410,7 @@ def _resolve_des_context(
 
         resolved = resolve_execution_log_path(
             project_id,
-            base=_Path(effective_cwd) / "docs" / "feature",
+            cwd=_Path(effective_cwd),
         )
         execution_log_path = str(resolved)
     except (FileNotFoundError, ValueError) as exc:
@@ -327,6 +426,90 @@ def _resolve_des_context(
         )
         _ = exc  # error surfaced by SubagentStopService when log not found
     return execution_log_path, project_id, step_id, raw_marker, effective_cwd
+
+
+def _resolve_wave_only_context(
+    agent_transcript_path: str | None,
+    cwd: str,
+    subagent_type: str = "",
+) -> _WaveOnlyResolvedContext | _WaveOnlyUnresolved | None:
+    """Re-parse the transcript for a wave-only Agent()-dispatch shape (WGO-001).
+
+    Three outcomes (slice-06 DDD-6 fail-closed boundary):
+
+    * ``_WaveOnlyResolvedContext`` -- the transcript carries a DES-WAVE
+      declaration whose value is in ``WAVE_VOCABULARY`` AND a DES-PROJECT-ID:
+      the resolvable wave-only shape (routes into the gate-out, slice-01).
+    * ``_WaveOnlyUnresolved`` -- a DES-WAVE marker IS present (the return IS a
+      DES return) but its context cannot be resolved: the wave is
+      OUT-OF-VOCABULARY, OR the DES-PROJECT-ID is absent. This is INDETERMINATE
+      and degrades LOUD to a fail-closed refusal -- NEVER the silent
+      passthrough-allow. The conflation slice-06 cures: at HEAD this case
+      returned ``None`` and the caller mapped it to the silent allow.
+    * ``None`` -- NO DES-WAVE marker anywhere (a genuinely non-DES return): the
+      caller keeps the existing passthrough-allow (byte-stable, AT-15).
+
+    Uses the EXISTING ``DesMarkerParser`` -- no parser change. The
+    ``effective_cwd`` follows the same marker-aware resolution as the
+    classic/atdd_pure paths.
+    """
+    if not agent_transcript_path:
+        return None
+
+    saw_des_wave_marker = False
+    declared_wave: str | None = None
+    project_id: str | None = None
+    raw_marker: str | None = None
+    for entry in _read_transcript_entries(agent_transcript_path):
+        message = entry.get("message", {})
+        if not isinstance(message, dict):
+            continue
+        content = _normalize_message_content(message.get("content", ""))
+        if "DES-WAVE" not in content:
+            continue
+        saw_des_wave_marker = True
+        markers = DesMarkerParser().parse(content)
+        if markers.declared_wave is not None:
+            declared_wave = markers.declared_wave
+        if markers.project_id is not None:
+            project_id = markers.project_id
+        if markers.project_root is not None:
+            raw_marker = markers.project_root
+
+    if declared_wave not in WAVE_VOCABULARY or not project_id:
+        # A DES-WAVE marker was present but the context is unresolvable
+        # (out-of-vocab wave / missing project id) -> degrade LOUD (DDD-6). A
+        # transcript with NO DES-WAVE marker at all stays a genuine non-DES
+        # return -> None -> the caller's byte-stable passthrough-allow (AT-15).
+        if not saw_des_wave_marker:
+            return None
+        if declared_wave not in WAVE_VOCABULARY:
+            reason = (
+                f"out-of-vocabulary wave {declared_wave!r}: a DES-WAVE marker was "
+                f"declared but is not a governed wave {sorted(WAVE_VOCABULARY)}"
+            )
+        else:
+            reason = (
+                f"missing project identity: a governed DES-WAVE ({declared_wave!r}) "
+                "was declared but no DES-PROJECT-ID accompanies it"
+            )
+        return _WaveOnlyUnresolved(
+            reason=reason,
+            declared_wave=declared_wave,
+            project_id=project_id,
+        )
+
+    effective_cwd = cwd
+    if raw_marker:
+        validated = validate_project_root(raw_marker, cwd)
+        if validated is not None:
+            effective_cwd = str(validated)
+    return _WaveOnlyResolvedContext(
+        declared_wave=declared_wave,
+        project_id=project_id,
+        effective_cwd=effective_cwd,
+        subagent_type=subagent_type,
+    )
 
 
 def _build_block_notification(
@@ -483,8 +666,10 @@ def _run_gate_subprocess(
     ADR-030 D5 fail-stuck discipline. The single subprocess-invocation helper
     the U2 G_COMMIT gates and the U4 feature-end gate both delegate to.
     """
-    completed = subprocess.run(
-        [python_for(None), "-m", module, *args],
+    completed = des_spawn(
+        None,
+        module,
+        *args,
         cwd=repo,
         capture_output=True,
         text=True,
@@ -1101,12 +1286,6 @@ def _handle_g_commit_exit_gate(
 _SLICE_PLAN_STATUS_VOCABULARY = frozenset({"pending", "shipped"})
 
 
-_SLICE_PLAN_HEADING_RE = re.compile(
-    r"^##\s+Wave:\s+DISCUSS\s+/\s+\[REF\]\s+Slice Plan\s*$"
-)
-_SLICE_ID_RE = re.compile(r"^slice-\d+$")
-
-
 class _SlicePlanParseUnresolved(Exception):
     """Raised when the markdown slice-plan `Status` column fails M12 parsing."""
 
@@ -1114,35 +1293,23 @@ class _SlicePlanParseUnresolved(Exception):
 def _parse_slice_plan_rows(repo: Path, feature_id: str) -> list[tuple[str, str]]:
     """Parse the feature-delta `[REF] Slice Plan` into ``(slice_id, status)`` rows.
 
-    A small self-contained parser -- the carpaccio CLI's parser lives under
-    ``scripts/cli/`` which is not importable from the ``des.`` hook runtime.
+    Delegates to the ONE tolerant slice-plan parser shared with the carpaccio
+    CLI entry gate (``des.cli.carpaccio_format.parse_slice_plan_rows``) so the
+    entry gate and this exit gate parse the SAME plan identically -- no
+    two-parser divergence (C10). Tolerant of an H2-H4 heading, a GFM-escaped
+    ``\\|`` in a cell, and a 3- or 5-column table.
+
     Raises ``FileNotFoundError`` when the feature-delta is absent;
     ``_SlicePlanParseUnresolved`` when no slice-plan table is found.
     """
+    from des.cli import carpaccio_format
+
     text = _feature_delta_path(repo, feature_id).read_text(encoding="utf-8")
-    lines = text.splitlines()
-    heading_index = next(
-        (i for i, line in enumerate(lines) if _SLICE_PLAN_HEADING_RE.match(line)),
-        None,
-    )
-    if heading_index is None:
-        raise _SlicePlanParseUnresolved(
-            "the feature-delta has no '[REF] Slice Plan' section"
-        )
-    rows: list[tuple[str, str]] = []
-    started = False
-    for line in lines[heading_index + 1 :]:
-        if line.strip().startswith("|") and line.strip().endswith("|"):
-            started = True
-            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-            if len(cells) >= 3 and _SLICE_ID_RE.match(cells[0]):
-                rows.append((cells[0], cells[2]))
-            continue
-        if started:
-            break
-    if not rows:
-        raise _SlicePlanParseUnresolved("the slice-plan table has no slice rows")
-    return rows
+    try:
+        parsed_rows = carpaccio_format.parse_slice_plan_rows(text)
+    except carpaccio_format.GateError as exc:
+        raise _SlicePlanParseUnresolved(str(exc)) from exc
+    return [(row.slice_id, row.status) for row in parsed_rows]
 
 
 def _slice_plan_slice_ids(repo: Path, feature_id: str) -> frozenset[str]:
@@ -1218,6 +1385,13 @@ def _resolve_shipped_slice_set(
 # required -- closes the named residue F-SLICE-06-U4-CONSUMER-MISSING from
 # Gate D slice-06 commit `a8c9dc9d8` ("the gate emits the heartbeats but
 # the consumer does not yet enforce them").
+# f-nonbypassable-attestation slice-01 (DDD-4): `FullSuiteLegRan` is the
+# feature-end full-suite leg's heartbeat. Its absence means the full suite never
+# ran at feature-end -- the done-gate refuses on record-ABSENCE (6th sibling of
+# the env-e2e / walking-skeleton / coverage-map heartbeat pattern). This frozenset
+# is the absent-flavor FALLBACK; the live SSOT is `atdd_pure.yaml
+# feature_end_required_records` (read by `_feature_end_required_records`), held
+# EQUAL to it + to `verify_deliver_integrity.py:required` (AT-A6).
 _REQUIRED_FEATURE_END_RECORDS = frozenset(
     {
         "CoverageMapVerifiedAtDeliverExit",
@@ -1225,6 +1399,7 @@ _REQUIRED_FEATURE_END_RECORDS = frozenset(
         "EBatchRefactorCompleted",
         "EnvironmentalE2eGateRan",
         "FeatureEndReviewVerdict",
+        "FullSuiteLegRan",
         "WalkingSkeletonGateRan",
     }
 )
@@ -1304,8 +1479,21 @@ def _missing_feature_end_cycle_records(repo: Path, feature_id: str) -> frozenset
     env_events = ledger.environmental_e2e_events()
     walking_skeleton = ledger.walking_skeleton_events()
     coverage_map = ledger.coverage_map_touchpoint_events()
+    # f-nonbypassable-attestation slice-01 (DDD-4): the full-suite leg's
+    # FullSuiteLegRan heartbeat (or its FullSuiteLegNotApplicable NA marker, which
+    # reconciles the requirement for a target repo with no collectable contract
+    # suite -- genericità, never a fake pass). Mirrors the CLI done-gate.
+    full_suite = ledger.full_suite_leg_events()
+    reconciled: set[str] = set()
+    if "FullSuiteLegNotApplicable" in full_suite:
+        reconciled.add("FullSuiteLegRan")
     return _feature_end_required_records() - (
-        recorded | env_events | walking_skeleton | coverage_map
+        recorded
+        | env_events
+        | walking_skeleton
+        | coverage_map
+        | full_suite
+        | reconciled
     )
 
 
@@ -1722,6 +1910,172 @@ def _handle_atdd_pure_return(
     return 0
 
 
+def _emit_wave_only_refire_terminal(
+    declared_wave: str,
+    project_id: str,
+    reason: str,
+    hook_id: str,
+) -> int:
+    """Break the wave-only re-fire loop with a terminating-LOUD INDETERMINATE.
+
+    RC2/RC1 cure (docs/feedback/des-spine-ceremony-cost-attack-plan.md). The
+    wave-only block keys on a DES-WAVE marker the agent CANNOT emit where the
+    parser reads (RC1: it lives in the orchestrator's Task-prompt). So when a
+    wave-only block re-fires (Claude Code re-invokes the Stop hook with
+    ``stop_hook_active: true``), re-emitting ``{decision:block}`` makes no
+    progress -- the agent loops unboundedly (RC2: the ~100k-per-dispatch
+    wave-marker tax). Unlike atdd_pure (`_emit_bounded_block_terminal`) and the
+    classic path (the `stop_hook_active` loop-break at
+    subagent_stop_service.py:266), the wave-only path had NO loop-breaker.
+
+    On a RE-FIRE this mirrors those two terminals: NO ``{decision:block}`` body
+    on stdout, a LOUD ``sys.__stderr__`` warning that NAMES the loop (the real
+    fd-2 that survives the handler's ``redirect_stderr`` -- same sink as
+    `_emit_terminating_indeterminate`), exit 0. Claude Code then reaches a
+    terminal Stop instead of re-firing. Enforcement is NOT bypassed: the wave
+    floor stays armed and the review verdict stays unrecorded, so the downstream
+    state-level cross-wave gate still refuses (fix-ask #2: wave-close derived
+    from STATE, not from an unemittable marker).
+    """
+    log_hook_invoked(
+        "subagent_stop_wave_only_refire_terminal",
+        {
+            "mode": "wave_only",
+            "declared_wave": declared_wave,
+            "project_id": project_id,
+        },
+        hook_id=hook_id,
+    )
+    print(
+        "INDETERMINATE: wave-only re-fire terminal -- the wave-only block for "
+        f"wave '{declared_wave}' (feature '{project_id}') re-fired "
+        "(stop_hook_active), but the demanded DES-WAVE marker is unemittable by "
+        f"the agent (RC1), so re-firing is futile (RC2: {reason}). Terminating "
+        "this Stop loud instead of re-blocking. The original refusal STILL "
+        "STANDS in STATE: the wave floor remains armed and the review verdict "
+        "remains unrecorded, so the downstream cross-wave gate continues to "
+        "enforce -- this terminal relocates enforcement to state, it does NOT "
+        "bypass the gate.",
+        file=sys.__stderr__,
+        flush=True,
+    )
+    return 0
+
+
+def _handle_wave_only_return(
+    resolved: _WaveOnlyResolvedContext,
+    hook_id: str,
+    stop_hook_active: bool = False,
+) -> int:
+    """Dispatch a wave-only Agent()-dispatch return into validate (WGO-001).
+
+    The wave-only return is execution-log-free (like atdd_pure): no
+    execution-log path, no step id. The handler builds a wave-only-shaped
+    SubagentStopContext (execution_log_path == "" AND step_id == "") and
+    delegates; the service's wave-only guard runs the EXISTING wave
+    review-verdict gate-out at Step -1 (it keys on the active floor wave +
+    feature-delta, never on the execution log) and NEVER reads an execution log.
+
+    Returns the hook exit code: 0 on allow, 0-with-{decision:block}-body on a
+    refusal (exit 0 so Claude Code processes the block JSON -- exit 2 ignores
+    stdout; subagent_stop_handler.py block protocol).
+    """
+    from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+
+    log_hook_invoked(
+        "subagent_stop_resolved",
+        {
+            "mode": "wave_only",
+            "declared_wave": resolved.declared_wave,
+            "project_id": resolved.project_id,
+        },
+        hook_id=hook_id,
+    )
+
+    service = service_factory.create_subagent_stop_service()
+    decision = service.validate(
+        SubagentStopContext(
+            execution_log_path="",
+            project_id=resolved.project_id,
+            step_id="",
+            cwd=resolved.effective_cwd,
+            # fix-floor-auto-close-cross-wave: thread the returning agent identity
+            # so the cross-wave auto-close fires on this LIVE path when the owner
+            # terminally returns (WAVE_OWNERS[subagent_type] == active wave).
+            subagent_type=resolved.subagent_type,
+        ),
+        hook_id=hook_id,
+    )
+
+    if decision.action == "allow":
+        return 0
+
+    # RC2/RC1: on a RE-FIRE break the loop loud instead of re-emitting the block
+    # (mirrors `_emit_bounded_block_terminal` + the classic stop_hook_active
+    # loop-break). The FIRST fire (stop_hook_active=False) keeps the gate-out
+    # review veto's fail-closed block byte-stable below.
+    if stop_hook_active:
+        return _emit_wave_only_refire_terminal(
+            resolved.declared_wave,
+            resolved.project_id,
+            decision.reason or "wave gate-out veto",
+            hook_id,
+        )
+
+    print(json.dumps({"decision": "block", "reason": decision.reason}))
+    return 0
+
+
+def _handle_wave_only_unresolved(
+    unresolved: _WaveOnlyUnresolved,
+    hook_id: str,
+    stop_hook_active: bool = False,
+) -> int:
+    """Refuse a DES-WAVE-bearing return the resolver could not resolve (DDD-6).
+
+    The fail-closed boundary (WGO-001 slice-06): a return whose transcript
+    carries a DES-WAVE marker -- so it IS a DES return -- that the wave-only
+    resolver could not map to a governed wave context (out-of-vocabulary wave /
+    missing DES-PROJECT-ID) degrades LOUD to a refusal, distinct from a genuine
+    non-DES return (no DES-WAVE marker) which keeps the existing
+    passthrough-allow. A DES-WAVE was clearly declared; the context is
+    INDETERMINATE; INDETERMINATE degrades LOUD, never to a silent allow.
+
+    Returns the hook exit code: 0-with-{decision:block}-body (exit 0 so Claude
+    Code processes the block JSON -- exit 2 ignores stdout; the SubagentStop
+    block protocol).
+    """
+    log_hook_invoked(
+        "subagent_stop_wave_only_unresolved",
+        {
+            "mode": "wave_only",
+            "declared_wave": unresolved.declared_wave,
+            "project_id": unresolved.project_id,
+            "reason": unresolved.reason,
+        },
+        hook_id=hook_id,
+    )
+    reason = (
+        "WAVE_GATEOUT_INDETERMINATE: a wave-agent return declared a DES-WAVE "
+        f"marker the wave boundary could not resolve -- {unresolved.reason}. An "
+        "unresolvable DES return fails closed (degrade-LOUD), it is never "
+        "silently allowed to close the wave."
+    )
+    # RC2/RC1: on a RE-FIRE break the loop loud instead of re-emitting the block
+    # (mirrors `_emit_bounded_block_terminal` + the classic stop_hook_active
+    # loop-break). The FIRST fire keeps the slice-06 fail-closed refusal below.
+    if stop_hook_active:
+        return _emit_wave_only_refire_terminal(
+            unresolved.declared_wave,
+            unresolved.project_id,
+            unresolved.reason,
+            hook_id,
+        )
+
+    print(json.dumps({"decision": "block", "reason": reason}))
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Main handler
 # ---------------------------------------------------------------------------
@@ -1817,6 +2171,34 @@ def handle_subagent_stop() -> int:
                     return exit_code
                 exit_code = _handle_atdd_pure_return(
                     des_context_result, hook_input, hook_id
+                )
+                return exit_code
+
+            # WGO-001 wave-only Agent()-dispatch return: execution-log-free path
+            # reaching the EXISTING wave review-verdict gate-out at validate Step
+            # -1 (sibling of the atdd_pure branch). A DES-WAVE return (no step-id)
+            # MUST reach validate so the design/devops/discuss review veto fires.
+            if isinstance(des_context_result, _WaveOnlyResolvedContext):
+                # RC2/RC1: thread stop_hook_active so a wave-only RE-FIRE breaks
+                # the loop (terminal) instead of re-emitting {decision:block}.
+                exit_code = _handle_wave_only_return(
+                    des_context_result,
+                    hook_id,
+                    stop_hook_active=bool(hook_input.get("stop_hook_active", False)),
+                )
+                return exit_code
+
+            # WGO-001 fail-closed boundary (slice-06 / DDD-6): a DES-WAVE-bearing
+            # return the resolver could NOT resolve (out-of-vocab wave / missing
+            # project id) degrades LOUD to a refusal -- never the silent
+            # passthrough-allow a genuine non-DES return keeps.
+            if isinstance(des_context_result, _WaveOnlyUnresolved):
+                # RC2/RC1: thread stop_hook_active so an unresolvable RE-FIRE
+                # breaks the loop (terminal) instead of re-emitting the block.
+                exit_code = _handle_wave_only_unresolved(
+                    des_context_result,
+                    hook_id,
+                    stop_hook_active=bool(hook_input.get("stop_hook_active", False)),
                 )
                 return exit_code
 

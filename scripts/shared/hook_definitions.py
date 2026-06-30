@@ -158,6 +158,37 @@ _BASH_GIT_STASH_GUARD = (
     'echo "$INPUT" | python3 -m scripts.hooks.git_stash_guard'
 )
 
+# Pure-shell wrapper around the --no-verify reminder guard (lean reminder,
+# Ale 2026-06-26). The shell fast-path greps the bash command for a `git` token
+# (cheap pre-filter; the Python hook does the precise tokenized detection) and
+# only then invokes the Python entry point. Mirrors `_BASH_GIT_STASH_GUARD`.
+#
+# Matcher coexistence: this entry is the 5th PreToolUse/Bash registration,
+# ADJACENT to the execution-log guard + the two spine-ledger entries + the
+# git-stash guard (do NOT modify any existing entry). Claude Code's PreToolUse
+# protocol permits multiple registrations per (event, matcher) tuple; execution
+# is registration-ordered; ANY hook returning `{decision: block}` blocks the
+# tool invocation. The no-verify guard fires ONLY on a real git verify-bypass
+# flag (`--no-verify` / `--no-gpg-sign`, or `-n` on `git commit`); its block
+# decision is orthogonal to the other four Bash entries, which grep different
+# command shapes and exit 0 silently on a plain bypass commit.
+#
+# The reminder is durable across installs because it lives in the DES HOOK_EVENTS
+# SSOT (carrying the `# des-hook:` marker) — a manual settings.json edit would be
+# dropped on the next install (the gotcha this entry fixes). Uses module-import
+# form (no `$HOME`) so it is valid in BOTH installer-path AND plugin-bundle
+# distribution modes; `des_plugin.py:DES_HOOKS` ships `no_verify_reminder.py` to
+# the operator's `~/.claude/scripts/hooks/` tree so the module resolves at runtime.
+_BASH_NO_VERIFY_REMINDER = (
+    "# des-hook:pre-bash-no-verify-reminder\n"
+    "INPUT=$(cat); "
+    'CMD=$(echo "$INPUT" | python3 -c '
+    '"import sys,json; print(json.load(sys.stdin)'
+    ".get('tool_input',{}).get('command',''))\"); "
+    "echo \"$CMD\" | grep -qE '\\bgit\\b' || exit 0; "
+    'echo "$INPUT" | python3 -m scripts.hooks.no_verify_reminder'
+)
+
 # Pure-shell wrapper around the slice-03 spine-ledger SubagentStop detector,
 # slice-04 of atdd-spine-ledger-enforcement-gate-v2. Mirrors the slice-02
 # module-import pattern (`python3 -m
@@ -169,6 +200,45 @@ _SUBAGENT_STOP_SPINE_LEDGER_DETECTOR_INSTALLED = (
     "INPUT=$(cat); "
     'echo "$INPUT" | python3 -m scripts.hooks.spine_ledger_subagent_stop_detector'
 )
+
+# Harness-neutral declare-done backstop -- the git pre-push done-gate shim
+# (f-nonbypassable-attestation slice-01, DDD-2). The terminal "declare a feature
+# done" action in the dogfood is a `git push`; this is the missing harness-neutral
+# surface that auto-fires the SAME portable done-gate core (`des verify-integrity`
+# / `verify_deliver_integrity`) on the terminal push, INDEPENDENT of the
+# Claude-Code F_FINAL_REVIEW SubagentStop the incident's hand-dispatch never
+# reached. It adds NO new decision logic -- a thin DDD-7 shim that REUSES
+# `des_declare_done_pre_push` (which delegates to `verify_deliver_integrity.main`)
+# and PROPAGATES its veto (a non-zero exit aborts the push).
+#
+# This is a GIT hook shim, NOT a Claude-Code settings.json event, so it is NOT in
+# HOOK_EVENTS (those drive `generate_hook_config`). The DES plugin installs it as
+# the real `.git/hooks/pre-push` (chaining any pre-existing pre-push) via
+# `scripts.shared.git_hooks_paths.resolve_hooks_dir`. The `{{PYTHON_CMD}}` /
+# `{{HOOK_SCRIPT_PATH}}` placeholders mirror the prepare-commit-msg attribution
+# shim and are substituted at install time.
+_GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP = (
+    "#!/bin/sh\n"
+    "# des-hook:pre-push-declare-done -- harness-neutral done-gate backstop (DDD-2)\n"
+    "# Auto-fires the portable done-gate (des verify-integrity /\n"
+    "# verify_deliver_integrity) on the terminal push; propagates its veto.\n"
+    'HOOK_DIR="$(dirname "$0")"\n'
+    'if [ -f "$HOOK_DIR/pre-push.nwave-original" ]; then\n'
+    '    "$HOOK_DIR/pre-push.nwave-original" "$@" || exit $?\n'
+    "fi\n"
+    'if ! command -v "{{PYTHON_CMD}}" >/dev/null 2>&1; then\n'
+    '    echo "nWave declare-done backstop: python3 not found, skipping" >&2\n'
+    "    exit 0\n"
+    "fi\n"
+    '"{{PYTHON_CMD}}" "{{HOOK_SCRIPT_PATH}}" "$@"\n'
+)
+
+# The pre-push backstop's Python entry module (the DDD-7 thin shim that delegates
+# to the portable `verify_deliver_integrity` done-gate). The DES plugin ships this
+# script alongside the other DES_HOOKS so `{{HOOK_SCRIPT_PATH}}` resolves at
+# runtime.
+GIT_PRE_PUSH_BACKSTOP_SCRIPT = "des_declare_done_pre_push.py"
+
 
 # Canonical hook event definitions -- the ONLY place these are defined.
 # Order matters: PreToolUse/Agent must come before Write/Edit guards. The
@@ -188,6 +258,21 @@ _SUBAGENT_STOP_SPINE_LEDGER_DETECTOR_INSTALLED = (
 # PreToolUse/Bash for the git-stash guard (4th Bash entry; #6 -> #7 PreToolUse;
 # greps `^git stash`, orthogonal to the other three Bash entries). Total grows
 # 12 -> 13.
+#
+# slice-04 amendment of nwave-flow-v2-enforcement (post-install smoke finding
+# #2): 1 new entry joins -- UserPromptSubmit for the wave-active anchor
+# (`hook_router` dispatches action `user-prompt-submit` to
+# `user_prompt_submit_handler.handle_user_prompt_submit`). The handler is a
+# deterministic no-op on non-`/nw-<wave>` prompts (NoWaveActive, zero writes),
+# so firing on every prompt is safe. No matcher (UserPromptSubmit has no tool
+# matcher). Total grows 13 -> 14; event types 5 -> 6.
+#
+# --no-verify reminder guard (Ale 2026-06-26): 1 new entry joins -- PreToolUse/
+# Bash for the lean verify-bypass reminder (5th Bash entry; #7 -> #8 PreToolUse;
+# greps `\bgit\b` fast-path then the Python hook tokenizes for a real bypass flag,
+# orthogonal to the other four Bash entries). Lives in the SSOT so the reminder
+# survives the install-time settings.json rewrite that drops manual hook edits.
+# Total grows 14 -> 15.
 HOOK_EVENTS: tuple[HookEvent, ...] = (
     HookEvent(event="PreToolUse", matcher="Agent", action="pre-task"),
     HookEvent(event="PreToolUse", matcher="Write", action="pre-write", is_guard=True),
@@ -216,6 +301,12 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
         action="pre-bash-git-stash-guard",
         shell_command=_BASH_GIT_STASH_GUARD,
     ),
+    HookEvent(
+        event="PreToolUse",
+        matcher="Bash",
+        action="pre-bash-no-verify-reminder",
+        shell_command=_BASH_NO_VERIFY_REMINDER,
+    ),
     HookEvent(event="PostToolUse", matcher="Agent", action="post-tool-use"),
     HookEvent(event="SubagentStop", matcher=None, action="subagent-stop"),
     HookEvent(event="SubagentStop", matcher=None, action="deliver-progress"),
@@ -227,6 +318,7 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     ),
     HookEvent(event="SessionStart", matcher="startup", action="session-start"),
     HookEvent(event="SubagentStart", matcher=None, action="subagent-start"),
+    HookEvent(event="UserPromptSubmit", matcher=None, action="user-prompt-submit"),
 )
 
 # The distinct event types DES registers (for validation).
@@ -269,6 +361,18 @@ def generate_hook_config(
         config.setdefault(hook_event.event, []).append(entry)
 
     return config
+
+
+def render_pre_push_backstop_shim(*, python_cmd: str, hook_script_path: str) -> str:
+    """Render the declare-done pre-push backstop shim with concrete paths (DDD-2).
+
+    Substitutes the `{{PYTHON_CMD}}` / `{{HOOK_SCRIPT_PATH}}` placeholders in
+    `_GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP` so the DES plugin can write the rendered
+    shim into `.git/hooks/pre-push`. SSOT for the shim text: the template lives
+    here once; the installer only fills in the per-machine paths.
+    """
+    shim = _GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP.replace("{{PYTHON_CMD}}", python_cmd)
+    return shim.replace("{{HOOK_SCRIPT_PATH}}", hook_script_path)
 
 
 def build_guard_command(python_cmd: str) -> str:

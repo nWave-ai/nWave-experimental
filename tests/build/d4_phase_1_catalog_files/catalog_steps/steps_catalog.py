@@ -65,13 +65,39 @@ def then_no_errors(composition) -> None:
     )
 
 
-@then("both contain exactly 22 entries")
-def then_both_21(composition) -> None:
-    assert len(composition.catalog_gate_ids) == 22, (
-        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 22"
+# Count re-baseline 28 -> 30 (2026-06-15, f-declarative-gate-composition slice-01
+# + retroactive wave-clear catalog reconcile): two legitimate new subcommands now
+# in the registry, catalog and per-gate files, each 1:1 across all three surfaces
+# -- verify-discuss-review (f-declarative OB-2) and wave-clear (reconciled; it was
+# added to _REGISTRY by commit c89be75d1 but its catalog entry + per-gate file
+# were omitted, breaking the 1:1 invariant the count pin guards).
+# Count re-baseline 30 -> 33 (2026-06-16, f-coherence-and-attestation slice-06):
+# three legitimate new subcommands wired across all three surfaces -- gate-g,
+# self-attest, verify-test-runner (thin CLI drivers over the slice-03/04/05 logic).
+# Count 33 -> 34 (2026-06-16, f-nonbypassable-attestation slice-05): verify-wave-dispatch
+# wired across all three surfaces (the dispatch.pre guard; closes the catalog mirror
+# its own slice-04 catalogato!=cablato invariant demanded).
+# Count 34 -> 35 (2026-06-16, f-spine-runs-tests-not-git-hooks slice-01): run-slice-ats
+# Count 35 -> 36 (2026-06-17, f-wave-contract-coherence slice-02): adds verify-wave-contract-coherence
+# wired across all three surfaces (the slice-scoped EXECUTOR -- THE ACCELERATION;
+# the commit-time test authority that supersedes the whole-tree run per slice).
+# Count 36 -> 38 (2026-06-18, f-design-devops-review-gate slice-01): adds the DESIGN
+# review-verdict pair record-design-review + verify-design-review (DISCUSS parity).
+# Count 38 -> 40 (2026-06-19, f-design-devops-review-gate slice-02): adds the DEVOPS
+# review-verdict pair record-devops-review + verify-devops-review (the SSOT-reuse
+# proof -- the SAME generic core serves a SECOND wave).
+# Count 40 -> 41 (2026-06-19, f-deliver-entry-contract-freeze slice-01): adds the
+# DELIVER-entry contract-freeze gate verify-deliver-entry-contract.
+# Count 41 -> 42 (2026-06-20, f-attest-bundled-slice slice-01): adds the bundled-slice
+# attestation command attest-bundled-slice, wired across all three surfaces (registry +
+# catalog + per-gate file), built on reverify's shared _reverify_core (no parallel path).
+@then("both contain exactly 43 entries")
+def then_both_counts_match(composition) -> None:
+    assert len(composition.catalog_gate_ids) == 43, (
+        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 43"
     )
-    assert len(composition.registry_names) == 22, (
-        f"_REGISTRY has {len(composition.registry_names)} entries, expected 22"
+    assert len(composition.registry_names) == 43, (
+        f"_REGISTRY has {len(composition.registry_names)} entries, expected 43"
     )
 
 

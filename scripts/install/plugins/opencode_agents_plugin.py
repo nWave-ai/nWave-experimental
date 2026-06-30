@@ -26,6 +26,7 @@ from scripts.install.plugins.opencode_common import (
     verify_with_manifest,
 )
 from scripts.shared.agent_catalog import is_public_agent, load_public_agents
+from scripts.shared.skill_path_rewrite import rewrite_host_paths
 
 
 _MANIFEST_FILENAME = ".nwave-agents-manifest.json"
@@ -121,21 +122,6 @@ def _transform_frontmatter(frontmatter: dict) -> dict:
     return result
 
 
-def _rewrite_skill_paths(body: str) -> str:
-    """Rewrite Claude Code skill paths to OpenCode paths in agent body.
-
-    Agent markdown bodies contain hardcoded ~/.claude/skills/ paths that must
-    be rewritten to ~/.config/opencode/skills/ for OpenCode compatibility.
-
-    Args:
-        body: Agent body text (everything after the frontmatter)
-
-    Returns:
-        Body with all skill path references rewritten for OpenCode
-    """
-    return body.replace("~/.claude/skills/", "~/.config/opencode/skills/")
-
-
 def _transform_agent(content: str) -> str:
     """Full transformation pipeline: parse, transform, render with body.
 
@@ -148,7 +134,7 @@ def _transform_agent(content: str) -> str:
     frontmatter, body = parse_frontmatter(content)
     transformed = _transform_frontmatter(frontmatter)
     rendered = render_frontmatter(transformed)
-    body = _rewrite_skill_paths(body)
+    body = rewrite_host_paths(body, "opencode")
     return rendered + body
 
 

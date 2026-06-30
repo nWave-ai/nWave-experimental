@@ -6,15 +6,17 @@ for both distribution paths (plugin and installer).
 
 Test Budget: 10 distinct behaviors x 2 = 20 max unit tests.
 Behaviors:
-  1. Hook events define all 13 required registrations (7 PreToolUse + 6 others)
+  1. Hook events define all 14 required registrations (7 PreToolUse + 7 others)
      -- slice-02 of atdd-spine-ledger-enforcement-gate-v2 added the spine-
      ledger PreToolUse/Bash dev-mode entry adjacent to the execution-log
      guard (9 -> 10); slice-04 added the installed-path PreToolUse/Bash
      entry (#5 -> #6 PreToolUse) AND the installed-path SubagentStop
      spine-detector entry (#2 -> #3 SubagentStop), total 10 -> 12;
      slice-01 of fix-crafter-stash-structural-mitigation added the git-stash
-     guard PreToolUse/Bash entry (#6 -> #7 PreToolUse), total 12 -> 13.
-  2. Hook event types cover all 5 distinct event types
+     guard PreToolUse/Bash entry (#6 -> #7 PreToolUse), total 12 -> 13;
+     slice-04 amendment of nwave-flow-v2-enforcement added the
+     UserPromptSubmit wave-active anchor entry, total 13 -> 14.
+  2. Hook event types cover all 6 distinct event types
   3. generate_hook_config produces correct structure for standard hooks
   4. generate_hook_config uses guard_command_fn for guard hooks
   5. generate_hook_config uses shell_command verbatim for Bash hooks
@@ -46,7 +48,7 @@ class TestHookEventDefinitions:
     """Verify the canonical hook event definitions are complete and correct."""
 
     def test_defines_all_twelve_hook_registrations(self):
-        """All 13 hook registrations are defined (7 PreToolUse + 6 others).
+        """All 14 hook registrations are defined (7 PreToolUse + 7 others).
 
         slice-02 of atdd-spine-ledger-enforcement-gate-v2 added the
         ("PreToolUse", "Bash", "pre-bash-spine-ledger") dev-mode entry
@@ -60,10 +62,15 @@ class TestHookEventDefinitions:
         fix-crafter-stash-structural-mitigation added the
         ("PreToolUse", "Bash", "pre-bash-git-stash-guard") entry (greps
         `^git stash`, orthogonal to the other Bash entries), raising
-        PreToolUse 6 -> 7, total 12 -> 13. Matcher coexistence: Claude Code
-        permits multiple entries per (event, matcher) tuple.
+        PreToolUse 6 -> 7, total 12 -> 13. slice-04 amendment of
+        nwave-flow-v2-enforcement added the ("UserPromptSubmit", None,
+        "user-prompt-submit") wave-active anchor entry, total 13 -> 14.
+        The --no-verify reminder guard (Ale 2026-06-26) added the 5th
+        PreToolUse/Bash entry (#7 -> #8 PreToolUse), total 14 -> 15.
+        Matcher coexistence: Claude Code permits multiple entries per
+        (event, matcher) tuple.
         """
-        assert len(HOOK_EVENTS) == 13
+        assert len(HOOK_EVENTS) == 15
 
         # Verify exact event/matcher/action triples
         events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
@@ -84,9 +91,10 @@ class TestHookEventDefinitions:
         assert ("SubagentStop", None, "subagent-stop-spine-detector") in events_matchers
         assert ("SessionStart", "startup", "session-start") in events_matchers
         assert ("SubagentStart", None, "subagent-start") in events_matchers
+        assert ("UserPromptSubmit", None, "user-prompt-submit") in events_matchers
 
     def test_hook_event_types_covers_five_distinct_types(self):
-        """HOOK_EVENT_TYPES contains exactly the 5 Claude Code event types."""
+        """HOOK_EVENT_TYPES contains exactly the 6 Claude Code event types."""
         assert (
             frozenset(
                 {
@@ -95,6 +103,7 @@ class TestHookEventDefinitions:
                     "SubagentStop",
                     "SessionStart",
                     "SubagentStart",
+                    "UserPromptSubmit",
                 }
             )
             == HOOK_EVENT_TYPES
@@ -130,22 +139,32 @@ class TestGenerateHookConfig:
         config = generate_hook_config(self._simple_command)
         assert set(config.keys()) == HOOK_EVENT_TYPES
 
-    def test_pretooluse_has_six_entries(self):
-        """PreToolUse has 7 entries: Agent, Write, Edit, Bash x 4.
+    def test_pretooluse_has_eight_entries(self):
+        """PreToolUse has 8 entries: Agent, Write, Edit, Bash x 5.
 
         slice-02 of atdd-spine-ledger-enforcement-gate-v2 added a NEW Bash
         entry adjacent to the execution-log guard (4 -> 5). slice-04 added
         the installed-path Bash entry (5 -> 6). slice-01 of
         fix-crafter-stash-structural-mitigation added the git-stash guard
-        Bash entry (6 -> 7). All 4 Bash entries share the same matcher;
-        Claude Code's PreToolUse protocol executes them in registration order
-        ("any block wins" semantic).
+        Bash entry (6 -> 7). The --no-verify reminder guard (Ale 2026-06-26)
+        added the 5th Bash entry (7 -> 8). All 5 Bash entries share the same
+        matcher; Claude Code's PreToolUse protocol executes them in
+        registration order ("any block wins" semantic).
         """
         config = generate_hook_config(self._simple_command)
         pre_tool_use = config["PreToolUse"]
-        assert len(pre_tool_use) == 7
+        assert len(pre_tool_use) == 8
         matchers = [e.get("matcher") for e in pre_tool_use]
-        assert matchers == ["Agent", "Write", "Edit", "Bash", "Bash", "Bash", "Bash"]
+        assert matchers == [
+            "Agent",
+            "Write",
+            "Edit",
+            "Bash",
+            "Bash",
+            "Bash",
+            "Bash",
+            "Bash",
+        ]
 
     def test_each_entry_has_hooks_array_with_command(self):
         """Every entry has a hooks array with type=command and non-empty command."""
@@ -200,9 +219,9 @@ class TestGenerateHookConfig:
         assert bash_entry["hooks"][0]["command"] == _BASH_EXECUTION_LOG_GUARD
 
     def test_entries_without_matcher_omit_matcher_key(self):
-        """SubagentStop and SubagentStart entries have no matcher key."""
+        """SubagentStop, SubagentStart and UserPromptSubmit entries have no matcher key."""
         config = generate_hook_config(self._simple_command)
-        for event in ("SubagentStop", "SubagentStart"):
+        for event in ("SubagentStop", "SubagentStart", "UserPromptSubmit"):
             for entry in config[event]:
                 assert "matcher" not in entry
 

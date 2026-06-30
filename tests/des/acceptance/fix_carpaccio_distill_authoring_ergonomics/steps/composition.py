@@ -1,25 +1,28 @@
 """Composition root for the fix-carpaccio-distill-authoring-ergonomics AT set.
 
 Mandate-13 (driving-port-only boundary) + Pillar 3 (app as in production): the
-SUT is driven EXCLUSIVELY through the real `des` CLIs invoked as Layer-3
-subprocesses. No production module is imported here -- the only seam is the
-process boundary + the filesystem. Two driving ports:
+SUT is driven EXCLUSIVELY through the real `des` CLI EDGEs, run IN-PROCESS via
+``run_cli_in_process`` (faithful to the `python -m des.cli...` process boundary
+without forking a fresh interpreter -- the corpus-migration-in-process refactor).
+The only seam is the EDGE `main(argv) -> int` + the filesystem. Two driving
+ports:
   * `des carpaccio-slice-gate`  -- the enforcing entry GATE (slices 01/02),
-    invoked via the `des` dispatcher subcommand (`python -m des.cli carpaccio-
-    slice-gate ...`).
-  * `python -m des.cli.carpaccio_precheck`  -- the NEW read-only advisory
-    pre-check (slice 03), a NON-GATE designer tool invoked MODULE-DIRECT. It is
-    NOT a `des` dispatcher subcommand: the dispatcher `_REGISTRY` is parity-pinned
-    to the 19-row gate catalog (tests/build/d4_phase_1_catalog_files), so adding
-    a non-gate tool would break that parity AT. The module-direct surface mirrors
-    the at_review_verdict precedent; the operator-ergonomic subcommand is deferred
-    to F-DES-AT-REVIEW-VERDICT-SUBCOMMAND-SURFACE.
+    driven through the `des` dispatcher EDGE (the in-process analogue of
+    `python -m des.cli carpaccio-slice-gate ...`).
+  * `des.cli.carpaccio_precheck`  -- the NEW read-only advisory pre-check
+    (slice 03), a NON-GATE designer tool driven through its OWN module EDGE
+    `main` (the in-process analogue of `python -m des.cli.carpaccio_precheck`).
+    It is NOT a `des` dispatcher subcommand: the dispatcher `_REGISTRY` is
+    parity-pinned to the 19-row gate catalog (tests/build/d4_phase_1_catalog_files),
+    so adding a non-gate tool would break that parity AT. The module-direct
+    surface mirrors the at_review_verdict precedent; the operator-ergonomic
+    subcommand is deferred to F-DES-AT-REVIEW-VERDICT-SUBCOMMAND-SURFACE.
 
 Business logic lives here as the single source of truth; step bodies delegate to
 ``CarpaccioErgonomicsComposition`` methods and never inline logic (Mandate-12
 criterion 3). The composition provisions a tmp_path repository fixture (feature-
 delta slice plan, `.feature` files, AT-completion ledger, signing key, config),
-invokes the CLI as a subprocess, and exposes the observable outcome (exit code,
+drives the CLI EDGE in-process, and exposes the observable outcome (exit code,
 stdout machine JSON, stderr human + diagnostic lines).
 
 RED scaffold note (ADR-025 / ADR-028):
@@ -42,10 +45,10 @@ import hashlib
 import hmac
 import importlib.util
 import json
-import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import (
     FeatureId,
@@ -93,7 +96,7 @@ _FIXTURE_BODY = (
 
 @dataclass
 class CliResult:
-    """Observable outcome of one `des` CLI subprocess invocation."""
+    """Observable outcome of one in-process `des` CLI EDGE invocation."""
 
     exit_code: int
     stdout: str
@@ -167,7 +170,7 @@ class CarpaccioErgonomicsComposition:
 
     ``repo_dir`` is a real tmp_path directory acting as the repository root. Each
     Given method provisions exactly the project state a scenario needs; the When
-    methods invoke the real `des` CLI subcommands as subprocesses against it.
+    methods drive the real `des` CLI EDGEs in-process against it.
     """
 
     repo_dir: Path
@@ -317,10 +320,10 @@ class CarpaccioErgonomicsComposition:
         """
         return importlib.util.find_spec("des.cli.carpaccio_format") is not None
 
-    # --- When: run the CLIs as subprocesses ----------------------------------
+    # --- When: drive the CLI EDGEs in-process --------------------------------
 
     def run_gate(self) -> CliResult:
-        """Invoke the real `des carpaccio-slice-gate` CLI as a subprocess."""
+        """Drive the real `des carpaccio-slice-gate` CLI EDGE in-process."""
         return self._run_des(
             "carpaccio-slice-gate",
             "--feature-id",
@@ -332,46 +335,44 @@ class CarpaccioErgonomicsComposition:
         )
 
     def run_precheck(self) -> CliResult:
-        """Invoke the real `python -m des.cli.carpaccio_precheck` CLI module-direct.
+        """Invoke the real `des.cli.carpaccio_precheck` CLI EDGE in-process.
 
-        The pre-check is a NON-GATE designer tool, so it is invoked MODULE-DIRECT
-        (`python -m des.cli.carpaccio_precheck`), NOT via the `des` dispatcher
-        subcommand. The dispatcher's `_REGISTRY` is parity-pinned to the 19-row
+        The pre-check is a NON-GATE designer tool whose production surface is the
+        module EDGE `python -m des.cli.carpaccio_precheck` (NOT a `des` dispatcher
+        subcommand: the dispatcher's `_REGISTRY` is parity-pinned to the 19-row
         gate catalog (tests/build/d4_phase_1_catalog_files), so a non-gate tool
         cannot be a `des` subcommand without first introducing a gate-vs-tool
-        distinction in the registry -- deferred to
-        F-DES-AT-REVIEW-VERDICT-SUBCOMMAND-SURFACE. This mirrors the
-        at_review_verdict precedent (non-gate `des.cli` tools run module-direct).
+        distinction -- deferred to F-DES-AT-REVIEW-VERDICT-SUBCOMMAND-SURFACE,
+        mirroring the at_review_verdict precedent).
+
+        MIGRATED TO IN-PROCESS (node-D): this fork ran as a faithful subprocess
+        because the precheck's human-surface advisory flows through
+        ``human_surface.print_human_summary``, whose default ``file`` previously
+        bound ``sys.stderr`` at DEF-TIME (module import) -- an in-process
+        ``redirect_stderr`` patched AFTER import never wrapped it, so the human-
+        verdict assertion could not see the advisory line. The production
+        late-bind (``file=None`` -> resolve ``sys.stderr`` at CALL-time) now lets
+        ``run_cli_in_process`` capture that loud diagnostic faithfully, so the
+        fork no longer needs a fresh interpreter. The EDGE's ``main`` is driven
+        directly (the module-direct surface, not the dispatcher).
         """
-        return self._run_module(
-            "des.cli.carpaccio_precheck",
-            "--feature-id",
-            str(self.feature_id),
-            "--repo-root",
-            str(self.repo_dir),
+        from des.cli.carpaccio_precheck import main as _precheck_main
+
+        exit_code, stdout, stderr = run_cli_in_process(
+            [
+                "--feature-id",
+                str(self.feature_id),
+                "--repo-root",
+                str(self.repo_dir),
+            ],
+            cwd=_REPO_ROOT,
+            main=_precheck_main,
         )
+        return CliResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
 
     def _run_des(self, *args: str) -> CliResult:
-        proc = subprocess.run(
-            [sys.executable, "-m", "des.cli", *args],
-            capture_output=True,
-            text=True,
-            cwd=_REPO_ROOT,
-        )
-        return CliResult(
-            exit_code=proc.returncode, stdout=proc.stdout, stderr=proc.stderr
-        )
-
-    def _run_module(self, module: str, *args: str) -> CliResult:
-        proc = subprocess.run(
-            [sys.executable, "-m", module, *args],
-            capture_output=True,
-            text=True,
-            cwd=_REPO_ROOT,
-        )
-        return CliResult(
-            exit_code=proc.returncode, stdout=proc.stdout, stderr=proc.stderr
-        )
+        exit_code, stdout, stderr = run_cli_in_process(list(args), cwd=_REPO_ROOT)
+        return CliResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
 
     # --- universe (Mandate 8) ------------------------------------------------
 

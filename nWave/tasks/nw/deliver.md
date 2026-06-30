@@ -3,6 +3,13 @@ description: "Orchestrates the full DELIVER wave end-to-end (roadmap > execute-a
 argument-hint: '[feature-description] - Example: "Implement user authentication with JWT"'
 ---
 
+<!-- gates-ref: deliver -->
+<!-- outputs-ref: deliver -->
+
+The DELIVER gate stack and output contract live ONCE in the wave-contract registry
+`nWave/waves/deliver.yaml` — the `gates-ref` / `outputs-ref` pointers above name it.
+This prose does not re-enumerate the gate stack inline; it POINTS at the registry.
+
 # NW-DELIVER: Complete DELIVER Wave Orchestrator
 
 **Wave**: DELIVER (wave 6 of 6)|**Agent**: Main Instance (orchestrator)|**Command**: `/nw-deliver "{feature-description}"`
@@ -23,18 +30,20 @@ Sub-agents cannot use Skill tool or `/nw:*` commands. You MUST:
 
 **DES monitoring is non-negotiable.** Circumventing DES — faking step IDs, omitting markers, or writing log entries manually — is a **violation that invalidates the delivery**. DES detects unmonitored steps and flags them; finalize **blocks** until every flagged step is re-executed through a properly instrumented Task. There is no workaround: unverified steps cannot pass integrity verification, and the delivery cannot be finalized. Without DES monitoring, nWave cannot **verify** TDD phase compliance. For non-deliver tasks (docs, research, one-off edits): `<!-- DES-ENFORCEMENT : exempt -->`.
 
-## Workflow Mode Dispatch (classic vs atdd_pure)
+## Workflow Mode Dispatch (classic vs atdd_pure) <!-- mode-ref-ok -->
 
-Before any phase work, read `.nwave/config.yaml` key `workflow.mode`. Two execution paths:
+Before any phase work, read `.nwave/config.yaml` key `workflow.mode`. Two execution paths — per-mode descriptor + DELIVER phase shape projected from the mode registry, never hand-written here: <!-- mode-ref-ok -->
 
-| mode | Phase canon | Reference |
-|------|-------------|-----------|
-| `classic` (default) | 3-phase ADR-025 `RED → GREEN → COMMIT` | unchanged path below |
-| `atdd_pure` (opt-in) | 7-phase ADR-027 `A→B→C→D→E→F→G` | see "ATDD-Pure 7-Phase Sequence" below |
+<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
+- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
+  Deliver phase shape: `RED -> GREEN -> COMMIT`
+<!-- GENERATED:mode-descriptor END -->
 
-Read precedence: `.nwave/config.yaml:workflow.mode` → if missing, fall back to `classic`. Mid-feature mode switch is forbidden (a feature is born in one mode and dies in it). On `atdd_pure`, the classic 3-phase orchestration in §Orchestration Flow Phase 2 is REPLACED by the 7-phase A→G sequence below; all other phases (refactor, review, mutation, integrity, finalize) still run as written.
+Read precedence: `.nwave/config.yaml:workflow.mode` → if missing, fall back to `classic`. Mid-feature mode switch is forbidden (a feature is born in one mode and dies in it). On the per-slice spine, the classic 3-phase orchestration in §Orchestration Flow Phase 2 is REPLACED by the per-slice sequence below; all other phases (refactor, review, mutation, integrity, finalize) still run as written. <!-- mode-ref-ok -->
 
-## ATDD-Pure 7-Phase Sequence (A→G) — invoked when workflow.mode = atdd_pure
+## ATDD-Pure 7-Phase Sequence (A→G) — invoked when workflow.mode = atdd_pure <!-- mode-ref-ok -->
 
 Reference: ADR-027 §Decision · plan v3 §4 §7 · domain types `src/des/domain/atdd_pure_phases.py`.
 
@@ -47,8 +56,22 @@ Replace the per-step `RED→GREEN→COMMIT` dispatch (Phase 2 step c2) with the 
 | C_REVIEWER_AUDIT | reviewer | 15-item AT-completeness audit via `nw-at-completeness-check` | `PhaseCReviewerVerdict` emitted; verdict_hash optional |
 | D_GAP_ROUTING | orchestrator | Route per `ATGapKind` (see §Phase D Routing below) | exactly one Routing decision recorded |
 | E_BATCH_REFACTOR | **crafter-B (separate instance, distinct agent_instance_id)** | L1-L6 batch refactor per `feedback_refactor_batch_when_test_suite_slow_2026_05_19` | Tests stay green |
-| F_FINAL_REVIEW | reviewer | Code review + refactor green check | `PhaseFReviewerVerdict` with MANDATORY verdict_hash (HMAC-SHA256) |
-| G_COMMIT | crafter | Conventional commit with `Step-Id:` + `Reviewed-by:` trailers (Reviewed-by carries verdict_hash) | HMAC trailer present and verified |
+| F_FINAL_REVIEW | reviewer | Code review + refactor green check | `PhaseFReviewerVerdict` with MANDATORY verdict_hash (keyless content seal) |
+| G_COMMIT | crafter | Conventional commit with `Step-Id:` + `Reviewed-by:` trailers (Reviewed-by carries verdict_hash) | Ledger record present and audited via verify-commit-trailers |
+
+### Crafter-matches-design gate-OUT (D2 review-rubric leg)
+
+Gate-IN: the A_GREEN_ATS dispatch consumes the bundle (AT + `[REF] Code-Design` contract + architecture + the DISTILL AT review) — the crafter implements MATCHING the declared design, not a re-invented structure that merely passes the ATs.
+
+Gate-OUT adds the matches-design review-rubric leg to F_FINAL_REVIEW: the crafter-matches-design gate compares the implementation public surface against the design declared public contract and emits a §17 verdict. The verdict map (reuses the five-verdict GateVerdict SSOT — no sixth verdict):
+
+- **PASS** — the implementation public symbol-set is equal to the design's declared public contract → proceed (no-veto, not authorize).
+- **FAIL → redo-in-wave** — an undeclared public symbol or a missing declared one fails the gate at gate-OUT and is routed to redo in-wave (privatize/remove the undeclared symbol, or implement the missing declared one). Private structure is out of scope: a new private symbol or Extract-Method refactor below the public boundary is never a conformance violation (C4).
+- **UNVERIFIED** — the design contract is prose-only and the rubric suspects a drift it cannot mechanically confirm: NAME the suspected drift, propose `/nw-design`, LOUD advisory, then escalate fail-closed. Never silent-pass.
+- **NOT_APPLICABLE** — a removal-only slice with no public contract to diff: proceed and record the N/A explicitly (not a FAIL).
+- **INDETERMINATE** — the crafter-matches-design mechanism that cannot run degrades LOUD as INDETERMINATE never a silent pass (the per-language AST adapter absent for the target language, or the `[REF] Code-Design` heading malformed / the impl modules unparseable). Degrade-LOUD and escalate now.
+
+The mechanical public-surface diff (the `CodeFactPort AstAdapter`-backed form) is DESIGNED-NOT-BUILT here — feature 6 swaps it in behind this same review-rubric seam without re-authoring; the interim form is the prose review-rubric diffing against the `[REF] Code-Design` contract.
 
 ### Phase D Routing (orchestrator decision rules)
 
@@ -58,6 +81,7 @@ Source of truth: plan v3 §7.2. Implementation outline:
 2. **Cycle exhaustion** (`ctx.phase_d_cycle_count > 2`) → emit `DeliverCycleExhausted`, halt exit 42 `CYCLE_EXHAUSTION`, return `HUMAN_ESCALATION`.
 3. **Wall-clock timeout** (`ctx.wall_clock_s > 14400` i.e. 4h) → emit `DeliverTimeoutExceeded`, checkpoint state, halt exit 42 `DELIVER_TIMEOUT`, return `CHECKPOINT_TIMEOUT`. Resume via `/nw-resume-deliver`.
 4. **Second-order architecture-scope-miss** (≥2 gaps sharing a `scenario_class` mapping to a component absent from DESIGN) → emit `ArchitectureScopeMissDetected`, return `REROUTE_DESIGN`.
+   - **Crafter-matches-design DESIGN-DEFECT bump** (K5, OB-2 named-contradiction witness): when a slice cannot pass because a named contract self-contradiction routes a recorded DESIGN-DEFECT bump to DESIGN that the human disposes instead of being patched in place — this EXTENDS the existing `REROUTE_DESIGN` substrate, NOT a new routing primitive nor a sixth verdict. The witness names the contradiction (e.g. an error-encoding requiring a field the declared return-type never declares); the orchestrator emits the recorded `DESIGN-DEFECT`, returns `REROUTE_DESIGN`, and the human disposes the bump (Invariant 1: a control only vetoes, the human authorizes). Distinct from redo-in-wave: a divergence the crafter can fix in-wave (undeclared/missing public symbol) is FAIL→redo; a contract the crafter CANNOT satisfy because it self-contradicts is the bump.
 5. **`SPECIFICATION_AMBIGUITY` gaps** → emit `SpecificationAmbiguityDetected`, derive upstream wave from gap kind (C2→DISCUSS state-machine, C5→DESIGN mode-flags, C7→DEVOPS env contract), return `REROUTE_DISCUSS` | `REROUTE_DESIGN` | `REROUTE_DEVOPS` accordingly.
 6. **`AT_GAP_IN_DELIVERY_SCOPE` only** → emit `AcceptanceTestGapIdentified`, increment `phase_d_cycle_count`, return `RELOOP_A` (re-enter Phase A with refined ATs from acceptance-designer).
 7. **No gaps** → return `PROCEED_TO_E_BATCH_REFACTOR`.
@@ -72,13 +96,11 @@ Phase E dispatch MUST use a SEPARATE crafter instance from Phase A (Ale 2026-05-
 2. Pre-flight check: orchestrator refuses to dispatch Phase E with the same `agent_instance_id` as the Phase A entry recorded in `execution-log.json`.
 3. Rationale: review independence — refactor by the original implementer rubber-stamps their own bias; a fresh crafter exposes structural smells.
 
-### HMAC-SHA256 Verdict-Hash Trailer (Phase F → G)
+### Verdict-Hash Trailer (Phase F → G)
 
-Reference: plan v3 §8. Phase F reviewer verdict MUST be paired with a mechanical `Reviewed-by: <agent>:<hmac-sha256>` trailer. Phase G commit message embeds this trailer verbatim.
+Reference: plan v3 §8. Phase F reviewer verdict MUST be paired with a `Reviewed-by: <agent>:<verdict-hash>` trailer. Phase G commit message embeds this trailer verbatim. The verdict-hash is the keyless content seal produced by `des.domain.at_review_signing.canonical_at_review_json`. Verification: `src/des/cli/verify_commit_trailers.py` audits the slice's ledger record (exit 45 on refusal).
 
-Canonical verdict serialization (input to HMAC): JSON with sorted keys, no whitespace, UTF-8, fields `{verdict, timestamp, reviewer_agent_id, findings_summary}`. HMAC key precedence: env `NWAVE_REVIEWER_SIGNING_KEY` → file `.nwave/secrets/reviewer-signing.key`. Verification location: `src/des/cli/verify_commit_trailers.py` (exit 4 on mismatch).
-
-### Telemetry per Phase Boundary (atdd_pure mode)
+### Telemetry per Phase Boundary (atdd_pure mode) <!-- mode-ref-ok -->
 
 Each phase A-G emits one JSONL event at PhaseEntered and PhaseCompleted to `nWave/telemetry/wave-time-token-telemetry/pilot/{feature_id}.jsonl`:
 
@@ -105,19 +127,15 @@ Fields `reviewer_findings`, `cycle_n`, `verdict_hash` are null outside their res
 After Phase G commit completes, invoke `python scripts/automation/atdd_pure_falsifier_gate.py` (Phase 5 deliverable per plan v3 §4.5). Behavior:
 
 - Reads N=3 latest pilot JSONL records.
-- ANY threshold breach (median wall-clock > 1.3× target | reviewer findings median > 12 | post-deploy defect rate > 2× classic | Phase D cycle rate median ≥ 2.0) → patch `.nwave/config.yaml:workflow.mode = classic`, emit `FalsifierGateTripped`, exit 42.
+- ANY threshold breach (median wall-clock > 1.3× target | reviewer findings median > 12 | post-deploy defect rate > 2× classic | Phase D cycle rate median ≥ 2.0) → patch `.nwave/config.yaml:workflow.mode = classic`, emit `FalsifierGateTripped`, exit 42. <!-- mode-ref-ok -->
 - Otherwise → emit `FalsifierGateHealthy`, exit 0.
 
 Falsifier-gate exit 42 blocks subsequent CI release steps; operator review required before next pilot feature.
 
 ## Skill Loading (ATDD-pure additions)
 
-When `workflow.mode = atdd_pure`, the orchestrator MUST embed skill-load directives in every crafter and reviewer dispatch prompt:
-
-| Phase | Skill to load | Path |
-|-------|---------------|------|
-| A, B, E | `nw-crafter-discipline-atdd-pure` | `~/.claude/skills/nw-crafter-discipline-atdd-pure/SKILL.md` |
-| C | `nw-at-completeness-check` | `~/.claude/skills/nw-at-completeness-check/SKILL.md` |
+When `workflow.mode = atdd_pure`, the orchestrator MUST embed skill-load directives in every crafter and reviewer dispatch prompt. <!-- mode-ref-ok -->
+The mode-conditional skill set per agent is declared by the mode registry `skill_load_set` (projected into each agent spec's GENERATED skill-load region — the registry, never this guide, is the author): embed a directive to load every skill the registry declares for the dispatched agent at its phase entry.
 | E | `nw-refactor` | `~/.claude/skills/nw-refactor/SKILL.md` |
 | F | `nw-review` | `~/.claude/skills/nw-review/SKILL.md` |
 
@@ -268,7 +286,7 @@ INPUT: "{feature-description}"
      a. Collect modified files: git diff --name-only {base-commit}..HEAD -- '*.py' | sort -u
         Split: PRODUCTION_FILES (src/) | TEST_FILES (tests/)
      b. /nw-refactor {files} --levels L1-L4 via {selected-crafter} with DES orchestrator markers:
-        <!-- DES-VALIDATION : required -->|<!-- DES-PROJECT-ID : {feature-id} -->|<!-- DES-MODE : orchestrator -->
+        <!-- DES-VALIDATION : required -->|<!-- DES-PROJECT-ID : {feature-id} -->|<!-- DES-MODE : orchestrator -->|<!-- DES-WAVE: deliver -->
      c. All tests green after each module
   |
   5. Phase 4 — Adversarial Review [SKIP if rigor.review_enabled = false]
@@ -332,6 +350,7 @@ Agent(
 <!-- DES-VALIDATION : required -->
 <!-- DES-PROJECT-ID : {project_id} -->
 <!-- DES-STEP-ID : {step_id} -->
+<!-- DES-WAVE: deliver -->
 
 # DES_METADATA
 Step: {step_id}

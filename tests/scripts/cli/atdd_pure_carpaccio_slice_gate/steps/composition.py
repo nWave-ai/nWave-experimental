@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import hmac
 import io
 import json
 import os
@@ -54,23 +53,10 @@ from .domain_types import (
 # ceiling and the @coupled escape against this value.
 _CARPACCIO_SLICE_MAX = 3
 
-# The reviewer signing key precedence mirrors verify_commit_trailers.py:
-# NWAVE_REVIEWER_SIGNING_KEY env -> .nwave/secrets/reviewer-signing.key file.
+# Signing-key env / file names -- referenced ONLY to guarantee they are ABSENT
+# after the demotion. No key is provisioned for any fixture state.
 _SIGNING_KEY_ENV = "NWAVE_REVIEWER_SIGNING_KEY"
 _SIGNING_KEY_FILE = ".nwave/secrets/reviewer-signing.key"
-_FIXTURE_SIGNING_KEY = b"slice-03-acceptance-fixture-signing-key"
-
-# The seven HMAC-signed fields of an ATReviewVerdict record (ADR-029 D5 / B1),
-# in no particular order -- canonical_at_review_json sorts keys.
-_SIGNED_FIELDS = (
-    "schema_version",
-    "slice_id",
-    "verdict",
-    "reviewer_agent_id",
-    "at_ids",
-    "at_content_hash",
-    "timestamp",
-)
 
 
 @dataclass
@@ -122,7 +108,6 @@ class CarpaccioGateComposition:
     feature_id: FeatureId = field(default=FeatureId("atdd-pure-demo"))
     entering_slice: SliceId = field(default=SliceId("slice-01"))
     _slice_at_count: int = field(default=1)
-    _signing_key_provisioned: bool = field(default=False)
 
     # --- paths ---------------------------------------------------------------
 
@@ -237,19 +222,14 @@ class CarpaccioGateComposition:
     # --- Given: AT-review verdict record ------------------------------------
 
     def provision_at_review_record(self, state: ATReviewRecordState) -> None:
-        """Provision the AT-completion ledger + signing key for assertion 5.
+        """Provision the AT-completion ledger for assertion 5.
 
         Each state isolates exactly one assertion-5 outcome (the APPROVED
-        happy path or one of the six closed rejection reasons).
+        happy path or one of the four closed rejection reasons). No signing
+        key is provisioned for any state -- the post-demotion gate is keyless.
         """
         provisioner = _AT_REVIEW_PROVISIONERS[state]
         provisioner(self)
-
-    def _provision_signing_key(self) -> None:
-        """Place the reviewer signing key file so assertion 5 can verify."""
-        self._signing_key_path.parent.mkdir(parents=True, exist_ok=True)
-        self._signing_key_path.write_bytes(_FIXTURE_SIGNING_KEY)
-        self._signing_key_provisioned = True
 
     def _current_at_ids(self) -> list[str]:
         """The @slice-NN scenario id set the gate computes for the slice."""
@@ -265,20 +245,14 @@ class CarpaccioGateComposition:
         )
         return hashlib.sha256("".join(bodies).encode("utf-8")).hexdigest()
 
-    def _canonical_at_review_json(self, payload: dict[str, object]) -> bytes:
-        """ADR-029 D5 B1 canonical serializer over the seven signed fields."""
-        signed = {k: payload[k] for k in _SIGNED_FIELDS}
-        return json.dumps(signed, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
     def _build_record(
         self,
         verdict: str,
         at_ids: list[str],
         at_content_hash: str,
-        tamper_hmac: bool,
     ) -> dict[str, object]:
-        """Build a (possibly tampered) ATReviewVerdict record for the slice."""
-        record: dict[str, object] = {
+        """Build a keyless ATReviewVerdict record for the slice."""
+        return {
             "event": "ATReviewVerdict",
             "schema_version": "1.0.0",
             "slice_id": str(self.entering_slice),
@@ -289,13 +263,6 @@ class CarpaccioGateComposition:
             "timestamp": "2026-05-20T00:00:00Z",
             "findings_summary": [],
         }
-        signature = hmac.new(
-            _FIXTURE_SIGNING_KEY,
-            self._canonical_at_review_json(record),
-            hashlib.sha256,
-        ).hexdigest()
-        record["hmac_sha256"] = "0" * 64 if tamper_hmac else signature
-        return record
 
     def _write_ledger_record(self, record: dict[str, object]) -> None:
         """Append one ATReviewVerdict record to the AT-completion ledger."""
@@ -308,8 +275,8 @@ class CarpaccioGateComposition:
     def run_gate(self) -> GateResult:
         """Invoke the production carpaccio-slice-gate CLI via its argv entry.
 
-        The reviewer signing key is exported into the environment only when a
-        key file was provisioned (NO_SIGNING_KEY fixtures must see neither).
+        The signing-key env var is scrubbed so no key leaks in from the test
+        runner's environment. The post-demotion gate never resolves a key.
         """
         argv = [
             "--feature-id",
@@ -389,13 +356,19 @@ def _build_over_n_coupled(comp: CarpaccioGateComposition) -> None:
 
 def _build_malformed_table(comp: CarpaccioGateComposition) -> None:
     comp._slice_at_count = 1
-    # Four columns instead of the required five -- a malformed table.
+    # A well-formed table whose lone data row carries NO cell matching the
+    # slice-NN identifier pattern -- the row is unresolvable to any slice.
+    # Under the column-count-tolerant parser (C10) a 4-column table is now
+    # VALID, so column count no longer signals malformedness; a row with no
+    # resolvable slice-id is the input that the tolerant parser STILL rejects
+    # (carpaccio_format._build_slice_rows: slice_index is None -> exit 2,
+    # cause "the slice-plan table").
     comp.feature_delta_path.write_text(
         "# Feature Delta: carpaccio gate fixture\n\n"
         "## Wave: DISCUSS / [REF] Slice Plan\n\n"
-        "| Slice | Value statement | Status | Annotation |\n"
-        "|-------|-----------------|--------|------------|\n"
-        "| slice-01 | Operator previews a plan | pending | |\n",
+        "| Slice | Value statement | Status | Annotation | Justification |\n"
+        "|-------|-----------------|--------|------------|---------------|\n"
+        "| not-a-slice | Operator previews a plan | pending | | |\n",
         encoding="utf-8",
     )
     comp._write_feature_file("slice-01", 1)
@@ -476,34 +449,21 @@ _SLICE_PLAN_BUILDERS: dict[
 
 
 # --- AT-review record provisioners ------------------------------------------
+# No signing key is provisioned for any state -- the post-demotion gate is
+# keyless (D-tolerate-old: a stray hmac_sha256 field is ignored, not verified).
 
 
 def _provision_approved_valid(comp: CarpaccioGateComposition) -> None:
-    comp._provision_signing_key()
     comp._write_ledger_record(
         comp._build_record(
             verdict="APPROVED",
             at_ids=comp._current_at_ids(),
             at_content_hash=comp._normalized_at_bodies_hash(),
-            tamper_hmac=False,
-        )
-    )
-
-
-def _provision_no_signing_key(comp: CarpaccioGateComposition) -> None:
-    # A valid record exists but the signing key is absent -> fail-closed.
-    comp._write_ledger_record(
-        comp._build_record(
-            verdict="APPROVED",
-            at_ids=comp._current_at_ids(),
-            at_content_hash=comp._normalized_at_bodies_hash(),
-            tamper_hmac=False,
         )
     )
 
 
 def _provision_no_record(comp: CarpaccioGateComposition) -> None:
-    comp._provision_signing_key()
     # The ledger exists but carries no ATReviewVerdict for the entering slice.
     comp.ledger_path.parent.mkdir(parents=True, exist_ok=True)
     comp.ledger_path.write_text(
@@ -514,52 +474,33 @@ def _provision_no_record(comp: CarpaccioGateComposition) -> None:
 
 
 def _provision_needs_revision(comp: CarpaccioGateComposition) -> None:
-    comp._provision_signing_key()
     comp._write_ledger_record(
         comp._build_record(
             verdict="NEEDS_REVISION",
             at_ids=comp._current_at_ids(),
             at_content_hash=comp._normalized_at_bodies_hash(),
-            tamper_hmac=False,
-        )
-    )
-
-
-def _provision_tampered_hmac(comp: CarpaccioGateComposition) -> None:
-    comp._provision_signing_key()
-    comp._write_ledger_record(
-        comp._build_record(
-            verdict="APPROVED",
-            at_ids=comp._current_at_ids(),
-            at_content_hash=comp._normalized_at_bodies_hash(),
-            tamper_hmac=True,
         )
     )
 
 
 def _provision_stale_at_ids(comp: CarpaccioGateComposition) -> None:
-    comp._provision_signing_key()
-    # The record was signed over a DIFFERENT at_ids set than the slice now has.
+    # The record's at_ids no longer match the slice's scenario set.
     comp._write_ledger_record(
         comp._build_record(
             verdict="APPROVED",
             at_ids=["AT-1", "AT-99"],
             at_content_hash=comp._normalized_at_bodies_hash(),
-            tamper_hmac=False,
         )
     )
 
 
 def _provision_stale_body_hash(comp: CarpaccioGateComposition) -> None:
-    comp._provision_signing_key()
-    # The record was signed over a content hash that no longer matches the
-    # slice's current normalized AT bodies (an in-place scenario rewrite).
+    # The record's at_content_hash no longer matches the slice's AT bodies.
     comp._write_ledger_record(
         comp._build_record(
             verdict="APPROVED",
             at_ids=comp._current_at_ids(),
             at_content_hash="f" * 64,
-            tamper_hmac=False,
         )
     )
 
@@ -568,10 +509,8 @@ _AT_REVIEW_PROVISIONERS: dict[
     ATReviewRecordState, callable[[CarpaccioGateComposition], None]
 ] = {
     ATReviewRecordState.APPROVED_VALID: _provision_approved_valid,
-    ATReviewRecordState.NO_SIGNING_KEY: _provision_no_signing_key,
     ATReviewRecordState.NO_RECORD: _provision_no_record,
     ATReviewRecordState.NEEDS_REVISION: _provision_needs_revision,
-    ATReviewRecordState.TAMPERED_HMAC: _provision_tampered_hmac,
     ATReviewRecordState.STALE_AT_IDS: _provision_stale_at_ids,
     ATReviewRecordState.STALE_BODY_HASH: _provision_stale_body_hash,
 }

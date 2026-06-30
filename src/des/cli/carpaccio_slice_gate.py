@@ -24,14 +24,13 @@ Exit codes:
     2  -- malformed input (the slice-plan table OR a ``.feature`` slice tag);
           the emitted JSON ``cause`` field names which input to repair
     44 -- CARPACCIO_SLICE_TOO_LARGE: oversized / coverage / ordering violation
-    45 -- AT_REVIEW_NOT_APPROVED: assertion 5 failed (one of six closed reasons)
+    45 -- AT_REVIEW_NOT_APPROVED: assertion 5 failed (one of four closed reasons)
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
-import hmac
 import json
 import sys
 from dataclasses import dataclass
@@ -53,9 +52,6 @@ from des.cli.carpaccio_format import (
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.at_review_signing import (
     canonical_at_review_json,
-)
-from des.domain.at_review_signing import (
-    load_signing_key as _load_signing_key,
 )
 from des.domain.repo_path_resolver import (
     feature_delta_path as _feature_delta_path,
@@ -314,12 +310,9 @@ def _emit_tag_mismatch_event(
     sys.stderr.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
-# The signing-key precedence + the seven HMAC-signed fields +
-# ``canonical_at_review_json`` now live in the ``des.domain.at_review_signing``
-# SSOT (ADR-029 D5, AD-05). ``_load_signing_key`` (returning ``None`` for
-# fail-closed) and ``canonical_at_review_json`` are imported from there and
-# re-exported (``__all__``) so existing importers of this CONSUMER gate keep
-# resolving them.
+# ``canonical_at_review_json`` lives in the ``des.domain.at_review_signing``
+# SSOT (ADR-029 D5, AD-05) and is re-exported (``__all__``) so existing
+# importers of this CONSUMER gate keep resolving it.
 
 
 # ---------------------------------------------------------------------------
@@ -369,25 +362,22 @@ def check_at_review(
 ) -> None:
     """Run assertion 5 (ADR-029 D5). Raises ``GateError`` exit 45 on failure.
 
-    Fail-closed: an unresolvable signing key refuses the slice (reason
-    ``key-absent``) -- the gate never passes blind. F-03 (atdd-pure-dogfooding-
-    friction-2026-05-20.md): an entering slice that maps to ZERO ``@slice-NN``
-    scenarios is rejected loud (reason ``no-scenarios-for-slice``), never
-    cleared vacuously on an empty AT set.
-    """
-    key = _load_signing_key(repo)
-    if key is None:
-        raise _at_review_rejection("key-absent", entering_slice)
+    Record-presence is the whole control: an absent or non-APPROVED record
+    refuses the slice fail-closed. No signing key is resolved -- the veto is
+    the presence of a well-formed APPROVED record that binds the AT set and
+    content seal. A stray ``hmac_sha256`` field on a pre-existing record is
+    tolerated-and-ignored (upgrade compatibility, D-tolerate-old).
 
+    F-03 (atdd-pure-dogfooding-friction-2026-05-20.md): an entering slice
+    that maps to ZERO ``@slice-NN`` scenarios is rejected loud (reason
+    ``no-scenarios-for-slice``), never cleared vacuously on an empty AT set.
+    """
     record = _latest_verdict_record(_ledger_path(repo, feature_id), entering_slice)
     if record is None:
         raise _at_review_rejection("absent", entering_slice)
 
     if record.get("verdict") != "APPROVED":
         raise _at_review_rejection("not-approved", entering_slice)
-
-    if not _hmac_verifies(record, key):
-        raise _at_review_rejection("hmac-mismatch", entering_slice)
 
     slice_scenarios = _slice_scenarios(scenarios, entering_slice)
     expected_ids = {f"AT-{n}" for n in range(1, len(slice_scenarios) + 1)}
@@ -398,20 +388,6 @@ def check_at_review(
     expected_hash = _at_content_hash(slice_scenarios)
     if record.get("at_content_hash") != expected_hash:
         raise _at_review_rejection("stale-at-content", entering_slice)
-
-
-def _hmac_verifies(record: dict[str, object], key: bytes) -> bool:
-    """Constant-time-compare the record HMAC over the seven signed fields."""
-    signature = record.get("hmac_sha256")
-    if not isinstance(signature, str):
-        return False
-    try:
-        expected = hmac.new(
-            key, canonical_at_review_json(record), hashlib.sha256
-        ).hexdigest()
-    except KeyError:
-        return False
-    return hmac.compare_digest(expected, signature)
 
 
 def _at_content_hash(slice_scenarios: list[Scenario]) -> str:
@@ -493,7 +469,44 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--feature-id", required=True)
     parser.add_argument("--entering-slice", required=True)
     parser.add_argument("--repo-root", default=None)
+    parser.add_argument(
+        "--enforce-sad-path-floor",
+        action="store_true",
+        help=(
+            "Co-emit the ZOMBIES-zero sad-path floor verdict "
+            "(at-in-process-port-default slice-03): FLAG a slice with zero @error "
+            "acceptance tests. Off by default -- existing callers see byte-identical "
+            "output."
+        ),
+    )
     return parser.parse_args(sys.argv[1:] if argv is None else list(argv))
+
+
+def _emit_sad_path_floor(repo: Path, feature_id: str, entering_slice: str) -> None:
+    """Co-emit the ZOMBIES-zero sad-path floor verdict (at-in-process-port-default).
+
+    Runs the shared sad-path floor over the entering slice's ``@error`` AT count.
+    A slice with zero error-path ATs is FLAGGED with the structured event
+    ``SadPathFloorFlagged`` co-emitted on stderr (the gate's existing dual-channel
+    pattern) -- this never alters the existing clear/refuse exit codes; it is an
+    additive non-vacuity floor. A slice carrying >=1 error-path AT is silent.
+    """
+    from des.cli.axis_b_levers import check_sad_path_floor, count_error_path_scenarios
+
+    error_path_count, total_count = count_error_path_scenarios(
+        repo, feature_id, entering_slice
+    )
+    lever = check_sad_path_floor(error_path_count, total_count)
+    if not lever.flagged:
+        return
+    payload = {
+        "event": lever.structured_event,
+        "feature_id": feature_id,
+        "slice_id": entering_slice,
+        "target": lever.target,
+        "remediation": lever.remediation,
+    }
+    sys.stderr.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -506,6 +519,9 @@ def main(argv: list[str] | None = None) -> int:
     repo = _repo_root(args.repo_root)
     feature_id = args.feature_id
     entering_slice = args.entering_slice
+
+    if getattr(args, "enforce_sad_path_floor", False):
+        _emit_sad_path_floor(repo, feature_id, entering_slice)
 
     try:
         delta_path = _feature_delta_path(repo, feature_id)

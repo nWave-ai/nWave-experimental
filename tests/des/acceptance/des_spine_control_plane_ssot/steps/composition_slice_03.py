@@ -58,9 +58,13 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+from des.cli.init_log import main as _init_log_main
+from des.cli.verify_deliver_integrity import main as _verify_integrity_main
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types_slice_03 import (
     ROADMAP_NOT_FOUND_MARKER,
@@ -147,18 +151,7 @@ class ModeResolutionFixture:
         check the AT-completion ledger (NOT exit 2 on a phantom `roadmap.json not
         found`).
         """
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "des.cli.verify_deliver_integrity",
-                project.deliver_dir,
-            ],
-            capture_output=True,
-            text=True,
-            env=self._spine_env(),
-            timeout=120,
-        )
+        completed = _run_spine_cli([project.deliver_dir], main=_verify_integrity_main)
         return self._classify_verify_run(completed)
 
     def run_init_log(self, project: ProjectProbe) -> DispatchRun:
@@ -171,20 +164,9 @@ class ModeResolutionFixture:
         verify-integrity's answer on the SAME unconfigured project — post-SSOT
         both must resolve atdd_pure.
         """
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "des.cli.init_log",
-                "--project-dir",
-                project.project_dir,
-                "--feature-id",
-                _FEATURE_ID,
-            ],
-            capture_output=True,
-            text=True,
-            env=self._spine_env(),
-            timeout=60,
+        completed = _run_spine_cli(
+            ["--project-dir", project.project_dir, "--feature-id", _FEATURE_ID],
+            main=_init_log_main,
         )
         return self._classify_dispatch_run(completed)
 
@@ -334,20 +316,31 @@ class ModeResolutionFixture:
             f"workflow:\n  mode: {mode_value}\n", encoding="utf-8"
         )
 
-    @staticmethod
-    def _spine_env() -> dict[str, str]:
-        """Env for the spine CLIs: inherit + isolate the freshness gate (RCA #68).
 
-        `NWAVE_FRESHNESS=skip` short-circuits the slice-01 install-freshness gate
-        so the slice-03 mode-resolution behavior is observed in isolation (DV-1)
-        AND so a `.git/`-adjacency autoskip cannot mask the verdict (RCA #68 P1-B:
-        a skip-masked freshness state confounding the assertion is invalid). The
-        skip here masks slice-01's gate ONLY — it has no bearing on the mode
-        answer the slice-03 ATs assert.
-        """
-        env = dict(os.environ)
-        env["NWAVE_FRESHNESS"] = "skip"
-        return env
+def _run_spine_cli(
+    flags: list[str], *, main: Callable[[list[str]], int]
+) -> subprocess.CompletedProcess[str]:
+    """Drive a spine CLI EDGE (`main(argv)`) in-process (Mandate-13 driving-port).
+
+    Replaces the former `python -m des.cli.X` subprocess (env=`_spine_env()`):
+    the spine CLIs resolve every path from their absolute args (deliver dir /
+    `--project-dir`), so cwd is irrelevant; `NWAVE_FRESHNESS=skip` is set on
+    `os.environ` for the call (restored after) to isolate the slice-01
+    install-freshness gate exactly as the subprocess env did (RCA #68 / DV-1).
+    Returns a `CompletedProcess` so the pure classifiers stay unchanged.
+    """
+    prior = os.environ.get("NWAVE_FRESHNESS")
+    os.environ["NWAVE_FRESHNESS"] = "skip"
+    try:
+        exit_code, stdout, stderr = run_cli_in_process(flags, cwd=Path.cwd(), main=main)
+    finally:
+        if prior is None:
+            os.environ.pop("NWAVE_FRESHNESS", None)
+        else:
+            os.environ["NWAVE_FRESHNESS"] = prior
+    return subprocess.CompletedProcess(
+        args=list(flags), returncode=exit_code, stdout=stdout, stderr=stderr
+    )
 
 
 __all__ = ["ModeResolutionFixture"]

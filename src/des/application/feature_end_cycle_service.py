@@ -54,9 +54,13 @@ subprocess), so the use-case is bundle-safe and host-agnostic.
 from __future__ import annotations
 
 import json
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    import subprocess
 
 from des.adapters.driven.config.des_config import DESConfig
 from des.adapters.driven.logging.at_completion_ledger import (
@@ -72,7 +76,7 @@ from des.application.feature_end_sign_service import (
     SignRefusal,
     sign_feature_end_review,
 )
-from des.runtime.interpreter import python_for
+from des.runtime.interpreter import des_spawn
 
 
 _MANIFEST_NAME = "walking-skeleton.json"
@@ -95,6 +99,43 @@ class CycleRefusal:
     """
 
     error: str
+
+
+@dataclass(frozen=True)
+class FullSuiteLegRan:
+    """The feature-end full-suite leg ran ONCE and passed (slice-05, AT-19).
+
+    slice-05 / §V.B ATs@slice / full-suite-once@feature-end allocation: a
+    DISTINCT clean full-suite leg added to the feature-end cycle. It runs the
+    FULL contract suite ONCE at feature-end (via the RETAINED whole-tree
+    ``run_contract_gate`` full-suite mode -- ``_full_suite_marker_args``), NOT at
+    every commit-slice (the obsolete behavior C10 removes from the per-slice
+    path). Carries the suite's pytest exit code: presence of this arm <=> the
+    full-suite leg RAN AND passed (anti-theater: a failed full suite fail-closes
+    the cycle, no ``FullSuiteLegRan``).
+    """
+
+    pytest_exit_code: int
+
+
+@dataclass(frozen=True)
+class FullSuiteLegNotApplicable:
+    """The feature-end full-suite leg had no contract suite to run (slice-05, AT-19).
+
+    The genericità counterpart of :class:`FullSuiteLegRan` (mirrors the empty
+    arch-set "CLEARS" rule in ``run_contract_gate._arch_invariant_paths`` and the
+    coverage-map / env-e2e NA legs): the feature-end cycle runs on the TARGET
+    repo, and a repo that carries NO collectable contract suite (an external
+    target, or a minimal feature workspace) has NO full suite to run. There is
+    nothing to certify, so the leg is NOT_APPLICABLE and the cycle PROCEEDS --
+    never a fake pass, never a fail-close on an absent suite. Carries the reason
+    naming WHY the leg was inapplicable (degrade-LOUD, no silent skip).
+
+    Anti-theater is preserved: a PRESENT-but-RED full suite still fail-closes
+    (``CycleRefusal``); only a genuinely-ABSENT suite is NA.
+    """
+
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -136,6 +177,27 @@ def run_feature_end_cycle(
     """
     ledger = AtCompletionLedger(feature_id, repo_root)
 
+    # ROOT FIX (adversarial swarm 2026-06-29): refuse to seal a TRUNCATED feature
+    # BEFORE running the gates (fail-fast). A Slice-Plan slice declared but never
+    # delivered (no `.feature` / no attested prose) means the feature-end cycle
+    # was DECOUPLED from verify-integrity's truncation oracle -- it could emit a
+    # FeatureEnd record that `des verify-integrity` then REJECTS (the swarm proved
+    # P1+P2 were sealed-but-truncated theater-seals). Run the SAME un-gameable
+    # oracle here, fail-closed (no record emitted), so the seal and its integrity
+    # check can no longer disagree.
+    from des.cli.verify_deliver_integrity import _undelivered_slice_plan_slices
+
+    undelivered = _undelivered_slice_plan_slices(repo_root, feature_id)
+    if undelivered:
+        return CycleRefusal(
+            f"cannot seal {feature_id!r}: its Slice-Plan declares "
+            f"{sorted(undelivered)} with no delivered acceptance-test (.feature) "
+            "file or attested prose -- the feature is TRUNCATED. Deliver or "
+            "reconcile the missing slice(s) before the feature-end seal "
+            "(verify-integrity parity: the seal must not emit a record its own "
+            "integrity check would reject)."
+        )
+
     walking_skeleton = _run_walking_skeleton_gate(
         repo_root=repo_root, feature_dir=feature_dir
     )
@@ -160,6 +222,20 @@ def run_feature_end_cycle(
     )
     if isinstance(coverage_map, CycleRefusal):
         return coverage_map
+
+    full_suite = _run_full_suite_leg(repo_root=repo_root)
+    if isinstance(full_suite, CycleRefusal):
+        return full_suite
+    # FullSuiteLegRan / FullSuiteLegNotApplicable both PROCEED: a green suite and
+    # a genuinely-absent suite are equally non-blocking (only a PRESENT-but-RED
+    # suite returns CycleRefusal above). f-nonbypassable-attestation slice-01
+    # (DDD-4): EMIT the leg's outcome as a feature-end ledger record so the
+    # done-gate can make it `required` and refuse on its ABSENCE -- the leg was
+    # a control-flow return type only, written by NO ledger call before.
+    if isinstance(full_suite, FullSuiteLegRan):
+        ledger.append_full_suite_leg_ran(feature_id=feature_id)
+    else:
+        ledger.append_full_suite_leg_not_applicable(feature_id=feature_id)
 
     signed = sign_feature_end_review(
         feature_id=feature_id,
@@ -389,6 +465,70 @@ def _run_coverage_map_verify_leg(
     return None
 
 
+def _run_full_suite_leg(
+    *, repo_root: Path
+) -> FullSuiteLegRan | FullSuiteLegNotApplicable | CycleRefusal:
+    """Run the FULL contract suite ONCE at feature-end (slice-05, AT-19, §V.B).
+
+    The full-suite-once@feature-end allocation: a DISTINCT clean leg that runs
+    the FULL whole-tree contract suite ONE time at feature-end -- the RETAINED
+    full-suite leg the per-commit-slice path no longer runs (C10). It invokes the
+    REAL ``des run-contract-gate`` default (full-suite) mode (the retained
+    whole-tree run owned by ``run_contract_gate._full_suite_marker_args``) and
+    derives the verdict from its REAL exit code -- never an input flag
+    (anti-theater, DDD-6).
+
+    Genericità (STANDING mandate, the same "empty set CLEARS" rule as
+    ``run_contract_gate._arch_invariant_paths``): the feature-end cycle runs on
+    the TARGET repo, and a repo that carries NO collectable contract suite (an
+    external target, or a minimal feature workspace) has NO full suite to run.
+    Such a repo gets :class:`FullSuiteLegNotApplicable` and the cycle PROCEEDS --
+    refusing here would break feature-end on every target without an nWave-shaped
+    contract tree. Only a PRESENT suite is held to the run: a green suite yields
+    ``FullSuiteLegRan`` (gate exit 0); a PRESENT-but-RED suite fail-closes
+    (``CycleRefusal``), so a real regression still yields no signed verdict.
+    """
+    if not _repo_has_contract_suite(repo_root):
+        return FullSuiteLegNotApplicable(
+            "the target repository carries no collectable contract suite; the "
+            "feature-end full-suite leg is not applicable (no full suite to run)"
+        )
+    completed = _dispatch(repo_root, ["run-contract-gate", "--repo", str(repo_root)])
+    if completed.returncode != 0:
+        return CycleRefusal(
+            "the feature-end full-suite leg failed; the feature-end cycle refuses "
+            "to certify the feature-end is complete (anti-theater): "
+            + _gate_diagnostic(completed)
+        )
+    return FullSuiteLegRan(pytest_exit_code=completed.returncode)
+
+
+def _repo_has_contract_suite(repo_root: Path) -> bool:
+    """Whether ``repo_root`` carries at least one collectable contract node-id.
+
+    Reuses the single contract-collection seam (``run_contract_gate.
+    _collect_node_ids``, DDD-12 -- no new pytest call site) to ask the genuine
+    question "does this repo have a full suite to run?". Returns True when the
+    collection finds at least one node-id; False when the repo collects nothing
+    (no full suite -> the leg is NOT_APPLICABLE). An untrustworthy collection is
+    treated as "no suite to certify here" rather than crashing the cycle -- the
+    PRESENT-but-RED anti-theater path is the gate run itself, not this presence
+    probe.
+    """
+    from des.cli.run_contract_gate import _collect_node_ids, _CollectionError
+    from des.runtime.interpreter import InterpreterUnavailable
+
+    try:
+        return bool(_collect_node_ids(repo_root))
+    except (_CollectionError, OSError, InterpreterUnavailable):
+        # InterpreterUnavailable: a non-pytest repo (e.g. Rust-only: cargo, no
+        # pytest interpreter) collects no pytest contract suite -> NOT_APPLICABLE,
+        # the cycle PROCEEDS (the documented graceful-degradation intent above).
+        # Aligned with the lib edit Lyra@tsunami applied 2026-06-28 (Ale option-B);
+        # sibling of #73. Mirrors worktree commit 6c9ac9cea (FIX2).
+        return False
+
+
 def _feature_root_from_manifest(feature_dir: Path, repo_root: Path) -> Path:
     """Read the installable ``feature_root`` from the walking-skeleton manifest.
 
@@ -445,8 +585,10 @@ def _gate_diagnostic(completed: subprocess.CompletedProcess[str]) -> str:
 
 def _dispatch(repo_root: Path, argv: list[str]) -> subprocess.CompletedProcess[str]:
     """Run a ``des <argv>`` subcommand over the real ``des`` dispatcher."""
-    return subprocess.run(
-        [python_for(None), "-m", "des.cli.__main__", *argv],
+    return des_spawn(
+        None,
+        "des.cli.__main__",
+        *argv,
         capture_output=True,
         text=True,
         cwd=str(repo_root),
@@ -456,6 +598,8 @@ def _dispatch(repo_root: Path, argv: list[str]) -> subprocess.CompletedProcess[s
 __all__ = [
     "CycleRefusal",
     "CycleSuccess",
+    "FullSuiteLegNotApplicable",
+    "FullSuiteLegRan",
     "WalkingSkeletonNotApplicable",
     "run_feature_end_cycle",
 ]

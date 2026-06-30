@@ -50,6 +50,8 @@ Draw a horizontal line that captures exactly one task from each activity -- the 
 ### Step 6: Slice into releases by outcome
 Group remaining tasks into horizontal bands. Each band targets a specific outcome KPI. Name each release by the outcome it achieves, not the features it contains.
 
+**Value-outcome naming (epic · feature · slice).** The naming rule extends to every level — epic-name, feature-name, slice-name. Each name MUST express the value-outcome (what the user GETS), never the mechanism. A good name conveys the value without reading the body; it is a compression of that item's Value statement / outcome KPI. Self-check before finalizing any name: *"Does this name say the VALUE/outcome, or the MECHANISM?"* — if mechanism, RENAME. Avoid as the primary descriptor: `refactor`, `migration`, `port`, `gate`, `schema`, `wiring`, `shared-surfaces`, `evolution`, `infrastructure`, `-aware`, `-handler` (these are HOW, not the value). Example: `atdd-pure-shared-surfaces` → `F-SUSTAINABLE-TEST-SUITE`; `F-DES-RUNNER-RESOLUTION-TARGET-AWARE` → `F-TESTS-RUN-IN-THE-PROJECTS-OWN-RUNNER`.
+
 ## Outcome-Based Prioritization
 
 Prioritize releases by outcome impact, not feature completeness. Each release slice targets a specific measurable behavior change.
@@ -145,4 +147,5 @@ Release Slice -> Output (features built)
 | Fat walking skeleton | Too many stories crammed into the skeleton. Defeats the purpose. | Skeleton = exactly the minimum to make the flow work. Move extras to Release 1. |
 | Effort-based priority | Ordering by "easy first" instead of outcome impact. Delivers low-value features early. | Prioritize by Value x Urgency / Effort. Easy-but-low-value stories go to later releases. |
 | Orphan stories | Stories with no outcome link. No measurable behavior change targeted. | Every story traces to an outcome KPI. If it cannot, question its value. |
+| Mechanism-named item | Epic/feature/slice/release named after the mechanism (`refactor`, `migration`, `port`, `gate`, `-aware`, `-handler`) instead of the value. Children never converge to a coherent outcome. | Rename to the value-outcome via the Step 6 self-check. |
 | Activity gaps | Some activities have no tasks in a release slice. Breaks end-to-end coherence. | Walking skeleton covers all activities. Later releases may skip activities only if those are already sufficient. |

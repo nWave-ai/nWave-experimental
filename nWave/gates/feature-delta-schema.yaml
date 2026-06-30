@@ -1,0 +1,52 @@
+# Gate-contract: feature-delta-schema (feature-delta-section-schema, ADR-FLOW-007)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=feature-delta-schema.
+
+gate_id: feature-delta-schema
+responsibility: |
+  The feature-delta typed section-schema algebra (5-constructor closed SectionType
+  + schema-totality / section-independence laws + consumed_by routing-as-data
+  registry) with 3 total pure projections: gate-verify (fail-closed P1),
+  wave-injection (pure consumed_by filter P2), output-contract (section write spec
+  P3). Realized as the des subcommand {describe, verify, inject, contract}.
+  Thin-additive: P1 delegates per-Table to the shipped validate_feature_delta
+  validators; the Composite Architecture-&-Contract-Tests section is the sole new
+  validator. Pure Python + filesystem, hooks-only (Invariant 4), no engine; verdicts
+  to stdout, fail-closed INDETERMINATE on undecodable bytes (ADR-FLOW-007).
+module: des.cli.feature_delta_schema
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --types
+    required: false
+    type: bool
+    help: "describe: list the five section-type constructors."
+  - name: --consumed-by
+    required: false
+    type: bool
+    help: "describe: list each section's consumed_by wave set."
+  - name: --wave
+    required: false
+    type: string
+    help: "inject: the wave whose consumed sections to project (wave-injection)."
+
+log_events: []
+
+failure_modes:
+  - error_class: UsageOrMalformed
+    exit_code: 2
+    remediation: "Supply a valid subcommand {describe, verify, inject, contract} plus its arguments."
+  - error_class: VerifyIndeterminate
+    exit_code: 4
+    remediation: "verify: the feature-delta bytes were undecodable -> INDETERMINATE (degrade-LOUD); fix the file encoding."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

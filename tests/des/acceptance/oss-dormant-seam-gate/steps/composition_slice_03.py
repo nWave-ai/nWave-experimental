@@ -97,20 +97,15 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from des.cli import dormant_seam_gate
+from tests.common.in_process_cli import run_cli_in_process
+
 from .domain_types import EmissionChannel
 
-
-# tests/des/acceptance/oss-dormant-seam-gate/steps/composition_slice_03.py
-#   parents[5] = REPO_ROOT
-REPO_ROOT = Path(__file__).resolve().parents[5]
-
-# The production CLI module under test. slice-03 hardens the binding-resolution ON it.
-GATE_MODULE = "des.cli.dormant_seam_gate"
 
 _FEATURE_ID = "probe-dormant-precision-feat"
 
@@ -488,29 +483,34 @@ class DormantSeamPrecisionComposition:
         assert self._repo_root is not None
         assert self._feature_dir is not None
         assert self._base_ref is not None
-        env = dict(os.environ)
-        env["NWAVE_FRESHNESS"] = ""
-        env["PIPENV_DONT_LOAD_ENV"] = "1"
-        env["PYTHONPATH"] = (
-            str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
-        )
-        self._completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                GATE_MODULE,
-                "--feature-dir",
-                str(self._feature_dir),
-                "--repo-root",
-                str(self._repo_root),
-                "--delta-base-ref",
-                self._base_ref,
-            ],
-            capture_output=True,
-            text=True,
-            cwd=str(self._repo_root),
-            env=env,
-        )
+        argv = [
+            "--feature-dir",
+            str(self._feature_dir),
+            "--repo-root",
+            str(self._repo_root),
+            "--delta-base-ref",
+            self._base_ref,
+        ]
+        # NWAVE_FRESHNESS="" + PIPENV_DONT_LOAD_ENV=1 so the freshness auto-skip /
+        # dotenv do not mask the gate verdict (env-parity). Set on os.environ
+        # around the in-process call, restored in `finally` -- shared-process safe.
+        prior = {
+            key: os.environ.get(key)
+            for key in ("NWAVE_FRESHNESS", "PIPENV_DONT_LOAD_ENV")
+        }
+        os.environ["NWAVE_FRESHNESS"] = ""
+        os.environ["PIPENV_DONT_LOAD_ENV"] = "1"
+        try:
+            exit_code, stdout, stderr = run_cli_in_process(
+                argv, cwd=str(self._repo_root), main=dormant_seam_gate.main
+            )
+        finally:
+            for key, value in prior.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+        self._completed = subprocess.CompletedProcess(argv, exit_code, stdout, stderr)
 
     def _require_completed(self) -> subprocess.CompletedProcess[str]:
         assert self._completed is not None, (

@@ -30,8 +30,8 @@ _FEATURE_ROOT = Path(__file__).resolve().parent.parent
 if str(_FEATURE_ROOT) not in sys.path:
     sys.path.insert(0, str(_FEATURE_ROOT))
 
-from pytest_bdd import given, then, when  # noqa: E402
-from steps.domain_types import (  # noqa: E402
+from pytest_bdd import given, then, when
+from steps.domain_types import (
     FreshnessOptOut,
     GateVerdict,
     SourceTreeKind,
@@ -64,7 +64,7 @@ parse_structured_event_line = sys.modules[
     _FIX_DES_GATE_SYNC_CONFTEST_MOD_NAME
 ].parse_structured_event_line
 
-from tests.common.state_delta import (  # noqa: E402
+from tests.common.state_delta import (
     assert_state_delta,
     set_to,
 )

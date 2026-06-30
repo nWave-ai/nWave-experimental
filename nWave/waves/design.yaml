@@ -1,0 +1,53 @@
+# DESIGN wave-contract — canonical, flavor-independent registry entry.
+#
+# f-design-devops-review-gate slice-01 (walking skeleton). Carries the DESIGN
+# review-verdict gate to parity with DISCUSS: the gate-out stack runs
+# verify-design-review so a DESIGN return is mechanically gated by an
+# artefact-current solution-architect-reviewer verdict (brief §6 / §7 surface 1).
+#
+# Per ADR-FLOW-006 (D1 the registry, D2 the gate_stack shape, D6 the registry is
+# the SOLE gate-stack source). One file per wave carries the two symmetric SSOTs
+# the wave prose points at instead of restating:
+#
+#   gate_stack      (SSOT-A) — the gate-in / gate-out ordered stacks. The DESIGN
+#                   gate-out runs the review-verdict CONSUMER veto.
+#   output_contract (SSOT-B) — what the DESIGN wave must produce (the [REF]
+#                   section list), migrated from
+#                   schemas/feature-delta-tier1-sections.yaml DESIGN
+#                   required_sections.
+#
+# Row schema = the EXISTING GateInvocation (nWave/flavors/_schema.yaml
+# $defs/GateInvocation), reused verbatim — NOT a new shape (mirrors
+# nWave/waves/discuss.yaml).
+
+wave: design
+
+gate_stack:
+  gate-out:
+    - gate_id: verify-design-review
+      on_failure: block
+
+# output_contract (SSOT-B) — the DESIGN [REF] section list, migrated VERBATIM
+# from schemas/feature-delta-tier1-sections.yaml waves.DESIGN.required_sections.
+output_contract:
+  ref_sections:
+    - id: DDD List
+      grade: mandatory
+    - id: Component Decomposition
+      grade: mandatory
+    - id: Driving Ports
+      grade: mandatory
+    - id: Driven Ports + Adapters
+      grade: mandatory
+    - id: Technology Choices
+      grade: mandatory
+    - id: Decisions Table
+      grade: mandatory
+    - id: Reuse Analysis
+      grade: mandatory
+    - id: Open Questions
+      grade: mandatory
+  files:
+    - path: "docs/feature/{feature_id}/feature-delta.md"
+      grade: mandatory
+      inline_in_feature_delta: true

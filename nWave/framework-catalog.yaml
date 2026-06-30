@@ -1,5 +1,5 @@
 name: nWave
-version: 3.15.1
+version: 3.21.0
 description: "Comprehensive DISCOVER\u2192DIVERGE\u2192DISCUSS\u2192SPIKE\u2192DESIGN\u2192\
   DEVOPS\u2192DISTILL\u2192DELIVER methodology with visual architecture lifecycle\
   \ management"
@@ -11,7 +11,6 @@ wave_phases:
 - DISCOVER
 - DIVERGE
 - DISCUSS
-- SPIKE
 - DESIGN
 - DEVOPS
 - DISTILL
@@ -133,6 +132,20 @@ agents:
     role: agent_design_review
     public: true
     description: Reviews agent specifications for compliance and quality
+  plugin-validator:
+    wave: CROSS_WAVE
+    priority: 2
+    role: plugin_structure_review
+    public: true
+    description: Validates Claude Code plugin structure and schema (manifest, layout,
+      hook/command/agent registration) for deliverable_type plugin
+  skill-reviewer:
+    wave: CROSS_WAVE
+    priority: 2
+    role: skill_quality_review
+    public: true
+    description: Reviews SKILL.md quality (structure, scope, frontmatter); reuses
+      nw-agent-builder skill assets for deliverable_type plugin/skill
   ddd-architect-reviewer:
     wave: CROSS_WAVE
     priority: 2
@@ -263,7 +276,7 @@ commands:
     description: Conducts Jobs-to-be-Done analysis, UX journey design, and requirements
       gathering through interactive discovery. Use when starting feature analysis,
       defining user stories, or creating acceptance criteria.
-    argument_hint: '[feature-name] - Optional: --phase=[jtbd|journey|requirements]
+    argument_hint: '[feature-name] - Optional: --epic=[epic-id] --phase=[jtbd|journey|requirements]
       --interactive=[high|moderate] --output-format=[md|yaml]'
     agents:
     - product-owner
@@ -278,18 +291,22 @@ commands:
     - requirements_document
     - user_stories
   spike:
-    description: Runs a timeboxed spike to validate one core assumption before DESIGN.
-      Use after DISCUSS when the feature involves a new mechanism, performance requirement,
-      or external integration.
+    description: "[DEPRECATED \u2014 use /nw-design with analysis focus instead] Runs\
+      \ a timeboxed spike to validate one core assumption before DESIGN. Use after\
+      \ DISCUSS when the feature involves a new mechanism, performance requirement,\
+      \ or external integration."
     argument_hint: '[feature-description] - Example: "wave-matrix -- derive feature
       status from pytest + filesystem"'
     agents:
     - software-crafter
     - functional-software-crafter
-    wave: SPIKE
+    wave: CROSS_WAVE
     outputs:
     - spike_report
     - validated_assumption
+    deprecated_in_version: 3.16.0
+    deprecation_note: SPIKE is no longer a canonical wave phase. Use DESIGN with pre-design
+      spike/analysis embedded instead.
   design:
     description: Designs system architecture with C4 diagrams and technology selection.
       Use when defining component boundaries, choosing tech stacks, or creating architecture
@@ -305,7 +322,7 @@ commands:
     description: Creates E2E acceptance tests in Given-When-Then format from requirements
       and architecture. Use when preparing executable specifications before implementation.
     argument_hint: '[story-id] - Optional: --test-framework=[cucumber|specflow|pytest-bdd]
-      --integration=[real-services|mocks] --accept-pilot-scope-extension'
+      --integration=[real-services|mocks]'
     agents:
     - acceptance-designer
     wave: DISTILL
@@ -414,8 +431,8 @@ commands:
     agents: []
   execute:
     description: Dispatches one unit of DELIVER work to a specialized agent for TDD
-      execution. Use to run a step (classic workflow.mode, a roadmap.json plan) or
-      one carpaccio slice (atdd_pure workflow.mode).
+      execution. Use to run a step (classic workflow mode, a roadmap.json plan) or
+      one carpaccio slice (ATDD-pure workflow mode).
     argument_hint: '[agent] [feature-id] [step-id] - Example: @nw-software-crafter
       "auth-upgrade" "01-01"'
     outputs:

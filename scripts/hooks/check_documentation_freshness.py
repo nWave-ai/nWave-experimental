@@ -27,6 +27,10 @@ _spec = importlib.util.spec_from_file_location(
     "docgen", _ROOT / "scripts" / "docgen.py"
 )
 _docgen = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
+# Register BEFORE exec_module (canonical importlib recipe): @dataclass under
+# `from __future__ import annotations` resolves string annotations via
+# sys.modules[cls.__module__] — unregistered, dataclasses raises AttributeError.
+sys.modules["docgen"] = _docgen
 _spec.loader.exec_module(_docgen)  # type: ignore[union-attr]
 check_pages = _docgen.check_pages
 run_pipeline = _docgen.run_pipeline

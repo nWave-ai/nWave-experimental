@@ -49,17 +49,18 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter_ns
 
+from tests.common.in_process_cli import run_hook_in_process
+
+from scripts.hooks import git_stash_guard
+
 
 # Repo root: tests/installer/acceptance/<feature>/steps/composition.py -> up five levels.
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_GUARD_MODULE = "scripts.hooks.git_stash_guard"
 
 # Kill-switch env var: when set to a truthy value, the guard approves the
 # `git stash` invocation and emits an audited GitStashBypassUsed event.
@@ -211,25 +212,32 @@ class GitStashGuardFixture:
         before_events = self._read_audit_log_events()
         stdin_payload = json.dumps(self._prepared_hook_event)
         start_ns = perf_counter_ns()
-        completed = subprocess.run(
-            [sys.executable, "-m", _GUARD_MODULE],
-            cwd=str(_REPO_ROOT),
-            input=stdin_payload,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-            env={
-                **os.environ,
-                _TARGET_ROOT_ENV: str(self._target_root),
-            },
-        )
+        # In-process analogue of ``python -m scripts.hooks.git_stash_guard`` reading
+        # the hook event on stdin. The guard spawns NO git (it regex-inspects the
+        # command string only) and locates its audit log via _TARGET_ROOT_ENV, NOT
+        # cwd -- so the former GIT_* env scrub (belt-and-braces over the conftest
+        # session scrub) is unnecessary in-process. _TARGET_ROOT_ENV is the lone
+        # load-bearing override (NWAVE_GIT_STASH_ALLOW is set on os.environ by the
+        # given steps); set it on os.environ and restore in finally.
+        prior_target_root = os.environ.get(_TARGET_ROOT_ENV)
+        os.environ[_TARGET_ROOT_ENV] = str(self._target_root)
+        try:
+            exit_code, out, err = run_hook_in_process(
+                git_stash_guard.main,
+                stdin_text=stdin_payload,
+                cwd=str(_REPO_ROOT),
+            )
+        finally:
+            if prior_target_root is None:
+                os.environ.pop(_TARGET_ROOT_ENV, None)
+            else:
+                os.environ[_TARGET_ROOT_ENV] = prior_target_root
         duration_ms = (perf_counter_ns() - start_ns) / 1_000_000
         after_events = self._read_audit_log_events()
         return HookInvocation(
-            exit_code=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
+            exit_code=exit_code,
+            stdout=out or "",
+            stderr=err or "",
             duration_ms=duration_ms,
             audit_events_before=before_events,
             audit_events_after=after_events,

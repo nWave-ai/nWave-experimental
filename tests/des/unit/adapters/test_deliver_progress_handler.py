@@ -14,6 +14,7 @@ Universe: resolved roadmap_path / exec_log_path used to read progress state.
 from __future__ import annotations
 
 import json
+import os
 import subprocess as sp
 
 
@@ -50,18 +51,43 @@ def _make_hook_input(transcript_path: str, cwd: str) -> str:
     )
 
 
+# Belt-and-braces mirror of the session scrub in tests/conftest.py
+# (_scrub_git_repo_override_env): an inherited GIT_DIR (linked-worktree
+# pre-push exports an absolute one) would redirect these git calls from the
+# tmp_path repo onto the REAL shared repository.
+_GIT_OVERRIDE_VARS = (
+    "GIT_DIR",
+    "GIT_COMMON_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+)
+
+
+def _no_git_env():
+    return {k: v for k, v in os.environ.items() if k not in _GIT_OVERRIDE_VARS}
+
+
 def _git_init(path):
-    sp.run(["git", "init"], cwd=str(path), capture_output=True)
+    env = _no_git_env()
+    sp.run(["git", "init"], cwd=str(path), capture_output=True, env=env)
     sp.run(
         ["git", "config", "user.email", "t@t.com"],
         cwd=str(path),
         capture_output=True,
+        env=env,
     )
-    sp.run(["git", "config", "user.name", "T"], cwd=str(path), capture_output=True)
+    sp.run(
+        ["git", "config", "user.name", "T"],
+        cwd=str(path),
+        capture_output=True,
+        env=env,
+    )
     sp.run(
         ["git", "commit", "--allow-empty", "--no-verify", "-m", "chore: init"],
         cwd=str(path),
         capture_output=True,
+        env=env,
     )
 
 
@@ -70,6 +96,7 @@ def _add_worktree(master, wt, branch="feat"):
         ["git", "worktree", "add", "-b", branch, str(wt), "HEAD"],
         cwd=str(master),
         capture_output=True,
+        env=_no_git_env(),
     )
 
 

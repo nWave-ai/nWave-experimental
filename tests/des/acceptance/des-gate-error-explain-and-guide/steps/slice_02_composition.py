@@ -66,15 +66,14 @@ self-contained and independent of slice-01 live runs.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .composition import _run_contract_gate_in_process
 from .domain_types import (
     ExplainAndGuideField,
     FeatureId,
@@ -85,8 +84,6 @@ from .domain_types import (
 # tests/des/acceptance/des-gate-error-explain-and-guide/steps/slice_02_composition.py
 #   parents[5] = REPO_ROOT
 REPO_ROOT = Path(__file__).resolve().parents[5]
-
-CONTRACT_GATE_MODULE = "des.cli.run_contract_gate"
 
 # Synthetic identifiers shared across all slice-02 substrates.
 _SYNTHETIC_FEATURE_ID = FeatureId("explain-guide-at-s2-substrate")
@@ -288,29 +285,14 @@ class Slice02Composition:
         tmp = self._require_tmp()
         self._universe_before = self.capture_universe()
 
-        env = dict(os.environ)
-        env["NWAVE_FRESHNESS"] = "skip"
-        env["PIPENV_DONT_LOAD_ENV"] = "1"
-        env["PYTHONPATH"] = (
-            str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+        exit_code, out, err = _run_contract_gate_in_process(
+            self._feature_id, self._entering_slice, tmp
         )
-
-        self._completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                CONTRACT_GATE_MODULE,
-                "--feature-id",
-                str(self._feature_id),
-                "--entering-slice",
-                str(self._entering_slice),
-                "--repo",
-                str(tmp),
-            ],
-            capture_output=True,
-            text=True,
-            cwd=str(tmp),
-            env=env,
+        self._completed = subprocess.CompletedProcess(
+            args=["des", "run-contract-gate"],
+            returncode=exit_code,
+            stdout=out,
+            stderr=err,
         )
 
         stdout = self._completed.stdout.strip()

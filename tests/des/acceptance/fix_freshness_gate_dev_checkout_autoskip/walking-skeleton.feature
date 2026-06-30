@@ -7,7 +7,7 @@
 #         AT-03: audit-trail (auto-skip emits a NEW structured event distinct
 #                from the existing operator-set NWAVE_FRESHNESS=skip event).
 #
-# RCA SOURCE: docs/backlog.md friction #16 (autonomous night 2026-05-24). The
+# RCA SOURCE: docs/product/backlog.md friction #16 (autonomous night 2026-05-24). The
 # `des` CLI dispatcher refuses every invocation with DEGRADED + "no install
 # manifest — reinstall required" whenever the installed copy at
 # `~/.claude/lib/python/des/` is out of sync with repo `src/des/`. Dev workflow

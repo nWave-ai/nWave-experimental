@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import hmac
 import io
 import json
 import os
@@ -34,7 +33,10 @@ from des.cli import at_review_verdict
 from scripts.cli import carpaccio_slice_gate
 
 
-_FIXTURE_KEY = b"carpaccio-entry-path-fix-signing-key"
+# The legacy signing-key env var — referenced ONLY to SCRUB it around producer
+# and gate runs (oss-review-verdict-demotion S2: the keyless producer never
+# resolves a key; the scrub guarantees a genuinely keyless run even on a
+# machine that still exports the var). No key file is provisioned anywhere.
 _SIGNING_KEY_ENV = "NWAVE_REVIEWER_SIGNING_KEY"
 
 
@@ -57,12 +59,6 @@ def _write_config(repo: Path) -> None:
     )
 
 
-def _write_signing_key(repo: Path) -> None:
-    key_file = repo / ".nwave" / "secrets" / "reviewer-signing.key"
-    key_file.parent.mkdir(parents=True, exist_ok=True)
-    key_file.write_bytes(_FIXTURE_KEY)
-
-
 def _write_feature_delta(repo: Path, feature_id: str, rows: str) -> None:
     delta = repo / "docs" / "feature" / feature_id / "feature-delta.md"
     delta.parent.mkdir(parents=True, exist_ok=True)
@@ -76,10 +72,11 @@ def _write_feature_delta(repo: Path, feature_id: str, rows: str) -> None:
     )
 
 
-def _signed_record(
+def _keyless_record(
     slice_id: str, at_ids: list[str], content_hash: str
 ) -> dict[str, object]:
-    record: dict[str, object] = {
+    """Build a keyless ATReviewVerdict record (post-demotion shape)."""
+    return {
         "event": "ATReviewVerdict",
         "schema_version": "1.0.0",
         "slice_id": slice_id,
@@ -90,12 +87,6 @@ def _signed_record(
         "timestamp": "2026-05-20T00:00:00Z",
         "findings_summary": [],
     }
-    record["hmac_sha256"] = hmac.new(
-        _FIXTURE_KEY,
-        carpaccio_slice_gate.canonical_at_review_json(record),
-        hashlib.sha256,
-    ).hexdigest()
-    return record
 
 
 def _write_ledger(repo: Path, feature_id: str, record: dict[str, object]) -> None:
@@ -161,7 +152,6 @@ def test_f04_gate_resolves_feature_files_by_feature_tag_outside_cli_tree(
     repo = tmp_path / "repo"
     feature_id = "fix-installer-private-skill-leak"
     _write_config(repo)
-    _write_signing_key(repo)
     _write_feature_delta(
         repo,
         feature_id,
@@ -189,7 +179,7 @@ def test_f04_gate_resolves_feature_files_by_feature_tag_outside_cli_tree(
     _write_ledger(
         repo,
         feature_id,
-        _signed_record("slice-01", ["AT-1", "AT-2"], _normalized_hash(2)),
+        _keyless_record("slice-01", ["AT-1", "AT-2"], _normalized_hash(2)),
     )
 
     exit_code, payload = _run_gate(repo, feature_id, "slice-01")
@@ -205,7 +195,6 @@ def test_f04_gate_ignores_feature_files_for_other_features(tmp_path: Path) -> No
     repo = tmp_path / "repo"
     feature_id = "feature-under-test"
     _write_config(repo)
-    _write_signing_key(repo)
     _write_feature_delta(
         repo,
         feature_id,
@@ -232,7 +221,7 @@ def test_f04_gate_ignores_feature_files_for_other_features(tmp_path: Path) -> No
     _write_ledger(
         repo,
         feature_id,
-        _signed_record("slice-01", ["AT-1"], _normalized_hash(1)),
+        _keyless_record("slice-01", ["AT-1"], _normalized_hash(1)),
     )
 
     exit_code, payload = _run_gate(repo, feature_id, "slice-01")
@@ -254,7 +243,6 @@ def test_f03b_slice_with_zero_scenarios_is_rejected_not_vacuously_passed(
     repo = tmp_path / "repo"
     feature_id = "feature-zero-scenarios"
     _write_config(repo)
-    _write_signing_key(repo)
     _write_feature_delta(
         repo,
         feature_id,
@@ -276,7 +264,7 @@ def test_f03b_slice_with_zero_scenarios_is_rejected_not_vacuously_passed(
     )
     # A signed verdict for the empty AT set -- the vacuous-pass attack vector.
     empty_hash = hashlib.sha256(b"").hexdigest()
-    _write_ledger(repo, feature_id, _signed_record("slice-01", [], empty_hash))
+    _write_ledger(repo, feature_id, _keyless_record("slice-01", [], empty_hash))
 
     exit_code, payload = _run_gate(repo, feature_id, "slice-01")
 
@@ -300,7 +288,6 @@ def test_f02_at_review_verdict_cli_records_verdict_the_gate_then_accepts(
     repo = tmp_path / "repo"
     feature_id = "feature-cli-roundtrip"
     _write_config(repo)
-    _write_signing_key(repo)
     _write_feature_delta(
         repo,
         feature_id,
@@ -352,7 +339,6 @@ def test_f02_at_review_verdict_cli_needs_revision_writes_nothing(
     repo = tmp_path / "repo"
     feature_id = "feature-needs-revision"
     _write_config(repo)
-    _write_signing_key(repo)
     _write_feature_delta(
         repo,
         feature_id,

@@ -56,10 +56,13 @@ machinery. Sad path (git-absent) is one explicit named example (Mandate 11).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from des.cli.run_contract_gate import main as _contract_gate_main
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types_slice_02 import (
     COMMITTED_SCOPE_INDETERMINATE_EVENT,
@@ -77,6 +80,32 @@ _PRODUCER_PASS_EXIT = 0
 _VERIFY_VERIFIED_EXIT = 0
 _VERIFY_UNVERIFIED_EXIT = 1
 _VERIFY_REFUSE_EXIT = 2
+
+
+def _run_contract_gate(flags: list[str]) -> subprocess.CompletedProcess[str]:
+    """Drive the `des run-contract-gate` EDGE in-process (Mandate-13 driving-port).
+
+    Replaces the former des.cli.run_contract_gate module-form subprocess
+    (env=`_gate_env()`): the producer resolves every path from its absolute
+    `--repo`/`--commit` args, so cwd is irrelevant; `NWAVE_FRESHNESS=skip` is set
+    on `os.environ` for the call (restored after) to isolate the slice-01
+    install-freshness gate exactly as the subprocess env did (DV-1). Returns a
+    `CompletedProcess` so the pure classifiers stay byte-for-byte unchanged.
+    """
+    prior = os.environ.get("NWAVE_FRESHNESS")
+    os.environ["NWAVE_FRESHNESS"] = "skip"
+    try:
+        exit_code, stdout, stderr = run_cli_in_process(
+            flags, cwd=Path.cwd(), main=_contract_gate_main
+        )
+    finally:
+        if prior is None:
+            os.environ.pop("NWAVE_FRESHNESS", None)
+        else:
+            os.environ["NWAVE_FRESHNESS"] = prior
+    return subprocess.CompletedProcess(
+        args=list(flags), returncode=exit_code, stdout=stdout, stderr=stderr
+    )
 
 
 def _iter_json_events(combined: str) -> list[dict]:
@@ -192,19 +221,7 @@ class ContractGateFixture:
         the producer-fallback behavior is observed without freshness chatter
         confounding the assertion (DV-1: per-subprocess tests set skip).
         """
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "des.cli.run_contract_gate",
-                "--repo",
-                tree.root_path,
-            ],
-            capture_output=True,
-            text=True,
-            env=self._gate_env(),
-            timeout=120,
-        )
+        completed = _run_contract_gate(["--repo", tree.root_path])
         run = self._classify_producer_run(completed)
         self.last_producer_run = run
         return run
@@ -227,21 +244,8 @@ class ContractGateFixture:
         digest = self._committed_scope_digest(root)
         self._amend_with_trailer(root, digest)
         pinned = self._git(root, "rev-parse", "HEAD").strip()
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "des.cli.run_contract_gate",
-                "--repo",
-                str(root),
-                "--commit",
-                pinned,
-                "--verify-gate-scope",
-            ],
-            capture_output=True,
-            text=True,
-            env=self._gate_env(),
-            timeout=120,
+        completed = _run_contract_gate(
+            ["--repo", str(root), "--commit", pinned, "--verify-gate-scope"]
         )
         return VerifyRun(
             exit_code=completed.returncode,
@@ -335,19 +339,8 @@ class ContractGateFixture:
         construction, the committed-tree digest — so once the producer is
         committed-scope, the round-trip verifies (AT-03).
         """
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "des.cli.run_contract_gate",
-                "--repo",
-                str(repo),
-                "--committed-scope-digest",
-            ],
-            capture_output=True,
-            text=True,
-            env=self._gate_env(),
-            timeout=120,
+        completed = _run_contract_gate(
+            ["--repo", str(repo), "--committed-scope-digest"]
         )
         for line in (ln.strip() for ln in completed.stdout.splitlines()):
             if len(line) == 64 and all(c in "0123456789abcdef" for c in line):
@@ -359,19 +352,6 @@ class ContractGateFixture:
         )
 
     # --- git as a test-harness dependency (NOT production import) ----------
-
-    @staticmethod
-    def _gate_env() -> dict[str, str]:
-        """Env for the gate subprocess: inherit + isolate the freshness gate.
-
-        `NWAVE_FRESHNESS=skip` short-circuits the slice-01 install-freshness gate
-        so the slice-02 committed-scope behavior is observed in isolation (DV-1).
-        """
-        import os
-
-        env = dict(os.environ)
-        env["NWAVE_FRESHNESS"] = "skip"
-        return env
 
     @staticmethod
     def _write_committed_contract(root: Path) -> None:

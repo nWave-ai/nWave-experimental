@@ -196,7 +196,9 @@ class ExitGateComposition:
 
     def _fresh_collect_only_digest(self) -> str:
         """A fresh gate-scope digest from `run_contract_gate.py --collect-only`."""
-        return self._run_contract_gate(["--collect-only", "--print-digest"])[1].strip()
+        return self._run_contract_gate_digest(
+            ["--collect-only", "--print-digest"]
+        ).strip()
 
     # --- exit-gate evaluation (driving port) ---------------------------------
 
@@ -218,24 +220,40 @@ class ExitGateComposition:
         )
 
     def _run_verify_completeness(self) -> tuple[int, str]:
-        """E1: invoke `verify_slice_commit_completeness` for the HEAD commit."""
-        return self._invoke_cli(
+        """E1: invoke `verify_slice_commit_completeness` for the HEAD commit.
+
+        The verdict is asserted over the human-facing output, so stdout and stderr
+        are combined here -- only the digest path needs the streams kept apart.
+        """
+        exit_code, stdout, stderr = self._invoke_cli(
             verify_slice_commit_completeness_main,
             ["--repo", str(self.repo_dir), "--commit", "HEAD"],
         )
+        return exit_code, stdout + stderr
 
     def _run_verify_gate_scope(self) -> tuple[int, str]:
-        """E2: verify the commit's `Gate-Scope:` digest matches a fresh digest."""
-        return self._invoke_cli(
+        """E2: verify the commit's `Gate-Scope:` digest matches a fresh digest.
+
+        The verdict is asserted over the human-facing output, so stdout and stderr
+        are combined here -- only the digest path needs the streams kept apart.
+        """
+        exit_code, stdout, stderr = self._invoke_cli(
             run_contract_gate_main,
             ["--repo", str(self.repo_dir), "--commit", "HEAD", "--verify-gate-scope"],
         )
+        return exit_code, stdout + stderr
 
-    def _run_contract_gate(self, extra_args: list[str]) -> tuple[int, str]:
-        """Invoke `run_contract_gate` with `extra_args` against the repo."""
-        return self._invoke_cli(
+    def _run_contract_gate_digest(self, extra_args: list[str]) -> str:
+        """Run `run_contract_gate` with `extra_args` and return its stdout digest.
+
+        Reads stdout ONLY: the `Gate-Scope:` digest is emitted to stdout while
+        event/log lines go to stderr. Combining them would yield a multi-line blob
+        that `verify_slice_commit_completeness` reads as `absent`.
+        """
+        _exit_code, stdout, _stderr = self._invoke_cli(
             run_contract_gate_main, ["--repo", str(self.repo_dir), *extra_args]
         )
+        return stdout
 
     # --- universe capture (Mandate 8) ----------------------------------------
 
@@ -267,12 +285,23 @@ class ExitGateComposition:
         return completed.stdout
 
     @staticmethod
-    def _invoke_cli(entry, argv: list[str]) -> tuple[int, str]:
-        """Invoke a CLI `main(argv)` capturing exit code + combined output."""
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+    def _invoke_cli(entry, argv: list[str]) -> tuple[int, str, str]:
+        """Invoke a CLI `main(argv)` capturing exit code, stdout, and stderr.
+
+        stdout and stderr are kept SEPARATE: the SUT writes its machine-readable
+        `Gate-Scope:` digest to stdout and its event/log lines (`WholeTreeRunnerResolved`,
+        `GateScopeDigest`, `des.runtime.freshness.autoskipped`) to stderr -- the
+        `_emit_runner_aware_digest` contract. A digest reader MUST take stdout only;
+        merging stderr in pollutes the digest into a multi-line blob.
+        """
+        out_buffer = io.StringIO()
+        err_buffer = io.StringIO()
+        with (
+            contextlib.redirect_stdout(out_buffer),
+            contextlib.redirect_stderr(err_buffer),
+        ):
             exit_code = entry(argv)
-        return exit_code, buffer.getvalue()
+        return exit_code, out_buffer.getvalue(), err_buffer.getvalue()
 
 
 # slice_id -> digest resolver. Module-level dispatch keeps `_resolve_gate_scope_digest`

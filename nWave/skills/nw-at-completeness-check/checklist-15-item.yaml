@@ -10,12 +10,19 @@
 # SUT (e.g. C7c for non-concurrent code) count as passing when explicit rationale
 # is provided. Tier-2 S-family items are mandatory unconditionally.
 
-version: "1.2.0"
+version: "1.3.0"
 total_items: 15           # Tier-1 only; preserved for downstream consumers
 thresholds:
   incomplete_below: 10
   acceptable_range: [10, 12]
   complete_at_or_above: 13
+  # ZERO-obligation override (C3): independent of the count. If any iterative
+  # surface lacks an explicit, first, recognizably-named Zero/empty scenario, the
+  # verdict is INCOMPLETE even at >=13/15. Hard block, not a documentable gap.
+  zero_obligation_override:
+    applies_to: C3
+    rule: "missing explicit Zero scenario on any iterative surface -> INCOMPLETE"
+    citation: "Grenning ZOMBIES — the Z [3a]"
 
 categories:
   - id: C1
@@ -27,8 +34,9 @@ categories:
     upstream_wave: DISCUSS
     upstream_artifact: "state diagram in user-stories Elevator Pitch + DoD"
   - id: C3
-    name: "Count Cardinality (0/1/N)"
-    anchor: "Hendrickson Count [3]; Adzic key examples [5]"
+    name: "Count Cardinality (0/1/N) — Zero is an OBLIGATION"
+    anchor: "Grenning ZOMBIES [3a]; Hendrickson Count [3]; Adzic key examples [5]"
+    zero_obligation: true   # explicit, first, recognizably-named Zero scenario per iterative surface; absence -> INCOMPLETE
   - id: C4
     name: "CRUD-Lifecycle & Idempotency"
     anchor: "Hendrickson CRUD [3]; Hillel Wayne PBT+Contracts [6]"
@@ -69,6 +77,11 @@ checks:
     category: C3
     description: "parametrize/PBT covering n in {0, 1, many} for each collection input"
     mandatory: true
+    applicability: "only when the SUT exposes at least one iterative surface (collection/loop/set input)"
+    zero_obligation:
+      rule: "explicit Zero/empty scenario per iterative surface — first + recognizably named"
+      verdict_on_absence: INCOMPLETE   # overrides Tier-1 count
+      citation: "Grenning ZOMBIES — the Z [3a]"
   - id: C4a
     category: C4
     description: "Each mutating op has 'apply twice' AT (idempotency or correct non-idempotency)"
@@ -188,7 +201,7 @@ structural_invariants:
     failure_kind: AT_GAP_IN_DELIVERY_SCOPE
     failure_severity: BLOCKER
     rationale: >
-      Hexagonal boundary discipline + atdd_pure paradigm (Layer 3 only). Direct-
+      Hexagonal boundary discipline + ATDD-pure paradigm (Layer 3 only). Direct-
       domain import + function-boundary invocation collapses the AT into a
       Layer-1 unit test masquerading as AT — violates Mandate-13. Recursive
       compounding: every future DISTILL paradigm-compliant via this invariant.
@@ -209,7 +222,7 @@ structural_invariants:
       / Layer 4 wiring_e2e)". Never recommend deletion — restructure preserves
       behavioral coverage at the right tier.
     connects_to:
-      - "F-ATDD-PURE-AT-DIRECT-DOMAIN-TESTING-ANTI-PATTERN (friction #32, docs/backlog.md 2026-05-25)"
+      - "F-ATDD-PURE-AT-DIRECT-DOMAIN-TESTING-ANTI-PATTERN (friction #32, docs/product/backlog.md 2026-05-25)"
       - "F-DIRECT-DOMAIN-TEST-RETRO-AUDIT (HIGH, separate retro audit of legacy violations)"
 
   - id: S3
@@ -267,5 +280,5 @@ structural_invariants:
       pre-commit) yet not functioning e2e. Two independent troubleshooter RCAs converged
       on this shared-asset gap.
     connects_to:
-      - "D11 F-OSS-UPSTREAM-WAVE-GATE-PAIRS (docs/backlog.md, DELTA 2026-06-07) legs (b)+(c)"
+      - "D11 F-OSS-UPSTREAM-WAVE-GATE-PAIRS (docs/product/backlog.md, DELTA 2026-06-07) legs (b)+(c)"
       - "nw-distill SKILL.md § Dormant-Seam Reconciliation (Leg b cross-table + Leg c walking-skeleton-real-entry-point)"

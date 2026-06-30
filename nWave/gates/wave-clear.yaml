@@ -1,0 +1,53 @@
+# Gate-contract: wave-clear (fix-wave-bypass-recovery-truthful slice-02, JOB-019)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=wave-clear.
+#
+# Retroactive per-gate file (2026-06-15): authored when the wave-clear catalog
+# entry was reconciled (it was omitted when wave-clear was added to _REGISTRY by
+# commit c89be75d1). Source of truth for the contract: src/des/cli/wave_clear.py
+# + src/des/application/wave_activation_service.py::clear_floor.
+
+gate_id: wave-clear
+responsibility: |
+  Operator command: clear the wave-active floor through the one sanctioned,
+  loud, audited path instead of hand-editing .nwave/wave-active/active.json.
+  Reuses the shipped WaveActiveWriter.clear via
+  WaveActivationService.clear_floor. The human, not the tool, authorizes the
+  clear (--reason is required); every non-usage run appends a wave.floor.clear*
+  audit record (who + why) under --project-root.
+module: des.cli.wave_clear
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --reason
+    required: true
+    type: string
+    help: "Why the floor is being cleared (the human GO token the audit record captures). REQUIRED -- the human, not the tool, authorizes the clear."
+  - name: --project-root
+    required: false
+    type: path
+    help: "The project root holding the wave-active floor + the audit log; defaults to the current working directory."
+
+log_events:
+  - WaveFloorCleared
+  - WaveFloorClearNoop
+  - WaveFloorClearIndeterminate
+
+failure_modes:
+  - error_class: UsageError
+    exit_code: 2
+    remediation: "Pass --reason \"<why>\" -- the floor is never touched and no audit record is written without it (the human authorizes the clear)."
+  - error_class: Indeterminate
+    exit_code: 1
+    remediation: "The wave-active floor is corrupt/unreadable -- the clear degrades LOUD and refuses to fabricate success; restore or remove .nwave/wave-active/active.json (a single well-formed JSON object) and retry."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

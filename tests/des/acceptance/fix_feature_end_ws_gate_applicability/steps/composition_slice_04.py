@@ -52,10 +52,10 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tests.common.in_process_cli import run_cli_in_process
 from tests.env_parity import seed_dev_checkout_marker
 
 from .domain_types_slice_04 import (
@@ -64,28 +64,9 @@ from .domain_types_slice_04 import (
 )
 
 
-# THIS file lives at
-# tests/des/acceptance/fix_feature_end_ws_gate_applicability/steps/composition_slice_04.py
-# -> 5 parents up is the repo root; repo-`src/` is the absolute import root the
-# `des` subprocess needs (its cwd is the per-test workspace, so a cwd-relative
-# PYTHONPATH would resolve under the tmp tree and fail to import `des`).
-_REPO_SRC = Path(__file__).resolve().parents[5] / "src"
-
 _MANIFEST_NAME = "walking-skeleton.json"
 _FEATURE_DELTA_NAME = "feature-delta.md"
 _FEATURE_ID = "fix-feature-end-ws-gate-applicability-demo"
-
-# The reviewer signing key the cycle's deep-review SIGN leg needs
-# (`feature_end_sign_service.py:88,108` -> `load_signing_key(repo_root)` reads
-# `NWAVE_REVIEWER_SIGNING_KEY`). A1/B1 are the first slice-04 scenarios that drive
-# a FULLY-NA feature all the way THROUGH the sign leg (the NA markers mint BEFORE
-# it; the dodge-catch scenarios refuse earlier and never reach it). The signing
-# key is a legitimate production input the operator provides -- staging it in the
-# subprocess env makes A1/B1 self-contained + deterministic with no ambient key,
-# changes no scenario body or assertion, and is harmless to the dodge-catch
-# scenarios (they refuse before the sign leg). Mirrors the established
-# self-contained pattern in oss_feature_end_emit_cli/steps/composition_slice_04.py:110.
-_SIGNING_KEY = "test-reviewer-signing-key-slice-04"
 
 # The baseline branch the WS-floor delta is computed against (slice-03 DDD-2
 # default `--delta-base-ref master`). The staged work-tree is initialised on it.
@@ -491,26 +472,18 @@ class ApplicabilityAwareCycleComposition:
     def _dispatch(
         self, repo_root: Path, argv: list[str]
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [sys.executable, "-m", "des.cli.__main__", *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(repo_root),
-            env=self._subprocess_env(),
-        )
-
-    def _subprocess_env(self) -> dict[str, str]:
-        env = dict(os.environ)
-        # ABSOLUTE repo-`src/` path (derived from __file__, not cwd-relative): the
-        # subprocess cwd is the per-test workspace, so a `Path("src")` would
-        # resolve under it and fail to import `des`.
-        env["PYTHONPATH"] = str(_REPO_SRC)
-        # The reviewer signing key the cycle's deep-review SIGN leg needs (A1/B1
-        # drive a fully-NA feature THROUGH the sign leg). Set unconditionally: the
-        # dodge-catch scenarios refuse before the sign leg, so the key is harmless
-        # there; self-contained, no ambient NWAVE_REVIEWER_SIGNING_KEY required.
-        env["NWAVE_REVIEWER_SIGNING_KEY"] = _SIGNING_KEY
-        return env
+        # Keyless post-demotion (oss-review-verdict-demotion S4): scrub any
+        # ambient signing key; the cycle's sign-leg content-hashes without a
+        # key. Restored in `finally` -- shared-process safe.
+        prior_key = os.environ.pop("NWAVE_REVIEWER_SIGNING_KEY", None)
+        try:
+            exit_code, stdout, stderr = run_cli_in_process(
+                list(argv), cwd=str(repo_root)
+            )
+        finally:
+            if prior_key is not None:
+                os.environ["NWAVE_REVIEWER_SIGNING_KEY"] = prior_key
+        return subprocess.CompletedProcess(argv, exit_code, stdout, stderr)
 
 
 @dataclass(frozen=True)

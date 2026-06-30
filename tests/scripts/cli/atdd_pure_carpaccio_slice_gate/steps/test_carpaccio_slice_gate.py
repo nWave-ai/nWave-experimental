@@ -6,7 +6,7 @@ Layer 3 (subprocess/FS acceptance). Example-only, no PBT machinery
 (Mandate 9/11) -- the @property tag on the assertion-5 outline marks it as a
 universal-invariant criterion (every rejection reason yields the same blocked
 outcome), realised at this layer as a `Scenario Outline` enumerating the closed
-six-value reason set, NOT a Hypothesis @given.
+four-value reason set, NOT a Hypothesis @given.
 
 The gate has a pure-function contract (ADR-028 D2-bis): it MUST mutate no file.
 The When-step asserts via `assert_state_delta` over a port-exposed filesystem

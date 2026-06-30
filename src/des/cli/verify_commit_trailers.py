@@ -1,185 +1,128 @@
-"""Generic HMAC-SHA256 commit-trailer verifier CLI.
+"""AT-completion-ledger audit window for delivered slice commits.
 
-Methodology-agnostic verifier for ``Reviewed-by: <agent>:<hmac-sha256-hex>``
-trailers embedded in git commit messages. Reconstructs the canonical verdict
-JSON from the trailer, recomputes the HMAC-SHA256 using a signing key (env
-first, file fallback), and constant-time-compares against the trailer hex.
+Audits a commit's AT-review record by reading the same AT-completion ledger
+record the carpaccio slice gate reads, and reaching the SAME verdict the gate
+reaches. One check, one home. The CLI is an audit window over the gate's
+verdict logic, never a second verifier.
 
-Invoked by (not specific to): DEV-side pre-push hooks, DISTILL/DELIVER
-command flows, and the SF (nwave-software-factory) sequencer. The CLI knows
-nothing about wave names, phase counts, or workflow shape — it verifies
-HMAC integrity of opaque verdict payloads only.
+Resolves the ``Slice-Id:`` trailer(s) in the commit body via the domain
+helper ``extract_slice_ids`` (the blessed F-07 batched-commit shape), then
+for each slice runs ``check_at_review`` -- the exact record-presence check
+the carpaccio gate runs -- against the AT-completion ledger. A record the
+gate refuses is refused here with the SAME ``ATReviewGateRejected`` reason.
 
-Canonical verdict JSON shape (input to HMAC):
-    {"findings_summary": [...], "reviewer_agent_id": "...",
-     "timestamp": "...", "verdict": "..."}
-Serialised with ``json.dumps(..., sort_keys=True,
-separators=(",", ":")).encode("utf-8")``.
-
-Trailer shape (one or more per commit):
-    ``Reviewed-by: <agent-id>:<64-hex-sha256>``
+Driving port: the ``CommitTrailerReadPort.commit_message`` seam (``git show``
+behind the port); the ledger + feature-delta + ``.feature`` files are read
+from the filesystem. Pure-read: no file is written.
 
 Exit codes:
-    0 = all trailers verify (or no trailers + not --strict)
-    4 = hash mismatch (tampering detected)
-    5 = missing key (env unset + file absent)
-    6 = malformed trailer OR --strict + no trailers
-    7 = cannot-evaluate: git absent or SHA unresolvable (LOUD INDETERMINATE)
+    0 = all slices carry a present-and-approved record
+    7 = cannot-evaluate: git absent, SHA unresolvable, OR no Slice-Id trailer
+        found in the commit body (A-absent-trailer: honest nothing-to-audit
+        INDETERMINATE, never a silent clear, never a block)
+   45 = AT_REVIEW_NOT_APPROVED: first refusing slice's ATReviewGateRejected
+        reason surfaced (the gate's own closed vocabulary)
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
-import hmac
 import json
-import os
-import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 from des.adapters.driven.git.git_commit_trailer_read_adapter import (
     GitCommitTrailerReadAdapter,
 )
+from des.cli.carpaccio_format import (
+    GateError,
+    _at_review_rejection,
+    _read_feature_files,
+)
+from des.cli.carpaccio_slice_gate import (
+    check_at_review,
+    parse_scenarios,
+)
+from des.domain.slice_id_trailer import extract_slice_ids
 from des.ports.driven_ports.commit_trailer_read_port import (
     CommitTrailerReadPort,
     Indeterminate,
 )
 
 
-DEFAULT_KEY_ENV = "NWAVE_REVIEWER_SIGNING_KEY"
-DEFAULT_KEY_FILE = ".nwave/secrets/reviewer-signing.key"
-TRAILER_RE = re.compile(r"^Reviewed-by:\s*([^:\s]+):([0-9a-fA-F]{64})\s*$")
-VERDICT_RE = re.compile(
-    r"^Verdict-Payload:\s*(\{.*\})\s*$",
-    re.MULTILINE,
-)
+_NO_SLICE_ID_REASON = "no Slice-Id trailer -- nothing to audit"
 
 
-@dataclass(frozen=True)
-class Trailer:
-    """Parsed ``Reviewed-by:`` trailer."""
+def _feature_id_for_slice(repo: Path, slice_id: str) -> str | None:
+    """Discover the feature that owns ``slice_id`` by scanning the ledger dir.
 
-    agent_id: str
-    hash_hex: str
-
-
-def extract_trailers(commit_message: str) -> list[Trailer]:
-    """Extract ``Reviewed-by:`` trailers from commit message body.
-
-    Returns trailers in source order. Lines matching the prefix
-    ``Reviewed-by:`` but failing the canonical shape raise ``ValueError``
-    so the caller can surface a malformed-trailer exit (code 6).
+    Scans ``repo/.nwave/telemetry/atdd-pure/*.jsonl`` for an
+    ``ATReviewVerdict`` record whose ``slice_id`` matches. The file stem is
+    the feature id. Returns the FIRST matching feature id in filesystem order,
+    or ``None`` if no record matches (the gate will then surface ``absent``).
     """
-    trailers: list[Trailer] = []
-    for line in commit_message.splitlines():
-        if not line.startswith("Reviewed-by:"):
-            continue
-        match = TRAILER_RE.match(line)
-        if match is None:
-            raise ValueError(f"malformed Reviewed-by trailer: {line!r}")
-        trailers.append(Trailer(agent_id=match.group(1), hash_hex=match.group(2)))
-    return trailers
-
-
-def canonical_verdict_json(verdict: dict[str, object]) -> bytes:
-    """Serialise a verdict dict to canonical JSON bytes.
-
-    Canonical form: sorted keys, no whitespace, UTF-8. Required fields:
-    ``verdict``, ``timestamp``, ``reviewer_agent_id``, ``findings_summary``.
-    Extra fields are rejected to keep the HMAC input bit-stable across
-    callers.
-    """
-    required = {"verdict", "timestamp", "reviewer_agent_id", "findings_summary"}
-    keys = set(verdict.keys())
-    if keys != required:
-        missing = required - keys
-        extra = keys - required
-        raise ValueError(
-            f"verdict shape mismatch: missing={sorted(missing)} extra={sorted(extra)}"
-        )
-    return json.dumps(verdict, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
-
-def compute_verdict_hash(verdict: dict[str, object], key: bytes) -> str:
-    """Compute HMAC-SHA256 over ``canonical_verdict_json(verdict)`` as hex."""
-    return hmac.new(key, canonical_verdict_json(verdict), hashlib.sha256).hexdigest()
-
-
-def verify_trailer(trailer: Trailer, verdict: dict[str, object], key: bytes) -> bool:
-    """Constant-time-compare expected HMAC vs trailer hex."""
-    expected = compute_verdict_hash(verdict, key)
-    return hmac.compare_digest(expected, trailer.hash_hex)
-
-
-def _load_key(env_var: str, key_file: Path) -> bytes | None:
-    """Load HMAC signing key. Env first, file fallback. None if neither."""
-    env_value = os.environ.get(env_var)
-    if env_value:
-        return env_value.encode("utf-8")
-    if key_file.exists():
-        return key_file.read_bytes().strip()
+    ledger_dir = repo / ".nwave" / "telemetry" / "atdd-pure"
+    if not ledger_dir.is_dir():
+        return None
+    for ledger_file in sorted(ledger_dir.glob("*.jsonl")):
+        for line in ledger_file.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                record = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            if record.get("event") != "ATReviewVerdict":
+                continue
+            if record.get("slice_id") == slice_id:
+                return ledger_file.stem
     return None
 
 
-def _extract_verdicts(commit_message: str) -> list[dict[str, object]]:
-    """Extract one ``Verdict-Payload:`` JSON dict per trailer (source order)."""
-    payloads: list[dict[str, object]] = []
-    for match in VERDICT_RE.finditer(commit_message):
-        try:
-            obj = json.loads(match.group(1))
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"malformed Verdict-Payload JSON: {exc}") from exc
-        if not isinstance(obj, dict):
-            raise ValueError("Verdict-Payload must be a JSON object")
-        payloads.append(obj)
-    return payloads
-
-
-def _read_commit_message(
+def _read_commit_body(
     repo: Path, sha: str, port: CommitTrailerReadPort
 ) -> str | Indeterminate:
-    """Read a single commit body via the port; return body string or Indeterminate.
-
-    git access is fully delegated to the port (AD-21 genericita mandate: no
-    subprocess/git in CLI gate logic). On ``Indeterminate`` the caller emits a
-    LOUD structured reason to stderr and returns exit 7.
-    """
+    """Read a single commit body via the port; return body string or Indeterminate."""
     result = port.commit_message(repo, sha)
     if isinstance(result, Indeterminate):
         return result
     return result.body
 
 
+def _audit_slice(repo: Path, slice_id: str) -> None:
+    """Audit one slice's review record. Raises ``GateError`` exit 45 on refusal.
+
+    Discovers the owning feature from the ledger dir, then reuses
+    ``check_at_review`` -- the carpaccio gate's own record-presence logic --
+    to verify the record. A record the gate refuses is refused here with the
+    same ``ATReviewGateRejected`` reason (one check, one home).
+    """
+    feature_id = _feature_id_for_slice(repo, slice_id)
+    if feature_id is None:
+        raise _at_review_rejection("absent", slice_id)
+    scenarios = parse_scenarios(_read_feature_files(repo, feature_id))
+    check_at_review(repo, feature_id, slice_id, scenarios)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="des verify-commit-trailers",
         description=(
-            "Generic HMAC-SHA256 commit-trailer verifier. Verifies "
-            "Reviewed-by: <agent>:<hmac-hex> trailers against "
-            "Verdict-Payload: {...} JSON in the same commit body."
+            "AT-completion-ledger audit window. Resolves the commit's "
+            "Slice-Id trailer(s) and audits each slice's review record "
+            "against the AT-completion ledger, reusing the carpaccio "
+            "gate's record-presence check."
         ),
         epilog=(
-            "Exit codes: 0 ok | 4 hash mismatch | 5 missing key | "
-            "6 malformed trailer or --strict + no trailers | "
-            "7 cannot-evaluate (git absent / SHA unresolvable)."
+            "Exit codes: 0 all slices approved | "
+            "7 cannot-evaluate (git absent / SHA unresolvable / no Slice-Id trailer) | "
+            "45 AT-review not approved (gate's own reason surfaced)."
         ),
     )
-    parser.add_argument("--commit", default="HEAD", help="target commit SHA")
-    parser.add_argument(
-        "--key-source",
-        choices=("env", "file"),
-        default="env",
-        help="primary key source (the other is always used as fallback)",
-    )
-    parser.add_argument("--key-env", default=DEFAULT_KEY_ENV)
-    parser.add_argument("--key-file", type=Path, default=Path(DEFAULT_KEY_FILE))
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="exit 6 if commit has no trailers (default: exit 0)",
-    )
+    parser.add_argument("--commit", default="HEAD", help="target commit SHA or ref")
     return parser
 
 
@@ -189,7 +132,8 @@ def main(argv: list[str] | None = None) -> int:
 
     port: CommitTrailerReadPort = GitCommitTrailerReadAdapter()
     repo = Path.cwd()
-    body = _read_commit_message(repo, args.commit, port)
+
+    body = _read_commit_body(repo, args.commit, port)
     if isinstance(body, Indeterminate):
         print(
             f"INDETERMINATE: cannot-evaluate git commit body -- {body.reason}",
@@ -197,62 +141,32 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 7
 
-    try:
-        trailers = extract_trailers(body)
-        verdicts = _extract_verdicts(body)
-    except ValueError as exc:
-        print(f"MALFORMED: {exc}", file=sys.stderr)
-        return 6
-
-    if not trailers:
-        if args.strict:
-            print("STRICT: no Reviewed-by trailers found", file=sys.stderr)
-            return 6
-        print("OK: no Reviewed-by trailers (non-strict mode)")
-        return 0
-
-    if len(verdicts) != len(trailers):
+    slice_ids = extract_slice_ids(body)
+    if not slice_ids:
         print(
-            f"MALFORMED: {len(trailers)} trailer(s) but "
-            f"{len(verdicts)} Verdict-Payload(s)",
+            f"INDETERMINATE: {_NO_SLICE_ID_REASON}",
             file=sys.stderr,
         )
-        return 6
+        return 7
 
-    # key_source toggles which source is tried first; both are tried.
-    if args.key_source == "env":
-        key = _load_key(args.key_env, args.key_file)
-    else:
-        env_save = os.environ.pop(args.key_env, None)
+    for slice_id in slice_ids:
         try:
-            key = _load_key(args.key_env, args.key_file) or (
-                env_save.encode("utf-8") if env_save else None
-            )
-        finally:
-            if env_save is not None:
-                os.environ[args.key_env] = env_save
+            _audit_slice(repo, slice_id)
+        except GateError as gate_error:
+            payload = gate_error.payload
+            line = json.dumps(payload, sort_keys=True) + "\n"
+            sys.stdout.write(line)
+            sys.stderr.write(line)
+            return gate_error.exit_code
 
-    if key is None:
-        print(
-            f"MISSING KEY: env {args.key_env} unset and {args.key_file} absent",
-            file=sys.stderr,
-        )
-        return 5
-
-    for trailer, verdict in zip(trailers, verdicts, strict=True):
-        try:
-            ok = verify_trailer(trailer, verdict, key)
-        except ValueError as exc:
-            print(f"MALFORMED: {exc}", file=sys.stderr)
-            return 6
-        if not ok:
-            print(
-                f"MISMATCH: trailer for {trailer.agent_id} failed HMAC verify",
-                file=sys.stderr,
-            )
-            return 4
-
-    print(f"OK: {len(trailers)} trailer(s) verified")
+    # All slices approved.
+    approved_payload: dict[str, object] = {
+        "event": "SliceAuditCleared",
+        "slice_id": slice_ids[0] if len(slice_ids) == 1 else slice_ids,
+        "audited_slices": slice_ids,
+    }
+    line = json.dumps(approved_payload, sort_keys=True) + "\n"
+    sys.stdout.write(line)
     return 0
 
 

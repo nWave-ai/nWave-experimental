@@ -33,23 +33,14 @@ than a ``NWAVE_FRESHNESS=skip`` mask (env-parity, RCA-#68; see
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from tests.common.in_process_cli import run_cli_in_process
 from tests.env_parity import seed_dev_checkout_marker
 
 from .domain_types import CycleOutcome, FeatureId, StagedFeature
 
-
-# THIS file lives at
-# tests/des/acceptance/fix_feature_end_ws_gate_applicability/steps/composition.py
-# -> 5 parents up is the repo root; repo-`src/` is the absolute import root the
-# `des` subprocess needs (its cwd is the per-test tmp workspace, so a cwd-relative
-# PYTHONPATH would resolve under the tmp tree and fail to import `des`).
-_REPO_SRC = Path(__file__).resolve().parents[5] / "src"
 
 _FEATURE_ID = FeatureId("fix-feature-end-ws-gate-applicability-demo")
 
@@ -104,15 +95,12 @@ class FeatureEndGateRefusalComposition:
         """
         feature_dir = self._workspace_root / "feature"
         feature_dir.mkdir(parents=True, exist_ok=True)
-        if shape is StagedFeature.NO_MANIFEST:
-            # No walking-skeleton.json at all -> the floor's real reason names
-            # the missing manifest.
-            return feature_dir
         if shape is StagedFeature.MANIFEST_NO_ROOT:
             # A manifest that is present but omits its `feature_root` -> the
-            # floor's real reason names the missing feature root. A DIFFERENT
-            # real reason than NO_MANIFEST, so a filter that surfaces the real
-            # reason is proven to surface different real reasons.
+            # floor's real reason names the missing feature root. ADR-098 leaves
+            # the malformed-manifest case raising (only ABSENCE computes from the
+            # git-delta), so this remains a genuine refusal whose real reason the
+            # slice asserts surfaces past the freshness notice.
             manifest = {"entry_points": []}
             (feature_dir / _MANIFEST_NAME).write_text(
                 json.dumps(manifest), encoding="utf-8"
@@ -139,22 +127,14 @@ class FeatureEndGateRefusalComposition:
             "--feature-dir",
             str(feature_dir),
         ]
-        completed = subprocess.run(
-            [sys.executable, "-m", "des.cli.__main__", *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(self._workspace_root),
-            env=self._subprocess_env(),
+        exit_code, stdout, _stderr = run_cli_in_process(
+            argv, cwd=str(self._workspace_root)
         )
-        outcome = (
-            CycleOutcome.CERTIFIED
-            if completed.returncode == 0
-            else CycleOutcome.REFUSED
-        )
+        outcome = CycleOutcome.CERTIFIED if exit_code == 0 else CycleOutcome.REFUSED
         return CycleRefusalObserved(
             outcome=outcome,
-            reported_reason=self._reported_reason(completed.stdout),
-            exit_code=completed.returncode,
+            reported_reason=self._reported_reason(stdout),
+            exit_code=exit_code,
         )
 
     # --- observable read-back (printed JSON, NOT the SUT) --------------------
@@ -181,14 +161,6 @@ class FeatureEndGateRefusalComposition:
             if isinstance(payload, dict) and "error" in payload:
                 return str(payload["error"])
         return ""
-
-    def _subprocess_env(self) -> dict[str, str]:
-        env = dict(os.environ)
-        # ABSOLUTE repo-`src/` path (derived from __file__, not cwd-relative):
-        # the subprocess cwd is the per-test tmp workspace, so a `Path("src")`
-        # would resolve under the tmp tree and fail to import `des`.
-        env["PYTHONPATH"] = str(_REPO_SRC)
-        return env
 
 
 __all__ = [

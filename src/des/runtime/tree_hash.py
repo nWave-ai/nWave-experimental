@@ -23,7 +23,11 @@ from __future__ import annotations
 
 import hashlib
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # The install-time import rewrite (mirrors des_plugin._rewrite_import_paths):

@@ -396,7 +396,7 @@ class PhaseCReviewerVerdict:
             )
         if self.verdict_hash is not None and not _is_hex64(self.verdict_hash):
             raise ValueError(
-                f"verdict_hash must be 64-char hex (HMAC-SHA256): {self.verdict_hash!r}"
+                f"verdict_hash must be 64-char hex (SHA-256): {self.verdict_hash!r}"
             )
 
 
@@ -416,12 +416,12 @@ class PhaseFReviewerVerdict:
     def __post_init__(self) -> None:
         if not _is_hex64(self.verdict_hash):
             raise ValueError(
-                f"verdict_hash must be 64-char hex (HMAC-SHA256): {self.verdict_hash!r}"
+                f"verdict_hash must be 64-char hex (SHA-256): {self.verdict_hash!r}"
             )
 
 
 def _is_hex64(s: str) -> bool:
-    """Validate string is 64-character lowercase hex (HMAC-SHA256 output)."""
+    """Validate string is 64-character lowercase hex (SHA-256 output)."""
     if len(s) != 64:
         return False
     try:

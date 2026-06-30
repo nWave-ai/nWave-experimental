@@ -5,6 +5,8 @@ user-invocable: true
 argument-hint: '[problem-description] - Optional: --depth=[3|5|7-whys] --output=[text|diagram|report]'
 ---
 
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+
 # NW-ROOT-WHY: Toyota 5 Whys Root Cause Analysis
 
 **Wave**: CROSS_WAVE
@@ -27,13 +29,13 @@ Execute \*investigate-root-cause for {problem-statement}.
 
 ## Workflow-mode context (ADR-028)
 
-The inputs RCA reads depend on `.nwave/config.yaml:workflow.mode`. Under `classic` mode, RCA reads `roadmap.json` + `execution-log.json` as the phase record. Under `atdd_pure` mode those artifacts are unreachable: RCA instead reads the per-slice ATs and the AT-completion ledger at `.nwave/telemetry/atdd-pure/` for the phase-boundary record — that is, in `atdd_pure` mode each slice's failure evidence comes from its slice ATs and the ledger, not from `execution-log.json`.
+The inputs RCA reads depend on `.nwave/config.yaml:workflow.mode`. Under `classic` mode, RCA reads `roadmap.json` + `execution-log.json` as the phase record. Under `atdd_pure` mode those artifacts are unreachable: RCA instead reads the per-slice ATs and the AT-completion ledger at `.nwave/telemetry/atdd-pure/` for the phase-boundary record — that is, in `atdd_pure` mode each slice's failure evidence comes from its slice ATs and the ledger, not from `execution-log.json`. <!-- mode-ref-ok -->
 
 ## Usage: DELIVER Wave Retrospective (Phase 3.5)
 
 When invoked as part of `/nw-deliver` Phase 3.5, execute in order:
 
-1. **Gather Inputs** — Read the evolution document, mutation results, and git log. In `classic` mode also read `roadmap.json` + `execution-log.json`; in `atdd_pure` mode read the per-slice ATs and the AT-completion ledger instead. Gate: all available inputs loaded.
+1. **Gather Inputs** — Read the evolution document, mutation results, and git log. In `classic` mode also read `roadmap.json` + `execution-log.json`; in `atdd_pure` mode read the per-slice ATs and the AT-completion ledger instead. Gate: all available inputs loaded. <!-- mode-ref-ok -->
 2. **Analyze What Worked Well** — Identify practices that succeeded and document why — preserve these. Gate: at least one practice documented with rationale.
 3. **Analyze What Improved** — Identify what worked better than before and why — record as reinforcements. Gate: delta from prior execution captured.
 4. **Analyze What Worked Badly** — Apply 5 Whys root cause analysis to failures; produce actionable fix per root cause. Gate: each failure has a root cause and fix.

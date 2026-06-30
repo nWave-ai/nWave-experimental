@@ -21,9 +21,13 @@ contract over the packaged console-script surface.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pytest_bdd import then, when
 
-from .composition import DesCliComposition
+
+if TYPE_CHECKING:
+    from .composition import DesCliComposition
 
 
 # Feature binding lives in `../test_slice_03_call_site_migration.py` — that

@@ -13,38 +13,25 @@ exactly as an operator (or the eventual SubagentStop hook shim) invokes it.
 
 OBSERVABLE READ-BACK (substrate verification, NOT a second SUT)
 --------------------------------------------------------------
-The produced `verdict_hash` is read off the command's stdout, then RECOMPUTED
-independently via the `des.domain.at_review_signing` SSOT
-(`compute_verdict_hmac(record, key)` over `canonical_at_review_json(record)`)
-to assert the produced hash is a GENUINE HMAC over the real deep-review verdict
-input -- not a minted constant. This is allowed (Mandate-13): the recompute
-verifies the observable SUBSTRATE the slice-01 consumer (`des emit-feature-end
---verdict-hash`) will later read; it is the anti-theater proof, not the SUT.
+The produced `verdict_hash` is read off the command's stdout; the command
+exit code and the `SignRefused` payload determine whether the signer refused.
 
-The end-to-end loop is also closed: the produced hash is fed straight into the
-real `des emit-feature-end --record FeatureEndReviewVerdict --verdict-hash
-<hex>` slice-01 consumer through the same dispatcher, proving the signer's
-output is accepted by the consumer (the two slices compose).
-
-There are no test doubles for the driving surface: the git working tree, the
-signing key (env `NWAVE_REVIEWER_SIGNING_KEY`), and the AT-completion ledger
-are real -- a layer-3 `@real-io` surface (Mandate 9/11: example only, no PBT
-machinery). The only thing the test sets/clears is the signing-key env var
-(an external/non-deterministic port per the Architecture of Reference -- a
-controlled fake-or-real secret, captured so a `Then` can observe the refusal).
+KEYLESS BY CONSTRUCTION (OSS demotion, oss-review-verdict-demotion S4)
+----------------------------------------------------------------------
+No reviewer signing key is provisioned. The signing-key env var is SCRUBBED
+for every subprocess run. A sign request with NO real verdict is REFUSED;
+key absence is a non-event for real-verdict inputs.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from des.domain.at_review_signing import (
-    compute_verdict_hmac,
-)
+from tests.common.in_process_cli import run_cli_in_process
 from tests.env_parity import seed_dev_checkout_marker
 
 from .domain_types import FeatureEndRecord
@@ -54,33 +41,15 @@ from .domain_types_slice_02 import (
     FeatureId,
     MalformedVerdictKind,
     ReviewerAgentId,
-    SigningKeyState,
     SignOutcome,
     VerdictHash,
 )
 
 
-# The absolute repo-`src/` path, derived from THIS file's location rather than a
-# cwd-relative `Path("src")` -- the `des` CLI subprocess is launched with
-# `cwd=project_root` (the per-test tmp workspace), so a cwd-relative PYTHONPATH
-# would resolve under the tmp tree and fail to import `des`. THIS file lives at
-# tests/des/acceptance/oss_feature_end_emit_cli/steps/composition_slice_02.py ->
-# 5 parents up is the repo root.
-_REPO_SRC = Path(__file__).resolve().parents[5] / "src"
-
 _FEATURE_ID = FeatureId("oss-feature-end-demo")
 
-# A deterministic reviewer signing key for the test environment. The signer
-# resolves it from `NWAVE_REVIEWER_SIGNING_KEY` (the `at_review_signing` env
-# precedence); the test recomputes the HMAC with the SAME bytes to assert the
-# produced hash is genuine. This is the controlled external-secret port -- not a
-# minted hash, a real key the real HMAC is computed under.
-_SIGNING_KEY = "test-reviewer-signing-key-slice-02"
-
 # The canonical real deep-review verdict the happy-path scenarios sign: a real
-# reviewer agent, an APPROVED decision, real findings. The SIGNED region reuses
-# the at_review_signing SSOT's seven SIGNED_FIELDS -- the signer HMACs exactly
-# these, and the test recomputes the SAME canonical JSON to verify genuineness.
+# reviewer agent, an APPROVED decision, real findings.
 _REVIEWER_AGENT = ReviewerAgentId("nw-software-crafter-reviewer")
 
 
@@ -112,7 +81,7 @@ class SignResult:
 
 @dataclass
 class EmitResult:
-    """The observable result of feeding a signed hash to the slice-01 consumer."""
+    """The observable result of feeding a hash to the slice-01 consumer."""
 
     outcome: SignOutcome
     exit_code: int
@@ -123,10 +92,8 @@ class FeatureEndSignComposition:
 
     The driving port is the real `des feature-end sign` subcommand invoked over
     the `des` dispatcher as a subprocess; the observable surface is the command
-    exit code and the signed `verdict_hash` it prints. The hash is verified
-    genuine by an INDEPENDENT recompute via the at_review_signing SSOT, and
-    end-to-end-accepted by feeding it to the real slice-01 `emit-feature-end`
-    consumer.
+    exit code and the `verdict_hash` it prints. The command runs KEYLESS -- the
+    signing-key env var is always scrubbed.
     """
 
     def __init__(self, project_root: Path) -> None:
@@ -162,18 +129,12 @@ class FeatureEndSignComposition:
 
     # --- driving-port invocation (the SUT) -----------------------------------
 
-    def sign(
-        self,
-        verdict: DeepReviewRecord,
-        *,
-        key_state: SigningKeyState = SigningKeyState.PRESENT,
-    ) -> SignResult:
+    def sign(self, verdict: DeepReviewRecord) -> SignResult:
         """Invoke the REAL `des feature-end sign` subcommand over the dispatcher.
 
         Supplies the real deep-review verdict (agent + verdict + findings); the
-        signer HMACs it via the at_review_signing SSOT and prints the produced
-        `verdict_hash`. `key_state` controls whether the signing-key env var is
-        present (the missing-key loud-refusal path).
+        keyless signer content-hashes it and prints the produced `verdict_hash`.
+        No signing key is provisioned -- key absence is a non-event.
         """
         argv = [
             "feature-end",
@@ -189,7 +150,7 @@ class FeatureEndSignComposition:
         ]
         for finding in verdict.findings:
             argv += ["--finding", finding]
-        return self._run_sign(argv, key_state=key_state)
+        return self._run_sign(argv)
 
     def sign_malformed(self, kind: MalformedVerdictKind) -> SignResult:
         """Invoke `des feature-end sign` with a non-real verdict input (refusal path).
@@ -226,10 +187,10 @@ class FeatureEndSignComposition:
             ]
         else:  # pragma: no cover - exhaustive enum
             raise AssertionError(f"unhandled malformed kind: {kind}")
-        return self._run_sign(argv, key_state=SigningKeyState.PRESENT)
+        return self._run_sign(argv)
 
     def emit_with_signed_hash(self, signed_hash: VerdictHash) -> EmitResult:
-        """Feed a signed hash to the REAL slice-01 `des emit-feature-end` consumer.
+        """Feed a hash to the REAL slice-01 `des emit-feature-end` consumer.
 
         Closes the end-to-end loop: the signer's output is accepted by the
         slice-01 consumer (`--record FeatureEndReviewVerdict --verdict-hash`),
@@ -246,7 +207,7 @@ class FeatureEndSignComposition:
             "--verdict-hash",
             str(signed_hash),
         ]
-        completed = self._dispatch(argv, key_state=SigningKeyState.PRESENT)
+        completed = self._dispatch(argv)
         outcome = (
             SignOutcome.SUCCEEDED if completed.returncode == 0 else SignOutcome.REFUSED
         )
@@ -256,7 +217,7 @@ class FeatureEndSignComposition:
         """Whether signing a real verdict then emitting its hash both succeed.
 
         The back-compat round-trip (DDD-7): the consolidated `des feature-end
-        sign` produces a genuine hash AND the consolidated/preserved `des
+        sign` produces a content hash AND the consolidated/preserved `des
         emit-feature-end` consumer accepts it -- proving the two verbs compose
         under the single entry point. Encapsulated here so the step body stays a
         single delegate + assert (Mandate-12 criterion 3).
@@ -275,43 +236,13 @@ class FeatureEndSignComposition:
         point. Reachable iff the help invocation exits zero and advertises the
         `sign` verb.
         """
-        completed = self._dispatch(
-            ["feature-end", "--help"], key_state=SigningKeyState.PRESENT
-        )
+        completed = self._dispatch(["feature-end", "--help"])
         return completed.returncode == 0 and "sign" in completed.stdout
-
-    # --- observable read-back (substrate verification, NOT the SUT) ----------
-
-    def expected_signature_for(self, verdict: DeepReviewRecord) -> str:
-        """The HMAC the signer MUST have produced over this real verdict.
-
-        Recomputed INDEPENDENTLY via the at_review_signing SSOT -- the same
-        `compute_verdict_hmac` over `canonical_at_review_json` the production
-        signer reuses. Asserting the produced hash equals THIS value proves the
-        signer signed the real input (genuine HMAC), never minted a constant.
-        The signed region is the seven SIGNED_FIELDS the SSOT defines.
-        """
-        record = _signed_region(verdict)
-        return compute_verdict_hmac(record, _SIGNING_KEY.encode("utf-8"))
-
-    @staticmethod
-    def is_genuine_hmac_shape(produced_hash: str | None) -> bool:
-        """Whether a produced hash has the genuine HMAC-SHA256 hex shape.
-
-        64 lowercase hex chars. A guard against a minted placeholder slipping
-        through with the wrong shape (the recompute-equality check is the
-        primary genuineness proof; this is the shape sanity check).
-        """
-        if produced_hash is None:
-            return False
-        return len(produced_hash) == 64 and all(
-            c in "0123456789abcdef" for c in produced_hash
-        )
 
     # --- subprocess plumbing -------------------------------------------------
 
-    def _run_sign(self, argv: list[str], *, key_state: SigningKeyState) -> SignResult:
-        completed = self._dispatch(argv, key_state=key_state)
+    def _run_sign(self, argv: list[str]) -> SignResult:
+        completed = self._dispatch(argv)
         outcome = (
             SignOutcome.SUCCEEDED if completed.returncode == 0 else SignOutcome.REFUSED
         )
@@ -331,37 +262,20 @@ class FeatureEndSignComposition:
             stderr=completed.stderr,
         )
 
-    def _dispatch(
-        self, argv: list[str], *, key_state: SigningKeyState
-    ) -> subprocess.CompletedProcess[str]:
+    def _dispatch(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
         """Dispatch `des <argv>` through the real `des.cli.__main__` entry point."""
-        return subprocess.run(
-            [sys.executable, "-m", "des.cli.__main__", *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(self._project_root),
-            env=_subprocess_env(key_state),
-        )
-
-
-def _signed_region(verdict: DeepReviewRecord) -> dict[str, object]:
-    """The seven-SIGNED_FIELDS record the signer HMACs for a deep-review verdict.
-
-    Reuses the at_review_signing SSOT field names. The mapping from a deep-review
-    verdict onto the seven fields is the signing use-case's contract -- the test
-    recomputes against the SAME mapping so the equality check is meaningful. (The
-    crafter's production use-case MUST build the identical signed region; a
-    divergence reds AT-1, which is the anti-theater guard working.)
-    """
-    return {
-        "schema_version": "1.0.0",
-        "slice_id": "feature-end",
-        "verdict": verdict.verdict.value,
-        "reviewer_agent_id": str(verdict.reviewer_agent_id),
-        "at_ids": [],
-        "at_content_hash": str(verdict.feature_id),
-        "timestamp": "feature-end-review",
-    }
+        # Keyless post-demotion (oss-review-verdict-demotion S4): scrub any
+        # ambient signing key so the signer runs entirely keyless. Restored in
+        # `finally` -- shared-process safe.
+        prior_key = os.environ.pop("NWAVE_REVIEWER_SIGNING_KEY", None)
+        try:
+            exit_code, stdout, stderr = run_cli_in_process(
+                list(argv), cwd=str(self._project_root)
+            )
+        finally:
+            if prior_key is not None:
+                os.environ["NWAVE_REVIEWER_SIGNING_KEY"] = prior_key
+        return subprocess.CompletedProcess(argv, exit_code, stdout, stderr)
 
 
 def _carries_signer_refusal(stdout: str, stderr: str) -> bool:
@@ -375,8 +289,6 @@ def _carries_signer_refusal(stdout: str, stderr: str) -> bool:
     refuses with its own marker. This is the discriminator that closes the
     vacuous-refusal trap (the same trap slice-01's conftest documented for AT-3).
     """
-    import json
-
     for stream in (stdout, stderr):
         for line in stream.splitlines():
             line = line.strip()
@@ -393,8 +305,6 @@ def _carries_signer_refusal(stdout: str, stderr: str) -> bool:
 
 def _extract_produced_hash(stdout: str) -> str | None:
     """Pull the produced `verdict_hash` off the signer's machine-readable stdout."""
-    import json
-
     for line in stdout.splitlines():
         line = line.strip()
         if not line.startswith("{"):
@@ -406,17 +316,6 @@ def _extract_produced_hash(stdout: str) -> str | None:
         if "verdict_hash" in payload:
             return str(payload["verdict_hash"])
     return None
-
-
-def _subprocess_env(key_state: SigningKeyState) -> dict[str, str]:
-    env = dict(os.environ)
-    # ABSOLUTE repo-`src/` path so the subprocess can import `des` from a tmp cwd.
-    env["PYTHONPATH"] = str(_REPO_SRC)
-    if key_state is SigningKeyState.PRESENT:
-        env["NWAVE_REVIEWER_SIGNING_KEY"] = _SIGNING_KEY
-    else:
-        env.pop("NWAVE_REVIEWER_SIGNING_KEY", None)
-    return env
 
 
 __all__ = [

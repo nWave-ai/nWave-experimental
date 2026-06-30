@@ -41,13 +41,20 @@ import subprocess
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from des.cli import walking_skeleton_done_gate as _done_gate_cli  # noqa: F401
 
+
+if TYPE_CHECKING:
+    from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+    from des.ports.driven_ports.staged_installer import InstalledTree
+
 # --- Production surfaces under test ------------------------------------------
-# slice-01 greened by DELIVER: `des.cli.walking_skeleton_gate` is the real CLI
-# the @walking-skeleton AT spawns as a `python -m` subprocess; the gate domain
-# + adapters back it. Slices 02..07 remain RED scaffolds.
+# slice-01 + slice-02 greened by DELIVER: `des.cli.walking_skeleton_gate` is the
+# real CLI the @walking-skeleton AT spawns as a `python -m` subprocess; the gate
+# domain + adapters back it. Advanced slices (03+) are deferred to backlog
+# (future-absent per ADR — F-CONSOLIDATION-FUTURE-SLICE-CANON ratified A).
 from des.cli import walking_skeleton_gate as _gate_cli  # noqa: F401
 
 from .domain_types import (

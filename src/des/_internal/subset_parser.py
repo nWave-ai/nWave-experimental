@@ -24,6 +24,9 @@ Supported subset
   lines; joined with single spaces. ``>`` keeps a trailing ``\\n``;
   ``>-`` strips the trailing newline (YAML chomping indicators).
 * String lists: ``key:`` followed by indented ``- item`` lines.
+* The empty flow list: a bare unquoted ``[]`` — inline (``key: []``) or
+  on its own indented line under a dict-item key — parses to ``[]``
+  (matching ``yaml.safe_load``). Non-empty flow lists stay unsupported.
 * Mapping (nested or top-level) with arbitrary depth: ``key:`` followed
   by indented ``sub: value`` lines.
 * List of dicts: ``key:`` followed by indented ``- field: value`` lines
@@ -39,7 +42,8 @@ Unsupported (raises ``ValueError`` on encounter)
 ------------------------------------------------
 
 * Anchors (``&anchor``, ``*alias``).
-* Flow-style sequences/maps (``[a, b, c]``, ``{a: 1, b: 2}``).
+* Flow-style sequences/maps (``[a, b, c]``, ``{a: 1, b: 2}``) — except
+  the empty list ``[]`` per the supported-subset note above.
 * Multi-document streams (``---`` separators beyond the first document).
 * Tags (``!!str``, ``!!int``).
 * Numeric scalars (every bare token is left as a string; quoted numeric
@@ -66,7 +70,11 @@ boundary.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def load(text: str) -> dict[str, object]:
@@ -191,12 +199,16 @@ def _coerce_scalar(raw: str) -> object:
     """Turn a YAML scalar token into a Python value.
 
     Strips matching outer quotes, maps bare ``true`` / ``false`` /
-    ``null`` / ``~`` (case-insensitive) to Python equivalents. Everything
-    else stays a string — numeric coercion is intentionally NOT performed
-    so a schema drift cannot silently coerce ``"1.0"`` to ``1.0``.
+    ``null`` / ``~`` (case-insensitive) to Python equivalents and the bare
+    empty flow list ``[]`` to a Python ``[]`` (``yaml.safe_load`` parity —
+    the shape a declared-empty string-list field renders to inline).
+    Everything else stays a string — numeric coercion is intentionally NOT
+    performed so a schema drift cannot silently coerce ``"1.0"`` to ``1.0``.
     """
     if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("'", '"'):
         return raw[1:-1]
+    if raw == "[]":
+        return []
     lowered = raw.lower()
     if lowered == "true":
         return True
@@ -354,7 +366,7 @@ def _consume_dict_item(
     columns past ``list_indent`` for the standard ``-  key:`` layout, or
     ``list_indent + 2`` for the compact ``- key:`` layout).
     """
-    indent, payload = lines[cursor]
+    _indent, payload = lines[cursor]
     stripped = payload.lstrip(" ")
     first_key, after_colon = _split_key(stripped[2:].strip())
     item: dict[str, object] = {}

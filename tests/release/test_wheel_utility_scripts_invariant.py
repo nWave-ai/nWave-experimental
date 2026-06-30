@@ -47,9 +47,9 @@ _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from build_dist import UTILITY_SCRIPTS  # noqa: E402
+from build_dist import UTILITY_SCRIPTS
 
-from scripts.release.patch_pyproject import patch_pyproject  # noqa: E402
+from scripts.release.patch_pyproject import patch_pyproject
 
 
 def _patched_text(sample_pyproject_path: str, tmp_path) -> str:

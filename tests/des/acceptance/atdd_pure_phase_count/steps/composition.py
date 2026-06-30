@@ -16,14 +16,10 @@ it and assert; they hold no recognition/derivation logic.
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from dataclasses import dataclass
 
-
-# Module-direct invocation (NOT a `des phases` dispatcher subcommand, which would
-# break the catalog/registry parity gate per at_review_verdict precedent).
-_PHASES_MODULE = "des.cli.phases"
+from des.cli.phases import main as _phases_main
+from tests.common.in_process_cli import run_cli_in_process
 
 
 @dataclass(frozen=True)
@@ -47,20 +43,23 @@ class PhaseModelComposition:
     """Driving-port wrapper over the production phase-report CLI."""
 
     def report_phase_model(self) -> PhaseReport:
-        """Run the real `python -m des.cli.phases --format json` subprocess.
+        """Run the real `des.cli.phases --format json` EDGE in-process.
 
-        Returns the parsed `PhaseReport` (phases + transitions + count + exit
-        code). On a non-zero exit or unparseable stdout (e.g. module absent on
-        master, the RED-for-right-reason path), returns an empty report carrying
-        the exit code so the assertion fails against the missing/wrong contract
-        rather than crashing the step.
+        In-process analogue of `python -m des.cli.phases --format json`: drives
+        the production `des.cli.phases.main(argv)` EDGE directly (module-direct,
+        NOT a dispatcher subcommand — preserving the catalog/registry parity the
+        subprocess form honoured). Returns the parsed `PhaseReport` (phases +
+        transitions + count + exit code). On a non-zero exit or unparseable
+        stdout (e.g. module absent on master, the RED-for-right-reason path),
+        returns an empty report carrying the exit code so the assertion fails
+        against the missing/wrong contract rather than crashing the step.
         """
-        completed = subprocess.run(
-            [sys.executable, "-m", _PHASES_MODULE, "--format", "json"],
-            capture_output=True,
-            text=True,
+        exit_code, stdout, _stderr = run_cli_in_process(
+            ["--format", "json"],
+            cwd=".",
+            main=_phases_main,
         )
-        return _parse_report(completed.stdout, completed.returncode)
+        return _parse_report(stdout, exit_code)
 
 
 def _parse_report(stdout: str, returncode: int) -> PhaseReport:

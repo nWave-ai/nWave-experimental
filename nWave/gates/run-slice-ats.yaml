@@ -1,0 +1,41 @@
+# Gate-contract: run-slice-ats (f-spine-runs-tests-not-git-hooks slice-01)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=run-slice-ats.
+
+gate_id: run-slice-ats
+responsibility: |
+  Slice-scoped EXECUTOR (THE ACCELERATION): genuinely RUN only the entering
+  slice's acceptance tests at commit and project the outcome onto the GateVerdict
+  SSOT -- a RED slice AT vetoes (FAIL), a green slice PASSes. The spine, not a git
+  hook, is the commit-time test authority; the whole-tree run moves to feature-end.
+module: des.cli.run_slice_ats
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --repo-root
+    required: true
+    type: path
+    help: "The target repository root the slice's ATs are scoped within."
+  - name: --entering-slice
+    required: true
+    type: string
+    help: "The @<slice> tag of the slice being committed."
+
+log_events:
+  - SliceAtGateResult
+
+failure_modes:
+  - error_class: SliceAtSuiteFailed
+    exit_code: 1
+    remediation: "Fix the failing entering-slice acceptance test before committing"
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

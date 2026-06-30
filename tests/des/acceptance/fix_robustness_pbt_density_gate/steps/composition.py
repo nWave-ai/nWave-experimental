@@ -32,6 +32,9 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from des.cli import at_review_verdict
+from scripts.hooks import subagent_stop_robustness_gate
+from tests.common.in_process_cli import run_cli_in_process, run_hook_in_process
 from tests.env_parity import seed_dev_checkout_marker
 
 from .domain_types import DomainId, RobustnessGateExit
@@ -883,36 +886,42 @@ class RobustnessGateComposition:
         # Composition signs through the real producer; the producer's HMAC
         # key resolution is env-first then file-fallback. Tests stage an
         # in-process env key so the producer signs deterministically.
-        env = dict(os.environ)
-        env["NWAVE_REVIEWER_SIGNING_KEY"] = "slice-05-test-signing-key"
-        env["PYTHONPATH"] = os.pathsep.join((str(_REPO_ROOT / "src"), str(_REPO_ROOT)))
-
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "des.cli.at_review_verdict",
-                "--feature-id",
-                feature_id,
-                "--slice-id",
-                slice_id,
-                "--verdict",
-                "APPROVED",
-                "--reviewer-agent-id",
-                "nw-acceptance-designer-reviewer",
-                "--repo-root",
-                str(project_root),
-                "--robustness-declaration",
-                str(self._declaration_path),
-                "--robustness-at-scope",
-                str(self._at_scope_dir),
-            ],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
+        # In-process analogue of the former des.cli.at_review_verdict module-form
+        # (corpus-migration): drive the production producer CLI EDGE
+        # `at_review_verdict.main(argv)`. The producer consults
+        # check_robustness_density as a NESTED subprocess (cwd=--repo-root), so
+        # the signing key + PYTHONPATH the original fork passed via `env=` are set
+        # on os.environ around the call (the nested subprocess inherits them);
+        # save/restore in finally so the shared test process is never mutated.
+        saved_env = dict(os.environ)
+        os.environ["NWAVE_REVIEWER_SIGNING_KEY"] = "slice-05-test-signing-key"
+        os.environ["PYTHONPATH"] = os.pathsep.join(
+            (str(_REPO_ROOT / "src"), str(_REPO_ROOT))
         )
+        try:
+            _exit_code, _stdout, producer_stderr = run_cli_in_process(
+                [
+                    "--feature-id",
+                    feature_id,
+                    "--slice-id",
+                    slice_id,
+                    "--verdict",
+                    "APPROVED",
+                    "--reviewer-agent-id",
+                    "nw-acceptance-designer-reviewer",
+                    "--repo-root",
+                    str(project_root),
+                    "--robustness-declaration",
+                    str(self._declaration_path),
+                    "--robustness-at-scope",
+                    str(self._at_scope_dir),
+                ],
+                cwd=_REPO_ROOT,
+                main=at_review_verdict.main,
+            )
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
 
         # The wiring-effect observable: did an APPROVED ATReviewVerdict
         # line land in the per-scenario ledger? The producer routes through
@@ -927,7 +936,7 @@ class RobustnessGateComposition:
 
         self.result = RobustnessGateResult(
             verdict_record_written=record_written,
-            verdict_producer_stderr=completed.stderr or "",
+            verdict_producer_stderr=producer_stderr or "",
         )
 
     def given_real_subagent_dispatch_prepared(self, domain_id: DomainId) -> None:
@@ -983,11 +992,6 @@ class RobustnessGateComposition:
         assert self._declaration_path is not None, "Given step must stage a declaration"
         assert self._at_scope_dir is not None, "Given step must stage an AT scope dir"
 
-        env = dict(os.environ)
-        env["NWAVE_ROBUSTNESS_GATE_DECLARATION"] = str(self._declaration_path)
-        env["NWAVE_ROBUSTNESS_GATE_AT_SCOPE"] = str(self._at_scope_dir)
-        env["NWAVE_ROBUSTNESS_GATE_REPO_ROOT"] = str(_REPO_ROOT)
-
         # A realistic Claude-Code SubagentStop hook delivery JSON payload.
         # The hook drains stdin but does not interpret it -- the block
         # decision is driven by the gate CLI exit code, NOT the payload
@@ -1003,25 +1007,32 @@ class RobustnessGateComposition:
             }
         )
 
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "scripts.hooks.subagent_stop_robustness_gate",
-            ],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-            input=subagent_stop_payload,
-        )
+        # In-process analogue of the stdin-protocol fork
+        # `python -m scripts.hooks.subagent_stop_robustness_gate` (corpus-
+        # migration): the production hook EDGE `main()` drains the SubagentStop
+        # JSON from sys.stdin and decides from the gate CLI exit code. The hook
+        # spawns check_robustness_density as a NESTED subprocess, so the 3
+        # NWAVE_ROBUSTNESS_GATE_* env vars are set on os.environ around the call
+        # (inherited by the nested subprocess); save/restore in finally.
+        saved_env = dict(os.environ)
+        os.environ["NWAVE_ROBUSTNESS_GATE_DECLARATION"] = str(self._declaration_path)
+        os.environ["NWAVE_ROBUSTNESS_GATE_AT_SCOPE"] = str(self._at_scope_dir)
+        os.environ["NWAVE_ROBUSTNESS_GATE_REPO_ROOT"] = str(_REPO_ROOT)
+        try:
+            exit_code, hook_stdout, _hook_stderr = run_hook_in_process(
+                subagent_stop_robustness_gate.main,
+                stdin_text=subagent_stop_payload,
+                cwd=_REPO_ROOT,
+            )
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
 
         # The hook's contract: exit 2 + a JSON decision payload on stdout
         # signals a block per Claude Code's hook protocol. The dispatch is
         # "blocked" iff the hook returned exit 2.
-        dispatch_blocked = completed.returncode == 2
-        hook_chain_diagnostic = completed.stdout or ""
+        dispatch_blocked = exit_code == 2
+        hook_chain_diagnostic = hook_stdout or ""
 
         self.result = RobustnessGateResult(
             dispatch_blocked=dispatch_blocked,

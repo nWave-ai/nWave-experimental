@@ -60,11 +60,23 @@ from pathlib import Path
 
 from des.adapters.driven.git.git_mutate import git_run
 from des.adapters.driven.git.git_subprocess import git_text as _git
+from des.adapters.driven.logging.at_completion_ledger import (
+    AtCompletionLedger,
+    LedgerIntegrityViolation,
+)
 from des.cli.run_contract_gate import (
     _committed_scope_digest_value,
     _CommittedScopeDigest,
     extract_gate_scope,
 )
+from des.cli.verify_slice_commit_completeness import _append_slice_commit_indeterminate
+from des.domain.slice_id_trailer import extract_slice_ids
+
+
+# The honest free-text degrade reason the committed-scope-digest step records
+# when no pytest interpreter resolves on this machine (a non-Python target). The
+# first value the carpaccio-honest AT pins; degrade-LOUD keeps the taxonomy open.
+_DEGRADE_REASON_INTERPRETER_UNAVAILABLE = "gate_scope_interpreter_unavailable"
 
 
 # The placeholder digest stamped on the FIRST (pre-amend) commit. 64 zero-hex
@@ -77,6 +89,18 @@ _PLACEHOLDER_DIGEST = "0" * 64
 # during the amend. Mirrors run_contract_gate._GATE_SCOPE_TRAILER_RE but is
 # multiline-anchored for an in-place message rewrite.
 _GATE_SCOPE_LINE_RE = re.compile(r"^Gate-Scope:.*$", re.MULTILINE)
+
+# Matches a ``Reviewed-by:`` trailer line (multiline-anchored). Presence in the
+# operator-supplied ``--message`` means the operator hand-stamped the trailer --
+# it is then preserved verbatim and the mechanical ledger lookup is skipped.
+_REVIEWED_BY_LINE_RE = re.compile(r"^Reviewed-by:.*$", re.MULTILINE)
+
+# The ATReviewVerdict ledger event name + the APPROVED verdict literal. The
+# ``Reviewed-by:`` trailer carries the APPROVED ATReviewVerdict record's
+# tamper-evident ``record_hash`` -- the SAME value the M7 ledger seals when
+# ``des record-at-review-verdict`` records the acceptance-designer's approval.
+_AT_REVIEW_VERDICT_EVENT = "ATReviewVerdict"
+_VERDICT_APPROVED = "APPROVED"
 
 
 def _emit(payload: dict[str, object]) -> None:
@@ -101,6 +125,22 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="The commit message BODY (conventional-commit subject + body). The "
         "Gate-Scope: trailer is appended mechanically -- do NOT include one.",
+    )
+    parser.add_argument(
+        "--slice-id",
+        default=None,
+        help="The carpaccio slice identity (slice-NN). Stamped mechanically as a "
+        "Slice-Id: trailer (idempotent -- skipped if the message already carries "
+        "one). Required unless the --message already carries a Slice-Id: trailer.",
+    )
+    parser.add_argument(
+        "--feature-id",
+        default=None,
+        help="The feature the slice commit belongs to (kebab-case). The "
+        "AT-completion ledger is feature-scoped, so it is required to MINT the "
+        "honest SliceCommitIndeterminate record when the committed-scope digest "
+        "degrades LOUD on a non-Python target (interpreter unavailable). On the "
+        "non-degraded path it is unused.",
     )
     parser.add_argument(
         "--path",
@@ -185,7 +225,7 @@ def _commit_with_placeholder(repo: Path, message: str, no_verify: bool) -> None:
     )
 
 
-def _amend_trailer(repo: Path, digest: str, no_verify: bool) -> None:
+def _amend_trailer(repo: Path, digest: str) -> None:
     """Amend HEAD's message, replacing the placeholder with the real digest.
 
     Reads HEAD's full message, substitutes the ``Gate-Scope:`` line with the
@@ -193,12 +233,20 @@ def _amend_trailer(repo: Path, digest: str, no_verify: bool) -> None:
     committed TREE (NOT the message), this message-only amend leaves the
     committed-scope digest STABLE -- the post-amend verify re-derives a
     byte-identical digest (the fixed point).
+
+    The amend ALWAYS passes ``--no-verify``, unconditionally. The amend mutates
+    only the commit MESSAGE on an already-validated tree: the slice's tree was
+    already validated by the pre-commit hook on the FIRST commit
+    (``_commit_with_placeholder``), and content validity is re-proven end-to-end
+    by the final ``_verify`` (``run_contract_gate --verify-gate-scope``). Re-running
+    the pre-commit hook here would re-execute the full suite a SECOND time against
+    a byte-identical tree -- redundant by construction. The user ``--no-verify-commit``
+    flag governs ONLY the first commit (``_commit_with_placeholder``); it does not
+    reach this amend, because the amend never warrants the hook either way.
     """
     current = _git(repo, "log", "-1", "--format=%B", "HEAD")
     rewritten = _GATE_SCOPE_LINE_RE.sub(f"Gate-Scope: {digest}", current, count=1)
-    args = ["commit", "--amend", "--file", "-"]
-    if no_verify:
-        args.append("--no-verify")
+    args = ["commit", "--amend", "--file", "-", "--no-verify"]
     subprocess.run(
         ["git", *args],
         cwd=repo,
@@ -223,6 +271,104 @@ def _verify(repo: Path) -> int:
     )
 
 
+def _review_verdict_hash(
+    repo: Path, slice_id: str, feature_id: str | None
+) -> str | None:
+    """The latest APPROVED ATReviewVerdict ``record_hash`` for ``slice_id``, or None.
+
+    The ``Reviewed-by:`` trailer carries the ATReviewVerdict ledger record's
+    ``record_hash`` -- the M7 tamper-evident seal ``des record-at-review-verdict``
+    minted when the acceptance-designer reviewer APPROVED the slice's AT set. The
+    READ here is aligned with that WRITE: same ledger
+    (``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``), same record keyed by
+    ``slice_id``, the LATEST (highest ``seq``) APPROVED record selected.
+
+    Resolves the owning feature from ``--feature-id`` when supplied; otherwise
+    discovers it by scanning the per-feature ledger directory for the file whose
+    records carry ``slice_id`` (the SAME discovery the ``verify-commit-trailers``
+    auditor performs). Returns ``None`` when no APPROVED verdict exists for the
+    slice OR the ledger is unreadable (the degrade-LOUD caller warns) -- a hash
+    is NEVER fabricated.
+    """
+    if feature_id is not None:
+        candidates = [feature_id]
+    else:
+        ledger_dir = repo / ".nwave" / "telemetry" / "atdd-pure"
+        candidates = (
+            sorted(path.stem for path in ledger_dir.glob("*.jsonl"))
+            if ledger_dir.is_dir()
+            else []
+        )
+
+    for candidate in candidates:
+        ledger = AtCompletionLedger(feature_id=candidate, project_root=repo)
+        try:
+            records = ledger.read_records(
+                slice_id=slice_id, event_type=_AT_REVIEW_VERDICT_EVENT
+            )
+        except LedgerIntegrityViolation:
+            # A corrupt ledger is surfaced as "no verdict found" (the caller
+            # warns LOUD); the M7 fail-closed read already refused to undercount.
+            continue
+        approved = [r for r in records if r.get("verdict") == _VERDICT_APPROVED]
+        if not approved:
+            continue
+        latest = max(approved, key=lambda r: int(r.get("seq", 0)))
+        record_hash = latest.get("record_hash")
+        if record_hash:
+            return str(record_hash)
+    return None
+
+
+def _ensure_reviewed_by(
+    repo: Path, message: str, slice_ids: list[str], feature_id: str | None
+) -> str:
+    """Mechanically stamp the ``Reviewed-by:`` trailer from the AT-review ledger.
+
+    Closes the recurring records-of-truth omission (class-#56): the
+    ``Reviewed-by:`` trailer was historically hand-typed into ``--message`` by the
+    crafter, so when the agent forgot it the trailer was SILENTLY omitted (no
+    error, ``verified:true``) -- the SAME discipline-gap class ``commit-slice``
+    already mechanized away for ``Gate-Scope:`` and ``Slice-Id:``. This looks the
+    verdict up from the ledger and stamps it, so the trailer no longer depends on
+    the agent remembering.
+
+    Idempotent: a ``--message`` already carrying a ``Reviewed-by:`` trailer is
+    preserved verbatim (no duplicate, no override of an operator hand-stamp).
+
+    Degrade-LOUD (no-silent-pass): a slice with NO recorded APPROVED verdict
+    emits a what/why/how WARNING on stderr and the trailer is omitted for that
+    slice -- never a silent omission, never a fabricated hash. The trailer
+    requirement itself is NOT weakened: ``verify-commit-trailers`` (exit 45) and
+    the carpaccio/readiness gate remain the enforcing authority on presence.
+    """
+    if _REVIEWED_BY_LINE_RE.search(message):
+        return message
+
+    trailers: list[str] = []
+    for slice_id in slice_ids:
+        record_hash = _review_verdict_hash(repo, slice_id, feature_id)
+        if record_hash is None:
+            sys.stderr.write(
+                f"WARNING: des commit-slice found NO APPROVED ATReviewVerdict "
+                f"record for {slice_id} -- the Reviewed-by: trailer is OMITTED "
+                f"for this slice (records-of-truth omission, not a silent pass). "
+                f"WHY: no `des record-at-review-verdict ... --verdict APPROVED` "
+                f"record is keyed to this slice in "
+                f".nwave/telemetry/atdd-pure/ (the AT-review was never recorded, "
+                f"or the ledger is unreadable). HOW: after the acceptance-designer "
+                f"reviewer APPROVES, run `des record-at-review-verdict "
+                f"--feature-id <feature> --slice-id {slice_id} --verdict APPROVED "
+                f"--reviewer-agent-id <id>`, then re-run des commit-slice.\n"
+            )
+            continue
+        trailers.append(f"Reviewed-by: {record_hash} ({_VERDICT_APPROVED})")
+
+    if not trailers:
+        return message
+    return f"{message.rstrip()}\n\n" + "\n".join(trailers)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Produce a correct-by-construction slice commit (stage->commit->amend->verify)."""
     args = _build_parser().parse_args(argv)
@@ -241,6 +387,37 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    # Resolve the Slice-Id trailer mechanically (the SAME discipline the
+    # Gate-Scope amend already closes). The message must end carrying a Slice-Id:
+    # trailer; it arrives via --slice-id or is already inlined. Refuse up-front
+    # when NEITHER is present -- no Slice-Id-less commit is ever produced.
+    if not extract_slice_ids(args.message):
+        if args.slice_id is None:
+            _emit(
+                {
+                    "event": "MalformedInput",
+                    "error": "missing Slice-Id: pass --slice-id or include a "
+                    "Slice-Id: trailer",
+                }
+            )
+            return 2
+        # Idempotent stamp: append only when the message carries no Slice-Id (the
+        # presence check above already excluded a message-carried one).
+        message = f"{args.message.rstrip()}\n\nSlice-Id: {args.slice_id}"
+    else:
+        # The message already carries a Slice-Id -- preserve it verbatim, no
+        # duplicate stamp even if --slice-id was also passed.
+        message = args.message
+
+    # Mechanically stamp the Reviewed-by: trailer from the AT-review ledger (the
+    # SAME discipline the Gate-Scope + Slice-Id stamps already close). When the
+    # operator already hand-stamped it the message is preserved verbatim; when a
+    # slice has no recorded APPROVED verdict the omission is WARNED LOUD on stderr
+    # (never silent), never fabricated.
+    message = _ensure_reviewed_by(
+        repo, message, extract_slice_ids(message), args.feature_id
+    )
+
     try:
         malformed = _stage(repo, args.paths, args.all)
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
@@ -252,7 +429,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Step 2: commit with the placeholder trailer. HEAD now carries the slice.
     try:
-        _commit_with_placeholder(repo, args.message, args.no_verify_commit)
+        _commit_with_placeholder(repo, message, args.no_verify_commit)
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
         _emit({"event": "CommitFailed", "error": f"git commit failed: {exc}"})
         return 2
@@ -263,13 +440,42 @@ def main(argv: list[str] | None = None) -> int:
     # propagated as 1 -- the commit landed but is un-verifiable).
     digest_result = _committed_scope_digest_value(repo, "HEAD")
     if not isinstance(digest_result, _CommittedScopeDigest):
-        # The committed-scope machinery already emitted its LOUD event.
+        # The committed-scope machinery already emitted its LOUD event. The
+        # commit LANDED at step 2 carrying its Slice-Id trailer, but the digest
+        # could not be pinned (a non-Python target with no resolvable pytest
+        # interpreter). DDD-6: instead of returning record-less -- which wedges
+        # the successor slice ("predecessor has no honest record") -- route the
+        # degrade to MINT the honest SliceCommitIndeterminate record (the SAME
+        # SSOT mint `des verify-slice-commit`'s E2 degrade uses). The in-order
+        # gate accepts an INDETERMINATE predecessor, so the chain progresses; a
+        # fabricated SliceCommitVerified is NEVER written (the honesty invariant).
+        if args.feature_id is not None:
+            slice_ids = extract_slice_ids(message)
+            _append_slice_commit_indeterminate(
+                repo,
+                args.feature_id,
+                slice_ids,
+                reason=_DEGRADE_REASON_INTERPRETER_UNAVAILABLE,
+            )
+            _emit(
+                {
+                    "event": "SliceCommitIndeterminate",
+                    "commit": _git(repo, "rev-parse", "HEAD").strip(),
+                    "feature_id": args.feature_id,
+                    "slice_ids": slice_ids,
+                    "reason": _DEGRADE_REASON_INTERPRETER_UNAVAILABLE,
+                    "error": "the committed-scope digest could not be established "
+                    "on this machine (no resolvable interpreter) -- recorded an "
+                    "honest SliceCommitIndeterminate (unverified here), never a "
+                    "fabricated pass",
+                }
+            )
         return 1
     digest = digest_result.digest
 
     # Step 4: amend the message-only trailer to the committed-scope digest.
     try:
-        _amend_trailer(repo, digest, args.no_verify_commit)
+        _amend_trailer(repo, digest)
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
         _emit({"event": "CommitFailed", "error": f"git amend failed: {exc}"})
         return 2

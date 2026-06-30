@@ -70,7 +70,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -420,25 +419,36 @@ class TrailerReadGateComposition:
             str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
         )
         if self._substrate is GitSubstrate.GIT_BINARY_ABSENT:
-            # Narrow PATH to a git-free directory so the subprocess cannot resolve
-            # the git binary (FileNotFoundError) -- the binary-absent failure mode.
+            # Narrow PATH to a git-free directory so the gate cannot resolve the
+            # git binary (FileNotFoundError) -- the binary-absent failure mode.
+            # The in-process gate still forks `git` (external tool); the swapped
+            # os.environ PATH makes that fork unresolvable, faithfully.
             git_free = self._tmp / "_no_git_path" if self._tmp else None
             assert git_free is not None
             git_free.mkdir(parents=True, exist_ok=True)
             env["PATH"] = str(git_free)
-        self._completed = subprocess.run(
-            [
-                sys.executable,
+        from des.cli import verify_deliver_integrity
+        from tests.common.in_process_cli import run_cli_in_process
+
+        exit_code, stdout, stderr = run_cli_in_process(
+            [str(project), "--feature-id", str(_FEATURE_ID)],
+            cwd=str(project),
+            main=verify_deliver_integrity.main,
+            env=env,
+            catch_all=True,
+        )
+        self._completed = subprocess.CompletedProcess(
+            args=[
+                "python",
                 "-m",
                 VERIFY_MODULE,
                 str(project),
                 "--feature-id",
                 str(_FEATURE_ID),
             ],
-            capture_output=True,
-            text=True,
-            cwd=str(project),
-            env=env,
+            returncode=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
 
     def _require_project(self) -> Path:

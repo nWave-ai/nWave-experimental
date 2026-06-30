@@ -220,6 +220,62 @@ class TestDESHookIdempotence:
         assert non_des_entries[0]["matcher"] == "SomeOtherTool"
 
     @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
+    def test_install_registers_user_prompt_submit_preserving_persona_entry(
+        self, _mock_python, plugin: DESPlugin, install_context: InstallContext
+    ):
+        """UserPromptSubmit registration is installed; pre-existing user entries survive.
+
+        Regression AT for the wave-active anchor dormant-registration seam
+        (slice-04 amendment of nwave-flow-v2-enforcement, post-install smoke
+        finding #2): the handler module shipped but the installer never
+        registered a UserPromptSubmit hook, so the anchor never fired. The
+        merge must be ADDITIVE -- a user's own UserPromptSubmit entry (e.g.
+        a persona loader) is preserved alongside the new DES entry.
+        """
+        settings_file = install_context.claude_dir / "settings.json"
+
+        # Pre-seed a non-DES UserPromptSubmit entry (persona-loader shape)
+        persona_entry = {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": "python3 $HOME/.claude/hooks/load_persona.py",
+                }
+            ]
+        }
+        settings_file.write_text(
+            json.dumps({"hooks": {"UserPromptSubmit": [persona_entry]}}, indent=2)
+        )
+
+        result = plugin._install_des_hooks(install_context)
+        assert result.success, f"Install failed: {result.message}"
+
+        settings = json.loads(settings_file.read_text())
+        entries = settings["hooks"]["UserPromptSubmit"]
+
+        # Persona entry preserved exactly once
+        non_des = [e for e in entries if not shared_hooks.is_des_hook_entry(e)]
+        assert len(non_des) == 1, f"Expected 1 preserved user entry, got {non_des}"
+        assert "load_persona.py" in non_des[0]["hooks"][0]["command"]
+
+        # DES entry registered exactly once, correct command shape, no matcher
+        des = [e for e in entries if shared_hooks.is_des_hook_entry(e)]
+        assert len(des) == 1, f"Expected 1 DES UserPromptSubmit entry, got {des}"
+        command = des[0]["hooks"][0]["command"]
+        assert command.endswith(
+            "-m des.adapters.drivers.hooks.claude_code_hook_adapter user-prompt-submit"
+        ), f"Unexpected command shape: {command}"
+        assert "PYTHONPATH=" in command and "lib/python" in command
+        assert "/.venv/" not in command, "Project-local .venv must not leak"
+        assert "matcher" not in des[0], "UserPromptSubmit has no tool matcher"
+
+        # Idempotence: second install does not duplicate either entry
+        plugin._install_des_hooks(install_context)
+        settings = json.loads(settings_file.read_text())
+        entries = settings["hooks"]["UserPromptSubmit"]
+        assert len(entries) == 2, f"Expected persona + DES entries, got {entries}"
+
+    @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
     def test_install_after_python_path_change_replaces_hooks(
         self, _mock_python, plugin: DESPlugin, install_context: InstallContext
     ):

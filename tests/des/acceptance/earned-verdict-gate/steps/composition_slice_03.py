@@ -34,20 +34,22 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from des.cli.inject_seam import main as _inject_seam_main
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import InjectionOutcome, VerdictReason
 
 
 # The production driving port: the seam-injection CLI module, invoked as a
-# subprocess (``python -m``). This module does NOT exist yet -- DELIVER creates
-# it. Until then the subprocess exits non-zero (ModuleNotFoundError), which is
-# the RIGHT-reason RED: missing functionality at the driving port.
-_CLI_MODULE = "des.cli.inject_seam"
+# subprocess (``python -m``). Driven IN-PROCESS via the shared
+# ``run_cli_in_process`` driver (the in-process analogue of
+# ``python -m des.cli.inject_seam``); the port reads ``NWAVE_PERTURB`` from
+# ``os.environ`` at call time, so setting it around the in-process call is
+# behaviour-identical to passing it in the subprocess env.
 
 # The named seam the scaffold exposes + the implementation labels the port
 # reports. ``real`` is what the seam resolves to before perturbation; ``fault``
@@ -124,21 +126,25 @@ class SeamInjectionComposition:
             ),
             encoding="utf-8",
         )
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                _CLI_MODULE,
-                "--scaffold",
-                str(scaffold_path),
-                "--out",
-                str(out_path),
-            ],
-            capture_output=True,
-            text=True,
-            env={**os.environ, _PERTURB_ENV: self._seam_to_request},
-        )
-        return self._result_from_emission(out_path, completed.returncode)
+        prior_perturb = os.environ.get(_PERTURB_ENV)
+        os.environ[_PERTURB_ENV] = self._seam_to_request
+        try:
+            exit_code, _stdout, _stderr = run_cli_in_process(
+                [
+                    "--scaffold",
+                    str(scaffold_path),
+                    "--out",
+                    str(out_path),
+                ],
+                cwd=workspace,
+                main=_inject_seam_main,
+            )
+        finally:
+            if prior_perturb is None:
+                os.environ.pop(_PERTURB_ENV, None)
+            else:
+                os.environ[_PERTURB_ENV] = prior_perturb
+        return self._result_from_emission(out_path, exit_code)
 
     def _result_from_emission(
         self, out_path: Path, cli_exit_code: int

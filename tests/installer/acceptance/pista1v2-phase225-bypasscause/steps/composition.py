@@ -71,10 +71,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from tests.common.in_process_cli import run_cli_in_process
+
+from scripts.hooks import spine_ledger_gate
+
 
 # Repo root: tests/installer/acceptance/<feature>/steps/composition.py -> up five levels.
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_GATE_MODULE = "scripts.hooks.spine_ledger_gate"
 _BYPASS_ENV = "NWAVE_SPINE_LEDGER_GATE_BYPASS"
 _DISABLED_GATES_RELPATH = Path(".nwave") / "disabled-gates"
 _TELEMETRY_RELPATH = Path(".nwave") / "telemetry" / "atdd-pure"
@@ -241,12 +244,14 @@ class BypassCauseFixture:
         self._wired_branch = branch_name
 
     def run_gate(self) -> GateInvocation:
-        """Invoke the production gate script as a real subprocess against the target."""
-        completed = subprocess.run(
+        """Invoke the production gate EDGE in-process against the target.
+
+        In-process analogue of ``python -m scripts.hooks.spine_ledger_gate ...``:
+        the gate reads the live ``os.environ`` (the bypass env the test set/popped)
+        directly, identical to the subprocess that inherited ``{**os.environ}``.
+        """
+        exit_code, out, err = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                _GATE_MODULE,
                 "--commit-msg-file",
                 str(self._commit_msg_path),
                 "--ledger-root",
@@ -255,16 +260,12 @@ class BypassCauseFixture:
                 str(self._target_root),
             ],
             cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-            env={**os.environ},
+            main=spine_ledger_gate.main,
         )
         return GateInvocation(
-            exit_code=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
+            exit_code=exit_code,
+            stdout=out or "",
+            stderr=err or "",
         )
 
     def assert_branch_cause(

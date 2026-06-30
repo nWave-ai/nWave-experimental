@@ -14,7 +14,7 @@ from pathlib import Path
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from validation.validate_platform_contracts import validate_des_template  # noqa: E402
+from validation.validate_platform_contracts import validate_des_template
 
 
 # ---------------------------------------------------------------------------

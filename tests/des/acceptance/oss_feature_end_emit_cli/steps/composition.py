@@ -23,12 +23,11 @@ no PBT machinery).
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from tests.common.in_process_cli import run_cli_in_process
 from tests.env_parity import seed_dev_checkout_marker
 
 from .domain_types import (
@@ -37,15 +36,6 @@ from .domain_types import (
     FeatureId,
     VerdictHash,
 )
-
-
-# The absolute repo-`src/` path, derived from THIS file's location rather than a
-# cwd-relative `Path("src")` -- the `des` CLI subprocess is launched with
-# `cwd=project_root` (the per-test tmp workspace), so a cwd-relative PYTHONPATH
-# would resolve under the tmp tree and fail to import `des`. THIS file lives at
-# tests/des/acceptance/oss_feature_end_emit_cli/steps/composition.py -> 5 parents
-# up is the repo root.
-_REPO_SRC = Path(__file__).resolve().parents[5] / "src"
 
 
 _FEATURE_ID = FeatureId("oss-feature-end-demo")
@@ -122,17 +112,9 @@ class EmitFeatureEndComposition:
 
     def _run_des(self, argv: list[str]) -> EmitResult:
         """Dispatch `des <argv>` through the real `des.cli.__main__` entry point."""
-        completed = subprocess.run(
-            [sys.executable, "-m", "des.cli.__main__", *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(self._project_root),
-            env=_subprocess_env(),
-        )
-        outcome = (
-            EmitOutcome.SUCCEEDED if completed.returncode == 0 else EmitOutcome.REFUSED
-        )
-        return EmitResult(outcome=outcome, exit_code=completed.returncode)
+        exit_code, _stdout, _stderr = run_cli_in_process(argv, cwd=self._project_root)
+        outcome = EmitOutcome.SUCCEEDED if exit_code == 0 else EmitOutcome.REFUSED
+        return EmitResult(outcome=outcome, exit_code=exit_code)
 
     # --- observable read-back (ledger SUBSTRATE, NOT the SUT) ---------------
 
@@ -180,17 +162,6 @@ class EmitFeatureEndComposition:
     def signed_verdict_hash(self) -> VerdictHash:
         """The signed reviewer verdict hash the deep-review record binds."""
         return _SIGNED_VERDICT_HASH
-
-
-def _subprocess_env() -> dict[str, str]:
-    import os
-
-    env = dict(os.environ)
-    # ABSOLUTE repo-`src/` path (derived from __file__, not cwd-relative): the
-    # subprocess cwd is the per-test tmp workspace, so a `Path("src")` would
-    # resolve under the tmp tree and fail to import `des`.
-    env["PYTHONPATH"] = str(_REPO_SRC)
-    return env
 
 
 __all__ = [

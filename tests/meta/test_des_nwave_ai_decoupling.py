@@ -34,7 +34,7 @@ _TOP_LEVEL_NWAVE_AI_IMPORT = re.compile(
     re.MULTILINE,
 )
 
-import pytest  # noqa: E402
+import pytest
 
 
 @pytest.mark.fast_gate

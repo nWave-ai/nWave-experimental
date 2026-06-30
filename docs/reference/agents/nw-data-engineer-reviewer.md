@@ -4,9 +4,9 @@ Use for review and critique tasks - Data architecture and pipeline review specia
 
 **Wave:** Other
 **Model:** haiku
-**Max turns:** 0
+**Max turns:** 20
 **Tools:** Read, Glob, Grep, Task
 
 ## Skills
 
-- [nw-der-review-criteria](../../../nWave/skills/nw-der-review-criteria/SKILL.md) — Evaluation criteria and scoring for data engineering artifact reviews
+- [nw-der-review-criteria](../skills/nw-der-review-criteria.md) — Evaluation criteria and scoring for data engineering artifact reviews

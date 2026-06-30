@@ -33,9 +33,13 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
+import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import (
     AggregateReaderMethod,
@@ -788,7 +792,8 @@ class CommonAuditLogSsotComposition:
         AT-N0a: the 5 existing fixture caller sites all invoke the helper
         this way today. After slice-02d-N0 ships the new `feature_id=None`
         default kw-only parameter, those 5 sites must continue to produce
-        byte-identical writes (6 records under the legacy per-feature path,
+        byte-identical writes (7 records under the legacy per-feature path
+        after f-nonbypassable-attestation slice-01 grew the registry 6->7,
         ledger-bound feature_id scoping, no records under the common log).
         """
         assert self._repo is not None, "repository not staged"
@@ -803,8 +808,9 @@ class CommonAuditLogSsotComposition:
         AT-N0b: the helper must forward the kw-only feature_id to every
         `_RECORD_WRITERS` writer wrapper, each forwarding to
         `ledger.append_*(feature_id=...)` under the singleton-shape
-        constructor. The observable contract: 6 records under the common
-        audit log path, each carrying an explicit `feature_id` field; no
+        constructor. The observable contract: 7 records under the common
+        audit log path (registry grew 6->7 via f-nonbypassable-attestation
+        slice-01), each carrying an explicit `feature_id` field; no
         records under the per-feature substrate.
         """
         assert self._repo is not None, "repository not staged"
@@ -831,7 +837,7 @@ class CommonAuditLogSsotComposition:
 
         Port-exposed observable: JSONL line count at
         `.nwave/telemetry/atdd-pure/{feature_id}.jsonl`. Pins the writer
-        registry size (currently 6 entries -- the F-FROZENSET-EXTENSION-
+        registry size (currently 7 entries -- the F-FROZENSET-EXTENSION-
         FIXTURE-CASCADE invariant; arch test
         `test_required_record_writer_registry.py` is the lockstep gate).
         """
@@ -856,7 +862,7 @@ class CommonAuditLogSsotComposition:
 
         Port-exposed observable: JSONL line count at
         `.nwave/audit/atdd-pure-events.jsonl`. Pins the writer registry
-        size (currently 6 entries) under the singleton-shape substrate.
+        size (currently 7 entries) under the singleton-shape substrate.
         """
         assert self._repo is not None, "repository not staged"
         path = self._repo / ".nwave" / "audit" / "atdd-pure-events.jsonl"
@@ -1420,41 +1426,60 @@ class CommonAuditLogSsotComposition:
 # was caught by M32 reviewer. Backlog F-MANDATE-13-ADAPTERS-IMPORT-NOT-CAUGHT
 # tracks the regex widening to `from des\.(?:domain|application|adapters)\.`.
 
-import sys
-import textwrap
-
 
 _CallerDriver = "callable"  # type alias: (project_root: Path, feature_id: str) -> None
 
 
-def _run_caller_stub(project_root: Path, stub_script: str) -> None:
-    """Run a caller-driver stub in a subprocess.
+def _exec_stub_in_process(project_root: Path, stub_script: str) -> tuple[int, str, str]:
+    """Drive a caller-driver stub IN-PROCESS (corpus-migration-in-process).
 
-    Mandate-13 boundary: composition.py spawns the subprocess; the stub
-    string is the only place where `from des.adapters.X import` appears
-    (and it executes in the child process, not in composition.py's import
-    set). The repo project_root is passed as argv[1] so the stub can
-    construct the production AtCompletionLedger against the tmp repo.
+    Replaces the ``python -c <stub_script> <project_root>`` fork. ``sys.argv`` is
+    set to ``["<stub>", str(project_root)]`` (the stub reads ``sys.argv[1]``) and
+    restored in ``finally``; ``run_cli_in_process`` ``exec``s the IDENTICAL stub
+    under the repo root, capturing stdout/stderr and mapping any ``sys.exit`` to
+    the exit code -- behaviour-identical to the fresh-interpreter fork, minus the
+    spawn. Mandate-13 boundary preserved: the ``des.adapters`` import lives ONLY
+    inside the exec'd stub string, never in this module's static import set.
     """
-    proc = subprocess.run(
-        [sys.executable, "-c", stub_script, str(project_root)],
-        capture_output=True,
-        text=True,
-        cwd=str(Path(__file__).resolve().parents[5]),
-    )
+    repo_root = Path(__file__).resolve().parents[5]
+    prior_argv = sys.argv
+    sys.argv = ["<in-process-stub>", str(project_root)]
+    try:
+
+        def _exec_stub(_argv: list[str]) -> int:
+            exec(
+                compile(stub_script, "<in-process-stub>", "exec"),
+                {"__name__": "__main__"},
+            )
+            return 0
+
+        return run_cli_in_process([], cwd=repo_root, main=_exec_stub)
+    finally:
+        sys.argv = prior_argv
+
+
+def _run_caller_stub(project_root: Path, stub_script: str) -> None:
+    """Run a caller-driver stub IN-PROCESS.
+
+    Mandate-13 boundary: the stub string is the only place where
+    `from des.adapters.X import` appears (it executes inside the exec'd stub,
+    not in composition.py's static import set). The repo project_root is passed
+    as `sys.argv[1]` so the stub can construct the production AtCompletionLedger
+    against the tmp repo.
+    """
+    returncode, stdout, stderr = _exec_stub_in_process(project_root, stub_script)
     # Pre-migration: legacy positional construction succeeds; the per-feature
     # file is written; AT-1's per-feature-absent assertion reds correctly.
     # Post-migration: the singleton-shape construction succeeds; the common
-    # log file is written; AT-1 passes. The subprocess SHOULD return 0;
+    # log file is written; AT-1 passes. The driver SHOULD return 0;
     # surface non-zero with stderr for diagnostic readability.
-    assert proc.returncode == 0, (
-        f"caller driver subprocess failed (exit {proc.returncode}):\n"
-        f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    assert returncode == 0, (
+        f"caller driver failed (exit {returncode}):\nstdout={stdout}\nstderr={stderr}"
     )
 
 
 def _run_caller_stub_capture(project_root: Path, stub_script: str) -> object:
-    """Run a stub in a subprocess and capture a JSON-serialized return value.
+    """Run a stub IN-PROCESS and capture a JSON-serialized return value.
 
     Mandate-13 boundary: identical to `_run_caller_stub` but the stub is
     expected to print a single JSON document to stdout (the parent parses
@@ -1462,25 +1487,18 @@ def _run_caller_stub_capture(project_root: Path, stub_script: str) -> object:
     methods which need the production return value (record dict / frozenset)
     back in the composition for the Then-clause assertions. The adapter
     import lives ONLY inside the stub string; composition.py imports zero
-    `des.adapters.*` symbols.
+    `des.adapters.*` symbols statically.
     """
-    proc = subprocess.run(
-        [sys.executable, "-c", stub_script, str(project_root)],
-        capture_output=True,
-        text=True,
-        cwd=str(Path(__file__).resolve().parents[5]),
-    )
-    assert proc.returncode == 0, (
-        f"caller driver subprocess failed (exit {proc.returncode}):\n"
-        f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    returncode, stdout, stderr = _exec_stub_in_process(project_root, stub_script)
+    assert returncode == 0, (
+        f"caller driver failed (exit {returncode}):\nstdout={stdout}\nstderr={stderr}"
     )
     # Stub's contract: print exactly one JSON document to stdout. Empty
     # stdout signals a stub-authoring bug, not a production failure.
-    assert proc.stdout.strip(), (
-        f"caller driver subprocess returned empty stdout (expected JSON):\n"
-        f"stderr={proc.stderr}"
+    assert stdout.strip(), (
+        f"caller driver returned empty stdout (expected JSON):\nstderr={stderr}"
     )
-    return json.loads(proc.stdout)
+    return json.loads(stdout)
 
 
 # --- Slice-02b subprocess stub builders (Mandate-13 compliant) --------------

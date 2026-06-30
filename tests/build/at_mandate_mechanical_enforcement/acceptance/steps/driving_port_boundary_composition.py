@@ -15,15 +15,14 @@ a fixture file off disk.
 
 from __future__ import annotations
 
+from des.testarch.adapters.python_ast import PythonAstAdapter
+from des.testarch.rules.driving_port_boundary import BoundaryVerdict, detect
 from tests.build.at_mandate_mechanical_enforcement.acceptance.steps.domain_types import (
     CLEAN_CORPUS,
     VIOLATION_CORPUS,
     BoundaryOutcome,
     CorpusKind,
 )
-
-from des.testarch.adapters.python_ast import PythonAstAdapter
-from des.testarch.rules.driving_port_boundary import BoundaryVerdict, detect
 
 
 _CORPUS_BY_KIND = {

@@ -1,29 +1,25 @@
 """CLI: Verify deliver integrity before finalize.
 
 Usage:
-    des verify-integrity docs/feature/{project-id}/
+    des verify-integrity <project-dir> [--feature-id <id>]
 
-Reads roadmap.json and execution-log.json from the project directory,
-cross-references step IDs against execution-log entries, and reports
-violations (steps without DES traces or with incomplete TDD phases).
+The DELIVER spine is atdd_pure: roadmap-free and execution-log-free. The
+verifier validates the AT-completion ledger for the feature under finalize.
+A missing ledger is an integrity violation (exit 1), never a crash; a leftover
+roadmap.json is a WARNING. The feature-end cycle records (batch refactor + deep
+review + the gate heartbeats) must all be present before a feature is closeable.
 
-Workflow-mode awareness (ADR-028 D4.2):
-    Under `workflow.mode: atdd_pure` (resolved from `.nwave/config.yaml`),
-    the DELIVER spine is roadmap-free and execution-log-free. In that mode
-    `--roadmap-only` and the execution-log cross-reference are no-ops: a
-    missing roadmap.json is the expected state (never exit 2), a leftover
-    roadmap.json is a WARNING, and the verifier validates the AT-completion
-    ledger instead. An absent ledger is an integrity violation (exit 1),
-    never a crash. An absent `workflow.mode` key OR an absent config file now
-    resolves to `atdd_pure` (DDD-7, slice-03: the canonical absent default);
-    only an EXPLICIT `workflow.mode: classic` selects the classic roadmap +
-    execution-log path (the 0/1/2 exit-code contract preserved byte-for-byte).
+(f-finalize-verify-single-spine slice-01: the classic `workflow.mode == classic`
+roadmap/execution-log finalize leg, the `resolve_workflow_mode` dispatch, and the
+`--roadmap-only` mode were removed -- `_verify_atdd_pure` is now the whole body of
+`main()`. The `des verify-integrity` subcommand and the 0/1/2 exit-code
+contract are preserved byte-for-byte.)
 
 Exit codes:
-    0 = All steps verified
-    1 = Integrity violations found
-    2 = Usage error
-    4 = cannot-evaluate (git absent / not a work-tree -- LOUD INDETERMINATE)
+    0 = feature verified (ledger present, feature-end cycle complete)
+    1 = integrity violation (missing ledger / incomplete feature-end cycle)
+    2 = usage error (no project_dir / --repo target)
+    4 = cannot-evaluate (git absent / unreconciled bypass debt -- LOUD INDETERMINATE)
 """
 
 from __future__ import annotations
@@ -34,60 +30,26 @@ import re
 import sys
 from pathlib import Path
 
-from des.adapters.driven.config.des_config import DESConfig
 from des.adapters.driven.git.git_commit_trailer_read_adapter import (
     GitCommitTrailerReadAdapter,
 )
-from des.application.workflow_mode import ATDD_PURE_MODE, resolve_workflow_mode
-from des.domain._roadmap_helpers import (
-    extract_step_ids as _extract_step_ids,
-)
-from des.domain.deliver_integrity_verifier import DeliverIntegrityVerifier
-from des.domain.roadmap_schema import RoadmapSchemaLoader
-from des.domain.roadmap_validator import RoadmapValidator
-from des.domain.tdd_schema import TDDSchemaLoader
 from des.ports.driven_ports.commit_trailer_read_port import (
     CommitTrailerReadPort,
     Indeterminate,
 )
 
 
-__all__ = ["_extract_step_ids"]  # re-export for tests/des/unit/cli/
-
-
-def _parse_execution_log(exec_log: dict) -> dict[str, list[str]]:
-    """Parse execution-log.json events into step_id -> list[phase_name] mapping.
-
-    Supports both v2.0 pipe format ("sid|phase|status|data|ts")
-    and v3.0 structured format ({sid, p, s, d, t}).
-    """
-    entries: dict[str, list[str]] = {}
-    for event in exec_log.get("events", []):
-        if isinstance(event, str):
-            parts = event.split("|")
-            if len(parts) >= 2:
-                step_id = parts[0]
-                phase_name = parts[1]
-                entries.setdefault(step_id, []).append(phase_name)
-        elif isinstance(event, dict):
-            step_id = event.get("sid", "")
-            phase_name = event.get("p", "")
-            if step_id and phase_name:
-                entries.setdefault(step_id, []).append(phase_name)
-    return entries
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="des verify-integrity",
         description=(
-            "Verify TDD phase completeness for all steps in a feature deliver. "
-            "Reads roadmap.json and execution-log.json, cross-references step IDs "
-            "against execution-log entries, and reports violations."
+            "Verify deliver integrity for a feature before finalize. The "
+            "atdd_pure spine is roadmap-free: the verifier validates the "
+            "AT-completion ledger and the feature-end cycle records."
         ),
         epilog=(
-            "Exit codes: 0 = all steps verified | 1 = integrity violations | "
-            "2 = usage / format error."
+            "Exit codes: 0 = feature verified | 1 = integrity violation | "
+            "2 = usage error | 4 = cannot-evaluate (LOUD INDETERMINATE)."
         ),
     )
     parser.add_argument(
@@ -96,8 +58,8 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         help=(
-            "Path to the feature deliver directory containing roadmap.json "
-            "and execution-log.json (e.g. docs/feature/<id>/deliver/)"
+            "Path to the feature project root holding the .nwave/ ledger "
+            "substrate (atdd_pure spine is roadmap-free)."
         ),
     )
     parser.add_argument(
@@ -109,16 +71,6 @@ def _build_parser() -> argparse.ArgumentParser:
             "alias for the positional project_dir used by the consolidated "
             "feature-end-cycle driving surface (atdd_pure spine is roadmap-free, "
             "so the project root IS the verification target)."
-        ),
-    )
-    parser.add_argument(
-        "--roadmap-only",
-        action="store_true",
-        help=(
-            "Validate roadmap.json only (RoadmapValidator); skip the "
-            "execution-log.json cross-reference. Intended for Phase 1 "
-            "hard-gate use before crafter dispatch has produced any "
-            "execution-log entries."
         ),
     )
     parser.add_argument(
@@ -268,6 +220,152 @@ def _foreign_owned_slices(project_dir: Path, *, own_ledger: Path) -> frozenset[s
     return frozenset(foreign)
 
 
+def _declared_slice_plan_slice_ids(project_dir: Path, feature_id: str) -> list[str]:
+    """Every slice-id DECLARED in the feature's Slice-Plan (the `Slice` column).
+
+    The feature's OWN slices, read from its feature-delta -- unlike the git-history
+    `Slice-Id:` trailer set (`_shipped_slices`), which is NOT feature-tagged and
+    over-counts across co-resident features (slice-ids are not globally unique).
+    Used to report `reconciled_slices` accurately for a slice-plan feature when the
+    verdict is FeatureReconciled (all declared slices are then reconciled), closing
+    the phantom over-count F-VERIFY-INTEGRITY-RECONCILED-SLICES-OVERCOUNTS-PHANTOM.
+    Empty when no feature-delta / Slice-Plan is present.
+    """
+    from des.cli.validate_feature_delta import (
+        _SLICE_PLAN_HEADING_RE,
+        SLICE_PLAN_COLUMNS,
+        _is_separator_row,
+        _parse_table_cells,
+        _plan_table_rows,
+    )
+
+    delta_path = project_dir / "docs" / "feature" / feature_id / "feature-delta.md"
+    if not delta_path.is_file():
+        return []
+    rows = _plan_table_rows(
+        delta_path.read_text(encoding="utf-8"), _SLICE_PLAN_HEADING_RE
+    )
+    if not rows:
+        return []
+    slice_index = SLICE_PLAN_COLUMNS.index("Slice")
+    ids: list[str] = []
+    for row in rows[1:]:
+        if _is_separator_row(row):
+            continue
+        cells = _parse_table_cells(row)
+        if len(cells) <= slice_index:
+            continue
+        sid = cells[slice_index].strip()
+        if sid:
+            ids.append(sid)
+    return ids
+
+
+def _undelivered_slice_plan_slices(project_dir: Path, feature_id: str) -> list[str]:
+    """Planned Slice-Plan slices with NO delivered acceptance-test file (DDD-5).
+
+    Un-gameable, git-free completeness oracle. Closes the truncated-feature hole
+    the 2026-06-04 dogfood exposed: a feature whose Slice-Plan DECLARES a slice
+    that was NEVER delivered must NOT be declarable done, even though every
+    committed slice reconciled.
+
+    The delivered-ness of a planned slice is DERIVED from a REAL artefact -- the
+    existence of a ``@slice-NN``-tagged ``.feature`` file under the feature's
+    ``@feature-{id}`` tag (``feature_files_for_slice``, a pure working-tree walk:
+    no git, no manual ``Status`` text column an author could flip to dodge the
+    gate). This is the no-silent-pass / un-gameable measure (Ale 2026-06-15,
+    "confermo: ledger-derived not the gameable status text"):
+
+      * a planned slice with >=1 such file WAS delivered -- its acceptance tests
+        exist on disk -- even when several plan-slices were BUNDLED into one
+        commit (the ``--no-verify`` era left features whose 2-3 plan-slices all
+        shipped under a single ``Slice-Id: slice-01`` trailer; their slice-02/03
+        ``.feature`` files exist, so they are correctly NOT flagged truncated).
+      * a planned slice with NO such file was declared-but-never-delivered ->
+        TRUNCATED (the 2026-06-04 hole: a plan row with no acceptance-test file).
+
+    The PLANNED slice-ids are read via the canonical Slice-Plan parser from
+    ``des.cli.validate_feature_delta`` (the `Slice` column); the `Status` text
+    column is deliberately NOT read. An absent feature-delta / Slice-Plan /
+    header-only plan yields an empty list -- the assertion never manufactures a
+    refusal where no plan declares work.
+    """
+    from des.application.slice_at_completeness import feature_files_for_slice
+    from des.cli.validate_feature_delta import (
+        _SLICE_PLAN_HEADING_RE,
+        SLICE_PLAN_COLUMNS,
+        _is_separator_row,
+        _parse_table_cells,
+        _plan_table_rows,
+    )
+
+    delta_path = project_dir / "docs" / "feature" / feature_id / "feature-delta.md"
+    if not delta_path.is_file():
+        return []
+    rows = _plan_table_rows(
+        delta_path.read_text(encoding="utf-8"), _SLICE_PLAN_HEADING_RE
+    )
+    if not rows:
+        return []
+    slice_index = SLICE_PLAN_COLUMNS.index("Slice")
+    prose_delivered = _prose_delivered_slices(project_dir, feature_id)
+    undelivered: list[str] = []
+    for row in rows[1:]:
+        if _is_separator_row(row):
+            continue
+        cells = _parse_table_cells(row)
+        if len(cells) <= slice_index:
+            continue
+        slice_id = cells[slice_index].strip()
+        if not slice_id:
+            continue
+        # A PROSE slice (Decision-4 NON-code / prose surfaces, "NO ATs authored
+        # for prose") is delivered WITHOUT a `.feature` file -- its delivery is
+        # attested by a `SliceProseDelivered` ledger record (attested=true), the
+        # un-gameable spine-emitted analogue of the `.feature`-presence oracle for
+        # code slices. Exempting it is NOT the gameable `Status` text dodge: the
+        # exemption keys on a real, hash-stamped ledger attestation, not a
+        # hand-editable column. Closes the verify-integrity false-positive the
+        # adversarial swarm 2026-06-29 exposed (a prose slice was wrongly flagged
+        # TRUNCATED, theater-rejecting an honestly-delivered prose slice).
+        if slice_id in prose_delivered:
+            continue
+        if not feature_files_for_slice(project_dir, slice_id, feature_id):
+            undelivered.append(slice_id)
+    return undelivered
+
+
+def _prose_delivered_slices(project_dir: Path, feature_id: str) -> frozenset[str]:
+    """Slice-ids carrying an attested ``SliceProseDelivered`` ledger record.
+
+    A prose slice (no acceptance-test ``.feature`` by design) is delivered when
+    the spine emits a ``SliceProseDelivered`` record with ``attested: true`` for
+    it. Un-gameable: the record is hash-stamped + reviewer-attested, NOT the
+    hand-editable ``Status`` column. Returns the empty set when no ledger exists.
+    """
+    ledger = project_dir / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
+    if not ledger.is_file():
+        return frozenset()
+    delivered: set[str] = set()
+    try:
+        for line in ledger.read_text(encoding="utf-8").splitlines():
+            if '"SliceProseDelivered"' not in line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if (
+                rec.get("event") == "SliceProseDelivered"
+                and rec.get("attested") is True
+                and isinstance(rec.get("slice_id"), str)
+            ):
+                delivered.add(rec["slice_id"])
+    except OSError:
+        return frozenset()
+    return frozenset(delivered)
+
+
 _COMMON_AUDIT_LOG_REL = Path(".nwave") / "audit" / "atdd-pure-events.jsonl"
 
 
@@ -409,9 +507,11 @@ def _verify_atdd_pure(
     # feature-end-cycle assertion below (a non-git ledger-only project stays
     # evaluable -- git-present parity preserved byte-for-byte).
     try:
-        verified = AtCompletionLedger(
-            resolved_feature_id, project_dir
-        ).verified_slices()
+        ledger_for_reconciliation = AtCompletionLedger(resolved_feature_id, project_dir)
+        verified = ledger_for_reconciliation.verified_slices()
+        unreconciled_bypass = (
+            ledger_for_reconciliation.unreconciled_bypass_debt_slices()
+        )
     except LedgerIntegrityViolation as exc:
         print(
             json.dumps(
@@ -425,6 +525,38 @@ def _verify_atdd_pure(
             )
         )
         return 1
+
+    # f-nonbypassable-attestation slice-02 (DDD-3 / CT-4): a `--no-verify`
+    # slice-commit left a `SliceCommitBypassed` debt record at the PreToolUse/Bash
+    # surface. While that debt carries NO matching `SliceCommitVerified` (the
+    # `des reverify-slice-commit` flip), the gate genuinely COULD NOT verify that
+    # commit -> the §17 degrade-LOUD class: verdict INDETERMINATE (exit 4), never
+    # PASS. This is checked BEFORE git-shipped reconciliation and the feature-end
+    # cycle assertion so the unreconciled-debt verdict takes precedence; it does
+    # NOT require git (the debt lives in the ledger, read git-free). The cause
+    # fragment NAMES `SliceCommitBypassed` so this INDETERMINATE is told apart from
+    # the git-absent `FeatureIndeterminate` (CT-7) path -- distinct cause, same
+    # verdict (DDD-7: no sixth verdict).
+    if unreconciled_bypass:
+        print(
+            json.dumps(
+                {
+                    "event": "FeatureBypassDebtUnreconciled",
+                    "feature_id": resolved_feature_id,
+                    "unreconciled_bypass_debt_slices": sorted(unreconciled_bypass),
+                    "debt_record": "SliceCommitBypassed",
+                    "error": (
+                        f"cannot certify {resolved_feature_id!r} as done: it carries "
+                        f"an unreconciled SliceCommitBypassed debt for "
+                        f"{sorted(unreconciled_bypass)} -- a per-commit verification "
+                        "was bypassed (git commit --no-verify) and never reconciled. "
+                        "Run `des reverify-slice-commit` to emit the matching "
+                        "SliceCommitVerified, then the done-gate can certify."
+                    ),
+                }
+            )
+        )
+        return CANNOT_EVALUATE_EXIT
 
     # The done-gate reads the commit-trailer history through the port (git lives
     # behind the adapter; this gate logic is git-free). On git-absence /
@@ -516,12 +648,21 @@ def _verify_atdd_pure(
     # `CoverageMapVerifiedAtDeliverExit`) emitted by the slice-06 gate are
     # also required -- closes the named residue F-SLICE-06-U4-CONSUMER-MISSING
     # from Gate D slice-06 commit `a8c9dc9d8`.
+    # f-nonbypassable-attestation slice-01 (DDD-4): the full-suite leg's
+    # `FullSuiteLegRan` heartbeat is also required -- a feature declared done
+    # over a full suite that never ran is refused on record-ABSENCE (the gate
+    # reads the leg's ledger record, never a pytest exit code; AT-A2 read/write
+    # split). 6th sibling of the env-e2e / walking-skeleton / coverage-map
+    # heartbeat pattern. This set is held EQUAL to
+    # `nWave/flavors/atdd_pure.yaml feature_end_required_records` (AT-A6): a
+    # single-location edit would silently re-open the half-wired hole.
     required = {
         "CoverageMapVerifiedAtDeliverExit",
         "CoverageMapVerifiedAtDistillExit",
         "EBatchRefactorCompleted",
         "EnvironmentalE2eGateRan",
         "FeatureEndReviewVerdict",
+        "FullSuiteLegRan",
         "WalkingSkeletonGateRan",
     }
     # fix-feature-end-ws-gate-applicability slice-04: each applicability-aware
@@ -536,6 +677,11 @@ def _verify_atdd_pure(
     _NA_MARKER_RECONCILES = {
         "CoverageMapNotApplicableAtDistillExit": "CoverageMapVerifiedAtDistillExit",
         "CoverageMapNotApplicableAtDeliverExit": "CoverageMapVerifiedAtDeliverExit",
+        # f-nonbypassable-attestation slice-01 (DDD-4): a target repo with no
+        # collectable contract suite emits `FullSuiteLegNotApplicable` instead of
+        # `FullSuiteLegRan`; the NA marker reconciles the requirement (genericità,
+        # never a fake pass).
+        "FullSuiteLegNotApplicable": "FullSuiteLegRan",
     }
     try:
         ledger = AtCompletionLedger(resolved_feature_id, project_dir)
@@ -544,6 +690,7 @@ def _verify_atdd_pure(
             | ledger.environmental_e2e_events()
             | ledger.walking_skeleton_events()
             | ledger.coverage_map_touchpoint_events()
+            | ledger.full_suite_leg_events()
         )
     except LedgerIntegrityViolation as exc:
         print(
@@ -592,16 +739,61 @@ def _verify_atdd_pure(
         )
         return 1
 
+    # f-nonbypassable-attestation slice-03 (DDD-5): the slice-plan-all-delivered
+    # assertion COMPOSES with the feature-end cycle + reconciliation above. A
+    # feature whose every committed slice reconciled but whose Slice-Plan DECLARES
+    # a slice with NO delivered acceptance-test file was TRUNCATED -- that slice
+    # was never delivered. The done-gate refuses with a definite FAIL (exit 1: the
+    # plan rows + the filesystem are readable, so it is a no, not an INDETERMINATE
+    # -- DDD-7, no sixth verdict) and NAMES the undelivered slice (distinct cause
+    # fragment so a blocked developer learns WHY). Delivered-ness is the
+    # un-gameable ``.feature``-file presence, NOT the gameable `Status` text
+    # column (Ale 2026-06-15). This closes the 2026-06-04 truncated-feature hole.
+    undelivered = _undelivered_slice_plan_slices(project_dir, resolved_feature_id)
+    if undelivered:
+        print(
+            json.dumps(
+                {
+                    "event": "FeatureSlicePlanPending",
+                    "feature_id": resolved_feature_id,
+                    "pending_slices": sorted(undelivered),
+                    "error": (
+                        f"cannot certify {resolved_feature_id!r} as done: its "
+                        f"Slice-Plan declares {len(undelivered)} slice(s) with no "
+                        f"delivered acceptance-test (@slice-NN .feature) file -- "
+                        f"{sorted(undelivered)}; every committed slice reconciled "
+                        "but the feature is TRUNCATED (slices declared but never "
+                        "delivered). Deliver the missing slices before declaring "
+                        "the feature done."
+                    ),
+                }
+            )
+        )
+        return 1
+
     # Both checks cleared. With `Slice-Id:` commits this is the composed
     # reconciliation verdict (`FeatureReconciled`); otherwise the classic
     # plain-text trace verdict, unchanged.
     if shipped:
+        # Report the feature's OWN reconciled slices, not the cross-feature
+        # git-history `shipped` over-count (F-VERIFY-INTEGRITY-RECONCILED-SLICES-
+        # OVERCOUNTS-PHANTOM, cross-tier swarm 2026-06-29): `shipped` is the
+        # `Slice-Id:` trailer set, NOT feature-tagged, so it accumulates EVERY
+        # co-resident feature's slice-ids (8 reported for a 4-slice feature).
+        # Subtracting `foreign_owned` is WRONG (slice-ids are not globally unique
+        # -> it removes THIS feature's own slices, an under-count). For a slice-
+        # plan feature the accurate set is its DECLARED slice-ids -- all
+        # reconciled here, since any undelivered slice would have FAILED the
+        # truncation check above. A classic feature with no Slice-Plan falls back
+        # to `shipped` (its historical behaviour, unchanged).
+        declared = _declared_slice_plan_slice_ids(project_dir, resolved_feature_id)
+        reconciled_ids = sorted(declared) if declared else sorted(shipped)
         print(
             json.dumps(
                 {
                     "event": "FeatureReconciled",
                     "feature_id": resolved_feature_id,
-                    "reconciled_slices": sorted(shipped),
+                    "reconciled_slices": reconciled_ids,
                 }
             )
         )
@@ -615,11 +807,12 @@ def _verify_atdd_pure(
 
 
 def main(argv: list[str] | None = None) -> int:
-    # F-2 (RC-B, ADR-025): argparse replaces hand-rolled args[0] loop. The
-    # legacy loop silently swallowed `--roadmap-only` (treating it as the
-    # positional path) which made the Phase 1 hard gate in
-    # `nw-deliver/SKILL.md:153` non-functional. argparse natively raises
-    # SystemExit on unknown flags with the usage banner.
+    # f-finalize-verify-single-spine slice-01: the integrity gate carries
+    # exactly ONE spine. The classic `workflow.mode == classic` finalize leg,
+    # the `resolve_workflow_mode` dispatch, and `--roadmap-only` were removed;
+    # `_verify_atdd_pure` is the whole body. The `des verify-integrity` subcommand
+    # and the 0/1/2 exit-code contract are preserved byte-for-byte (exit 2 is the
+    # argparse usage error below; exit 4 is the LOUD cannot-evaluate verdict).
     raw_args = sys.argv[1:] if argv is None else list(argv)
     parser = _build_parser()
     args = parser.parse_args(raw_args)
@@ -631,126 +824,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("a project_dir positional or --repo is required")
     roadmap_path = project_dir / "roadmap.json"
 
-    # ADR-028 D4.2: resolve workflow mode BEFORE any roadmap.json access. Under
-    # atdd_pure the spine is roadmap-free -- a missing roadmap is the expected
-    # state, not exit 2 -- so the mode branch MUST run above the roadmap check.
-    if resolve_workflow_mode(project_dir) == ATDD_PURE_MODE:
-        # Composition root: default-wire the real git adapter and inject it down
-        # the call chain (main -> _verify_atdd_pure -> _shipped_slices). The gate
-        # logic stays git-free; git lives only behind GitCommitTrailerReadAdapter.
-        return _verify_atdd_pure(
-            project_dir,
-            roadmap_path,
-            args.feature_id,
-            trailer_port=GitCommitTrailerReadAdapter(),
-        )
-
-    if not roadmap_path.exists():
-        print(f"Error: roadmap.json not found at {roadmap_path}")
-        return 2
-
-    roadmap = json.loads(roadmap_path.read_text())
-
-    # Structural pre-check: validate roadmap format. In --roadmap-only mode
-    # this is the ONLY check; execution-log.json is never opened.
-    try:
-        roadmap_schema = RoadmapSchemaLoader().load()
-        validator = RoadmapValidator(roadmap_schema)
-        validation = validator.validate(roadmap)
-        errors = [v for v in validation.violations if v.severity == "error"]
-        if errors:
-            print(f"ROADMAP FORMAT ERRORS ({len(errors)}):")
-            for e in errors:
-                print(f"  - [{e.rule}] {e.path}: {e.message}")
-            print("Fix roadmap format before verifying deliver integrity.")
-            return 1
-    except Exception as e:
-        print(f"Warning: roadmap format pre-check skipped: {e}")
-        if args.roadmap_only:
-            # In --roadmap-only mode the validator IS the verdict — surface
-            # the failure rather than silently continuing past it.
-            return 2
-
-    if args.roadmap_only:
-        print(
-            f"Roadmap format OK: {roadmap_path} "
-            f"(validator: no errors). --roadmap-only: execution-log skipped."
-        )
-        return 0
-
-    exec_log_path = project_dir / "execution-log.json"
-    if not exec_log_path.exists():
-        print(f"Error: execution-log.json not found at {exec_log_path}")
-        return 2
-
-    exec_log = json.loads(exec_log_path.read_text())
-
-    step_ids = _extract_step_ids(roadmap)
-    entries = _parse_execution_log(exec_log)
-
-    schema = TDDSchemaLoader().load()
-
-    # F-3 (RC-C, ADR-025): the integrity verifier honours the rigor-profile
-    # phase set declared in `.nwave/des-config.json`, intersected with the
-    # canonical TDDSchema phase set. This lets 3-phase ADR-025 projects pass
-    # integrity without spurious "missing PREPARE/RED_ACCEPTANCE/RED_UNIT"
-    # errors, while legacy 5-phase projects continue to verify unchanged.
-    #
-    # ADR-025 dispatch (per-log auto-detect, 2026-05-18 hotfix): the CLI
-    # uses the EXECUTION LOG to decide which canon applies. If ALL three
-    # legacy-only phases (PREPARE, RED_ACCEPTANCE, RED_UNIT) appear in
-    # ANY step's recorded events, treat the log as v4 legacy and validate
-    # against the schema's `legacy_phases` tuple. Otherwise canonical.
-    # Mirrors `validator._resolve_active_phases` for consistency with the
-    # in-process step-completion validator.
-    legacy_only = {"PREPARE", "RED_ACCEPTANCE", "RED_UNIT"}
-    log_canon_is_legacy = any(
-        legacy_only.issubset(set(phase_names)) for phase_names in entries.values()
+    # Composition root: default-wire the real git adapter and inject it down the
+    # call chain (main -> _verify_atdd_pure -> _shipped_slices). The gate logic
+    # stays git-free; git lives only behind GitCommitTrailerReadAdapter.
+    return _verify_atdd_pure(
+        project_dir,
+        roadmap_path,
+        args.feature_id,
+        trailer_port=GitCommitTrailerReadAdapter(),
     )
-    active_phases = schema.legacy_phases if log_canon_is_legacy else schema.tdd_phases
-    rigor_phases = DESConfig().rigor_tdd_phases
-    # Empty rigor.tdd_phases is a config misconfiguration, not a degenerate
-    # zero-overlap case — surface the diagnostic BEFORE the active-phases
-    # fallback can mask it. The fallback (line below) is correct ONLY when
-    # rigor declares non-empty phases that simply do not overlap with the
-    # active canon (e.g. 3-phase rigor against a legacy v4 audit-replay).
-    if not rigor_phases:
-        print(
-            f"ERROR: rigor.tdd_phases is empty in .nwave/des-config.json. "
-            f"Configure rigor.tdd_phases with at least one of: "
-            f"{list(schema.tdd_phases)!r} (canonical) or "
-            f"{list(schema.legacy_phases)!r} (legacy).",
-            file=sys.stderr,
-        )
-        return 2
-    effective_phases = (
-        tuple(p for p in active_phases if p in rigor_phases) or active_phases
-    )
-    if not effective_phases:
-        print(
-            f"ERROR: rigor.tdd_phases contains no phases recognised by the "
-            f"canonical TDDSchema. Misconfigured rigor phases: "
-            f"{list(rigor_phases)!r}; canonical phases: "
-            f"{list(schema.tdd_phases)!r}.",
-            file=sys.stderr,
-        )
-        return 2
-
-    required_phases = list(effective_phases)
-    verifier = DeliverIntegrityVerifier(required_phases=required_phases)
-    result = verifier.verify(step_ids, entries)
-
-    if result.is_valid:
-        print(f"All {result.steps_verified} steps have complete DES traces")
-        return 0
-    else:
-        print(f"INTEGRITY VIOLATIONS: {result.reason}")
-        for v in result.violations:
-            print(
-                f"  - {v.step_id}: {v.phase_count}/{len(required_phases)} phases, "
-                f"missing: {v.missing_phases}"
-            )
-        return 1
 
 
 if __name__ == "__main__":

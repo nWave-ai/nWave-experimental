@@ -49,7 +49,7 @@ def write_deferral_marker(path: Path, reason: str) -> None:
     )
     with os.fdopen(tmp_fd, "w", encoding="utf-8") as handle:
         handle.write(f"deferral: {reason}\n")
-    os.replace(tmp_name, path)
+    Path(tmp_name).replace(path)
 
 
 __all__ = ["deferral_marker_path", "write_deferral_marker"]

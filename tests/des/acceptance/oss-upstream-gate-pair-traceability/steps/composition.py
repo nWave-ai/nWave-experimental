@@ -59,7 +59,6 @@ import hashlib
 import hmac
 import json
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -69,6 +68,8 @@ from pathlib import Path
 # ATReviewVerdict the DOWNSTREAM verdict-completeness gate reads so it ALLOWS,
 # making DT-5's "proceed to DELIVER" / "exit zero" Gherkin literally assertable.
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
+from tests.common.in_process_cli import run_hook_in_process
 
 from .domain_types import ClauseVerdict, EmissionChannel
 
@@ -76,7 +77,6 @@ from .domain_types import ClauseVerdict, EmissionChannel
 # tests/des/acceptance/oss-upstream-gate-pair-traceability/steps/composition.py
 #   parents[5] = REPO_ROOT
 REPO_ROOT = Path(__file__).resolve().parents[5]
-HOOK_MODULE = "des.adapters.drivers.hooks.subagent_stop_handler"
 
 # The orphan clause-ID the gate must surface as UNWITNESSED; the witnessed
 # clause-ID it must stay silent about. Both ride in the tmp feature-delta table.
@@ -175,18 +175,16 @@ class TraceabilityGateComposition:
                 "permission_mode": "default",
             }
         )
-        runner = (
-            "import sys; "
-            f"sys.path.insert(0, {str(REPO_ROOT / 'src')!r}); "
-            f"from {HOOK_MODULE} import handle_subagent_stop; "
-            "sys.exit(handle_subagent_stop())"
-        )
-        self._completed = subprocess.run(
-            [sys.executable, "-c", runner],
-            input=hook_input,
-            capture_output=True,
-            text=True,
+        exit_code, out, err = run_hook_in_process(
+            handle_subagent_stop,
+            stdin_text=hook_input,
             cwd=str(self._project_root),
+        )
+        self._completed = subprocess.CompletedProcess(
+            args=["subagent-stop-hook"],
+            returncode=exit_code,
+            stdout=out,
+            stderr=err,
         )
 
     # ---- then ----------------------------------------------------------

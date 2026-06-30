@@ -278,10 +278,7 @@ def _extract_attested_class_ids(body: str) -> tuple[str, ...]:
         if stripped.startswith("- omission-classes-attested:"):
             # Inline `[]` empty-list shape.
             tail = stripped.split(":", 1)[1].strip()
-            if tail == "[]":
-                in_attested = False
-            else:
-                in_attested = True
+            in_attested = tail != "[]"
             continue
         if in_attested:
             if stripped.startswith("- "):

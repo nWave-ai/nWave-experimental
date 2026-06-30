@@ -3,12 +3,12 @@
 Defect (RCA: docs/analysis/atdd-pure-dogfooding-friction-2026-05-20.md):
 `python scripts/install/install_nwave.py` (bare script-mode invocation —
 the form documented in the installer's own `--help` usage line) crashes.
-The package-import `try` block fails at the `reviewer_signing_plugin`
-import (`ModuleNotFoundError`), falls through to the standalone-fallback
-`except` block, which then fails at `from shared.agent_catalog import ...`
-(`ModuleNotFoundError: shared` — `shared` is not importable in pure script
-mode). `python -m scripts.install.install_nwave` works; the bare-script
-form does not. Surfaced when the F-01 commit added a new plugin module.
+The package-import `try` block fails, falls through to the
+standalone-fallback `except` block, which then fails at
+`from shared.agent_catalog import ...` (`ModuleNotFoundError: shared` —
+`shared` is not importable in pure script mode).
+`python -m scripts.install.install_nwave` works; the bare-script form does
+not. Surfaced when the F-01 commit added a new plugin module.
 
 These are @wiring_e2e regression tests: they run the REAL installer as a
 subprocess (not import it), because this is precisely the "fixture passes,

@@ -35,11 +35,13 @@ import json
 import os
 import re
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
+from des.cli.run_contract_gate import main as _run_contract_gate_main
+from tests.common.in_process_cli import run_cli_in_process, run_hook_in_process
 
 from .domain_types_slice_03 import (
     CoResidentState,
@@ -50,7 +52,6 @@ from .domain_types_slice_03 import (
 )
 
 
-_HANDLER_MODULE = "des.adapters.drivers.hooks.subagent_stop_handler"
 _SRC_ROOT = Path("src").resolve()
 
 # The slice the committing feature A delivers; the co-resident foreign feature B
@@ -208,19 +209,34 @@ class GcommitE1ScopingComposition:
                 "permission_mode": "default",
             }
         )
-        runner = (
-            "import sys; "
-            f"sys.path.insert(0, {str(_SRC_ROOT)!r}); "
-            f"from {_HANDLER_MODULE} import handle_subagent_stop; "
-            "sys.exit(handle_subagent_stop())"
-        )
-        completed = subprocess.run(
-            [sys.executable, "-c", runner],
-            input=hook_input,
-            capture_output=True,
-            text=True,
-            cwd=str(Path.cwd()),
-            env=self._subprocess_env(),
+        # In-process analogue of the former `python -c "from <handler> import
+        # handle_subagent_stop; sys.exit(handle_subagent_stop())"` fork with the
+        # JSON event on stdin: drive the REAL no-argv handler directly, dropping
+        # the per-scenario interpreter fork. The handler reads its event from
+        # stdin and resolves the repo from the event `cwd`, so process cwd stays
+        # the repo root. The two load-bearing env keys (PYTHONPATH for the child
+        # E2 gate subprocess, NWAVE_FRESHNESS=skip to isolate the install-freshness
+        # probe) are applied to os.environ around the call and restored in finally
+        # (shared-process safe); the inner gate subprocess inherits them.
+        target_env = self._subprocess_env()
+        managed_keys = ("PYTHONPATH", "NWAVE_FRESHNESS")
+        priors = {key: os.environ.get(key) for key in managed_keys}
+        try:
+            for key in managed_keys:
+                os.environ[key] = target_env[key]
+            exit_code, stdout, stderr = run_hook_in_process(
+                handle_subagent_stop,
+                stdin_text=hook_input,
+                cwd=Path.cwd(),
+            )
+        finally:
+            for key, value in priors.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=exit_code, stdout=stdout, stderr=stderr
         )
         decision_event, block_reason = self._read_decision(completed.stdout)
         self.last_run = InterceptRun(
@@ -297,27 +313,22 @@ class GcommitE1ScopingComposition:
         )
 
     def _committed_scope_digest(self, root: Path) -> str:
-        completed = subprocess.run(
+        exit_code, stdout, stderr = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                "des.cli.run_contract_gate",
                 "--repo",
                 str(root),
                 "--committed-scope-digest",
             ],
-            capture_output=True,
-            text=True,
-            cwd=str(Path.cwd()),
-            env=self._subprocess_env(),
+            cwd=root,
+            main=_run_contract_gate_main,
         )
-        for line in (ln.strip() for ln in completed.stdout.splitlines()):
+        for line in (ln.strip() for ln in stdout.splitlines()):
             if len(line) == 64 and all(c in "0123456789abcdef" for c in line):
                 return line
         raise AssertionError(
             "could not derive a committed-scope digest to build the trailer "
-            f"(exit {completed.returncode}); stdout={completed.stdout!r} "
-            f"stderr={completed.stderr!r}"
+            f"(exit {exit_code}); stdout={stdout!r} "
+            f"stderr={stderr!r}"
         )
 
     # --- transcript ----------------------------------------------------------

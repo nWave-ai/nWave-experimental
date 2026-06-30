@@ -38,7 +38,6 @@ scripts/
 │   └── README.md                      # Detailed installation docs
 │
 ├── update/              # Update system
-│   ├── update_orchestrator.py         # Update workflow coordinator
 │   └── backup_manager.py             # Backup creation adapter
 │
 ├── mutation/            # Mutation testing

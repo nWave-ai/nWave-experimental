@@ -12,7 +12,7 @@ from __future__ import annotations
 import concurrent.futures
 from pathlib import Path  # used in fixture bodies via sandbox: Path
 
-import pytest  # noqa: TC002  # used at runtime via pytest.MonkeyPatch, pytest.FixtureRequest
+import pytest  # used at runtime via pytest.MonkeyPatch, pytest.FixtureRequest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 

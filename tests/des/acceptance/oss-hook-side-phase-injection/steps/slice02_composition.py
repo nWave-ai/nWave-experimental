@@ -39,11 +39,19 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+
+# The REAL `handle_pre_tool_use` (PreToolUse) + `handle_subagent_stop`
+# (SubagentStop) hook handlers, driven IN-PROCESS over their JSON stdin protocol
+# (node-C enabler `run_hook_in_process`) — behaviour-identical to the prior
+# `python -c "... handle()"` subprocess forks, no fresh interpreter. Both are
+# no-argv handlers that read their JSON event from sys.stdin.
+from des.adapters.drivers.hooks.pre_tool_use_handler import handle_pre_tool_use
+from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
+from tests.common.in_process_cli import run_hook_in_process
 
 from .slice02_domain_types import (
     DispatchVerdict,
@@ -70,14 +78,6 @@ def _git(repo: Path, *args: str) -> str:
         ["git", *args], cwd=repo, capture_output=True, text=True, check=True
     )
     return completed.stdout
-
-
-def _subprocess_env() -> dict[str, str]:
-    import os
-
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(Path("src").resolve())
-    return env
 
 
 # ---------------------------------------------------------------------------
@@ -152,19 +152,16 @@ class DistillDispatchGateComposition:
                 },
             }
         )
-        runner = (
-            "import sys; "
-            f"sys.path.insert(0, {str(Path('src').resolve())!r}); "
-            f"from {_PRE_TOOL_USE_MODULE} import handle_pre_tool_use; "
-            "sys.exit(handle_pre_tool_use())"
-        )
-        completed = subprocess.run(
-            [sys.executable, "-c", runner],
-            input=hook_input,
-            capture_output=True,
-            text=True,
+        exit_code, stdout, stderr = run_hook_in_process(
+            handle_pre_tool_use,
+            stdin_text=hook_input,
             cwd=str(Path.cwd()),
-            env=_subprocess_env(),
+        )
+        completed = subprocess.CompletedProcess(
+            args=[_PRE_TOOL_USE_MODULE],
+            returncode=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
         return self._interpret(completed)
 
@@ -306,19 +303,16 @@ class GCommitExitGateComposition:
                 "permission_mode": "default",
             }
         )
-        runner = (
-            "import sys; "
-            f"sys.path.insert(0, {str(Path('src').resolve())!r}); "
-            f"from {_SUBAGENT_STOP_MODULE} import handle_subagent_stop; "
-            "sys.exit(handle_subagent_stop())"
-        )
-        completed = subprocess.run(
-            [sys.executable, "-c", runner],
-            input=hook_input,
-            capture_output=True,
-            text=True,
+        exit_code, stdout, stderr = run_hook_in_process(
+            handle_subagent_stop,
+            stdin_text=hook_input,
             cwd=str(Path.cwd()),
-            env=_subprocess_env(),
+        )
+        completed = subprocess.CompletedProcess(
+            args=[_SUBAGENT_STOP_MODULE],
+            returncode=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
         return self._interpret(completed)
 

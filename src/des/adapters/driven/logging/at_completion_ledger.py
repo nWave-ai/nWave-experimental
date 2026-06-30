@@ -53,10 +53,9 @@ import fcntl
 import hashlib
 import json
 import os
-from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from des.ports.driven_ports.at_completion_ledger_port import (
     COVERAGE_MAP_NOT_APPLICABLE_AT_DELIVER_EXIT,
@@ -67,6 +66,10 @@ from des.ports.driven_ports.at_completion_ledger_port import (
     AtCompletionLedgerPort,
     LedgerFactoryPort,
 )
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 # The required integrity-bearing fields every record carries. `record_hash`
@@ -119,13 +122,103 @@ COVERAGE_MAP_VERIFIED_AT_DELIVER_EXIT = "CoverageMapVerifiedAtDeliverExit"
 # through `append_review_verdict`, so the record carries `seq` + `record_hash`
 # exactly like a gate event and the M7 fail-closed read accepts the ledger.
 _AT_REVIEW_VERDICT = "ATReviewVerdict"
+
+# The prose-delivered event name (carpaccio-in-order-honest-non-at-attestation
+# slice-01, DDD-2). A principle-b prose slice authors no acceptance tests, so it
+# never earns a `SliceCommitVerified`; the `record_prose_delivered` producer
+# mints ONE such honest record from a doc-review APPROVED verdict through
+# `append_prose_delivered`. It carries `seq` + `record_hash` exactly like a gate
+# event, and is read by the in-order gate via `prose_delivered_slices()`. The
+# kind stays semantically DISTINCT from `SliceCommitVerified` -- minting a
+# verified record for a prose slice would be theater (the honesty invariant).
+_SLICE_PROSE_DELIVERED = "SliceProseDelivered"
+
+# The DISCUSS PO-review verdict event name (nwave-flow-v2-enforcement
+# slice-07b, O-4). The `discuss_review_verdict` producer appends one such
+# record per recorded review outcome -- BOTH `approved` AND `needs-revision`
+# (intentional divergence from the AT-review producer's NEEDS_REVISION skip:
+# the DISCUSS veto-gate must mechanically READ a veto to enforce it) --
+# through `append_discuss_review_verdict`, so the record carries `seq` +
+# `record_hash` exactly like a gate event.
+_DISCUSS_REVIEW_VERDICT = "DiscussReviewVerdict"
+
+# The DESIGN review-verdict event name (f-design-devops-review-gate slice-01).
+# The `design_review_verdict` producer appends one such record per recorded
+# solution-architect-reviewer outcome -- BOTH `approved` AND `needs-revision`
+# (the O-4 both-outcomes policy reused verbatim for the DESIGN wave) through
+# `append_design_review_verdict`, the sibling of the DISCUSS append for the
+# DESIGN-scoped record family.
+_DESIGN_REVIEW_VERDICT = "DesignReviewVerdict"
+
+# The DEVOPS review-verdict event name (f-design-devops-review-gate slice-02).
+# The `devops_review_verdict` producer appends one such record per recorded
+# platform-architect-reviewer outcome -- BOTH `approved` AND `needs-revision`
+# (the O-4 both-outcomes policy reused verbatim for the DEVOPS wave) through
+# `append_devops_review_verdict`, the sibling of the DESIGN append for the
+# DEVOPS-scoped record family. The SSOT-reuse proof: a SECOND wave with zero
+# new verdict logic.
+_DEVOPS_REVIEW_VERDICT = "DevopsReviewVerdict"
 _WALKING_SKELETON_EVENTS = frozenset(
     {WALKING_SKELETON_GATE_RAN, WALKING_SKELETON_TIER_VERIFIED}
 )
 
+# Feature-end full-suite-leg event names (f-nonbypassable-attestation slice-01,
+# DDD-4). The feature-end cycle's full-suite leg runs the FULL contract suite
+# ONCE at feature-end; the cycle emits `FullSuiteLegRan` when the leg ran and
+# passed, or `FullSuiteLegNotApplicable` when the target repo carries no
+# collectable contract suite (the genericità NA counterpart). The done-gate
+# makes `FullSuiteLegRan` `required` and reconciles the NA marker, so a feature
+# declared done over an unrun full suite is refused on record-ABSENCE -- never on
+# a read pytest exit code. Both are feature-scoped (`slice_id == ""`).
+FULL_SUITE_LEG_RAN = "FullSuiteLegRan"
+FULL_SUITE_LEG_NOT_APPLICABLE = "FullSuiteLegNotApplicable"
+_FULL_SUITE_LEG_EVENTS = frozenset({FULL_SUITE_LEG_RAN, FULL_SUITE_LEG_NOT_APPLICABLE})
+
+# The silent-bypass debt event name (f-nonbypassable-attestation slice-02, DDD-3).
+# An LLM/developer-issued `git commit --no-verify` (or `-n`) skips git's own
+# pre-commit/commit-msg hooks, so the per-commit Gate-Scope stamping never runs and
+# the absent trailer is indistinguishable from a legitimately-out-of-scope commit.
+# The ONLY surface that observes the bypass is the PreToolUse/Bash hook, which fires
+# BEFORE git runs; it appends a `SliceCommitBypassed` debt record (this event) so the
+# bypass becomes RECORDED, veto-able debt rather than the ~17 silent skips the
+# incident declared "done" over. The done-gate treats an unreconciled
+# `SliceCommitBypassed` as INDETERMINATE (cannot certify), never PASS, until
+# `des reverify-slice-commit` emits the matching `SliceCommitVerified` (the same
+# reconciliation key the `shipped - verified` sweep uses). Slice-scoped
+# (`slice_id == "slice-N"`).
+SLICE_COMMIT_BYPASSED = "SliceCommitBypassed"
+SLICE_COMMIT_VERIFIED = "SliceCommitVerified"
+
+# The honest non-Python-target degrade record (carpaccio-in-order-honest-non-at-
+# attestation, DDD-2/DDD-6). The committed-scope-digest / E2 contract gate could
+# not resolve a usable interpreter on this machine and degraded LOUD
+# INDETERMINATE, so the ledger states "unverified on this machine" truthfully --
+# NEVER a fabricated `SliceCommitVerified` (no-silent-pass) and never a bare
+# refusal that wedges the slice chain. The record carries a free-text `reason`
+# (the degrade cause) and the honesty fields `gate_scope == "INDETERMINATE"`
+# (never a real/fabricated digest), `attested == True`, `at_verified == False`,
+# `terminal == True`; all are hashed into `record_hash` exactly like a required
+# field. Read by the in-order gate (which accepts an INDETERMINATE predecessor),
+# so the successor slice dispatches instead of wedging. Slice-scoped.
+SLICE_COMMIT_INDETERMINATE = "SliceCommitIndeterminate"
+
+# The honest gate-scope sentinel an INDETERMINATE record carries IN PLACE OF a
+# real committed-scope digest -- the value is unmistakably NOT a 64-hex digest,
+# so a ledger reader can never mistake it for a verified scope.
+GATE_SCOPE_INDETERMINATE = "INDETERMINATE"
+
+# The bundle-attestation provenance event name (f-attest-bundled-slice slice-04,
+# I-6). The success path of `des attest-bundled-slice` appends this LOUD audit
+# marker ADJACENT to the origin-blind `SliceCommitVerified` -- it carries
+# {slice_id, bundle_commit, reason, timestamp} so a ledger audit reader can trace
+# which verifications came through the bundle-recovery path and on whose stated
+# authority. M8-/scorecard-IGNORED (only `SliceCommitVerified` is counted), so the
+# provenance record never affects carpaccio ordering or the delivered count.
+SLICE_ATTESTED_FROM_BUNDLE = "SliceAttestedFromBundle"
+
 # The G-DISTILL-EXIT success terminal (oss-hook-side-phase-injection slice-01).
 # The SubagentStop G-DISTILL-EXIT gate appends this record when every planned
-# slice carries a signed ATReviewVerdict -- the symmetric SUCCESS terminal (SF
+# slice carries an ATReviewVerdict record -- the symmetric SUCCESS terminal (SF
 # ADR-016) that leaves the same kind of evidence a blocked feature does. The
 # phase is encoded in the event NAME, so the record carries only the five
 # `_HASHED_FIELDS` + `record_hash` -- zero new read-contract field.
@@ -318,6 +411,33 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             feature_id=feature_id,
         )
 
+    def append_contract_frozen(
+        self,
+        *,
+        feature_id: str | None = None,
+        baseline: str | None = None,
+    ) -> dict[str, Any]:
+        """Append the ``ContractFrozen`` record at the first DELIVER gate-IN (F1).
+
+        f-deliver-entry-contract-freeze DDD-1 / CT-1 / CT-7: on a structural PASS
+        the DELIVER-entry contract-freeze gate writes ONE ``ContractFrozen``
+        record — the frozen baseline per-slice gate-INs re-verify against
+        (feature-level granularity, ADR-FLOW-002 D8). The record is appended via
+        the EXISTING ``_append_record`` HMAC-chain writer (the writer is REUSED,
+        no new writer); it is feature-scoped, so ``slice_id`` is the empty string.
+
+        slice-02 (CT-5): the optional ``baseline`` carries the status-normalised
+        snapshot of the frozen feature-delta. Subsequent per-slice gate-INs read
+        it back to diff the LIVE feature-delta against the FROZEN baseline (a
+        post-freeze mutation beyond the permitted status-flip -> drift HALT). The
+        snapshot is hashed into ``record_hash`` like every field, so a tampered
+        baseline is tamper-evident exactly like a required field.
+        """
+        fields: dict[str, Any] = {"event": "ContractFrozen", "slice_id": ""}
+        if baseline is not None:
+            fields["frozen_baseline"] = baseline
+        return self._append_record(fields, feature_id=feature_id)
+
     def append_feature_end_event(
         self,
         event: str,
@@ -349,8 +469,9 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         """Append the `WorkflowPhaseCompletedDistill` success terminal record.
 
         oss-hook-side-phase-injection slice-01: the SubagentStop G-DISTILL-EXIT
-        gate emits this record when every planned slice carries a signed
-        `ATReviewVerdict` -- the symmetric SUCCESS terminal (SF ADR-016) that
+        gate emits this record when every planned slice carries an
+        `ATReviewVerdict` record -- the symmetric SUCCESS terminal (SF ADR-016)
+        that
         leaves the same kind of durable evidence a blocked feature does.
 
         The phase is encoded in the event NAME, so the record carries only the
@@ -402,21 +523,125 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         every gate event carries -- the ledger becomes a single uniform schema
         the carpaccio-order read consumes without raising.
 
-        ``verdict_fields`` carries the verdict's own keys -- the seven HMAC-
-        signed fields (`schema_version`, `verdict`, `reviewer_agent_id`,
-        `at_ids`, `at_content_hash`, plus the producer-chosen `timestamp`),
-        the `hmac_sha256` signature and `findings_summary`. `event` is forced
-        to `ATReviewVerdict` and `slice_id` is taken from the argument.
+        ``verdict_fields`` carries the verdict's own keys -- the content-seal
+        fields (`schema_version`, `verdict`, `reviewer_agent_id`, `at_ids`,
+        `at_content_hash`, plus the producer-chosen `timestamp`) and
+        `findings_summary`. `event` is forced to `ATReviewVerdict` and
+        `slice_id` is taken from the argument.
 
-        The producer signs its own `timestamp` (the HMAC covers it), so the
-        M7 critical section honours a `timestamp` already present in
-        ``verdict_fields`` rather than overwriting it -- it assigns only the
-        monotonic `seq`, the `feature_id` and the `record_hash`. The
-        `record_hash` covers every field, so the signed verdict is tamper-
-        evident under BOTH the HMAC and the M7 hash.
+        The producer sets its own `timestamp`, so the M7 critical section
+        honours a `timestamp` already present in ``verdict_fields`` rather than
+        overwriting it -- it assigns only the monotonic `seq`, the `feature_id`
+        and the `record_hash`. The `record_hash` covers every field, making the
+        verdict tamper-evident under the M7 hash.
         """
         return self._append_record(
             {"event": _AT_REVIEW_VERDICT, "slice_id": slice_id, **verdict_fields},
+            feature_id=feature_id,
+        )
+
+    def append_prose_delivered(
+        self,
+        slice_id: str,
+        verdict_fields: dict[str, Any],
+        *,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one SliceProseDelivered record under the M7 write contract.
+
+        carpaccio-in-order-honest-non-at-attestation slice-01 (DDD-4): the
+        `record_prose_delivered` producer routes its honest prose-attestation
+        record through this method -- the sibling of :meth:`append_review_verdict`
+        for the prose-delivered record family. Routing through `_append_record`
+        gives it the same `seq` + `record_hash` every gate event carries, so the
+        M7 fail-closed read accepts it and the in-order gate's
+        `prose_delivered_slices()` query reads it without raising.
+
+        ``verdict_fields`` carries the record's own keys (`schema_version`,
+        `reviewer_agent_id`, `verdict`, `doc_review_ref`, `timestamp`, plus the
+        honesty fields `attested`, `at_verified`, `reason`, `terminal`). `event`
+        is forced to `SliceProseDelivered` and `slice_id` is taken from the
+        argument. The producer sets its own `timestamp`, honoured by the M7
+        critical section (F-13 precedent).
+        """
+        return self._append_record(
+            {"event": _SLICE_PROSE_DELIVERED, "slice_id": slice_id, **verdict_fields},
+            feature_id=feature_id,
+        )
+
+    def append_discuss_review_verdict(
+        self,
+        verdict_fields: dict[str, Any],
+        *,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one DiscussReviewVerdict record under the M7 write contract.
+
+        nwave-flow-v2-enforcement slice-07b (O-4): the DISCUSS PO-review
+        producer routes its keyless verdict through this method -- the sibling
+        of :meth:`append_review_verdict` for the DISCUSS-scoped record family.
+
+        ``verdict_fields`` carries the verdict's own keys -- the content-seal
+        fields (`schema_version`, `feature_id`, `verdict`, `reviewer_agent_id`,
+        `feature_delta_hash`, plus the producer-chosen `timestamp`) and
+        `findings_summary`. `event` is forced to `DiscussReviewVerdict`; the
+        record is feature-scoped (`slice_id == ""` -- the DISCUSS gate-OUT is a
+        whole-feature readiness verdict). The producer sets its own `timestamp`
+        (honoured by the M7 critical section, F-13 precedent).
+        """
+        return self._append_record(
+            {"event": _DISCUSS_REVIEW_VERDICT, "slice_id": "", **verdict_fields},
+            feature_id=feature_id,
+        )
+
+    def append_design_review_verdict(
+        self,
+        verdict_fields: dict[str, Any],
+        *,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one DesignReviewVerdict record under the M7 write contract.
+
+        f-design-devops-review-gate slice-01: the DESIGN review producer routes
+        its keyless verdict through this method -- the sibling of
+        :meth:`append_discuss_review_verdict` for the DESIGN-scoped record family.
+
+        ``verdict_fields`` carries the verdict's own keys -- the content-seal
+        fields (`schema_version`, `feature_id`, `verdict`, `reviewer_agent_id`,
+        `feature_delta_hash`, plus the producer-chosen `timestamp`) and
+        `findings_summary`. `event` is forced to `DesignReviewVerdict`; the
+        record is feature-scoped (`slice_id == ""` -- the DESIGN gate-OUT is a
+        whole-feature readiness verdict). The producer sets its own `timestamp`
+        (honoured by the M7 critical section, F-13 precedent).
+        """
+        return self._append_record(
+            {"event": _DESIGN_REVIEW_VERDICT, "slice_id": "", **verdict_fields},
+            feature_id=feature_id,
+        )
+
+    def append_devops_review_verdict(
+        self,
+        verdict_fields: dict[str, Any],
+        *,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one DevopsReviewVerdict record under the M7 write contract.
+
+        f-design-devops-review-gate slice-02: the DEVOPS review producer routes
+        its keyless verdict through this method -- the sibling of
+        :meth:`append_design_review_verdict` for the DEVOPS-scoped record family
+        (the SSOT-reuse proof: a SECOND wave with zero new verdict logic).
+
+        ``verdict_fields`` carries the verdict's own keys -- the content-seal
+        fields (`schema_version`, `feature_id`, `verdict`, `reviewer_agent_id`,
+        `feature_delta_hash`, plus the producer-chosen `timestamp`) and
+        `findings_summary`. `event` is forced to `DevopsReviewVerdict`; the
+        record is feature-scoped (`slice_id == ""` -- the DEVOPS gate-OUT is a
+        whole-feature readiness verdict). The producer sets its own `timestamp`
+        (honoured by the M7 critical section, F-13 precedent).
+        """
+        return self._append_record(
+            {"event": _DEVOPS_REVIEW_VERDICT, "slice_id": "", **verdict_fields},
             feature_id=feature_id,
         )
 
@@ -544,6 +769,180 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             str(record["event"])
             for record in self.read_records(feature_id=feature_id)
             if record["event"] in env_events
+        )
+
+    def full_suite_leg_events(self, *, feature_id: str | None = None) -> frozenset[str]:
+        """The set of feature-end full-suite-leg event names recorded (DDD-4).
+
+        The done-gate (`verify_deliver_integrity`) consumes this set: a feature
+        is closeable only when `FullSuiteLegRan` is present (or its
+        `FullSuiteLegNotApplicable` NA marker reconciles it). Its absence means
+        the feature-end full-suite leg never ran -- the done-gate refuses on
+        record-ABSENCE, never on a read pytest exit code (DDD-4 / AT-A2: the gate
+        holds no write port and reads no exit code). Read under the M7
+        fail-closed integrity contract.
+
+        Optional `feature_id=` filter scopes the read to one feature in the
+        singleton-shape substrate; ``None`` retains the cross-feature aggregate
+        semantics.
+        """
+        return frozenset(
+            str(record["event"])
+            for record in self.read_records(feature_id=feature_id)
+            if record["event"] in _FULL_SUITE_LEG_EVENTS
+        )
+
+    def append_full_suite_leg_ran(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `FullSuiteLegRan` feature-end record (DDD-4 / slice-01).
+
+        Emitted by `run_feature_end_cycle` after the full-suite leg ran the FULL
+        contract suite ONCE and it passed -- presence of this record <=> the leg
+        ran AND was green (anti-theater: a present-but-RED suite fail-closes the
+        cycle, so no `FullSuiteLegRan`). Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": FULL_SUITE_LEG_RAN, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_full_suite_leg_not_applicable(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `FullSuiteLegNotApplicable` NA marker (DDD-4 / slice-01).
+
+        Emitted by `run_feature_end_cycle` when the target repo carries no
+        collectable contract suite (the genericità NA counterpart of
+        `append_full_suite_leg_ran`). The done-gate reconciles this marker in
+        place of `FullSuiteLegRan` -- a genuinely-absent suite is non-blocking,
+        never a fake pass. Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": FULL_SUITE_LEG_NOT_APPLICABLE, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_slice_commit_bypassed(
+        self, slice_id: str, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append a `SliceCommitBypassed` debt record (f-nonbypassable slice-02, DDD-3).
+
+        Written by the PreToolUse/Bash spine hook when it observes a
+        `git commit --no-verify` (or `-n`) command BEFORE git runs -- the only
+        surface that can see an LLM-issued bypass, since `--no-verify` skips git's
+        own hooks. The record makes the bypass indelible, veto-able debt: the
+        done-gate refuses (INDETERMINATE) over an unreconciled `SliceCommitBypassed`
+        until `des reverify-slice-commit` emits the matching `SliceCommitVerified`.
+
+        Appended via the EXISTING M7 critical section (`append_gate_event` shape),
+        so the record carries `seq` + `record_hash` exactly like every gate event
+        and is tamper-evident. Slice-scoped (`slice_id == "slice-N"`).
+        """
+        return self._append_record(
+            {"event": SLICE_COMMIT_BYPASSED, "slice_id": slice_id},
+            feature_id=feature_id,
+        )
+
+    def append_attested_from_bundle(
+        self,
+        slice_id: str,
+        bundle_commit: str,
+        reason: str,
+        *,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append a `SliceAttestedFromBundle` provenance record (slice-04, I-6).
+
+        Written by the success path of `des attest-bundled-slice`, ADJACENT to the
+        origin-blind `SliceCommitVerified`. The loud audit trail: it carries the
+        `bundle_commit` the slice landed on and the human `--reason` justifying the
+        bundle attestation, so a ledger reader can trace bundle-recovery
+        verifications and the authority they ran under. Carried via the SAME M7
+        critical section every `append_*` uses, so the extra fields are hashed into
+        `record_hash` and are tamper-evident. The writer stamps its own
+        `timestamp`. M8-/scorecard-ignored. Slice-scoped (`slice_id == "slice-N"`).
+        """
+        return self._append_record(
+            {
+                "event": SLICE_ATTESTED_FROM_BUNDLE,
+                "slice_id": slice_id,
+                "bundle_commit": bundle_commit,
+                "reason": reason,
+            },
+            feature_id=feature_id,
+        )
+
+    def append_slice_commit_indeterminate(
+        self,
+        slice_id: str,
+        reason: str,
+        *,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one honest `SliceCommitIndeterminate` record (DDD-2 / DDD-6).
+
+        The SSOT mint for the non-Python-target degrade record: the
+        committed-scope-digest step (or the E2 contract gate) could not resolve a
+        usable interpreter on this machine and degraded LOUD INDETERMINATE. The
+        record states "unverified on this machine" truthfully -- it carries the
+        free-text `reason` (the degrade cause), `gate_scope == "INDETERMINATE"`
+        (NEVER a real or fabricated committed-scope digest), `attested == True`,
+        `at_verified == False`, and `terminal == True`. Minting a
+        `SliceCommitVerified` here would be theater (the honesty invariant); a
+        bare refusal would wedge the slice chain. Both `des verify-slice-commit`
+        (E2 degrade) and `des commit-slice` (committed-scope-digest degrade)
+        route through this ONE writer (DDD-6 reuse).
+
+        Carried via the SAME M7 critical section every `append_*` uses, so the
+        extra fields are hashed into `record_hash` and are tamper-evident. The
+        in-order gate reads the record (it accepts an INDETERMINATE predecessor),
+        so the successor slice dispatches instead of wedging. Slice-scoped.
+        """
+        return self._append_record(
+            {
+                "event": SLICE_COMMIT_INDETERMINATE,
+                "slice_id": slice_id,
+                "reason": reason,
+                "gate_scope": GATE_SCOPE_INDETERMINATE,
+                "attested": True,
+                "at_verified": False,
+                "terminal": True,
+            },
+            feature_id=feature_id,
+        )
+
+    def bypass_debt_slices(self, *, feature_id: str | None = None) -> frozenset[str]:
+        """The set of slice ids carrying a `SliceCommitBypassed` debt record (DDD-3).
+
+        Read under the M7 fail-closed integrity contract. The done-gate computes
+        the UNRECONCILED debt as `bypass_debt_slices() - verified_slices()`: a
+        bypass debt is reconciled exactly when `des reverify-slice-commit` has
+        emitted the matching `SliceCommitVerified` for the same slice.
+
+        Optional `feature_id=` filter scopes the read to one feature in the
+        singleton-shape substrate; ``None`` retains the cross-feature aggregate
+        semantics.
+        """
+        return frozenset(
+            str(record["slice_id"])
+            for record in self.read_records(feature_id=feature_id)
+            if record["event"] == SLICE_COMMIT_BYPASSED
+        )
+
+    def unreconciled_bypass_debt_slices(
+        self, *, feature_id: str | None = None
+    ) -> frozenset[str]:
+        """Bypass-debt slices with NO matching `SliceCommitVerified` (DDD-3 / CT-4).
+
+        A `SliceCommitBypassed` debt is reconciled iff a `SliceCommitVerified`
+        record exists for the same slice (the `des reverify-slice-commit` flip).
+        The done-gate refuses with INDETERMINATE while this set is non-empty,
+        naming `SliceCommitBypassed` so the unreconciled-debt cause is told apart
+        from the git-absent INDETERMINATE path. Read under M7 fail-closed.
+        """
+        return self.bypass_debt_slices(feature_id=feature_id) - self.verified_slices(
+            feature_id=feature_id
         )
 
     def append_coverage_map_verified_at_distill_exit(
@@ -732,8 +1131,11 @@ class AtCompletionLedger(AtCompletionLedgerPort):
 
         F-13: a `timestamp` already present in ``fields`` is honoured (the
         spread below overrides the default), so the `at_review_verdict`
-        producer's HMAC, computed over its own chosen timestamp, stays valid
-        once the record is routed through this critical section.
+        producer's record passes through unaltered: its keyless content seal
+        (`at_content_hash`, SHA-256 over sorted normalized scenario bodies)
+        and its own chosen timestamp stay exactly as the producer serialized
+        them -- this critical section adds only `seq`, `feature_id` and
+        `record_hash`.
 
         Migration quiesce (slice-01 singleton shape only): when env var
         ``NWAVE_AUDIT_LOG_MIGRATING=1`` is set, the singleton-shape writer
@@ -1048,6 +1450,44 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             if record["event"] == "SliceCommitVerified"
         )
 
+    def indeterminate_slices(self, *, feature_id: str | None = None) -> frozenset[str]:
+        """The set of slice ids carrying a `SliceCommitIndeterminate` record.
+
+        The honest "unverified on this machine" terminal the non-Python-target
+        E2 degrade-path mints (DDD-2). Consumed by the U1 carpaccio-order check
+        ALONGSIDE `verified_slices()`: an INDETERMINATE predecessor satisfies the
+        in-order requirement just as a verified one does (DDD-3) -- the
+        (a)-restricted unblock that lets a non-Python slice chain progress
+        without a genuine machine-local attestation. Read under the same M7
+        fail-closed integrity contract as `verified_slices()`.
+        """
+        return frozenset(
+            str(record["slice_id"])
+            for record in self.read_records(feature_id=feature_id)
+            if record["event"] == "SliceCommitIndeterminate"
+        )
+
+    def prose_delivered_slices(
+        self, *, feature_id: str | None = None
+    ) -> frozenset[str]:
+        """The set of slice ids carrying a `SliceProseDelivered` record.
+
+        The honest "doc-review attested, no acceptance tests" record a
+        principle-b prose slice mints (DDD-2). Consumed by the U1 carpaccio-order
+        check ALONGSIDE `verified_slices()` and `indeterminate_slices()`: a
+        PROSE_DELIVERED predecessor satisfies the in-order requirement just as a
+        verified or indeterminate one does (DDD-3) -- the unified `attested`
+        contract that lets an honest prose slice chain progress instead of
+        wedging, never silent (the record is explicit on the ledger and stays
+        DISTINCT from a fabricated `SliceCommitVerified`). Read under the same M7
+        fail-closed integrity contract as `verified_slices()`.
+        """
+        return frozenset(
+            str(record["slice_id"])
+            for record in self.read_records(feature_id=feature_id)
+            if record["event"] == "SliceProseDelivered"
+        )
+
     def count_slice_commit_blocked(
         self,
         slice_id: str,
@@ -1087,7 +1527,7 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         )
 
     def review_verdict_slices(self, *, feature_id: str | None = None) -> frozenset[str]:
-        """The set of slice ids carrying a signed `ATReviewVerdict` record.
+        """The set of slice ids carrying an `ATReviewVerdict` record.
 
         The NUMERATOR of the G-DISTILL-EXIT gate completeness check
         (oss-hook-side-phase-injection slice-01): the gate allows the
@@ -1170,6 +1610,8 @@ __all__ = [
     "ENVIRONMENTAL_E2E_GATE_RAN",
     "ENVIRONMENTAL_E2E_VERIFIED",
     "FEATURE_END_REVIEW_VERDICT",
+    "FULL_SUITE_LEG_NOT_APPLICABLE",
+    "FULL_SUITE_LEG_RAN",
     "WALKING_SKELETON_GATE_RAN",
     "WALKING_SKELETON_TIER_VERIFIED",
     "WORKFLOW_PHASE_COMPLETED_DISTILL",

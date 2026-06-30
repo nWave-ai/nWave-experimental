@@ -91,9 +91,6 @@ try:
     from scripts.install.plugins.opencode_des_plugin import OpenCodeDESPlugin
     from scripts.install.plugins.opencode_skills_plugin import OpenCodeSkillsPlugin
     from scripts.install.plugins.registry import PluginRegistry
-    from scripts.install.plugins.reviewer_signing_plugin import (
-        ReviewerSigningPlugin,
-    )
     from scripts.install.plugins.skills_plugin import SkillsPlugin
     from scripts.install.plugins.templates_plugin import TemplatesPlugin
     from scripts.install.plugins.utilities_plugin import UtilitiesPlugin
@@ -132,7 +129,6 @@ except ImportError:
     from plugins.opencode_des_plugin import OpenCodeDESPlugin
     from plugins.opencode_skills_plugin import OpenCodeSkillsPlugin
     from plugins.registry import PluginRegistry
-    from plugins.reviewer_signing_plugin import ReviewerSigningPlugin
     from plugins.skills_plugin import SkillsPlugin
     from plugins.templates_plugin import TemplatesPlugin
     from plugins.utilities_plugin import UtilitiesPlugin
@@ -392,7 +388,6 @@ class NWaveInstaller:
         registry.register(SkillsPlugin())
         registry.register(UtilitiesPlugin())
         registry.register(DESPlugin())
-        registry.register(ReviewerSigningPlugin())
         registry.register(AttributionPlugin())
         # OpenCode plugins (registered when opencode detected)
         if target_platforms and "opencode" in target_platforms:

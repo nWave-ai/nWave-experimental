@@ -37,6 +37,18 @@ nWave is an AI-powered workflow framework that orchestrates specialized Claude A
 
 ---
 
+## 📏 OBJECTIVE PROGRESS MEASUREMENT — `flow-v2-wave-migrations` closure (STANDING, marchiato 2026-06-15)
+
+**The measurement of "is the epic done" is CODE, not Lyra's word.** Ale 2026-06-15, after repeated "done/implemented" claims turned out not-exactly-true (the goal felt like it kept moving because it was anchored to my assertion, not a verifiable criterion).
+
+- **The measure IS `scripts/flow_v2_closure_scorecard.py` — Ale ratified it as THE GOAL CONTRACT (2026-06-15).** Run it — don't re-derive by hand: `uv run python scripts/flow_v2_closure_scorecard.py` (`--with-suite` also runs pytest). Same committed code + same repo state → same number, by construction. Baseline 2026-06-15 = **EPIC 0/10 features DONE**.
+- **UNIT = the FEATURE, inside the EPIC** (a slice is too fine — it excludes not-yet-designed work and hides the moving goal). Hierarchy EPIC → FEATURE → SLICE. Every known feature is in the denominator from day one, INCLUDING undesigned ones (phase `to-design`); the denominator grows only if we DISCOVER new work, never shrinks to hide known work.
+- **Definition of DONE (anti-overstatement contract)**: a FEATURE is DONE iff a `FeatureEnd` ledger record attests it (that gate internally requires all slices delivered + full suite green + env-e2e + coverage + — for feature-with-modules — modules WIRED into a live hook/flavor gate-stack). NEVER "module exists + ATs green"; **catalogued ≠ wired** (the catalog is the registry, not a firing surface — the iter-1 scorecard bug, fixed). A delivered-but-unattested feature is NOT done. Code committed with `--no-verify` (no `SliceCommitVerified`) is NOT attested → NOT done.
+- **Rule for me**: NEVER say "done/implemented/working" for an item without showing the scorecard check output that PASSes. If the measure must change, it is a reviewed git diff to the script (the metric cannot drift silently); the script is fail-closed (unknown/error = FAIL) and is itself §22.0-reviewable.
+- SSOT of the closure inventory + sequence: `docs/epic/flow-v2-wave-migrations/RESUME.md §-0.1` + backlog `F-FLOW-V2-EPIC-HONEST-CLOSURE`. See [[feedback_objective_committed_scorecard_not_lyra_word_2026_06_15]].
+
+---
+
 ## Repository Topology (three channels, one source)
 
 This is the canonical truth about what is public vs private. Do not infer from filenames — follow the matrix below.
@@ -253,7 +265,7 @@ uv run poe docgen                          # Regenerate reference docs
 uv run poe mutation-test                   # Run mutation tests
 ```
 
-> Task aliases live in `[tool.poe.tasks]` (`pyproject.toml`); run `uv run poe` to list them. See [ADR-PLAT-004](docs/architecture/adr/ADR-PLAT-004-uv-dev-workflow.md) for the pipenv→uv decision.
+> Task aliases live in `[tool.poe.tasks]` (`pyproject.toml`); run `uv run poe` to list them. See [ADR-PLAT-004](docs/product/architecture/ADR-PLAT-004-uv-dev-workflow.md) for the pipenv→uv decision.
 
 ---
 
@@ -276,6 +288,11 @@ Rationale: `.nwave/des-config.json` has `mutation_enabled=false` for per-feature
 - Types: `feat` (minor), `fix`/`perf`/`refactor` (patch), `docs`/`test`/`ci`/`chore` (no release)
 - `BREAKING CHANGE:` in body/footer triggers major bump
 - Enforced by: gitlint (commit-msg hook) + commitlint (CI)
+- **gitlint hard limits — get these right the FIRST time (no wasted retries):**
+  - **T1 — subject ≤ 100 chars** (the whole `type(scope): subject` line). Long scope names (e.g. `f-wave-contract-coherence`) eat the budget — keep the subject terse.
+  - **B1 — every body line ≤ 120 chars.** WRAP the body; never write one long paragraph-line. Blank line between subject and body.
+  - Note: `—` (em-dash) and other multibyte chars count toward the char limit — prefer `-`/`(...)`.
+  - `des commit-slice` appends the `Gate-Scope:` trailer mechanically (a ~76-char line, gitlint-safe) — do NOT hand-add one. Slice commits carry a `Slice-Id: slice-NN` trailer.
 
 ### Versioning (Two-Track)
 - **nwave-dev** (this repo): semantic-release from conventional commits (`v2.17.5`)
@@ -329,23 +346,26 @@ Slack notifications on failure (RED) and recovery (GREEN).
 
 ## Wave Methodology
 
-The canonical development sequence:
+The canonical development sequence (7 waves, 5 optional upstream, mandatory floor DISTILL→DELIVER):
 
 ```
-DISCOVER → DISCUSS → DESIGN → DEVOPS → DISTILL → DELIVER
+DISCOVER(opt) → DIVERGE(opt) → DISCUSS(opt) → DESIGN(opt) → DEVOPS(opt) → DISTILL → DELIVER
 ```
 
-| Wave | Command | Agent | Output |
-|------|---------|-------|--------|
-| DISCOVER | `/nw-discover` | product-discoverer | Evidence, opportunity validation |
-| DISCUSS | `/nw-discuss` | product-owner | User stories, acceptance criteria |
-| DESIGN | `/nw-design` | solution-architect | Architecture, component boundaries |
-| DEVOPS | `/nw-devops` | platform-architect | Infrastructure, CI/CD, deployment |
-| DISTILL | `/nw-distill` | acceptance-designer | BDD test scenarios (Given-When-Then) |
-| DELIVER | `/nw-deliver` | software-crafter | Working code via Outside-In TDD |
+| Wave | Command | Agent | Output | Mandatory |
+|------|---------|-------|--------|-----------|
+| DISCOVER | `/nw-discover` | product-discoverer | Evidence, opportunity validation | Optional |
+| DIVERGE | `/nw-diverge` | diverger | Design directions, competitive analysis | Optional |
+| DISCUSS | `/nw-discuss` | product-owner | User stories, acceptance criteria | Optional |
+| DESIGN | `/nw-design` | solution-architect | Architecture, component boundaries | Optional |
+| DEVOPS | `/nw-devops` | platform-architect | Infrastructure, CI/CD, deployment | Optional |
+| DISTILL | `/nw-distill` | acceptance-designer | BDD test scenarios (Given-When-Then) | **Mandatory** |
+| DELIVER | `/nw-deliver` | software-crafter | Working code via Outside-In TDD | **Mandatory** |
 
-**Cross-wave agents**: researcher, troubleshooter, documentarist, visual-architect
+**Cross-wave agents**: researcher, troubleshooter, documentarist, visual-architect, test-optimizer, security-analyst, agent-builder, workshopper
 **Reviewers**: 11 peer review agents (one per specialist + specialized reviewers)
+
+**Deprecation**: SPIKE was a canonical wave phase prior to v3.16.0 and is now deprecated. Spike/analysis work is embedded in the DESIGN wave. The `/nw-spike` command remains for backward compatibility.
 
 ---
 
@@ -366,6 +386,21 @@ DISCOVER → DISCUSS → DESIGN → DEVOPS → DISTILL → DELIVER
 ## Architectural Constraints (STANDING — marchiati 2026-05-31)
 
 These are hard, non-negotiable constraints. Violations are tech-debt tracked in [`ARCH_TECH_DEBT.md`](ARCH_TECH_DEBT.md). Re-read before any gate/wave/design proposal.
+
+### Spine-driven dispatch — NEVER bare-invoke an agent (Ale 2026-06-21)
+
+- **NEVER invoke an agent directly without explicit HUMAN permission — epic & feature
+  implementation MUST be driven through the SPINE (Ale 2026-06-21; the bare-dispatch error
+  cost ~500k tokens).** Do NOT call `Agent(...)` / Task on ANY agent (architect, PO,
+  acceptance-designer, crafter, reviewer, researcher) unless Ale has explicitly granted it
+  for that dispatch. **Epic and feature work is driven through the spine** — the
+  wave-execution mechanism invoked via the `/nw-*` wave commands (`/nw-discuss` ·
+  `/nw-design` · `/nw-distill` · `/nw-deliver`), which run the wave WITH its mandated
+  anti-drift sections + gates (reuse-first, C4, the `[REF]` sections, wave-decision
+  reconciliation, the review gate). A bare-agent dispatch skips exactly that discipline —
+  the very sections whose absence causes architectural drift. In the bootstrap "the spine"
+  = the installed nWave `/nw-*` methodology (contamination-free, never OSS source); the SF
+  engine being built becomes the spine for its own future features.
 
 ### Generality & target-machine agnosticism — depend ONLY on Python
 

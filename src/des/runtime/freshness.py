@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 from des.adapters.driven.freshness.repo_source_probe import RepoSourceProbe
@@ -169,7 +170,7 @@ def assert_fresh_or_explain(
 
     Honors ``NWAVE_FRESHNESS=skip`` ahead of the probe (§1.8) — emits the
     audit-bearing ``des.runtime.freshness.skipped`` event and returns. This is
-    the F3 bootstrap-blind closure: without it, every ``pipenv run python -m
+    the F3 bootstrap-blind closure: without it, every ``uv run python -m
     des.cli.*`` against a repo dev tree without a fresh install would
     deterministically REFUSE.
 
@@ -215,19 +216,20 @@ def assert_fresh_or_explain(
         not suppress_git_autoskip
         and os.environ.get(_FORCE_GATE_ENV_VAR) != _FORCE_GATE_ENABLED
     ):
-        cwd = os.path.abspath(".")
+        cwd = Path.cwd()
         while True:
-            if os.path.isdir(os.path.join(cwd, ".git")):
+            if (cwd / ".git").exists():  # file (worktree gitdir: pointer) or dir
                 _emit_event(
                     {
                         "event": "des.runtime.freshness.autoskipped",
                         "reason": (
-                            f"developer checkout detected via .git/ adjacency at {cwd!r}"
+                            "developer checkout detected via .git adjacency at "
+                            f"{str(cwd)!r}"
                         ),
                     }
                 )
                 return
-            parent = os.path.dirname(cwd)
+            parent = cwd.parent
             if parent == cwd:
                 break  # reached filesystem root, no .git/ found
             cwd = parent

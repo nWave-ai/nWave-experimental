@@ -1,7 +1,8 @@
 ---
-description: "Dispatches one unit of DELIVER work to a specialized agent for TDD execution. Use to run a step (classic workflow.mode, a roadmap.json plan) or one carpaccio slice (atdd_pure workflow.mode)."
+description: "Dispatches one unit of DELIVER work to a specialized agent for TDD execution. Use to run a step (classic workflow mode, a roadmap.json plan) or one carpaccio slice (ATDD-pure workflow mode)."
 argument-hint: '[agent] [feature-id] [step-id] - Example: @nw-software-crafter "auth-upgrade" "01-01"'
 ---
+
 
 # NW-EXECUTE: Atomic Task Execution
 
@@ -9,27 +10,35 @@ argument-hint: '[agent] [feature-id] [step-id] - Example: @nw-software-crafter "
 
 ## Overview
 
-Dispatch one unit of DELIVER work to an agent. The unit depends on `workflow.mode` (read from `.nwave/config.yaml`): under `classic` it is a single roadmap step; under `atdd_pure` it is one carpaccio slice run through the per-slice lean cycle.
+Dispatch one unit of DELIVER work to an agent. The unit depends on `workflow.mode` (read from `.nwave/config.yaml`): under `classic` it is a single roadmap step; under `atdd_pure` it is one carpaccio slice run through the per-slice lean cycle. <!-- mode-ref-ok -->
 
 ## Workflow Mode
 
-`/nw-execute` reads `workflow.mode` from `.nwave/config.yaml` and branches on it before doing anything else.
+`/nw-execute` reads `workflow.mode` from `.nwave/config.yaml` and branches on it before doing anything else. <!-- mode-ref-ok -->
+Per-mode descriptor + DELIVER phase shape, projected from the mode registry (never hand-written here):
 
-- **`classic`** — the ADR-025 roadmap-based spine. `/nw-execute` extracts a single step from `roadmap.json` and dispatches it for the 3-phase TDD canon; the agent appends phase events to `execution-log.json`. This is the default; everything below under "Context Files", "Dispatcher Workflow", and "TDD_PHASES" describes the `classic` path.
-- **`atdd_pure`** — the ADR-028 D6 roadmap-free spine. `/nw-execute` IS the **per-slice lean cycle**: it executes ONE carpaccio slice and has no `roadmap.json` or `execution-log.json` involvement (those are `classic`-only artifacts). See "ATDD-Pure Per-Slice Lean Cycle" below.
+<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
+- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
+  Deliver phase shape: `RED -> GREEN -> COMMIT`
+<!-- GENERATED:mode-descriptor END -->
+
+- **`classic`** — `/nw-execute` extracts a single step from `roadmap.json` and dispatches it; the agent appends phase events to `execution-log.json`. This is the default; everything below under "Context Files", "Dispatcher Workflow", and "TDD_PHASES" describes the `classic` path.
+- **`atdd_pure`** — `/nw-execute` IS the **per-slice lean cycle**: it executes ONE carpaccio slice. See "ATDD-Pure Per-Slice Lean Cycle" below. <!-- mode-ref-ok -->
 
 ### ATDD-Pure Per-Slice Lean Cycle
 
-Under `workflow.mode: atdd_pure`, `/nw-execute` runs one carpaccio slice through the per-slice lean cycle (ADR-028 D6). It does NOT extract roadmap steps and does NOT emit an execution-log — the unit of work is a carpaccio slice, not a roadmap step. The cycle, in order:
+Under `workflow.mode: atdd_pure`, `/nw-execute` runs one carpaccio slice through the per-slice lean cycle (ADR-028 D6). It does NOT extract roadmap steps and does NOT emit an execution-log — the unit of work is a carpaccio slice, not a roadmap step. The cycle, in order: <!-- mode-ref-ok -->
 
-1. **Carpaccio entry gate** — confirm the slice's acceptance tests exist and are correctly skip-scaffolded; reject the slice if the carpaccio gate fails.
-2. **`A_GREEN_ATS`** — activate the slice's acceptance tests and implement until they are GREEN. This replaces `classic`-mode roadmap-step extraction: under `atdd_pure` the slice's ATs ARE the work unit.
+1. **Carpaccio entry gate** — confirm the slice's acceptance tests exist and are active-RED (run + raise AssertionError — no @skip/@pending, per ADR-GV-001 D6); reject the slice if the carpaccio gate fails.
+2. **`A_GREEN_ATS`** — activate the slice's acceptance tests and implement until they are GREEN. This replaces `classic`-mode roadmap-step extraction: under `atdd_pure` the slice's ATs ARE the work unit. <!-- mode-ref-ok -->
 3. **`B_COVERAGE_CLEANUP`** — coverage-driven dead-code elimination for the slice.
 4. **Light slice review** — confirm the implementation satisfies the slice's ATs (a light pass, not the deep adversarial review, which belongs to `/nw-deliver`'s feature-end cycle).
 5. **Terminating contract-gate run** — run the whole-tree contract suite (`run_contract_gate.py`); a slice that breaks an earlier slice fails its own terminating run.
 6. **`G_COMMIT`** — stage and conventional-commit, then enforce the `G_COMMIT` exit gate.
 
-`E_BATCH_REFACTOR` and the deep review are explicitly NOT part of `/nw-execute` under `atdd_pure`.
+`E_BATCH_REFACTOR` and the deep review are explicitly NOT part of `/nw-execute` under `atdd_pure`. <!-- mode-ref-ok -->
 
 ## Syntax
 
@@ -39,7 +48,7 @@ Under `workflow.mode: atdd_pure`, `/nw-execute` runs one carpaccio slice through
 
 ## Context Files Required (classic mode)
 
-These context files apply only when `workflow.mode` is `classic`; under `atdd_pure` there is no roadmap or execution-log (see "ATDD-Pure Per-Slice Lean Cycle").
+These context files apply only when `workflow.mode` is `classic`; under `atdd_pure` there is no roadmap or execution-log (see "ATDD-Pure Per-Slice Lean Cycle"). <!-- mode-ref-ok -->
 
 - `classic` mode: `docs/feature/{feature-id}/deliver/roadmap.json` — Orchestrator reads once, extracts step context
 - `classic` mode: `docs/feature/{feature-id}/deliver/execution-log.json` — Agent appends only (never reads)
@@ -54,7 +63,7 @@ Before dispatching the agent, read rigor config from `.nwave/des-config.json` (k
 
 ## Dispatcher Workflow
 
-This workflow is the `classic`-mode path (roadmap.json step extraction, execution-log emission). Under `atdd_pure`, follow "ATDD-Pure Per-Slice Lean Cycle" above instead.
+This workflow is the `classic`-mode path (roadmap.json step extraction, execution-log emission). Under `atdd_pure`, follow "ATDD-Pure Per-Slice Lean Cycle" above instead. <!-- mode-ref-ok -->
 
 1. Parse parameters: agent name|feature ID|step ID
 2. Read rigor profile from `.nwave/des-config.json` (default: standard)
@@ -72,6 +81,7 @@ Use this DES template verbatim. Fill `{placeholders}` from roadmap. Without DES 
 <!-- DES-VALIDATION : required -->
 <!-- DES-PROJECT-ID : {feature-id} -->
 <!-- DES-STEP-ID : {step-id} -->
+<!-- DES-WAVE: deliver -->
 
 # DES_METADATA
 Step: {step-id}
@@ -97,7 +107,7 @@ Load on-demand per phase as specified in your Skill Loading Strategy table.
 3-phase canon (ADR-025, 2026-05-07). Execute in order:
 
 1. RED - Activate the pre-authored acceptance test (PRIMARY TBU DEFENSE); write PBT unit tests ONLY if the AT cannot reach GREEN without them.
-   AT activation: If TASK_CONTEXT includes test_file, locate it and remove the @skip/@ignore/@pending/xit/.skip/[Ignore] marker from the target scenario (the AT scaffold was authored by DISTILL — DELIVER does NOT re-author ATs). Run it — must fail for business logic reason (not import/syntax error). Fail-for-right-reason gate: collected ≥ 1, failures ≥ 1, no collection errors, semantic AssertionError / expected-exception-not-thrown.
+   AT activation: If TASK_CONTEXT includes test_file, locate the active-RED scenario authored by DISTILL (the scaffold already runs and raises AssertionError — DELIVER does NOT re-author ATs, and in atdd_pure there is no @skip marker to remove). Run it — must fail for business logic reason (not import/syntax error). Fail-for-right-reason gate: collected ≥ 1, failures ≥ 1, no collection errors, semantic AssertionError / expected-exception-not-thrown. If the scenario is SKIPPED instead of FAIL → BLOCK (silent dormant seam — see ADR-GV-001 D7; remediation: DISTILL must convert to active-RED). <!-- mode-ref-ok -->
    PORT-TO-PORT PRINCIPLE: The acceptance test exercises the scenario through
    the driving port (application service, orchestrator, CLI handler, API controller),
    not a decomposed helper or internal class. A correctly-written port-to-port test
@@ -217,11 +227,11 @@ The invoked agent MUST create a task list from its workflow phases at the start 
 ## Success Criteria
 
 - [ ] Agent invoked via Agent tool (dispatcher does not execute the work)
-- [ ] `classic` mode: step context extracted from roadmap and passed in prompt; `atdd_pure` mode: one carpaccio slice run through the per-slice lean cycle
+- [ ] `classic` mode: step context extracted from roadmap and passed in prompt; `atdd_pure` mode: one carpaccio slice run through the per-slice lean cycle <!-- mode-ref-ok -->
 - [ ] `classic` mode: agent appended phase events to execution-log.json
-- [ ] `classic` mode: agent did not load roadmap.json (under `atdd_pure` there is no roadmap.json)
+- [ ] `classic` mode: agent did not load roadmap.json (under `atdd_pure` there is no roadmap.json) <!-- mode-ref-ok -->
 
 ## Next Wave
 
 **Handoff To**: /nw-review for post-execution review
-**Deliverables**: `classic` mode — updated execution-log.json; `atdd_pure` mode — committed carpaccio slice; both — implementation artifacts and git commits
+**Deliverables**: `classic` mode — updated execution-log.json; `atdd_pure` mode — committed carpaccio slice; both — implementation artifacts and git commits <!-- mode-ref-ok -->

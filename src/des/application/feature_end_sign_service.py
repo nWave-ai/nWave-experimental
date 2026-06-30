@@ -2,18 +2,18 @@
 
 slice-02 of oss-feature-end-emit-cli. This is the PRODUCER half of the
 feature-end deep-review leg: it turns a REAL reviewer deep-review verdict
-(agent + APPROVED/REJECTED + findings) into a verifiable ``verdict_hash`` by
-HMAC-ing it through the ``des.domain.at_review_signing`` SSOT. The produced hex
-is the input slice-01's ``des emit-feature-end --record FeatureEndReviewVerdict
+(agent + APPROVED/REJECTED + findings) into a deterministic content hash
+(``verdict_hash``) via the ``des.domain.at_review_signing`` SSOT. The produced
+hex is the input slice-01's ``des emit-feature-end --record FeatureEndReviewVerdict
 --verdict-hash`` consumes.
 
 ANTI-THEATER INVARIANT (DDD-5, load-bearing, per ``feedback_earned_trust_
 mechanical_evidence_not_llm_verdict``): the signer NEVER MINTS. It requires the
-reviewer's real verdict record and HMACs it via ``compute_verdict_hmac(record,
-require_signing_key(repo))`` over ``canonical_at_review_json(record)``. A sign
-request with no real verdict / a malformed-or-empty verdict / no resolvable
-signing key is REFUSED -- no hash is produced. Genuineness is provable by an
-independent recompute of the SAME HMAC over the SAME signed region.
+reviewer's real verdict record and content-hashes it via
+``sha256(canonical_signed_json(signed_region, SIGNED_FIELDS))``. A sign request
+with no real verdict / a malformed-or-empty verdict is REFUSED -- no hash is
+produced. Key absence is a non-event (OSS demotion, oss-review-verdict-demotion
+S4): the signed region is hashed deterministically without a key.
 
 DDD-7 separation: this is the platform-agnostic DECISION logic. The
 ``des feature-end sign`` CLI shim (and the eventual SubagentStop hook shim)
@@ -22,19 +22,20 @@ region reuses the seven ``at_review_signing.SIGNED_FIELDS``: a deep-review
 verdict maps onto them as ``slice_id="feature-end"``, ``timestamp=
 "feature-end-review"``, ``at_ids=[]``, ``at_content_hash=<feature_id>``.
 
-Stdlib-only at this layer (the SSOT is HMAC + canonical JSON), so the use-case
-is bundle-safe and host-agnostic.
+Stdlib-only at this layer (hashlib + canonical JSON), so the use-case is
+bundle-safe and host-agnostic.
 """
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from des.domain.at_review_signing import (
+    SIGNED_FIELDS,
     canonical_at_review_json,
-    compute_verdict_hmac,
-    load_signing_key,
+    canonical_signed_json,
 )
 
 
@@ -57,7 +58,7 @@ _KNOWN_VERDICTS = ("APPROVED", "REJECTED")
 
 @dataclass(frozen=True)
 class SignSuccess:
-    """A genuine signature was produced over the real deep-review verdict."""
+    """A deterministic content hash was produced over the real deep-review verdict."""
 
     verdict_hash: str
 
@@ -76,16 +77,19 @@ def sign_feature_end_review(
     verdict: str | None,
     repo_root: Path,
 ) -> SignSuccess | SignRefusal:
-    """Sign a real deep-review verdict into a verifiable ``verdict_hash``.
+    """Produce a deterministic content ``verdict_hash`` over a real deep-review verdict.
 
-    Returns :class:`SignSuccess` carrying the genuine HMAC when the verdict is
-    real and the signing key is resolvable, otherwise :class:`SignRefusal`
-    naming the violated anti-theater precondition -- never a minted hash.
+    Returns :class:`SignSuccess` carrying the content hash when the verdict is
+    real, otherwise :class:`SignRefusal` naming the violated anti-theater
+    precondition -- never a minted hash.
 
     A real deep-review verdict has a non-empty ``feature_id``, a non-empty
     ``reviewer_agent_id``, and a ``verdict`` the signer recognizes
-    (APPROVED/REJECTED). The signing key resolves from the
-    ``NWAVE_REVIEWER_SIGNING_KEY`` env (or the repo key file) per the SSOT.
+    (APPROVED/REJECTED). Key absence is a non-event: the hash is computed
+    deterministically from the signed region alone (OSS demotion S4).
+
+    ``repo_root`` is accepted for API-stability (callers already supply it) but
+    is not read: no key is resolved post-demotion.
     """
     if not feature_id or not feature_id.strip():
         return SignRefusal("no feature id supplied; cannot sign a verdict")
@@ -105,31 +109,26 @@ def sign_feature_end_review(
             f"{', '.join(_KNOWN_VERDICTS)} (anti-theater)"
         )
 
-    key = load_signing_key(repo_root)
-    if key is None:
-        return SignRefusal(
-            "reviewer signing key unresolvable: set NWAVE_REVIEWER_SIGNING_KEY "
-            "or provide the repo key file; refusing to produce a silent unsigned "
-            "hash (anti-theater)"
-        )
-
     signed_region = _signed_region(
         feature_id=feature_id,
         reviewer_agent_id=reviewer_agent_id,
         verdict=verdict,
     )
-    return SignSuccess(compute_verdict_hmac(signed_region, key))
+    verdict_hash = hashlib.sha256(
+        canonical_signed_json(signed_region, SIGNED_FIELDS)
+    ).hexdigest()
+    return SignSuccess(verdict_hash)
 
 
 def _signed_region(
     *, feature_id: str, reviewer_agent_id: str, verdict: str
 ) -> dict[str, object]:
-    """The seven-SIGNED_FIELDS record HMAC-ed for a deep-review verdict.
+    """The seven-SIGNED_FIELDS record content-hashed for a deep-review verdict.
 
     Reuses the ``at_review_signing`` SSOT field names. The mapping is the
-    signing contract the independent recompute reproduces; the canonical
-    serializer (``canonical_at_review_json``) sorts keys, so the order here is
-    irrelevant to the signed bytes -- only the field set + values matter.
+    content-hash contract the independent recompute reproduces; the canonical
+    serializer (``canonical_signed_json``) sorts keys, so the order here is
+    irrelevant to the hashed bytes -- only the field set + values matter.
     """
     record: dict[str, object] = {
         "schema_version": _SCHEMA_VERSION,

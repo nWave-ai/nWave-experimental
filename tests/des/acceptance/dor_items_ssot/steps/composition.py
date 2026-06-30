@@ -37,10 +37,11 @@ test-local types + stdlib subprocess, so the suite COLLECTS cleanly.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
+
+from scripts.cli import read_dor_items
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import CanonicalReadinessSet, ReadinessItem
 
@@ -51,12 +52,6 @@ from .domain_types import CanonicalReadinessSet, ReadinessItem
 # resolves `nWave/data/dor-items.yaml` from the real tracked tree (the SSOT is
 # repo-tracked data, not a per-test tmp fixture).
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_REPO_SRC = _REPO_ROOT / "src"
-
-# The production driving port the crafter must implement: a `scripts/cli/`
-# standalone reader (the `check_reuse_first_design.py` / `verify_coverage_map.py`
-# precedent -- stdlib-only, hook-invocable, NO `des` gate-catalog coupling).
-_READER_RELPATH = "scripts/cli/read_dor_items.py"
 
 
 class CanonicalSetReaderComposition:
@@ -109,12 +104,13 @@ class CanonicalSetReaderComposition:
         empty stdout -- the honest MISSING_FUNCTIONALITY observable, surfaced as
         the EMPTY set by `_parse_set`, never a raised setup error.
         """
-        return subprocess.run(
-            [sys.executable, _READER_RELPATH, *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(self._repo_root),
-            env=_subprocess_env(),
+        exit_code, stdout, stderr = run_cli_in_process(
+            argv,
+            cwd=self._repo_root,
+            main=read_dor_items.main,
+        )
+        return subprocess.CompletedProcess(
+            args=argv, returncode=exit_code, stdout=stdout, stderr=stderr
         )
 
     @staticmethod
@@ -137,14 +133,6 @@ class CanonicalSetReaderComposition:
             items=tuple(ReadinessItem(name=str(name)) for name in item_names),
             separate_hard_gates=tuple(str(gate) for gate in hard_gates),
         )
-
-
-def _subprocess_env() -> dict[str, str]:
-    env = dict(os.environ)
-    # ABSOLUTE repo-`src/` path so the subprocess imports `des` regardless of
-    # cwd (mirrors the oss-feature-end-emit-cli composition env-parity shape).
-    env["PYTHONPATH"] = str(_REPO_SRC)
-    return env
 
 
 __all__ = [

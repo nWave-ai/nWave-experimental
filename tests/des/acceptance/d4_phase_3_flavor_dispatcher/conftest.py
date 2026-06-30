@@ -326,11 +326,11 @@ def intercept_composition(tmp_path: Path) -> CarpaccioInterceptComposition:
 
 # --- slice-03 composition (D1 readiness pre-dispatch gate) ----------------
 
-import hashlib  # noqa: E402
-import subprocess  # noqa: E402
-import sys  # noqa: E402
+import hashlib
+import subprocess
+import sys
 
-from .dispatcher_steps.domain_types import (  # noqa: E402
+from .dispatcher_steps.domain_types import (
     FirstDispatchInvariantId,
     InvariantStatus,
     ReadinessVerdict,
@@ -464,6 +464,8 @@ class ReadinessGateComposition:
              the repo_root (already created by the fixture).
           5. PRE_COMMIT_SCOPE -- structurally satisfied when no untagged
              RED scaffolds exist (vacuously true under tmp_path).
+          6. REUSE_FIRST_OR_DESIGN_SKIP -- a `## Reuse Analysis` section
+             carrying a no-overlap exemption marker (reuse leg present).
         """
         import json
 
@@ -472,7 +474,22 @@ class ReadinessGateComposition:
         (workspace / "feature-delta.md").write_text(
             "# Feature Delta: f-readiness\n\n"
             "## Wave: DISCUSS / [REF] Slice Plan\n\n"
-            "| Slice | ATs |\n|---|---|\n| slice-01 | 1 |\n"
+            "| Slice | ATs |\n|---|---|\n| slice-01 | 1 |\n\n"
+            # 6th invariant (reuse_first_or_design_skip, added by
+            # fix-readiness-gate-reuse-first-invariant): the canonical
+            # "satisfying every invariant" workspace must now ALSO carry a
+            # valid reuse-first leg. A no-overlap exemption marker is the
+            # lightest accepted form (VERDICT_NO_OVERLAP_DECLARED).
+            "## Reuse Analysis\n\n"
+            "Reuse-Analysis: no-overlap\n\n"
+            # 7th invariant (sustainability, added by sustainable-test-suite
+            # slice-06 wiring invariant 7 into the readiness aggregate): the
+            # canonical "satisfying every invariant" workspace must now ALSO
+            # carry a well-formed Test Reuse & Consolidation Analysis section.
+            # A `methodology-exempt` marker is the lightest accepted verdict
+            # (_SUSTAINABILITY_ACCEPTED_VERDICTS).
+            "## Test Reuse & Consolidation Analysis\n\n"
+            "Test-Reuse-Analysis: methodology-exempt\n"
         )
         # Author a tagged Gherkin feature so SCENARIO_SLICE_TAGS holds
         # positively (rather than vacuously) when feature files exist.
@@ -626,19 +643,19 @@ def readiness_composition(tmp_path: Path) -> ReadinessGateComposition:
 # --- slice-04 composition (LogPersistencePort + adapters) -----------------
 
 
-import io  # noqa: E402
-from datetime import datetime, timezone  # noqa: E402
+import io
+from datetime import datetime, timezone
 
-from des.adapters.driven.log_persistence import (  # noqa: E402
+from des.adapters.driven.log_persistence import (
     JsonlLogAdapter,
     SilentLogAdapter,
 )
-from des.application.log_persistence import (  # noqa: E402
+from des.application.log_persistence import (
     GateLogEvent,
     LogPersistencePort,
 )
 
-from .dispatcher_steps.domain_types import GateEventId, LogAdapterKind  # noqa: E402
+from .dispatcher_steps.domain_types import GateEventId, LogAdapterKind
 
 
 @dataclass
@@ -916,7 +933,7 @@ def log_persistence_composition(tmp_path: Path) -> LogPersistenceComposition:
 #     fixture/stub artefacts.
 
 
-from .dispatcher_steps.domain_types import (  # noqa: E402
+from .dispatcher_steps.domain_types import (
     BlockEventName,
     GateIdOnDispatchPre,
 )

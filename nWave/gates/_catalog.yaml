@@ -43,7 +43,7 @@ gates:
     language_neutral_contract: true
 
   - gate_id: verify-commit-trailers
-    responsibility: "Verify a commit message carries required Slice-Id and optional Reviewed-by HMAC trailers."
+    responsibility: "AT-completion-ledger audit window: resolves Slice-Id trailers and audits each slice's ledger record via the carpaccio gate's check_at_review logic."
     module: des.cli.verify_commit_trailers
     entry_function: main
     language_neutral_contract: true
@@ -90,6 +90,12 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
+  - gate_id: attest-bundled-slice
+    responsibility: "Attest a bundle-delivered carpaccio slice on reverify's shared core (human-GO required)."
+    module: des.cli.attest_bundled_slice
+    entry_function: main
+    language_neutral_contract: true
+
   - gate_id: verify-environmental-e2e
     responsibility: "Run environmental e2e gate against the installed tree + emit ledger heartbeat."
     module: des.cli.verify_environmental_e2e
@@ -115,7 +121,7 @@ gates:
     language_neutral_contract: true
 
   - gate_id: feature-end
-    responsibility: "Consolidated feature-end command namespace (DDD-7). Verb `sign` HMACs a real reviewer deep-review verdict (agent + APPROVED/REJECTED + findings) into a verifiable verdict_hash that feeds `des emit-feature-end --verdict-hash`; a non-real verdict or a missing signing key is refused (anti-theater, no hash minted)."
+    responsibility: "Consolidated feature-end command namespace (DDD-7). Verb `sign` produces a keyless content-seal verdict_hash from a real reviewer deep-review verdict (agent + APPROVED/REJECTED + findings) that feeds `des emit-feature-end --verdict-hash`; a non-real verdict is refused (anti-theater, no hash minted)."
     module: des.cli.feature_end
     entry_function: main
     language_neutral_contract: true
@@ -133,7 +139,7 @@ gates:
     language_neutral_contract: true
 
   - gate_id: verify-readiness-pre-dispatch
-    responsibility: "Verify the 5 cascading first-dispatch invariants (slice plan section, slice tags per scenario, AT-review verdict ledger record, gate output produceable, pre-commit pytest scope) in one invocation; closes friction #57."
+    responsibility: "Verify the 6 cascading first-dispatch invariants (slice plan section, slice tags per scenario, AT-review verdict ledger record, gate output produceable, pre-commit pytest scope, reuse-first analysis or DESIGN-skip witness) in one invocation; closes friction #57."
     module: des.cli.verify_readiness_pre_dispatch
     entry_function: main
     language_neutral_contract: true
@@ -141,5 +147,157 @@ gates:
   - gate_id: verify-slice-ledger-evidence
     responsibility: "Read-only aggregator: scan spine-ledger audit log, emit JSON report of cumulative event counts (slice_commits_verified, carpaccio_gates_cleared, bypasses_detected, bypasses_used) since --since=<date>; closes platform-architect critical-4 (observability aggregator gap, F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2 slice-04 FINAL)."
     module: des.cli.verify_slice_ledger_evidence
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: validate-feature-delta
+    responsibility: "Structural feature-delta.md validator: heading-form check (plain mode), --require-slice-plan (closed verdict set incl. rejected-infra-only cohesion-MECC floor), --require-reuse-analysis (DESIGN reuse-first gate); reads one feature-delta path, emits verdict + exit 0 iff valid."
+    module: des.cli.validate_feature_delta
+    entry_function: main
+    language_neutral_contract: true
+
+  # feature-delta-section-schema (ADR-FLOW-007): the typed section-schema algebra
+  # + 3 pure projections (gate-verify / wave-injection / output-contract). 1:1
+  # mirror of the _REGISTRY row. P1 delegates to validate-feature-delta (thin-additive).
+  - gate_id: feature-delta-schema
+    responsibility: "Feature-delta section-schema algebra (ADR-FLOW-007): the typed 5-constructor section-schema + 3 total pure projections (gate-verify / wave-injection / output-contract) as the des subcommand {describe, verify, inject, contract}. P1 verify delegates per-Table to the shipped validate_feature_delta validators (thin-additive, no re-impl) and validates the Composite Architecture-and-Contract-Tests section; P2 inject is a pure consumed_by filter (wave-injection routing-as-data); P3 contract is the section write spec. Pure Python + filesystem, hooks-only (Invariant 4), no engine; verdicts to stdout, fail-closed INDETERMINATE on undecodable bytes."
+    module: des.cli.feature_delta_schema
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: record-discuss-review
+    responsibility: "Record a DISCUSS product-owner review verdict (DiscussReviewVerdict, O-4 producer): keyless content seal over DISCUSS_SIGNED_FIELDS bound to the feature-delta content hash; writes BOTH approved and needs-revision so the DISCUSS gate-OUT can mechanically honor a reviewer veto."
+    module: des.cli.discuss_review_verdict
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-discuss-review
+    responsibility: "DISCUSS PO-review CONSUMER veto gate (f-declarative-gate-composition OB-2): a thin wrapper over the pure DiscussReviewGate.evaluate core that reads the latest DiscussReviewVerdict ledger record, seals the feature-delta content, and projects the verdict (PASS / VETOED / INDETERMINATE) onto an exit code + JSON-stdout recovery so the declarative DISCUSS gate-out stack is the readable 2-row list [validate-feature-delta, verify-discuss-review]."
+    module: des.cli.verify_discuss_review
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: record-at-review-verdict
+    responsibility: "Record a keyless AT-review verdict (ATReviewVerdict, ADR-029 D5 producer): on APPROVED appends one record carrying the reviewer identity, the AT-set binding and the content seal (no hmac_sha256, no signing key) that the carpaccio slice gate reads at DELIVER entry; on NEEDS_REVISION writes nothing (the slice loops back to DISTILL)."
+    module: des.cli.at_review_verdict
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: mode-locus-gate
+    responsibility: "Layer-A mode guardrail (mode-registry-single-locus slice-05): refuse any naked mode literal (atdd_pure / workflow.mode unconditional; classic in declaration shapes per BARE_CLASSIC_RULE) in nWave/{skills,agents,tasks} outside a GENERATED region or a <!-- mode-ref-ok --> allow-marker, naming each offender file+line."
+    module: des.cli.mode_locus_gate
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: mode-registry-completeness
+    responsibility: "Layer-B mode guardrail (mode-registry-single-locus slice-05): refuse a half-declared mode — every flavor declares the 4-tuple fields, exactly one default:true across flavors, every skill_load_set agent exists, no conflicting selection — naming each completeness defect."
+    module: des.cli.mode_registry_completeness
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: skill-normative-gate
+    responsibility: "Verify every manifest-declared normative clause survives verbatim (whitespace-normalized) in its shipped skill asset, naming each failing skill and clause-id in a closed verdict."
+    module: des.cli.skill_normative_gate
+    entry_function: main
+    language_neutral_contract: true
+
+  # Retroactive 1:1 reconcile (2026-06-15, f-declarative-gate-composition slice-01):
+  # wave-clear was added to _REGISTRY by fix-wave-bypass-recovery-truthful slice-02
+  # (commit c89be75d1) but its catalog entry + per-gate file were omitted, breaking
+  # the registry<->catalog<->per-gate-file 1:1 invariant. Reconciled here alongside
+  # the verify-discuss-review addition.
+  - gate_id: wave-clear
+    responsibility: "Operator command: clear a stale wave-active floor through the one sanctioned, audited path (--reason required; CLEARED/NOOP_SUCCESS exit 0, INDETERMINATE degrade-LOUD exit 1) instead of hand-editing active.json."
+    module: des.cli.wave_clear
+    entry_function: main
+    language_neutral_contract: true
+
+  # f-coherence-and-attestation slice-06 (the gate-stack WIRING slice, JOB-028):
+  # the three already-built feature modules wired into the dispatcher as thin CLI
+  # drivers over the EXISTING slice-03/04/05 logic. 1:1 mirror of the three new
+  # _REGISTRY rows; each has a matching per-gate file (gate-g.yaml / self-attest.yaml
+  # / verify-test-runner.yaml) keeping the registry<->catalog<->per-gate-file 1:1.
+  - gate_id: gate-design-at-coherence
+    responsibility: "Mechanical design↔AT coherence gate: diff the design `[REF] Code-Design` example-table (or code-design.manifest.yaml row-ids) against the AT module's scenarios and emit a §17 GateVerdict (PASS/FAIL/UNVERIFIED/INDETERMINATE/NOT_APPLICABLE). A thin CLI driver over the existing evaluate_gate_g; a PASS means no objection found, never an authorizing GO. (f-code-design-manifest-and-gate-g slice-04 renamed gate-g -> gate-design-at-coherence; module des.cli.gate_g unchanged.)"
+    module: des.cli.gate_g
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: self-attest
+    responsibility: "Self-attest verdict classifier: read a dual-source verdict record (mechanical + LLM verdict, evidence ref, watchdog signal) and classify onto the §17 GateVerdict SSOT -- a machine YES never authorizes (bare-LLM -> UNVERIFIED, divergence / watchdog -> INDETERMINATE, mechanically-grounded agreement -> PASS). A thin CLI driver over the existing self_attest.classify."
+    module: des.cli.self_attest
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-test-runner
+    responsibility: "Per-language test-runner port driver: run a REAL test invocation over a target directory and emit one nwave.test_result.v1 envelope whose counts are byte-faithful to what ran (failed>0 on a failing target), or a fail-safe nwave.earned_verdict.v1 ABSTAIN when the named runner cannot be invoked (never a fabricated green). The CLI contract is language-neutral (--runner parameterizes the language); the pytest default is the adapter's implementation choice, not a contract constraint."
+    module: des.cli.run_tests
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-wave-dispatch
+    responsibility: "Wave-dispatch guard: verify an Agent/Task dispatch enters its wave on-spine before it fires -- a wave-OWNER agent dispatched WITHOUT a matching DES-WAVE marker is BLOCKED (exit 1) unless a form-valid skip witness or a fresh session pre-grant concedes it; reviewers / exempt agents ALLOW. Composed onto dispatch.pre (fail-open: only exit 1 blocks) so the guard FIRES, closing the wave-level silent-entry hole (the exemption that let DISCUSS/DESIGN/DEVOPS/DISTILL be entered off-spine). A thin CLI driver over the pure wave_dispatch_guard_policy, mirroring verify-readiness-pre-dispatch."
+    module: des.cli.verify_wave_dispatch
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: run-slice-ats
+    responsibility: "Slice-scoped EXECUTOR (the acceleration): genuinely RUN only the entering slice's acceptance tests at commit (a real execution, not a collect-only walk) and project the outcome onto the GateVerdict SSOT -- a RED slice AT vetoes (FAIL, exit 1), a green slice PASSes (exit 0). The spine, not a git hook, is the commit-time test authority; the whole-tree run moves to feature-end. The CLI contract is language-neutral (the slice RUN routes through the resolved per-language runner); the pytest run-facet is the dogfood adapter's implementation choice, not a contract constraint."
+    module: des.cli.run_slice_ats
+    entry_function: main
+    language_neutral_contract: true
+
+  # f-wave-contract-coherence slice-02 (ADR-FLOW-006 D7/D9): the git-free
+  # wave-contract coherence gate. An operator-direct CLI gate (host_visibility:
+  # cli) wired here as the 1:1 catalog mirror of the _REGISTRY row + the per-gate
+  # file verify-wave-contract-coherence.yaml. Reuses the TextSearch-floor lexical
+  # scan (stdlib re) + the catalog gate_id set; no sixth verdict, no engine.
+  - gate_id: verify-wave-contract-coherence
+    responsibility: "Git-free wave-contract coherence gate: verify a wave's prose carries valid gates-ref + outputs-ref pointers, restates no bare catalog gate_id inline (the duplication drift surface), the referenced wave resolves in BOTH SSOTs (gate_stack AND output_contract), and every gate_id resolves to the catalog; emits a §17 GateVerdict (PASS/FAIL/INDETERMINATE -- the five existing verdicts, no sixth). An unreadable registry degrades LOUD to INDETERMINATE (Invariant 2), never a silent green."
+    module: des.cli.verify_wave_contract_coherence
+    entry_function: main
+    language_neutral_contract: true
+
+  # f-design-devops-review-gate slice-01: the per-wave review-verdict gate carried
+  # to DESIGN (DISCUSS parity). 1:1 mirror of the two new _REGISTRY rows; each has
+  # a matching per-gate file (record-design-review.yaml / verify-design-review.yaml)
+  # keeping the registry<->catalog<->per-gate-file 1:1. Thin wrappers over the
+  # wave-parametric ReviewVerdictGate core; no new verdict logic.
+  - gate_id: record-design-review
+    responsibility: "Record a DESIGN solution-architect review verdict (DesignReviewVerdict, O-4 producer): keyless content seal over the feature-delta content hash; writes BOTH approved and needs-revision so the DESIGN gate-OUT can mechanically honor a reviewer veto."
+    module: des.cli.design_review_verdict
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-design-review
+    responsibility: "DESIGN architect-review CONSUMER veto gate: a thin wrapper over the wave-parametric ReviewVerdictGate.evaluate core that reads the latest DesignReviewVerdict ledger record, seals the feature-delta content, and projects the verdict (PASS / VETOED / INDETERMINATE) onto an exit code + JSON-stdout recovery, wired into the DESIGN gate-out stack (nWave/waves/design.yaml). Asymmetric authority (§22.0): a NEEDS_REVISION is a mechanically-honored VETO; an artefact-current APPROVED is no objection found (PASS), never an authorizing GO; absent / stale / schema-unknown -> INDETERMINATE degrade-LOUD (§17), never a silent pass."
+    module: des.cli.verify_design_review
+    entry_function: main
+    language_neutral_contract: true
+
+  # f-design-devops-review-gate slice-02: the SAME pair carried to DEVOPS (the
+  # SSOT-reuse proof). 1:1 mirror of the two new _REGISTRY rows; each has a
+  # matching per-gate file (record-devops-review.yaml / verify-devops-review.yaml)
+  # keeping the registry<->catalog<->per-gate-file 1:1. Thin wrappers over the
+  # SAME wave-parametric ReviewVerdictGate core; no new verdict logic.
+  - gate_id: record-devops-review
+    responsibility: "Record a DEVOPS platform-architect review verdict (DevopsReviewVerdict, O-4 producer): keyless content seal over the feature-delta content hash; writes BOTH approved and needs-revision so the DEVOPS gate-OUT can mechanically honor a reviewer veto."
+    module: des.cli.devops_review_verdict
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-devops-review
+    responsibility: "DEVOPS platform-architect-review CONSUMER veto gate: a thin wrapper over the wave-parametric ReviewVerdictGate.evaluate core that reads the latest DevopsReviewVerdict ledger record, seals the feature-delta content, and projects the verdict (PASS / VETOED / INDETERMINATE) onto an exit code + JSON-stdout recovery, wired into the DEVOPS gate-out stack (nWave/waves/devops.yaml). Asymmetric authority (§22.0): a NEEDS_REVISION is a mechanically-honored VETO; an artefact-current APPROVED is no objection found (PASS), never an authorizing GO; absent / stale / schema-unknown -> INDETERMINATE degrade-LOUD (§17), never a silent pass."
+    module: des.cli.verify_devops_review
+    entry_function: main
+    language_neutral_contract: true
+
+  # f-deliver-entry-contract-freeze slice-01 (ADR-FLOW-004, DDD-1): the DELIVER-
+  # entry contract-freeze gate. 1:1 mirror of the new _REGISTRY row. Composes the
+  # EXISTING validate_feature_delta checks (in-process) + the feature_tag_files
+  # AT-module resolution; writes ContractFrozen on PASS. No sixth verdict, no engine.
+  - gate_id: verify-deliver-entry-contract
+    responsibility: "DELIVER-entry contract-freeze gate: at the first DELIVER gate-IN, assert the contract is STRUCTURALLY complete (locked [REF] sections present + valid 5-column Slice Plan + an authored AT module per planned slice) and write ONE ContractFrozen ledger record on PASS (the frozen baseline per-slice gate-INs re-verify against, feature-level granularity, ADR-FLOW-002 D8). Composes validate_feature_delta_content + validate_slice_plan_content + the NEW locked-section-presence check (in-process) + the feature_tag_files Slice-Id->AT resolution. Emits a §17 GateVerdict (PASS/FAIL/INDETERMINATE -- the five existing verdicts, no sixth, no engine). An unreadable feature-delta degrades LOUD to INDETERMINATE (Invariant 2), never a false freeze. Structural completeness != semantic completeness (the human-GO boundary is flagged LOUD)."
+    module: des.cli.verify_deliver_entry_contract
     entry_function: main
     language_neutral_contract: true

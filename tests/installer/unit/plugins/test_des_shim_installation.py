@@ -1,7 +1,7 @@
 """Integration tests for DES shim installation via DESPlugin.
 
 Tests verify that _install_des_shims() correctly:
-1. Copies 5 shim files from nWave/scripts/des/ to ~/.claude/bin/
+1. Copies 6 shim files from nWave/scripts/des/ to ~/.claude/bin/
 2. Sets executable mode (0o755) on each shim
 3. Prepends absolute DES bin path (no $HOME literal) to settings.json env.PATH
 4. Is idempotent: repeated calls do not duplicate PATH or error

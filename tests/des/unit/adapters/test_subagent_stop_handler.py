@@ -16,6 +16,7 @@ audit-event payload (resolved execution_log_path, project_root_marker).
 from __future__ import annotations
 
 import json
+import os
 import subprocess as sp
 
 
@@ -65,14 +66,38 @@ def _complete_exec_log(project_id: str, step_id: str = "01-01") -> str:
     )
 
 
+# Belt-and-braces mirror of the session scrub in tests/conftest.py
+# (_scrub_git_repo_override_env): an inherited GIT_DIR (linked-worktree
+# pre-push exports an absolute one) would redirect these git calls from the
+# tmp_path repo onto the REAL shared repository.
+_GIT_OVERRIDE_VARS = (
+    "GIT_DIR",
+    "GIT_COMMON_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+)
+
+
+def _no_git_env():
+    return {k: v for k, v in os.environ.items() if k not in _GIT_OVERRIDE_VARS}
+
+
 def _setup_git_repo(repo_dir, step_id="01-01", feature_id=None):
-    sp.run(["git", "init"], cwd=str(repo_dir), capture_output=True)
+    env = _no_git_env()
+    sp.run(["git", "init"], cwd=str(repo_dir), capture_output=True, env=env)
     sp.run(
         ["git", "config", "user.email", "t@t.com"],
         cwd=str(repo_dir),
         capture_output=True,
+        env=env,
     )
-    sp.run(["git", "config", "user.name", "T"], cwd=str(repo_dir), capture_output=True)
+    sp.run(
+        ["git", "config", "user.name", "T"],
+        cwd=str(repo_dir),
+        capture_output=True,
+        env=env,
+    )
     body = f"Step-Id: {step_id}"
     if feature_id is not None:
         body += f"\nTask-Id: {feature_id}"
@@ -80,6 +105,7 @@ def _setup_git_repo(repo_dir, step_id="01-01", feature_id=None):
         ["git", "commit", "--allow-empty", "-m", f"feat: step\n\n{body}"],
         cwd=str(repo_dir),
         capture_output=True,
+        env=env,
     )
 
 
@@ -88,6 +114,7 @@ def _setup_worktree(master_repo, worktree_dir, branch="feature-branch"):
         ["git", "worktree", "add", "-b", branch, str(worktree_dir), "HEAD"],
         cwd=str(master_repo),
         capture_output=True,
+        env=_no_git_env(),
     )
 
 

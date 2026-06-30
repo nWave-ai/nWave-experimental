@@ -5,6 +5,8 @@ user-invocable: true
 argument-hint: '[bug-description] - Describe the defect observed'
 ---
 
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+
 # NW-BUGFIX: Defect Resolution Workflow
 
 **Wave**: CROSS_WAVE
@@ -28,9 +30,9 @@ INPUT: "{bug-description}"
   │   └─ User confirms root cause + approves fix direction
   │   └─ If user rejects → refine RCA or stop
   │
-  └─ Phase 3: Regression Test + Fix (branches on workflow.mode)
+  └─ Phase 3: Regression Test + Fix (branches on workflow.mode) <!-- mode-ref-ok -->
       └─ classic   → /nw-deliver "fix-{bug-id}" — roadmap-based bugfix flow
-      └─ atdd_pure → single carpaccio slice via the /nw-execute per-slice cycle
+      └─ atdd_pure → single carpaccio slice via the /nw-execute per-slice cycle <!-- mode-ref-ok -->
       └─ Paradigm detection determines crafter (OOP or FP)
       └─ Both modes: regression test (RED) → fix (GREEN) → verify (COMMIT)
 ```
@@ -86,10 +88,20 @@ If user rejects:
 
 If user approves → proceed to Phase 3.
 
-### Phase 3: Regression Test + Fix (branches on workflow.mode)
+### Phase 3: Regression Test + Fix (branches on workflow.mode) <!-- mode-ref-ok -->
 
-Phase 3 reads `workflow.mode` from `.nwave/config.yaml` and dispatches the fix
-along one of two paths. Both paths share paradigm detection (reads project
+Phase 3 reads `workflow.mode` from `.nwave/config.yaml` and dispatches the fix <!-- mode-ref-ok -->
+along one of two paths. Per-mode descriptor + DELIVER phase shape, projected
+from the mode registry (never hand-written here):
+
+<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
+- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
+  Deliver phase shape: `RED -> GREEN -> COMMIT`
+<!-- GENERATED:mode-descriptor END -->
+
+Both paths Both paths share paradigm detection (reads project
 CLAUDE.md for `## Development Paradigm`), crafter selection (@nw-software-crafter
 for OOP, @nw-functional-software-crafter for FP), DES enforcement, and the rigor
 profile from `.nwave/des-config.json`.
@@ -102,7 +114,7 @@ profile from `.nwave/des-config.json`.
 
 #### Mode `classic` — roadmap-based bugfix flow
 
-Under `workflow.mode: classic`, delegate to `/nw-deliver`:
+Under `workflow.mode: classic`, delegate to `/nw-deliver`: <!-- mode-ref-ok -->
 
 ```
 /nw-deliver "fix-{bug-summary}"
@@ -121,9 +133,9 @@ The deliver orchestrator builds a minimal two-step roadmap:
 - Run ALL tests — regression test must now PASS
 - Existing tests must not regress
 
-#### Mode `atdd_pure` — single carpaccio slice, no roadmap
+#### Mode `atdd_pure` — single carpaccio slice, no roadmap <!-- mode-ref-ok -->
 
-Under `workflow.mode: atdd_pure` the bugfix is the canonical single carpaccio
+Under `workflow.mode: atdd_pure` the bugfix is the canonical single carpaccio <!-- mode-ref-ok -->
 slice: there is no roadmap and no roadmap-step extraction. The defect's
 regression test IS the slice's acceptance test (regression AT green → fix →
 commit). Run it through the slice-04 roadmap-free spine via the per-slice
@@ -182,4 +194,4 @@ Phase 3: `/nw-deliver "fix-compose-none-guard"` → paradigm detected as FP → 
 - The regression test is the primary deliverable — it prevents the bug from recurring.
 - Keep the fix minimal. Refactoring belongs in `/nw-refactor`, not here.
 - If the RCA reveals a design flaw (not just a code bug), escalate to `/nw-design` before fixing.
-- Phase 3 branches on `workflow.mode`: `classic` delegates to `/nw-deliver`; `atdd_pure` runs a single carpaccio slice via the `/nw-execute` per-slice cycle. Both modes handle paradigm detection, DES enforcement, and rigor profile automatically.
+- Phase 3 branches on `workflow.mode`: `classic` delegates to `/nw-deliver`; `atdd_pure` runs a single carpaccio slice via the `/nw-execute` per-slice cycle. <!-- mode-ref-ok --> Both modes handle paradigm detection, DES enforcement, and rigor profile automatically.

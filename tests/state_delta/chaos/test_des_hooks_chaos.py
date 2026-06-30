@@ -68,7 +68,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest  # noqa: TC002
+import pytest
 from hypothesis import HealthCheck, given
 from hypothesis import settings as h_settings
 from nwave_ai.state_delta import (

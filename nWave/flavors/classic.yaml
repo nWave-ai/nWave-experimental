@@ -15,6 +15,15 @@
 
 flavor_id: classic
 
+# Face (b) + (d) of the mode 4-tuple (mode-registry-single-locus slice-05):
+# `default: false` — classic is the explicit-only fallback, never the
+# absent-config default (atdd_pure carries `default: true`). Selection is
+# ALWAYS deterministic-config (read from .nwave/config.yaml), never an LLM
+# prompt.
+display_name: Classic
+default: false
+selection: deterministic-config
+
 description: |
   Roadmap-based DELIVER spine (ADR-025 3-phase TDD canon, ADR-024 era).
   Each step in roadmap.json triggers RED → GREEN → COMMIT cycle with
@@ -26,6 +35,35 @@ description: |
 required_artifacts:
   - docs/feature/{feature_id}/deliver/roadmap.json
   - docs/feature/{feature_id}/deliver/execution-log.json
+
+# Face (c) of the mode 4-tuple (mode-registry-single-locus slice-01, analysis
+# §2.2): under classic the crafter is DECLARED with no conditional skills —
+# declared-empty is the registry's own answer, distinct from an absent row
+# (which the resolver refuses, fail-closed).
+skill_load_set:
+  nw-software-crafter:
+    conditional: []
+  nw-functional-software-crafter:
+    conditional: []
+  nw-software-crafter-reviewer:
+    conditional: []
+  nw-acceptance-designer:
+    conditional: []
+  nw-acceptance-designer-reviewer:
+    conditional: []
+  nw-product-owner:
+    conditional: []
+  nw-product-owner-reviewer:
+    conditional: []
+
+# Face (d) of the mode 4-tuple (mode-registry-single-locus slice-02): the
+# descriptor + DELIVER phase shape docgen projects into
+# `GENERATED:mode-descriptor` regions. Sole-author registry field.
+descriptor: >
+  Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json +
+  execution-log.json are the audit. DEPRECATED per ADR-028 D6 —
+  fallback under explicit per-instance authorization only.
+deliver_phase_shape: "RED -> GREEN -> COMMIT"
 
 lifecycle_events:
 
@@ -55,7 +93,7 @@ lifecycle_events:
     - gate_id: verify-commit-trailers
       args:
         commit: HEAD
-        require_reviewed_by: false  # classic doesn't require HMAC
+        require_reviewed_by: false  # classic: no ledger-record veto required
       on_failure: warn
 
   # Session init: health-check (analogous to atdd_pure session.init).

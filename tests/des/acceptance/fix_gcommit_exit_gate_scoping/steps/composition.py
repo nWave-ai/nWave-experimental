@@ -38,9 +38,11 @@ dependency of the test harness), never as production code the AT imports.
 from __future__ import annotations
 
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from des.cli.run_contract_gate import main as _run_contract_gate_main
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import (
     CommittedContent,
@@ -222,13 +224,12 @@ class GcommitScopingComposition:
     # --- driving port: the real `des run-contract-gate` CLI subprocess ---
 
     def derive_digest(self, repo: Path) -> DigestRun:
-        """Drive `des run-contract-gate --committed-scope-digest` (subprocess).
+        """Drive `des run-contract-gate --committed-scope-digest` (in-process).
 
-        Mandate-13 Layer-3 subprocess black-box: the AT spawns the real CLI by
-        module and observes only its stdout / stderr / exit code. The digest
-        function is never imported. Run via `sys.executable -m
-        des.cli.run_contract_gate` so the test's own interpreter resolves `des`
-        without depending on a `des` console-script being on PATH.
+        Mandate-13 Layer-3 black-box: drives the real `run_contract_gate`
+        EDGE `main(argv)` IN-PROCESS via the shared `run_cli_in_process`
+        driver and observes only its stdout / stderr / exit code. The digest
+        function is never imported directly.
 
         Re-scope (2026-05-31): drives the NEW `--committed-scope-digest` mode,
         NOT the general `--collect-only --print-digest`. The committed-scope
@@ -237,22 +238,19 @@ class GcommitScopingComposition:
         general working-tree digest -- which the dogfood ATs + backward-compat
         consumers depend on -- entirely untouched (no collision).
         """
-        completed = subprocess.run(
+        exit_code, stdout, stderr = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                "des.cli.run_contract_gate",
                 "--repo",
                 str(repo),
                 "--committed-scope-digest",
             ],
-            capture_output=True,
-            text=True,
+            cwd=repo,
+            main=_run_contract_gate_main,
         )
         self.last_run = DigestRun(
-            exit_code=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
         return self.last_run
 

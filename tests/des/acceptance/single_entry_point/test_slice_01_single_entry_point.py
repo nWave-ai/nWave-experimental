@@ -14,7 +14,7 @@ collapse.
 
 from pytest_bdd import scenarios
 
-from .steps.steps_slice_01 import *  # noqa: F403
+from .steps.steps_slice_01 import *
 
 
 scenarios("slice_01_single_entry_point_walking_skeleton.feature")

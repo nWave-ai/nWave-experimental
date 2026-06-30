@@ -8,8 +8,8 @@ install-time failure modes that have broken recent RCs:
   1. issue #41 — patcher leaves the wheel without the nwave-ai console
      script entry. Mirrored via a direct call to patch_pyproject + grep on
      the patched [project.scripts] section.
-  2. reviewer_signing_plugin EROFS — install crashes when the project dir
-     is read-only. Mirrored via running `python -m nwave_ai.cli install
+  2. Read-only project dir — install crashes when the project dir is
+     read-only. Mirrored via running `python -m nwave_ai.cli install
      --yes` from a chmod 555 .nwave/ subdir under a fake HOME.
 
 Exit codes:
@@ -91,11 +91,10 @@ def _check_entry_point_regression(workdir: Path) -> None:
 
 
 def _check_install_under_readonly_project(workdir: Path) -> None:
-    """reviewer_signing_plugin must soft-skip on EROFS-class errors.
+    """Install must succeed when the project dir is read-only (EROFS-class).
 
-    Mirrors the CI failure: /src is a read-only container mount, so the
-    project-level .nwave/secrets/ cannot be created. The install must
-    succeed; soft-skip plugins must absorb the OSError.
+    Mirrors the CI failure: /src is a read-only container mount. The install
+    must succeed against a read-only project dir.
     """
     print("[2/2] Run `nwave-ai install --yes` from read-only project dir...")
     project = workdir / "ro-project"
@@ -107,8 +106,6 @@ def _check_install_under_readonly_project(workdir: Path) -> None:
     fake_home.mkdir()
     env = os.environ.copy()
     env["HOME"] = str(fake_home)
-    # Drop NWAVE_REVIEWER_SIGNING_KEY so the file-provision path is exercised
-    env.pop("NWAVE_REVIEWER_SIGNING_KEY", None)
     try:
         _run(
             [sys.executable, "-m", "nwave_ai.cli", "install", "--yes"],

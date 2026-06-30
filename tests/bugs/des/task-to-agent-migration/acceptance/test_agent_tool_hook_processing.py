@@ -275,22 +275,36 @@ def claude_code_hook_stdin(tmp_path):
 
     Note: Direct function calls are ~10x faster than subprocess invocation.
     """
+    import os
     from io import StringIO
     from unittest.mock import patch
 
     def invoke_hook(command: str, stdin_data: str) -> tuple[int, str, str]:
-        """Invoke hook adapter function directly with mocked I/O."""
+        """Invoke hook adapter function directly with mocked I/O.
+
+        Runs WHILE chdir'd into the fixture's isolated ``tmp_path``: the
+        production ``PreToolUseService`` sources its wave floor off
+        ``Path.cwd()`` (``WaveActiveReader.read(Path.cwd())``), so the hook's
+        decision must be a function of the floor in this injected root, NOT the
+        ambient working-tree floor armed by whatever branch the suite runs on.
+        Previous CWD is restored afterward.
+        """
         from des.adapters.drivers.hooks.claude_code_hook_adapter import (
             handle_pre_tool_use,
         )
 
-        # Mock stdin with the input data
-        with patch("sys.stdin", StringIO(stdin_data)):
-            # Mock stdout to capture output
-            with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
-                # Call the handler directly
-                exit_code = handle_pre_tool_use()
-                stdout = mock_stdout.getvalue()
+        prev_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            # Mock stdin with the input data
+            with patch("sys.stdin", StringIO(stdin_data)):
+                # Mock stdout to capture output
+                with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+                    # Call the handler directly
+                    exit_code = handle_pre_tool_use()
+                    stdout = mock_stdout.getvalue()
+        finally:
+            os.chdir(prev_cwd)
 
         # No stderr in direct calls (only in subprocess)
         stderr = ""

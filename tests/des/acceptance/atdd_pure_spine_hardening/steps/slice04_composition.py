@@ -20,12 +20,14 @@ are all real I/O.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
+from tests.common.in_process_cli import run_hook_in_process
 from tests.des._helpers.feature_end_seeding import (
     seed_required_feature_end_records,
 )
@@ -34,7 +36,8 @@ from .slice04_domain_types import FeatureEndOutcome, FeatureId
 
 
 _FEATURE_ID = FeatureId("atdd-pure-demo")
-_HANDLER_MODULE = "des.adapters.drivers.hooks.subagent_stop_handler"
+# The env var the U4 branch reads to force the M1 try/except fault path.
+_FAULT_ENV = "NWAVE_U4_FORCE_HANDLER_FAULT"
 
 # The planned slice ids for the synthetic feature-delta slice plan.
 _PLANNED_SLICES = ("slice-00", "slice-01")
@@ -108,6 +111,19 @@ class FeatureEndInterceptComposition:
             f"{rows}\n"
         )
         (feature_dir / "feature-delta.md").write_text(text, encoding="utf-8")
+        # f-nonbypassable-attestation slice-03 (DDD-5, filesystem-derived): the
+        # done-gate proves a planned slice was DELIVERED by the presence of its
+        # `@slice-NN @feature-{id}` `.feature` file under `tests/` (un-gameable,
+        # not the Status text). This is a COMPLETE-cycle fixture, so it authors the
+        # acceptance-test file for every planned slice; without them the integrity
+        # gate would (correctly) BLOCK the feature-end as TRUNCATED.
+        tests_dir = self._repo / "tests" / self._feature_id
+        tests_dir.mkdir(parents=True, exist_ok=True)
+        for sid in _PLANNED_SLICES:
+            (tests_dir / f"{sid}.feature").write_text(
+                f"@feature-{self._feature_id} @{sid}\nFeature: {sid} acceptance\n",
+                encoding="utf-8",
+            )
 
     # --- ledger provisioning ------------------------------------------------
 
@@ -244,22 +260,29 @@ class FeatureEndInterceptComposition:
             }
         )
         env_fault = "1" if self._fault_injected else "0"
-        runner = (
-            "import sys; "
-            f"sys.path.insert(0, {str(Path('src').resolve())!r}); "
-            f"from {_HANDLER_MODULE} import handle_subagent_stop; "
-            "sys.exit(handle_subagent_stop())"
-        )
-        completed = subprocess.run(
-            [sys.executable, "-c", runner],
-            input=hook_input,
-            capture_output=True,
-            text=True,
-            cwd=str(Path.cwd()),
-            env={
-                **_subprocess_env(),
-                "NWAVE_U4_FORCE_HANDLER_FAULT": env_fault,
-            },
+        # Faithful in-process analogue of the prior `python -c "... import
+        # handle_subagent_stop; sys.exit(handle_subagent_stop())"` fork: drive the
+        # REAL no-argv handler over the SAME stdin payload. The handler resolves
+        # the work-tree from the JSON `cwd` field, so the process cwd is incidental
+        # (kept at Path.cwd(), as the fork ran). The `NWAVE_U4_FORCE_HANDLER_FAULT`
+        # env var the U4 branch reads is set around the call and restored in
+        # finally (shared-process safe); PYTHONPATH was a subprocess import concern
+        # only (a no-op in-process).
+        prior_fault = os.environ.get(_FAULT_ENV)
+        os.environ[_FAULT_ENV] = env_fault
+        try:
+            exit_code, stdout, stderr = run_hook_in_process(
+                handle_subagent_stop,
+                stdin_text=hook_input,
+                cwd=str(Path.cwd()),
+            )
+        finally:
+            if prior_fault is None:
+                os.environ.pop(_FAULT_ENV, None)
+            else:
+                os.environ[_FAULT_ENV] = prior_fault
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=exit_code, stdout=stdout, stderr=stderr
         )
         return self._interpret(completed)
 
@@ -298,11 +321,3 @@ def classify_skew(installed: str | None, checkout: str) -> str:
 
     case = _classify_hook_version_skew(installed, checkout)
     return case if case is not None else "none"
-
-
-def _subprocess_env() -> dict[str, str]:
-    import os
-
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(Path("src").resolve())
-    return env

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.21.0"]
+requires = ["hatchling>=1.30.1"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -27,7 +27,7 @@ packages = ["src/des", "nwave_ai"]
 
 [project]
 name = "nwave"
-version = "3.15.1+atddpure.039b2bb80"
+version = "3.21.0+atddpure.a719b572d"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -64,20 +64,21 @@ classifiers = [
 
 dependencies = [
     "rich>=13.7.0",
-    "typer>=0.12.0",
+    "typer>=0.26.7",
     "pydantic>=2.5.0",
-    "pydantic-settings>=2.1.0",
+    "pydantic-settings>=2.14.2",
     "httpx>=0.27.0",
     "platformdirs>=4.2.0",
     "pyyaml>=6.0",
     "packaging>=21.0",
     "tomli>=2.0.0; python_version < '3.11'",
-    "typing_extensions>=4.0"
+    "typing_extensions>=4.0",
+    "jsonschema>=4.0.0"
 ]
 
 [project.optional-dependencies]
 test = [
-    "pytest>=8.0.0",
+    "pytest>=9.1.1",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
     "pytest-xdist>=3.5.0",
@@ -91,7 +92,7 @@ test = [
 # Not published in package metadata (unlike the `test` extra above).
 dev = [
     # Testing
-    "pytest>=8.0.0",
+    "pytest>=9.1.1",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
     "pytest-xdist>=3.5.0",
@@ -100,22 +101,22 @@ dev = [
     "pytest-html>=4.0.0",
     "pytest-pspec>=0.0.4",
     "pytest-mock>=3.12.0",
-    "pytest-describe>=2.1.0",
+    "pytest-describe>=3.2.0",
     "pytest-watch>=4.2.0",
     "allure-pytest>=2.13.0",
     "respx>=0.20.0",
-    "hypothesis>=6.0",
+    "hypothesis>=6.155.7",
     # Mutation testing
     "cosmic-ray>=8.4.0",
-    "mutmut>=2.4.0",
+    "mutmut>=3.6.0",
     # Linting & formatting
     "mypy>=1.8.0",
-    "ruff==0.15.0",
-    "bandit[toml]>=1.7.0",
+    "ruff==0.15.20",
+    "bandit[toml]>=1.9.4",
     "detect-secrets>=1.4.0",
     # Git & release
     "pre-commit>=3.6.0",
-    "commitizen>=3.12.0",
+    "commitizen>=4.16.4",
     "gitlint>=0.19.0",
     # Task runner (replaces Pipfile [scripts]; run via `uv run poe <task>`)
     "poethepoet>=0.24",
@@ -123,7 +124,7 @@ dev = [
     "fpdf2>=2.7.0",
     "click>=8.0.0",
     "colorama>=0.4.0",
-    "tqdm>=4.64.0",
+    "tqdm>=4.68.3",
     # Token measurement (advisory, dev-only) — DDD-1
     "tiktoken>=0.7.0",
     # E2E container testing
@@ -167,6 +168,7 @@ verify-environmental-e2e = "des.cli.verify_environmental_e2e:main"
 # `src/des/ports/` MUST NOT import from `scripts.*` (friction #38 + F-D-09).
 [project.entry-points."nwave.lang.adapter"]
 _conformance_fixture = "scripts.install.plugins._conformance_fixture_language_adapter:ConformanceFixtureLanguageAdapter"
+nwave-lang-rust = "scripts.install.plugins.nwave_lang_rust:NwaveLangRust"
 
 [tool.nwave]
 # Override floor for nwave-ai public version (PyPI + GitHub).
@@ -185,11 +187,15 @@ pythonpath = ["src", "."]
 # basename (test_walking_skeleton, acceptance) and same-named modules across
 # the tree collide ("import file mismatch" / "No module named acceptance.conftest").
 consider_namespace_packages = true
+# Set strictness via ini booleans rather than addopts flags: pytest 9.0.x silently
+# ignored --strict-markers/--strict-config passed through addopts (regression
+# fixed in 9.1.0, pytest #14442). The ini booleans are immune to that regression
+# class and enforce the same gate.
+strict_markers = true
+strict_config = true
 addopts = [
     "-ra",
     "-q",
-    "--strict-markers",
-    "--strict-config",
     "--import-mode=importlib",
     # Quarantined pre-FM-1 hooks.json schema tests (top-level array root) are
     # superseded by tests/e2e/test_codex_real_boot.py per DDD-7 (FM-4). They are
@@ -200,18 +206,20 @@ addopts = [
     "not broken_schema_v0",
 ]
 markers = [
-    "unit: Unit tests (fast, isolated)",
-    "integration: Integration tests (may use external resources)",
     "acceptance: Acceptance tests (BDD scenarios, may be slow)",
-    "e2e: End-to-end acceptance tests",
-    "e2e_smoke: Critical-path e2e subset run in pre-push on master (privacy contract, behavioral smoke, packaging shape, cross-platform contract). Full e2e remains gated by CI on PR.",
-    "slow: Tests that take longer to run",
-    "canary: Canary skill injection detection tests (ADR-006)",
-    "probe_test: Tests that exercise substrate probe wiring (opt-out from _silence_probe autouse)",
-    "fast_gate: Fast source-level regression guards run pre-commit/pre-push",
-    "live_api: Tests that call paid external APIs (e.g. OpenAI); skipped unless relevant API key env var is set",
     "broken_schema_v0: Quarantined tests asserting internal pre-FM-1 (top-level array) hooks.json schema; superseded by tests/e2e/test_codex_real_boot.py per DDD-7 (codex-empirical-e2e-support / FM-4). Excluded by default CI selector via -m 'not broken_schema_v0'.",
+    "canary: Canary skill injection detection tests (ADR-006)",
+    "e2e_smoke: Critical-path e2e subset run in pre-push on master (privacy contract, behavioral smoke, packaging shape, cross-platform contract). Full e2e remains gated by CI on PR.",
+    "e2e: End-to-end acceptance tests",
+    "fast_gate: Fast source-level regression guards run pre-commit/pre-push",
+    "integration: Integration tests (may use external resources)",
+    "live_api: Tests that call paid external APIs (e.g. OpenAI); skipped unless relevant API key env var is set",
     "polyglot_smoke: Polyglot pilot smoke tests (per-pilot toolchain required: Node/npm for TS, dotnet for C#, cargo for Rust). Skipped automatically when toolchain absent.",
+    "probe_test: Tests that exercise substrate probe wiring (opt-out from _silence_probe autouse)",
+    "slice_01: Slice-01 traceability marker applied as a Python marker (pytest.mark.slice_01).",
+    "slow: Tests that take longer to run",
+    "unit: Unit tests (fast, isolated)",
+    "walking_skeleton: Walking-skeleton acceptance tests applied as a Python marker (pytest.mark.walking_skeleton); distinct from the gherkin @walking_skeleton tag consumed by pytest_bdd_apply_tag.",
     "wiring_e2e: Walking-skeleton integration tests that wire spine CLIs together via real subprocess against a realistic tmp project (proves end-to-end composition, not isolated fixtures).",
 ]
 # Suppress PytestUnknownMarkWarning floods from pytest-bdd dynamic
@@ -249,6 +257,7 @@ norecursedirs = [
     "reports",
     "docs",
     ".nwave",
+    ".claude",
     "target",
 ]
 asyncio_mode = "auto"
@@ -364,8 +373,15 @@ ignore = [
     "B007",     # unused loop variable
     "B008",     # function call in default argument (fixtures)
     "RUF001",   # ambiguous unicode
+    "RUF002",   # ambiguous unicode in docstrings — same class as RUF001, test prose
+    "TC001",    # first-party type in TYPE_CHECKING — test composition classes used at runtime
+    "TC002",    # third-party type in TYPE_CHECKING — same runtime-usage rationale
     "TC003",    # stdlib Path in TYPE_CHECKING — test files use Path at runtime via tmp_path
     "RUF005",   # list concatenation — acceptable in test code
+    "F811",     # pytest-bdd false positive: fixture imported then injected as a step param
+    "F403",     # `from steps import *` — pytest-bdd shared-step aggregation idiom
+    "F405",     # name may be from star import — companion of F403 for shared steps
+    "E402",     # import after sys.path-insert / scenarios() — pytest-bdd registration idiom
 ]
 # Hook scripts may need inline imports
 "scripts/hooks/**/*.py" = [
@@ -394,7 +410,7 @@ line-ending = "auto"
 [tool.commitizen]
 # WARNING: the tool.commitizen.version is tracking the LAST STABLE version and is updated by the pipeline!
 # DON'T TOUCH IT!
-version = "3.15.1"
+version = "3.21.0"
 version_scheme = "pep440"
 version_files = [
     "nWave/VERSION",
@@ -440,4 +456,5 @@ validate-yaml    = "python scripts/validation/validate_yaml_files.py"
 # Build, docs & hooks (alphabetical)
 build            = "python scripts/build_dist.py"
 docgen           = "python scripts/docgen.py"
-install-hooks    = "pre-commit install --install-hooks"  # all hook types via default_install_hook_types
+install-hooks    = "pre-commit install --install-hooks --overwrite"  # all hook types via default_install_hook_types; --overwrite forces a clean install (no migration-mode chaining of a stale/foreign hook)
+verify-hooks     = "python scripts/validation/verify_hooks.py"  # fails loudly unless every default_install_hook_types hook is installed, pre-commit-managed, and not bypassed by core.hooksPath

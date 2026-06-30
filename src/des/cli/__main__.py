@@ -81,9 +81,166 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.verify_readiness_pre_dispatch",
         "main",
     ),
+    # f-nonbypassable-attestation slice-05 (DDD-8/9): the PRODUCTION RUNTIME
+    # wave-dispatch guard gate -- a thin CLI over wave_dispatch_guard_policy,
+    # composed onto dispatch.pre (atdd_pure.yaml) so a wave-owner dispatched
+    # off-spine is BLOCKED (warn+ask), never silently allowed.
+    _SubcommandRow(
+        "verify-wave-dispatch",
+        "des.cli.verify_wave_dispatch",
+        "main",
+    ),
     _SubcommandRow(
         "verify-slice-ledger-evidence",
         "des.cli.verify_slice_ledger_evidence",
+        "main",
+    ),
+    _SubcommandRow(
+        "validate-feature-delta",
+        "des.cli.validate_feature_delta",
+        "main",
+    ),
+    # feature-delta-section-schema (ADR-FLOW-007): the typed section-schema
+    # algebra + 3 pure projections (gate-verify / wave-injection / output-
+    # contract) realized as a `des` subcommand. RED scaffold authored by DISTILL.
+    _SubcommandRow(
+        "feature-delta-schema",
+        "des.cli.feature_delta_schema",
+        "main",
+    ),
+    _SubcommandRow(
+        "record-discuss-review",
+        "des.cli.discuss_review_verdict",
+        "main",
+    ),
+    # f-declarative-gate-composition (OB-2): the DISCUSS PO-review CONSUMER veto
+    # promoted to its own catalog gate_id so the declarative DISCUSS gate-out
+    # stack is the readable 2-row list [validate-feature-delta,
+    # verify-discuss-review]. Thin wrapper over DiscussReviewGate.evaluate.
+    _SubcommandRow(
+        "verify-discuss-review",
+        "des.cli.verify_discuss_review",
+        "main",
+    ),
+    _SubcommandRow(
+        "record-at-review-verdict",
+        "des.cli.at_review_verdict",
+        "main",
+    ),
+    # mode-registry-single-locus slice-05: the two new mechanical guardrails
+    # (Layer A + Layer B) that make the next mode shotgun-surgery structurally
+    # impossible. Both are reachable as `des <gate-id>` subcommands and mirrored
+    # 1:1 in nWave/gates/_catalog.yaml (+ per-gate files).
+    _SubcommandRow("mode-locus-gate", "des.cli.mode_locus_gate", "main"),
+    _SubcommandRow(
+        "mode-registry-completeness",
+        "des.cli.mode_registry_completeness",
+        "main",
+    ),
+    # skill-normative-content-gate slice-01 (M-1 dormant-seam guard): the
+    # maintainer-facing gate reached through the real `des` dispatcher.
+    _SubcommandRow(
+        "skill-normative-gate",
+        "des.cli.skill_normative_gate",
+        "main",
+    ),
+    # fix-wave-bypass-recovery-truthful slice-02: the sanctioned operator command
+    # for clearing a stale wave-active floor (reuses WaveActiveWriter.clear via
+    # WaveActivationService.clear_floor -- the floor's first CLI consumer, D11).
+    _SubcommandRow("wave-clear", "des.cli.wave_clear", "main"),
+    # f-coherence-and-attestation slice-06 (the gate-stack WIRING slice, JOB-028):
+    # the three already-built feature modules are CONNECTED into the dispatcher so a
+    # maintainer can REACH them and the closure scorecard sees the feature WIRED
+    # (closing `catalogato ≠ cablato`). Each row is a THIN CLI driver over the
+    # EXISTING slice-03/04/05 logic -- no domain re-implementation:
+    #   gate-design-at-coherence -> des.cli.gate_g.main over evaluate_gate_g
+    #                         (slice-03). f-code-design-manifest-and-gate-g slice-04
+    #                         RENAMED the subcommand gate-g -> gate-design-at-coherence
+    #                         (DDD-5: a GENERAL design<->AT coherence gate after the
+    #                         slice-03 generalization, so the descriptive id). The
+    #                         MODULE des.cli.gate_g is unchanged.
+    #   self-attest        -> des.cli.self_attest.main over self_attest.classify
+    #                         (slice-04, a new thin wrapper over the pure domain).
+    #   verify-test-runner -> the EXISTING des.cli.run_tests.main (slice-05); only
+    #                         the registry row + catalog mirror are net-new.
+    _SubcommandRow("gate-design-at-coherence", "des.cli.gate_g", "main"),
+    _SubcommandRow("self-attest", "des.cli.self_attest", "main"),
+    _SubcommandRow("verify-test-runner", "des.cli.run_tests", "main"),
+    # f-spine-runs-tests-not-git-hooks slice-01 (THE ACCELERATION, DDD-1/AT-A1):
+    # the slice-scoped EXECUTOR that genuinely RUNS only the entering slice's
+    # acceptance tests at commit (a real execution, not a collect-only walk) and
+    # vetoes on a RED slice AT -- the commit-time test authority that supersedes
+    # the whole-tree run-contract-gate per slice. Wiring this row is what makes
+    # `run_slice_ats` reachable (no longer dead code).
+    _SubcommandRow("run-slice-ats", "des.cli.run_slice_ats", "main"),
+    # f-wave-contract-coherence slice-02: the git-free wave-contract coherence
+    # gate -- verifies wave prose carries valid gates-ref/outputs-ref pointers,
+    # restates nothing inline, and the referenced wave resolves in both SSOTs
+    # (gate_stack + output_contract) with every gate_id resolving to the catalog.
+    # Reuses the TextSearch-floor lexical scan (stdlib re) + the catalog gate_id
+    # set; degrades LOUD to INDETERMINATE on an unreadable registry (ADR-FLOW-006
+    # D7/D9 -- the five existing verdicts, no sixth).
+    _SubcommandRow(
+        "verify-wave-contract-coherence",
+        "des.cli.verify_wave_contract_coherence",
+        "main",
+    ),
+    # f-design-devops-review-gate slice-01: the per-wave review-verdict gate
+    # carried to DESIGN (DISCUSS parity). record-design-review is the PRODUCER
+    # (writes BOTH approved + needs-revision, O-4); verify-design-review is the
+    # CONSUMER veto wired into nWave/waves/design.yaml gate-out. Both are thin
+    # wrappers over the wave-parametric ReviewVerdictGate core (no new verdict
+    # logic), mirroring the DISCUSS record/verify pair.
+    _SubcommandRow(
+        "record-design-review",
+        "des.cli.design_review_verdict",
+        "main",
+    ),
+    _SubcommandRow(
+        "verify-design-review",
+        "des.cli.verify_design_review",
+        "main",
+    ),
+    # f-design-devops-review-gate slice-02: the SAME pair carried to DEVOPS
+    # (the SSOT-reuse proof). record-devops-review is the PRODUCER (O-4 both
+    # outcomes); verify-devops-review is the CONSUMER veto wired into
+    # nWave/waves/devops.yaml gate-out. Both are thin wrappers over the SAME
+    # wave-parametric ReviewVerdictGate core -- zero new verdict logic, only
+    # the wave name changes.
+    _SubcommandRow(
+        "record-devops-review",
+        "des.cli.devops_review_verdict",
+        "main",
+    ),
+    _SubcommandRow(
+        "verify-devops-review",
+        "des.cli.verify_devops_review",
+        "main",
+    ),
+    # f-deliver-entry-contract-freeze slice-01 (ADR-FLOW-004, DDD-1): the
+    # DELIVER-entry contract-freeze gate. At the first DELIVER gate-IN it asserts
+    # the contract is STRUCTURALLY complete (locked [REF] sections present + valid
+    # Slice Plan + an authored AT module per planned slice) and writes ONE
+    # ContractFrozen ledger record on PASS. Composes the EXISTING
+    # validate_feature_delta checks in-process + the feature_tag_files AT-module
+    # resolution; emits a §17 GateVerdict (PASS/FAIL/INDETERMINATE -- the five
+    # existing verdicts, no sixth, no engine).
+    _SubcommandRow(
+        "verify-deliver-entry-contract",
+        "des.cli.verify_deliver_entry_contract",
+        "main",
+    ),
+    # f-attest-bundled-slice slice-01 (ADR-ABS-001): the sanctioned
+    # bundle-delivered-slice attestation command, a SCAFFOLD reachable through
+    # the real dispatcher. Built on reverify's SHARED precondition/gate/record
+    # core (des.cli._reverify_core, extracted this slice from
+    # reverify_slice_commit) -- no parallel attestation path. --reason is
+    # MANDATORY (argparse required=True, the wave-clear precedent) so a missing
+    # reason is the genuine usage error demanding a human GO. The A2 flow
+    # (preconditions, gate composition, ledger record) lands in slices 02-04.
+    _SubcommandRow(
+        "attest-bundled-slice",
+        "des.cli.attest_bundled_slice",
         "main",
     ),
 )

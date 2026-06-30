@@ -16,7 +16,7 @@ implemented gate.
 
 from pytest_bdd import scenarios
 
-from .dispatcher_steps.steps_readiness_gate import *  # noqa: F403
+from .dispatcher_steps.steps_readiness_gate import *
 
 
 scenarios("slice-03-d1-readiness-gate.feature")

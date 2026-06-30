@@ -89,16 +89,26 @@ def when_operator_records_approval_from_cwd(installed: ShippingComposition) -> N
 # --- Then ---------------------------------------------------------------------
 
 
-@then(
-    "the working repository's ledger gains one signed AT-review verdict for the slice"
-)
+@then("the working repository's ledger gains one AT-review verdict for the slice")
 def then_ledger_gains_one_verdict(installed: ShippingComposition) -> None:
     assert len(installed.verdicts_for_entering_slice()) == 1
 
 
-@then("the recorded verdict verifies against the reviewer signing key")
-def then_recorded_verdict_verifies(installed: ShippingComposition) -> None:
-    assert installed.recorded_verdict_verifies()
+@then(
+    "the recorded verdict binds the reviewer identity and the content seal "
+    "it was reviewed under"
+)
+def then_record_binds_reviewer_and_seal(installed: ShippingComposition) -> None:
+    # Keyless equal-or-stronger replacement for the superseded HMAC-verifies
+    # assertion (oss-review-verdict-demotion S2): the record's PRESENT fields
+    # are the whole control — APPROVED verdict, named reviewer, AT-set binding,
+    # content seal, timestamp.
+    assert installed.latest_record_binds_reviewer_and_seal()
+
+
+@then("the recorded verdict carries no signature field and needed no key")
+def then_record_is_keyless(installed: ShippingComposition) -> None:
+    assert not installed.latest_record_carries_signature_field()
 
 
 @then("the carpaccio gate clears the slice")

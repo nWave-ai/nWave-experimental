@@ -21,10 +21,12 @@ on stdin, asserts exit code and stdout content. No mocks, no test doubles.
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from des.adapters.drivers.hooks import claude_code_hook_adapter
+from tests.common.in_process_cli import run_hook_in_process
 
 
 # ---------------------------------------------------------------------------
@@ -63,17 +65,31 @@ def _invoke_pre_tool_use_hook(prompt: str) -> subprocess.CompletedProcess:
         }
     )
 
-    env = os.environ.copy()
+    # In-process analogue of the former
+    # ``subprocess.run([sys.executable, HOOK_ADAPTER, "pre-tool-use"], input=payload)``
+    # fork: drive the real adapter EDGE (``hook_router.main``) directly, routed by
+    # argv exactly as the script invocation was, feeding the SAME JSON on stdin.
+    # PYTHONPATH=<root>/src is set on os.environ (restored after) for parity.
+    prior_pythonpath = os.environ.get("PYTHONPATH")
     src_path = str(PROJECT_ROOT / "src")
-    env["PYTHONPATH"] = src_path + os.pathsep + env.get("PYTHONPATH", "")
-
-    return subprocess.run(
-        [sys.executable, str(HOOK_ADAPTER), "pre-tool-use"],
-        input=payload,
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=30,
+    os.environ["PYTHONPATH"] = src_path + os.pathsep + (prior_pythonpath or "")
+    try:
+        exit_code, out, err = run_hook_in_process(
+            claude_code_hook_adapter.main,
+            stdin_text=payload,
+            cwd=str(PROJECT_ROOT),
+            argv=[str(HOOK_ADAPTER), "pre-tool-use"],
+        )
+    finally:
+        if prior_pythonpath is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = prior_pythonpath
+    return subprocess.CompletedProcess(
+        args=[str(HOOK_ADAPTER), "pre-tool-use"],
+        returncode=exit_code,
+        stdout=out,
+        stderr=err,
     )
 
 

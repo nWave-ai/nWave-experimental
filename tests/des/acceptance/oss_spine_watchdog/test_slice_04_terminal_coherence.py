@@ -35,7 +35,7 @@ from .composition_slice_04 import (  # noqa: F401  -- pytest fixtures
     state_04,
     terminal_coherence_fixture,
 )
-from .steps.steps_slice_04_terminal_coherence import *  # noqa: F403  -- step vocab
+from .steps.steps_slice_04_terminal_coherence import *
 
 
 scenarios("slice-04-terminal-coherence.feature")

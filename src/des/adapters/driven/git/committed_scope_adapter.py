@@ -40,6 +40,20 @@ if TYPE_CHECKING:
 # exclusion -- every `.feature` scenario is collected via its bound `.py`
 # `@scenario` module, which remains in the path-set (slice-01 AT-4).
 def _is_contract_suite_path(rel_path: str) -> bool:
+    # DISTILL staging artifacts under `docs/feature/*/pending-ats/` are committed
+    # (but superseded by their live `tests/` relocation) and are NOT the contract
+    # suite. Collecting them as explicit `--path` argv trips the worker: a
+    # deleted-on-disk staged file -> pytest exit 4, and a hyphenated
+    # `docs/feature/f-...-attestation/pending-ats/...` dir is not an importable
+    # module path -> ImportError -> pytest exit 2. Either way the digest worker
+    # fails closed (vacuous Gate-Scope). Excluding the `docs/` staging tree keeps
+    # the committed-scope fingerprint robust WITHOUT over-restricting to `tests/`:
+    # the contract suite is generically "a test-named module anywhere in the
+    # target repo" (a target's tests may sit at the repo root, not only under
+    # `tests/` -- the fix-gcommit-exit-gate-scoping ATs pin exactly that with
+    # root-level committed contract fixtures).
+    if rel_path.startswith("docs/"):
+        return False
     name = rel_path.rsplit("/", maxsplit=1)[-1]
     if not name.endswith(".py"):
         return False

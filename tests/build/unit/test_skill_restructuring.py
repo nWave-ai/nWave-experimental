@@ -183,6 +183,12 @@ EXPECTED_BULK_SKILLS = [
 ]
 
 BULK_HASHES = {
+    # 2026-06-11 (mode-registry-single-locus slice-04): THE LAST MANUAL RE-PIN.
+    # 6 skills re-pinned after the bulk mode-prose migration (GENERATED regions
+    # + mode-ref-ok allow-markers): nw-buddy-project-reading,
+    # nw-buddy-wave-knowledge, nw-deliver-orchestration, nw-tdd-methodology,
+    # nw-tdd-review-enforcement, nw-test-design-mandates. From slice-05 on,
+    # the mode_locus_gate + docgen --check own this guard.
     "nw-agent-creation-workflow": "9c18760734ef8702c68581e940c57df1",
     "nw-agent-testing": "58093930e354b85b07be5fe0a08fc4ed",
     "nw-ai-workflow-tutorials": "93e15d83c8b2042102785dff4c677bb7",
@@ -205,11 +211,12 @@ BULK_HASHES = {
     # of pipx-only.
     "nw-buddy": "720a5634d2f2f333c854f1ac07de2624",
     "nw-buddy-command-catalog": "403ff4bf5cc44e73183e6021e0e3147d",
-    "nw-buddy-project-reading": "87e85232291063f4e68f816e0864298a",
+    "nw-buddy-project-reading": "911fd5d795aee5acb100528d47fe2d4f",
     "nw-buddy-ssot-knowledge": "7a801cc1b1ab7379a258f621a08a71f5",
     # Hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation —
     # DELIVER wave description now cites 3-phase RED→GREEN→COMMIT with legacy fallback.
-    "nw-buddy-wave-knowledge": "333d14f2b678d5f9450f9e801051daf9",
+    # Hash updated 2026-06-08: ADR-GV-001 D6 — DISTILL active-RED scaffolds (not @skip).
+    "nw-buddy-wave-knowledge": "2564ad5d5db8adadc12c69aab2a0710b",
     "nw-cialdini-outreach": "90aea943d1a2eb313561ecbd0f2c5915",
     "nw-cicd-and-deployment": "2195ace1646b4c0ced64070d57bb542a",
     "nw-cognitive-load-management": "3e06303c46182b62288a7bffeb342909",
@@ -221,7 +228,9 @@ BULK_HASHES = {
     # snapshot refresh — no structural change to the skill.
     "nw-collaboration-and-handoffs": "6c13ac6880b1a7ed4109accec49abd38",
     "nw-collapse-detection": "d9d627bef17d03649583302e18482570",
-    "nw-command-design-patterns": "ed39642cc074ad30d53cf345a915c45d",
+    # Hash updated 2026-06-17: decompose-and-recompose into 3 nw-command-design-patterns-*
+    # modules (classification, reduction, authoring); core is a lean composing router. §22.0 reviewed.
+    "nw-command-design-patterns": "2ff3b1ec3ddb875e9b6bff92b253595b",
     "nw-command-optimization-workflow": "c9152d7ea4b3c1657ebcac9a439fcdee",
     "nw-competitive-analysis": "ec05866d4429c42ea27d84aad891f719",
     "nw-compliance-framework": "5574d1c462405437898f603dce12340e",
@@ -236,7 +245,7 @@ BULK_HASHES = {
     "nw-ddd-eventsourcing": "f014437fa2b76008896d3a83e4f48288",
     "nw-ddd-strategic": "1bee905e197ac9f2cacf4e5e37f3f8ef",
     "nw-ddd-tactical": "7ec690c487144de353ae7d01ba24cd6c",
-    "nw-deliver-orchestration": "913857db6188bd32dd9267e73776de90",
+    "nw-deliver-orchestration": "319dc7db0b187c01dd2f92462f986a02",
     "nw-deployment-strategies": "a73beb26bce3706db567f8cce3497b9b",
     "nw-design-methodology": "9f161d6ae6ad061a6a4eb7dcb63c082c",
     "nw-design-patterns": "b0e3f59bfde50d1a7bb6ada40ca9b3b4",
@@ -267,7 +276,14 @@ BULK_HASHES = {
     "nw-gamification-mda-wow-aha": "c4e7a921d649f098534c5d238c8271f6",
     "nw-hexagonal-testing": "0de49f81beb7bbcb8654cf2f050ce604",
     "nw-icp-design": "45578e183c03c5047d1ac44c74880941",
-    "nw-infrastructure-and-observability": "f190e2f9695ec7b42695c746496a9e4d",
+    # Hash updated 2026-06-14: f-devops-wave-migration slice-01 (AT-3) — added the
+    # "Outcome-KPI-Traced Observability (Second Way)" section: 2nd-Way observability
+    # is designed around the outcome-KPI signals, not generic dashboards untraced to a KPI.
+    # Hash updated 2026-06-14: f-devops-wave-migration slice-02 (AT-6) — added the
+    # "Language-Agnostic Security-Gate Seam (per-language port, degrade-LOUD)" section:
+    # the security gate resolves the target toolchain behind a per-language port and
+    # degrades LOUD as INDETERMINATE on an unrecognized toolchain, never a silent pass.
+    "nw-infrastructure-and-observability": "54913197e10857289e4a6f2246ca1b43",
     "nw-interaction-choreography": "8707cda3fea5be7df1daa63d6f56660f",
     "nw-interviewing-techniques": "fffd5344322d67d5070f3a7e4f435304",
     "nw-investigation-techniques": "b04c2a2ec34ed186c238518788ea7640",
@@ -304,7 +320,9 @@ BULK_HASHES = {
     "nw-pedagogy-bloom-andragogy": "ae7f9e75d0c3e02cb07faefb4b919482",
     "nw-persona-jtbd-analysis": "6f77c93d06a99d54a0511599e55b455a",
     "nw-platform-engineering-foundations": "137a9f433ae656b4853a5d66caa896ff",
-    "nw-pricing-frameworks": "3bd645624b50c048bf6e01bb7fa13aac",
+    # Hash updated 2026-06-17: decompose-and-recompose into 5 nw-pricing-frameworks-*
+    # modules (value-based, tiering, persuasion, negotiation, unit-economics). §22.0 reviewed.
+    "nw-pricing-frameworks": "4820ab5d14e2b74c28ea2771d6af5b2d",
     "nw-production-readiness": "d94eaa53a822fb6ca220a442cb0782f9",
     "nw-production-safety": "2a9b76c9a548a9986b06a6b6c99437c4",
     "nw-progressive-refactoring": "35e590c9df632bcfa04098d6246e5bd9",
@@ -312,9 +330,11 @@ BULK_HASHES = {
     # falsifier-gate anti-pattern + empirical anchor (commit c2637f6c8). See
     # backlog F-TEST-SPEEDUP-PARADIGM-CATALOG for context.
     "nw-property-based-testing": "605d22bd69e68109fbb2abe49c2bbf14",
-    "nw-proposal-structure": "6703c77e63466b6e911b02afeddc4514",
+    # Hash updated 2026-06-17: decompose-and-recompose into 2 nw-proposal-structure-*
+    # modules (b2b, cialdini); core is a lean composing router. §22.0 reviewed.
+    "nw-proposal-structure": "bec9dd508f567c847da44cd41ee56821",
     "nw-psychological-safety": "106382f562186d415f5b5ad1430542b7",
-    "nw-quality-framework": "c539c9288c26d9e3ec64075e63982175",
+    "nw-quality-framework": "2282d36809cc57235e6cd98dbae2cebe",
     "nw-quality-validation": "41cee9327afa9d4e579b7c0699eb544d",
     "nw-query-optimization": "17959230c1a5f619b4a172e5e8196068",
     "nw-research-methodology": "e4910ea40aefc82f421640138986f300",
@@ -340,7 +360,16 @@ BULK_HASHES = {
     "nw-stress-analysis": "ad5e1b64848a4343e749ec99c61f3517",
     "nw-taste-evaluation": "93f3f75be13aae0ec1a260ca68af94b7",
     "nw-tbr-methodology": "40e44f3c469968c140bd7c107b536644",
-    "nw-tdd-methodology": "d91e473ed1f18399c9db4c5768b07086",
+    # Hash updated 2026-06-08: ADR-GV-001 D6 — active-RED scaffolds (not @skip), classic skip DEPRECATED.
+    # Hash updated 2026-06-14: f-deliver-wave-migration slice-01 (AT-3) — added the
+    # "GREEN matches the declared public contract; refactor freedom is private-surface
+    # freedom" section: GREEN matches the design's declared PUBLIC contract while a new
+    # private symbol / Extract-Method below the public boundary is never a conformance
+    # violation (the load-bearing C4 private-refactor-freedom invariant).
+    # Hash updated 2026-06-17: decompose-and-recompose into 7 nw-tdd-methodology-*
+    # modules (cycle, outside-in, port-to-port, test-doubles, walking-skeleton,
+    # paradigm, pbt-deep); core is now a lean composing router. §22.0 reviewed.
+    "nw-tdd-methodology": "75c09aa58c9b12832c4da0294e2d1471",
     # Hash updated 2026-06-02: merge master — merged content combines branch
     # mandate-9 v2 slice-02 adapter-integration RED expansion (c9f8f8479) +
     # master LANGUAGE CONVENTION FRAME banner (Python-leak prevention, 596c0025c).
@@ -349,14 +378,19 @@ BULK_HASHES = {
     # + mode-scoped execution-log prose for the roadmap-free spine.
     # Prior hash updated 2026-05-15: closed-source refs scrubbed (3ab776967).
     # Prior hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation.
-    "nw-tdd-review-enforcement": "e34abb5843029fa0e2f21a9e8dad662d",
-    "nw-test-design-mandates": "02c1e8d272160403106bb7df2be82324",
+    "nw-tdd-review-enforcement": "d9c67c58f9c6842792e223b7c6328bf7",
+    # Hash updated 2026-06-08: ADR-GV-001 D8 — back-ported Mandates 12-15
+    # into the SSOT + added the numbering-convention frame + Mandate Registry.
+    # Hash updated 2026-06-17: decompose-and-recompose into 3 nw-test-design-mandates-*
+    # modules (scenario-design, layered-mechanics, composition-contract); core is now
+    # a lean composing router + Mandate Registry. §22.0 reviewed.
+    "nw-test-design-mandates": "a123a96f14ee5b8dbbdf83c52bdd060a",
     "nw-test-organization-conventions": "64778077de4b55a493e89cf0e06ce681",
     "nw-test-refactoring-catalog": "9dd4d17224b32058386f4413027253bd",
     "nw-tlaplus-verification": "39ba15e1845e237a9d2014c467aa56ff",
     "nw-tutorial-structure": "9cb0099f21b1190abf2ed2166c6e2d8f",
     "nw-usability-engineering": "0fd991a15911cb39158396906b8ebd16",
-    "nw-user-story-mapping": "104afdc456a9c7c8d05cd3910cfd2afb",
+    "nw-user-story-mapping": "426a522168f54f7cfde7cbaf57bc3801",
     "nw-ux-desktop-patterns": "4fc6bfc86d9c6f7ad1eaa1f9e09f48fb",
     "nw-ux-emotional-design": "fd02a828c5bf352fd438d5250f6850ee",
     "nw-ux-principles": "25c5074d1dd34e76a8a15f7c92c58772",

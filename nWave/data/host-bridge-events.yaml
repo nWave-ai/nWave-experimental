@@ -106,8 +106,8 @@ events:
   - id: commit.pre
     description: |
       Fired BEFORE git commit message is sealed. Used by prepare-commit-msg
-      hook to derive Reviewed-by HMAC trailer from ledger record (closes
-      friction #35 mechanical-HMAC-trailer-derivation).
+      hook to derive Reviewed-by trailer from ledger record (closes
+      friction #35 mechanical-trailer-derivation).
     hosts:
       claude-code: n/a
       codex: n/a

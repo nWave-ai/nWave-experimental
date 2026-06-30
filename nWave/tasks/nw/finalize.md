@@ -100,6 +100,12 @@ These are process scaffolding — valuable during delivery, disposable after:
 
 @{agent}
 
+<!-- DES-WAVE: feature-end -->
+
+**Wave-entry dispatch marker contract.** Include the `<!-- DES-WAVE: feature-end -->` marker line above verbatim in the Agent dispatch prompt. For a wave-ENTERING dispatch this single marker is the COMPLETE and SUFFICIENT contract — it both declares the wave (so the PreToolUse hook arms enforcement via the INFERRED fallback even on runtimes whose prompt-submission anchor never fired) and is recognized by the spine as a legitimate entry that is EXEMPT from the WAVE_MARKER_BYPASS veto. Do not add `DES-VALIDATION`/`DES-PROJECT-ID`/`DES-STEP-ID` to the entry dispatch; the DES-WAVE marker can only ADD gating, never remove it.
+
+**In-wave child dispatch (non-entering).** If you dispatch a FURTHER sub-agent while the wave is already active (not the entry dispatch), that child is NOT exempt. A child carrying no DES markers is DENIED loud as a wave bypass. Such a child MUST carry the wave's DES marker set — copy `<!-- DES-WAVE: feature-end -->` plus the wave's `DES-*` markers from the parent dispatch onto the child prompt.
+
 Finalize: {feature-id}
 
 **Key constraints:**

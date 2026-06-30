@@ -1,0 +1,42 @@
+# Gate-contract: attest-bundled-slice (f-attest-bundled-slice slice-01)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=attest-bundled-slice.
+
+gate_id: attest-bundled-slice
+responsibility: |
+  Attest a bundle-delivered carpaccio slice on reverify's shared precondition/gate/record core (human-GO required).
+module: des.cli.attest_bundled_slice
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "Feature owning the bundle-delivered slice."
+  - name: --slice-id
+    required: true
+    type: string
+    help: "Bundled slice to attest (slice-NN)."
+  - name: --reason
+    required: true
+    type: string
+    help: "Human-authored GO reason justifying the bundled-slice attestation."
+
+log_events:
+  - BundledSliceAttestNotApplicable
+
+failure_modes:
+  - error_class: UsageOrMalformed
+    exit_code: 2
+    remediation: "--reason is mandatory (argparse required=True); supply the human GO."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

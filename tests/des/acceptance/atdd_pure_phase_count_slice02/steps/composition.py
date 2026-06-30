@@ -31,11 +31,15 @@ result; they never inline subprocess logic.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from des.adapters.drivers.hooks.hook_router import main as _hook_router_main
+from des.cli.phases import main as _phases_main
+from tests.common.in_process_cli import run_cli_in_process, run_hook_in_process
 
 from .domain_types import CanonicalPhase, CommitStepWord
 
@@ -68,10 +72,18 @@ class PhaseResolveComposition:
     """Drives ``python -m des.cli.phases --resolve`` (Layer-3 subprocess port)."""
 
     def resolve(self, phase_name: str) -> ResolutionResult:
-        proc = subprocess.run(
-            [sys.executable, "-m", "des.cli.phases", "--resolve", phase_name],
-            capture_output=True,
-            text=True,
+        # In-process analogue of `python -m des.cli.phases --resolve PHASE`: drive
+        # the REAL `des.cli.phases.main(argv)` EDGE, capturing the same stdout the
+        # subprocess captured. The resolver is cwd-independent (pure alias map), so
+        # the process cwd is incidental (kept at "." as the fork's was). Result is
+        # wrapped in a CompletedProcess so the typed parser stays byte-identical.
+        exit_code, stdout, stderr = run_cli_in_process(
+            ["--resolve", phase_name],
+            cwd=".",
+            main=_phases_main,
+        )
+        proc = subprocess.CompletedProcess(
+            args=[], returncode=exit_code, stdout=stdout, stderr=stderr
         )
         return self._parse_resolution(phase_name, proc)
 
@@ -160,7 +172,20 @@ class CommitStepGateComposition:
         with tempfile.TemporaryDirectory() as workspace:
             repo = Path(workspace)
             self._init_repo(repo)
+            self._activate_project(repo)
             return self._drive_hook(word, repo)
+
+    def _activate_project(self, repo: Path) -> None:
+        """ACTIVATE the tmp project so the ADR-AG-001 activation gate dispatches
+        the SubagentStop handler (an INACTIVE project short-circuits with
+        sys.exit(0) before the C3 commit-word dispatch ever runs -- a state
+        production never produces, so the routing seam must be exercised on an
+        active root). Writes the global-config marker the gate reads at
+        ``$HOME/.nwave/global-config.json``; ``_drive_hook`` sandboxes HOME to
+        ``repo`` so this marker is the one the gate resolves."""
+        gc = repo / ".nwave" / "global-config.json"
+        gc.parent.mkdir(parents=True, exist_ok=True)
+        gc.write_text(json.dumps({"activation": {"mode": "all"}}), encoding="utf-8")
 
     def _init_repo(self, repo: Path) -> None:
         # The exit-gate runs git-dependent completeness checks; a bare temp dir
@@ -181,23 +206,38 @@ class CommitStepGateComposition:
 
     def _drive_hook(self, word: CommitStepWord, workspace: Path) -> CommitGateOutcome:
         transcript = self._write_marker_transcript(word, workspace)
-        proc = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "des.adapters.drivers.hooks.claude_code_hook_adapter",
-                "subagent_stop",
-            ],
-            input=json.dumps(
-                {
-                    "agent_transcript_path": str(transcript),
-                    "cwd": str(workspace),
-                    "agent_type": "software-crafter",
-                }
-            ),
-            capture_output=True,
-            text=True,
-            cwd=str(workspace),
+        stdin_payload = json.dumps(
+            {
+                "agent_transcript_path": str(transcript),
+                "cwd": str(workspace),
+                "agent_type": "software-crafter",
+            }
+        )
+        # In-process analogue of `python -m des...claude_code_hook_adapter
+        # subagent_stop` with JSON on stdin: drive the REAL `hook_router.main`
+        # over argv `[prog, "subagent_stop"]`. This PRESERVES the ADR-AG-001
+        # activation gate (`apply_gate`) the routing seam depends on, while
+        # bypassing the facade's decision-irrelevant import-time freshness notice
+        # (stderr-only). HOME is sandboxed to the workspace (the activation gate
+        # reads `$HOME/.nwave/global-config.json`); set + restored in finally,
+        # shared-process safe. Result wrapped in CompletedProcess so the typed
+        # gate-outcome parser stays byte-identical.
+        prior_home = os.environ.get("HOME")
+        os.environ["HOME"] = str(workspace)
+        try:
+            exit_code, stdout, stderr = run_hook_in_process(
+                _hook_router_main,
+                stdin_text=stdin_payload,
+                cwd=str(workspace),
+                argv=["claude_code_hook_adapter", "subagent_stop"],
+            )
+        finally:
+            if prior_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = prior_home
+        proc = subprocess.CompletedProcess(
+            args=[], returncode=exit_code, stdout=stdout, stderr=stderr
         )
         return self._parse_gate_outcome(word, proc)
 

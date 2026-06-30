@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-from .steps.steps_slice_01_hook_freshness import *  # noqa: F403  -- step vocabulary
+from .steps.steps_slice_01_hook_freshness import *
 
 
 scenarios("slice-01-hook-freshness-wiring.feature")

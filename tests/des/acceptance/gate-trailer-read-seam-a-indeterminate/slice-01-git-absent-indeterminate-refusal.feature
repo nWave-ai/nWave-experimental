@@ -84,8 +84,3 @@ Feature: The commit-trailer verifier refuses LOUD with a uniform cannot-evaluate
     And the cannot-evaluate verdict is distinct from the tampering verdict
     And the cannot-evaluate verdict is distinct from the malformed-trailer verdict
 
-  @slice-01 @driving_port @real-io @contract-shape:unbounded-preservation
-  Scenario: A commit-trailer verifier run on a signed commit in a real git work-tree still produces the verified verdict
-    Given a real git work-tree with a commit carrying a correctly signed trailer
-    When the operator runs des verify-commit-trailers on that signed commit
-    Then the verifier produces the verified verdict

@@ -27,6 +27,7 @@ from scripts.shared.skill_distribution import (
     enumerate_skills,
     filter_public_skills,
 )
+from scripts.shared.skill_path_rewrite import rewrite_host_paths
 
 
 _MANIFEST_FILENAME = ".nwave-manifest.json"
@@ -251,6 +252,7 @@ class CodexSkillsPlugin(InstallationPlugin):
 
                 content = source_file.read_text(encoding="utf-8")
                 content = _strip_forbidden_fields(content)
+                content = rewrite_host_paths(content, "codex")
                 target_file.write_text(content, encoding="utf-8")
 
                 installed_names.append(entry.name)

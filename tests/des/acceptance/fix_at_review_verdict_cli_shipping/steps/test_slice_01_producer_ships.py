@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pytest_bdd import scenarios
 
-from .steps_slice_01_producer_ships import *  # noqa: F403 -- step vocabulary
+from .steps_slice_01_producer_ships import *
 
 
 scenarios("../slice-01-producer-ships.feature")

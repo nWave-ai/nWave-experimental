@@ -35,7 +35,7 @@ Before emitting any Tier-1 section, resolve the active documentation density:
 
 The resolver itself encodes the D12 cascade: explicit `documentation.density` override > `rigor.profile` mapping (`lean`→`lean`, `standard`→`lean`+`ask`, `thorough`→`full`, `exhaustive`→`full`+all-expansions, `custom`→`lean`+`ask`) > hard default `lean`+`ask`. Wave skills MUST NOT replicate the cascade locally — call `resolve_density(global_config)` and trust its output.
 
-**Section heading prefix convention (per D2)**: every emitted section starts with `## Wave: <NAME> / [REF] <Section>` for Tier-1; `## Wave: <NAME> / [WHY] <Section>` or `## Wave: <NAME> / [HOW] <Section>` for Tier-2. Validator `scripts/validation/validate_feature_delta.py` enforces the regex `^## Wave: \w+ / \[(REF|WHY|HOW)\] .+$` on every wave heading.
+**Section heading prefix convention (per D2)**: every emitted section starts with `## Wave: <NAME> / [REF] <Section>` for Tier-1; `## Wave: <NAME> / [WHY] <Section>` or `## Wave: <NAME> / [HOW] <Section>` for Tier-2. Validator `des validate-feature-delta` (module `des.cli.validate_feature_delta`) enforces the regex `^## Wave: \w+ / \[(REF|WHY|HOW)\] .+$` on every wave heading.
 
 ### Ad-hoc override — user request mid-session
 

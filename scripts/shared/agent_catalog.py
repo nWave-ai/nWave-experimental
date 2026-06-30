@@ -65,6 +65,14 @@ PUBLIC_SHARED_SKILLS: frozenset[str] = frozenset(
         "nw-speculative-dispatch",
         "nw-tdd-cross-language",
         "nw-wizard-shared-rules",
+        # Decomposed command-design-patterns modules (2026-06-17): the public
+        # core nw-command-design-patterns (load-bearing for the public
+        # agent-builder via *optimize-command) composes these via its loading
+        # table; they are routed via-core, not frontmatter-owned, so the
+        # ownership strip would drop them — same load-bearing pattern as above.
+        "nw-command-design-patterns-classification",
+        "nw-command-design-patterns-reduction",
+        "nw-command-design-patterns-authoring",
     }
 )
 

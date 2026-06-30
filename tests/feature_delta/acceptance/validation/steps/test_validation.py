@@ -99,10 +99,10 @@ def _stderr_protocol_surface(cli_result, surface: str) -> None:
     assert surface in cli_result.stderr
 
 
-@then("stderr suggests adding a DDD entry or restoring the commitment")
+@then("stderr suggests adding a DDR entry or restoring the commitment")
 def _stderr_remediation(cli_result) -> None:
     text = cli_result.stderr.lower()
-    assert "ddd" in text and ("restore" in text or "add" in text)
+    assert "ddr" in text and ("restore" in text or "add" in text)
 
 
 @then("no file outside the path argument was modified")
@@ -739,10 +739,10 @@ def _then_offender_row(cli_result) -> None:
     )
 
 
-@then("stderr suggests citing DDD-N or row#N")
+@then("stderr suggests citing DDR-N or row#N")
 def _then_suggest_citation(cli_result) -> None:
     text = cli_result.stderr.lower()
-    assert "ddd" in text or "row#" in text or "row" in text, (
+    assert "ddr" in text or "row#" in text or "row" in text, (
         f"expected citation hint in stderr, got {cli_result.stderr!r}"
     )
 
@@ -1340,7 +1340,7 @@ def _then_pending_consistent(cli_result) -> None:
     errors = cli_result.get("errors", [])
     assert not errors, f"Manifest inconsistency errors: {errors}"
     # Confirm pending rules are a strict subset of known rule IDs.
-    known_rule_ids = {"E1", "E2", "E3", "E3b", "E4", "E5", "R1", "R2", "R3"}
+    known_rule_ids = {"E1", "E2", "E3", "E3b", "E4", "E5", "R1", "R2", "R3", "R4"}
     unknown = {r for r, e in manifest_rules.items() if r not in known_rule_ids}
     assert not unknown, f"Unknown rule IDs in manifest: {unknown}"
 

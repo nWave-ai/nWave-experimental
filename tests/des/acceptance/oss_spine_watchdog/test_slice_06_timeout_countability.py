@@ -35,7 +35,7 @@ from .composition_slice_06 import (  # noqa: F401  -- pytest fixtures
     state_06,
     timeout_countability_fixture,
 )
-from .steps.steps_slice_06_timeout_countability import *  # noqa: F403  -- step vocab
+from .steps.steps_slice_06_timeout_countability import *
 
 
 scenarios("slice-06-timeout-block-countability.feature")

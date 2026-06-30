@@ -148,8 +148,8 @@ class CarpaccioSpineComposition:
 
                 | Slice | Value Statement | Status |
                 |-------|-----------------|--------|
-                | slice-01 | first thin slice | pending |
-                | slice-02 | second thin slice | pending |
+                | slice-01 | first thin slice | shipped |
+                | slice-02 | second thin slice | shipped |
                 """
             ),
             encoding="utf-8",
@@ -502,6 +502,21 @@ class CarpaccioSpineComposition:
         """
         from .domain_types import IntegrityOutcome
         from .domain_types import SliceTag as _SliceTag
+
+        # f-nonbypassable-attestation slice-03 (DDD-5, filesystem-derived): the
+        # composed done-gate proves a planned slice was delivered by the presence
+        # of its `@slice-NN @feature-{id}` `.feature` file (NOT the gameable
+        # Status text). A genuinely-complete (reconciled) feature has authored
+        # every planned slice's acceptance test; without these files the done-gate
+        # would (correctly) refuse the feature as TRUNCATED, masking the
+        # reconciliation outcome under test. Authored on disk (the done-gate walks
+        # the working tree), scoped to this feature so the slice-plan rows resolve.
+        for slice_tag in ("slice-01", "slice-02"):
+            (self.tests_dir / f"{slice_tag}.feature").write_text(
+                f"@feature-{self.feature_id} @{slice_tag}\n"
+                f"Feature: {slice_tag} acceptance fixture\n",
+                encoding="utf-8",
+            )
 
         (self.project_root / f"{self.entering_slice}.delivered").write_text(
             "", encoding="utf-8"

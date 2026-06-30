@@ -37,11 +37,17 @@ import hashlib
 import hmac
 import json
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+
+# The REAL `handle_subagent_stop` SubagentStop hook handler, driven IN-PROCESS
+# over its JSON stdin protocol (node-C enabler `run_hook_in_process`) —
+# behaviour-identical to the prior `python -c "... handle_subagent_stop()"`
+# subprocess fork, no fresh interpreter. No-argv, reads its JSON event from stdin.
+from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
+from tests.common.in_process_cli import run_hook_in_process
 
 from .domain_types import (
     FeatureId,
@@ -255,19 +261,16 @@ class DistillExitGateComposition:
                 "permission_mode": "default",
             }
         )
-        runner = (
-            "import sys; "
-            f"sys.path.insert(0, {str(Path('src').resolve())!r}); "
-            f"from {_HANDLER_MODULE} import handle_subagent_stop; "
-            "sys.exit(handle_subagent_stop())"
-        )
-        completed = subprocess.run(
-            [sys.executable, "-c", runner],
-            input=hook_input,
-            capture_output=True,
-            text=True,
+        exit_code, stdout, stderr = run_hook_in_process(
+            handle_subagent_stop,
+            stdin_text=hook_input,
             cwd=str(Path.cwd()),
-            env=_subprocess_env(),
+        )
+        completed = subprocess.CompletedProcess(
+            args=[_HANDLER_MODULE],
+            returncode=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
         return self._interpret(completed)
 
@@ -305,14 +308,6 @@ class DistillExitGateComposition:
         except Exception:
             return False
         return len(records) >= 1
-
-
-def _subprocess_env() -> dict[str, str]:
-    import os
-
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(Path("src").resolve())
-    return env
 
 
 __all__ = [

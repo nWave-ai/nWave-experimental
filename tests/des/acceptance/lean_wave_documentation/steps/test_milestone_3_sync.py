@@ -34,20 +34,6 @@ scenarios("../milestone-3-mirror-sync.feature")
 
 
 # ---------------------------------------------------------------------------
-# Skip hook — maps @skip tag to pytest.mark.skip (preserves the
-# existing convention; future scenarios may re-acquire @skip).
-# ---------------------------------------------------------------------------
-
-
-def pytest_bdd_apply_tag(tag: str, function: object) -> bool | None:
-    if tag == "skip":
-        marker = pytest.mark.skip(reason="DELIVER will activate one scenario at a time")
-        marker(function)
-        return True
-    return None
-
-
-# ---------------------------------------------------------------------------
 # Helpers — real subprocess git operations on tmp_path.
 # ---------------------------------------------------------------------------
 
@@ -75,6 +61,23 @@ def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         "-c",
         "commit.gpgsign=false",
     ]
+    # Scrub git repo-override vars (belt-and-braces mirror of the session
+    # scrub in tests/conftest.py _scrub_git_repo_override_env): an inherited
+    # GIT_DIR (linked-worktree pre-push exports an absolute one) would
+    # redirect these git calls onto the REAL shared repository — note
+    # GIT_CEILING_DIRECTORIES does NOT protect against env-override discovery.
+    no_git_env = {
+        k: v
+        for k, v in os.environ.items()
+        if k
+        not in (
+            "GIT_DIR",
+            "GIT_COMMON_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+        )
+    }
     return subprocess.run(
         base + args,
         cwd=str(cwd),
@@ -82,7 +85,7 @@ def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         text=True,
         timeout=30,
         check=False,
-        env={**os.environ, "GIT_CEILING_DIRECTORIES": str(cwd.parent)},
+        env={**no_git_env, "GIT_CEILING_DIRECTORIES": str(cwd.parent)},
     )
 
 

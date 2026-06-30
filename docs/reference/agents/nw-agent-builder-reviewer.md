@@ -4,10 +4,12 @@ Use for review and critique tasks - Agent design and quality review specialist. 
 
 **Wave:** Other
 **Model:** haiku
-**Max turns:** 0
+**Max turns:** 20
 **Tools:** Read, Glob, Grep, Task
 
 ## Skills
 
-- [nw-abr-critique-dimensions](../../../nWave/skills/nw-abr-critique-dimensions/SKILL.md) — Review dimensions for validating agent quality - template compliance, safety, testing, and priority validation
-- [nw-review-workflow](../../../nWave/skills/nw-review-workflow/SKILL.md) — Detailed review process, v2 validation checklist, and scoring methodology for agent definition reviews
+- [nw-ab-anti-patterns](../skills/nw-ab-anti-patterns.md) — KNOWLEDGE — agent/skill/command anti-pattern catalog with fixes. Reference scanned by validate-spec; no sequence.
+- [nw-ab-validation-checklist](../skills/nw-ab-validation-checklist.md) — KNOWLEDGE (data) — the 19-item agent-spec validation checklist. The item definitions the validate-spec / todoify procedures RUN against. No sequence of its own.
+- [nw-abr-critique-dimensions](../skills/nw-abr-critique-dimensions.md) — Review dimensions for validating agent quality - template compliance, safety, testing, and priority validation
+- [nw-review-workflow](../skills/nw-review-workflow.md) — Detailed review process, v2 validation checklist, and scoring methodology for agent definition reviews

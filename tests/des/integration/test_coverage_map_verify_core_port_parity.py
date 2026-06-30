@@ -66,7 +66,7 @@ _SCRIPTS_ROOT = Path(__file__).resolve().parents[3] / "scripts"
 if str(_SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_ROOT))
 
-from cli import verify_coverage_map as _upstream  # noqa: E402
+from cli import verify_coverage_map as _upstream
 
 
 # The ported module DESIGN target (DDD-8). Does not exist until DELIVER. The

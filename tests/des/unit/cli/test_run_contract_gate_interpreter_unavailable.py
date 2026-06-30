@@ -1,8 +1,12 @@
 """Criterion 3: run_contract_gate surfaces InterpreterUnavailable as exit 2.
 
 F-21 boundary contract. `run_contract_gate` resolves its nested pytest
-interpreter through `des.runtime.interpreter.python_for("pytest")`. When no
-candidate on the fallback ladder is pytest-capable, `python_for` raises
+interpreter through the pytest run-facet boundary
+`des.adapters.driven.runner.pytest_runner.pytest_interpreter()` (which calls
+`des.runtime.interpreter.python_for("pytest")`) -- the gate no longer calls
+`python_for` inline (gate-layer-test-runner-genericity slice-01: the
+python-hardcode lives behind the runner-adapter boundary, never in gate logic).
+When no candidate on the fallback ladder is pytest-capable, `python_for` raises
 `InterpreterUnavailable` rather than spawning a known-bad interpreter.
 
 The gate must convert that raise into a structured, machine-readable
@@ -17,6 +21,7 @@ import json
 
 import pytest
 
+from des.adapters.driven.runner import pytest_runner
 from des.cli import run_contract_gate
 from des.runtime.interpreter import InterpreterUnavailable
 
@@ -47,7 +52,7 @@ def test_interpreter_unavailable_surfaces_as_exit_2_structured_payload(
     def boom(capability):  # type: ignore[no-untyped-def]
         raise InterpreterUnavailable(capability, probed)
 
-    monkeypatch.setattr(run_contract_gate, "python_for", boom)
+    monkeypatch.setattr(pytest_runner, "python_for", boom)
 
     exit_code = run_contract_gate.main(argv)
     stdout = capsys.readouterr().out

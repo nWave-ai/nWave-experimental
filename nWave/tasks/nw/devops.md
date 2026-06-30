@@ -13,88 +13,15 @@ Execute DEVOPS wave: platform readiness|CI/CD pipeline setup|observability desig
 
 Apex translates DESIGN architecture decisions into operational infrastructure: CI/CD pipelines|logging|monitoring|alerting|observability.
 
-## Interactive Decision Points
+## Platform Decisions (flow-v2: KPI-driven, applicability-first)
 
-Before proceeding, the orchestrator asks:
+The pre-flow-v2 free-form decision-question block (deployment-target / container-orchestration / CI-platform / observability-stack / deployment-strategy / continuous-learning / branching asked by open judgement) is removed. Under flow-v2 these are NOT free-form questions: Apex (nw-platform-architect) derives them from the prior-wave SSOT and the DISCUSS outcome KPIs rather than asking them blind. See `@nw-platform-architect` for the normative model:
 
-### Decision 1: Deployment Target
-**Question**: What is the deployment target?
-**Options**:
-1. Cloud-native -- AWS, GCP, Azure managed services
-2. On-premise -- self-hosted infrastructure
-3. Hybrid -- mix of cloud and on-premise
-4. Edge -- distributed edge deployment
-5. Other -- user provides custom input
+- **Applicability-first**: the DEVOPS gate-IN consumes the DESIGN-OUT pass and the DISCUSS outcome KPIs and runs the applicability check first. A feature with no infra, deploy, or observability delta records an explicit N/A DEVOPS skip (Tier-B advisory notifies without blocking).
+- **KPI → telemetry**: the platform-architect maps every outcome KPI to a concrete telemetry signal — a log event, a metric, a trace span, or a golden-signal threshold — and designs second-way observability around the outcome-KPI signals, not generic dashboards untraced to a KPI. An un-instrumentable KPI fails the gate at gate-OUT and is routed to redo in-wave.
+- **Infrastructure / deployment / branching / security**: derived from the SSOT architecture (deployment topology, scaling needs, risk profile) and the team-capability evidence the architect gathers — not from a blind menu. Deployment-strategy selection carries evidence-based justification referencing SLOs|risk|team capability, with a tested rollback procedure.
 
-### Decision 2: Container Orchestration
-**Question**: Container orchestration approach?
-**Options**:
-1. Kubernetes -- full orchestration
-2. Docker Compose -- lightweight container management
-3. Serverless -- function-as-a-service, no containers
-4. None -- bare metal or VM-based deployment
-
-### Decision 3: CI/CD Platform
-**Question**: CI/CD platform preference?
-**Options**:
-1. GitHub Actions
-2. GitLab CI
-3. Jenkins
-4. Azure DevOps
-5. Other -- user provides custom input
-
-### Decision 4: Existing Infrastructure
-**Question**: Is there existing infrastructure or CI/CD to integrate with?
-**Options**:
-1. Yes, both -- describe existing infrastructure and CI/CD (user provides details)
-2. Existing infra only -- infrastructure exists, CI/CD is greenfield
-3. Existing CI/CD only -- CI/CD exists, infrastructure is greenfield
-4. No -- greenfield, design everything from scratch
-
-### Decision 5: Observability and Logging
-**Question**: What observability and logging approach?
-**Options**:
-1. Prometheus + Grafana (metrics) with structured JSON logs
-2. Datadog (full-stack observability including logs)
-3. ELK stack (Elasticsearch, Logstash, Kibana for logs and metrics)
-4. OpenTelemetry (vendor-agnostic telemetry) with provider of choice
-5. CloudWatch (AWS-native metrics and logging)
-6. Custom -- user provides details
-7. None -- defer observability setup
-
-### Decision 6: Deployment Strategy
-**Question**: What deployment strategy?
-**Options**:
-1. Blue-green -- zero-downtime with environment swap
-2. Canary -- gradual traffic shifting
-3. Rolling -- incremental pod/instance replacement
-4. Recreate -- simple stop-and-replace
-
-### Decision 7: Continuous Learning (conditional)
-**Question**: Is there existing monitoring/alerting infrastructure in place?
-**Options**:
-1. Yes -- include continuous learning and experimentation capabilities
-2. No -- focus on foundational monitoring setup first
-
-If Yes to Decision 7:
-**Follow-up**: Which continuous learning capabilities to include?
-**Options**:
-1. A/B testing framework
-2. Feature flags (LaunchDarkly, Unleash, custom)
-3. Canary analysis (automated rollback on metrics)
-4. Progressive rollout (percentage-based deployment)
-5. All of the above
-
-### Decision 8: Git Branching Strategy
-**Question**: What Git branching strategy should the project follow?
-**Options**:
-1. Trunk-Based Development -- single main branch, short-lived feature branches (<1 day), continuous integration. Requires robust CI gates on every commit.
-2. GitHub Flow -- feature branches from main, pull requests, merge to main after review. Balanced CI with PR-triggered pipelines.
-3. GitFlow -- develop/main branches, feature/release/hotfix branches, formal release process. Requires branch-specific pipelines (develop CI, release candidate, hotfix fast-track).
-4. Release Branching -- long-lived release branches, cherry-pick fixes between branches. Requires per-branch pipelines and cross-branch validation.
-5. Other -- user provides custom strategy
-
-This directly influences CI/CD pipeline design: trigger rules|branch protection|environment promotion|release automation.
+Decision 9 (Mutation Testing Strategy) below remains an explicit flow-v2 decision because it persists to project CLAUDE.md.
 
 ### Decision 9: Mutation Testing Strategy
 **Question**: When should mutation testing run?
@@ -144,15 +71,18 @@ When DEVOPS decisions change assumptions from prior waves:
 
 @nw-platform-architect
 
+<!-- DES-WAVE: devops -->
+
+**Wave-entry dispatch marker contract.** Include the `<!-- DES-WAVE: devops -->` marker line above verbatim in the Agent dispatch prompt. For a wave-ENTERING dispatch this single marker is the COMPLETE and SUFFICIENT contract — it both declares the wave (so the PreToolUse hook arms enforcement via the INFERRED fallback even on runtimes whose prompt-submission anchor never fired) and is recognized by the spine as a legitimate entry that is EXEMPT from the WAVE_MARKER_BYPASS veto. Do not add `DES-VALIDATION`/`DES-PROJECT-ID`/`DES-STEP-ID` to the entry dispatch; the DES-WAVE marker can only ADD gating, never remove it.
+
+**In-wave child dispatch (non-entering).** If you dispatch a FURTHER sub-agent while the wave is already active (not the entry dispatch), that child is NOT exempt. A child carrying no DES markers is DENIED loud as a wave bypass. Such a child MUST carry the wave's DES marker set — copy `<!-- DES-WAVE: devops -->` plus the wave's `DES-*` markers from the parent dispatch onto the child prompt.
+
 Execute platform readiness and infrastructure design for {feature-id}.
 
 Context files: see Prior Wave Consultation above.
 
 **Configuration:**
-- deployment_target: {Decision 1} | container_orchestration: {Decision 2}
-- cicd_platform: {Decision 3} | existing_infrastructure: {Decision 4}
-- observability_and_logging: {Decision 5} | deployment_strategy: {Decision 6}
-- continuous_learning: {Decision 7} | git_branching_strategy: {Decision 8}
+- Platform decisions (deployment target, container orchestration, CI/CD platform, existing infrastructure, observability/logging, deployment strategy, continuous learning, git branching) are DERIVED by Apex from the SSOT architecture + DISCUSS outcome KPIs per the flow-v2 KPI-driven, applicability-first model above — not supplied as free-form answers.
 - mutation_testing_strategy: {Decision 9}
 
 **KPI-Driven Observability:**

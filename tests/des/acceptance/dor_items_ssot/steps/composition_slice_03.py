@@ -47,11 +47,12 @@ forbidden prefix.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
-import sys
 from pathlib import Path
+
+from scripts.cli import read_dor_items
+from tests.common.in_process_cli import run_cli_in_process
 
 # Reuse slice-02's checklist-section scoping so the readiness-item enumeration is
 # parsed from exactly the same DoR-checklist section -- the single source of
@@ -68,14 +69,9 @@ from .domain_types_slice_03 import (
 # tests/des/acceptance/dor_items_ssot/steps/composition_slice_03.py -> 5 parents
 # up is the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_REPO_SRC = _REPO_ROOT / "src"
 
 # The reviewer-loaded skill -- the cross-artifact SUT.
 _DOR_SKILL_RELPATH = Path("nWave") / "skills" / "nw-dor-validation" / "SKILL.md"
-
-# The production driving port for the coherence leg: the slices-01/02 standalone
-# reader (NO `des` gate-catalog coupling, stdlib-only, hook-invocable).
-_READER_RELPATH = "scripts/cli/read_dor_items.py"
 
 # "Separate hard gate" relationship phrasing the skill must state. The crafter is
 # free to word the sentence (render-shape tolerance, mirroring slice-02): the
@@ -140,12 +136,13 @@ class JobTraceabilityGateComposition:
         return self._skill_path.read_text(encoding="utf-8")
 
     def _run_reader(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [sys.executable, _READER_RELPATH, *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(self._repo_root),
-            env=_subprocess_env(),
+        exit_code, stdout, stderr = run_cli_in_process(
+            argv,
+            cwd=self._repo_root,
+            main=read_dor_items.main,
+        )
+        return subprocess.CompletedProcess(
+            args=argv, returncode=exit_code, stdout=stdout, stderr=stderr
         )
 
 
@@ -274,12 +271,6 @@ def _extract_json_object(stdout: str) -> dict | None:
         if isinstance(payload, dict) and "hard_gates" in payload:
             return payload
     return None
-
-
-def _subprocess_env() -> dict[str, str]:
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(_REPO_SRC)
-    return env
 
 
 __all__ = [

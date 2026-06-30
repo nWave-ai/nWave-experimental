@@ -1,0 +1,49 @@
+# Gate-contract: skill-normative-gate (skill-normative-content-gate slice-01)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=skill-normative-gate.
+
+gate_id: skill-normative-gate
+responsibility: |
+  Verify every normative clause declared in the manifest
+  (nWave/data/skill-normative-clauses.json) survives verbatim
+  (whitespace-normalized substring match) in its shipped skill asset,
+  emitting a closed verdict that names each failing skill and clause-id.
+module: des.cli.skill_normative_gate
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --manifest
+    required: false
+    type: path
+    help: "Normative-clause manifest path (default: nWave/data/skill-normative-clauses.json)."
+  - name: --root
+    required: false
+    type: path
+    help: "Repository root the skill corpus is resolved against (default: current working directory)."
+
+log_events: []
+
+failure_modes:
+  - error_class: NormativeClauseAbsent
+    exit_code: 1
+    remediation: "Restore the verbatim clause text named in the verdict to its skill asset, or update the manifest if the clause was intentionally superseded."
+  - error_class: NonDiscriminatingMarker
+    exit_code: 4
+    remediation: "Replace the single-token marker named in the verdict with a discriminating multi-word phrase (≥2 whitespace-separated tokens) drawn verbatim from the skill's normative text."
+  - error_class: ManifestAssetAbsent
+    exit_code: 4
+    remediation: "Restore the missing skill asset named in the verdict, or correct the manifest's asset/skill path so the gate can read what it must check (the gate refuses to certify what it cannot read — loud absence, never silent PASS)."
+  - error_class: ManifestAssetUndecodable
+    exit_code: 4
+    remediation: "Re-save the skill asset named in the verdict as valid UTF-8 text, or correct the manifest path; the gate emits INDETERMINATE rather than certify an unreadable asset."
+  - error_class: MalformedArgs
+    exit_code: 2
+    remediation: "Pass valid --manifest and --root paths."
+
+idempotency: idempotent
+
+host_visibility:
+  - cli

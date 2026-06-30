@@ -69,13 +69,24 @@ def then_schema_draft(s3_comp) -> None:
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
 
 
-@then("the schema requires flavor_id, description, lifecycle_events fields")
+@then("the schema requires the mode 4-tuple plus flavor_id and lifecycle_events")
 def then_schema_required(s3_comp) -> None:
+    # mode-registry-single-locus slice-05 (Layer B / analysis §3.2): the schema
+    # now requires the asset-facing 4-tuple fields so a half-declared mode is
+    # refused structurally, not merely by the completeness gate.
     schema = s3_comp.get("flavor_schema")
     required = set(schema["required"])
-    assert required == {"flavor_id", "description", "lifecycle_events"}, (
-        f"required={required}"
-    )
+    assert required == {
+        "flavor_id",
+        "display_name",
+        "description",
+        "default",
+        "selection",
+        "skill_load_set",
+        "descriptor",
+        "deliver_phase_shape",
+        "lifecycle_events",
+    }, f"required={required}"
 
 
 @then("the schema defines a GateInvocation $def with gate_id + on_failure")

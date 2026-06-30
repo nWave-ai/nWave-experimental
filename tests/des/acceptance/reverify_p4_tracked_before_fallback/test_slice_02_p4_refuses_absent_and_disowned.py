@@ -12,7 +12,7 @@ accept. DELIVER must keep them green while making slice-01 go green.
 from pytest_bdd import scenarios
 
 # Step definitions -- shared vocabulary (Mandate 10 / Mandate-12).
-from .steps.steps_reverify_p4 import *  # noqa: F403
+from .steps.steps_reverify_p4 import *
 
 
 scenarios("slice_02_p4_refuses_absent_and_disowned.feature")

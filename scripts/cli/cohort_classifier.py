@@ -24,6 +24,11 @@ Cohort = Literal["S", "M", "L", "XL"]
 SCENARIO_RE = re.compile(r"^\s*Scenario(?: Outline)?:", re.MULTILINE)
 EXAMPLES_ROW_RE = re.compile(r"^\s*\|.+\|\s*$", re.MULTILINE)
 TEST_DEF_RE = re.compile(r"^\s*def\s+test_\w+\s*\(", re.MULTILINE)
+# The DISTILL Test Placement heading the cohort gate keys on; its numbered list
+# enumerates a fresh feature's candidate ATs before any Gherkin is authored.
+PLACEMENT_HEADING_RE = re.compile(r"^\s*#{2,}\s.*Test Placement")
+SECTION_HEADING_RE = re.compile(r"^\s*#{2,3}\s")
+NUMBERED_ITEM_RE = re.compile(r"^\s*\d+\.\s")
 
 
 @dataclass(frozen=True)
@@ -69,6 +74,28 @@ def _count_scenarios_in_text(text: str) -> int:
     return scenarios + examples_data_rows
 
 
+def _count_test_placement_candidates(text: str) -> int:
+    """Count the numbered candidate ATs in the DISTILL Test Placement section.
+
+    A fresh feature has no authored Gherkin; its candidate ATs live as a numbered
+    prose list under ``## Wave: DISTILL / [REF] Test Placement``. The section runs
+    from that heading up to the NEXT ``##``/``###`` heading (or end of text). Each
+    list item (``^\\s*\\d+\\.\\s``) is one candidate AT.
+    """
+    lines = text.splitlines()
+    in_section = False
+    candidates = 0
+    for line in lines:
+        if PLACEMENT_HEADING_RE.match(line):
+            in_section = True
+            continue
+        if in_section and SECTION_HEADING_RE.match(line):
+            break
+        if in_section and NUMBERED_ITEM_RE.match(line):
+            candidates += 1
+    return candidates
+
+
 def _count_ats(target: Path, kind: str) -> int:
     total = 0
     if kind == "distill":
@@ -83,7 +110,10 @@ def _count_ats(target: Path, kind: str) -> int:
                 total += len(TEST_DEF_RE.findall(path.read_text(errors="replace")))
     else:  # feature_delta
         text = target.read_text(errors="replace")
-        total += _count_scenarios_in_text(text)
+        total += max(
+            _count_scenarios_in_text(text),
+            _count_test_placement_candidates(text),
+        )
     return total
 
 

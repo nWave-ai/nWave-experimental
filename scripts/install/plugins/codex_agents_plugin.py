@@ -36,6 +36,7 @@ from scripts.install.plugins.base import (
 from scripts.install.plugins.opencode_common import parse_frontmatter
 from scripts.shared.agent_catalog import is_public_agent, load_public_agents
 from scripts.shared.platform_contracts import CODEX_AGENT_FORBIDDEN_FIELDS
+from scripts.shared.skill_path_rewrite import rewrite_host_paths
 
 
 _MANIFEST_FILENAME = ".nwave-agents-manifest.json"
@@ -221,6 +222,7 @@ def _transform_agent(source_content: str, agent_name: str) -> str:
     frontmatter, body = parse_frontmatter(source_content)
     _warn_if_tools_dropped(agent_name, frontmatter)
     scalar_fields = _extract_scalar_fields(frontmatter)
+    body = rewrite_host_paths(body, "codex")
     return _render_toml_agent(scalar_fields, body)
 
 

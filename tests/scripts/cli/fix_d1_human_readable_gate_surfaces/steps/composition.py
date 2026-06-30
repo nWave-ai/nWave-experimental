@@ -573,7 +573,7 @@ class SpineTripleSurfaceFixture:
         return {"feature_id": feature_id, "entering_slice": "slice-01"}
 
     def _stage_at_review_verdict(self, success_path: bool) -> dict[str, str]:
-        """Stage a feature with one slice scenario + a signing key.
+        """Stage a feature with one slice scenario (keyless producer).
 
         Success path: invoke with ``--verdict APPROVED`` → ledger record
         appended (PASS verdict line). Negative path: invoke with
@@ -593,10 +593,8 @@ class SpineTripleSurfaceFixture:
             "    Given a stub\n    When stuff happens\n    Then it works\n"
         )
         (tests_dir / "fixture.feature").write_text(scenario_block, encoding="utf-8")
-        # Signing key file for the verdict HMAC.
-        key_dir = self.repo_root / ".nwave" / "secrets"
-        key_dir.mkdir(parents=True, exist_ok=True)
-        (key_dir / "reviewer-signing.key").write_bytes(b"slice-02-fixture-key")
+        # No signing key: the producer is keyless (oss-review-verdict-demotion
+        # S2 — key absence is a non-event).
         # Ledger directory must exist for the writer.
         (self.repo_root / ".nwave" / "telemetry" / "atdd-pure").mkdir(
             parents=True, exist_ok=True

@@ -47,8 +47,8 @@ _FEATURE_ROOT = Path(__file__).resolve().parent.parent
 if str(_FEATURE_ROOT) not in sys.path:
     sys.path.insert(0, str(_FEATURE_ROOT))
 
-from pytest_bdd import given, parsers, then  # noqa: E402
-from steps.domain_types import CorruptionKind  # noqa: E402
+from pytest_bdd import given, parsers, then
+from steps.domain_types import CorruptionKind
 
 
 # --- Given ----------------------------------------------------------------

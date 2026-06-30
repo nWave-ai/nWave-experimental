@@ -24,14 +24,21 @@ Finalize a completed feature: verify all steps done|create evolution document|mi
 
 ## Context Files Required
 
-The completion-evidence files depend on `workflow.mode`:
+The completion-evidence files depend on `workflow.mode` — per-mode descriptor + audit substrate projected from the mode registry: <!-- mode-ref-ok -->
+
+<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
+- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
+  Deliver phase shape: `RED -> GREEN -> COMMIT`
+<!-- GENERATED:mode-descriptor END -->
 
 - **classic mode** — `docs/feature/{feature-id}/deliver/roadmap.json` (classic-mode original project plan) and `docs/feature/{feature-id}/deliver/execution-log.json` (classic-mode step execution history).
-- **atdd_pure mode** — the AT-completion ledger. There is no roadmap and no step log; the ledger records each slice's `at_ids`, their pass transitions, and the phase-boundary timestamps.
+- **atdd_pure mode** — the AT-completion ledger: it records each slice's `at_ids`, their pass transitions, and the phase-boundary timestamps. <!-- mode-ref-ok -->
 
 ## Pre-Dispatch Gate: All Work Complete
 
-Before dispatching, verify all work is done — prevents archiving incomplete features. The completeness signal is `workflow.mode`-specific.
+Before dispatching, verify all work is done — prevents archiving incomplete features. The completeness signal is `workflow.mode`-specific. <!-- mode-ref-ok -->
 
 ### classic mode
 
@@ -39,17 +46,17 @@ Before dispatching, verify all work is done — prevents archiving incomplete fe
 2. **Verify completeness** — Check every step has status `DONE`. Gate: all steps DONE.
 3. **Block or proceed** — If any step is not DONE, list incomplete steps with current status and halt. If all DONE, proceed to dispatch. Gate: zero incomplete steps before dispatch.
 
-### atdd_pure mode
+### atdd_pure mode <!-- mode-ref-ok -->
 
-The `atdd_pure` path has no roadmap and no step log. Completion is read from the **AT-completion ledger**: every slice in the slice plan must show all its `at_ids` GREEN, and the Phase 6 verification — ledger + slice plan + commit-trailer chain (ADR-028 D4.3) — must reconcile. Gate: ledger shows every slice-plan slice complete, trailer chain unbroken.
+Completion is read from the **AT-completion ledger**: every slice in the slice plan must show all its `at_ids` GREEN, and the Phase 6 verification — ledger + slice plan + commit-trailer chain (ADR-028 D4.3) — must reconcile. Gate: ledger shows every slice-plan slice complete, trailer chain unbroken.
 
 ## Phases
 
 ### Phase A — Evolution Document
 
-1. **Gather source data** — In classic mode read `execution-log.json` + `roadmap.json` (the `classic` step log and plan); in atdd_pure mode read the AT-completion ledger instead. Either way also read all `*/wave-decisions.md` files. Gate: source files read.
+1. **Gather source data** — In classic mode read `execution-log.json` + `roadmap.json` (the `classic` step log and plan); in atdd_pure mode read the AT-completion ledger instead. <!-- mode-ref-ok --> Either way also read all `*/wave-decisions.md` files. Gate: source files read.
 2. **Extract key decisions** — Pull decisions, issues, and lessons from wave-decisions files. Gate: decisions list assembled.
-3. **Write evolution doc** — Create `docs/evolution/YYYY-MM-DD-{feature-id}.md` with: feature summary, business context, key decisions, work completed (in classic mode from `execution-log.json`, in atdd_pure mode from the ledger's per-slice `at_ids`), lessons learned, issues encountered, links to migrated permanent artifacts. Gate: file written.
+3. **Write evolution doc** — Create `docs/evolution/YYYY-MM-DD-{feature-id}.md` with: feature summary, business context, key decisions, work completed (from the active mode's audit substrate: classic `execution-log.json`, or the ledger's per-slice `at_ids`), lessons learned, issues encountered, links to migrated permanent artifacts. Gate: file written.
 
 ### Phase B — Migrate Lasting Artifacts
 
@@ -109,6 +116,10 @@ These are process scaffolding — valuable during delivery, disposable after:
 ## Agent Invocation
 
 @{agent}
+
+<!-- DES-WAVE: feature-end -->
+
+Include the `<!-- DES-WAVE: feature-end -->` marker line above verbatim in the Agent dispatch prompt — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
 
 Finalize: {feature-id}
 

@@ -5,17 +5,18 @@
 # Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
 # Catalog entry: `nWave/gates/_catalog.yaml` (appended by crafter A_GREEN_ATS).
 #
-# Single-invocation aggregate gate. Verifies the 5 cascading invariants
-# catalogued in `docs/backlog.md` friction #57 BEFORE a NEW feature first
-# crafter dispatch. Cascade-debug reduced from 5 friction roundtrips to 1
+# Single-invocation aggregate gate. Verifies the 6 cascading invariants
+# catalogued in `docs/product/backlog.md` friction #57 BEFORE a NEW feature first
+# crafter dispatch. Cascade-debug reduced from 6 friction roundtrips to 1
 # combined diagnostic.
 
 gate_id: verify-readiness-pre-dispatch
 responsibility: |
-  Verify the 5 cascading first-dispatch invariants (slice plan section, slice
+  Verify the 7 cascading first-dispatch invariants (slice plan section, slice
   tags per scenario, AT-review verdict ledger record, gate output produceable,
-  pre-commit pytest scope satisfiable) in one invocation; emit combined
-  diagnostic naming every failed invariant.
+  pre-commit pytest scope satisfiable, reuse-first analysis or DESIGN-skip
+  witness, sustainability Test Reuse & Consolidation Analysis section) in one
+  invocation; emit combined diagnostic naming every failed invariant.
 module: des.cli.verify_readiness_pre_dispatch
 entry_function: main
 language_neutral_contract: true
@@ -54,6 +55,12 @@ failure_modes:
   - error_class: PreCommitScopeUnsatisfiable
     exit_code: 1
     remediation: "Add `@skip @pending` markers to RED scaffolds within pre-commit pytest scope"
+  - error_class: ReuseFirstOrDesignSkipMissing
+    exit_code: 1
+    remediation: "Add a `## Reuse Analysis` section (DDD-8) OR, if DESIGN was deliberately skipped, a `## Wave: DESIGN / [REF] Design Skipped` witness with a non-empty rationale"
+  - error_class: SustainabilitySectionMissing
+    exit_code: 1
+    remediation: "Add a well-formed `## Test Reuse & Consolidation Analysis` section (nw-distill) OR a `Test-Reuse-Analysis: methodology-exempt` marker to feature-delta.md"
 
 idempotency: idempotent
 

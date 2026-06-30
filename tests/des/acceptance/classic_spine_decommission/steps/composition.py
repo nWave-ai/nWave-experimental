@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,6 +41,11 @@ from des.adapters.driven.logging.at_completion_ledger import (
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
+from des.cli.at_review_verdict import main as _at_review_verdict_main
+from des.cli.carpaccio_slice_gate import main as _carpaccio_slice_gate_main
+from des.cli.convert_to_atdd_pure import main as _convert_to_atdd_pure_main
+from des.cli.verify_commit_trailers import main as _verify_commit_trailers_main
+from tests.common.in_process_cli import run_cli_in_process
 
 from ._git_workspace import (
     git_init_with_identity,
@@ -453,29 +457,21 @@ class LedgerInterleaveComposition:
     deliver_dir: Path
     _feature_id: FeatureId | None = field(default=None, init=False)
 
-    # The fixture reviewer signing key the real `at_review_verdict` CLI signs
-    # ATReviewVerdict records with. Provisioned into the installed feature's
-    # `.nwave/secrets/` so the producer resolves a key without an env var.
-    _SIGNING_KEY = b"f13-fixture-reviewer-signing-key"
-
     @property
     def _project_root(self) -> Path:
-        """The installed feature root -- holds `.nwave/telemetry` + `.nwave/secrets`."""
+        """The installed feature root -- holds `.nwave/telemetry`."""
         return self.deliver_dir / str(self._feature_id)
 
     def create_installed_feature(self, feature_id: FeatureId) -> None:
         """Create a subprocess-real installed feature layout with a ledger dir.
 
-        Materialises the `.nwave/telemetry/atdd-pure` ledger directory and a
-        `.nwave/secrets/reviewer-signing.key` so the real `at_review_verdict`
-        CLI resolves a signing key file-side -- no ambient env dependency.
+        Materialises the `.nwave/telemetry/atdd-pure` ledger directory. NO
+        signing key is provisioned (oss-review-verdict-demotion S2: the real
+        `at_review_verdict` CLI is keyless — key absence is a non-event).
         """
         self._feature_id = feature_id
         telemetry = self._project_root / ".nwave" / "telemetry" / "atdd-pure"
         telemetry.mkdir(parents=True, exist_ok=True)
-        key_file = self._project_root / ".nwave" / "secrets" / "reviewer-signing.key"
-        key_file.parent.mkdir(parents=True, exist_ok=True)
-        key_file.write_bytes(self._SIGNING_KEY)
 
     def writer_appends_record(self, writer: LedgerWriter, slice_id: str) -> None:
         """Have the named REAL writer append a record to the shared ledger.
@@ -502,12 +498,8 @@ class LedgerInterleaveComposition:
         same `.nwave/telemetry` ledger the completion writer appends to, so
         the F-13 interleave is genuine -- never a fixture-uniform ledger.
         """
-        env = subprocess_env(include_repo_on_path=True)
-        completed = subprocess.run(
+        exit_code, _stdout, stderr = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                "des.cli.at_review_verdict",
                 "--feature-id",
                 str(self._feature_id),
                 "--slice-id",
@@ -519,13 +511,11 @@ class LedgerInterleaveComposition:
                 "--repo-root",
                 str(self._project_root),
             ],
-            capture_output=True,
-            text=True,
-            env=env,
+            cwd=self._project_root,
+            main=_at_review_verdict_main,
         )
-        assert completed.returncode == 0, (
-            f"at_review_verdict CLI failed (rc={completed.returncode}): "
-            f"{completed.stderr}"
+        assert exit_code == 0, (
+            f"at_review_verdict CLI failed (rc={exit_code}): {stderr}"
         )
 
     def run_carpaccio_order_read(self) -> LedgerReadResult:
@@ -549,39 +539,23 @@ class LedgerInterleaveComposition:
         )
 
     def run_atdd_pure_dispatch_installed(self) -> int:
-        """Run a real installed atdd_pure dispatch end-to-end (the F-13 proof).
+        """Run the M7 fail-closed ledger-integrity read an atdd_pure dispatch runs.
 
-        Subprocess-real (`@wiring_e2e`): a fresh interpreter performs the M7
-        fail-closed ledger-integrity read an installed atdd_pure dispatch runs
-        at entry. Exit 0 iff the mixed-writer ledger reads cleanly -- the F-13
-        defect would surface here as a non-zero exit on `LedgerIntegrityViolation`.
+        In-process (the migration off subprocess-e2e): performs the SAME M7
+        fail-closed integrity read an atdd_pure dispatch runs at entry, against
+        the production `AtCompletionLedger` (mirrors `run_carpaccio_order_read`
+        in this class). Returns 1 iff the mixed-writer ledger raises
+        `LedgerIntegrityViolation` (the F-13 defect), else 0 -- the exact
+        exit-code contract the fresh-interpreter probe asserted.
         """
-        probe = (
-            "import sys\n"
-            "from des.adapters.driven.logging.at_completion_ledger import "
-            "AtCompletionLedger, LedgerIntegrityViolation\n"
-            "ledger = AtCompletionLedger(feature_id=sys.argv[1], "
-            "project_root=sys.argv[2])\n"
-            "try:\n"
-            "    ledger.read_records()\n"
-            "except LedgerIntegrityViolation as exc:\n"
-            "    sys.stderr.write(str(exc))\n"
-            "    sys.exit(1)\n"
+        ledger = AtCompletionLedger(
+            feature_id=str(self._feature_id), project_root=self._project_root
         )
-        env = subprocess_env()
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                probe,
-                str(self._feature_id),
-                str(self._project_root),
-            ],
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        return completed.returncode
+        try:
+            ledger.read_records()
+        except LedgerIntegrityViolation:
+            return 1
+        return 0
 
     def capture_universe(self) -> dict[str, object]:
         """Snapshot the port-exposed ledger observables (Mandate 8).
@@ -638,10 +612,9 @@ class ConversionComposition:
     _feature_dir_original_mode: int | None = field(default=None, init=False)
     _drain_payload: dict[str, object] | None = field(default=None, init=False)
 
-    # The fixture reviewer signing key the carpaccio AT-review gate verifies
-    # the seeded ATReviewVerdict against. Provisioned into the workspace's
-    # `.nwave/secrets/` so the gate resolves a key file-side, no env var.
-    _SIGNING_KEY = b"slice-05-fixture-reviewer-signing-key"
+    # Keyless (oss-review-verdict-demotion S1/S2): the carpaccio AT-review
+    # gate reads the seeded ATReviewVerdict on its PRESENT fields — no key
+    # is provisioned and the seeded record carries no signature field.
 
     @property
     def _feature_dir(self) -> Path:
@@ -675,7 +648,7 @@ class ConversionComposition:
         DESIGN `[REF] Recommended Slice Plan` heading (which conversion Step 1
         promotes), a `deliver/roadmap.json`, a slice `.feature` file with one
         `@slice-01` scenario, a `.nwave/config.yaml` whose `workflow.mode` is
-        `classic`, and a reviewer signing key. The AT-review verdict is seeded
+        `classic`. The AT-review verdict is seeded keyless
         once the slice map + commits are declared (see `_finalise_fixture`).
         """
         self._feature_id = feature_id
@@ -712,9 +685,6 @@ class ConversionComposition:
             "atdd_pure:\n  carpaccio_slice_max: 3\n\nworkflow:\n  mode: classic\n",
             encoding="utf-8",
         )
-        key_file = self.workspace / ".nwave" / "secrets" / "reviewer-signing.key"
-        key_file.parent.mkdir(parents=True, exist_ok=True)
-        key_file.write_bytes(self._SIGNING_KEY)
         self._init_repo()
 
     def _init_repo(self) -> None:
@@ -828,35 +798,19 @@ class ConversionComposition:
         roadmap_path.write_text(json.dumps(roadmap, indent=2) + "\n", encoding="utf-8")
 
     def _seed_at_review_verdict(self) -> None:
-        """Seed an HMAC-signed APPROVED ATReviewVerdict for slice-01.
+        """Seed a keyless APPROVED ATReviewVerdict for slice-01.
 
-        The carpaccio AT-review gate (ADR-029 D5) requires a signed APPROVED
-        verdict in the AT-completion ledger before it clears a slice. The
-        fixture seeds it through the real `AtCompletionLedger.append_review_
-        verdict` M7 API so the record carries `seq` + `record_hash`.
+        The carpaccio AT-review gate (ADR-029 D5, demoted keyless per
+        oss-review-verdict-demotion) requires a well-formed APPROVED verdict
+        record in the AT-completion ledger before it clears a slice — read on
+        its PRESENT fields, no signature. The fixture seeds it through the
+        real `AtCompletionLedger.append_review_verdict` M7 API so the record
+        carries `seq` + `record_hash`.
         """
         import hashlib
-        import hmac
 
-        feature_text = (self._feature_dir / "feature-delta.md").read_text(
-            encoding="utf-8"
-        )
-        del feature_text
         body = "given a precondition\nwhen an action occurs\nthen an outcome holds"
         at_content_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
-        signed = {
-            "schema_version": "1.0",
-            "slice_id": "slice-01",
-            "verdict": "APPROVED",
-            "reviewer_agent_id": "nw-acceptance-designer-reviewer",
-            "at_ids": ["AT-1"],
-            "at_content_hash": at_content_hash,
-            "timestamp": "2026-05-21T00:00:00Z",
-        }
-        canonical = json.dumps(signed, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
-        signature = hmac.new(self._SIGNING_KEY, canonical, hashlib.sha256).hexdigest()
         ledger = AtCompletionLedger(
             feature_id=str(self._feature_id), project_root=self.workspace
         )
@@ -869,7 +823,6 @@ class ConversionComposition:
                 "at_ids": ["AT-1"],
                 "at_content_hash": at_content_hash,
                 "timestamp": "2026-05-21T00:00:00Z",
-                "hmac_sha256": signature,
                 "findings_summary": "fixture-seeded slice-05 verdict",
             },
         )
@@ -1067,26 +1020,19 @@ class ConversionComposition:
         feature's block reason -- the per-feature sets are read from
         `converted_features()` / `parked_features()`.
         """
-        env = subprocess_env()
-        completed = subprocess.run(
+        exit_code, stdout, stderr = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                "des.cli.convert_to_atdd_pure",
                 "--workspace",
                 str(self.workspace),
                 "--drain",
                 "--feature-ids",
                 " ".join(str(fid) for fid in feature_ids),
             ],
-            capture_output=True,
-            text=True,
-            env=env,
+            cwd=self.workspace,
+            main=_convert_to_atdd_pure_main,
         )
-        assert completed.returncode == 0, (
-            f"convert --drain failed (rc={completed.returncode}): {completed.stderr}"
-        )
-        payload = json.loads(completed.stdout)
+        assert exit_code == 0, f"convert --drain failed (rc={exit_code}): {stderr}"
+        payload = json.loads(stdout)
         self._drain_payload = payload
         return ConversionResult(outcome=ConversionOutcome(payload["outcome"]))
 
@@ -1251,12 +1197,8 @@ class ConversionComposition:
         promoted slice plan, the `.feature` files, and the seeded ledger and
         writes nothing. Exit 0 means the slice cleared the entry gate.
         """
-        env = subprocess_env()
-        completed = subprocess.run(
+        exit_code, _stdout, _stderr = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                "des.cli.carpaccio_slice_gate",
                 "--feature-id",
                 str(self._feature_id),
                 "--entering-slice",
@@ -1264,11 +1206,10 @@ class ConversionComposition:
                 "--repo-root",
                 str(self.workspace),
             ],
-            capture_output=True,
-            text=True,
-            env=env,
+            cwd=self.workspace,
+            main=_carpaccio_slice_gate_main,
         )
-        return completed.returncode == 0
+        return exit_code == 0
 
     def capture_universe(self) -> dict[str, object]:
         """Snapshot the port-exposed conversion observables (Mandate 8).
@@ -1359,9 +1300,12 @@ class ReplayComposition:
 
         Two halves, both REUSED production code:
 
-          1. `des.cli.verify_commit_trailers` (non-strict) over the real legacy
-             commit -- a pre-decommission commit has no HMAC trailer, so the
-             verifier exits 0 ("OK: no Reviewed-by trailers").
+          1. `des.cli.verify_commit_trailers` over the real legacy commit -- a
+             pre-decommission commit has no `Slice-Id:` trailer, so the repurposed
+             verifier exits 7 (INDETERMINATE: cannot-evaluate / nothing-to-audit).
+             Exit 7 is accepted as non-failure for replay: it means there is no
+             Slice-Id to audit, not that verification failed. Exit 45 (rejection)
+             is the failure case.
           2. `des.domain.phase_event.PhaseEventParser.parse_all` over the
              commit's legacy v2.0-pipe execution log -- every 5-phase pipe
              event must parse to a `PhaseEvent`.
@@ -1370,7 +1314,11 @@ class ReplayComposition:
         """
         from des.domain.phase_event import PhaseEventParser
 
-        if self._verify_trailers_exit_code() != 0:
+        exit_code = self._verify_trailers_exit_code()
+        # Exit 0 = all slices approved; exit 7 = INDETERMINATE (no Slice-Id trailer
+        # -- nothing to audit, not a failure). Both are acceptable for a legacy commit.
+        # Exit 45 = ATReviewNotApproved (a hard rejection) = RED.
+        if exit_code not in (0, 7):
             return ReplayOutcome.RED
         events = PhaseEventParser().parse_all(list(self._LEGACY_PIPE_EVENTS))
         if len(events) != len(self._LEGACY_PIPE_EVENTS):
@@ -1379,21 +1327,15 @@ class ReplayComposition:
 
     def _verify_trailers_exit_code(self) -> int:
         """Run the real `des-verify-commit-trailers` CLI over the legacy commit."""
-        env = subprocess_env()
-        completed = subprocess.run(
+        exit_code, _stdout, _stderr = run_cli_in_process(
             [
-                sys.executable,
-                "-m",
-                "des.cli.verify_commit_trailers",
                 "--commit",
                 str(self._legacy_sha),
             ],
-            capture_output=True,
-            text=True,
-            cwd=str(self.workspace),
-            env=env,
+            cwd=self.workspace,
+            main=_verify_commit_trailers_main,
         )
-        return completed.returncode
+        return exit_code
 
 
 # --- slice-07: classic deprecation marking -----------------------------------

@@ -6,12 +6,10 @@ dispatch_seq)`` triple. Mandate 9 layer-1 PBT-full allowed: Hypothesis
 ``@given`` explores the operational input space; ``@example`` pins a
 canonical case for reviewer readability.
 
-RED scaffold (Mandate 7 / ADR-025): the ``derive_correlation_id`` helper
-does NOT YET exist on
-``src.des.adapters.driven.logging.at_completion_ledger``. The import
-inside the test body fails with ``ImportError`` BEFORE Hypothesis
-generates any example; the xfail marker on this module catches it as a
-RIGHT-reason RED.
+DELIVERED (slice-01 core): the ``derive_correlation_id`` helper is live on
+``src.des.adapters.driven.logging.at_completion_ledger`` and both properties
+(determinism + collision-freedom) hold organically — the scenarios run green,
+no xfail.
 
 Mandate-12 criterion 3 compliance: the test bodies invoke the composition
 service (``composition.when_correlation_id_derived_twice`` and
@@ -21,21 +19,14 @@ no business logic lives in the test bodies.
 
 from __future__ import annotations
 
-import pytest
 from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from .composition import CommonAuditLogSsotComposition
 
 
-# Same xfail discipline as the .feature scenarios: layer 1 PBT against a
-# helper that does NOT YET exist -> ImportError. Strict=False so a future
-# GREEN that lands the helper organically passes without XPASS.
-pytestmark = pytest.mark.xfail(
-    reason="RED scaffold -- derive_correlation_id helper does not yet exist",
-    strict=False,
-    raises=(AssertionError, ModuleNotFoundError, ImportError, TypeError),
-)
+# slice-01 core DELIVERED: derive_correlation_id is live; the properties hold
+# organically. No xfail — these run as normal green PBT.
 
 
 # Mandate 9 layer-1 PBT: domain-realistic strategies, not unconstrained text.

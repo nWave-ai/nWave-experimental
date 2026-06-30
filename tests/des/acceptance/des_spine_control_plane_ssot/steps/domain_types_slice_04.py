@@ -66,12 +66,15 @@ FEATURE_END_BLOCK_EVENT = "FeatureEndCycleIncomplete"
 # stdout as one JSON line). A non-block feature-end return carries no block JSON.
 BLOCK_DECISION = "block"
 
-# The six required-records names the HARDCODED frozenset demands today
-# (`_REQUIRED_FEATURE_END_RECORDS`, `subagent_stop_handler.py:820-829`). This is
+# The required-records names the HARDCODED frozenset demands today
+# (`_REQUIRED_FEATURE_END_RECORDS`, `subagent_stop_handler.py`). This is
 # the behavior-preservation baseline AT-03 pins: with the PRODUCTION flavor (no
-# override) the boundary must keep naming exactly these six in `missing`. After
+# override) the boundary must keep naming exactly these in `missing`. After
 # slice-04 these become the flavor YAML's `subagent.stop` required-records
-# profile — same six, now YAML-sourced (representation 3 → 1).
+# profile — same set, now YAML-sourced (representation 3 → 1).
+# Grew from six → seven: `FullSuiteLegRan` added by feature
+# `f-nonbypassable-attestation` slice-01 (DDD-4 — the full-suite leg becomes a
+# required feature-end record across all three SSOTs, incl. this boundary).
 PRODUCTION_REQUIRED_RECORDS = frozenset(
     {
         "CoverageMapVerifiedAtDeliverExit",
@@ -79,6 +82,7 @@ PRODUCTION_REQUIRED_RECORDS = frozenset(
         "EBatchRefactorCompleted",
         "EnvironmentalE2eGateRan",
         "FeatureEndReviewVerdict",
+        "FullSuiteLegRan",
         "WalkingSkeletonGateRan",
     }
 )

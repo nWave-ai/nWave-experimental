@@ -19,8 +19,10 @@ writes" is non-representable.
 
 from __future__ import annotations
 
+import re
 import time
 
+from des.domain.atdd_pure_phases import FEATURE_END_RETURN_PHASE
 from des.domain.design_context_content_check import (
     design_context_carries_architecture,
 )
@@ -47,6 +49,67 @@ ATDD_PURE_MANDATORY_SECTIONS: tuple[str, ...] = (
     "TERMINATING_RUN",
     "TIMEOUT_INSTRUCTION",
 )
+
+# --- RC4-a: required-section set keyed on dispatch ROLE -----------------------
+# Root cause (docs/feedback/des-spine-ceremony-cost-attack-plan.md, RC4 dispatch
+# facet): ATDD_PURE_MANDATORY_SECTIONS is a FLAT 12 required for EVERY atdd_pure
+# dispatch, BLIND to role. A read-only REVIEW dispatch (slice reviewer-audit /
+# feature-end deep review) writes no code, runs no TDD phases, appends no ledger
+# records and runs no terminating suite — yet is forced to carry the 5
+# implementation-contract sections, which are empty ceremony for a review.
+#
+# Cure (Option A): select the profile from the dispatch's DES-PHASE marker. The
+# recognition substrate the hook keys on is the MARKERS (DES-MODE / DES-PHASE /
+# DES-SLICE), NOT these prose sections — so dropping ceremony sections for a
+# review changes the ceremony WITHOUT touching dispatch recognition.
+#
+# Key on the RAW marker string, NOT the normalised phase: F_FINAL_REVIEW
+# normalises to D_REFACTOR_COMMIT for ROUTING, but as a dispatch ROLE it is the
+# read-only feature-end review → light profile. Normalising before role-keying
+# would wrongly hand the feature-end review the full implementation template.
+_REVIEW_DISPATCH_PHASES: frozenset[str] = frozenset(
+    {"C_REVIEWER_AUDIT", FEATURE_END_RETURN_PHASE}
+)
+
+# The 5 implementation-contract sections a read-only review does not need.
+_IMPLEMENTATION_ONLY_SECTIONS: frozenset[str] = frozenset(
+    {
+        "ATDD_PURE_PHASES",
+        "QUALITY_GATES",
+        "AT_COMPLETION_LEDGER",
+        "RECORDING_INTEGRITY",
+        "TERMINATING_RUN",
+    }
+)
+
+# The 7-section light REVIEW profile = the full set MINUS the implementation-only
+# 5. DERIVED from ATDD_PURE_MANDATORY_SECTIONS (ADD-not-mutate: the full tuple
+# stays the exported SSOT) so section order is preserved and the two never drift.
+_REVIEW_PROFILE_SECTIONS: tuple[str, ...] = tuple(
+    s for s in ATDD_PURE_MANDATORY_SECTIONS if s not in _IMPLEMENTATION_ONLY_SECTIONS
+)
+
+# Raw DES-PHASE marker (first match). Deliberately keys on the RAW declared phase
+# string — see the role-vs-routing note above — keeping the validator a pure
+# function with no I/O.
+_DES_PHASE_MARKER = re.compile(r"<!--\s*DES-PHASE\s*:\s*(\S+)\s*-->")
+
+
+def _required_sections(prompt: str) -> tuple[str, ...]:
+    """Select the required-section profile for ``prompt`` by its dispatch role.
+
+    Reads the RAW ``<!-- DES-PHASE : X -->`` marker (first match, un-normalised):
+      * a REVIEW phase (``C_REVIEWER_AUDIT`` / the feature-end review return
+        phase ``F_FINAL_REVIEW``) → the 7-section light REVIEW profile;
+      * any other phase, OR NO marker at all → the full 12 (fail-closed default:
+        an unclassified dispatch is treated as implementation, never silently
+        downgraded to the light profile).
+    """
+    match = _DES_PHASE_MARKER.search(prompt)
+    if match is not None and match.group(1) in _REVIEW_DISPATCH_PHASES:
+        return _REVIEW_PROFILE_SECTIONS
+    return ATDD_PURE_MANDATORY_SECTIONS
+
 
 _RECOVERY_GUIDANCE = {
     "DES_METADATA": "Add DES_METADATA section with slice / feature / phase",
@@ -113,15 +176,20 @@ class AtddPurePromptValidator(ValidatorPort):
         """
         start_time = time.perf_counter()
 
+        # RC4-a: iterate the ROLE-selected profile (review = 7, else full 12), so
+        # a review dispatch is neither blocked on nor told to add the 5 dropped
+        # implementation-contract sections.
+        required_sections = _required_sections(prompt)
+
         errors = [
             f"MISSING: Mandatory section '{section}' not found"
-            for section in ATDD_PURE_MANDATORY_SECTIONS
+            for section in required_sections
             if f"# {section}" not in prompt
         ]
 
         recovery_guidance = [
             f"FIX: {_RECOVERY_GUIDANCE[section]}"
-            for section in ATDD_PURE_MANDATORY_SECTIONS
+            for section in required_sections
             if f"# {section}" not in prompt and section in _RECOVERY_GUIDANCE
         ]
 

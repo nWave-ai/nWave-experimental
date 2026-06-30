@@ -2,7 +2,7 @@
 
 F-DESIGN-REUSE-FIRST-GATE (DDD-1..DDD-11), Mandate-12 + Pillar 3. Wires the
 PRODUCTION validate-feature-delta CLI entry point
-(``scripts.validation.validate_feature_delta.main``) against a tmp_path
+(``des.cli.validate_feature_delta.main``) against a tmp_path
 feature-delta fixture. Business logic lives here as the single source of
 truth; step bodies delegate to ``ReuseAnalysisComposition`` methods and never
 inline logic.
@@ -55,7 +55,7 @@ from pathlib import Path
 # Production driving port -- the validate-feature-delta CLI. The module exists
 # on master; F-DESIGN-REUSE-FIRST-GATE EXTENDS its `main` with the
 # --require-reuse-analysis flag and a real pure core (DDD-1).
-from scripts.validation.validate_feature_delta import (
+from des.cli.validate_feature_delta import (
     main as validate_feature_delta_main,
 )
 
@@ -276,7 +276,7 @@ def _doc(*sections: str) -> str:
 
 # An EXTEND row -- the structural happy path. Every cell populated.
 _EXTEND_ROW = (
-    "| validate_feature_delta.py | scripts/validation/validate_feature_delta.py "
+    "| validate_feature_delta.py | src/des/cli/validate_feature_delta.py "
     "| structural validation | EXTEND | a third validation aspect of the same "
     "artifact |"
 )
@@ -305,15 +305,15 @@ def _build_this_feature_gold(comp: ReuseAnalysisComposition) -> None:
     rows = "\n".join(
         [
             "| **validate_feature_delta.py** | "
-            "scripts/validation/validate_feature_delta.py | structural "
+            "src/des/cli/validate_feature_delta.py | structural "
             "validation; pure-core + thin-shell | EXTEND | the slice-plan "
             "check was added as a mode on this same file |",
             "| validate_slice_plan_content / SlicePlanResult | "
-            "scripts/validation/validate_feature_delta.py:243,100 | closed-set "
+            "src/des/cli/validate_feature_delta.py:243,100 | closed-set "
             "verdict value object | EXTEND | ReuseAnalysisResult copies the "
             "SlicePlanResult NamedTuple shape verbatim |",
             "| _parse_args / _run_require_slice_plan | "
-            "scripts/validation/validate_feature_delta.py:348,386 | CLI flag "
+            "src/des/cli/validate_feature_delta.py:348,386 | CLI flag "
             "parsing + mode dispatch | EXTEND | add one --require-reuse-analysis "
             "branch mirroring _run_require_slice_plan |",
             "| nw-design/SKILL.md Reuse Analysis step | "

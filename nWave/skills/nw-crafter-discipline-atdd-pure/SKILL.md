@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 ## Scope
 
-This skill defines the **discipline contract** for the slim crafter in the ATDD-pure 7-phase workflow (ADR-027, plan v3 §3-§4). It is loaded when `.nwave/config.yaml` sets `workflow.mode: atdd_pure` and the crafter is dispatched into Phase A, Phase B, or Phase E.
+This skill defines the **discipline contract** for the slim crafter in the ATDD-pure 7-phase workflow (ADR-027, plan v3 §3-§4). It is loaded when `.nwave/config.yaml` sets `workflow.mode: atdd_pure` and the crafter is dispatched into Phase A, Phase B, or Phase E. <!-- mode-ref-ok -->
 
 The crafter does NOT author ATs. ATs are the exclusive territory of `nw-acceptance-designer` (DISTILL wave). Back-pressure on AT gaps flows through the Phase C reviewer + Phase D router — never crafter-side AT edits.
 
@@ -102,13 +102,13 @@ This invariant is owned by the crafter/workflow, NOT delegated to pre-commit hoo
 
 Applies to every phase: Phase A exit gate (all ATs pass), Phase B exit gate (suite stays green after cuts), Phase E exit gate (single suite run after the batch). The rule is the union — every modification terminates in a green suite.
 
-**The terminating run IS `run_contract_gate`.** The terminating command is NOT a crafter-picked subset (`pytest tests/des/` or similar) — that is the exact RCA "verification narrower than the contract" defect (`docs/analysis/rca-slice-shipped-broken-verification-narrower-than-contract-2026-05-20.md`). The canonical terminating command is:
+**The per-slice-commit terminating run IS `run-slice-ats` — the SPINE runs the entering slice's ATs, NOT a git hook** (f-spine-runs-tests-not-git-hooks DDD-1, the §2B ATs@slice allocation). The terminating command is NOT a crafter-picked subset (`pytest tests/des/` or similar) — that is the exact RCA "verification narrower than the contract" defect (`docs/analysis/rca-slice-shipped-broken-verification-narrower-than-contract-2026-05-20.md`) — but it is ALSO no longer the whole-tree run at EVERY commit (the ~40-min mis-allocation). The canonical per-slice-commit terminating command is:
 
 ```
-des run-contract-gate --repo .
+des run-slice-ats --repo . --entering-slice <s>
 ```
 
-`run_contract_gate` runs `pytest -m "unit or integration or acceptance"` over the WHOLE tree (the exact pre-push contract scope) and verifies it passes. The `G_COMMIT` commit MUST then carry a `Gate-Scope:` trailer holding the **committed-scope** digest of the commit's OWN tree. This is not skill text alone: the `G_COMMIT` DES `exit_gate` (E2) re-derives a fresh **committed-scope** digest via `run_contract_gate --verify-gate-scope --commit HEAD` (`git ls-tree` of HEAD's committed tree) and refuses the commit if the `Gate-Scope:` trailer is absent or mismatching — the skill prose and the mechanical exit gate are enforcement-paired, so a narrower terminating run is mechanically caught, not merely discouraged.
+`run-slice-ats` genuinely RUNS only the entering slice's acceptance tests (scoped to its `@<s>` tag, slice-proportional, fast) and vetoes (FAIL) on a RED slice AT — the spine, not a git hook, is the commit-time test authority. The WHOLE-tree `pytest -m "unit or integration or acceptance"` run stays where the §2B allocation puts it: ONCE at **feature-end**, inside `feature_end_cycle_service._run_full_suite_leg` (the `des run-contract-gate --repo .` whole-tree run, emitting `FullSuiteLegRan`), NOT at every slice commit. The `G_COMMIT` commit MUST then carry a `Gate-Scope:` trailer holding the **committed-scope** digest of the commit's OWN tree. This is not skill text alone: the `G_COMMIT` DES `exit_gate` (E2) re-derives a fresh **committed-scope** digest via `run_contract_gate --verify-gate-scope --commit HEAD` (`git ls-tree` of HEAD's committed tree) and refuses the commit if the `Gate-Scope:` trailer is absent or mismatching — the skill prose and the mechanical exit gate are enforcement-paired, so a narrower terminating run is mechanically caught, not merely discouraged.
 
 ### Stamp the trailer MECHANICALLY — `des commit-slice` (do NOT hand-stamp)
 
@@ -201,7 +201,7 @@ Run mechanically before emitting any commit:
 5. ☐ `git diff --name-only` confirms only files in roadmap `files_to_modify` were touched.
 6. ☐ Conventional commit message with `Step-Id:` trailer (per ADR-025 §3 commit gate).
 7. ☐ No prohibited bypass flags used (grep diff for `--no-verify`, `# noqa`, `# type: ignore`, `@pytest.mark.skip`, `suppress_health_check`).
-8. ☐ Reviewer verdict-hash trailer present and valid (per plan v3 §8 HMAC-SHA256 spec).
+8. ☐ Reviewer verdict-hash trailer present and valid (per plan v3 §8 keyless content-seal spec).
 
 Any unchecked box blocks COMMIT. Surface diagnosis to operator; do not bypass.
 

@@ -153,6 +153,25 @@ class ConstructInfo:
 
 
 @dataclass(frozen=True)
+class StepShapeCorpus:
+    """A plain-data step-shape census of a test module (sustainable-test-suite slice-09).
+
+    ``total_step_definitions`` is the count of pytest-bdd step definitions
+    (``@given`` / ``@when`` / ``@then`` functions) in the module;
+    ``near_duplicate_groups`` is the number of step-shape groups that contain MORE than one
+    step definition sharing a normalized body shape (each such group is one collapsible
+    near-duplicate cluster). A module with every step distinct has
+    ``near_duplicate_groups == 0``. The existing-base near-duplicate-step ratio is
+    ``near_duplicate_groups / total_step_definitions``; the rule layer reads only this
+    plain-data census — the normalization + grouping is the per-language adapter's concern
+    (genericità, ADR-TEST-002 D-A).
+    """
+
+    near_duplicate_groups: int
+    total_step_definitions: int
+
+
+@dataclass(frozen=True)
 class FunctionInfo:
     """A plain-data description of a function definition in a parsed tree.
 
@@ -183,6 +202,19 @@ class TestSuiteAstAdapter(Protocol):
         self, tree: object, decorator_names: frozenset[str]
     ) -> list[FunctionInfo]:
         """Return every function decorated with one of ``decorator_names``."""
+        ...
+
+    def functions_in_module(self, tree: object) -> list[FunctionInfo]:
+        """Return every function/method defined in ``tree`` (slice-02 CodeFact).
+
+        The structural enumeration the ``AstAdapter`` (``approx`` tier) consumes to
+        compute atoms / call-sites over a real tree without a second parser. Every
+        ``def`` / ``async def`` at any nesting depth is reported as a
+        ``FunctionInfo`` (name + 1-based line + opaque ``node_ref``), so a class
+        method is reported as well as a top-level function. Decorator filtering is
+        NOT applied — this is the unfiltered "every function" surface, distinct from
+        ``functions_with_decorator``.
+        """
         ...
 
     def imports_in_function(self, tree: object, fn: FunctionInfo) -> list[ImportInfo]:
@@ -250,6 +282,19 @@ class TestSuiteAstAdapter(Protocol):
         it (structural-by-name match — the learning hypothesis of slice-07). The M11
         coverage rule consumes only the resulting ``FailureModeCoverage``; the manifest
         parse + the name match are the adapter's per-language concern.
+        """
+        ...
+
+    def step_shapes_in_module(self, tree: object) -> StepShapeCorpus:
+        """Census the step-shape corpus of a test module (sustainable-test-suite slice-09).
+
+        Counts the pytest-bdd step definitions (``@given`` / ``@when`` / ``@then``
+        functions) in ``tree``, groups them by normalized body shape, and reports
+        ``total_step_definitions`` + the number of groups holding MORE than one step
+        (``near_duplicate_groups`` — each a collapsible near-duplicate cluster). The
+        normalization is structural (the sequence of statement/call shapes in the body),
+        so two step defs that perform the same body shape group together regardless of
+        their step-text literal. A module with no step definitions reports a zero census.
         """
         ...
 

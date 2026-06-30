@@ -121,9 +121,20 @@ def _read_skill_agent_doc_body(repo_root: Path, doc: SkillAgentDoc) -> str:
     """
     rel = SKILL_AGENT_DOC_PATHS[doc]
     target = repo_root / rel
-    if not target.is_file():
-        return ""
-    return target.read_text(encoding="utf-8")
+    # Skill-CORPUS read (monolith->lean decomposition): a `.../skills/<skill>/SKILL.md`
+    # path resolves to the UNION of the monolith plus every `<skill>-*/SKILL.md`
+    # sub-skill, so a contract token is found wherever it was migrated -- decoupling
+    # the AT from the physical skill layout (additive: the monolith is still read).
+    parts: list[str] = []
+    if target.is_file():
+        parts.append(target.read_text(encoding="utf-8"))
+    if target.name == "SKILL.md":
+        skill_dir = target.parent
+        parts += [
+            sub.read_text(encoding="utf-8")
+            for sub in sorted(skill_dir.parent.glob(f"{skill_dir.name}-*/SKILL.md"))
+        ]
+    return "\n".join(parts)
 
 
 def _read_markdown_table_rows(

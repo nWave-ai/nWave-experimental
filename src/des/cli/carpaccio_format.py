@@ -13,7 +13,7 @@ and glob-shipped with the rest of ``des.cli``.
 
 The import direction is one-directional: ``carpaccio_slice_gate -> carpaccio_format``
 (and ``carpaccio_precheck -> carpaccio_format``), NEVER the reverse, to avoid a
-circular import. The gate RETAINS its assertion-5 HMAC review logic, ``main()``,
+circular import. The gate RETAINS its assertion-5 record-presence review logic, ``main()``,
 and ``_emit``; those depend on the shared helpers ``_at_review_rejection`` and
 ``_slice_scenarios`` which therefore live here (peer-review LOW, 2026-05-29:
 both helpers cross the moved/retained boundary so they MOVE into this module and
@@ -52,13 +52,19 @@ __all__ = [
 _DEFAULT_SLICE_MAX = 3
 
 _SLICE_PLAN_HEADING_RE = re.compile(
-    r"^##\s+Wave:\s+DISCUSS\s+/\s+\[REF\]\s+Slice Plan\s*$"
+    r"^#{2,4}\s+Wave:\s+DISCUSS\s+/\s+\[REF\]\s+Slice Plan\s*$"
 )
 _TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 _SLICE_ID_RE = re.compile(
     r"^slice-\d+(?:[a-z])?$"
 )  # canonical + letter-suffix (friction #10)
-_SLICE_TAG_RE = re.compile(r"@(slice-\d+)\b")
+# The tag extractor MUST accept the SAME grammar the validator above accepts
+# (sister Tsunami Q-31, 2026-06-26): a `slice-05b` id is validator-VALID, but the
+# old `@(slice-\d+)\b` failed to extract `@slice-05b` (the `\b` between `\d` and a
+# letter is no boundary -> the whole match fails) -> the gate emitted a SILENT
+# `no-scenarios-for-slice` on a valid id. The `(?:[a-z])?` mirrors the validator so
+# the two grammars agree; `@slice-01` (digit-only) is unaffected.
+_SLICE_TAG_RE = re.compile(r"@(slice-\d+(?:[a-z])?)\b")
 _COUPLED_TAG_RE = re.compile(r"@coupled\b")
 _WALKING_SKELETON_RE = re.compile(r"@walking-skeleton|@walking_skeleton")
 _ANNOTATION_ESCAPE_RE = re.compile(
@@ -185,16 +191,49 @@ def _scan_atdd_pure_int(text: str, key: str) -> int | None:
 # ---------------------------------------------------------------------------
 
 
+# A GFM-escaped pipe (``\|``) is literal cell text, NOT a column boundary.
+# ``_UNESCAPED_PIPE_RE`` matches a ``|`` only when it is not preceded by a
+# backslash, so a row is split on real boundaries while ``\|`` survives inside a
+# cell; ``_split_table_cells`` then un-escapes the survivor back to ``|``.
+_UNESCAPED_PIPE_RE = re.compile(r"(?<!\\)\|")
+
+
 def _split_table_cells(line: str) -> list[str]:
-    """Split a GFM table row into trimmed cells, dropping the outer pipes."""
-    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+    """Split a GFM table row into trimmed cells, dropping the outer pipes.
+
+    GFM-escaped pipes (``\\|``) are treated as literal text: the split is on
+    un-escaped ``|`` only, and each cell un-escapes ``\\|`` back to ``|`` so the
+    value statement keeps the literal pipe the author wrote.
+    """
+    stripped = line.strip()
+    # Drop the single outer boundary pipe on each side (GFM table fence), then
+    # split on un-escaped interior pipes so an in-cell ``\|`` is not a boundary.
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|") and not stripped.endswith("\\|"):
+        stripped = stripped[:-1]
+    return [
+        cell.strip().replace("\\|", "|") for cell in _UNESCAPED_PIPE_RE.split(stripped)
+    ]
 
 
-def parse_slice_plan(feature_delta_text: str) -> SlicePlan:
-    """Parse the ``[REF] Slice Plan`` table out of a feature-delta.
+def parse_slice_plan_rows(feature_delta_text: str) -> list[SlicePlanRow]:
+    """Tolerant parse of the ``[REF] Slice Plan`` table into slice rows.
 
-    Raises ``GateError`` exit 1 when the section heading is absent, exit 2
-    when the table is malformed (wrong column count, bad slice identifier,
+    The single shared slice-plan parser (C10): the carpaccio CLI entry gate and
+    the subagent-stop hook both delegate here so the entry gate and the exit
+    gate agree on the SAME parse of the SAME plan. Tolerant of three GFM-naive
+    defects the two former copies disagreed on:
+
+    * heading depth -- the section heading matches at H2 through H4;
+    * escaped pipes -- a GFM ``\\|`` inside a cell is literal, not a boundary;
+    * column count -- the slice-id is the cell matching ``slice-NN`` and the
+      value is the next cell, with any further columns (status, annotation,
+      justification) read positionally and extras ignored. A 3-column plan and
+      a 5-column plan both parse.
+
+    Raises ``GateError`` exit 1 when the section heading is absent, exit 2 when
+    the table is malformed (no data rows, no row carrying a ``slice-NN`` id,
     duplicate slice id).
     """
     lines = feature_delta_text.splitlines()
@@ -213,7 +252,16 @@ def parse_slice_plan(feature_delta_text: str) -> SlicePlan:
     table_rows = _collect_table_rows(lines, heading_index + 1)
     if len(table_rows) < 2:
         raise _malformed_table("the slice-plan table has no data rows")
-    return _build_slice_plan(table_rows[2:])
+    return _build_slice_rows(table_rows[2:])
+
+
+def parse_slice_plan(feature_delta_text: str) -> SlicePlan:
+    """Parse the ``[REF] Slice Plan`` table out of a feature-delta.
+
+    Thin wrapper over the shared tolerant :func:`parse_slice_plan_rows` that
+    boxes the rows into a :class:`SlicePlan`.
+    """
+    return SlicePlan(rows=tuple(parse_slice_plan_rows(feature_delta_text)))
 
 
 def _collect_table_rows(lines: list[str], start: int) -> list[str]:
@@ -230,36 +278,48 @@ def _collect_table_rows(lines: list[str], start: int) -> list[str]:
     return rows
 
 
-def _build_slice_plan(data_rows: list[str]) -> SlicePlan:
-    """Validate + build slice rows from the table data rows (exit 2 on error)."""
+def _build_slice_rows(data_rows: list[str]) -> list[SlicePlanRow]:
+    """Build slice rows from the table data rows, column-count-tolerant (exit 2).
+
+    Column-tolerant: the slice-id is the first cell matching ``slice-NN`` and
+    the value / status / annotation / justification are read positionally from
+    the cells that follow it; any cell beyond the fifth is ignored, and a
+    3-column plan simply leaves annotation + justification empty. This unifies
+    the former 3-column (hook) and 5-column (CLI) contracts into one parse.
+    """
     rows: list[SlicePlanRow] = []
     seen: set[str] = set()
     for raw in data_rows:
         cells = _split_table_cells(raw)
-        if len(cells) != 5:
+        slice_index = next(
+            (i for i, cell in enumerate(cells) if _SLICE_ID_RE.match(cell)),
+            None,
+        )
+        if slice_index is None:
             raise _malformed_table(
-                f"slice-plan row must have 5 columns, found {len(cells)}: {raw!r}"
+                f"slice-plan row has no 'slice-NN' identifier cell: {raw!r}"
             )
-        slice_id = cells[0]
-        if not _SLICE_ID_RE.match(slice_id):
-            raise _malformed_table(
-                f"slice-plan row identifier must match 'slice-NN': {slice_id!r}"
-            )
+        slice_id = cells[slice_index]
         if slice_id in seen:
             raise _malformed_table(f"duplicate slice id in slice plan: {slice_id!r}")
         seen.add(slice_id)
         rows.append(
             SlicePlanRow(
                 slice_id=slice_id,
-                value_statement=cells[1],
-                status=cells[2],
-                annotation=cells[3],
-                justification=cells[4],
+                value_statement=_cell_at(cells, slice_index + 1),
+                status=_cell_at(cells, slice_index + 2),
+                annotation=_cell_at(cells, slice_index + 3),
+                justification=_cell_at(cells, slice_index + 4),
             )
         )
     if not rows:
         raise _malformed_table("the slice-plan table has no slice rows")
-    return SlicePlan(rows=tuple(rows))
+    return rows
+
+
+def _cell_at(cells: list[str], index: int) -> str:
+    """Return ``cells[index]`` or the empty string when the column is absent."""
+    return cells[index] if index < len(cells) else ""
 
 
 def _malformed_table(detail: str) -> GateError:

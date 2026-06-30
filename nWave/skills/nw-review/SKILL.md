@@ -5,6 +5,8 @@ user-invocable: true
 argument-hint: '[agent] [artifact-type] [artifact-path] - Example: @software-crafter task "roadmap.json"'
 ---
 
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+
 # NW-REVIEW: Expert Critique and Quality Assurance
 
 **Wave**: CROSS_WAVE
@@ -63,7 +65,16 @@ Findings MUST be priority-ordered: blocking issues first, then suggestions, then
 
 ## Workflow Mode Awareness
 
-Reviews run against two DELIVER spines. The classic spine is roadmap-driven (roadmap step + `execution-log.json`). The `atdd_pure` spine is the **roadmap-free sibling spine** — a 7-phase A→G per-slice loop (ADR-028) with no roadmap step and an AT-completion ledger in place of `execution-log.json`. It is a sibling of classic, not derived from the ADR-025 roadmap phases: the two spines run in parallel, selected by `workflow.mode`. When dispatching a reviewer, pass the `workflow_mode` from dispatch context unchanged so the reviewer agent applies the spine-appropriate DoR/DoD (ADR-029 re-split: the PO reviewer gates the slice plan; the acceptance-designer reviewer gates that the ATs themselves stand as the acceptance criteria).
+Reviews run against two DELIVER spines, siblings selected by `workflow.mode` — per-mode descriptor + DELIVER phase shape projected from the mode registry: <!-- mode-ref-ok -->
+
+<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
+- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
+  Deliver phase shape: `RED -> GREEN -> COMMIT`
+<!-- GENERATED:mode-descriptor END -->
+
+When dispatching a reviewer, pass the `workflow_mode` from dispatch context unchanged so the reviewer agent applies the spine-appropriate DoR/DoD (ADR-029 re-split: the PO reviewer gates the slice plan; the acceptance-designer reviewer gates that the ATs themselves stand as the acceptance criteria).
 
 ## Rigor Profile Integration
 

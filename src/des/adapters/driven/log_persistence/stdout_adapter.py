@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
 
-from des.application.log_persistence import GateLogEvent
+
+if TYPE_CHECKING:
+    from des.application.log_persistence import GateLogEvent
 
 
 class StdoutLogAdapter:

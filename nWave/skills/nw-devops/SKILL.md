@@ -184,6 +184,10 @@ When DEVOPS decisions change assumptions from prior waves:
 
 ## Agent Invocation
 
+<!-- DES-WAVE: devops -->
+
+Include the `<!-- DES-WAVE: devops -->` marker line above verbatim in the Agent dispatch prompt — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
+
 1. **Dispatch** — Invoke `@nw-platform-architect` with the feature-id and configuration below. Gate: agent accepts invocation.
 2. **Provide context** — Pass all prior wave consultation files (see Prior Wave Consultation). Gate: context files attached.
 3. **Pass configuration** — Include all Decision 1-9 selections in the invocation:

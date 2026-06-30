@@ -4,8 +4,8 @@ Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggrega
 
 **Wave:** DESIGN
 **Model:** inherit
-**Max turns:** 0
-**Tools:** Read, Write, Edit, Glob, Grep, Task
+**Max turns:** 45
+**Tools:** Read, Write, Edit, Glob, Grep, Bash, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 
 ## Commands
 
@@ -13,7 +13,10 @@ Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggrega
 
 ## Skills
 
-- [nw-ddd-event-modeling](../../../nWave/skills/nw-ddd-event-modeling/SKILL.md) — Event Modeling facilitation technique — brainstorm events, identify commands and views, define aggregate boundaries, write Given-When-Then specifications
-- [nw-ddd-eventsourcing](../../../nWave/skills/nw-ddd-eventsourcing/SKILL.md) — Event Sourcing and CQRS as DDD implementation patterns — when to use, aggregate event streams, projections, snapshots, sagas, upcasting, conflict resolution
-- [nw-ddd-strategic](../../../nWave/skills/nw-ddd-strategic/SKILL.md) — Strategic DDD — bounded context discovery, context mapping patterns, subdomain classification, ubiquitous language, and organizational alignment
-- [nw-ddd-tactical](../../../nWave/skills/nw-ddd-tactical/SKILL.md) — Tactical DDD — aggregate design rules, entities, value objects, domain events, repositories, domain services, and anti-pattern detection
+- [nw-code-analysis-port](../skills/nw-code-analysis-port.md) — KNOWLEDGE — resolve code facts (who-calls-X / where-defined-or-read / call-graph / change-scope / file-atoms) THROUGH the nWave vendor-neutral CodeFactPort, preferring Tsunami, then AST, with grep as last resort and degrading LOUD. Trigger: any time an agent designs, writes, analyzes, or reviews code or tests and needs a structural code fact.
+- [nw-code-design-fp](../skills/nw-code-design-fp.md) — FP code-design SSOT — the WHAT-to-design catalog (algebra-driven design, domain modelling with types, railway/error-track isolation) shared by the solution architect (design-time) and the functional crafter (execution-time).
+- [nw-code-design-oo](../skills/nw-code-design-oo.md) — OO code-design SSOT — the WHAT-to-design anti-smell catalog (Object Calisthenics, RPP smell taxonomy, effect isolation) shared by the solution architect (design-time) and the crafter (execution-time).
+- [nw-ddd-event-modeling](../skills/nw-ddd-event-modeling.md) — Event Modeling facilitation technique — brainstorm events, identify commands and views, define aggregate boundaries, write Given-When-Then specifications
+- [nw-ddd-eventsourcing](../skills/nw-ddd-eventsourcing.md) — Event Sourcing and CQRS as DDD implementation patterns — when to use, aggregate event streams, projections, snapshots, sagas, upcasting, conflict resolution
+- [nw-ddd-strategic](../skills/nw-ddd-strategic.md) — Strategic DDD — bounded context discovery, context mapping patterns, subdomain classification, ubiquitous language, and organizational alignment
+- [nw-ddd-tactical](../skills/nw-ddd-tactical.md) — Tactical DDD — aggregate design rules, entities, value objects, domain events, repositories, domain services, and anti-pattern detection

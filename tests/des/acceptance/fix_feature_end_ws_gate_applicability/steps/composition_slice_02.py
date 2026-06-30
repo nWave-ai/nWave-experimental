@@ -40,23 +40,14 @@ the gate keys its mechanical installability cross-check on (DESIGN DDD-3/DDD-6).
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from tests.common.in_process_cli import run_cli_in_process
 from tests.env_parity import seed_dev_checkout_marker
 
 from .domain_types_slice_02 import FeatureShape, FloorVerdict
 
-
-# THIS file lives at
-# tests/des/acceptance/fix_feature_end_ws_gate_applicability/steps/composition_slice_02.py
-# -> 5 parents up is the repo root; repo-`src/` is the absolute import root the
-# `des` subprocess needs (its cwd is the per-test tmp workspace, so a cwd-relative
-# PYTHONPATH would resolve under the tmp tree and fail to import `des`).
-_REPO_SRC = Path(__file__).resolve().parents[5] / "src"
 
 _MANIFEST_NAME = "walking-skeleton.json"
 
@@ -163,18 +154,12 @@ class WalkingSkeletonFloorComposition:
             "--repo-root",
             str(self._workspace_root),
         ]
-        completed = subprocess.run(
-            [sys.executable, "-m", "des.cli.__main__", *argv],
-            capture_output=True,
-            text=True,
-            cwd=str(self._workspace_root),
-            env=self._subprocess_env(),
-        )
+        exit_code, stdout, _stderr = run_cli_in_process(argv, cwd=self._workspace_root)
         return FloorVerdictObserved(
-            verdict=self._verdict_from_exit(completed.returncode),
-            reported_verdict_token=self._reported_token(completed.stdout),
-            reported_reason=self._reported_reason(completed.stdout),
-            exit_code=completed.returncode,
+            verdict=self._verdict_from_exit(exit_code),
+            reported_verdict_token=self._reported_token(stdout),
+            reported_reason=self._reported_reason(stdout),
+            exit_code=exit_code,
         )
 
     # --- observable read-back (printed JSON, NOT the SUT) --------------------
@@ -243,14 +228,6 @@ class WalkingSkeletonFloorComposition:
             if isinstance(payload, dict):
                 return payload
         return None
-
-    def _subprocess_env(self) -> dict[str, str]:
-        env = dict(os.environ)
-        # ABSOLUTE repo-`src/` path (derived from __file__, not cwd-relative):
-        # the subprocess cwd is the per-test tmp workspace, so a `Path("src")`
-        # would resolve under the tmp tree and fail to import `des`.
-        env["PYTHONPATH"] = str(_REPO_SRC)
-        return env
 
 
 __all__ = [

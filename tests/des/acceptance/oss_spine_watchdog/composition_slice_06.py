@@ -102,7 +102,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -114,6 +113,14 @@ import pytest
 # (slice-02 / slice-04 / slice-05 siblings).
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 
+# The REAL `handle_subagent_stop` SubagentStop hook handler, driven IN-PROCESS
+# over its stdin protocol (node-C enabler `run_hook_in_process`) —
+# behaviour-identical to the prior `python -c "... handle_subagent_stop()"`
+# subprocess fork, no fresh interpreter. No-argv, reads its JSON event from stdin.
+# The force-timeout env seam is set in-process around the call (and restored).
+from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
+from tests.common.in_process_cli import run_hook_in_process
+
 from .steps.domain_types_slice_06 import (
     FeatureId,
     GateOutcome,
@@ -121,10 +128,6 @@ from .steps.domain_types_slice_06 import (
     TimeoutBlockHistory,
 )
 
-
-# Repo root = .../nWave-dev (this file lives 4 dirs deep under tests/des/...).
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-_REPO_SRC = _REPO_ROOT / "src"
 
 _HANDLER_MODULE = "des.adapters.drivers.hooks.subagent_stop_handler"
 
@@ -344,23 +347,28 @@ class TimeoutCountabilityFixture:
                 "permission_mode": "default",
             }
         )
-        runner = (
-            "import sys; "
-            f"sys.path.insert(0, {str(_REPO_SRC)!r}); "
-            f"from {_HANDLER_MODULE} import handle_subagent_stop; "
-            "sys.exit(handle_subagent_stop())"
-        )
-        env = dict(os.environ)
-        env["PYTHONPATH"] = str(_REPO_SRC)
-        env[_FORCE_GATE_TIMEOUT_ENV] = "1"
-        return subprocess.run(
-            [sys.executable, "-c", runner],
-            input=hook_input,
-            capture_output=True,
-            text=True,
-            cwd=str(self._repo),
-            env=env,
-            timeout=180,
+        # The force-timeout seam is a process-env flag the production gate reads
+        # via `os.environ.get(...)`; in-process we set it around the call and
+        # restore the prior value in `finally` so the shared test process is
+        # never left mutated (faithful to the env= the subprocess passed in).
+        prior_force = os.environ.get(_FORCE_GATE_TIMEOUT_ENV)
+        os.environ[_FORCE_GATE_TIMEOUT_ENV] = "1"
+        try:
+            exit_code, stdout, stderr = run_hook_in_process(
+                handle_subagent_stop,
+                stdin_text=hook_input,
+                cwd=str(self._repo),
+            )
+        finally:
+            if prior_force is None:
+                os.environ.pop(_FORCE_GATE_TIMEOUT_ENV, None)
+            else:
+                os.environ[_FORCE_GATE_TIMEOUT_ENV] = prior_force
+        return subprocess.CompletedProcess(
+            args=[_HANDLER_MODULE],
+            returncode=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
 
 

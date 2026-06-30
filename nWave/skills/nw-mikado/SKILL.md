@@ -5,6 +5,8 @@ user-invocable: true
 argument-hint: '[refactoring-goal] - Optional: --complexity=[simple|moderate|complex] --visualization=[tree|graph]'
 ---
 
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+
 # NW-MIKADO: Complex Refactoring with Mikado Method
 
 > **EXPERIMENTAL**: Under active development. Behavior and output format may change between versions.

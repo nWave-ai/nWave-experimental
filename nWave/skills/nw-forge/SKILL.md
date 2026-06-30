@@ -10,21 +10,25 @@ argument-hint: '[agent-name] - Optional: --type=[specialist|reviewer|orchestrato
 **Wave**: CROSS_WAVE
 **Agent**: Zeus (nw-agent-builder)
 
-## Overview
+## SSOT pointer (de-duplicated 2026-06-17)
 
-Create a new agent using research-validated v2 approach: focused core (200-400 lines) with Skills for domain knowledge.
+This skill previously duplicated the `forge.md` command near-verbatim. The single
+source of truth for the create-agent procedure is now:
+- Command surface: `nWave/tasks/nw/forge.md` — PRESERVED, unchanged. `forge` keeps its
+  name (no rename, no replacement command).
+- Procedure: skill `nw-ab-create-agent` (one job, one trigger, deterministic 5-phase
+  sequence: ANALYZE → DESIGN → CREATE → VALIDATE → REFINE; VALIDATE composes
+  `nw-ab-validate-spec`). `forge` routes to this internal procedure.
 
-1. **ANALYZE** — Identify single clear responsibility, check overlap with existing agents, classify type, determine minimum tools needed. Gate: responsibility defined, no overlap, classification chosen.
-2. **DESIGN** — Select design pattern, define role and divergent principles, plan Skills extraction, draft frontmatter. Gate: pattern selected, principles drafted, frontmatter ready.
-3. **CREATE** — Write agent `.md` using template. Workflow must be numbered task list. Create Skill files if domain knowledge exceeds 50 lines. Gate: agent file written, line count under 400.
-4. **VALIDATE** — Run 14-point validation checklist. Check for anti-patterns. Verify workflow is numbered task list, not prose. Gate: all 14 items pass, zero anti-patterns.
-5. **REFINE** — Address validation failures. Add instructions only for observed failure modes. Re-measure and re-validate. Gate: all items pass, line count reported.
+Do not edit the procedure here — edit `nw-ab-create-agent`. This file is retained as
+a pointer for backward compatibility and is flagged for DELETION at the cutover step
+(held for Ale's explicit OK).
 
 ## Agent Invocation
 
 @nw-agent-builder
 
-Execute \*forge to create {agent-name} agent.
+Run the `nw-ab-create-agent` procedure to create the {agent-name} agent.
 
 **Configuration:**
 - agent_type: specialist | reviewer | orchestrator
@@ -40,6 +44,9 @@ Execute \*forge to create {agent-name} agent.
 - [ ] Domain knowledge extracted to Skills if >50 lines
 - [ ] No aggressive language (no CRITICAL/MANDATORY/ABSOLUTE)
 - [ ] Safety via platform features (frontmatter/hooks), not prose
+- [ ] Caveman house style — dry/declarative, tables and compact lists, lean body, deep knowledge in skills
+- [ ] `## Reasoning Mandate` section present (verdict-first, tables, evidence-dense)
+- [ ] A05/A06 literal anchors present (`You MUST load your skill files` or `Your FIRST action before any other work`, AND `~/.claude/skills/nw-`)
 
 ## Next Wave
 

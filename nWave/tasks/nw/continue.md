@@ -53,19 +53,27 @@ Check before showing progress:
 
 ### Step 5: DELIVER Progress Detail
 
-DELIVER progress detection branches on `workflow.mode` (read from `.nwave/config.yaml`).
+DELIVER progress detection branches on `workflow.mode` (read from `.nwave/config.yaml`). <!-- mode-ref-ok -->
+Per-mode descriptor + DELIVER phase shape, projected from the mode registry:
+
+<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
+- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
+  Deliver phase shape: `RED -> GREEN -> COMMIT`
+<!-- GENERATED:mode-descriptor END -->
 
 **`classic` mode** — if DELIVER in progress, show step-level detail:
 - `classic` mode: read `docs/feature/{id}/deliver/execution-log.json` — count COMMIT/PASS steps, find first without COMMIT/PASS
 - Read `.develop-progress.json` if exists: check last failure point
 - Display: "DELIVER in progress: Steps 01-01 through 02-01 complete. Next: 02-02"
 
-**`atdd_pure` mode** — there is no `classic`-mode execution-log; resume is driven by the AT-completion ledger using the **two-case cue** (ADR-028 D6). Read the slice plan and the ledger, then pick the case:
+**`atdd_pure` mode** — resume is driven by the AT-completion ledger using the **two-case cue** (ADR-028 D6). Read the slice plan and the ledger, then pick the case: <!-- mode-ref-ok -->
 
 1. **Case (i): slices still `pending`.** Some slices are not yet `shipped`. Restart the `/nw-execute` per-slice lean cycle at the first **un-shipped slice** — the first slice plan row whose Status is not `shipped`.
 2. **Case (ii): all slices `shipped`, feature-end cycle unfinished.** The Status column gives no signal once every row is `shipped`, so read the latest `FeatureEndCheckpoint` ledger record and resume the **feature-end cycle** at the recorded step.
 
-Display under `atdd_pure`: "DELIVER (atdd_pure) in progress: 3/5 slices shipped. Next: re-enter /nw-execute at the first un-shipped slice" or "DELIVER (atdd_pure): all slices shipped. Resuming feature-end cycle from FeatureEndCheckpoint."
+Display under `atdd_pure`: "DELIVER (atdd_pure) in progress: 3/5 slices shipped. Next: re-enter /nw-execute at the first un-shipped slice" or "DELIVER (atdd_pure): all slices shipped. Resuming feature-end cycle from FeatureEndCheckpoint." <!-- mode-ref-ok -->
 
 ### Step 6: Progress Display
 
