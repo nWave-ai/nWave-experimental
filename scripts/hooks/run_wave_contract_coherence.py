@@ -25,6 +25,8 @@ _WAVES_DIR = _REPO / "nWave" / "waves"
 
 # (wave-id, prose-locus) pairs whose contract lives in the registry. Extend as waves migrate.
 _MIGRATED: tuple[tuple[str, str], ...] = (
+    ("design", "nWave/skills/nw-design/SKILL.md"),
+    ("devops", "nWave/skills/nw-devops/SKILL.md"),
     ("discuss", "nWave/tasks/nw/discuss.md"),
     ("discuss", "nWave/skills/nw-discuss/SKILL.md"),
     ("distill", "nWave/tasks/nw/distill.md"),

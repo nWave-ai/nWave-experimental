@@ -73,6 +73,29 @@ PUBLIC_SHARED_SKILLS: frozenset[str] = frozenset(
         "nw-command-design-patterns-classification",
         "nw-command-design-patterns-reduction",
         "nw-command-design-patterns-authoring",
+        # Decomposed nw-deliver wave-skill modules (2026-07-02): the public
+        # command-skill nw-deliver (recomposing core) composes these via its
+        # Composition table + explicit load paths; they are routed via-core,
+        # not frontmatter-owned, so the ownership strip would drop them —
+        # same load-bearing pattern as above.
+        "nw-deliver-classic-orchestration",
+        "nw-deliver-atdd-pure-slice-gates",
+        # Decomposed nw-discuss / nw-design / nw-devops wave-skill modules
+        # (2026-07-02, same recomposition pass): each public recomposing core
+        # composes its modules via-core exactly like nw-deliver above; without
+        # these entries the ownership strip ships the cores with dangling
+        # module loads (the defect the nw-deliver pass surfaced).
+        "nw-discuss-prior-wave-reading",
+        "nw-discuss-decision-points",
+        "nw-discuss-jtbd-analysis",
+        "nw-discuss-journey-design",
+        "nw-discuss-story-mapping",
+        "nw-discuss-requirements-stories",
+        "nw-design-prior-wave-reading",
+        "nw-design-discovery-flow",
+        "nw-devops-prior-wave-reading",
+        "nw-devops-decision-points",
+        "nw-devops-environment-inventory",
     }
 )
 

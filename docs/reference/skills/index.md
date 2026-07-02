@@ -216,6 +216,14 @@
 
 - [nw-deliver](nw-deliver.md) — Orchestrates the full DELIVER wave end-to-end (roadmap > execute-all > finalize). Use when all prior waves are complete and the feature is ready for implementation.
 
+## nw-deliver-atdd-pure-slice-gates
+
+- [nw-deliver-atdd-pure-slice-gates](nw-deliver-atdd-pure-slice-gates.md) — DELIVER ATDD-pure per-slice phase-boundary contracts — the D_REFACTOR_COMMIT exit gate (E1 slice-commit completeness + E2 contract-gate scope), Phase D routing decision rules, A_GREEN/D_REFACTOR_COMMIT separation enforcement, the verdict-hash trailer, per-phase-boundary telemetry, and the post-commit falsifier-gate hook. Load when a per-slice phase boundary beyond the A_GREEN entry dispatch must be governed.
+
+## nw-deliver-classic-orchestration
+
+- [nw-deliver-classic-orchestration](nw-deliver-classic-orchestration.md) — DELIVER classic roadmap-driven spine (deprecated fallback, ADR-028 D6) — the §Orchestration Flow phase list (setup, paradigm/mutation/deliverable-type detection, roadmap creation + review, execute-all-steps, post-merge integration + Elevator Pitch demo gate, refactoring, adversarial review, mutation, integrity, finalize, retrospective, report), orchestrator responsibilities, the Task invocation pattern (DES template), the roadmap quality gate, skip/resume, and the per-step design compliance check. Load when the mode dispatch routes to the classic spine, or when the per-slice spine re-enters the shared refactor/review/mutation/integrity/finalize phases as written.
+
 ## nw-deliver-orchestration
 
 - [nw-deliver-orchestration](nw-deliver-orchestration.md) — DELIVER wave orchestration workflow -- 9 phases from baseline to finalization. Load when user invokes *deliver command. Covers state tracking, smart skip logic, retry, resume, and quality gate enforcement.
@@ -234,7 +242,11 @@
 
 ## nw-design
 
-- [nw-design](nw-design.md) — Designs system architecture with C4 diagrams and technology selection. Routes to the right architect based on design scope (system, domain, application, or full stack). Two interaction modes: guide (collaborative Q&A) or propose (architect presents options with trade-offs).
+- [nw-design](nw-design.md) — Designs system architecture with C4 diagrams and technology selection (recomposing core). DESIGN identity + density-aware output contract + gate-parsed Reuse Analysis contract + interactive decision points + architect routing/dispatch. Lean core that COMPOSES the narrow nw-design-* modules; the prior-wave-reading and discovery-flow procedures live in those modules, not re-inlined here. Routes to the right architect based on design scope (system, domain, application, or full stack). Two interaction modes: guide (collaborative Q&A) or propose (architect presents options with trade-offs).
+
+## nw-design-discovery-flow
+
+- [nw-design-discovery-flow](nw-design-discovery-flow.md) — DESIGN discovery-driven architecture flow — problem understanding, constraints, Conway's Law mapping, paradigm selection, Reuse Analysis (contract pinned in the nw-design core), architecture recommendation, optional stress analysis, deliverables, and the Outcome Collision Check. Run when architecture work begins, after the wave-entry decisions are resolved.
 
 ## nw-design-methodology
 
@@ -244,9 +256,25 @@
 
 - [nw-design-patterns](nw-design-patterns.md) — 7 agentic design patterns with decision tree for choosing the right pattern for each agent type
 
+## nw-design-prior-wave-reading
+
+- [nw-design-prior-wave-reading](nw-design-prior-wave-reading.md) — DESIGN prior-wave consultation + back-propagation procedure — read SSOT architecture + DISCUSS/SPIKE artifacts with a confirmation checklist, run the migration gate, check contradictions, and back-propagate changed assumptions (including upstream-changes.md for the product owner). Run BEFORE beginning DESIGN work.
+
 ## nw-devops
 
-- [nw-devops](nw-devops.md) — Designs CI/CD pipelines, infrastructure, observability, and deployment strategy. Use when preparing platform readiness for a feature.
+- [nw-devops](nw-devops.md) — Designs CI/CD pipelines, infrastructure, observability, and deployment strategy (recomposing core). DEVOPS identity + density-aware output contract + agent dispatch + peer-review gate + output/handoff contract. Lean core that COMPOSES the narrow nw-devops-* modules; the prior-wave-reading, decision-point, and environment-inventory procedures live in those modules, not re-inlined here. Use when preparing platform readiness for a feature.
+
+## nw-devops-decision-points
+
+- [nw-devops-decision-points](nw-devops-decision-points.md) — DEVOPS interactive decision catalog — Decisions 1-9 (deployment target, container orchestration, CI/CD platform, existing infrastructure, observability and logging, deployment strategy, continuous learning, Git branching strategy, mutation testing strategy) with options, defaults, and the CLAUDE.md persistence wording. Consult when presenting or resolving the wave-entry decisions.
+
+## nw-devops-environment-inventory
+
+- [nw-devops-environment-inventory](nw-devops-environment-inventory.md) — DEVOPS mandatory environment-inventory deliverable — produce environments.yaml (target environments, coexistence matrix, platform coverage, deployment assumptions) that DISTILL parses to parametrize acceptance scenarios over target environments (Mandate 4 / Environmental Realism). Run BEFORE completing the DEVOPS wave.
+
+## nw-devops-prior-wave-reading
+
+- [nw-devops-prior-wave-reading](nw-devops-prior-wave-reading.md) — DEVOPS prior-wave consultation + back-propagation procedure — read the DISCUSS outcome KPIs and the DESIGN artifacts with a confirmation checklist, check contradictions against the architecture, and back-propagate changed assumptions (including upstream-changes.md for the architect). Run BEFORE beginning DEVOPS work.
 
 ## nw-diagram
 
@@ -266,7 +294,31 @@
 
 ## nw-discuss
 
-- [nw-discuss](nw-discuss.md) — Conducts Jobs-to-be-Done analysis, UX journey design, and requirements gathering through interactive discovery. Use when starting feature analysis, defining user stories, or creating acceptance criteria.
+- [nw-discuss](nw-discuss.md) — Conducts Jobs-to-be-Done analysis, UX journey design, and requirements gathering through interactive discovery (recomposing core). DISCUSS identity + output-tier contract + scope escalation/Epic Mode + agent dispatch. Lean core that COMPOSES the narrow nw-discuss-* modules; phase procedures live in those modules, not re-inlined here. Use when starting feature analysis, defining user stories, or creating acceptance criteria.
+
+## nw-discuss-decision-points
+
+- [nw-discuss-decision-points](nw-discuss-decision-points.md) — DISCUSS interactive decision catalog — Decisions 1-4 (feature type, walking skeleton, UX research depth, JTBD inclusion) with options, defaults, and rationale. Consult when presenting or resolving the wave-entry decisions.
+
+## nw-discuss-journey-design
+
+- [nw-discuss-journey-design](nw-discuss-journey-design.md) — DISCUSS Phase 2 journey design procedure — mental model discovery, happy path, emotional arc, shared artifact tracking, error paths, and Gherkin scenario generation, with artifact paths. Run when designing the UX journey informed by JTBD.
+
+## nw-discuss-jtbd-analysis
+
+- [nw-discuss-jtbd-analysis](nw-discuss-jtbd-analysis.md) — DISCUSS Phase 1 JTBD analysis procedure — job discovery, job dimensions, four forces, opportunity scoring, and the JTBD-to-story bridge, with artifact paths. Run when Decision 4 = Yes and JTBD analysis is about to start.
+
+## nw-discuss-prior-wave-reading
+
+- [nw-discuss-prior-wave-reading](nw-discuss-prior-wave-reading.md) — DISCUSS prior-wave consultation + back-propagation procedure — read SSOT + DISCOVER/DIVERGE artifacts with reading enforcement, run the migration gate, check DISCOVER contradictions, and back-propagate changed assumptions. Run BEFORE beginning DISCUSS work.
+
+## nw-discuss-requirements-stories
+
+- [nw-discuss-requirements-stories](nw-discuss-requirements-stories.md) — DISCUSS Phase 3 requirements + user stories procedure — LeanUX stories with job traceability, the Elevator Pitch gate, the slice-composition hard gate, ACs, KPIs, DoR validation, optional peer review, handoff, and the Wave Decisions Summary. Run when crafting stories/ACs/DoR and closing the wave.
+
+## nw-discuss-story-mapping
+
+- [nw-discuss-story-mapping](nw-discuss-story-mapping.md) — DISCUSS Phase 2.5 user story mapping procedure — backbone, walking-skeleton slice, elephant-carpaccio slicing with taste tests, slice briefs, and prioritization, with artifact paths. Run when decomposing the feature into a story map + thin vertical slices.
 
 ## nw-distill
 

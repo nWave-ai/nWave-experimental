@@ -1,13 +1,13 @@
 ---
 name: nw-design
-description: "Designs system architecture with C4 diagrams and technology selection. Routes to the right architect based on design scope (system, domain, application, or full stack). Two interaction modes: guide (collaborative Q&A) or propose (architect presents options with trade-offs)."
+description: "Designs system architecture with C4 diagrams and technology selection (recomposing core). DESIGN identity + density-aware output contract + gate-parsed Reuse Analysis contract + interactive decision points + architect routing/dispatch. Lean core that COMPOSES the narrow nw-design-* modules; the prior-wave-reading and discovery-flow procedures live in those modules, not re-inlined here. Routes to the right architect based on design scope (system, domain, application, or full stack). Two interaction modes: guide (collaborative Q&A) or propose (architect presents options with trade-offs)."
 user-invocable: true
 argument-hint: '[component-name] - Optional: --residuality --paradigm=[auto|oop|fp]'
 ---
 
 > **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
 
-# NW-DESIGN: Architecture Design
+# NW-DESIGN: Architecture Design (recomposing core)
 
 **Wave**: DESIGN (wave 3 of 6) | **Agents**: Morgan (nw-solution-architect), nw-system-designer, nw-ddd-architect | **Command**: `*design-architecture`
 
@@ -19,6 +19,25 @@ Execute DESIGN wave through discovery-driven architecture design. The command st
 2. **Interaction Mode** — guide (architect asks questions, you decide together) or propose (architect reads requirements, presents 2-3 options with trade-offs).
 
 All architects write to `docs/product/architecture/brief.md` (SSOT), each in its own section. Analyzes existing codebase, evaluates open-source alternatives, produces C4 diagrams (Mermaid) as mandatory output.
+
+This core holds the cross-cutting DESIGN concerns — identity, the density-aware output contract, telemetry, the gate-parsed Reuse Analysis contract (AT-pinned), the interactive decision points, rigor integration, and the architect routing/dispatch block — and COMPOSES the narrow `nw-design-*` modules. The phase procedures live in those modules, not re-inlined here.
+
+## Composition (load by trigger)
+
+| Module | Kind | Trigger — load when... | Covers |
+|---|---|---|---|
+| `nw-design-prior-wave-reading` | PROCEDURE | BEFORE beginning DESIGN work — consuming SSOT + prior-wave artifacts | Prior Wave Consultation reading order + confirmation checklist, contradiction check, migration gate, Document Update (back-propagation + upstream-changes.md) |
+| `nw-design-discovery-flow` | PROCEDURE | architecture work begins — wave-entry Decisions 0-1 resolved | Discovery Flow steps 1-8 (problem, constraints, Conway, paradigm selection, Reuse Analysis pointer, recommendation, stress analysis, deliverables) + Outcome Collision Check |
+
+Load path: `~/.claude/skills/nw-{module}/SKILL.md`. Load the module whose trigger matches your current moment; the triggers partition the DESIGN phase-space — every section lives in exactly one module. Do NOT re-inline a module's content into this core. The Reuse Analysis step-5 contract, the Reuse-first DESIGN exit gate, and the Wave Decisions Summary template stay in this core (below) — they are AT-pinned to this file.
+
+## Workflow (phase order)
+
+At the start of execution, create these tasks using TaskCreate and follow them in order, loading each phase's module at that phase: prior-wave reading → Decision 0 (design scope) + Decision 1 (interaction mode, below) → architect dispatch (below) → discovery flow with the Reuse Analysis contract (below) and the Outcome Collision Check → Wave Decisions Summary + Outputs (below).
+
+## Reasoning Mandate (Caveman)
+
+Verdict-first, tables over prose, evidence-dense, zero narrative. Depth comes from rigor, not padding. State the conclusion, then the supporting evidence; never bury the verdict under exposition.
 
 ## Output Tiers (per D2)
 
@@ -62,50 +81,22 @@ Every expansion choice emits a `DocumentationDensityEvent` (dataclass at `src/de
 
 Wave-specific signal: DEVOPS/DISTILL consuming a lean DESIGN feature-delta — downstream `--expand` requests for trade-off or evolution scenarios indicate the `[REF]` baseline was insufficient. Full emission rules: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
 
-## Prior Wave Consultation
+## Reuse Analysis (Discovery Flow step 5 — the gate-parsed contract)
 
-Before beginning DESIGN work, read SSOT and prior wave artifacts in this order:
+Referenced as step 5 of the Discovery Flow (`nw-design-discovery-flow`); the contract stays in this core because it is AT-pinned to this file. Before designing ANY new component, search the existing codebase for components with overlapping responsibilities. For each overlap, decide "extend existing" or "justify new". Output a table:
 
-1. **Read SSOT architecture** (if `docs/product/` exists) — read `docs/product/architecture/brief.md` (extend, not recreate), `docs/product/architecture/adr-*.md` (existing decisions), `docs/product/journeys/{name}.yaml` (journey schema for port identification). Gate: all existing files read or confirmed missing.
-2. **Read DISCUSS artifacts** (primary input) — read from `docs/feature/{feature-id}/discuss/`: `wave-decisions.md` (decision summary), `user-stories.md` (scope, requirements, acceptance criteria), `story-map.md` (walking skeleton and release slicing), `outcome-kpis.md` (quality attributes). Gate: all four files read or confirmed missing.
-3. **Read SPIKE findings** (if spike was run) — read from `docs/feature/{feature-id}/spike/`: `findings.md` (validated assumptions, performance measurements, what didn't work). This informs your architecture constraints. Gate: file read if present, marked as not found if absent.
-4. **Output confirmation checklist** — after reading, output `✓ {file}` for each read, `⊘ {file} (not found)` for each missing. Gate: checklist produced before any architecture work begins.
-5. **Check for contradictions** — identify any DESIGN decisions that would contradict DISCUSS requirements or SPIKE findings. Flag contradictions and resolve with user before proceeding. Example: DISCUSS requires "real-time updates" but DESIGN chooses batch processing; or SPIKE found performance budget can't be met. Gate: zero unresolved contradictions.
-6. **Migration gate check** — if `docs/product/` does not exist but `docs/feature/` has existing features, STOP. Guide the user to `docs/guides/migrating-to-ssot-model/README.md`. If greenfield, proceed — DESIGN will bootstrap `docs/product/architecture/`. Gate: migration status confirmed.
+```
+| Existing Component | File | Overlap | Decision | Justification |
+|-------------------|------|---------|----------|---------------|
+| WorkflowExecutor | src/des/application/zero_trust/workflow_executor.py | Phase iteration, gate eval | EXTEND | Adding dispatch branch is ~15 LOC vs 200 LOC new class |
+```
 
-Note: DISCOVER evidence is already synthesized into DISCUSS — read DISCOVER only if wave-decisions.md flags something architecturally significant.
-
-## Document Update (Back-Propagation)
-
-When DESIGN decisions change assumptions from prior waves:
-
-1. **Document the change** — add a `## Changed Assumptions` section at the end of the affected DESIGN artifact. Gate: section present in artifact.
-2. **Reference the original** — quote the original assumption from the prior-wave document, with file path. Gate: original quoted verbatim with source.
-3. **State the new assumption** — write the replacement assumption and its rationale. Gate: new assumption and rationale present.
-4. **Propagate upstream if needed** — if architecture constraints require changes to user stories or acceptance criteria, write them to `docs/feature/{feature-id}/design/upstream-changes.md` for the product owner to review. Gate: upstream-changes.md created if any story/criteria changes needed.
-
-## Discovery Flow
-
-Architecture decisions are driven by quality attributes, not pattern shopping. Execute these steps in order:
-
-1. **Understand the Problem** — review JTBD artifacts from DISCUSS. Ask: What are we building? For whom? Which quality attributes matter most? (scalability|maintainability|testability|time-to-market|fault tolerance|auditability). Gate: quality attribute priorities ranked.
-2. **Understand Constraints** — ask: Team size/experience? Timeline? Existing systems to integrate? Regulatory requirements? Operational maturity (CI/CD, monitoring)? Gate: constraints list documented.
-3. **Map Team Structure (Conway's Law)** — ask: How many teams? Communication patterns? Does proposed architecture match org chart? Gate: team-architecture alignment confirmed.
-4. **Select Development Paradigm** — identify primary language(s) from constraints, then: FP-native (Haskell|F#|Scala|Clojure|Elixir) → recommend Functional; OOP-native (Java|C#|Go) → recommend OOP; Multi-paradigm (TypeScript|Kotlin|Python|Rust|Swift) → present both, let user choose. After confirmation, ask user permission to write paradigm to project CLAUDE.md: FP: `This project follows the **functional programming** paradigm. Use @nw-functional-software-crafter for implementation.` OOP: `This project follows the **object-oriented** paradigm. Use @nw-software-crafter for implementation.` Default if user declines/unsure: OOP. Gate: paradigm selected and optionally written to CLAUDE.md.
-5. **Reuse Analysis (MANDATORY — RCA F-1 fix)** — before designing ANY new component, search the existing codebase for components with overlapping responsibilities. For each overlap, decide "extend existing" or "justify new". Output a table:
-
-   ```
-   | Existing Component | File | Overlap | Decision | Justification |
-   |-------------------|------|---------|----------|---------------|
-   | WorkflowExecutor | src/des/application/zero_trust/workflow_executor.py | Phase iteration, gate eval | EXTEND | Adding dispatch branch is ~15 LOC vs 200 LOC new class |
-   ```
-
-   Rules:
-   - If the design creates a new class that does something an existing class already does (iterate phases, evaluate gates, dispatch agents, handle retry), the default is EXTEND, not CREATE_NEW.
-   - CREATE_NEW requires evidence that extending is impossible or creates unacceptable coupling (not just "it's complex").
-   - "The existing class has too many dependencies" is NOT a valid justification — simplify the existing class instead (see F-4: strategy pattern extraction).
-   - The reviewer MUST verify this table exists and challenge every "CREATE_NEW" decision.
-   - Gate: Reuse Analysis table present with zero unjustified CREATE_NEW decisions.
+Rules:
+- If the design creates a new class that does something an existing class already does (iterate phases, evaluate gates, dispatch agents, handle retry), the default is EXTEND, not CREATE_NEW.
+- CREATE_NEW requires evidence that extending is impossible or creates unacceptable coupling (not just "it's complex").
+- "The existing class has too many dependencies" is NOT a valid justification — simplify the existing class instead (see F-4: strategy pattern extraction).
+- The reviewer MUST verify this table exists and challenge every "CREATE_NEW" decision.
+- Gate: Reuse Analysis table present with zero unjustified CREATE_NEW decisions.
 
 ### Reuse-first DESIGN exit gate
 
@@ -193,34 +184,6 @@ the enforcement binary; surface contract anchored at
 token, DDD-5 exit codes 0/1/2, DDD-6 lenient match, DDD-7 NEW component
 detection scoped to `src/`).
 
-6. **Recommend Architecture Based on Drivers** — recommend based on quality attribute priorities|constraints|paradigm from steps 1-5. Default: modular monolith with dependency inversion (ports-and-adapters). Overrides require evidence. If functional paradigm: apply types-first design, composition pipelines, pure core / effect shell, effect boundaries as ports, immutable state — in architecture document only, no code snippets. Gate: architecture pattern selected with written rationale.
-6. **Stress Analysis** (HIDDEN — `--residuality` flag only) — when activated: apply complexity-science-based stress analysis (stressors|attractors|residues|incidence matrix|resilience modifications) using the `stress-analysis` skill. When not activated: skip entirely, do not mention. Gate: activated only when flag present.
-7. **Produce Deliverables** — write architecture document with component boundaries|tech stack|integration patterns. Produce C4 System Context diagram (Mermaid) — mandatory. Produce C4 Container diagram (Mermaid) — mandatory. Produce C4 Component diagrams (Mermaid) — only for complex subsystems. Write ADRs for significant decisions. Gate: mandatory C4 diagrams present, ADRs written.
-
-## Outcome Collision Check (per DISCUSS#D-5 grain)
-
-Provenance: feature `outcomes-registry` — DISCUSS#D-2 (lean Tier-1 + Tier-2 default), D-5 (per-typed-contract grain), D-6 (gate-scoping: code-feature pipelines only).
-
-**Trigger**: a new feature-delta has been emitted in DESIGN with a Reuse Analysis table. Run this check AFTER step 5 (Reuse Analysis) in the Discovery Flow and BEFORE producing the final architecture deliverables in step 7.
-
-**Skip when**: the feature is methodology-only (skill propagation, prose changes, no new typed contract surface). Per D-6 gate-scoping, the outcomes registry tracks code-feature pipelines only.
-
-**Procedure**:
-
-1. **Run** the collision-check CLI against the freshly-emitted feature-delta:
-   ```
-   nwave-ai outcomes check-delta docs/feature/{feature-id}/feature-delta.md
-   ```
-2. **Handle exit codes**:
-   - **Exit `0`** — no collisions detected. Proceed to step 7 (Produce Deliverables).
-   - **Exit `1`** — one or more candidate outcomes overlap with existing OUT-N rows in `docs/product/outcomes/registry.yaml`. Review the reported OUT-ids. For each:
-     - **Genuine duplication**: link the new candidate to the existing OUT-N via `related: [OUT-N]` in the registry, OR mark the existing OUT-N `superseded_by: OUT-M` if the new contract replaces it. Re-run `check-delta` to confirm.
-     - **False positive** (Tier-1 keyword/shape match fired but Tier-2 disambiguation reveals the contracts are distinct): annotate the candidate's keywords in the registry to be more distinctive, then re-run.
-
-The registry at `docs/product/outcomes/registry.yaml` is the SSOT for "what we promise the system does." Reuse Analysis (step 5) deduplicates within the codebase; the Outcome Collision Check deduplicates across the contract registry — they are complementary gates.
-
-Gate: `check-delta` exits `0`, OR every reported collision has been resolved (linked, superseded, or disambiguated) and the re-run exits `0`, OR the feature is documented as methodology-only and the check is correctly skipped.
-
 ## Rigor Profile Integration
 
 Before dispatching the architect agent, read rigor config from `.nwave/des-config.json` (key: `rigor`). If absent, use standard defaults.
@@ -276,6 +239,14 @@ For **Full stack** mode, each agent reads the prior architect's output before st
 ### Agent Dispatch (after Decision 0 — no default)
 
 <!-- DES-WAVE: design -->
+<!-- gates-ref: design -->
+<!-- outputs-ref: design -->
+
+The DESIGN gate stack and output contract live ONCE in the wave-contract registry
+`nWave/waves/design.yaml` — the `gates-ref` / `outputs-ref` pointers above name it.
+This skill narrates DESIGN intent (discovery-driven architecture whose feature-delta
+the acceptance-designer consumes) but does NOT enumerate the registry gate stack
+inline; consult the registry for the authoritative gate stack + output contract.
 
 Include the `<!-- DES-WAVE: design -->` marker line above verbatim in EVERY architect Agent dispatch prompt — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
 
@@ -288,7 +259,7 @@ Based on Decision 0 answer, invoke the corresponding agent. Do NOT default to ap
 
 Execute \*design-architecture for {feature-id}.
 
-Context files: see Prior Wave Consultation above.
+Context files: see `nw-design-prior-wave-reading` (Prior Wave Consultation) + project context files.
 
 **Configuration:**
 - model: rigor.agent_model (omit if "inherit")
