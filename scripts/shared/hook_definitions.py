@@ -201,7 +201,7 @@ _SUBAGENT_STOP_SPINE_LEDGER_DETECTOR_INSTALLED = (
     'echo "$INPUT" | python3 -m scripts.hooks.spine_ledger_subagent_stop_detector'
 )
 
-# Harness-neutral declare-done backstop -- the git pre-push done-gate shim
+# Harness-neutral declare-done backstop -- the git pre-push done-gate
 # (f-nonbypassable-attestation slice-01, DDD-2). The terminal "declare a feature
 # done" action in the dogfood is a `git push`; this is the missing harness-neutral
 # surface that auto-fires the SAME portable done-gate core (`des verify-integrity`
@@ -211,32 +211,20 @@ _SUBAGENT_STOP_SPINE_LEDGER_DETECTOR_INSTALLED = (
 # `des_declare_done_pre_push` (which delegates to `verify_deliver_integrity.main`)
 # and PROPAGATES its veto (a non-zero exit aborts the push).
 #
-# This is a GIT hook shim, NOT a Claude-Code settings.json event, so it is NOT in
-# HOOK_EVENTS (those drive `generate_hook_config`). The DES plugin installs it as
-# the real `.git/hooks/pre-push` (chaining any pre-existing pre-push) via
-# `scripts.shared.git_hooks_paths.resolve_hooks_dir`. The `{{PYTHON_CMD}}` /
-# `{{HOOK_SCRIPT_PATH}}` placeholders mirror the prepare-commit-msg attribution
-# shim and are substituted at install time.
-_GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP = (
-    "#!/bin/sh\n"
-    "# des-hook:pre-push-declare-done -- harness-neutral done-gate backstop (DDD-2)\n"
-    "# Auto-fires the portable done-gate (des verify-integrity /\n"
-    "# verify_deliver_integrity) on the terminal push; propagates its veto.\n"
-    'HOOK_DIR="$(dirname "$0")"\n'
-    'if [ -f "$HOOK_DIR/pre-push.nwave-original" ]; then\n'
-    '    "$HOOK_DIR/pre-push.nwave-original" "$@" || exit $?\n'
-    "fi\n"
-    'if ! command -v "{{PYTHON_CMD}}" >/dev/null 2>&1; then\n'
-    '    echo "nWave declare-done backstop: python3 not found, skipping" >&2\n'
-    "    exit 0\n"
-    "fi\n"
-    '"{{PYTHON_CMD}}" "{{HOOK_SCRIPT_PATH}}" "$@"\n'
-)
-
+# RETIRED (fix-pre-push-hook-dual-installer-collision RCA, slice-01): the
+# `_GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP` shim template + `render_pre_push_backstop_shim`
+# that used to render it into `.git/hooks/pre-push` (chaining any pre-existing
+# hook aside) are REMOVED -- that second writer of the SAME file
+# `pre-commit install` also writes tripped `verify-hooks`'s foreign-hook
+# detector. RCA: docs/analysis/root-cause-analysis-pre-push-hook-dual-installer-collision.md
+# The backstop's BEHAVIOR is unchanged and still fires -- it is now a `local`
+# `stages: [pre-push]` hook in `.pre-commit-config.yaml`, so `pre-commit install`
+# is the SOLE writer of `.git/hooks/pre-push`.
+#
 # The pre-push backstop's Python entry module (the DDD-7 thin shim that delegates
-# to the portable `verify_deliver_integrity` done-gate). The DES plugin ships this
-# script alongside the other DES_HOOKS so `{{HOOK_SCRIPT_PATH}}` resolves at
-# runtime.
+# to the portable `verify_deliver_integrity` done-gate). The DES plugin still
+# ships this script alongside the other DES_HOOKS (deployed to
+# ~/.claude/scripts/) so the `.pre-commit-config.yaml` local hook can invoke it.
 GIT_PRE_PUSH_BACKSTOP_SCRIPT = "des_declare_done_pre_push.py"
 
 
@@ -361,18 +349,6 @@ def generate_hook_config(
         config.setdefault(hook_event.event, []).append(entry)
 
     return config
-
-
-def render_pre_push_backstop_shim(*, python_cmd: str, hook_script_path: str) -> str:
-    """Render the declare-done pre-push backstop shim with concrete paths (DDD-2).
-
-    Substitutes the `{{PYTHON_CMD}}` / `{{HOOK_SCRIPT_PATH}}` placeholders in
-    `_GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP` so the DES plugin can write the rendered
-    shim into `.git/hooks/pre-push`. SSOT for the shim text: the template lives
-    here once; the installer only fills in the per-machine paths.
-    """
-    shim = _GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP.replace("{{PYTHON_CMD}}", python_cmd)
-    return shim.replace("{{HOOK_SCRIPT_PATH}}", hook_script_path)
 
 
 def build_guard_command(python_cmd: str) -> str:

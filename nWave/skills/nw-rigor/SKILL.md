@@ -11,7 +11,7 @@ argument-hint: '[profile] - Optional: lean, standard, thorough, exhaustive, cust
 
 ## Overview
 
-Interactive command to select a quality-vs-token-consumption profile. Persists choice to either `~/.nwave/global-config.json` (global scope) or `.nwave/des-config.json` (project scope) under the `rigor` key. All wave commands read this config to adjust agent models, review policy, TDD phases, and mutation testing.
+Interactive command to select a quality-vs-token-consumption profile. Persists choice to either `~/.nwave/global-config.json` (global scope) or `.nwave/des-config.json` (project scope) under the `rigor` key. All wave commands read this config to adjust agent models, review policy, and TDD phases.
 
 You (the main Claude instance) run this directly. No subagent delegation.
 
@@ -28,7 +28,6 @@ You (the main Claude instance) run this directly. No subagent delegation.
 | tdd_phases (v5 canonical, ADR-025)    | [RED, GREEN]                          | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         |
 | tdd_phases (v4 legacy, audit-replay)  | [RED_UNIT, GREEN]                     | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           |
 | refactor_pass      | false                                 | true                                                                         | true                                                                         | true                                                                         | true                                                                         |
-| mutation_enabled   | false                                 | false                                                                        | false                                                                        | true                                                                         | false                                                                        |
 
 ## Behavior Flow
 
@@ -48,7 +47,7 @@ If JSON is invalid -> backup as `.nwave/des-config.json.bak`, reset config to `{
 
 Display current profile (from `config.rigor.profile`) or "none set" if absent.
 
-Brief explanation: "Rigor profiles control how much quality infrastructure nWave applies per wave: agent models, review depth, TDD phases, mutation testing. Higher rigor = better guarantees, higher token cost."
+Brief explanation: "Rigor profiles control how much quality infrastructure nWave applies per wave: agent models, review depth, TDD phases. Higher rigor = better guarantees, higher token cost."
 
 #### Step 1.5: Scope Selection
 
@@ -79,7 +78,6 @@ Display this table:
 | Review    | no     | yes      | double   | double     | yes     |
 | TDD       | R->G   | 5-phase  | 5-phase  | 5-phase    | 5-phase |
 | Refactor  | no     | yes      | yes      | yes        | yes     |
-| Mutation  | no     | no       | no       | yes        | no      |
 +-----------+--------+----------+----------+------------+---------+
 | Est. cost | lowest | moderate | higher   | highest    | varies  |
 | Est. time | fast   | moderate | slower   | slowest    | varies  |
@@ -117,7 +115,6 @@ WHAT YOU LOSE:
   - No PREPARE phase (no test fixture setup)
   - No RED_ACCEPTANCE phase (no acceptance tests)
   - No COMMIT phase (no refactoring pass)
-  - No mutation testing
 
 WHEN TO USE:
   Config changes, documentation, simple bug fixes, spikes/prototypes
@@ -136,7 +133,6 @@ WHAT YOU GET:
 
 WHAT'S NOT INCLUDED:
   - No double review (single pass only)
-  - No mutation testing
   - Not opus-level reasoning
 
 WHEN TO USE:
@@ -169,7 +165,6 @@ WHAT YOU GET:
   - Double review (two independent review passes)
   - Full 5-phase TDD
   - Refactoring pass
-  - Mutation testing (>= 80% kill rate gate)
 
 WHAT IT COSTS:
   Highest token cost | Slowest per step
@@ -217,7 +212,6 @@ Ask user to confirm via AskUserQuestion:
      "tdd_phases": [...],
      "review_enabled": true/false,
      "double_review": true/false,
-     "mutation_enabled": true/false,
      "refactor_pass": true/false
    }
    ```
@@ -237,7 +231,6 @@ Rigor profile saved: {name}
   | tdd_phases            | {value}                                           |
   | review_enabled        | {value}                                           |
   | double_review         | {value}                                           |
-  | mutation_enabled      | {value}                                           |
   | refactor_pass         | {value}                                           |
   +-----------------------+---------------------------------------------------+
 
@@ -271,7 +264,6 @@ Switching from {current} -> {target}:
   review_enabled:   true -> false
   tdd_phases:       5-phase -> R->G
   refactor_pass:    true -> false
-  mutation_enabled: (unchanged) false
 ```
 
 If downgrading (moving to a less rigorous profile), highlight what user will lose:
@@ -365,17 +357,7 @@ Options:
 
 Only show if TDD phases is "Full 5-phase". If minimal, set refactor_pass = false automatically.
 
-#### Step 7: Mutation Testing
-
-Ask via AskUserQuestion:
-```
-Enable mutation testing (>= 80% kill rate gate)?
-```
-Options:
-1. No (Recommended) — skip mutation testing
-2. Yes — run mutmut after implementation, gate at 80% kill rate
-
-#### Step 8: Summary + Confirm
+#### Step 7: Summary + Confirm
 
 Display the assembled profile:
 
@@ -388,7 +370,6 @@ Custom profile:
   | double_review         | {value}                                           |
   | tdd_phases            | {value}                                           |
   | refactor_pass         | {value}                                           |
-  | mutation_enabled      | {value}                                           |
   +-----------------------+---------------------------------------------------+
 ```
 
@@ -397,7 +378,7 @@ Ask to confirm via AskUserQuestion:
 2. Start over (return to Step 2)
 3. Cancel (exit without saving)
 
-#### Step 9: Save + Summary
+#### Step 8: Save + Summary
 
 Same as Mode 1 Steps 6 and 7. Uses `{target_file}` from Step 1.5. Save with `"profile": "custom"`.
 
@@ -444,7 +425,7 @@ Current profile is "standard". Shows diff: sonnet->opus agent, haiku->sonnet rev
 ```
 /nw-rigor custom
 ```
-Walks through 6 questions: agent model (opus), reviewer (haiku), double review (no), TDD (full 5-phase), refactoring (yes), mutation (yes). Saves as custom profile with opus agent, haiku reviewer, single review, full TDD, refactoring, and mutation testing — a combination no preset offers.
+Walks through 5 questions: agent model (opus), reviewer (haiku), double review (no), TDD (full 5-phase), refactoring (yes). Saves as custom profile with opus agent, haiku reviewer, single review, full TDD, and refactoring — a combination no preset offers.
 
 ### Example 5: Invalid profile name
 ```

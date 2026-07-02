@@ -10,6 +10,7 @@ Usage: python install_nwave.py [--backup-only] [--restore] [--dry-run] [--help]
 
 import argparse
 import hashlib
+import json
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -172,6 +173,89 @@ def _get_version() -> str:
 
 
 __version__ = _get_version()
+
+
+# Interpreter-path markers that identify a package-manager tool venv. Mirrors
+# scripts/install/preflight_checker.TOOL_VENV_PATH_MARKERS — kept local to avoid
+# a cross-module import for two string constants.
+_PM_PATH_MARKERS: tuple[tuple[str, str], ...] = (
+    ("/pipx/venvs/", "pipx"),
+    ("/uv/tools/", "uv"),
+)
+
+
+def _detect_package_manager() -> str | None:
+    """Best-effort: which PM installed this package, inferred from sys.executable.
+
+    The installer runs from the tool venv that owns ``nwave-ai``, so its
+    interpreter path reveals the manager (``pipx`` venvs live under
+    ``/pipx/venvs/``, ``uv`` tools under ``/uv/tools/``). Returns None when the
+    path matches neither (e.g. a plain pip/venv or system install) — the caller
+    then simply omits the key rather than guessing.
+    """
+    exe = sys.executable or ""
+    for marker, name in _PM_PATH_MARKERS:
+        if marker in exe:
+            return name
+    return None
+
+
+def _detect_installed_version() -> str | None:
+    """Return the live ``nwave-ai`` package version, or None when unavailable.
+
+    Metadata-only (no pyproject fallback): the recorded value must match what
+    the doctor reads at runtime via ``importlib.metadata`` so a dev/editable
+    checkout (no installed distribution) records nothing rather than a pyproject
+    version that would read as spurious drift.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("nwave-ai")
+    except PackageNotFoundError:
+        return None
+
+
+def record_install_metadata(
+    global_config_path: Path,
+    installed_version: str,
+    package_manager: str | None,
+) -> None:
+    """Record install provenance into the global config (read-modify-write).
+
+    Writes ``install.installed_version`` — the anchor the doctor
+    ``VersionSyncCheck`` compares against the live package version to flag a
+    package upgraded without re-running install — and, when known,
+    ``install.package_manager`` (consumed by ``/nw-update``). All unrelated keys
+    are preserved; a None ``package_manager`` never erases a previously recorded
+    one.
+
+    Best-effort: any failure is swallowed. A metadata write must never fail the
+    install itself.
+    """
+    try:
+        current: dict = {}
+        if global_config_path.exists():
+            try:
+                loaded = json.loads(global_config_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    current = loaded
+            except (json.JSONDecodeError, OSError):
+                current = {}
+
+        existing_install = current.get("install")
+        install_block = (
+            dict(existing_install) if isinstance(existing_install, dict) else {}
+        )
+        install_block["installed_version"] = installed_version
+        if package_manager is not None:
+            install_block["package_manager"] = package_manager
+        current["install"] = install_block
+
+        global_config_path.parent.mkdir(parents=True, exist_ok=True)
+        global_config_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _component_synced(matched: int, expected: int) -> bool:
@@ -1020,6 +1104,23 @@ def main():
         return 0
 
     if installer.validate_installation():
+        # Record install provenance (machine-scoped ~/.nwave, like update-check
+        # state) so the doctor VersionSyncCheck can later detect a package
+        # upgraded without re-running install. Best-effort; never fails the run.
+        #
+        # Known limitation: the record is keyed to the machine, NOT the install
+        # target. A `--target` install shares this single ~/.nwave record with
+        # the default install, so maintaining two targets backed by different
+        # venvs could surface a spurious drift warning on the target not last
+        # installed. Single-target is the norm; left as-is deliberately.
+        installed_version = _detect_installed_version()
+        if installed_version is not None:
+            record_install_metadata(
+                Path.home() / ".nwave" / "global-config.json",
+                installed_version=installed_version,
+                package_manager=_detect_package_manager(),
+            )
+
         installer.logger.info("")
         show_installation_summary(installer.logger)
 

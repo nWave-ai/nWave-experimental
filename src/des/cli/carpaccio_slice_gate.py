@@ -46,8 +46,10 @@ from des.cli.carpaccio_format import (
     _read_feature_files,
     _slice_scenarios,
     check_carpaccio,
+    count_pytest_regression_ats,
     parse_scenarios,
     parse_slice_plan,
+    pytest_regression_content_hash,
 )
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.at_review_signing import (
@@ -63,6 +65,7 @@ from des.domain.repo_path_resolver import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Literal
 
 
 # Re-export the format predicates the gate composes with so existing importers
@@ -77,9 +80,11 @@ __all__ = [
     "canonical_at_review_json",
     "check_at_review",
     "check_carpaccio",
+    "count_pytest_regression_ats",
     "main",
     "parse_scenarios",
     "parse_slice_plan",
+    "pytest_regression_content_hash",
 ]
 
 
@@ -359,6 +364,8 @@ def check_at_review(
     feature_id: str,
     entering_slice: str,
     scenarios: list[Scenario],
+    at_kind: Literal["gherkin", "pytest-regression"] = "gherkin",
+    regression_test_file: Path | None = None,
 ) -> None:
     """Run assertion 5 (ADR-029 D5). Raises ``GateError`` exit 45 on failure.
 
@@ -371,7 +378,19 @@ def check_at_review(
     F-03 (atdd-pure-dogfooding-friction-2026-05-20.md): an entering slice
     that maps to ZERO ``@slice-NN`` scenarios is rejected loud (reason
     ``no-scenarios-for-slice``), never cleared vacuously on an empty AT set.
+
+    ``at_kind="gherkin"`` (default) preserves byte-identical behavior for
+    every existing caller. ``at_kind="pytest-regression"`` (ADR-001,
+    fix-pre-push-hook-dual-installer-collision) REUSES the record-presence /
+    APPROVED / stale-AT-set / stale-content-hash control flow UNCHANGED --
+    only the AT-count + content-hash SOURCE differs: AST-counted ``test_*``
+    functions + a sha256 over the regression file's raw source text, in place
+    of the Gherkin scenario count + ``_at_content_hash``.
     """
+    if at_kind == "pytest-regression" and regression_test_file is None:
+        raise ValueError(
+            "check_at_review: at_kind='pytest-regression' requires regression_test_file"
+        )
     record = _latest_verdict_record(_ledger_path(repo, feature_id), entering_slice)
     if record is None:
         raise _at_review_rejection("absent", entering_slice)
@@ -379,13 +398,20 @@ def check_at_review(
     if record.get("verdict") != "APPROVED":
         raise _at_review_rejection("not-approved", entering_slice)
 
-    slice_scenarios = _slice_scenarios(scenarios, entering_slice)
-    expected_ids = {f"AT-{n}" for n in range(1, len(slice_scenarios) + 1)}
+    if at_kind == "pytest-regression":
+        assert regression_test_file is not None  # guarded above
+        at_count = count_pytest_regression_ats(regression_test_file)
+        expected_hash = pytest_regression_content_hash(regression_test_file)
+    else:
+        slice_scenarios = _slice_scenarios(scenarios, entering_slice)
+        at_count = len(slice_scenarios)
+        expected_hash = _at_content_hash(slice_scenarios)
+
+    expected_ids = {f"AT-{n}" for n in range(1, at_count + 1)}
     record_ids = record.get("at_ids")
     if not isinstance(record_ids, list) or set(record_ids) != expected_ids:
         raise _at_review_rejection("stale-at-set", entering_slice)
 
-    expected_hash = _at_content_hash(slice_scenarios)
     if record.get("at_content_hash") != expected_hash:
         raise _at_review_rejection("stale-at-content", entering_slice)
 
@@ -479,6 +505,26 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "output."
         ),
     )
+    parser.add_argument(
+        "--at-kind",
+        choices=["gherkin", "pytest-regression"],
+        default="gherkin",
+        help=(
+            "AT-discovery mode (ADR-001, fix-pre-push-hook-dual-installer-"
+            "collision). 'gherkin' (default) discovers ATs from .feature "
+            "Scenario blocks -- existing callers see byte-identical behavior. "
+            "'pytest-regression' AST-counts module-level test_* functions in "
+            "--regression-test-file."
+        ),
+    )
+    parser.add_argument(
+        "--regression-test-file",
+        default=None,
+        help=(
+            "Repo-relative path to a plain-pytest regression-test file. "
+            "Required iff --at-kind=pytest-regression."
+        ),
+    )
     return parser.parse_args(sys.argv[1:] if argv is None else list(argv))
 
 
@@ -519,11 +565,31 @@ def main(argv: list[str] | None = None) -> int:
     repo = _repo_root(args.repo_root)
     feature_id = args.feature_id
     entering_slice = args.entering_slice
+    at_kind = args.at_kind
+    regression_test_file = (
+        (repo / args.regression_test_file) if args.regression_test_file else None
+    )
 
     if getattr(args, "enforce_sad_path_floor", False):
         _emit_sad_path_floor(repo, feature_id, entering_slice)
 
     try:
+        if at_kind == "pytest-regression" and regression_test_file is None:
+            # Only the CLI's own arg-parsing can mis-wire this combination
+            # (ADR-001 DD-7): `check_carpaccio`/`check_at_review` raise
+            # `ValueError` on it (a programming-contract violation), so the
+            # CLI shell enforces it itself as a `GateError` diagnostic before
+            # either function is ever called with `regression_test_file=None`.
+            raise GateError(
+                2,
+                {
+                    "event": "MalformedInput",
+                    "cause": "the pytest regression-test file",
+                    "error": (
+                        "--at-kind=pytest-regression requires --regression-test-file"
+                    ),
+                },
+            )
         delta_path = _feature_delta_path(repo, feature_id)
         if not delta_path.is_file():
             raise GateError(
@@ -539,8 +605,22 @@ def main(argv: list[str] | None = None) -> int:
         plan = parse_slice_plan(delta_path.read_text(encoding="utf-8"))
         scenarios = parse_scenarios(_read_feature_files(repo, feature_id))
         slice_max = _config_slice_max(repo)
-        coupled_event = check_carpaccio(plan, scenarios, entering_slice, slice_max)
-        check_at_review(repo, feature_id, entering_slice, scenarios)
+        coupled_event = check_carpaccio(
+            plan,
+            scenarios,
+            entering_slice,
+            slice_max,
+            at_kind=at_kind,
+            regression_test_file=regression_test_file,
+        )
+        check_at_review(
+            repo,
+            feature_id,
+            entering_slice,
+            scenarios,
+            at_kind=at_kind,
+            regression_test_file=regression_test_file,
+        )
     except GateError as gate_error:
         _emit(gate_error.payload)
         return gate_error.exit_code

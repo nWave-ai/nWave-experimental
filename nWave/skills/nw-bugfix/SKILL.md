@@ -10,11 +10,13 @@ argument-hint: '[bug-description] - Describe the defect observed'
 # NW-BUGFIX: Defect Resolution Workflow
 
 **Wave**: CROSS_WAVE
-**Agents**: Rex (nw-troubleshooter) → selected crafter (OOP or FP per project paradigm)
+**Agents**: Rex (nw-troubleshooter) → nw-acceptance-designer (regression test author) → selected crafter (OOP or FP per project paradigm, fix implementor only)
 
 ## Overview
 
 End-to-end bug fix pipeline: diagnose root cause, review findings with user, then deliver regression tests that fail with the bug and pass with the fix. Ensures every defect produces a test that prevents recurrence.
+
+**Test/fix authorship split (SLIM-crafter discipline)**: the crafter NEVER authors tests, in `/nw-bugfix` same as everywhere else in nWave. `nw-acceptance-designer` authors the regression test (it IS the bugfix's acceptance test — no DISTILL wave runs separately, but AT authorship still belongs to the acceptance-designer, not the crafter). The paradigm-selected crafter (OOP or FP) implements the fix only, against the already-authored, already-RED test — mirroring the SLIM-crafter dispatch contract every other `/nw-execute`/`/nw-deliver` A_GREEN phase already enforces (no carve-out needed).
 
 ## Flow
 
@@ -30,11 +32,15 @@ INPUT: "{bug-description}"
   │   └─ User confirms root cause + approves fix direction
   │   └─ If user rejects → refine RCA or stop
   │
-  └─ Phase 3: Regression Test + Fix (branches on workflow.mode) <!-- mode-ref-ok -->
+  ├─ Phase 3a: Regression Test (@nw-acceptance-designer, RED)
+  │   └─ Author the regression test from the RCA's root cause + proposed fix
+  │   └─ Test MUST fail against current code for the diagnosed reason (not import/syntax error)
+  │
+  └─ Phase 3b: Fix (branches on workflow.mode, paradigm-selected crafter, GREEN → COMMIT) <!-- mode-ref-ok -->
       └─ classic   → /nw-deliver "fix-{bug-id}" — roadmap-based bugfix flow
-      └─ atdd_pure → single carpaccio slice via the /nw-execute per-slice cycle <!-- mode-ref-ok -->
+      └─ atdd_pure → single carpaccio slice via the /nw-execute per-slice cycle, A_GREEN onward <!-- mode-ref-ok -->
       └─ Paradigm detection determines crafter (OOP or FP)
-      └─ Both modes: regression test (RED) → fix (GREEN) → verify (COMMIT)
+      └─ Crafter implements against the already-RED test only — never authors or edits the test
 ```
 
 ## Execution Steps
@@ -73,7 +79,7 @@ After the troubleshooter returns, present findings to the user. Include:
 - Files to modify
 - Risk level
 
-**STOP and wait for user confirmation before proceeding to Phase 3.**
+**STOP and wait for user confirmation before proceeding to Phase 3a.**
 
 ### Phase 2: User Review
 
@@ -86,13 +92,25 @@ If user rejects:
 - Refine the RCA with additional context
 - Or stop the workflow entirely
 
-If user approves → proceed to Phase 3.
+If user approves → proceed to Phase 3a.
 
-### Phase 3: Regression Test + Fix (branches on workflow.mode) <!-- mode-ref-ok -->
+### Phase 3a: Regression Test (@nw-acceptance-designer)
 
-Phase 3 reads `workflow.mode` from `.nwave/config.yaml` and dispatches the fix <!-- mode-ref-ok -->
-along one of two paths. Per-mode descriptor + DELIVER phase shape, projected
-from the mode registry (never hand-written here):
+Invoke @nw-acceptance-designer via Agent tool to author the regression test from the RCA's
+root cause chain and proposed fix (Phase 1 output) — the crafter dispatched in Phase 3b
+does NOT write or edit this test, only implements against it. Test location + naming follow
+the mode-appropriate convention below (classic: `tests/regression/{component}/` or
+`tests/bugs/`, `test_bug_{description}.py`; atdd_pure: the bugfix's single-slice `.feature` + <!-- mode-ref-ok -->
+step file under `tests/{feature-path}/`). The test MUST fail against current code for the
+diagnosed reason (a real assertion on the defect's observable behavior, never an
+import/collection error) — confirm this before proceeding to Phase 3b.
+
+### Phase 3b: Fix (branches on workflow.mode, paradigm-selected crafter) <!-- mode-ref-ok -->
+
+Phase 3b reads `workflow.mode` from `.nwave/config.yaml` and dispatches the fix <!-- mode-ref-ok -->
+along one of two paths, against the already-authored, already-RED regression test from Phase
+3a. Per-mode descriptor + DELIVER phase shape, projected from the mode registry (never
+hand-written here):
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
@@ -101,16 +119,18 @@ from the mode registry (never hand-written here):
   Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
-Both paths Both paths share paradigm detection (reads project
+Both paths share paradigm detection (reads project
 CLAUDE.md for `## Development Paradigm`), crafter selection (@nw-software-crafter
 for OOP, @nw-functional-software-crafter for FP), DES enforcement, and the rigor
-profile from `.nwave/des-config.json`.
+profile from `.nwave/des-config.json`. Neither path's crafter authors or edits the
+regression test — it was authored in Phase 3a by @nw-acceptance-designer.
 
 **Preparation (both modes):**
 
 1. Derive feature-id: `fix-{kebab-case-bug-summary}` (max 5 words)
 2. Create `docs/feature/{feature-id}/deliver/` directory
 3. Prepare RCA context from Phase 1 output (root cause, files affected, proposed fix)
+4. Confirm Phase 3a's regression test exists and is RED for the right reason before dispatching the crafter
 
 #### Mode `classic` — roadmap-based bugfix flow
 
@@ -120,45 +140,45 @@ Under `workflow.mode: classic`, delegate to `/nw-deliver`: <!-- mode-ref-ok -->
 /nw-deliver "fix-{bug-summary}"
 ```
 
-The deliver orchestrator builds a minimal two-step roadmap:
+The deliver orchestrator builds a minimal one-step roadmap (the regression test
+already exists from Phase 3a):
 
-**Step 01-01: Regression test (RED)**
-- Write a test that reproduces the exact defect
-- Test MUST fail against current code (proves the bug exists)
-- Test location: `tests/regression/{component}/` or `tests/bugs/`
-- Test name: `test_bug_{description}.py`
-
-**Step 01-02: Fix implementation (GREEN)**
-- Implement the minimal fix identified in RCA
+**Step 01-01: Fix implementation (GREEN)**
+- Implement the minimal fix identified in RCA against the Phase 3a regression test
 - Run ALL tests — regression test must now PASS
 - Existing tests must not regress
+- The crafter does NOT write, edit, or weaken the regression test — if it seems
+  wrong or insufficient, escalate back to @nw-acceptance-designer, do not touch it directly
 
 #### Mode `atdd_pure` — single carpaccio slice, no roadmap <!-- mode-ref-ok -->
 
 Under `workflow.mode: atdd_pure` the bugfix is the canonical single carpaccio <!-- mode-ref-ok -->
 slice: there is no roadmap and no roadmap-step extraction. The defect's
-regression test IS the slice's acceptance test (regression AT green → fix →
-commit). Run it through the slice-04 roadmap-free spine via the per-slice
-`/nw-execute` lean cycle:
+regression test (authored in Phase 3a) IS the slice's acceptance test. Run the
+fix through the slice-04 roadmap-free spine via the per-slice `/nw-execute` lean
+cycle, starting at `A_GREEN` (the AT already exists — same SLIM-crafter contract
+as any other atdd_pure slice, no carve-out): <!-- mode-ref-ok -->
 
 ```
 /nw-execute "fix-{bug-summary}"
 ```
 
-The per-slice cycle drives the same RED → GREEN → COMMIT shape — write the
-failing regression AT, implement the minimal fix, commit — as one carpaccio
-slice rather than a two-step roadmap.
+The per-slice cycle drives the standard A_GREEN → B_COVERAGE_CLEANUP → G_COMMIT
+shape (light single-slice bugfix cycle — no C_REVIEWER_AUDIT/E_BATCH_REFACTOR/
+F_FINAL_REVIEW, those belong to a full feature's feature-end cycle) against the
+already-authored, already-RED regression AT.
 
 The crafter handles the TDD cycle (3-phase canon RED → GREEN → COMMIT per
 ADR-025, or legacy 5-phase PREPARE → RED_ACCEPTANCE → RED_UNIT → GREEN → COMMIT
-for pre-2026-05-07 audit-log replay) with DES monitoring in either mode.
+for pre-2026-05-07 audit-log replay) with DES monitoring in either mode — RED
+here means activating/running the already-authored test, never authoring it.
 
 ## Success Criteria
 
 - [ ] Root cause identified with evidence at each causal level
 - [ ] User reviewed and approved fix direction
-- [ ] Regression test written that fails with the bug
-- [ ] Fix implemented that makes the regression test pass
+- [ ] Regression test authored by @nw-acceptance-designer, fails with the bug
+- [ ] Fix implemented by the paradigm-selected crafter that makes the regression test pass, without the crafter touching the test itself
 - [ ] All existing tests still pass (no regressions)
 - [ ] Commit with conventional message: `fix(scope): description`
 
@@ -170,7 +190,8 @@ for pre-2026-05-07 audit-log replay) with DES monitoring in either mode.
 ```
 Phase 1: Rex traces to missing `step-tdd-cycle-schema.json` in plugin cache.
 Phase 2: User confirms.
-Phase 3: `/nw-deliver "fix-missing-template-schema"` → crafter writes `test_bug_missing_template_schema.py` (RED), adds fallback path resolution (GREEN), commits.
+Phase 3a: @nw-acceptance-designer writes `test_bug_missing_template_schema.py` (RED).
+Phase 3b: `/nw-deliver "fix-missing-template-schema"` → crafter adds fallback path resolution (GREEN), commits.
 
 ### Example 2: Silent failure
 ```
@@ -178,7 +199,8 @@ Phase 3: `/nw-deliver "fix-missing-template-schema"` → crafter writes `test_bu
 ```
 Phase 1: Rex traces to `is_public_skill()` returning False for all nw-prefixed names due to ownership map key mismatch.
 Phase 2: User confirms.
-Phase 3: `/nw-deliver "fix-ownership-map-keys"` → crafter writes regression test with nw-prefixed fixture (RED), fixes ownership map keys (GREEN), commits.
+Phase 3a: @nw-acceptance-designer writes a regression test with an nw-prefixed fixture (RED).
+Phase 3b: `/nw-deliver "fix-ownership-map-keys"` → crafter fixes the ownership map keys (GREEN), commits.
 
 ### Example 3: Functional project bug
 ```
@@ -186,12 +208,13 @@ Phase 3: `/nw-deliver "fix-ownership-map-keys"` → crafter writes regression te
 ```
 Phase 1: Rex traces to missing None guard in compose() function.
 Phase 2: User confirms.
-Phase 3: `/nw-deliver "fix-compose-none-guard"` → paradigm detected as FP → @nw-functional-software-crafter writes property-based test (RED), adds None guard (GREEN), commits.
+Phase 3a: @nw-acceptance-designer writes a property-based test covering the None-predicate case (RED).
+Phase 3b: `/nw-deliver "fix-compose-none-guard"` → paradigm detected as FP → @nw-functional-software-crafter adds the None guard (GREEN), commits.
 
 ## Notes
 
 - This command is for **known defects** (something is broken). For new features, use `/nw-deliver`.
-- The regression test is the primary deliverable — it prevents the bug from recurring.
+- The regression test is the primary deliverable — it prevents the bug from recurring. It is authored by @nw-acceptance-designer (Phase 3a), never by the crafter — the SLIM-crafter no-test-authorship discipline applies to `/nw-bugfix` exactly as it does everywhere else in nWave.
 - Keep the fix minimal. Refactoring belongs in `/nw-refactor`, not here.
 - If the RCA reveals a design flaw (not just a code bug), escalate to `/nw-design` before fixing.
-- Phase 3 branches on `workflow.mode`: `classic` delegates to `/nw-deliver`; `atdd_pure` runs a single carpaccio slice via the `/nw-execute` per-slice cycle. <!-- mode-ref-ok --> Both modes handle paradigm detection, DES enforcement, and rigor profile automatically.
+- Phase 3a (@nw-acceptance-designer, regression test) always runs first, regardless of mode. Phase 3b branches on `workflow.mode`: `classic` delegates to `/nw-deliver` (one-step roadmap, GREEN only); `atdd_pure` runs a single carpaccio slice via the `/nw-execute` per-slice cycle starting at `A_GREEN`. <!-- mode-ref-ok --> Both modes handle paradigm detection, DES enforcement, and rigor profile automatically for the fix implementor; neither touches the test.

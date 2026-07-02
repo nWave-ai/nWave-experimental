@@ -96,7 +96,6 @@ Feature: Rigor configuration cascade resolution
     And the active agent model is "opus"
     And the active reviewer model is "haiku"
     And the active TDD phases are the canonical 3-phase cycle
-    And mutation testing is disabled
 
   @property
   Scenario: Cascade resolution never raises an exception regardless of config state

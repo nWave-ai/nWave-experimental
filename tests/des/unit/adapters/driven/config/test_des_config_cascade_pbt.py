@@ -54,7 +54,6 @@ def rigor_block_strategy() -> st.SearchStrategy[dict[str, Any]]:
             "tdd_phases": tdd_phase_values,
             "review_enabled": st.booleans(),
             "double_review": st.booleans(),
-            "mutation_enabled": st.booleans(),
             "refactor_pass": st.booleans(),
         },
     )
@@ -159,7 +158,6 @@ def test_cascade_always_produces_valid_rigor_types(
 
         assert isinstance(config.rigor_review_enabled, bool)
         assert isinstance(config.rigor_double_review, bool)
-        assert isinstance(config.rigor_mutation_enabled, bool)
         assert isinstance(config.rigor_refactor_pass, bool)
 
 
@@ -200,7 +198,6 @@ def test_cascade_resolution_is_idempotent(
         assert config_a.rigor_tdd_phases == config_b.rigor_tdd_phases
         assert config_a.rigor_review_enabled == config_b.rigor_review_enabled
         assert config_a.rigor_double_review == config_b.rigor_double_review
-        assert config_a.rigor_mutation_enabled == config_b.rigor_mutation_enabled
         assert config_a.rigor_refactor_pass == config_b.rigor_refactor_pass
 
 

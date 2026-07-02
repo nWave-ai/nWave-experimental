@@ -189,10 +189,13 @@ class DESPlugin(InstallationPlugin):
         # a git verify-bypass with an imperative reminder to get human agreement.
         "no_verify_reminder.py",
         # f-nonbypassable-attestation slice-01 (DDD-2): the harness-neutral
-        # declare-done backstop. The pre-push git shim
-        # (`hook_definitions._GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP`) invokes this
-        # script, which delegates to the portable `verify_deliver_integrity`
-        # done-gate.
+        # declare-done backstop, delegating to the portable
+        # `verify_deliver_integrity` done-gate. Deployed here (to
+        # ~/.claude/scripts/) so the `.pre-commit-config.yaml` `local`
+        # `stages: [pre-push]` hook (fix-pre-push-hook-dual-installer-
+        # collision, slice-01) can invoke it -- `pre-commit install` is the
+        # SOLE writer of `.git/hooks/pre-push`; this script deployment is
+        # unrelated to that file.
         shared_hooks.GIT_PRE_PUSH_BACKSTOP_SCRIPT,
     ]
     # Asset-family key for the DES scripts list in the shared
@@ -402,12 +405,16 @@ class DESPlugin(InstallationPlugin):
             if not hook_scripts_result.success:
                 return hook_scripts_result
 
-            # Install the harness-neutral declare-done git pre-push backstop
-            # (f-nonbypassable-attestation slice-01, DDD-2). Runs AFTER the hook
-            # scripts so the backstop's Python entry exists at its target path.
-            backstop_result = self._install_git_pre_push_backstop(context)
-            if not backstop_result.success:
-                return backstop_result
+            # NOTE (fix-pre-push-hook-dual-installer-collision, slice-01): the
+            # `_install_git_pre_push_backstop` call formerly here is RETIRED.
+            # It wrote a second, non-pre-commit-managed `.git/hooks/pre-push`
+            # on top of `pre-commit install`'s banner-marked one, tripping
+            # `verify-hooks`'s foreign-hook detector -- see the RCA:
+            # docs/analysis/root-cause-analysis-pre-push-hook-dual-installer-collision.md
+            # The declare-done backstop's behavior is unchanged and still
+            # fires -- it is now a `local` `stages: [pre-push]` hook in
+            # `.pre-commit-config.yaml`, so `pre-commit install` is the SOLE
+            # writer of `.git/hooks/pre-push`.
 
             # Install DES templates
             templates_result = self._install_des_templates(context)
@@ -945,68 +952,38 @@ class DESPlugin(InstallationPlugin):
             )
 
     def _install_git_pre_push_backstop(self, context: InstallContext) -> PluginResult:
-        """Install the harness-neutral declare-done git pre-push backstop (DDD-2).
+        """Retired (fix-pre-push-hook-dual-installer-collision RCA, slice-01).
 
-        f-nonbypassable-attestation slice-01: renders
-        `hook_definitions._GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP` into the shared
-        `.git/hooks/pre-push` so the terminal push auto-fires the portable
-        done-gate, INDEPENDENT of the Claude-Code F_FINAL_REVIEW SubagentStop. Any
-        pre-existing pre-push hook is chained (renamed to `pre-push.nwave-original`),
-        mirroring the `prepare-commit-msg` attribution-shim install.
+        Formerly rendered `hook_definitions._GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP`
+        into the shared `.git/hooks/pre-push`, chaining any pre-existing hook
+        aside to `pre-push.nwave-original`. That wrapper carried no
+        pre-commit-generated banner, so it collided with `pre-commit install`
+        (`.pre-commit-config.yaml`'s SSOT-intended writer) -- a SECOND writer
+        of the SAME file tripped `verify-hooks`'s foreign-hook detector. RCA:
+        docs/analysis/root-cause-analysis-pre-push-hook-dual-installer-collision.md
 
-        Target-machine independence (AD-21/24): when the install target is not a
-        git work-tree, `resolve_hooks_dir` cannot resolve and the backstop is
-        SKIPPED (degrade-LOUD via the result message), never a hard failure -- the
-        SubagentStop done-gate surface remains.
+        The declare-done backstop's BEHAVIOR is unchanged and still fires --
+        it is now installed as a `local` `stages: [pre-push]` hook in
+        `.pre-commit-config.yaml` (guarded for the script's absence on
+        another machine, per target-machine independence), so
+        `pre-commit install` is the SOLE writer of `.git/hooks/pre-push`.
+
+        This method is now a deliberate no-op: it performs NO writes to the
+        git hooks directory. It is kept (not deleted) because
+        `tests/build/f_pre_push_hook_dual_installer_collision/
+        test_dual_installer_collision_regression.py` exercises it directly,
+        as its own real-production-entry-point regression guard against the
+        two-writer collision recurring.
         """
-        try:
-            from scripts.shared.git_hooks_paths import resolve_hooks_dir
-
-            try:
-                hooks_dir = resolve_hooks_dir()
-            except Exception as exc:
-                return PluginResult(
-                    success=True,
-                    plugin_name="des",
-                    message=(
-                        "DES git pre-push backstop skipped: install target is not "
-                        f"a git work-tree ({exc})"
-                    ),
-                )
-
-            shim_path = hooks_dir / "pre-push"
-            script_path = (
-                context.claude_dir
-                / "scripts"
-                / shared_hooks.GIT_PRE_PUSH_BACKSTOP_SCRIPT
-            )
-            python_cmd = self._resolve_python_path()
-            shim = shared_hooks.render_pre_push_backstop_shim(
-                python_cmd=python_cmd, hook_script_path=str(script_path)
-            )
-
-            if not context.dry_run:
-                hooks_dir.mkdir(parents=True, exist_ok=True)
-                if (
-                    shim_path.exists()
-                    and "des-hook:pre-push" not in shim_path.read_text(encoding="utf-8")
-                ):
-                    shim_path.replace(hooks_dir / "pre-push.nwave-original")
-                shim_path.write_text(shim, encoding="utf-8")
-                shim_path.chmod(0o755)
-
-            return PluginResult(
-                success=True,
-                plugin_name="des",
-                message="Installed DES git pre-push declare-done backstop",
-            )
-
-        except Exception as e:
-            return PluginResult(
-                success=False,
-                plugin_name="des",
-                message=f"DES git pre-push backstop install failed: {e}",
-            )
+        return PluginResult(
+            success=True,
+            plugin_name="des",
+            message=(
+                "DES git pre-push backstop retired: folded into "
+                ".pre-commit-config.yaml as a local pre-push hook -- "
+                "pre-commit install is the sole writer of .git/hooks/pre-push"
+            ),
+        )
 
     def _sweep_retired_scripts(
         self, target_dir: Path, record: FamilyRecord, context: InstallContext

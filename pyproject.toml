@@ -27,7 +27,7 @@ packages = ["src/des", "nwave_ai"]
 
 [project]
 name = "nwave"
-version = "3.21.0+atddpure.a719b572d"
+version = "3.21.0+atddpure.c1d0cc04b"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -64,7 +64,7 @@ classifiers = [
 
 dependencies = [
     "rich>=13.7.0",
-    "typer>=0.26.7",
+    "typer>=0.26.8",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.14.2",
     "httpx>=0.27.0",
@@ -119,7 +119,7 @@ dev = [
     "commitizen>=4.16.4",
     "gitlint>=0.19.0",
     # Task runner (replaces Pipfile [scripts]; run via `uv run poe <task>`)
-    "poethepoet>=0.24",
+    "poethepoet>=0.47.0",
     # Utilities
     "fpdf2>=2.7.0",
     "click>=8.0.0",
@@ -207,7 +207,6 @@ addopts = [
 ]
 markers = [
     "acceptance: Acceptance tests (BDD scenarios, may be slow)",
-    "broken_schema_v0: Quarantined tests asserting internal pre-FM-1 (top-level array) hooks.json schema; superseded by tests/e2e/test_codex_real_boot.py per DDD-7 (codex-empirical-e2e-support / FM-4). Excluded by default CI selector via -m 'not broken_schema_v0'.",
     "canary: Canary skill injection detection tests (ADR-006)",
     "e2e_smoke: Critical-path e2e subset run in pre-push on master (privacy contract, behavioral smoke, packaging shape, cross-platform contract). Full e2e remains gated by CI on PR.",
     "e2e: End-to-end acceptance tests",

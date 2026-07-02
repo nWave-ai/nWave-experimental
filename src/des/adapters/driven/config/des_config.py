@@ -22,6 +22,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from des.domain.nwave_dir_gitignore import ensure_nwave_gitignore
+from des.domain.rigor.review_step_registry import (
+    REVIEW_STEP_CATALOG,
+    ResolvedReviewStepSet,
+    ReviewStepResolver,
+)
 
 
 if TYPE_CHECKING:
@@ -406,10 +411,32 @@ class DESConfig:
         """Check if double review is enabled. Default: False."""
         return self._rigor().get("double_review", False)
 
-    @property
-    def rigor_mutation_enabled(self) -> bool:
-        """Check if mutation testing is enabled. Default: False."""
-        return self._rigor().get("mutation_enabled", False)
+    # ------------------------------------------------------------------
+    # Rigor review-step registry (EXTEND -- feature rigor-review-step-toggles,
+    # ADR-RST-001 / DSN-1..DSN-3). DISTILL active-RED scaffold (slice-01):
+    # the method EXISTS so collection + the in-process driving call resolve,
+    # but the body delegates to the pure-domain resolver. DELIVER (slice-01)
+    # reads the ``rigor.review_steps`` overrides + the master
+    # ``rigor_review_enabled`` flag and delegates to
+    # ``des.domain.rigor.review_step_registry.ReviewStepResolver``.
+    # ------------------------------------------------------------------
+    def resolve_review_steps(self) -> ResolvedReviewStepSet:
+        """Resolve the active DISTILL review-step set for this project.
+
+        Reads the per-step ``rigor.review_steps`` overrides and the
+        profile-level ``rigor_review_enabled`` flag, then delegates to the pure
+        ``ReviewStepResolver``. Per DSN-3 the precedence is ``enabled = True if
+        always_on else (override.enabled if present else review_enabled)``; the
+        returned ``ResolvedReviewStepSet.active()`` yields the firing steps
+        (each carrying ``.id``).
+        """
+        overrides = self._rigor().get("review_steps", {})
+        return ReviewStepResolver().resolve(
+            REVIEW_STEP_CATALOG,
+            overrides,
+            self.rigor_review_enabled,
+            self.rigor_reviewer_model,
+        )
 
     @property
     def rigor_refactor_pass(self) -> bool:

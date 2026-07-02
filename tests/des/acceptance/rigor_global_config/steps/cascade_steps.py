@@ -402,12 +402,6 @@ def then_double_review_enabled(ctx: dict[str, Any]) -> None:
     assert ctx["des_config"].rigor_double_review is True
 
 
-@then("mutation testing is disabled")
-def then_mutation_disabled(ctx: dict[str, Any]) -> None:
-    """Verify mutation testing is off."""
-    assert ctx["des_config"].rigor_mutation_enabled is False
-
-
 @then("no error is raised")
 def then_no_error(ctx: dict[str, Any]) -> None:
     """Verify no exception was raised during config loading."""
@@ -455,9 +449,6 @@ def then_valid_rigor_settings(ctx: dict[str, Any]) -> None:
 
     # rigor_double_review: always a boolean
     assert isinstance(config.rigor_double_review, bool)
-
-    # rigor_mutation_enabled: always a boolean
-    assert isinstance(config.rigor_mutation_enabled, bool)
 
     # rigor_refactor_pass: always a boolean
     assert isinstance(config.rigor_refactor_pass, bool)

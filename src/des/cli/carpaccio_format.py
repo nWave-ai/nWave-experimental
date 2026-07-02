@@ -22,6 +22,8 @@ the gate imports them).
 
 from __future__ import annotations
 
+import ast
+import hashlib
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -36,6 +38,7 @@ from des.application.feature_at_files import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Literal
 
 
 # ``_legacy_acceptance_dir`` and ``_feature_tag_files`` are re-exported from the
@@ -344,6 +347,108 @@ def _malformed_feature_tag(detail: str) -> GateError:
     )
 
 
+def _malformed_regression_file(detail: str) -> GateError:
+    return GateError(
+        2,
+        {
+            "event": "MalformedInput",
+            "cause": "the pytest regression-test file",
+            "error": detail,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# pytest-regression AT-discovery mode (ADR-001, fix-pre-push-hook-dual-
+# installer-collision) -- the pytest-native mirror of "one Gherkin Scenario
+# = one AT", for a bugfix's plain-pytest regression test file.
+# ---------------------------------------------------------------------------
+
+
+def count_pytest_regression_ats(regression_test_file: Path) -> int:
+    """AT count for ``at_kind="pytest-regression"`` (ADR-001, this feature).
+
+    AST-counts module-level (never class-nested) ``def test_*`` / ``async def
+    test_*`` function definitions in ``regression_test_file`` -- the pytest-
+    native mirror of "one Gherkin ``Scenario:`` = one AT". Three exclusions
+    are CLOSED (ADR-001):
+
+    * a ``class TestFoo: def test_bar(self): ...`` is NOT counted (the walk
+      is over ``tree.body`` only, never recursed into a class body);
+    * a ``@pytest.mark.parametrize``-decorated ``def test_*`` counts as
+      exactly ONE AT regardless of parameter-set count (mirrors Gherkin
+      ``Scenario Outline:`` collapsing its ``Examples`` rows to one parsed
+      ``Scenario``);
+    * a ``test_*``-named function decorated ``@pytest.fixture`` / ``@fixture``
+      is excluded via a decorator-list check before counting.
+
+    Raises ``GateError`` exit 2 (``MalformedInput``, ``cause="the pytest
+    regression-test file"``) when the file cannot be read, cannot be parsed,
+    or has zero module-level ``test_*`` functions -- never a silently-zero
+    AT count.
+    """
+    try:
+        source = regression_test_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise _malformed_regression_file(
+            f"cannot read {regression_test_file}: {exc}"
+        ) from exc
+    try:
+        tree = ast.parse(source, filename=str(regression_test_file))
+    except SyntaxError as exc:
+        raise _malformed_regression_file(
+            f"cannot parse {regression_test_file}: {exc}"
+        ) from exc
+    count = sum(
+        1
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name.startswith("test_")
+        and not _has_fixture_decorator(node)
+    )
+    if count == 0:
+        raise _malformed_regression_file(
+            f"zero test_* functions found at module level in {regression_test_file}"
+        )
+    return count
+
+
+def pytest_regression_content_hash(regression_test_file: Path) -> str:
+    """Content-seal for ``at_kind="pytest-regression"`` (ADR-001, this feature).
+
+    SHA-256 over ``regression_test_file``'s raw source text -- the pytest-
+    regression mirror of ``_at_content_hash``'s sorted-scenario-body hash:
+    same anti-staleness guarantee (any post-approval edit changes the hash),
+    different substrate (one file's full source, not scenario bodies).
+    """
+    try:
+        source = regression_test_file.read_bytes()
+    except OSError as exc:
+        raise _malformed_regression_file(
+            f"cannot read {regression_test_file}: {exc}"
+        ) from exc
+    return hashlib.sha256(source).hexdigest()
+
+
+def _has_fixture_decorator(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return any(
+        _decorator_name(dec) in ("fixture", "pytest.fixture")
+        for dec in node.decorator_list
+    )
+
+
+def _decorator_name(dec: ast.expr) -> str:
+    """Dotted name of a decorator expression, e.g. ``@pytest.fixture(...)`` -> 'pytest.fixture'."""
+    target = dec.func if isinstance(dec, ast.Call) else dec
+    parts: list[str] = []
+    while isinstance(target, ast.Attribute):
+        parts.append(target.attr)
+        target = target.value
+    if isinstance(target, ast.Name):
+        parts.append(target.id)
+    return ".".join(reversed(parts))
+
+
 # ---------------------------------------------------------------------------
 # .feature scenario parsing
 # ---------------------------------------------------------------------------
@@ -437,12 +542,50 @@ def check_carpaccio(
     scenarios: list[Scenario],
     entering_slice: str,
     slice_max: int,
+    at_kind: Literal["gherkin", "pytest-regression"] = "gherkin",
+    regression_test_file: Path | None = None,
 ) -> dict[str, object] | None:
-    """Run carpaccio assertions 1-4. Raises ``GateError`` on a violation.
+    """Run carpaccio assertions 1-4 (+ mixed-mode guard). Raises ``GateError``.
+
+    ``at_kind="gherkin"`` (default) preserves byte-identical behavior for
+    every existing caller. ``at_kind="pytest-regression"`` (ADR-001,
+    fix-pre-push-hook-dual-installer-collision) swaps assertion 2's
+    Gherkin-coverage check + the Gherkin-scenario AT count for an AST-counted
+    ``test_*``-function AT count read from ``regression_test_file``;
+    assertions 1/3/4 are REUSED UNCHANGED -- only the AT-count source differs.
+
+    Raises ``ValueError`` (a programming-contract violation, never a
+    ``GateError``) when ``at_kind="pytest-regression"`` is passed with
+    ``regression_test_file=None`` -- only the CLI's own arg-parsing can
+    mis-wire this combination; it never reflects a malformed feature-delta.
 
     Returns a non-None dict only to surface the ``CoupledSliceAccepted``
-    event when an over-N coupled slice with a justification is accepted.
+    event when an over-N coupled slice with a justification is accepted
+    (gherkin mode only -- a pytest-regression AT carries no ``@coupled``-tag
+    vocabulary, so the escape never applies in that mode).
     """
+    if at_kind == "pytest-regression" and regression_test_file is None:
+        raise ValueError(
+            "check_carpaccio: at_kind='pytest-regression' requires regression_test_file"
+        )
+    if at_kind == "pytest-regression" and scenarios:
+        # Mixed-mode guard (ADR-001 HIGH-3): the caller always parses
+        # `scenarios` from `_feature_tag_files(repo, feature_id)`, so a
+        # non-empty list here IS "the feature owns .feature files" -- the two
+        # AT-discovery modes are mutually exclusive by enforcement, never a
+        # silent precedence rule.
+        raise GateError(
+            2,
+            {
+                "event": "MalformedInput",
+                "cause": "mixed AT-discovery mode",
+                "error": (
+                    "at_kind='pytest-regression' but the feature also owns "
+                    ".feature scenarios; the two AT-discovery modes are "
+                    "mutually exclusive"
+                ),
+            },
+        )
     if plan.row_for(entering_slice) is None:
         raise GateError(
             44,
@@ -455,6 +598,14 @@ def check_carpaccio(
                     "add a slice-plan row for the entering slice, or re-slice"
                 ),
             },
+        )
+    if at_kind == "pytest-regression":
+        assert regression_test_file is not None  # guarded above
+        at_count = count_pytest_regression_ats(regression_test_file)
+        _check_walking_skeleton_first(plan)
+        _check_value_annotation(plan)
+        return _check_slice_size_count(
+            plan, entering_slice, slice_max, at_count, all_coupled=False
         )
     _check_total_coverage(plan, scenarios)
     if not _slice_scenarios(scenarios, entering_slice):
@@ -553,7 +704,8 @@ def _check_slice_size(
     entering_slice: str,
     slice_max: int,
 ) -> dict[str, object] | None:
-    """Assertion 1: slice size <= N unless a coupled-AT-group escape applies.
+    """Assertion 1 (gherkin mode): slice size <= N unless a coupled-AT-group
+    escape applies.
 
     The only size escape (ADR-028 D2) is a coupled AT group: every scenario
     in the slice carries a ``@coupled`` tag AND the plan row records a
@@ -563,13 +715,34 @@ def _check_slice_size(
     """
     slice_scenarios = _slice_scenarios(scenarios, entering_slice)
     at_count = len(slice_scenarios)
+    all_coupled = bool(slice_scenarios) and all(
+        s.has_coupled_tag for s in slice_scenarios
+    )
+    return _check_slice_size_count(
+        plan, entering_slice, slice_max, at_count, all_coupled
+    )
+
+
+def _check_slice_size_count(
+    plan: SlicePlan,
+    entering_slice: str,
+    slice_max: int,
+    at_count: int,
+    all_coupled: bool,
+) -> dict[str, object] | None:
+    """Assertion 1 core: slice size <= N unless a coupled-AT-group escape applies.
+
+    Shared by both ``at_kind`` modes (ADR-001, fix-pre-push-hook-dual-
+    installer-collision): gherkin mode (``_check_slice_size``) computes
+    ``at_count`` / ``all_coupled`` from ``.feature`` scenarios;
+    pytest-regression mode (``check_carpaccio``) passes the AST-counted AT
+    count and ``all_coupled=False`` -- no ``@coupled``-tag vocabulary exists
+    for a plain pytest regression file in this ADR's scope.
+    """
     if at_count <= slice_max:
         return None
     row = plan.row_for(entering_slice)
     assert row is not None  # guaranteed by check_carpaccio precondition
-    all_coupled = bool(slice_scenarios) and all(
-        s.has_coupled_tag for s in slice_scenarios
-    )
     if all_coupled and row.justification:
         return {
             "event": "CoupledSliceAccepted",

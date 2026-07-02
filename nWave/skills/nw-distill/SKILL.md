@@ -267,31 +267,44 @@ Missing artifacts → warnings, not failures; DESIGN-absence is surfaced via the
 
 ## Final Wave Review Gate (Mandatory — covers DISCUSS+DESIGN+DEVOPS+DISTILL)
 
-AFTER all DISTILL Tier-1 [REF] sections are appended to `feature-delta.md` and acceptance scenarios + scaffolds written: dispatch FOUR reviewers in parallel against the full `feature-delta.md`. Consolidated mandatory review — replaces per-wave reviews (per-wave now opt-in only — see DISCUSS/DESIGN/DEVOPS skills). All four see the entire 4-wave chain in one file → cross-wave consistency checks per-wave review misses.
+AFTER all DISTILL Tier-1 [REF] sections are appended to `feature-delta.md` and acceptance scenarios + scaffolds written: dispatch the active review steps in parallel against the full `feature-delta.md`. Consolidated mandatory review — replaces per-wave reviews (per-wave now opt-in only — see DISCUSS/DESIGN/DEVOPS skills). All active steps see the entire 4-wave chain in one file → cross-wave consistency checks per-wave review misses.
 
-1. **Dispatch four reviewers in parallel** (single message, multiple Agent tool uses, all Haiku for cost):
-   - `@nw-product-owner-reviewer` (Eclipse) — DISCUSS sections (lines 1 to first `## Wave: DESIGN` heading)
-   - `@nw-solution-architect-reviewer` (Architect) — DESIGN sections (between `## Wave: DESIGN` and `## Wave: DEVOPS`)
-   - `@nw-platform-architect-reviewer` (Forge) — DEVOPS sections (between `## Wave: DEVOPS` and `## Wave: DISTILL`)
-   - `@nw-acceptance-designer-reviewer` (Sentinel) — DISTILL sections + executable `.feature` files + scaffolds
-   Gate: all four dispatched concurrently.
+1. **Dispatch each active review step** (single message, multiple Agent tool uses; each on its resolved model):
+   Consult `DESConfig.resolve_review_steps()` — reads `.nwave/des-config.json` `rigor.review_steps` per-step overrides + the profile-level `rigor_review_enabled` flag, the same registry resolver `rigor-review-step-toggles` slices 01-06 built (ADR-RST-001) — and dispatch exactly the steps in `resolve_review_steps().active()`; a step absent from `.active()` is NOT dispatched. For each active step, dispatch its agent on `resolve_review_steps().model_for(step_id)`:
+   - `eclipse` → `@nw-product-owner-reviewer` — DISCUSS sections (lines 1 to first `## Wave: DESIGN` heading)
+   - `architect` → `@nw-solution-architect-reviewer` — DESIGN sections (between `## Wave: DESIGN` and `## Wave: DEVOPS`)
+   - `forge` → `@nw-platform-architect-reviewer` — DEVOPS sections (between `## Wave: DEVOPS` and `## Wave: DISTILL`)
+   - `sentinel` → `@nw-acceptance-designer-reviewer` — DISTILL sections + executable `.feature` files + scaffolds; hard-pinned `always_on` (ADR-RST-001 DD-D3), so always present in `.active()`
+   Gate: every step in `.active()` dispatched concurrently, no step outside `.active()` dispatched.
+
+   **Double-dispatch for opted-in steps (ADR-RST-002 decision 4a):** for each active step where `resolve_review_steps().requires_agreement(step_id)` is `True`, dispatch that step's reviewer agent TWICE on the identical review scope (not once) — two separate dispatches, same resolved model, same scope; a step whose `requires_agreement(step_id)` is `False` (the default, DD-4) keeps dispatching exactly once, unchanged.
 
    <!-- DES-WAVE: distill -->
 
-   Include the `<!-- DES-WAVE: distill -->` marker line above verbatim in EACH of the four reviewer Agent dispatch prompts — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
+   Include the `<!-- DES-WAVE: distill -->` marker line above verbatim in EACH active step's Agent dispatch prompt — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
 
 | Step | Rule | Gate |
 |---|---|---|
-| 2 | Each reviewer outputs YAML verdict: `approval_status` ∈ {approved, conditionally_approved, needs_revision, rejected} + `blocker_count`, `high_count`, `low_count`, `findings_list` | structured verdict received from each |
+| 2 | Each dispatched reviewer outputs YAML verdict: `approval_status` ∈ {approved, conditionally_approved, needs_revision, rejected} + `blocker_count`, `high_count`, `low_count`, `findings_list` | structured verdict received from each |
 | 3 | Cross-wave consistency: Eclipse APPROVES DISCUSS but Architect's findings reveal DISCUSS contradictions (e.g. story claims X, ADR assumes Y) → surface as cross-wave blocker | contradictions flagged |
 | 4 | Per NEEDS_REVISION verdict: dispatch fix to the wave's primary agent (Luna DISCUSS · Morgan DESIGN · platform-architect DEVOPS · acceptance-designer DISTILL); re-run only the affected reviewer after fix | 2 revision cycles max per wave; escalate to user if unresolved |
-| 5 | Block DELIVER handoff until all four verdicts APPROVED or CONDITIONALLY_APPROVED with documented action items in DELIVER scope | zero blockers, zero high (or accepted-with-conditions) |
+| 5 | Block DELIVER handoff until every dispatched reviewer's verdict is APPROVED or CONDITIONALLY_APPROVED with documented action items in DELIVER scope | zero blockers, zero high (or accepted-with-conditions) |
 
-**Cost**: 4 Haiku reviewers in parallel ≈ $0.05-0.20 per feature. Small cost vs late-feedback-blast-radius reduction (full chain visible).
+**Per-step agreement predicate (opted-in steps only, ADR-RST-002 decision 4b):** classify each dispatch's `approval_status` into one of two outcome classes — pass-class (`approved`, `conditionally_approved`) or fail-class (`needs_revision`, `rejected`). When both of an opted-in step's dispatches classify into the SAME class, the step resolves normally per Step 4/5 above. When the two dispatches' outcome classes disagree (one pass-class, one fail-class), the step does NOT resolve automatically — surface both verdicts side by side as an explicit disagreement and BLOCK Step 5's pass-and-move-on path until a human resolves it.
 
-**Structural-correctness reviewer never skips**: `rigor.reviewer_model: "skip"` applies ONLY to the three scale-sensitive cost-driven reviewers (Eclipse / Architect / Forge). Sentinel (`@nw-acceptance-designer-reviewer`) ALWAYS dispatches regardless of rigor cascade or scenario count fast-path — structural-correctness reviewer (Gherkin antipatterns, hexagonal boundary, scaffold integrity); silent skip masks the bug class issue #52 fixed.
+A dispatch failure (timeout, reviewer unavailable, or a dispatch that fails to return a verdict) is a DISTINCT escalation class — UNRESOLVED — separate from a disagreement: the step resolves PASS or FAIL only when both dispatches return a completed verdict; a single completed dispatch is never treated as sufficient even when the other times out.
+
+**Cost**: each active step runs on its `resolve_review_steps().model_for(step_id)` — per-step model resolution (ADR-RST-001), not a flat assumption. The default catalog resolves eclipse/architect/forge/sentinel to Haiku ≈ $0.05-0.20 per feature when all four are active; disabling cost-driven steps lowers both count and cost. Small cost vs late-feedback-blast-radius reduction (full chain visible).
+
+**Structural-correctness reviewer never skips**: a disabled/`"skip"`-modeled step in `rigor.review_steps` (or the profile-level `rigor_review_enabled` master toggle) applies ONLY to the three scale-sensitive cost-driven steps (`eclipse` / `architect` / `forge`). `sentinel` is hard-pinned `always_on` in the catalog (ADR-RST-001 DD-D3) — `resolve_review_steps().active()` always contains it, mechanically impossible to disable. Sentinel (`@nw-acceptance-designer-reviewer`) ALWAYS dispatches regardless of rigor cascade or scenario count fast-path — structural-correctness reviewer (Gherkin antipatterns, hexagonal boundary, scaffold integrity); silent skip masks the bug class issue #52 fixed. This hard-pin survives the double-dispatch rewrite too: whether or not Sentinel is also opted into `requires_agreement` (DD-5 orthogonality — `always_on` and `requires_agreement` are independent axes), it keeps dispatching regardless of any per-step agreement opt-in.
 
 **Per-wave review trigger override**: a wave-skill may still trigger its own per-wave review (DoR ambiguity, contested ADR, novel deployment target, etc.). Per-wave reviewer outputs = PR-ephemeral, not committed; they inform the wave's primary agent in real time, never substitute this final gate.
+
+**Two-party self-approval constraint (recording an AT-review verdict, ADR-029 D5) — budget for this BEFORE starting DELIVER, do not discover it mid-slice.** Once the carpaccio entry gate exists (`des carpaccio-slice-gate`, ADR-028 D2-bis assertion 5), advancing to a slice's `A_GREEN` requires a recorded `ATReviewVerdict` in the AT-completion ledger (`des record-at-review-verdict --verdict APPROVED ...`). The orchestrator dispatched the reviewer whose verdict this seals — the auto-mode classifier correctly treats the orchestrator then running `record-at-review-verdict` on that reviewer's behalf as **self-approval** and denies it, every time, for every slice. This is NOT a bug to route around:
+- The classifier denies the orchestrator sealing its own commissioned verdict, AND denies dispatching a sub-agent to run the identical command as a proxy (tunneling the same action through a different actor is recognized and denied too).
+- The only correct path is `AskUserQuestion` to the human, per-instance — a prior authorization for one slice does **NOT** generalize to the next slice of the same feature, and does not generalize across features. Plan for **one human check-in per slice** in `atdd_pure` mode if this constraint is still unresolved when you read this. <!-- mode-ref-ok -->
+- If the human is unavailable (e.g. an autonomous/overnight run), the constraint is a genuine hold point — do not attempt a workaround; hold the slice, report the blocker clearly (`PushNotification` if appropriate), and resume when authorization is available.
+- Structural fix status: tracked as `F-FEATURE-END-SEAL-TWO-PARTY-CONSTRAINT-UNDISCOVERABLE-UPFRONT` in `docs/product/backlog.md` (recurred 3× in one session across `des feature-end run` and `des record-at-review-verdict`, both feature-end and per-slice contexts) — candidate fixes are a per-feature (not per-AskUserQuestion-instance) authorization grant, or a genuinely independent attestation channel that doesn't require a human at every slice boundary.
 
 ## Deliverable-Type Verification Routing (ADR-PST-003 / DDD-6)
 

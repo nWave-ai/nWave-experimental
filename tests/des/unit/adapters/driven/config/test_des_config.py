@@ -177,7 +177,6 @@ class TestDESConfigRigorDefaults:
         assert cfg.rigor_reviewer_model == "haiku"
         assert cfg.rigor_review_enabled is True
         assert cfg.rigor_double_review is False
-        assert cfg.rigor_mutation_enabled is False
         assert cfg.rigor_refactor_pass is True
         # F6 sweep (2026-05-18): default rigor_tdd_phases follows ADR-025
         # canonical (RED/GREEN/COMMIT). Legacy 5-phase only via explicit
@@ -235,7 +234,6 @@ class TestDESConfigRigorExplicitProfiles:
                         "tdd_phases": ["GREEN", "COMMIT"],
                         "review_enabled": False,
                         "double_review": False,
-                        "mutation_enabled": False,
                         "refactor_pass": False,
                     }
                 }
@@ -253,7 +251,6 @@ class TestDESConfigRigorExplicitProfiles:
         assert cfg.rigor_tdd_phases == ("GREEN", "COMMIT")
         assert cfg.rigor_review_enabled is False
         assert cfg.rigor_double_review is False
-        assert cfg.rigor_mutation_enabled is False
         assert cfg.rigor_refactor_pass is False
 
     def test_exhaustive_profile_values(self, tmp_path):
@@ -276,7 +273,6 @@ class TestDESConfigRigorExplicitProfiles:
                         ],
                         "review_enabled": True,
                         "double_review": True,
-                        "mutation_enabled": True,
                         "refactor_pass": True,
                     }
                 }
@@ -300,7 +296,6 @@ class TestDESConfigRigorExplicitProfiles:
         )
         assert cfg.rigor_review_enabled is True
         assert cfg.rigor_double_review is True
-        assert cfg.rigor_mutation_enabled is True
         assert cfg.rigor_refactor_pass is True
 
     def test_rigor_tdd_phases_returns_tuple_not_list(self, tmp_path):

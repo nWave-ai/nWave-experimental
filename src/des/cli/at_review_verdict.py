@@ -22,8 +22,10 @@ import datetime
 import json
 import sys
 from pathlib import Path
+from typing import Literal
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.cli.carpaccio_format import GateError
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.repo_path_resolver import (
     resolve_repo_root as _resolve_repo_root,
@@ -195,15 +197,45 @@ def record_review_outcome(
 
 
 def _slice_at_derivation(
-    repo_root: Path, feature_id: str, slice_id: str
+    repo_root: Path,
+    feature_id: str,
+    slice_id: str,
+    at_kind: Literal["gherkin", "pytest-regression"] = "gherkin",
+    regression_test_file: Path | None = None,
 ) -> tuple[list[str], str]:
-    """Derive ``(at_ids, at_content_hash)`` for ``slice_id`` from its scenarios.
+    """Derive ``(at_ids, at_content_hash)`` for ``slice_id`` (ADR-001 producer mirror).
 
-    Reuses ``carpaccio_slice_gate``'s ``.feature`` resolution + parsing + the
-    consumer's ``_at_content_hash`` so the producer signs exactly what the
-    gate will later verify. ``carpaccio_slice_gate`` is stdlib-only at import
-    time (``yaml`` is imported lazily), so this import keeps the bundle safe.
+    ``at_kind="gherkin"`` (default) reuses ``carpaccio_slice_gate``'s ``.feature``
+    resolution + parsing + the consumer's ``_at_content_hash`` so the producer
+    signs exactly what the gate will later verify. ``carpaccio_slice_gate`` is
+    stdlib-only at import time (``yaml`` is imported lazily), so this import
+    keeps the bundle safe.
+
+    ``at_kind="pytest-regression"`` (ADR-001, fix-pre-push-hook-dual-installer-
+    collision) mirrors the consumer-side derivation in ``carpaccio_format``:
+    AST-counted ``test_*`` functions for ``at_ids`` + a sha256 over the
+    regression file's raw source text for the content hash. Raises
+    ``ValueError`` (a programming-contract violation, never a ``GateError``)
+    when ``at_kind="pytest-regression"`` is passed with
+    ``regression_test_file=None`` -- only the CLI's own arg-parsing can
+    mis-wire this combination.
     """
+    if at_kind == "pytest-regression" and regression_test_file is None:
+        raise ValueError(
+            "_slice_at_derivation: at_kind='pytest-regression' requires "
+            "regression_test_file"
+        )
+    if at_kind == "pytest-regression":
+        assert regression_test_file is not None  # guarded above
+        from des.cli import carpaccio_format
+
+        at_count = carpaccio_format.count_pytest_regression_ats(regression_test_file)
+        at_ids = [f"AT-{n}" for n in range(1, at_count + 1)]
+        at_content_hash = carpaccio_format.pytest_regression_content_hash(
+            regression_test_file
+        )
+        return at_ids, at_content_hash
+
     from des.cli import carpaccio_slice_gate
 
     scenarios = carpaccio_slice_gate.parse_scenarios(
@@ -252,6 +284,26 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "activate the slice-05 gate-consultation wiring."
         ),
     )
+    parser.add_argument(
+        "--at-kind",
+        choices=["gherkin", "pytest-regression"],
+        default="gherkin",
+        help=(
+            "AT-discovery mode (ADR-001, fix-pre-push-hook-dual-installer-"
+            "collision). 'gherkin' (default) derives (at_ids, at_content_hash) "
+            "from .feature Scenario blocks -- existing callers see byte-"
+            "identical behavior. 'pytest-regression' AST-counts module-level "
+            "test_* functions in --regression-test-file."
+        ),
+    )
+    parser.add_argument(
+        "--regression-test-file",
+        default=None,
+        help=(
+            "Repo-relative path to a plain-pytest regression-test file. "
+            "Required iff --at-kind=pytest-regression."
+        ),
+    )
     return parser.parse_args(sys.argv[1:] if argv is None else list(argv))
 
 
@@ -265,9 +317,43 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = _parse_args(argv)
     repo_root = _resolve_repo_root(args.repo_root)
-    at_ids, at_content_hash = _slice_at_derivation(
-        repo_root, args.feature_id, args.slice_id
+    at_kind = args.at_kind
+    regression_test_file = (
+        (repo_root / args.regression_test_file) if args.regression_test_file else None
     )
+    try:
+        if at_kind == "pytest-regression" and regression_test_file is None:
+            # Only the CLI's own arg-parsing can mis-wire this combination
+            # (ADR-001 DD-7): `_slice_at_derivation` raises `ValueError` on it
+            # (a programming-contract violation), so the CLI shell enforces
+            # it itself as a `GateError` diagnostic before that function is
+            # ever called with `regression_test_file=None`.
+            raise GateError(
+                2,
+                {
+                    "event": "MalformedInput",
+                    "cause": "the pytest regression-test file",
+                    "error": (
+                        "--at-kind=pytest-regression requires --regression-test-file"
+                    ),
+                },
+            )
+        at_ids, at_content_hash = _slice_at_derivation(
+            repo_root,
+            args.feature_id,
+            args.slice_id,
+            at_kind=at_kind,
+            regression_test_file=regression_test_file,
+        )
+    except GateError as gate_error:
+        error_line = json.dumps(gate_error.payload, sort_keys=True) + "\n"
+        sys.stdout.write(error_line)
+        sys.stderr.write(error_line)
+        print_human_summary(
+            Verdict.FAIL,
+            f"AT-review verdict CLI refused: {gate_error.payload.get('error')}",
+        )
+        return gate_error.exit_code
     timestamp = (
         datetime.datetime.now(datetime.timezone.utc)
         .replace(microsecond=0)
