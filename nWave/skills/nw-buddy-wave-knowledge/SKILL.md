@@ -10,10 +10,10 @@ The nWave methodology organizes work into a canonical sequence of **waves**. Eac
 ## The canonical wave sequence
 
 ```
-DISCOVER -> DISCUSS -> SPIKE(opt) -> DESIGN -> DEVOPS -> DISTILL -> DELIVER
+DISCOVER -> DIVERGE(opt) -> DISCUSS -> DESIGN -> DEVOPS -> DISTILL -> DELIVER
 ```
 
-Each wave has a slash command (`/nw-<wave>`) and a primary agent. Waves run top-to-bottom. Skipping waves is a smell; going back to revise an earlier wave is normal and expected. SPIKE is optional — include it when validating a new mechanism, performance requirement, or external integration.
+Each wave has a slash command (`/nw-<wave>`) and a primary agent. Waves run top-to-bottom. Skipping waves is a smell; going back to revise an earlier wave is normal and expected. DIVERGE is optional — run it when a validated problem has several plausible solution approaches and the team hasn't converged yet. (SPIKE was a canonical phase before v3.16.0 and is now deprecated — pre-design spike/analysis is embedded in DESIGN. See the deprecated note below.)
 
 ## Wave-by-wave reference
 
@@ -26,31 +26,32 @@ Each wave has a slash command (`/nw-<wave>`) and a primary agent. Waves run top-
 - **Typical artifacts**: `docs/discover/<opportunity>-brief.md`, user interview notes, competitive scans.
 - **Common questions**: "is this worth doing?", "who has this problem?", "what's the evidence?"
 
-### 2. DISCUSS
+### 2. DIVERGE (optional)
+
+- **Purpose**: generate 3–5 divergent solution directions before converging on one — via JTBD analysis, competitive research, structured brainstorming, and taste-filtered evaluation.
+- **Primary agent**: diverger (Flux).
+- **Inputs**: DISCOVER output — a validated problem and target users, but no chosen approach yet.
+- **Outputs**: a ranked set of design directions with a branch-point recommendation.
+- **Typical artifacts**: `docs/feature/<id>/diverge/recommendation.md`.
+- **Common questions**: "which approach should we take?", "what are the options?"
+- **When to run**: run DIVERGE when the problem is validated but the solution shape is genuinely open. Skip when the approach is obvious or already decided.
+
+### 3. DISCUSS
 
 - **Purpose**: turn a validated opportunity into user stories with acceptance criteria.
 - **Primary agent**: product-owner.
-- **Inputs**: DISCOVER output — validated problem and target users.
+- **Inputs**: DISCOVER output — validated problem and target users; DIVERGE recommendation (if run) — the chosen solution direction handed off from Flux.
 - **Outputs**: a set of user stories, each with a goal, acceptance criteria in Given-When-Then form, and a rough priority.
 - **Typical artifacts**: `docs/discuss/<feature>-stories.md`, a backlog update.
 - **Common questions**: "what does 'done' look like for this feature?", "what are the user stories?"
 
-### 3. SPIKE (optional)
-
-- **Purpose**: validate one core assumption through timeboxed throwaway code before investing in architecture design.
-- **Primary agent**: software-crafter.
-- **Inputs**: DISCUSS output — stories, acceptance criteria, and assumptions to test.
-- **Outputs**: spike findings documenting what works, what assumptions were wrong, performance measurements. Code is discarded.
-- **Typical artifacts**: `docs/feature/<name>/spike/findings.md`, throwaway code (not committed).
-- **Common questions**: "will this mechanism work?", "can we hit the performance budget?", "does the third-party API behave as expected?"
-- **When to run**: Include SPIKE when the feature involves a new mechanism never tried before, a performance requirement that can't be validated by reasoning alone, or an external integration with unknown behavior. Skip for pure refactoring, bug fixes, or features < 1 day.
-- **Duration**: max 1 hour, timeboxed.
+> **SPIKE (deprecated).** SPIKE was a canonical wave phase before v3.16.0. It is now deprecated — pre-design spike/analysis work is embedded in the DESIGN wave. The `/nw-spike` command remains for backward compatibility, but the buddy must NOT present SPIKE as a step in the canonical sequence. Route spike-type questions ("will this mechanism work?", "can we hit the performance budget?") to DESIGN. See the `spike` entry's `deprecation_note` in `framework-catalog.yaml`.
 
 ### 4. DESIGN
 
 - **Purpose**: propose the solution architecture — component boundaries, key abstractions, major trade-offs.
 - **Primary agent**: solution-architect.
-- **Inputs**: DISCUSS output — stories and acceptance criteria. SPIKE findings (if spike was run) — validated assumptions and performance constraints.
+- **Inputs**: DISCUSS output — stories and acceptance criteria (carrying through the DIVERGE recommendation, if one was made). Any pre-design spike/analysis is embedded in this wave.
 - **Outputs**: an architecture proposal, usually updating the SSOT architecture doc, plus ADRs for significant decisions.
 - **Typical artifacts**: `docs/architecture/architecture-design.md` updates, `docs/adrs/ADR-NNN-<title>.md`, diagrams.
 - **Common questions**: "how will this be built?", "what are the components?", "what are the boundaries?"
@@ -89,7 +90,9 @@ Some agents operate across waves:
 - **researcher** — gathers evidence for any wave that needs it.
 - **troubleshooter** — diagnoses problems in existing code or processes.
 - **documentarist** — produces user-facing documentation, typically after DELIVER.
-- **visual-architect** — produces diagrams to support DESIGN.
+- **data-engineer** — advises on data architecture, schema, and storage for any wave that needs it.
+
+Diagrams are produced via the `/nw-diagram` command (owned by the solution-architect), not a separate agent.
 
 Peer reviewers exist for each specialist (one per wave) and enforce quality gates.
 
@@ -100,6 +103,7 @@ When a user asks something, the buddy identifies which wave owns the question an
 | Question | Wave | Where to read |
 |---|---|---|
 | "Is this idea any good?" | DISCOVER | discover briefs |
+| "Which approach should we take?" | DIVERGE | `diverge/recommendation.md` |
 | "What are the user stories?" | DISCUSS | story docs / backlog |
 | "How will the module be shaped?" | DESIGN | architecture doc, ADRs |
 | "What's the CI plan?" | DEVOPS | CI workflows, runbooks |
@@ -113,8 +117,8 @@ If the user's question spans multiple waves (e.g., "what's this feature and how 
 Signals:
 
 - **DISCOVER**: user is asking about opportunity, not code. Words like "should we", "is there demand".
+- **DIVERGE**: user is weighing several solution approaches and hasn't committed. Words like "which approach", "what are the options", "this way or that way".
 - **DISCUSS**: user is talking about stories, acceptance criteria, user needs.
-- **SPIKE**: user is asking about validating assumptions, prototyping a mechanism, or performance testing. Words like "prove it works", "test this idea", "spike".
 - **DESIGN**: user is asking about components, layers, boundaries, trade-offs.
 - **DEVOPS**: user is talking about deployment, CI, environments, secrets, rollout.
 - **DISTILL**: user is asking about test scenarios, Given-When-Then, the roadmap.

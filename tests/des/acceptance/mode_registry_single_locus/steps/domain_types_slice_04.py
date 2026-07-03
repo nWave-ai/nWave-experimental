@@ -16,7 +16,7 @@ equivalence pattern applied to the watcher inventory).
 
 Verified inventory provenance (2026-06-11, current tree at 9972dbe2d):
 35 asset files / 277 naked `atdd_pure` | `workflow.mode` occurrences across
-nWave/{skills,agents,tasks}; 11 watcher locations classified below.
+nWave/{skills,agents,tasks}; 10 watcher locations classified below.
 """
 
 from __future__ import annotations
@@ -222,15 +222,12 @@ WATCHER_LEDGER: tuple[ProseWatcher, ...] = (
     ),
     # --- KEEP: not replaced by the slice-04 migration; deleting would lose
     # a guard. Routed explicitly (feature-delta DISTILL slice-04 section). ---
-    ProseWatcher(
-        "tests/scripts/cli/atdd_pure_documentation_coherence",
-        "docs/ prose (des-markers.md, deliver tutorial, wave-flow map) "
-        "agrees with the mode",
-        WatcherVerdict.KEPT,
-        "docs/ files are OUTSIDE the slice-04 migrated families "
-        "(nWave/{skills,agents,tasks}); no shipped replacement exists — "
-        "docs-prose migration is not in this feature's scope",
-    ),
+    # NOTE: the atdd_pure_documentation_coherence watcher (formerly KEPT here)
+    # was removed — the docs/ prose it guarded (des-markers.md AT-completion
+    # ledger, deliver tutorial) was WITHDRAWN by hotfix 47d6a504c, an ancestor
+    # of this branch, so the guarded fact no longer exists at HEAD. It was not
+    # migrated into a registry projection (so not DELETED-verdict either); it
+    # is simply retired. Stale-record rule: behaviour changed, git keeps history.
     ProseWatcher(
         "tests/des/acceptance/atdd_pure_phase_count_slice03/"
         "test_prose_runtime_parity.py",

@@ -388,6 +388,8 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         slice_id: str,
         *,
         feature_id: str | None = None,
+        gate: str | None = None,
+        justification: str | None = None,
     ) -> dict[str, Any]:
         """Append one slice gate-boundary audit record under the M7 write contract.
 
@@ -404,12 +406,21 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         past the current terminal `seq`), a `record_hash`, and -- in the
         singleton shape -- a derived `correlation_id`.
 
+        ADR-001 signature delta: the optional ``gate`` + ``justification``
+        kwargs carry a `BootstrapGateExempted{gate, justification, feature_id}`
+        record honestly. Both default None (the ordinary gate event carries
+        neither), so every existing call site is byte-identical; when present,
+        each is threaded into the record `fields` and thereby hashed into
+        `record_hash` like every other field (tamper-evident audit).
+
         Returns the appended record.
         """
-        return self._append_record(
-            {"event": event, "slice_id": slice_id},
-            feature_id=feature_id,
-        )
+        fields: dict[str, Any] = {"event": event, "slice_id": slice_id}
+        if gate is not None:
+            fields["gate"] = gate
+        if justification is not None:
+            fields["justification"] = justification
+        return self._append_record(fields, feature_id=feature_id)
 
     def append_contract_frozen(
         self,

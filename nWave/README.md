@@ -4,20 +4,19 @@
 
 ## Overview
 
-The nWave framework implements the comprehensive DISCOVER→DIVERGE→DISCUSS→SPIKE→DESIGN→DEVOPS→DISTILL→DELIVER methodology. This framework provides a streamlined, integrated workflow with complete knowledge preservation for critical technical execution agents and comprehensive 5-layer testing framework.
+The nWave framework implements the comprehensive DISCOVER→DIVERGE→DISCUSS→DESIGN→DEVOPS→DISTILL→DELIVER methodology. This framework provides a streamlined, integrated workflow with complete knowledge preservation for critical technical execution agents and comprehensive 5-layer testing framework.
 
 ## nWave Methodology
 
-The nWave methodology implements a systematic approach to software development through eight distinct waves:
+The nWave methodology implements a systematic approach to software development through seven distinct waves:
 
 1. **DISCOVER**: Evidence-based product discovery and market validation
 2. **DIVERGE**: Structured divergent option generation (JTBD, competitive research, brainstorming)
 3. **DISCUSS**: Requirements gathering and business analysis
-4. **SPIKE**: Timeboxed assumption validation before committing to design
-5. **DESIGN**: Architecture design with visual representation
-6. **DEVOPS**: Platform readiness, CI/CD, infrastructure, and deployment design
-7. **DISTILL**: Acceptance test creation and business validation scenarios
-8. **DELIVER**: Outside-In TDD implementation with production readiness validation
+4. **DESIGN**: Architecture design with visual representation
+5. **DEVOPS**: Platform readiness, CI/CD, infrastructure, and deployment design
+6. **DISTILL**: Acceptance test creation and business validation scenarios
+7. **DELIVER**: Outside-In TDD implementation with production readiness validation
 
 ## Core and Specialist Agents (10 Total)
 

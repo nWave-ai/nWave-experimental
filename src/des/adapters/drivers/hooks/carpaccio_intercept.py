@@ -68,10 +68,12 @@ from des.domain.atdd_pure_phases import (
     CARPACCIO_ENTRY_PHASES as _CARPACCIO_ENTRY_PHASES,
 )
 from des.domain.des_marker_parser import (
+    BOOTSTRAPPABLE_GATES,
     DesMarkerParser,
     DesMarkers,
     atdd_pure_missing_marker,
     classify_atdd_pure_dispatch,
+    classify_bootstrap,
 )
 from des.domain.slice_id_trailer import extract_slice_ids
 from des.runtime.interpreter import des_spawn
@@ -218,7 +220,11 @@ class InterceptDecision:
         return cls(is_block=True, is_atdd_pure=True, event=event, reason=reason)
 
 
-def _real_carpaccio_runner(project_root: Path) -> CarpaccioRunner:
+def _real_carpaccio_runner(
+    project_root: Path,
+    at_kind: str = "gherkin",
+    regression_test_file: str | None = None,
+) -> CarpaccioRunner:
     """Build the real carpaccio runner bound to ``project_root``.
 
     F-11: the gate runs as a `python_for(None) -m` module subprocess -- a
@@ -226,7 +232,22 @@ def _real_carpaccio_runner(project_root: Path) -> CarpaccioRunner:
     the `des` package. A timeout / signal-kill is surfaced as a non-zero exit
     so the caller blocks identically to an explicit gate rejection (ADR-030 D5
     fail-stuck).
+
+    fix-carpaccio-intercept-honors-at-kind (ADD-not-mutate, template-identical
+    to the RC4-b `_real_readiness_runner` `lane` closure): when ``at_kind`` is
+    ``pytest-regression`` the closure appends ``--at-kind pytest-regression
+    --regression-test-file <file>`` so the shipped pytest-regression gate mode
+    becomes reachable from a live dispatch. The extra args are closed over at
+    BUILD time, so the returned `_run(feature_id, entering_slice)` Callable
+    signature is UNCHANGED. With the default ``at_kind="gherkin"`` the des_spawn
+    call is byte-identical to the pre-fix invocation -- zero blast-radius.
     """
+
+    _at_kind_args: tuple[str, ...] = (
+        ("--at-kind", at_kind, "--regression-test-file", regression_test_file)
+        if at_kind == "pytest-regression" and regression_test_file is not None
+        else ()
+    )
 
     def _run(feature_id: str, entering_slice: str) -> tuple[int, str]:
         try:
@@ -239,6 +260,7 @@ def _real_carpaccio_runner(project_root: Path) -> CarpaccioRunner:
                 entering_slice,
                 "--repo-root",
                 str(project_root),
+                *_at_kind_args,
                 capture_output=True,
                 text=True,
                 timeout=CARPACCIO_GATE_SUBPROCESS_TIMEOUT_SECONDS,
@@ -280,6 +302,33 @@ def _parse_lane_from_prompt(prompt: str) -> tuple[str | None, str]:
     justification_match = _DES_LANE_JUSTIFICATION_PATTERN.search(prompt)
     justification = justification_match.group(1).strip() if justification_match else ""
     return lane_match.group(1), justification
+
+
+_DES_AT_KIND_PATTERN = re.compile(r"<!--\s*DES-AT-KIND\s*:\s*(\S+)\s*-->")
+_DES_REGRESSION_TEST_FILE_PATTERN = re.compile(
+    r"<!--\s*DES-REGRESSION-TEST-FILE\s*:\s*(\S+)\s*-->"
+)
+
+
+def _parse_at_kind_from_prompt(prompt: str) -> tuple[str, str | None]:
+    """Parse the optional DES-AT-KIND markers from a dispatch ``prompt``.
+
+    Two separate HTML-comment markers (mirroring the DES-LANE pair) so an
+    embedded path in the regression-test-file value is unambiguous:
+
+      <!-- DES-AT-KIND : pytest-regression -->
+      <!-- DES-REGRESSION-TEST-FILE : tests/build/x/test_y.py -->
+
+    Whitespace around the ``:`` is tolerated like the other DES markers. Absent
+    DES-AT-KIND yields ``("gherkin", None)`` -- the default (Gherkin) path, so a
+    dispatch with no marker stays byte-identical to today.
+    """
+    at_kind_match = _DES_AT_KIND_PATTERN.search(prompt)
+    if at_kind_match is None:
+        return "gherkin", None
+    file_match = _DES_REGRESSION_TEST_FILE_PATTERN.search(prompt)
+    regression_test_file = file_match.group(1) if file_match else None
+    return at_kind_match.group(1), regression_test_file
 
 
 def _real_readiness_runner(
@@ -649,6 +698,20 @@ def _gate_invoker_for(
         slice_registry[_CHECK_SLICE_AT_COMPLETENESS_GATE_ID] = completeness_runner
 
     def _invoke(gate_id: str, context: dict[str, str]) -> tuple[int, str]:
+        # ADR-001 DES-BOOTSTRAP: a dispatch repairing dispatch-gate G is
+        # surgically exempted from G's OWN check only. The classifier runs FRESH
+        # per composed gate; a `valid` verdict (the marker names THIS firing
+        # gate) SKIPS exactly this gate (the real runner is NOT invoked) and
+        # emits a distinct `BootstrapGateExempted` audit record. Every other
+        # verdict (`absent-for-this-gate`, including no-marker and the canonical
+        # divergence rule) falls through to the real runner byte-identically.
+        bootstrap_markers = DesMarkerParser().parse(context.get("prompt", ""))
+        verdict = classify_bootstrap(bootstrap_markers, gate_id)
+        if verdict == "malformed":
+            return _bootstrap_malformed_block(bootstrap_markers)
+        if verdict == "valid":
+            return _bootstrap_exempt(gate_id, bootstrap_markers, context)
+
         # The wave-dispatch guard reads its OWN context keys (subagent_type +
         # prompt), distinct from the (feature_id, slice_id) gates.
         if (
@@ -669,6 +732,144 @@ def _gate_invoker_for(
         return runner(context["feature_id"], context["slice_id"])
 
     return _invoke
+
+
+def _bootstrap_malformed_block(markers: DesMarkers) -> tuple[int, str]:
+    """Fail-CLOSED BLOCK a malformed DES-BOOTSTRAP claim (ADR-001 D4, slice-02).
+
+    The single `malformed` verdict maps to two DISTINCT block events so the
+    async-review trail names the malformation precisely:
+
+      * gate-id NOT in `BOOTSTRAPPABLE_GATES` (out-of-vocab) ->
+        `BootstrapMarkerMalformed`;
+      * an in-vocab gate but missing / empty justification ->
+        `BootstrapJustificationMissing`.
+
+    The real gate runner is NOT invoked (neither run nor skipped) and NO
+    exemption is written -- an invalid claim can never buy a surgical skip.
+    """
+    if markers.bootstrap_gate not in BOOTSTRAPPABLE_GATES:
+        return 1, json.dumps(
+            {
+                "event": "BootstrapMarkerMalformed",
+                "gate": markers.bootstrap_gate,
+                "reason": (
+                    f"DES-BOOTSTRAP names an out-of-vocabulary gate "
+                    f"{markers.bootstrap_gate!r} (not in BOOTSTRAPPABLE_GATES) -- "
+                    "fix the gate-id to a bootstrappable dispatch-gate"
+                ),
+            }
+        )
+    return 1, json.dumps(
+        {
+            "event": "BootstrapJustificationMissing",
+            "gate": markers.bootstrap_gate,
+            "reason": (
+                "DES-BOOTSTRAP carries no DES-BOOTSTRAP-JUSTIFICATION marker -- "
+                "add a non-empty justification for the async-review trail"
+            ),
+        }
+    )
+
+
+def _bootstrap_exempt(
+    gate_id: str, markers: DesMarkers, context: dict[str, str]
+) -> tuple[int, str]:
+    """Skip the CURRENTLY-firing gate for a `valid` DES-BOOTSTRAP dispatch.
+
+    The surgical exemption (ADR-001 D2): the real gate runner is NOT invoked;
+    the gate clears with exit 0, and a distinct `BootstrapGateExempted{gate,
+    justification, feature_id}` audit record is written so the async-review
+    trail exists from the first commit. The audit write is fail-OPEN (mirrors
+    `_emit_carpaccio_gate_event`): the exemption verdict already stands, so a
+    lost ledger line never changes the decision -- but the write is best-effort,
+    never silently omitted.
+
+    D8 reuse cap (slice-02): BEFORE granting, the fail-CLOSED reuse cap reads
+    the ledger for a prior exemption of this (gate, feature); a second bootstrap
+    of the same gate within one feature is BLOCKed so a gate can never be
+    silently disabled by repeated stamping.
+    """
+    feature_id = context.get("feature_id", "")
+    project_root = Path(context.get("repo_root", "."))
+    justification = markers.bootstrap_justification or ""
+    cap_block = _reuse_cap_block(gate_id, feature_id, project_root)
+    if cap_block is not None:
+        return cap_block
+    _emit_bootstrap_exemption_event(
+        gate_id, justification, feature_id, project_root, context.get("slice_id", "")
+    )
+    return 0, json.dumps(
+        {
+            "event": "BootstrapGateExempted",
+            "gate": gate_id,
+            "justification": justification,
+            "feature_id": feature_id,
+        }
+    )
+
+
+def _reuse_cap_block(
+    gate_id: str, feature_id: str, project_root: Path
+) -> tuple[int, str] | None:
+    """The D8 per-feature-per-gate reuse cap of 1 -- fail-CLOSED (slice-02).
+
+    Reads the ledger for a prior `BootstrapGateExempted{gate}` record for this
+    feature under the M7 fail-closed integrity contract (the per-feature ledger
+    file already scopes to `feature_id`). When one exists, the reuse cap is
+    spent -> BLOCK `BootstrapReuseCapExceeded`, writing NO new exemption. When
+    none exists, return None so the caller grants the first exemption.
+
+    Fail-CLOSED on a corrupt ledger: `read_records` raises
+    `LedgerIntegrityViolation`, which propagates to the M1 handler wrapper (the
+    same fail-closed-on-corruption pattern the M8 order check uses) -- an
+    unreadable ledger cannot prove the cap unspent, so the bootstrap never
+    silent-passes.
+    """
+    records = AtCompletionLedger(feature_id, project_root).read_records()
+    already_exempted = any(
+        record.get("event") == "BootstrapGateExempted" and record.get("gate") == gate_id
+        for record in records
+    )
+    if not already_exempted:
+        return None
+    return 1, json.dumps(
+        {
+            "event": "BootstrapReuseCapExceeded",
+            "gate": gate_id,
+            "feature_id": feature_id,
+            "reason": (
+                f"gate {gate_id!r} was already DES-BOOTSTRAP-exempted for feature "
+                f"{feature_id!r} (reuse cap = 1) -- a gate cannot be disabled twice"
+            ),
+        }
+    )
+
+
+def _emit_bootstrap_exemption_event(
+    gate: str,
+    justification: str,
+    feature_id: str,
+    project_root: Path,
+    slice_id: str,
+) -> None:
+    """Append the distinct `BootstrapGateExempted` audit record (fail-OPEN).
+
+    REUSES the M7 ledger writer via the ADR-001 signature delta -- the optional
+    `gate` + `justification` kwargs carry the exemption honestly. Fail-OPEN on
+    the write (the exemption verdict already stands; the audit is async-review
+    material, not part of the decision).
+    """
+    try:
+        AtCompletionLedger(feature_id, project_root).append_gate_event(
+            event="BootstrapGateExempted",
+            slice_id=slice_id,
+            gate=gate,
+            justification=justification,
+        )
+    except Exception:
+        # Fail-open: the exemption verdict already stands; ledger emission is audit.
+        pass
 
 
 def evaluate_atdd_pure_dispatch(
@@ -713,7 +914,10 @@ def evaluate_atdd_pure_dispatch(
     its own exceptions. `handle_pre_tool_use` wraps the call in a try/except and
     surfaces any exception as an `AtddPureHookInternalError` block.
     """
-    carpaccio = carpaccio_runner or _real_carpaccio_runner(project_root)
+    _at_kind, _regression_test_file = _parse_at_kind_from_prompt(prompt)
+    carpaccio = carpaccio_runner or _real_carpaccio_runner(
+        project_root, at_kind=_at_kind, regression_test_file=_regression_test_file
+    )
     _lane, _lane_just = _parse_lane_from_prompt(prompt)
     readiness = readiness_runner or _real_readiness_runner(
         project_root, lane=_lane, lane_justification=_lane_just

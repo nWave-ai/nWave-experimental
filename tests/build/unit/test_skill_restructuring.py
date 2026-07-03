@@ -216,7 +216,15 @@ BULK_HASHES = {
     # Hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation —
     # DELIVER wave description now cites 3-phase RED→GREEN→COMMIT with legacy fallback.
     # Hash updated 2026-06-08: ADR-GV-001 D6 — DISTILL active-RED scaffolds (not @skip).
-    "nw-buddy-wave-knowledge": "2564ad5d5db8adadc12c69aab2a0710b",
+    # Hash updated 2026-07-01: wave-sequence sync to framework-catalog SSOT —
+    # inserted DIVERGE as canonical wave 2, demoted SPIKE to a deprecated note
+    # (embedded in DESIGN per v3.16.0), corrected the visual-architect ref to the
+    # /nw-diagram command (solution-architect). Content-only correction.
+    # Re-pinned same day after adversarial review: ordered DIVERGE before DISCUSS
+    # in the routing table + recognition list, and moved the DIVERGE recommendation
+    # to DISCUSS inputs (its documented consumer, per nw-diverger.md:93) — DESIGN
+    # now carries it through rather than owning the handoff.
+    "nw-buddy-wave-knowledge": "f3ccd8215e8ce60e5316664a99582abd",
     "nw-cialdini-outreach": "90aea943d1a2eb313561ecbd0f2c5915",
     "nw-cicd-and-deployment": "2195ace1646b4c0ced64070d57bb542a",
     "nw-cognitive-load-management": "3e06303c46182b62288a7bffeb342909",

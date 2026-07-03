@@ -40,6 +40,17 @@ Under `workflow.mode: atdd_pure`, `/nw-execute` runs one carpaccio slice through
 
 `E_BATCH_REFACTOR` and the deep review are explicitly NOT part of `/nw-execute` under `atdd_pure`. <!-- mode-ref-ok -->
 
+#### AT-kind dispatch markers (pytest-regression slices)
+
+A carpaccio slice whose acceptance tests are a plain-pytest regression file (`at_kind: pytest-regression`, the mode `/nw-bugfix` slices use — the regression test IS the slice's AT) MUST render two extra markers into the crafter dispatch prompt, so the PreToolUse carpaccio intercept spawns the carpaccio slice gate in pytest-regression mode instead of globbing for `.feature` scenarios:
+
+```
+<!-- DES-AT-KIND : pytest-regression -->
+<!-- DES-REGRESSION-TEST-FILE : <repo-relative-path-to-the-regression-test> -->
+```
+
+A default (Gherkin) slice renders NEITHER marker — its dispatch prompt stays byte-identical to today, and the intercept runs the gate in default Gherkin mode. The intercept parses these via `_parse_at_kind_from_prompt`; absent DES-AT-KIND ⇒ `("gherkin", None)`. A marker-vs-reality mismatch fails LOUD through the carpaccio CLI's existing `.feature`-presence mixed-mode guard. <!-- mode-ref-ok -->
+
 ## Syntax
 
 ```

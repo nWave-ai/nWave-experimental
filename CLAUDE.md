@@ -362,7 +362,7 @@ DISCOVER(opt) → DIVERGE(opt) → DISCUSS(opt) → DESIGN(opt) → DEVOPS(opt) 
 | DISTILL | `/nw-distill` | acceptance-designer | BDD test scenarios (Given-When-Then) | **Mandatory** |
 | DELIVER | `/nw-deliver` | software-crafter | Working code via Outside-In TDD | **Mandatory** |
 
-**Cross-wave agents**: researcher, troubleshooter, documentarist, visual-architect, test-optimizer, security-analyst, agent-builder, workshopper
+**Cross-wave agents**: researcher, troubleshooter, documentarist, test-optimizer, security-analyst, agent-builder, workshopper (diagrams are produced via the `/nw-diagram` command, owned by the solution-architect — there is no separate visual-architect agent)
 **Reviewers**: 11 peer review agents (one per specialist + specialized reviewers)
 
 **Deprecation**: SPIKE was a canonical wave phase prior to v3.16.0 and is now deprecated. Spike/analysis work is embedded in the DESIGN wave. The `/nw-spike` command remains for backward compatibility.

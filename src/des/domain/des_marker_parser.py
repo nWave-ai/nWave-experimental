@@ -89,6 +89,24 @@ _DES_MARKER_KEY = re.compile(
 # literal -- a closed two-member union, nothing else.
 _FEATURE_END_SCOPE = "feature-end"
 
+# The closed dispatch-gate class a DES-BOOTSTRAP marker may name (ADR-001 D6).
+# A bootstrap marker claims a dispatch repairs a dispatch-gate G and must be
+# exempted from G's OWN check only. Membership is the RARE + self-limiting
+# dispatch-gate class; `feature-end-cycle-gate` is DELIBERATELY EXCLUDED
+# (Critical-1: it is a standing-recurrence gate, not a rare/self-limiting
+# dispatch-gate, so bootstrapping it would degrade into a standing routine
+# bypass of the completion-attestation gate). An out-of-vocab gate-id is
+# malformed (slice-02 fail-closed), keeping the unbounded-gate-name bug class
+# non-representable -- mirrors `_parse_slice`'s closed-scope discipline.
+BOOTSTRAPPABLE_GATES = frozenset(
+    {
+        "carpaccio-slice-gate",
+        "verify-readiness-pre-dispatch",
+        "verify-wave-dispatch",
+        "check-slice-at-completeness",
+    }
+)
+
 # The closed set of feature-end-cycle phases (ADR-028 D6) — imported from the
 # phase-identity SSOT (``atdd_pure_phases.FEATURE_END_PHASES``) rather than
 # restated here. A dispatch of one of these phases is, by definition, NOT
@@ -173,6 +191,15 @@ class DesMarkers:
     # with no I/O -- wave is never self-reported). PreToolUseService reads the
     # WaveActiveReader port and composes this field onto the parsed markers.
     wave: str | None = None
+    # --- DES-BOOTSTRAP dispatch-gate exemption markers (ADR-001) --------------
+    # The gate-id a DES-BOOTSTRAP marker names (the dispatch-gate the dispatch
+    # claims to repair, to be exempted from its OWN check only) + the mandatory
+    # justification. Two SEPARATE HTML-comment markers (DES-LANE shape) so an
+    # embedded colon in the justification is unambiguous. Both None when the
+    # dispatch carries no DES-BOOTSTRAP marker (the ordinary case). Pure
+    # prompt-parse output -- validated at the USE site via `classify_bootstrap`.
+    bootstrap_gate: str | None = None
+    bootstrap_justification: str | None = None
 
     @property
     def is_feature_end(self) -> bool:
@@ -240,6 +267,16 @@ class DesMarkerParser:
     _PROJECT_ROOT_PATTERN = re.compile(r"<!--\s*DES-PROJECT-ROOT\s*:\s*(\S+)\s*-->")
     # slice-07d (F4): the wave-bearing declaration a dispatch may carry.
     _WAVE_PATTERN = re.compile(r"<!--\s*DES-WAVE\s*:\s*(\S+)\s*-->")
+    # ADR-001: the two DES-BOOTSTRAP markers (DES-LANE two-comment shape so a
+    # colon in the justification text is unambiguous). The gate-id is a single
+    # token (`\S+`); the justification is free text captured non-greedily up to
+    # the closing `-->`. `DES-BOOTSTRAP-JUSTIFICATION` cannot false-match the
+    # gate pattern -- after `DES-BOOTSTRAP` the gate pattern requires `\s*:`, but
+    # the justification line has `-JUSTIFICATION` there instead.
+    _BOOTSTRAP_PATTERN = re.compile(r"<!--\s*DES-BOOTSTRAP\s*:\s*(\S+)\s*-->")
+    _BOOTSTRAP_JUSTIFICATION_PATTERN = re.compile(
+        r"<!--\s*DES-BOOTSTRAP-JUSTIFICATION\s*:\s*(.+?)\s*-->"
+    )
 
     def parse(self, prompt: str) -> DesMarkers:
         """Parse DES markers from a Task prompt string.
@@ -272,6 +309,17 @@ class DesMarkerParser:
         declared_wave_match = self._WAVE_PATTERN.search(prompt)
         declared_wave = declared_wave_match.group(1) if declared_wave_match else None
 
+        bootstrap_match = self._BOOTSTRAP_PATTERN.search(prompt)
+        bootstrap_gate = bootstrap_match.group(1) if bootstrap_match else None
+        bootstrap_justification_match = self._BOOTSTRAP_JUSTIFICATION_PATTERN.search(
+            prompt
+        )
+        bootstrap_justification = (
+            bootstrap_justification_match.group(1).strip()
+            if bootstrap_justification_match
+            else None
+        )
+
         return DesMarkers(
             is_des_task=is_des_task,
             is_orchestrator_mode=mode == "orchestrator",
@@ -285,6 +333,8 @@ class DesMarkerParser:
             has_des_markers=bool(_DES_MARKER_KEY.search(prompt)),
             carries_validation_marker=carries_validation_marker,
             declared_wave=declared_wave,
+            bootstrap_gate=bootstrap_gate,
+            bootstrap_justification=bootstrap_justification,
         )
 
     def _parse_mode(self, prompt: str) -> str | None:
@@ -372,3 +422,45 @@ def atdd_pure_missing_marker(markers: DesMarkers) -> str | None:
     if markers.slice_id is None:
         return "des-slice"
     return None
+
+
+def classify_bootstrap(markers: DesMarkers, firing_gate_id: str) -> str:
+    """Classify a DES-BOOTSTRAP marker against the CURRENTLY-firing gate.
+
+    Pure function (return-only, zero I/O): marker set + the gate this `_invoke`
+    call is currently evaluating in, verdict out. The slice-01 verdict set
+    (ADR-001 D4, Handoff-to-DISTILL (a)/(c)):
+
+      * no DES-BOOTSTRAP marker                     -> 'absent-for-this-gate'
+      * marker names THIS in-vocab firing gate      -> 'valid'
+      * marker names a DIFFERENT in-vocab composed
+        gate than THIS `_invoke` evaluates          -> 'absent-for-this-gate'
+
+    The canonical divergence rule (Critical-2): `classify_bootstrap` runs FRESH
+    per composed gate, so a marker naming gate G legitimately "does not match"
+    the OTHER composed gates that fire in the same 4-gate dispatch.pre
+    composition. That divergence is EXPECTED, not abuse -- it yields
+    `absent-for-this-gate` (the real runner fires); the named gate is skipped
+    only when ITS OWN `_invoke` fires.
+
+    The slice-02 `malformed` verdict (ADR-001 D4, Handoff-to-DISTILL (b1)/(b2))
+    is the ONLY fail-closed BLOCK case and is INTRINSIC to the marker -- decided
+    independent of divergence-within-a-valid-composition:
+
+      * gate-id NOT in `BOOTSTRAPPABLE_GATES` (out-of-vocab)  -> 'malformed'
+      * missing / empty justification                         -> 'malformed'
+
+    Both are genuine malformation, NOT the expected in-composition divergence, so
+    they classify `malformed` regardless of which gate is currently firing. The
+    intercept maps the single `malformed` verdict to the two DISTINCT block events
+    (`BootstrapMarkerMalformed` vs `BootstrapJustificationMissing`).
+    """
+    if markers.bootstrap_gate is None:
+        return "absent-for-this-gate"
+    if markers.bootstrap_gate not in BOOTSTRAPPABLE_GATES:
+        return "malformed"
+    if not markers.bootstrap_justification:
+        return "malformed"
+    if markers.bootstrap_gate == firing_gate_id:
+        return "valid"
+    return "absent-for-this-gate"

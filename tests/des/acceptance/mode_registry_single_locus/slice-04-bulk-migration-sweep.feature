@@ -11,7 +11,7 @@
 # (2026-06-11, supersedes the analysis estimate): 35 asset files carry 277
 # naked `atdd_pure` / `workflow.mode` literals outside GENERATED regions
 # (20 remaining skill dirs + 1 checklist yaml + 6 remaining agent specs + 6
-# task guides); 11 prose-watcher test locations enumerated (8 DELETE / 3
+# task guides); 10 prose-watcher test locations enumerated (8 DELETE / 2
 # KEEP), per the deletion-safety ledger in `domain_types_slice_04.py` and
 # the feature-delta DISTILL slice-04 section.
 #
