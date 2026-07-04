@@ -33,10 +33,12 @@ Feature: Per-gate YAML files validate against GateContractFull schema (slice-02)
   # Count 41 -> 42 (2026-06-20, f-attest-bundled-slice slice-01): per-gate file for the
   # bundled-slice attestation command (attest-bundled-slice), 1:1 with its catalog entry.
   @driving_port @in-process @real-io @slice-02 @contract-shape:pure-function
-  Scenario: All 42 per-gate files exist and validate against GateContractFull schema
+  # Count 43 -> 48 -> 51 (2026-07-03, P0.1-P0.5 + P1.3): per-gate files for the six
+  # evidence-by-execution gates, 1:1 with their catalog entries.
+  Scenario: All 51 per-gate files exist and validate against GateContractFull schema
     Given the per-gate file directory at "nWave/gates/"
     When each per-gate file is loaded and validated
-    Then exactly 42 per-gate files exist (one per catalog entry)
+    Then exactly 51 per-gate files exist (one per catalog entry)
     And every per-gate file validates against the GateContractFull schema
 
   @driving_port @in-process @real-io @slice-02 @contract-shape:pure-function

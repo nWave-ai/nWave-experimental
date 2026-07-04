@@ -91,13 +91,20 @@ def then_no_errors(composition) -> None:
 # Count 41 -> 42 (2026-06-20, f-attest-bundled-slice slice-01): adds the bundled-slice
 # attestation command attest-bundled-slice, wired across all three surfaces (registry +
 # catalog + per-gate file), built on reverify's shared _reverify_core (no parallel path).
-@then("both contain exactly 43 entries")
+# Count 43 -> 51 (2026-07-03, evolution-plan P0.1-P0.5 catalog reconcile): the five
+# evidence-by-execution gates (verify-fresh-clone, verify-red-green, verify-negative-at,
+# verify-doc-coherence, verify-execution-reach) were added to _REGISTRY by the v2
+# evolution work WITHOUT their catalog rows + per-gate files -- exactly the
+# registry-coherence drift class the per-slice build-tier exit gate now catches
+# (F-CONTRACT-GATE-EXCLUDES-BUILD-TIER-ARCH-TESTS). Reconciled 1:1 across all
+# three surfaces.
+@then("both contain exactly 51 entries")
 def then_both_counts_match(composition) -> None:
-    assert len(composition.catalog_gate_ids) == 43, (
-        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 43"
+    assert len(composition.catalog_gate_ids) == 51, (
+        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 51"
     )
-    assert len(composition.registry_names) == 43, (
-        f"_REGISTRY has {len(composition.registry_names)} entries, expected 43"
+    assert len(composition.registry_names) == 51, (
+        f"_REGISTRY has {len(composition.registry_names)} entries, expected 51"
     )
 
 

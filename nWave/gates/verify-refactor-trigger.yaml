@@ -1,0 +1,69 @@
+# Gate-contract: verify-refactor-trigger (evolution-plan P1.3 — signal-driven refactor)
+#
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-refactor-trigger.
+
+gate_id: verify-refactor-trigger
+responsibility: |
+  Signal-driven refactor trigger: detector findings on the slice diff
+  (including the SSOT-violation classes: duplicated code/constants, parallel
+  enum definitions, long functions, unused imports) ARE the refactor's
+  expectations; zero findings means no refactor pass runs. The verdict always
+  declares which analysis arm ran (tsunami | ast-fallback | none), degrading
+  LOUD when no arm can assess (never a silent nobody-looked).
+module: des.cli.verify_refactor_trigger
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --repo
+    required: false
+    type: path
+    help: "Repository root."
+    default: "."
+  - name: --files
+    required: false
+    type: path
+    help: "Explicit file selection (repeatable; XOR with --diff-base)."
+  - name: --diff-base
+    required: false
+    type: string
+    help: "Git ref: analyze files from `git diff --name-only <ref>...HEAD` (XOR with --files)."
+  - name: --ext
+    required: false
+    type: string
+    help: "Source extension the AST arm analyzes."
+    default: ".py"
+  - name: --threshold-func-lines
+    required: false
+    type: int
+    help: "Long-function threshold (lines)."
+    default: 60
+  - name: --threshold-dup-block-lines
+    required: false
+    type: int
+    help: "Duplicated-block window (normalized lines)."
+    default: 5
+  - name: --threshold-enum-overlap
+    required: false
+    type: string
+    help: "Parallel-enum member-name overlap ratio."
+    default: 0.8
+
+log_events:
+  - RefactorTriggerClean
+  - RefactorTriggerFired
+  - RefactorTriggerIndeterminate
+
+failure_modes:
+  - error_class: RefactorTriggerFired
+    exit_code: 1
+    remediation: "Findings above threshold: the findings list IS the refactor brief -- dispatch the refactor with it, then re-run the trigger to measure the delta."
+  - error_class: RefactorTriggerIndeterminate
+    exit_code: 2
+    remediation: "No analysis arm can assess the selected set (non-Python files without a wired tsunami adapter, or git unavailable for --diff-base); install/wire tsunami for non-Python arms or point --files/--ext at Python sources."
+
+idempotency: idempotent
+
+host_visibility:
+  - cli

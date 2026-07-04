@@ -18,11 +18,32 @@ reads the filesystem and mutates nothing.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Iterator
+
+
+# Directories pruned during the repo-wide ``.feature`` walk (workspace-layout
+# generalization, fix-feature-tag-files-workspace-layout): version control,
+# virtualenvs, dependency/vendor trees, and build/cache artifacts never carry
+# authored acceptance scenarios and can be arbitrarily large or vendored.
+EXCLUDED_SEARCH_DIRS = frozenset(
+    {
+        ".git",
+        ".venv",
+        "node_modules",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "build",
+        "dist",
+    }
+)
 
 
 def _legacy_acceptance_dir(repo: Path, feature_id: str) -> Path:
@@ -45,17 +66,38 @@ def feature_tag_files(repo: Path, feature_id: str) -> list[Path]:
     ``@feature-{feature_id}`` tag preceding its ``Feature:`` header, OR it
     lives under the legacy feature-scoped acceptance directory. The legacy
     path stays a source -- it is no longer the ONLY source.
+
+    Workspace-layout generalization (fix-feature-tag-files-workspace-layout):
+    the search root is the repo root itself, not a hardcoded ``{repo}/tests``
+    -- a ``.feature`` file under any workspace subdir (``server/tests/...``,
+    ``packages/api/tests/...``) is found. ``EXCLUDED_SEARCH_DIRS`` is pruned
+    DURING the walk (never post-filtered) so the search stays bounded even
+    over a large or vendored tree; the ``@feature-{feature_id}`` tag filter
+    keeps the result TAG-scoped, never "every .feature in the repo".
     """
-    tests_dir = repo / "tests"
-    if not tests_dir.is_dir():
+    if not repo.is_dir():
         return []
     wanted = f"@feature-{feature_id}"
     legacy_dir = _legacy_acceptance_dir(repo, feature_id)
     matched: set[Path] = set()
-    for path in tests_dir.rglob("*.feature"):
+    for path in _walk_feature_files(repo):
         if wanted in _file_feature_tags(path) or legacy_dir in path.parents:
             matched.add(path)
     return sorted(matched)
+
+
+def _walk_feature_files(repo: Path) -> Iterator[Path]:
+    """Yield every ``*.feature`` file under ``repo``, pruning excluded dirs.
+
+    Pruning happens on ``dirnames`` in place (the ``os.walk`` contract) so an
+    excluded subtree (``node_modules``, ``.git``, ...) is never descended
+    into, keeping the walk bounded regardless of tree size.
+    """
+    for dirpath, dirnames, filenames in os.walk(repo):
+        dirnames[:] = [d for d in dirnames if d not in EXCLUDED_SEARCH_DIRS]
+        for filename in filenames:
+            if filename.endswith(".feature"):
+                yield Path(dirpath) / filename
 
 
 def _file_feature_tags(path: Path) -> tuple[str, ...]:

@@ -15,24 +15,43 @@ zero drift (OUT is IN):
 - P2 `wave_injection`  — pure filter on `consumed_by`
 - P3 `output_contract` — the write spec for a section
 
+evolution-plan P1.4 adds a FOURTH consumer — P4 `project_for_role` — a role-scoped
+markdown projection (`crafter | examiner | atd`) so an agent consumes a lean SLICE
+of the one SSOT feature-delta instead of the whole document (~8x full-delta reads
+per feature, measured). The Reuse Analysis rows are MANDATORY, NON-PROJECTABLE-AWAY
+for the crafter role (Ale 2026-07-03: "il crafter spesso crea codice alternativo e
+viola SSOT") — a crafter projection that would drop them is REFUSED loud rather than
+silently shipped slim, because that is exactly the anti-SSOT-duplication guardrail
+the crafter must see.
+
 OSS invariant (F-D-09): `des.*` imports + stdlib only; NO `import yaml`; NO
 sequencer/engine. The projections REUSE the shipped validators in
 `des.cli.validate_feature_delta` — they do NOT re-implement Table validation.
 
-CLI contract (driving port): `des feature-delta-schema {describe,verify,inject,contract}`.
+CLI contract (driving port): `des feature-delta-schema
+{describe,verify,inject,contract,project}`.
 """
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass
 
 from des.cli.validate_feature_delta import (
+    _SLICE_PLAN_HEADING_RE,
     REUSE_ANALYSIS_COLUMNS,
+    REUSE_ANALYSIS_HEADING,
     SLICE_PLAN_COLUMNS,
+    SUSTAINABILITY_HEADING,
     VERDICT_ACCEPTED,
+    VERDICT_MALFORMED_REUSE_ANALYSIS,
+    VERDICT_MISSING_REUSE_ANALYSIS,
     VERDICT_STRUCTURALLY_ACCEPTED,
+    VERDICT_UNJUSTIFIED_CREATE_NEW,
+    _is_separator_row,
     _parse_table_cells,
+    _plan_table_rows,
     validate_reuse_analysis_content,
     validate_slice_plan_content,
 )
@@ -152,6 +171,13 @@ _ARCHITECTURE_TESTS_TABLE = Table(
     )
 )
 
+#: Definition-of-Done heading literal — reused by both the registry entry and the
+#: P4 role-projection extractor (single seam, no per-consumer duplicate literal).
+_DEFINITION_OF_DONE_HEADING = "## Wave: DISCUSS / [REF] Definition of Done"
+
+#: DESIGN Decisions heading literal — same single-seam reuse as above.
+_DESIGN_DECISIONS_HEADING = "## Wave: DESIGN / [REF] Decisions"
+
 
 #: The ordered section registry — the ONE typed feature-delta value (§S.3). Every
 #: entry maps to exactly one constructor instance; every `consumed_by` token is a
@@ -185,6 +211,28 @@ FEATURE_DELTA_SCHEMA: tuple[SectionEntry, ...] = (
         section_type=RefList(),
         heading="## Wave: DESIGN / [REF] ADR Refs",
         consumed_by=frozenset({"design", "deliver"}),
+    ),
+    # --- evolution-plan P1.4: three ADDITIVE entries backing the P4 role
+    # projection. Each is a no-op in gate_verify (Table/Prose section_ids other
+    # than "slice-plan"/"reuse-analysis" fall through `_verify_table` unchanged;
+    # ADD-not-mutate, zero behavior change for P1-P3 or the existing test suite.
+    SectionEntry(
+        section_id="definition-of-done",
+        section_type=Prose(),
+        heading=_DEFINITION_OF_DONE_HEADING,
+        consumed_by=frozenset({"discuss", "distill", "deliver"}),
+    ),
+    SectionEntry(
+        section_id="design-decisions",
+        section_type=Table(columns=("ID", "Decision", "Rationale")),
+        heading=_DESIGN_DECISIONS_HEADING,
+        consumed_by=frozenset({"design", "distill", "deliver"}),
+    ),
+    SectionEntry(
+        section_id="test-reuse-analysis",
+        section_type=Prose(),
+        heading=SUSTAINABILITY_HEADING,
+        consumed_by=frozenset({"distill", "deliver"}),
     ),
 )
 
@@ -227,22 +275,22 @@ def _verify_table(entry: SectionEntry, content: str) -> VerifyVerdict | None:
     / `validate_reuse_analysis_content` verbatim (REUSE, no re-implementation).
     """
     if entry.section_id == "slice-plan":
-        result = validate_slice_plan_content(content)
-        if result.verdict != VERDICT_ACCEPTED and "Slice Plan" in content:
+        plan_result = validate_slice_plan_content(content)
+        if plan_result.verdict != VERDICT_ACCEPTED and "Slice Plan" in content:
             return VerifyVerdict(
                 GateVerdict.FAIL,
-                f"{_section_name(entry)}: {result.detail}",
+                f"{_section_name(entry)}: {plan_result.detail}",
             )
         return None
     if entry.section_id == "reuse-analysis":
-        result = validate_reuse_analysis_content(content)
+        reuse_result = validate_reuse_analysis_content(content)
         if (
-            result.verdict != VERDICT_STRUCTURALLY_ACCEPTED
+            reuse_result.verdict != VERDICT_STRUCTURALLY_ACCEPTED
             and "Reuse Analysis" in content
         ):
             return VerifyVerdict(
                 GateVerdict.FAIL,
-                f"{_section_name(entry)}: {result.detail}",
+                f"{_section_name(entry)}: {reuse_result.detail}",
             )
         return None
     return None
@@ -383,6 +431,292 @@ def output_contract(
 
 
 # ---------------------------------------------------------------------------
+# §S.5 — P4 `project_for_role`: role-scoped markdown projections
+# (evolution-plan P1.4). SSOT stays the ONE feature-delta.md; this is a pure
+# READ projection, never a second authoring surface.
+#
+# Roles v1:
+#   - crafter  — value statement + DoD rows + Reuse Analysis rows (MANDATORY,
+#                cannot be projected away) + Design Decisions table.
+#   - examiner — ONLY the value statement + spec-row refs (deliberately the
+#                leanest — its ignorance of implementation detail is its value).
+#   - atd      — value statement + DoD + Design Decisions + Test-Reuse section.
+# ---------------------------------------------------------------------------
+
+#: The closed role vocabulary (v1). An unrecognized role is a USAGE error at the
+#: CLI shell (exit 1) — never silently defaulted to a role.
+ROLES: frozenset[str] = frozenset({"crafter", "examiner", "atd"})
+
+#: A `**Label**: value` preamble metadata line (e.g. `**Backlog**: ...`,
+#: `**Design ADR**: ...`) — the "spec-row refs" the leanest (examiner) role
+#: carries instead of any implementation section.
+_SPEC_REF_LINE_RE = re.compile(r"^\*\*[A-Za-z][A-Za-z0-9 \-]*\*\*:\s*.+")
+
+
+class ProjectionRefusal(Exception):
+    """Raised by `project_for_role` when a required section is absent/malformed.
+
+    Carries a structured (what, why, how) triple so the CLI shell prints a
+    self-explaining refusal (every failure explains what/why/how — never a bare
+    non-zero exit).
+    """
+
+    def __init__(self, what: str, why: str, how: str) -> None:
+        super().__init__(what)
+        self.what = what
+        self.why = why
+        self.how = how
+
+
+@dataclass(frozen=True)
+class RoleProjection:
+    """The rendered P4 projection + its size accounting. Pure value."""
+
+    role: str
+    slice_id: str
+    source: str
+    markdown: str
+    full_chars: int
+    full_words: int
+    projected_chars: int
+    projected_words: int
+
+
+def _section_body(content: str, heading_literal: str) -> str | None:
+    """The raw text block beneath `heading_literal`, up to the next `##`
+    heading (exclusive). Pure. Generic section-body extractor — the ONE seam
+    every role projection reuses (no per-role/per-section parser)."""
+    lines = content.splitlines()
+    start = None
+    for idx, line in enumerate(lines):
+        if line.rstrip() == heading_literal:
+            start = idx + 1
+            break
+    if start is None:
+        return None
+    body_lines: list[str] = []
+    for line in lines[start:]:
+        if line.startswith("##"):
+            break
+        body_lines.append(line)
+    while body_lines and not body_lines[0].strip():
+        body_lines.pop(0)
+    while body_lines and not body_lines[-1].strip():
+        body_lines.pop()
+    return "\n".join(body_lines)
+
+
+def _slice_plan_row(content: str, slice_id: str) -> dict[str, str] | None:
+    """The single Slice Plan row for `slice_id` as a column->cell dict. Pure.
+
+    Reuses `_plan_table_rows` + `_parse_table_cells` + `_is_separator_row`
+    (validate_feature_delta) — no parallel table parser.
+    """
+    rows = _plan_table_rows(content, _SLICE_PLAN_HEADING_RE)
+    if not rows:
+        return None
+    header = _parse_table_cells(rows[0])
+    for row in rows[1:]:
+        if _is_separator_row(row):
+            continue
+        cells = _parse_table_cells(row)
+        if cells and cells[0].strip().lower() == slice_id.strip().lower():
+            return dict(zip(header, cells, strict=False))
+    return None
+
+
+def _dod_lines_for_slice(content: str, slice_id: str) -> list[str] | None:
+    """The Definition-of-Done bullets scoped to `slice_id`. Pure.
+
+    Filters the DoD section's bullet lines to those mentioning `slice_id`; when
+    no bullet is slice-annotated (a feature-wide DoD), returns every bullet —
+    never a silent empty projection when the section genuinely has content.
+    Returns None only when the DoD section itself is absent.
+    """
+    body = _section_body(content, _DEFINITION_OF_DONE_HEADING)
+    if body is None:
+        return None
+    bullets = [line for line in body.splitlines() if line.strip().startswith("-")]
+    scoped = [line for line in bullets if slice_id.lower() in line.lower()]
+    return scoped if scoped else bullets
+
+
+def _spec_row_refs(content: str) -> list[str]:
+    """The preamble `**Label**: value` metadata lines (before the first `##`
+    heading). Pure. The examiner role's "spec-row refs" — pointers to the
+    backlog/ADR/spec provenance, deliberately without any design/reuse detail.
+    """
+    refs: list[str] = []
+    for line in content.splitlines():
+        if line.startswith("##"):
+            break
+        stripped = line.strip()
+        if _SPEC_REF_LINE_RE.match(stripped):
+            refs.append(stripped)
+    return refs
+
+
+#: Reuse Analysis verdicts under which the section is either well formed or
+#: honestly exempt — safe to include in a crafter projection. Any OTHER verdict
+#: (malformed / unjustified-create-new / missing) is a refusal: the crafter
+#: mandate is that these rows are NON-PROJECTABLE-AWAY, so a source that cannot
+#: be honestly parsed must never ship a silently slimmed projection.
+_REUSE_ANALYSIS_SAFE_VERDICTS = frozenset(
+    {
+        VERDICT_STRUCTURALLY_ACCEPTED,
+        "methodology-exempt",
+        "no-overlap-declared",
+    }
+)
+
+
+def _mandatory_reuse_analysis_block(content: str, source: str) -> str:
+    """The Reuse Analysis section body for the crafter role, or a loud refusal.
+
+    REUSES `validate_reuse_analysis_content` verbatim (no re-implementation).
+    Malformed, unjustified-create-new, or wholly absent Reuse Analysis all
+    raise `ProjectionRefusal` — this section can NEVER be silently dropped or
+    slimmed away for the crafter role (Ale 2026-07-03 SSOT-duplication guard).
+    """
+    result = validate_reuse_analysis_content(content)
+    if result.verdict not in _REUSE_ANALYSIS_SAFE_VERDICTS:
+        malformed = result.verdict in (
+            VERDICT_MALFORMED_REUSE_ANALYSIS,
+            VERDICT_UNJUSTIFIED_CREATE_NEW,
+        )
+        missing = result.verdict == VERDICT_MISSING_REUSE_ANALYSIS
+        what = (
+            "Reuse Analysis section is malformed and cannot be safely projected"
+            if malformed
+            else "Reuse Analysis section is absent"
+            if missing
+            else f"Reuse Analysis section verdict is {result.verdict!r}"
+        )
+        raise ProjectionRefusal(
+            what=what,
+            why=f"{result.detail} (source: {source})",
+            how=(
+                "fix the '## Reuse Analysis' table (DDD-8 five-column contract, "
+                "or a Reuse-Analysis: methodology-exempt/no-overlap marker) "
+                "before projecting for the crafter role — this section is "
+                "MANDATORY and can never be projected away"
+            ),
+        )
+    body = _section_body(content, REUSE_ANALYSIS_HEADING)
+    return body if body else result.detail
+
+
+def project_for_role(
+    content: str, role: str, slice_id: str, source: str
+) -> RoleProjection:
+    """P4 — the role-scoped markdown projection. Pure (raises on refusal).
+
+    `role` MUST already be validated against `ROLES` by the caller (the CLI
+    shell treats an unknown role as a usage error, exit 1); this function
+    still defends against a bad role via `ProjectionRefusal` so a direct
+    caller (e.g. a test) gets the same loud what/why/how.
+    """
+    if role not in ROLES:
+        raise ProjectionRefusal(
+            what=f"unknown role {role!r}",
+            why=f"role must be one of {sorted(ROLES)}",
+            how="pass --role crafter|examiner|atd",
+        )
+    row = _slice_plan_row(content, slice_id)
+    if row is None:
+        raise ProjectionRefusal(
+            what=f"slice {slice_id!r} not found in the Slice Plan",
+            why=(
+                "no row in '## Wave: DISCUSS / [REF] Slice Plan' matches this "
+                f"slice id (source: {source})"
+            ),
+            how="pass --slice matching a real row in the delta's Slice Plan table",
+        )
+    value_statement = row.get("Value statement", "")
+    sections = [f"## Value Statement ({slice_id})\n\n{value_statement}"]
+
+    if role == "examiner":
+        refs = _spec_row_refs(content)
+        if refs:
+            sections.append("## Spec Refs\n\n" + "\n".join(f"- {r}" for r in refs))
+        return _render_projection(role, slice_id, source, content, sections)
+
+    # crafter + atd both carry DoD + Design Decisions.
+    dod = _dod_lines_for_slice(content, slice_id)
+    if dod is None:
+        raise ProjectionRefusal(
+            what="Definition of Done section is absent",
+            why=(
+                f"no '{_DEFINITION_OF_DONE_HEADING}' heading found (source: {source})"
+            ),
+            how="author the DISCUSS Definition of Done section before projecting",
+        )
+    sections.append(
+        f"## Definition of Done ({slice_id})\n\n" + "\n".join(dod)
+        if dod
+        else f"## Definition of Done ({slice_id})\n\n(none)"
+    )
+
+    decisions_body = _section_body(content, _DESIGN_DECISIONS_HEADING)
+    if decisions_body:
+        sections.append(f"## Design Decisions\n\n{decisions_body}")
+
+    if role == "crafter":
+        reuse_block = _mandatory_reuse_analysis_block(content, source)
+        sections.append(f"## Reuse Analysis\n\n{reuse_block}")
+
+    if role == "atd":
+        test_reuse_body = _section_body(content, SUSTAINABILITY_HEADING)
+        if test_reuse_body is None:
+            raise ProjectionRefusal(
+                what="Test Reuse & Consolidation Analysis section is absent",
+                why=f"no '{SUSTAINABILITY_HEADING}' heading found (source: {source})",
+                how="author the DISTILL Test Reuse & Consolidation Analysis section",
+            )
+        sections.append(f"## Test Reuse & Consolidation Analysis\n\n{test_reuse_body}")
+
+    projection = _render_projection(role, slice_id, source, content, sections)
+    if role == "crafter" and "Reuse Analysis" not in projection.markdown:
+        # Self-check (never reached under the guard above; defends the
+        # NON-PROJECTABLE-AWAY invariant against a future rendering bug).
+        raise ProjectionRefusal(
+            what="Reuse Analysis rows were dropped from the crafter projection",
+            why="the rendered markdown does not carry a Reuse Analysis section",
+            how="this is a projector bug — do not ship a slim crafter projection",
+        )
+    return projection
+
+
+def _render_projection(
+    role: str, slice_id: str, source: str, full_content: str, sections: list[str]
+) -> RoleProjection:
+    """Assemble the header + sections into the final markdown. Pure."""
+    body = "\n\n".join(sections) + "\n"
+    full_chars = len(full_content)
+    full_words = len(full_content.split())
+    projected_chars = len(body)
+    projected_words = len(body.split())
+    ratio = projected_chars / full_chars if full_chars else 0.0
+    header = (
+        "# Feature-Delta Projection\n\n"
+        f"**Role**: {role} · **Slice**: {slice_id} · **Source**: {source}\n"
+        f"**Size**: projection={projected_chars} chars ({projected_words} words) "
+        f"/ full={full_chars} chars ({full_words} words) / ratio={ratio:.4f}\n\n"
+    )
+    markdown = header + body
+    return RoleProjection(
+        role=role,
+        slice_id=slice_id,
+        source=source,
+        markdown=markdown,
+        full_chars=full_chars,
+        full_words=full_words,
+        projected_chars=len(markdown),
+        projected_words=len(markdown.split()),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Thin CLI shell — the driving port. Verdicts to STDOUT; the pure functions
 # above are the only logic. This is the sole side-effect boundary.
 # ---------------------------------------------------------------------------
@@ -390,7 +724,8 @@ def output_contract(
 _USAGE = (
     "usage: des feature-delta-schema "
     "{describe [--types|--consumed-by] | verify <file> | "
-    "inject --wave <wave> | contract <section_id>}"
+    "inject --wave <wave> | contract <section_id> | "
+    "project --role <crafter|examiner|atd> --slice <slice-id> <file>}"
 )
 
 
@@ -463,8 +798,93 @@ def _cmd_contract(extra: list[str]) -> int:
     return 0
 
 
+def _parse_project_args(extra: list[str]) -> tuple[str, str, str] | None:
+    """Parse `--role <role> --slice <slice-id> <file>` in any flag order. Pure.
+
+    Returns (role, slice_id, path) or None when the invocation is malformed
+    (missing a flag, missing/extra positional).
+    """
+    role: str | None = None
+    slice_id: str | None = None
+    positional: list[str] = []
+    idx = 0
+    while idx < len(extra):
+        token = extra[idx]
+        if token == "--role" and idx + 1 < len(extra):
+            role = extra[idx + 1]
+            idx += 2
+        elif token == "--slice" and idx + 1 < len(extra):
+            slice_id = extra[idx + 1]
+            idx += 2
+        else:
+            positional.append(token)
+            idx += 1
+    if role is None or slice_id is None or len(positional) != 1:
+        return None
+    return role, slice_id, positional[0]
+
+
+def _cmd_project(extra: list[str]) -> int:
+    """`project --role <role> --slice <slice-id> <file>` — P4 project_for_role.
+
+    Usage errors (malformed flags, unknown role) exit 1. A well-formed
+    invocation whose SOURCE content cannot honestly satisfy the role's
+    contract (missing file, missing slice, missing/malformed mandatory
+    section) degrades LOUD: exit 2 with what/why/how — never a silent slim
+    projection.
+    """
+    parsed = _parse_project_args(extra)
+    if parsed is None:
+        print(_USAGE, file=sys.stderr)
+        return 1
+    role, slice_id, path_str = parsed
+    if role not in ROLES:
+        print(
+            f"error: unknown role {role!r}; expected one of {sorted(ROLES)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    from pathlib import Path
+
+    target = Path(path_str)
+    if not target.is_file():
+        print(
+            f"{GateVerdict.INDETERMINATE.name}: "
+            f"what=feature-delta {target} not found; "
+            "why=project reads a real feature-delta.md; "
+            "how=pass a valid path to an existing feature-delta.md",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        content = target.read_bytes().decode("utf-8")
+    except UnicodeDecodeError as exc:
+        print(
+            f"{GateVerdict.INDETERMINATE.name}: "
+            f"what=undecodable document; why={exc}; "
+            "how=save the feature-delta as UTF-8",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        projection = project_for_role(content, role, slice_id, str(target))
+    except ProjectionRefusal as refusal:
+        print(
+            f"{GateVerdict.INDETERMINATE.name}: "
+            f"what={refusal.what}; why={refusal.why}; how={refusal.how}",
+            file=sys.stderr,
+        )
+        return 2
+
+    print(projection.markdown)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry: `des feature-delta-schema {describe,verify,inject,contract}`."""
+    """CLI entry: `des feature-delta-schema {describe,verify,inject,contract,
+    project}`."""
     args = sys.argv[1:] if argv is None else argv
     if not args:
         print(_USAGE, file=sys.stderr)
@@ -475,6 +895,7 @@ def main(argv: list[str] | None = None) -> int:
         "verify": _cmd_verify,
         "inject": _cmd_inject,
         "contract": _cmd_contract,
+        "project": _cmd_project,
     }
     handler = dispatch.get(subcommand)
     if handler is None:

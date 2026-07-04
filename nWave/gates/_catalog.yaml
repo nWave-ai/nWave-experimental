@@ -301,3 +301,53 @@ gates:
     module: des.cli.verify_deliver_entry_contract
     entry_function: main
     language_neutral_contract: true
+
+  # evolution-plan P0.1-P0.5 (2026-07-03, evidence-by-execution gate family):
+  # the five mechanical done-currency gates. 1:1 mirror of the five _REGISTRY
+  # rows landed with the v2 evolution work; each has a matching per-gate file
+  # keeping the registry<->catalog<->per-gate-file 1:1 (this reconcile closes
+  # the catalog<->registry drift the build-tier exit gate now catches per slice).
+  - gate_id: verify-fresh-clone
+    responsibility: "Execute the project's declared demo recipe in a fresh export of the COMMITTED tree (evidence-by-execution, evolution P0.1): works-only-on-my-machine / broken-on-fresh-clone cannot reach done."
+    module: des.cli.verify_fresh_clone
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-red-green
+    responsibility: "Seal the RED->GREEN transition of an AT file as mechanical non-vacuity evidence (evolution P0.2): --record-red captures the failing witness, --verify-green seals only a genuinely red-then-green untampered AT; runner-agnostic JUnit-XML outcome contract via a declared --run-cmd."
+    module: des.cli.verify_red_green
+    entry_function: main
+    language_neutral_contract: true
+  - gate_id: verify-refactor-trigger
+    responsibility: "Signal-driven refactor trigger (evolution P1.3): detector findings on the slice diff (incl. SSOT-violation classes) ARE the refactor expectations; zero findings = no pass runs; the verdict declares the analysis arm (tsunami|ast-fallback|none), degrading LOUD when nothing could assess."
+    module: des.cli.verify_refactor_trigger
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-negative-at
+    responsibility: "Verify every CRITICAL test scope carries >=1 negative AT -- an assertion that the WRONG output is NOT produced (evolution P0.3); static pytest + Gherkin arms, honest N/A on non-critical scopes, never a silent pass."
+    module: des.cli.verify_negative_at
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-doc-coherence
+    responsibility: "Check doc claims (npm scripts, repo file paths, python -m modules) against the actual tree (evolution P0.5): shipped docs claiming absent artifacts are refused with line + why + how."
+    module: des.cli.verify_doc_coherence
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-execution-reach
+    responsibility: "Binary execution-reach verdict over a Cobertura coverage XML (evolution P0.4): every production file under --src-dir must show >0 line hits; a never-executed production module cannot ship as done."
+    module: des.cli.verify_execution_reach
+    entry_function: main
+    language_neutral_contract: true
+  - gate_id: verify-spec-coverage
+    responsibility: "Spec-coverage gate at DISTILL-exit (evolution P3.2): every DISTILL-open checklist requirement row must be covered by >=1 marker-discriminated AT (six mandatory categories called out when uncovered), or it is a visible red row; missing/malformed checklist degrades LOUD -- the eval silent-absence class."
+    module: des.cli.verify_spec_coverage
+    entry_function: main
+    language_neutral_contract: true
+  - gate_id: record-examine-verdict
+    responsibility: "User-Examiner verdict PRODUCER (evolution P2.1/P1.2): appends a charter-sealed tamper-evident ExamineVerdict to the per-feature examine ledger; the commit-slice examine gate consumes it. The execution-observation replacement for the code-reading C_REVIEWER_AUDIT."
+    module: des.cli.record_examine_verdict
+    entry_function: main
+    language_neutral_contract: true

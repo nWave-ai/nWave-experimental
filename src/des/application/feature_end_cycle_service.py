@@ -76,11 +76,20 @@ from des.application.feature_end_sign_service import (
     SignRefusal,
     sign_feature_end_review,
 )
+from des.cli.record_examine_verdict import examine_ledger_path
+from des.domain.examine_verdict_signing import charter_seal as _charter_seal
 from des.runtime.interpreter import des_spawn
 
 
 _MANIFEST_NAME = "walking-skeleton.json"
 _FEATURE_DELTA_NAME = "feature-delta.md"
+
+# The examine-verdict ledger's event name (mirrors ``commit_slice.py``'s
+# ``_EXAMINE_VERDICT_EVENT``) and the feature-end scope marker: a feature-end
+# examine is recorded with ``--slice feature-end`` (never a real slice-id), so
+# it cannot be confused with a per-slice PASS recorded during delivery.
+_EXAMINE_VERDICT_RECORDED_EVENT = "ExamineVerdictRecorded"
+_FEATURE_END_EXAMINE_SLICE_ID = "feature-end"
 
 
 @dataclass(frozen=True)
@@ -236,6 +245,12 @@ def run_feature_end_cycle(
         ledger.append_full_suite_leg_ran(feature_id=feature_id)
     else:
         ledger.append_full_suite_leg_not_applicable(feature_id=feature_id)
+
+    feature_end_examine = _run_feature_end_examine_leg(
+        repo_root=repo_root, feature_id=feature_id
+    )
+    if isinstance(feature_end_examine, CycleRefusal):
+        return feature_end_examine
 
     signed = sign_feature_end_review(
         feature_id=feature_id,
@@ -527,6 +542,173 @@ def _repo_has_contract_suite(repo_root: Path) -> bool:
         # Aligned with the lib edit Lyra@tsunami applied 2026-06-28 (Ale option-B);
         # sibling of #73. Mirrors worktree commit 6c9ac9cea (FIX2).
         return False
+
+
+def _charter_dir(repo_root: Path, feature_id: str) -> Path:
+    """Where a feature's User-Examiner charters live, per the P1.2 convention."""
+    return repo_root / "docs" / "product" / "expectations" / feature_id
+
+
+def _repo_relative_str(path: Path, repo_root: Path) -> str:
+    """Repo-relative string form of ``path`` (mirrors ``commit_slice._repo_relative``)."""
+    try:
+        return str(path.resolve().relative_to(repo_root.resolve()))
+    except ValueError:
+        return str(path)
+
+
+def _feature_end_examine_remediation(feature_id: str, charter_relpath: str) -> str:
+    return (
+        "dispatch nw-user-examiner against the charter at FEATURE scope, then "
+        f"record its verdict: `des record-examine-verdict --repo <repo> "
+        f"--feature-id {feature_id} --slice {_FEATURE_END_EXAMINE_SLICE_ID} "
+        f"--charter {charter_relpath} --verdict PASS --observations <text> "
+        "--examiner nw-user-examiner`"
+    )
+
+
+def _latest_feature_end_examine_verdict(
+    repo_root: Path, feature_id: str, charter_relpath: str
+) -> dict[str, object] | None:
+    """The latest feature-end-scoped ``ExamineVerdict`` for one charter, or None.
+
+    Mirrors ``commit_slice._latest_examine_verdict`` but additionally filters
+    on ``charter_path`` (a feature can carry SEVERAL charters, each requiring
+    its OWN fresh PASS) and pins ``slice_id == "feature-end"`` (never a real
+    slice-id -- a per-slice PASS recorded during delivery can never satisfy
+    the feature-end requirement).
+    """
+    ledger_path = examine_ledger_path(repo_root, feature_id)
+    if not ledger_path.is_file():
+        return None
+    latest: dict[str, object] | None = None
+    for line in ledger_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        if record.get("event") != _EXAMINE_VERDICT_RECORDED_EVENT:
+            continue
+        if record.get("slice_id") != _FEATURE_END_EXAMINE_SLICE_ID:
+            continue
+        if record.get("charter_path") != charter_relpath:
+            continue
+        latest = record
+    return latest
+
+
+def _check_feature_end_examine(
+    repo_root: Path, feature_id: str, charter_path: Path
+) -> CycleRefusal | None:
+    """Assert ``charter_path`` has a fresh feature-end PASS; else refuse LOUD.
+
+    Mirrors ``commit_slice.check_examine_verdict``'s refusal taxonomy
+    (Missing / Refused / Indeterminate / Stale), scoped to ``slice_id ==
+    "feature-end"`` and to THIS charter. Every refusal states WHAT charter
+    failed, WHY, and HOW to remediate -- never a bare event name.
+    """
+    charter_relpath = _repo_relative_str(charter_path, repo_root)
+    record = _latest_feature_end_examine_verdict(repo_root, feature_id, charter_relpath)
+
+    if record is None:
+        return CycleRefusal(
+            f"charter {charter_relpath!r} has no recorded FEATURE-END "
+            "examine-verdict (ExamineVerdictMissing); the feature-end cycle "
+            "refuses to certify the feature is done (anti-theater): a charter "
+            "exists under docs/product/expectations, so a fresh PASS "
+            "ExamineVerdict recorded at feature scope "
+            f"(slice={_FEATURE_END_EXAMINE_SLICE_ID}) is required before done. "
+            + _feature_end_examine_remediation(feature_id, charter_relpath)
+        )
+
+    verdict = record.get("verdict")
+
+    if verdict == "FAIL":
+        return CycleRefusal(
+            f"charter {charter_relpath!r} was examined at feature scope and "
+            "FAILED (ExamineVerdictRefused): "
+            f"{record.get('observations', '')}; the feature-end cycle refuses "
+            "to certify the feature is done. Fix the feature per the "
+            f"examiner's observations, then "
+            + _feature_end_examine_remediation(feature_id, charter_relpath)
+        )
+
+    if verdict == "INDETERMINATE":
+        return CycleRefusal(
+            f"charter {charter_relpath!r}'s recorded feature-end examine-verdict "
+            "is INDETERMINATE (ExamineVerdictIndeterminate); an unexaminable "
+            "feature carries no observable done-proof (never a silent pass). "
+            + _feature_end_examine_remediation(feature_id, charter_relpath)
+        )
+
+    if verdict != "PASS":
+        return CycleRefusal(
+            f"charter {charter_relpath!r}'s recorded feature-end verdict is "
+            f"unrecognised: {verdict!r} (ExamineVerdictStale); only PASS / "
+            "FAIL / INDETERMINATE are valid examine verdicts. "
+            + _feature_end_examine_remediation(feature_id, charter_relpath)
+        )
+
+    recorded_seal = record.get("charter_seal")
+    if not isinstance(recorded_seal, str):
+        return CycleRefusal(
+            f"charter {charter_relpath!r}'s feature-end PASS record is "
+            "malformed (missing charter_seal, ExamineVerdictStale) and cannot "
+            "be re-verified. "
+            + _feature_end_examine_remediation(feature_id, charter_relpath)
+        )
+
+    if not charter_path.is_file():
+        return CycleRefusal(
+            f"the examined charter no longer exists: {charter_relpath!r} "
+            "(ExamineVerdictStale); a PASS verdict is bound to the charter "
+            "bytes at exam time -- an absent charter cannot be re-verified. "
+            + _feature_end_examine_remediation(feature_id, charter_relpath)
+        )
+
+    current_seal = _charter_seal(charter_path.read_bytes())
+    if current_seal != recorded_seal:
+        return CycleRefusal(
+            f"the charter changed after its feature-end examination: "
+            f"{charter_relpath!r} (ExamineVerdictStale); the recorded "
+            "charter_seal no longer matches the charter's CURRENT bytes -- the "
+            "PASS verdict is void (stale-seal, never a silent pass). "
+            + _feature_end_examine_remediation(feature_id, charter_relpath)
+        )
+    return None
+
+
+def _run_feature_end_examine_leg(
+    *, repo_root: Path, feature_id: str
+) -> None | CycleRefusal:
+    """Require a fresh feature-end PASS for EVERY charter; ARMED only when any exist.
+
+    ADD-not-mutate, mirrors the per-slice ``commit_slice`` examine gate at
+    FEATURE scope: the per-slice gate already requires execution-observation
+    before a slice may commit; this leg requires the SAME discipline again, at
+    feature scope, before the feature-end cycle may sign + declare done.
+
+    ARMING (backward-compat): a no-op when the feature carries NO charters
+    under ``docs/product/expectations/{feature_id}/*.md`` -- so the entire
+    pre-existing feature-end test suite (no charters) stays green, byte-
+    identical to the pre-P2.2 cycle. A feature that HAS adopted the charter
+    convention must re-examine EVERY charter at feature scope; any charter
+    with no feature-end PASS / a FAIL / INDETERMINATE / stale-seal fail-closes
+    the WHOLE cycle (no signed verdict, no feature-end record).
+    """
+    charter_dir = _charter_dir(repo_root, feature_id)
+    if not (charter_dir.is_dir() and any(charter_dir.glob("*.md"))):
+        return None
+    for charter_path in sorted(charter_dir.glob("*.md")):
+        refusal = _check_feature_end_examine(repo_root, feature_id, charter_path)
+        if refusal is not None:
+            return refusal
+    return None
 
 
 def _feature_root_from_manifest(feature_dir: Path, repo_root: Path) -> Path:

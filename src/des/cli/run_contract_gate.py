@@ -43,6 +43,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -331,10 +332,15 @@ class _ArchVerdict:
       carried the contract marker, so the arch tier ran vacuously).
     * ``passed`` -- whether the arch run was GREEN (pytest exit 0 or 5). A RED
       arch run is the keystone refusal: a run-time arch invariant FAILED.
+    * ``failed_node_ids`` -- the nodeids of the FAILED arch tests (setup error
+      or call failure), so a refusal NAMES the violated invariant rather than
+      reporting only a bare pytest exit code. Empty on a GREEN run and when an
+      older worker payload carries no ``failed_node_ids`` key.
     """
 
     collected: int
     passed: bool
+    failed_node_ids: tuple[str, ...] = ()
 
 
 def _arch_invariant_paths(repo: Path) -> list[Path]:
@@ -376,10 +382,20 @@ def _run_arch_invariant_set(repo: Path, arch_paths: list[Path]) -> _ArchVerdict:
 
     Maps the worker's run-outcome marker line to an ``_ArchVerdict``: pytest exit
     0/5 is GREEN, any other exit is a RED arch run. ``collected_count`` carries
-    the M-1-floor signal for a vacuous arch scope.
+    the M-1-floor signal for a vacuous arch scope; ``failed_node_ids`` names the
+    violated invariant(s) on a RED run.
+
+    Parallel-by-default via pytest-xdist when importable (the SAME
+    ``gate.jobs`` / ``NWAVE_GATE_JOBS`` resolution the full-suite RUN honours,
+    through ``_parallel_pytest_args``): the arch tier is the per-slice quick
+    tier, so its wall-clock matters at every slice commit. Serial when the
+    operator asked for serial or xdist is absent (the LOUD degrade lives in
+    ``_parallel_pytest_args``).
     """
     interpreter = pytest_interpreter()
     worker = Path(__file__).with_name("_collect_scope_worker.py")
+    parallel = _parallel_pytest_args(repo, interpreter)
+    jobs_args = ["--jobs", parallel[1]] if parallel else []
     completed = subprocess.run(
         [
             interpreter,
@@ -387,6 +403,7 @@ def _run_arch_invariant_set(repo: Path, arch_paths: list[Path]) -> _ArchVerdict:
             "--run",
             "--repo",
             str(repo),
+            *jobs_args,
             *_path_args(arch_paths),
         ],
         capture_output=True,
@@ -402,7 +419,161 @@ def _run_arch_invariant_set(repo: Path, arch_paths: list[Path]) -> _ArchVerdict:
     pytest_exit = int(raw_exit) if isinstance(raw_exit, int) else 1
     raw_collected = payload.get("collected_count", 0)
     collected = int(raw_collected) if isinstance(raw_collected, int) else 0
-    return _ArchVerdict(collected=collected, passed=pytest_exit in (0, 5))
+    raw_failed = payload.get("failed_node_ids", [])
+    failed = (
+        tuple(str(node_id) for node_id in raw_failed)
+        if isinstance(raw_failed, list)
+        else ()
+    )
+    return _ArchVerdict(
+        collected=collected,
+        passed=pytest_exit in (0, 5),
+        failed_node_ids=failed,
+    )
+
+
+# The honest N/A event the build-tier exit check emits when the target carries
+# no ``tests/build`` tier at all (genericita: an external target legitimately
+# has no nWave arch tier). Distinct from a pass claim -- it names the absence.
+_BUILD_TIER_NOT_APPLICABLE_EVENT = "BuildTierNotApplicable"
+
+# The LOUD degrade marker when the build-tier run cannot resolve a pytest
+# interpreter (a non-Python target). The caller PROCEEDS -- the downstream
+# committed-scope digest step degrades on the same absence and mints the honest
+# SliceCommitIndeterminate record -- but the skip is never silent.
+_BUILD_TIER_INDETERMINATE_EVENT = "health.gate.build-tier.indeterminate"
+
+
+def build_tier_exit_verdict(repo: Path) -> int:
+    """RUN the build-tier architectural set as a per-slice exit check.
+
+    Closes F-CONTRACT-GATE-EXCLUDES-BUILD-TIER-ARCH-TESTS for the slice exit
+    path (evolution-plan P1 deletion-safety precondition): the ``des
+    commit-slice`` composition EXECUTES ``tests/build/**`` (via the existing
+    ``_run_arch_invariant_set`` seam -- collect-AND-RUN under the contract
+    marker), so a build-tier arch violation (forbidden import, registry-
+    coherence break) is CAUGHT at the slice exit instead of shipping unseen
+    until a full-suite run.
+
+    ADD-not-mutate (design option i): this is an ADDITIONAL executed check.
+    The committed-scope digest machinery (``_collect_scope`` /
+    ``compute_gate_scope_digest`` / ``_FULL_SUITE_MARKER``) is untouched, so
+    every historic ``Gate-Scope:`` trailer re-verifies byte-identically.
+
+    Verdicts (all LOUD, single-line JSON events):
+
+    * ``tests/build`` absent -> ``BuildTierNotApplicable`` + return 0 (an
+      external target legitimately carries no nWave arch tier; the N/A is
+      emitted distinctly, never a silent pass claim).
+    * interpreter unresolvable -> ``health.gate.build-tier.indeterminate`` +
+      return 0 (proceed; the downstream committed-scope digest step degrades
+      on the same absence and mints the honest ``SliceCommitIndeterminate``).
+    * worker failure -> ``BuildTierRefused`` reason ``worker-failed`` +
+      return 1 (fail-closed: an unrunnable arch tier is never certified).
+    * present-but-vacuous (zero collected under the contract marker) ->
+      ``BuildTierRefused`` reason ``arch-scope-zero-collected`` + return 1.
+    * a failing arch test -> ``BuildTierRefused`` reason
+      ``arch-invariant-failed`` NAMING the failing node-id(s) + return 1.
+    * GREEN -> ``BuildTierVerified`` carrying the executed count and the
+      measured wall-clock + return 0.
+    """
+    arch_paths = _arch_invariant_paths(repo)
+    if not arch_paths:
+        _emit(
+            {
+                "event": _BUILD_TIER_NOT_APPLICABLE_EVENT,
+                "reason": "no tests/build tier on this target",
+                "detail": (
+                    "the target repository carries no tests/build directory; "
+                    "there is no build-tier architecture invariant to run -- "
+                    "recorded as an honest N/A, not a pass claim"
+                ),
+            }
+        )
+        return 0
+    started = time.monotonic()
+    try:
+        arch = _run_arch_invariant_set(repo, arch_paths)
+    except InterpreterUnavailable as exc:
+        _emit(
+            {
+                "event": _BUILD_TIER_INDETERMINATE_EVENT,
+                "outcome": "indeterminate",
+                "capability": exc.capability,
+                "error": (
+                    "no usable interpreter to run the build tier -- proceeding; "
+                    "the committed-scope digest step degrades on the same "
+                    f"absence and records the honest INDETERMINATE: {exc}"
+                ),
+            }
+        )
+        return 0
+    except _CollectionError as exc:
+        _emit(
+            {
+                "event": "BuildTierRefused",
+                "reason": "worker-failed",
+                "what": "build-tier architecture run",
+                "why": f"the arch-invariant run could not be trusted: {exc}",
+                "how": (
+                    "run `pytest tests/build -m 'unit or integration or "
+                    "acceptance'` directly and fix the collection/run failure"
+                ),
+            }
+        )
+        return 1
+    elapsed = round(time.monotonic() - started, 2)
+    if arch.collected == 0:
+        _emit(
+            {
+                "event": "BuildTierRefused",
+                "reason": "arch-scope-zero-collected",
+                "what": "build-tier architecture scope",
+                "why": (
+                    "tests/build exists but collected zero runnable node-ids "
+                    "under the contract marker filter -- refusing rather than "
+                    "certifying a vacuous arch tier"
+                ),
+                "how": (
+                    "ensure at least one tests/build test carries the "
+                    "unit/integration/acceptance marker, or remove the empty "
+                    "tests/build directory"
+                ),
+            }
+        )
+        return 1
+    if not arch.passed:
+        _emit(
+            {
+                "event": "BuildTierRefused",
+                "reason": "arch-invariant-failed",
+                "failed_node_ids": list(arch.failed_node_ids),
+                "elapsed_seconds": elapsed,
+                "what": "build-tier architecture invariant",
+                "why": (
+                    "a build-tier architecture test FAILED -- the slice breaks "
+                    "an architecture/contract invariant in tests/build/**: "
+                    + (
+                        ", ".join(arch.failed_node_ids[:10])
+                        or "see the arch run output"
+                    )
+                ),
+                "how": (
+                    "fix the production code (or the drifted registry/catalog "
+                    "artifact) the named arch test guards, then re-run "
+                    "des commit-slice"
+                ),
+            }
+        )
+        return 1
+    _emit(
+        {
+            "event": "BuildTierVerified",
+            "collected": arch.collected,
+            "elapsed_seconds": elapsed,
+        }
+    )
+    return 0
 
 
 def _collected_count(collect_stdout: str) -> int:

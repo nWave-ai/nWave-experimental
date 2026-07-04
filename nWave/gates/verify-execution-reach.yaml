@@ -1,0 +1,52 @@
+# Gate-contract: verify-execution-reach (evolution-plan P0.4 — execution-reach gate)
+#
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-execution-reach.
+
+gate_id: verify-execution-reach
+responsibility: |
+  Binary execution-reach verdict over a Cobertura coverage report: every
+  production file under --src-dir must show >0 line hits across the
+  feature's verification run -- a never-executed production module cannot
+  ship as done (evolution P0.4; runner-agnostic Cobertura XML contract).
+module: des.cli.verify_execution_reach
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --coverage-xml
+    required: true
+    type: path
+    help: "Cobertura XML report from the feature's verification run."
+  - name: --src-dir
+    required: true
+    type: path
+    help: "Production source root, repo-relative."
+  - name: --repo
+    required: false
+    type: path
+    help: "Path to the repository."
+    default: "."
+  - name: --ext
+    required: false
+    type: string
+    help: "Source file extension to enumerate (default: .py)."
+    default: ".py"
+
+log_events:
+  - ExecutionReachVerified
+  - ExecutionReachRefused
+  - ExecutionReachIndeterminate
+
+failure_modes:
+  - error_class: ExecutionReachRefused
+    exit_code: 1
+    remediation: "A production file shows zero executed lines across the verification run; exercise it from a test (or delete the dead scaffold) and regenerate the coverage XML."
+  - error_class: ExecutionReachIndeterminate
+    exit_code: 2
+    remediation: "Coverage XML missing/unreadable or --src-dir not a directory; run the suite with Cobertura XML output and pass the correct paths."
+
+idempotency: idempotent
+
+host_visibility:
+  - cli

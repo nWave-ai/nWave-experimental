@@ -18,6 +18,15 @@ output, explicit exit codes, pure-function -- the gate reads the feature-delta
 + ``.feature`` files + the AT-completion ledger and returns a verdict (exit
 code + JSON); it performs NO filesystem mutation.
 
+NOTE (evolution-plan P1.2, User-Examiner spine wiring): this module's
+assertion 5 (``check_at_review``) is the DISTILL-exit AT-review gate -- it is
+NOT the per-slice C_REVIEWER_AUDIT / EXAMINE clearing route. The commit-time
+examine-verdict gate that REPLACES the per-slice code-reading review lives at
+the per-slice COMMIT chokepoint instead: see
+``des.cli.commit_slice.check_examine_verdict`` + the ``ATDDPurePhase.EXAMINE``
+value-alias in ``des.domain.atdd_pure_phases``. Neither module imports the
+other; this note exists only so a reader does not conflate the two gates.
+
 Exit codes:
     0  -- the slice is cleared to enter implementation
     1  -- the feature-delta or its ``[REF] Slice Plan`` section is absent
@@ -30,7 +39,9 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import io
 import json
 import sys
 from dataclasses import dataclass
@@ -52,6 +63,15 @@ from des.cli.carpaccio_format import (
     pytest_regression_content_hash,
 )
 from des.cli.human_surface import Verdict, print_human_summary
+
+# Mechanical-seal alternative to the LLM AT-review verdict (evolution-plan
+# P1.1, pytest-regression mode only): the RED-observed seal predicates live in
+# their P0 SSOT modules; the gate imports them so seal-path/content-hash and
+# negative-AT semantics can never drift from `des verify-red-green` /
+# `des verify-negative-at`.
+from des.cli.verify_negative_at import _scan_file as _scan_negative_at_file
+from des.cli.verify_red_green import _content_sha as _red_seal_content_sha
+from des.cli.verify_red_green import _seal_path as _red_green_seal_path
 from des.domain.at_review_signing import (
     canonical_at_review_json,
 )
@@ -359,6 +379,23 @@ def _latest_verdict_record(
     return latest
 
 
+_AT_REVIEW_REJECTED_EXIT = 45
+
+# Attestation labels for the SliceCleared ``at_evidence`` field
+# (pytest-regression mode only -- the gherkin payload stays byte-identical).
+_AT_EVIDENCE_REVIEWER_VERDICT = "reviewer-verdict"
+_AT_EVIDENCE_MECHANICAL_SEAL = "mechanical-seal"
+
+_MECHANICAL_OR_VERDICT_HOW = (
+    "satisfy assertion 5 by EITHER (a) minting an APPROVED ATReviewVerdict "
+    "for this slice in the AT-completion ledger, OR (b) recording the "
+    "mechanical pair: `des verify-red-green --record-red --test-file "
+    "<regression-test-file>` (the RED seal must match the CURRENT file "
+    "content) AND a negative AT in that same file so `des verify-negative-at "
+    "--test-file <regression-test-file> --all-critical` passes."
+)
+
+
 def check_at_review(
     repo: Path,
     feature_id: str,
@@ -366,7 +403,7 @@ def check_at_review(
     scenarios: list[Scenario],
     at_kind: Literal["gherkin", "pytest-regression"] = "gherkin",
     regression_test_file: Path | None = None,
-) -> None:
+) -> str | None:
     """Run assertion 5 (ADR-029 D5). Raises ``GateError`` exit 45 on failure.
 
     Record-presence is the whole control: an absent or non-APPROVED record
@@ -380,17 +417,63 @@ def check_at_review(
     ``no-scenarios-for-slice``), never cleared vacuously on an empty AT set.
 
     ``at_kind="gherkin"`` (default) preserves byte-identical behavior for
-    every existing caller. ``at_kind="pytest-regression"`` (ADR-001,
-    fix-pre-push-hook-dual-installer-collision) REUSES the record-presence /
-    APPROVED / stale-AT-set / stale-content-hash control flow UNCHANGED --
-    only the AT-count + content-hash SOURCE differs: AST-counted ``test_*``
-    functions + a sha256 over the regression file's raw source text, in place
-    of the Gherkin scenario count + ``_at_content_hash``.
+    every existing caller and returns ``None``. ``at_kind="pytest-regression"``
+    (ADR-001, fix-pre-push-hook-dual-installer-collision) REUSES the
+    record-presence / APPROVED / stale-AT-set / stale-content-hash control
+    flow UNCHANGED -- only the AT-count + content-hash SOURCE differs:
+    AST-counted ``test_*`` functions + a sha256 over the regression file's
+    raw source text, in place of the Gherkin scenario count +
+    ``_at_content_hash``.
+
+    Mechanical-seal alternative (evolution-plan P1.1, ADD-not-mutate,
+    pytest-regression mode ONLY): assertion 5 is satisfied by EITHER the
+    legacy ``ATReviewVerdict`` (checked first, unchanged) OR the mechanical
+    pair -- a fresh ``RedObserved`` seal for the regression file (P0.2,
+    ``des verify-red-green --record-red``; stale/tampered content voids it,
+    the same staleness semantics as the verdict path) AND the negative-AT
+    mandate satisfied for that file (P0.3, ``--all-critical`` semantics).
+    Returns the attestation that cleared the slice (``"reviewer-verdict"`` /
+    ``"mechanical-seal"``) so the ledger distinguishes the two. When BOTH
+    fail, the verdict path's rejection is re-raised fail-closed with its
+    ``how`` naming both remedies.
     """
     if at_kind == "pytest-regression" and regression_test_file is None:
         raise ValueError(
             "check_at_review: at_kind='pytest-regression' requires regression_test_file"
         )
+    if at_kind != "pytest-regression":
+        _check_verdict_record(
+            repo, feature_id, entering_slice, scenarios, at_kind, regression_test_file
+        )
+        return None
+    assert regression_test_file is not None  # guarded above
+    try:
+        _check_verdict_record(
+            repo, feature_id, entering_slice, scenarios, at_kind, regression_test_file
+        )
+    except GateError as rejection:
+        if rejection.exit_code != _AT_REVIEW_REJECTED_EXIT:
+            raise  # malformed-input diagnostics (exit 2) propagate untouched
+        if _mechanical_seal_satisfied(repo, regression_test_file):
+            return _AT_EVIDENCE_MECHANICAL_SEAL
+        raise _with_mechanical_remedy(rejection) from None
+    return _AT_EVIDENCE_REVIEWER_VERDICT
+
+
+def _check_verdict_record(
+    repo: Path,
+    feature_id: str,
+    entering_slice: str,
+    scenarios: list[Scenario],
+    at_kind: Literal["gherkin", "pytest-regression"],
+    regression_test_file: Path | None,
+) -> None:
+    """The legacy ``ATReviewVerdict`` record check -- extracted verbatim.
+
+    Byte-identical to the pre-P1.1 ``check_at_review`` body: record presence,
+    APPROVED verdict, AT-set match, content-seal match. Raises the closed
+    ``ATReviewGateRejected`` reasons (exit 45) exactly as before.
+    """
     record = _latest_verdict_record(_ledger_path(repo, feature_id), entering_slice)
     if record is None:
         raise _at_review_rejection("absent", entering_slice)
@@ -399,7 +482,7 @@ def check_at_review(
         raise _at_review_rejection("not-approved", entering_slice)
 
     if at_kind == "pytest-regression":
-        assert regression_test_file is not None  # guarded above
+        assert regression_test_file is not None  # guarded by check_at_review
         at_count = count_pytest_regression_ats(regression_test_file)
         expected_hash = pytest_regression_content_hash(regression_test_file)
     else:
@@ -414,6 +497,84 @@ def check_at_review(
 
     if record.get("at_content_hash") != expected_hash:
         raise _at_review_rejection("stale-at-content", entering_slice)
+
+
+def _mechanical_seal_satisfied(repo: Path, regression_test_file: Path) -> bool:
+    """The P0 mechanical pair: fresh RED seal AND negative-AT satisfied.
+
+    Fail-closed on every degraded input (seal absent, unreadable, malformed,
+    content-stale, no witnessed failure; regression file unanalyzable or
+    carrying zero negative ATs) -- a ``False`` here falls back to the verdict
+    path's rejection, never a silent clear.
+    """
+    if not _red_seal_fresh(repo, regression_test_file):
+        return False
+    return _negative_at_satisfied(regression_test_file)
+
+
+def _red_seal_fresh(repo: Path, regression_test_file: Path) -> bool:
+    """A ``RedObserved`` seal (P0.2) exists and matches the CURRENT content.
+
+    Reuses ``verify_red_green``'s own seal-path + content-sha helpers over
+    RESOLVED paths (the seal producer resolves both) so the slug and the hash
+    can never diverge from the producer. Freshness = the recorded
+    ``content_sha256`` equals the file's current sha256 (any post-RED edit
+    voids the evidence -- the same tamper semantics as the verdict path) AND
+    the seal witnessed >=1 failing test (a seal without a witnessed RED
+    proves nothing and never clears).
+    """
+    try:
+        seal = _red_green_seal_path(repo.resolve(), regression_test_file.resolve())
+    except ValueError:
+        return False  # the regression file is not under the repo root
+    if not seal.is_file():
+        return False
+    try:
+        record = json.loads(seal.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(record, dict):
+        return False
+    outcomes = record.get("outcomes")
+    if not isinstance(outcomes, dict) or "fail" not in outcomes.values():
+        return False
+    try:
+        current_sha = _red_seal_content_sha(regression_test_file)
+    except OSError:
+        return False
+    return record.get("content_sha256") == current_sha
+
+
+def _negative_at_satisfied(regression_test_file: Path) -> bool:
+    """The negative-AT mandate (P0.3) holds for the regression file.
+
+    ``--all-critical`` semantics: the whole file is one critical scope,
+    satisfied by >=1 negative AT anywhere within it (the ``verify_negative_at``
+    convention: ``@pytest.mark.negative_at`` or a ``_not_``/``_never_``/
+    ``_rejects_``/``_refuses_``/``_fails_`` name token). Delegates to the
+    P0.3 SSOT scanner; its degrade-loud output is suppressed here because an
+    unanalyzable file is simply NOT satisfied (fail-closed) and the gate's
+    stdout must stay a single JSON verdict line.
+    """
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        scan = _scan_negative_at_file(regression_test_file)
+    if isinstance(scan, int):
+        return False  # unanalyzable -> fail-closed, never a silent pass
+    return bool(scan.negative_cases())
+
+
+def _with_mechanical_remedy(rejection: GateError) -> GateError:
+    """Extend an assertion-5 rejection's remediation to name BOTH remedies.
+
+    ADD-not-mutate: the payload's existing fields (event, slice_id, reason,
+    error) are untouched; only the what/why/how-mandated ``how`` is added so
+    the operator learns the mechanical-seal remedy exists alongside the
+    reviewer verdict.
+    """
+    payload = dict(rejection.payload)
+    payload["how"] = _MECHANICAL_OR_VERDICT_HOW
+    return GateError(rejection.exit_code, payload)
 
 
 def _at_content_hash(slice_scenarios: list[Scenario]) -> str:
@@ -612,8 +773,10 @@ def main(argv: list[str] | None = None) -> int:
             slice_max,
             at_kind=at_kind,
             regression_test_file=regression_test_file,
+            repo=repo,
+            feature_id=feature_id,
         )
-        check_at_review(
+        at_evidence = check_at_review(
             repo,
             feature_id,
             entering_slice,
@@ -632,6 +795,11 @@ def main(argv: list[str] | None = None) -> int:
     }
     if coupled_event:
         payload.update(coupled_event)
+    if at_evidence is not None:
+        # pytest-regression mode only: the ledger distinguishes WHICH
+        # attestation cleared assertion 5 (reviewer-verdict | mechanical-seal).
+        # The gherkin payload stays byte-identical (at_evidence is None there).
+        payload["at_evidence"] = at_evidence
     _emit(payload)
     return 0
 

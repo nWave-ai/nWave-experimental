@@ -55,6 +55,7 @@ Under `## Wave: DISCUSS / [REF] <Section>` headings:
 - Locked decisions — D-numbered design decisions with verdicts
 - User stories with elevator pitches — every story has Before/After/Decision-enabled triplet
 - Slice Plan — `## Wave: DISCUSS / [REF] Slice Plan`, a five-column fixed-order carpaccio table (Slice, Value statement, Status, Annotation, Justification). Emitted when `workflow.mode == atdd_pure` (ADR-028 D2 / ADR-029 D3); the PO authors it in place of UAT-scenario user stories, and it replaces the user-story + AC sections as the decomposition + value SSOT. Structurally checked by the feature-delta validator (gate-id in `nWave/gates/_catalog.yaml`) with `--require-slice-plan` (verdict `accepted`). <!-- mode-ref-ok -->
+- Expectation Charters — one per slice that promises observable value (evolution-plan P2.0/P2.1). The PO derives each charter from that slice's Value statement and writes it to `docs/product/expectations/{feature-id}/{intent-name}.md` using `nWave/templates/expectation-charter.md`. See §Expectation Charter below. Authoring the charter is what ARMS the DELIVER EXAMINE step + the commit-slice examine-verdict gate for that feature (no charter → the gate is unarmed and DELIVER falls back to the legacy reviewer audit). <!-- mode-ref-ok -->
 - Acceptance criteria (ACs) — testable, embedded per story (classic mode; under `atdd_pure` the per-slice `.feature` ATs are the AC SSOT, authored downstream in DISTILL) <!-- mode-ref-ok -->
 - Definition of Done (DoD) — 9-item checklist
 - Out-of-scope — explicit non-goals
@@ -101,6 +102,17 @@ Every expansion choice emits a `DocumentationDensityEvent` (dataclass at `src/de
 
 Wave-specific signal: feeds DDD-7 pilot success metric (4) — "downstream agent regression — DESIGN consumes lean DISCUSS feature-delta.md and produces no `--expand` invocation". `ask-intelligent` emission rules: one expand event per scoped-menu acceptance; one skip event for no-trigger silent-lean; one skip event for triggers fired but user declined. Full emission rules + per-mode patterns: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
 
+## Expectation Charter (atdd_pure — arms the DELIVER EXAMINE step) <!-- mode-ref-ok -->
+
+Provenance: evolution-plan P2.0/P2.1 (evidence-by-execution). For each Slice Plan row that promises **observable value**, the PO authors ONE expectation charter — the human-intent, re-examinable product document the User-Examiner ("Vera") walks in DELIVER.
+
+- **Path**: `docs/product/expectations/{feature-id}/{intent-name}.md`. `{intent-name}` is kebab-case and NAMES THE INTENT from the user's side (e.g. `a-visitor-confirms-a-seat-and-finds-it-in-their-bookings`), never the implementation.
+- **Template**: `nWave/templates/expectation-charter.md`. Fill: Intent (derived from the slice Value statement), Preconditions/start-recipe (how to launch + which surfaces), Charter (what to explore), **Expected observations (the oracle) — INCLUDING at least one negative observation** (the system must NOT claim success while the outcome is absent), and an append-only Session log.
+- **Charter, not click-script**: describe the outcome to observe, not a keystroke sequence — independence must survive re-execution (the same charter, re-run by a different examiner or a swarm, must produce comparable logs; divergence = signal).
+- **Two independent derivations**: the acceptance-designer (DISTILL) derives the ATs and the examiner derives its walk from the SAME value statement, INDEPENDENTLY — the crafter never authors either. The charter is the examiner's half.
+- **Arming contract**: writing at least one charter under `docs/product/expectations/{feature-id}/` ARMS the DELIVER EXAMINE step and the commit-slice examine-verdict gate for that feature. A slice that promises observable value but ships no charter leaves the gate unarmed — flag it (the observable-value slice was meant to be examined).
+- For a backend-only slice the charter's surface is the API (the examiner acts as an API consumer); for an infra/observability outcome the charter names a concrete observable surface (see evolution-plan P2.3 — open design).
+
 ## Agent Invocation
 
 @nw-product-owner
@@ -117,7 +129,7 @@ for the authoritative gate stack + output contract.
 
 Include the `<!-- DES-WAVE: discuss -->` marker line above verbatim in the Agent dispatch prompt — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
 
-IF Decision 4 = Yes (default): Execute *jtbd-analysis for {feature-id}, then *journey informed by JTBD artifacts, then *story-map, then *gather-requirements with outcome KPIs. Every user story must include a `job_id` field traceable to `docs/product/jobs.yaml`.
+IF Decision 4 = Yes (default): Execute *jtbd-analysis for {feature-id}, then *journey informed by JTBD artifacts, then *story-map, then *gather-requirements with outcome KPIs. Every user story must include a `job_id` field traceable to `docs/product/jobs.yaml`. **THEN, before closing the wave, author the Expectation Charters — this is a REQUIRED step, not an optional deliverable (§Expectation Charter): for EACH Slice Plan row that promises observable value, WRITE `docs/product/expectations/{feature-id}/{intent-name}.md` from `nWave/templates/expectation-charter.md`, deriving the Intent from that row's Value statement, with ≥1 NEGATIVE observation in the oracle. Writing the charters is what ARMS the DELIVER EXAMINE gate; skipping this step ships the feature un-examinable. Emit the list of charter paths written in the wave summary.**
 IF Decision 4 = No (infrastructure-only escape valve): Execute *journey for {feature-id}, then *story-map, then *gather-requirements with outcome KPIs. Every story must use `job_id: infrastructure-only` AND include an `infrastructure_rationale` field. Reviewer rejects this branch for any user-facing feature.
 
 Context files: see `nw-discuss-prior-wave-reading` (Prior Wave Consultation) + project context files.
@@ -202,6 +214,14 @@ The epic-delta is a LIVE tracker, not a write-once artifact. As features are pic
 - **Citation** (LSC-4) — the picked-up feature's own artifacts cite the epic BY NAME, and the backlog entry cites the epic by name (one home for the feature list — the epic-delta — never duplicated lists elsewhere).
 
 A flip edits only the Status cell (and, on pick-up, the Feature cell link), so the document's structure is untouched and it still clears the slice-01 keystone gate (`accepted`) after every flip. Re-validate (Gate-OUT) after maintenance edits to confirm structural validity held.
+
+## Gotchas (dogfood-surfaced, 2026-07-03)
+
+Hard-won lessons from running DISCUSS on real features (two independent dogfoods: Python/infra + TS/product, which converged on the SAME form-defects — a strong signal they are real).
+
+- **Infrastructure / internal features strain the user-journey machinery — do NOT fabricate a journey.** DISCUSS Phases 1-2 (JTBD, mental model, emotional arc, journey visualization) and Phase 4 (story-map backbone) are built around a human moving through screens. For an infra/tooling feature (`job_id: infrastructure-only` + Decision-3 = Lightweight) whose "outcome" is a CLI exit code / a gate firing, those phases are DEGENERATE: there is no screen, no emotional arc, one activity. The right move is NOT to fabricate a feeling or silently no-op four mandated phases — it is to go lean: the Slice Plan + Expectation Charters carry the real content; express the "emotion" as an Outcome KPI (maintainer trust that a caught defect class stays caught), and waive the journey/story-map artifacts explicitly (atdd_pure already waives user-stories — the same logic extends to journey/story-map for infra). Do not let the story-map "backbone present" or emotional-arc gates push you into ceremony a 1-2 day wiring task does not warrant. <!-- mode-ref-ok -->
+- **Over-instruction is a confound — do NOT compensate for a weak native trigger with an emphatic prompt.** When dispatching the PO, if you find yourself adding "treat this as first-class, not optional" beyond what the skill natively says, that is the tell that the skill under-specifies — report it as a friction, do not paper over it. (Empirical: the charter-authoring step needed to be made a native REQUIRED dispatch step precisely because a documented [REF] deliverable alone did not trigger it.)
+- **The Expectation Charter format is medium-agnostic** — it holds up on a CLI/gate outcome (start recipe = `des <cmd>`, oracle = exit code + JSON event + absence-of-ledger-record), not just a browser UI. Don't assume the seat-booking UI example is the only shape.
 
 ## Success Criteria
 

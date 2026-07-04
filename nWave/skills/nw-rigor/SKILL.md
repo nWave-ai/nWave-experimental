@@ -28,6 +28,28 @@ You (the main Claude instance) run this directly. No subagent delegation.
 | tdd_phases (v5 canonical, ADR-025)    | [RED, GREEN]                          | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         |
 | tdd_phases (v4 legacy, audit-replay)  | [RED_UNIT, GREEN]                     | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           |
 | refactor_pass      | false                                 | true                                                                         | true                                                                         | true                                                                         | true                                                                         |
+| examine_swarm_n    | 1                                     | 1                                                                           | 3                                                                           | 5                                                                           | 1                                                                           |
+
+**v2 evolution notes (evidence-by-execution migration, 2026-07-03) — the rigor axes shifted with the flow; ADD-not-mutate, so the legacy keys keep resolving for their 9 consumers:**
+- `examine_swarm_n` (NEW): how many independent User-Examiners ("Vera") walk each slice's expectation charter at the DELIVER EXAMINE step. `1` = one exam; `≥3` = swarm, and **divergence between the session logs is itself a signal** (a charter that different examiners read differently is under-specified). The examiner runs on **haiku** (its work is walk/observe/describe, not code reasoning — model pinned in the `nw-user-examiner` agent, not a rigor knob).
+- `reviewer_model` is now the **FEATURE-END** deep-review model (P2.2). The per-slice code-reading `C_REVIEWER_AUDIT` is REPLACED by the EXAMINE step (execution-observation) — see nw-deliver. `reviewer_model` is retained (backward-compat + the feature-end review), not deleted.
+- `agent_model` is **UNCAPPED** — `thorough`/`exhaustive` legitimately offer `opus` for the user's high-stakes choice (vision principle 4). (The no-opus/fable rule governs Lyra's *own* migration dispatches + defaults, not the product ceiling.)
+- `mutation_enabled` is **no longer a rigor axis** — it is a standalone NIGHTLY CI job (mutmut on changed modules), not a per-feature knob. New profiles write it `false`; its 2 consumers skip on `false`.
+
+## Execution-observing floor (ALWAYS on — NOT rigor-gated)
+
+Ale 2026-07-03 (ratified). The gates that **observe execution** — `verify-red-green`
+(the AT genuinely went RED→GREEN, non-vacuous), `verify-spec-coverage` (every requirement
+has a covering AT), and the `examine-verdict` gate (a User-Examiner walked the charter on the
+real surface) — are a **FIXED FLOOR present in EVERY profile, `lean` included**. No profile
+can gate them off.
+
+Rigor modulates only the **elevatable dimensions ABOVE the floor**: `agent_model`,
+`examine_swarm_n`, `reviewer_model` (feature-end), `refactor_pass`, review depth. It NEVER
+lowers the floor. This refines vision principle 4 (proportional quality) — proportional
+*above* the floor, never *below* it: the execution-observation is the one thing that is not
+bartered for speed (it is exactly the hole that shipped testing-theater in the external eval).
+See `[[feedback_execution_observing_gates_are_fixed_floor_not_rigor_gated_2026_07_03]]`.
 
 ## Behavior Flow
 

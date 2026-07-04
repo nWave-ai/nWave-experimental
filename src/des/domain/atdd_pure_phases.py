@@ -72,6 +72,23 @@ class ATDDPurePhase(str, Enum):
     D_REFACTOR_COMMIT = "D_REFACTOR_COMMIT"
     D_DISTILL = "D_DISTILL"
 
+    # evolution-plan P1.2 (User-Examiner spine wiring): ``EXAMINE`` is a VALUE
+    # ALIAS of ``C_REVIEWER_AUDIT`` -- the SAME phase slot in the 3-link
+    # sequence, cleared going forward via a recorded execution-observation
+    # ExamineVerdict (see ``des.cli.commit_slice.check_examine_verdict``)
+    # rather than a code-reading review. Python enum aliasing binds a second
+    # name sharing an existing member's value to THAT member, so
+    # ``ATDDPurePhase.EXAMINE is ATDDPurePhase.C_REVIEWER_AUDIT`` -- iteration
+    # (``list(ATDDPurePhase)``), ``CANONICAL_PHASES`` (len 3, the ADR-001 7->3
+    # reduction deletion-test), and every ``LEGAL_TRANSITIONS`` /
+    # ``CANONICAL_TRANSITIONS`` entry keyed on ``C_REVIEWER_AUDIT`` are
+    # UNCHANGED by this alias -- zero drift, zero shotgun surgery across the
+    # 15+ modules/tests that already pin ``C_REVIEWER_AUDIT``. New code
+    # spells the clearing route ``ATDDPurePhase.EXAMINE``; every existing
+    # caller/test naming ``ATDDPurePhase.C_REVIEWER_AUDIT`` keeps resolving to
+    # the identical member.
+    EXAMINE = "C_REVIEWER_AUDIT"
+
 
 class PhaseExit(str, Enum):
     """Non-phase routing outcomes (architect choice 3).

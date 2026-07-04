@@ -1,0 +1,52 @@
+# Gate-contract: verify-spec-coverage (evolution-plan P3.2 — DISTILL-exit coverage)
+#
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-spec-coverage.
+
+gate_id: verify-spec-coverage
+responsibility: |
+  Spec-coverage gate at DISTILL-exit (evolution P3.2): every requirement row in
+  the DISTILL-open checklist must be covered by >=1 acceptance test, or it is a
+  visible red row -- never a silent absence (the eval's largest lost pool:
+  UI/e2e/NFR/security/validation/build requirements uncovered without a trace).
+  Coverage is discriminated by an explicit marker (pytest @pytest.mark.covers /
+  `# covers: Rn` / docstring token, or a Gherkin `@covers-Rn` tag). The six
+  mandatory categories (ui, e2e, nfr, security, validation, build) are called
+  out explicitly when uncovered. A missing/malformed checklist or an empty AT
+  corpus degrades LOUD (INDETERMINATE), never a silent pass.
+module: des.cli.verify_spec_coverage
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --checklist
+    required: true
+    type: path
+    help: "Requirement checklist file extracted at DISTILL-open (P3.1)."
+  - name: --at-dir
+    required: false
+    type: path
+    help: "Directory of AT files (.py / .feature); repeatable."
+  - name: --repo
+    required: false
+    type: path
+    help: "Repository root."
+    default: "."
+
+log_events:
+  - SpecCoverageVerified
+  - SpecCoverageRefused
+  - SpecCoverageIndeterminate
+
+failure_modes:
+  - error_class: SpecCoverageRefused
+    exit_code: 1
+    remediation: "One or more requirement rows have no covering AT (mandatory categories called out): author an AT carrying @pytest.mark.covers/# covers:/@covers-Rn for each uncovered row, then re-run."
+  - error_class: SpecCoverageIndeterminate
+    exit_code: 2
+    remediation: "Missing/malformed checklist or empty AT corpus: provide a well-formed --checklist (rows `| Rn | text | category |` or `- Rn [category] text`) and at least one --at-dir; a feature without a checklist cannot claim coverage."
+
+idempotency: idempotent
+
+host_visibility:
+  - cli

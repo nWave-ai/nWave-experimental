@@ -77,6 +77,14 @@ agents:
     public: true
     description: Outside-In TDD with functional paradigm. Pure functions, pipeline
       composition, types as documentation, property-based testing.
+  user-examiner:
+    wave: DELIVER
+    priority: 2
+    role: user_examination
+    public: true
+    description: Non-technical User-Examiner - walks expectation charters through
+      the real user surface (browser/CLI/API), verdict plus constructive beta feedback;
+      cannot read source code (Vera)
   platform-architect:
     wave: DEVOPS
     priority: 1

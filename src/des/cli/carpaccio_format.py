@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from des.application.feature_at_files import (
+    EXCLUDED_SEARCH_DIRS,
     _legacy_acceptance_dir,
 )
 from des.application.feature_at_files import (
@@ -544,8 +545,18 @@ def check_carpaccio(
     slice_max: int,
     at_kind: Literal["gherkin", "pytest-regression"] = "gherkin",
     regression_test_file: Path | None = None,
+    *,
+    repo: Path | None = None,
+    feature_id: str | None = None,
 ) -> dict[str, object] | None:
     """Run carpaccio assertions 1-4 (+ mixed-mode guard). Raises ``GateError``.
+
+    ``repo`` + ``feature_id`` (fix-feature-tag-files-workspace-layout,
+    keyword-only, optional): when both are given, a ``no-scenarios-for-slice``
+    rejection is enriched with WHAT was searched (the ``@feature-{feature_id}``
+    tag), WHERE (the roots walked), and HOW to fix it -- see
+    :func:`_no_scenarios_rejection`. When either is omitted, the plain
+    :func:`_at_review_rejection` fires unchanged (byte-identical legacy path).
 
     ``at_kind="gherkin"`` (default) preserves byte-identical behavior for
     every existing caller. ``at_kind="pytest-regression"`` (ADR-001,
@@ -609,6 +620,8 @@ def check_carpaccio(
         )
     _check_total_coverage(plan, scenarios)
     if not _slice_scenarios(scenarios, entering_slice):
+        if repo is not None and feature_id is not None:
+            raise _no_scenarios_rejection(repo, feature_id, entering_slice)
         raise _at_review_rejection("no-scenarios-for-slice", entering_slice)
     _check_walking_skeleton_first(plan)
     _check_value_annotation(plan)
@@ -782,5 +795,46 @@ def _at_review_rejection(reason: str, slice_id: str) -> GateError:
             "slice_id": slice_id,
             "reason": reason,
             "error": f"AT-review gate rejected slice {slice_id}: {reason}",
+        },
+    )
+
+
+def _no_scenarios_rejection(repo: Path, feature_id: str, slice_id: str) -> GateError:
+    """Self-describing ``no-scenarios-for-slice`` rejection (fix-feature-tag-
+    files-workspace-layout).
+
+    Every-failure-explains-what-why-how (STANDING): the plain
+    ``_at_review_rejection`` names only the reason code; on GENUINE absence of
+    any matching ``.feature`` file this enriches the payload with WHAT was
+    searched (the ``@feature-{feature_id}`` tag), WHERE it looked (the repo
+    root, pruning ``EXCLUDED_SEARCH_DIRS``, plus the legacy acceptance dir),
+    and HOW to fix it (add/author a matching, correctly-tagged ``.feature``).
+    """
+    wanted_tag = f"@feature-{feature_id}"
+    legacy_dir = _legacy_acceptance_dir(repo, feature_id)
+    pruned = ", ".join(sorted(EXCLUDED_SEARCH_DIRS))
+    searched_roots = (
+        f"repo root {repo} (walked recursively, pruning: {pruned}) and the "
+        f"legacy acceptance dir {legacy_dir}"
+    )
+    return GateError(
+        45,
+        {
+            "event": "ATReviewGateRejected",
+            "slice_id": slice_id,
+            "reason": "no-scenarios-for-slice",
+            "error": (
+                f"AT-review gate rejected slice {slice_id}: no-scenarios-for-slice -- "
+                f"searched for a '.feature' file tagged {wanted_tag!r} under "
+                f"{searched_roots}, found none tagged with an @{slice_id} scenario. "
+                f"To fix: add/author a '.feature' file carrying the file-level tag "
+                f"{wanted_tag!r} with a scenario tagged @{slice_id}."
+            ),
+            "searched_tag": wanted_tag,
+            "searched_roots": searched_roots,
+            "instruction": (
+                f"add/author a '.feature' file tagged {wanted_tag!r} with a "
+                f"scenario tagged @{slice_id}"
+            ),
         },
     )

@@ -105,6 +105,25 @@ step file under `tests/{feature-path}/`). The test MUST fail against current cod
 diagnosed reason (a real assertion on the defect's observable behavior, never an
 import/collection error) — confirm this before proceeding to Phase 3b.
 
+**Slice entry evidence — mechanical seal by default (evolution-plan P1.1).** Once the test
+is confirmed RED, record the mechanical pair against the regression test file:
+
+```bash
+des verify-red-green --record-red --test-file {regression-test-file}
+des verify-negative-at --test-file {regression-test-file} --all-critical
+```
+
+The first captures the `RedObserved` seal, bound to the file's current content — re-run it
+if the test file changes afterward, a stale seal is void. The second verifies the file
+carries at least one negative AT (the wrong output is NOT produced). The carpaccio slice
+gate accepts this pair as the slice's AT attestation (`SliceCleared at_evidence:
+mechanical-seal`) — no AT-review LLM dispatch on this pytest-regression path.
+
+**Optional double attestation (rigor-profile opt-in)**: dispatch an independent reviewer of
+the regression test and record the verdict via `des record-at-review-verdict --verdict
+APPROVED` (clears as `at_evidence: reviewer-verdict`). Use it when the rigor profile
+demands double attestation; it is never mandatory on this path.
+
 ### Phase 3b: Fix (branches on workflow.mode, paradigm-selected crafter) <!-- mode-ref-ok -->
 
 Phase 3b reads `workflow.mode` from `.nwave/config.yaml` and dispatches the fix <!-- mode-ref-ok -->
@@ -154,7 +173,11 @@ already exists from Phase 3a):
 
 Under `workflow.mode: atdd_pure` the bugfix is the canonical single carpaccio <!-- mode-ref-ok -->
 slice: there is no roadmap and no roadmap-step extraction. The defect's
-regression test (authored in Phase 3a) IS the slice's acceptance test. Run the
+regression test (authored in Phase 3a) IS the slice's acceptance test. The
+slice enters the carpaccio gate in pytest-regression mode, where the Phase 3a
+mechanical pair is its default entry evidence (`at_evidence: mechanical-seal`)
+— no AT-reviewer dispatch and no verdict record needed unless the rigor
+profile opts into double attestation. Run the
 fix through the slice-04 roadmap-free spine via the per-slice `/nw-execute` lean
 cycle, starting at `A_GREEN` (the AT already exists — same SLIM-crafter contract
 as any other atdd_pure slice, no carve-out): <!-- mode-ref-ok -->

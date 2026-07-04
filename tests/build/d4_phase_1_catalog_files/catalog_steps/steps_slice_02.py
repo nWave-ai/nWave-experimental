@@ -148,10 +148,12 @@ def when_enumerate_bound(per_gate_comp) -> None:
 # for the DELIVER-entry contract-freeze gate (verify-deliver-entry-contract).
 # Count 41 -> 42 (2026-06-20, f-attest-bundled-slice slice-01): per-gate file for the
 # bundled-slice attestation command (attest-bundled-slice), 1:1 with its catalog entry.
-@then("exactly 42 per-gate files exist (one per catalog entry)")
+# Count 43 -> 51 (2026-07-03, evolution-plan P0.1-P0.5): five per-gate files for
+# the evidence-by-execution gate family, 1:1 with catalog + _REGISTRY.
+@then("exactly 51 per-gate files exist (one per catalog entry)")
 def then_per_gate_file_count(per_gate_comp) -> None:
-    assert per_gate_comp.file_count == 43, (
-        f"Found {per_gate_comp.file_count} per-gate files, expected 43"
+    assert per_gate_comp.file_count == 51, (
+        f"Found {per_gate_comp.file_count} per-gate files, expected 51"
     )
 
 

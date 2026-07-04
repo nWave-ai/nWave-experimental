@@ -131,6 +131,60 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # (Layer A + Layer B) that make the next mode shotgun-surgery structurally
     # impossible. Both are reachable as `des <gate-id>` subcommands and mirrored
     # 1:1 in nWave/gates/_catalog.yaml (+ per-gate files).
+    # evolution-plan P0.1 (evidence-by-execution): the fresh-clone gate --
+    # executes the target project's declared demo recipe in a fresh export of
+    # the COMMITTED tree, so "works only on my machine / broken on fresh
+    # clone" (the eval'd repo's npm-ci failure class) cannot reach done.
+    _SubcommandRow("verify-fresh-clone", "des.cli.verify_fresh_clone", "main"),
+    # evolution-plan P0.2: the RED->GREEN non-vacuity seal -- an AT that
+    # passes without the implementation (never-red) cannot count as coverage;
+    # a test edited between RED and GREEN voids its own evidence.
+    _SubcommandRow("verify-red-green", "des.cli.verify_red_green", "main"),
+    # evolution-plan P0.3: the negative-AT mandate -- a critical scope with
+    # presence-only ATs is refused (weak assertions die to negative ATs).
+    _SubcommandRow("verify-negative-at", "des.cli.verify_negative_at", "main"),
+    # evolution-plan P1.3: the signal-driven refactor trigger -- detector
+    # findings on the slice diff (incl. the SSOT-violation classes) ARE the
+    # refactor's expectations; zero findings = no refactor pass runs; the
+    # verdict declares which analysis arm ran (never a silent nobody-looked).
+    _SubcommandRow(
+        "verify-refactor-trigger",
+        "des.cli.verify_refactor_trigger",
+        "main",
+    ),
+    # evolution-plan P0.5: doc<->code coherence -- shipped docs claiming
+    # absent scripts/files/modules are refused (docs cannot overstate code).
+    _SubcommandRow(
+        "verify-doc-coherence",
+        "des.cli.verify_doc_coherence",
+        "main",
+    ),
+    # evolution-plan P0.4: execution-reach -- a production file with ZERO
+    # executions across the feature's verification cannot ship (binary
+    # predicate over Cobertura XML, runner-agnostic; the never-run class).
+    _SubcommandRow(
+        "verify-execution-reach",
+        "des.cli.verify_execution_reach",
+        "main",
+    ),
+    # evolution-plan P3.2: the spec-coverage gate at DISTILL-exit -- every
+    # requirement checklist row must be covered by >=1 AT (marker-discriminated),
+    # or it is a visible red row; the six mandatory categories are called out;
+    # missing/malformed checklist degrades LOUD (the eval's silent-absence class).
+    _SubcommandRow(
+        "verify-spec-coverage",
+        "des.cli.verify_spec_coverage",
+        "main",
+    ),
+    # evolution-plan P2.1/P1.2: the User-Examiner ("Vera") verdict PRODUCER --
+    # appends a tamper-evident ExamineVerdict (charter-sealed) to the per-feature
+    # examine ledger; the commit-slice examine gate is the consumer. This is the
+    # execution-observation replacement for the code-reading C_REVIEWER_AUDIT.
+    _SubcommandRow(
+        "record-examine-verdict",
+        "des.cli.record_examine_verdict",
+        "main",
+    ),
     _SubcommandRow("mode-locus-gate", "des.cli.mode_locus_gate", "main"),
     _SubcommandRow(
         "mode-registry-completeness",

@@ -89,6 +89,27 @@ class _Collector:
         self.collected_count: int = 0
         self.modify_count: int = 0
         self.crashing_module: str | None = None
+        # The ``--run`` branch's failure witnesses: every nodeid whose test
+        # report FAILED (setup error or call failure). Lets the parent NAME the
+        # failing arch test in its refusal (what/why/how) instead of reporting
+        # only a bare pytest exit code. Populated via ``pytest_runtest_logreport``
+        # so it works under BOTH serial and xdist runs (xdist forwards test
+        # reports to the controller, where this hook fires).
+        self.failed_node_ids: list[str] = []
+        # Every nodeid that produced ANY test report -- the run-scope cardinality
+        # that stays truthful under xdist, where collection happens in the
+        # workers and the controller's ``pytest_collection_finish`` sees no items.
+        self.reported_node_ids: set[str] = set()
+
+    def pytest_runtest_logreport(self, report: object) -> None:
+        nodeid = getattr(report, "nodeid", None)
+        if not isinstance(nodeid, str) or not nodeid:
+            return
+        self.reported_node_ids.add(nodeid)
+        when = getattr(report, "when", None)
+        if getattr(report, "failed", False) and when in ("setup", "call"):
+            if nodeid not in self.failed_node_ids:
+                self.failed_node_ids.append(nodeid)
 
     def pytest_collectreport(self, report: object) -> None:
         # KPI-3 named-module capture: record the FIRST failed collector's
@@ -145,15 +166,24 @@ def _identity_of(item: object, rootpath: Path) -> str:
     return f"{relative.as_posix()}::{'::'.join(chain)}"
 
 
-def _run_scope(repo: str, paths: list[str]) -> int:
+def _run_scope(repo: str, paths: list[str], jobs: str | None = None) -> int:
     """RUN the contract set over ``paths`` and emit the run-outcome marker line.
 
     The ``--run`` branch of the single pytest-argv seam (DDD-12): it drops
     ``--collect-only`` and RUNS ``pytest.main`` over the given path subset under
     the SAME ``-m "unit or integration or acceptance"`` contract marker and the
     same ``no:cacheprovider`` hygiene. It reports the run OUTCOME --
-    ``{"pytest_exit_code": N, "collected_count": M}`` -- so the parent can map a
-    RED arch run to a refusal AND a zero-collected arch set to the M-1 floor.
+    ``{"pytest_exit_code": N, "collected_count": M, "failed_node_ids": [...]}``
+    -- so the parent can map a RED arch run to a refusal NAMING the failing
+    arch test(s), AND a zero-collected arch set to the M-1 floor.
+
+    ``jobs`` (the parent's ``--jobs`` passthrough) selects a pytest-xdist worker
+    count (``-n <jobs> --dist loadgroup``); the parent only passes it when xdist
+    is importable in this interpreter, so the argv never names an absent plugin.
+    Under xdist the controller's ``pytest_collection_finish`` sees no items
+    (collection is distributed), so ``collected_count`` falls back to the
+    reported-nodeid cardinality captured via ``pytest_runtest_logreport`` --
+    the controller receives every test report, serial or distributed.
 
     The arch-invariant set is a self-contained AST scanner class (it reads
     ``src/des/**`` as text, asserts at run-time), so a forbidden import / inline
@@ -168,15 +198,18 @@ def _run_scope(repo: str, paths: list[str]) -> int:
         "no:cacheprovider",
         "--rootdir",
         repo,
+        *(["-n", jobs, "--dist", "loadgroup"] if jobs else []),
         *(paths if paths else [repo]),
     ]
     exit_code = int(pytest.main(pytest_argv, plugins=[collector]))
+    collected = max(collector.collected_count, len(collector.reported_node_ids))
     print(
         _RUN_RESULT_PREFIX
         + json.dumps(
             {
                 "pytest_exit_code": exit_code,
-                "collected_count": collector.collected_count,
+                "collected_count": collected,
+                "failed_node_ids": collector.failed_node_ids,
             }
         ),
         flush=True,
@@ -190,10 +223,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", required=True)
     parser.add_argument("--path", action="append", default=[])
     parser.add_argument("--run", action="store_true")
+    parser.add_argument("--jobs", default=None)
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
     if args.run:
-        return _run_scope(args.repo, args.path)
+        return _run_scope(args.repo, args.path, jobs=args.jobs)
 
     collector = _Collector()
     pytest_argv = [

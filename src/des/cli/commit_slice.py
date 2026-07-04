@@ -42,8 +42,12 @@ Exit codes:
     0 = a verified slice commit was produced.
     1 = the committed-scope digest could not be established (LOUD
         INDETERMINATE -- e.g. not a git work-tree) OR the post-amend verify
-        refused the commit.
-    2 = malformed input (nothing staged, empty message, repo unreadable).
+        refused the commit OR the slice was EXAMINED and FAILED
+        (``ExamineVerdictRefused``).
+    2 = malformed input (nothing staged, empty message, repo unreadable) OR
+        the entering slice fails the examine-verdict gate (missing / stale /
+        INDETERMINATE -- ``ExamineVerdictMissing`` / ``ExamineVerdictStale`` /
+        ``ExamineVerdictIndeterminate``).
 
 Reference: docs/feature/des-spine-control-plane-ssot (committed-scope trailer),
            #67 facet-4 / MEMORY control-plane SSOT (digest-timing facet).
@@ -53,6 +57,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -64,12 +69,15 @@ from des.adapters.driven.logging.at_completion_ledger import (
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
+from des.cli.record_examine_verdict import examine_ledger_path as _examine_ledger_path
 from des.cli.run_contract_gate import (
     _committed_scope_digest_value,
     _CommittedScopeDigest,
+    build_tier_exit_verdict,
     extract_gate_scope,
 )
 from des.cli.verify_slice_commit_completeness import _append_slice_commit_indeterminate
+from des.domain.examine_verdict_signing import charter_seal as _charter_seal
 from des.domain.slice_id_trailer import extract_slice_ids
 
 
@@ -101,6 +109,226 @@ _REVIEWED_BY_LINE_RE = re.compile(r"^Reviewed-by:.*$", re.MULTILINE)
 # ``des record-at-review-verdict`` records the acceptance-designer's approval.
 _AT_REVIEW_VERDICT_EVENT = "ATReviewVerdict"
 _VERDICT_APPROVED = "APPROVED"
+
+
+# ---------------------------------------------------------------------------
+# Examine-verdict commit-time gate (evolution-plan P1.2 -- User-Examiner wiring)
+# ---------------------------------------------------------------------------
+#
+# Replaces the per-slice code-reading C_REVIEWER_AUDIT with EXECUTION-
+# OBSERVATION: a slice may not commit unless a human-intent charter was walked
+# through the REAL surface by nw-user-examiner ("Vera") and a PASS verdict was
+# recorded (des record-examine-verdict) whose charter_seal still matches the
+# CURRENT charter bytes. ADD-not-mutate (same discipline the build-tier check
+# above already established): this is an ADDITIONAL check at the SAME
+# chokepoint, before the placeholder commit lands.
+#
+# ARMING (backward-compat escape): the gate is a no-op unless it is ARMED for
+# this commit, so the entire pre-existing commit-slice test suite (no
+# charters, no opt-in) stays green. Armed when EITHER:
+#   (a) the operator opts in via NWAVE_EXAMINE_GATE_OPT_IN=1, OR
+#   (b) a charter exists for the feature under
+#       docs/product/expectations/{feature_id}/*.md (i.e. the feature has
+#       ADOPTED the User-Examiner charter convention).
+# Absent both AND a --feature-id, the gate cannot even resolve which ledger to
+# read, so it is a no-op there too -- a caller that never passes --feature-id
+# (as several pre-existing call sites do not) is completely unaffected.
+_EXAMINE_GATE_ENV = "NWAVE_EXAMINE_GATE_OPT_IN"
+
+_EXAMINE_VERDICT_EVENT = "ExamineVerdictRecorded"
+
+
+def _examine_gate_armed(repo: Path, feature_id: str | None) -> bool:
+    """Whether the examine-verdict commit gate applies to this commit.
+
+    See the module-level "ARMING" note above for the two independent
+    activation conditions. Fail-open-to-no-op (never fail-open-to-pass): an
+    unarmed gate returns ``False`` and ``check_examine_verdict`` then returns
+    ``None`` (cleared) unconditionally -- byte-identical to pre-P1.2 behavior.
+    """
+    if os.environ.get(_EXAMINE_GATE_ENV) == "1":
+        return True
+    if not feature_id:
+        return False
+    charter_dir = repo / "docs" / "product" / "expectations" / feature_id
+    return charter_dir.is_dir() and any(charter_dir.glob("*.md"))
+
+
+def _latest_examine_verdict(
+    repo: Path, feature_id: str, slice_id: str
+) -> dict[str, object] | None:
+    """The latest recorded ``ExamineVerdict`` record for ``slice_id``, or None."""
+    ledger_path = _examine_ledger_path(repo, feature_id)
+    if not ledger_path.is_file():
+        return None
+    latest: dict[str, object] | None = None
+    for line in ledger_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        if record.get("event") != _EXAMINE_VERDICT_EVENT:
+            continue
+        if record.get("slice_id") != slice_id:
+            continue
+        latest = record
+    return latest
+
+
+def _examine_remediation_command(feature_id: str, slice_id: str) -> str:
+    return (
+        "dispatch nw-user-examiner with the slice's charter, then record its "
+        f"verdict: `des record-examine-verdict --repo <repo> --feature-id "
+        f"{feature_id} --slice {slice_id} --charter <path> --verdict PASS "
+        "--observations <text> --examiner nw-user-examiner`"
+    )
+
+
+def check_examine_verdict(
+    repo: Path, feature_id: str, slice_id: str
+) -> dict[str, object] | None:
+    """Assert the entering ``slice_id`` has a fresh PASS examine-verdict.
+
+    Returns ``None`` when the gate is not ARMED for this feature, OR clears
+    with a fresh PASS verdict (charter_seal matches the charter's CURRENT
+    bytes). Returns a refusal payload (carrying an ``exit_code`` key the
+    caller pops before emitting) otherwise -- every refusal states WHAT
+    failed, WHY, and HOW to fix it (never a bare event name).
+
+    Refusal taxonomy (fail-closed, never a silent pass):
+      * ``ExamineVerdictMissing``       (exit 2) -- no record at all.
+      * ``ExamineVerdictRefused``       (exit 1) -- recorded verdict is FAIL.
+      * ``ExamineVerdictIndeterminate`` (exit 2) -- recorded verdict is
+        INDETERMINATE (an unexaminable slice carries no observable value --
+        it was not a slice; carpaccio-honesty enforcement).
+      * ``ExamineVerdictStale``         (exit 2) -- recorded verdict is PASS
+        but the charter no longer exists, OR its CURRENT bytes no longer
+        match the recorded ``charter_seal`` (the charter changed after
+        examination -- the PASS verdict is void).
+    """
+    if not _examine_gate_armed(repo, feature_id):
+        return None
+
+    record = _latest_examine_verdict(repo, feature_id, slice_id)
+    if record is None:
+        return {
+            "event": "ExamineVerdictMissing",
+            "exit_code": 2,
+            "feature_id": feature_id,
+            "slice_id": slice_id,
+            "what": f"slice {slice_id} has no recorded examine-verdict",
+            "why": (
+                "the commit-time examine gate is ARMED for "
+                f"{feature_id} (a charter exists, or the opt-in env is set) "
+                "and requires a fresh PASS ExamineVerdict before the slice "
+                "may commit -- execution-observation replaces the old "
+                "code-reading review for this slice."
+            ),
+            "how": f"slice not examined: {_examine_remediation_command(feature_id, slice_id)}",
+        }
+
+    verdict = record.get("verdict")
+
+    if verdict == "FAIL":
+        return {
+            "event": "ExamineVerdictRefused",
+            "exit_code": 1,
+            "feature_id": feature_id,
+            "slice_id": slice_id,
+            "what": f"slice {slice_id} was examined and FAILED",
+            "why": str(record.get("observations", "")),
+            "how": (
+                "fix the slice per the examiner's observations, then "
+                f"{_examine_remediation_command(feature_id, slice_id)}"
+            ),
+        }
+
+    if verdict == "INDETERMINATE":
+        return {
+            "event": "ExamineVerdictIndeterminate",
+            "exit_code": 2,
+            "feature_id": feature_id,
+            "slice_id": slice_id,
+            "what": f"slice {slice_id}'s recorded examine-verdict is INDETERMINATE",
+            "why": (
+                "an unexaminable slice carries no observable value -- it was "
+                "not a slice (carpaccio-honesty enforcement); INDETERMINATE "
+                "is never a silent pass."
+            ),
+            "how": (
+                "re-decompose the slice so it exposes an observable surface, "
+                f"then {_examine_remediation_command(feature_id, slice_id)}"
+            ),
+        }
+
+    if verdict != "PASS":
+        return {
+            "event": "ExamineVerdictStale",
+            "exit_code": 2,
+            "feature_id": feature_id,
+            "slice_id": slice_id,
+            "what": f"slice {slice_id}'s recorded verdict is unrecognised: {verdict!r}",
+            "why": "only PASS / FAIL / INDETERMINATE are valid examine verdicts.",
+            "how": f"re-record a valid verdict: {_examine_remediation_command(feature_id, slice_id)}",
+        }
+
+    charter_path_raw = record.get("charter_path")
+    recorded_seal = record.get("charter_seal")
+    if not isinstance(charter_path_raw, str) or not isinstance(recorded_seal, str):
+        return {
+            "event": "ExamineVerdictStale",
+            "exit_code": 2,
+            "feature_id": feature_id,
+            "slice_id": slice_id,
+            "what": f"slice {slice_id}'s PASS record is malformed (missing charter_path/charter_seal)",
+            "why": "a PASS verdict must carry both charter_path and charter_seal to be re-verified.",
+            "how": f"re-record a fresh verdict: {_examine_remediation_command(feature_id, slice_id)}",
+        }
+
+    charter_path = Path(charter_path_raw)
+    if not charter_path.is_absolute():
+        charter_path = repo / charter_path
+    if not charter_path.is_file():
+        return {
+            "event": "ExamineVerdictStale",
+            "exit_code": 2,
+            "feature_id": feature_id,
+            "slice_id": slice_id,
+            "what": f"the examined charter no longer exists: {charter_path_raw}",
+            "why": (
+                "a PASS verdict is bound to the charter bytes at exam time; "
+                "an absent charter cannot be re-verified -- stale, void."
+            ),
+            "how": (
+                "restore the charter or re-examine against the current one: "
+                f"{_examine_remediation_command(feature_id, slice_id)}"
+            ),
+        }
+
+    current_seal = _charter_seal(charter_path.read_bytes())
+    if current_seal != recorded_seal:
+        return {
+            "event": "ExamineVerdictStale",
+            "exit_code": 2,
+            "feature_id": feature_id,
+            "slice_id": slice_id,
+            "what": f"the charter changed after examination: {charter_path_raw}",
+            "why": (
+                "the recorded charter_seal no longer matches the charter's "
+                "CURRENT bytes -- the PASS verdict is void (stale-seal, "
+                "never a silent pass)."
+            ),
+            "how": (
+                "re-examine against the CURRENT charter and record a fresh "
+                f"PASS verdict: {_examine_remediation_command(feature_id, slice_id)}"
+            ),
+        }
+    return None
 
 
 def _emit(payload: dict[str, object]) -> None:
@@ -426,6 +654,32 @@ def main(argv: list[str] | None = None) -> int:
     if malformed is not None:
         _emit(malformed)
         return 2
+
+    # Build-tier exit check (F-CONTRACT-GATE-EXCLUDES-BUILD-TIER-ARCH-TESTS,
+    # evolution P1 deletion-safety precondition): EXECUTE tests/build/** BEFORE
+    # the commit lands, so an arch/contract violation is refused at the slice
+    # exit -- fail-closed, nothing ships. ADD-not-mutate (design option i): the
+    # committed-scope digest machinery is untouched, so historic Gate-Scope:
+    # trailers stay byte-identically verifiable. tests/build absent -> honest
+    # BuildTierNotApplicable + proceed (target projects may carry no build
+    # tier); interpreter absence -> LOUD indeterminate + proceed (the digest
+    # step downstream mints the honest SliceCommitIndeterminate).
+    if build_tier_exit_verdict(repo) != 0:
+        return 1
+
+    # Examine-verdict exit check (evolution-plan P1.2 -- User-Examiner wiring):
+    # the SAME chokepoint as the build-tier check above. A no-op unless ARMED
+    # for this feature (see the module-level note); when armed, EVERY entering
+    # slice-id must carry a fresh PASS ExamineVerdict or the commit is refused
+    # fail-closed BEFORE the placeholder commit lands.
+    if args.feature_id is not None:
+        for slice_id in extract_slice_ids(message):
+            examine_rejection = check_examine_verdict(repo, args.feature_id, slice_id)
+            if examine_rejection is not None:
+                exit_code = examine_rejection.pop("exit_code")
+                _emit(examine_rejection)
+                assert isinstance(exit_code, int)
+                return exit_code
 
     # Step 2: commit with the placeholder trailer. HEAD now carries the slice.
     try:

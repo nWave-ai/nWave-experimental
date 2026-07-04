@@ -51,6 +51,8 @@ A carpaccio slice whose acceptance tests are a plain-pytest regression file (`at
 
 A default (Gherkin) slice renders NEITHER marker — its dispatch prompt stays byte-identical to today, and the intercept runs the gate in default Gherkin mode. The intercept parses these via `_parse_at_kind_from_prompt`; absent DES-AT-KIND ⇒ `("gherkin", None)`. A marker-vs-reality mismatch fails LOUD through the carpaccio CLI's existing `.feature`-presence mixed-mode guard. <!-- mode-ref-ok -->
 
+In pytest-regression mode the gate's AT attestation (assertion 5) clears by DEFAULT on the mechanical pair recorded at test-authoring time — `des verify-red-green --record-red --test-file <f>` (fresh `RedObserved` seal, voided by content drift) + `des verify-negative-at --test-file <f> --all-critical` — yielding `SliceCleared at_evidence: mechanical-seal`, no AT-review LLM dispatch (evolution-plan P1.1). A recorded `ATReviewVerdict` (reviewer dispatch + `des record-at-review-verdict`) remains the optional, rigor-profile alternative on this path — and stays the route for Gherkin slices, where the seal path is not yet wired (tracked follow-up).
+
 ## Syntax
 
 ```

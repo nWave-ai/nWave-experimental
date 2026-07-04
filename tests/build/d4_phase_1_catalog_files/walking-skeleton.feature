@@ -43,11 +43,14 @@ Feature: Gate-contract catalog YAML mirrors _REGISTRY (D4 Phase 1 slice-01)
   # Count 41 -> 42 (2026-06-20, f-attest-bundled-slice slice-01): adds the
   # bundled-slice attestation command attest-bundled-slice (on reverify's shared core).
   @driving_port @in-process @real-io @slice-01 @contract-shape:pure-function
-  Scenario: Catalog row count equals registry count (43 total, adds feature-delta-schema)
+  # Count 43 -> 48 -> 51 (2026-07-03, P0.1-P0.5 reconcile + P1.3 verify-refactor-trigger): the six
+  # evidence-by-execution gates (verify-fresh-clone/red-green/negative-at/doc-coherence/
+  # execution-reach) landed in _REGISTRY without catalog rows; reconciled 1:1.
+  Scenario: Catalog row count equals registry count (51 total, adds the P0 evidence gates)
     Given the gate catalog loaded from "nWave/gates/_catalog.yaml"
     And the production _REGISTRY loaded from `src.des.cli.__main__`
     When the row counts are compared
-    Then both contain exactly 43 entries
+    Then both contain exactly 51 entries
     And every gate_id in the catalog is also a SubcommandRow.name in _REGISTRY
     And every SubcommandRow.name in _REGISTRY is also a gate_id in the catalog
 

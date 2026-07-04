@@ -9,6 +9,7 @@ This service implements the SubagentStopPort driver port interface.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -61,6 +62,189 @@ _REVIEW_GATE_OUT_WAVES: frozenset[str] = frozenset({"discuss", "design", "devops
 _REVIEW_VERDICT_GATE_IDS: frozenset[str] = frozenset(
     {"verify-design-review", "verify-devops-review"}
 )
+
+# --- DISTILL gate-out: verify-spec-coverage (evolution P3.1/P3.2, ADVISORY) --
+#
+# DISCOVERY (this wiring slice): the four rows already declared in
+# ``nWave/waves/distill.yaml`` ``gate_stack.gate-out`` (check-slice-at-
+# completeness, gate-design-at-coherence, self-attest, verify-test-runner) are
+# NOT reached by ``_discuss_gate_out_declarative`` -- ``_REVIEW_GATE_OUT_WAVES``
+# is ``{discuss, design, devops}`` and does NOT include ``"distill"``. The
+# DISTILL registry stack is a resolution-only proof (the composition ATs read
+# ``wave_gate_stack_dispatch.resolve_stack("distill", "gate-out")`` directly);
+# no live invoker dispatches it today. Adding ``"distill"`` to
+# ``_REVIEW_GATE_OUT_WAVES`` would activate the WHOLE stack at once, including
+# ``check-slice-at-completeness`` (``on_failure: block``) which
+# ``_discuss_gate_out_invoker`` does not route -- an uncatalogued gate_id fails
+# CLOSED (``unknown_gate_stdout`` -> exit 1) and, being first in the list with
+# ``on_failure: block``, would BLOCK EVERY DISTILL RETURN. That is exactly the
+# non-zero blast radius this wiring must avoid on a MANDATORY wave, so this
+# slice deliberately does NOT touch ``_REVIEW_GATE_OUT_WAVES`` / the shared
+# discuss/design/devops invoker. Instead ``verify-spec-coverage`` gets its OWN
+# narrow, ADVISORY-ONLY dispatch (``_distill_gate_out_spec_coverage`` below)
+# that never blocks by construction (it always returns exit 0), independent of
+# the still-unwired sibling rows.
+_DISTILL_WAVE = "distill"
+_SPEC_COVERAGE_GATE_ID = "verify-spec-coverage"
+
+# Conventional per-feature paths (P3.1 checklist extraction + AT corpus scope).
+# No shipped feature has produced a requirement-checklist.md yet (P3.1/P3.2 are
+# greenfield), so there is no existing sibling convention to mirror; this is
+# the documented fallback the wiring brief names when the convention is
+# unclear: the feature's own DISTILL folder plus the repo-wide ``tests/`` tree
+# (covering both Gherkin ATs colocated with DISTILL output and pytest ATs
+# anywhere under ``tests/``).
+_CHECKLIST_RELATIVE_PATH = "requirement-checklist.md"
+
+
+def _distill_checklist_path(project_root: Path, feature_id: str) -> Path:
+    """The P3.1 requirement-checklist path for ``feature_id`` under ``project_root``."""
+    return (
+        project_root
+        / "docs"
+        / "feature"
+        / feature_id
+        / "distill"
+        / _CHECKLIST_RELATIVE_PATH
+    )
+
+
+def _distill_spec_coverage_at_dirs(project_root: Path, feature_id: str) -> list[Path]:
+    """The AT-corpus directories to scan for ``feature_id`` -- existing dirs only."""
+    candidates = (
+        project_root / "docs" / "feature" / feature_id / "distill",
+        project_root / "tests",
+    )
+    return [candidate for candidate in candidates if candidate.is_dir()]
+
+
+def spec_coverage_gate_stdout(project_root: Path, feature_id: str) -> tuple[int, str]:
+    """Evaluate the P3.2 spec-coverage gate for ``feature_id`` -- ADVISORY ONLY.
+
+    Wraps the ALREADY-BUILT, pinned pure-computation functions in
+    ``des.cli.verify_spec_coverage`` (checklist parsing, AT-corpus discovery,
+    coverage-marker scanning, category counting) -- this function is pure
+    orchestration, it invents no new gate logic. Always returns exit 0 (never
+    a veto -- P3.1/P3.2 enforcement is advisory at DISTILL gate-out):
+
+      * no checklist on disk / no AT-corpus directory / a malformed checklist
+        -> an ``advisory`` verdict naming the arming gap, never silently
+        passing (a silent pass on an unarmed gate is the eval's disease this
+        gate exists to close).
+      * every checklist row covered by >=1 AT -> a clean ``pass`` (silent).
+      * >=1 uncovered row -> an ``advisory`` verdict naming each uncovered row
+        + the mandatory categories among them (ui/e2e/nfr/security/
+        validation/build), loud but non-blocking.
+
+    ``verify_spec_coverage``'s pure helpers print human-readable lines on
+    their OWN error/indeterminate branches (designed for standalone CLI use);
+    called in-process from a hook path, that stdout would otherwise leak into
+    the hook's own stdout protocol. Every call into that module is wrapped in
+    ``redirect_stdout`` so this function is silent on the real stdout by
+    construction, regardless of which branch fires.
+    """
+    import io
+    from contextlib import redirect_stdout
+
+    from des.application import wave_gate_stack_dispatch as wgs
+    from des.cli import verify_spec_coverage as spec_coverage_cli
+
+    checklist_path = _distill_checklist_path(project_root, feature_id)
+    if not checklist_path.is_file():
+        return wgs.advisory_stdout(
+            _SPEC_COVERAGE_GATE_ID,
+            reason=(
+                f"no requirement-checklist.md -- spec-coverage not yet armed "
+                f"for this feature (expected at {checklist_path})"
+            ),
+            advice=[
+                "extract the requirement checklist at DISTILL-open (P3.1) to "
+                f"{checklist_path} to arm the spec-coverage gate for this "
+                "feature.",
+            ],
+        )
+
+    at_dirs = _distill_spec_coverage_at_dirs(project_root, feature_id)
+    if not at_dirs:
+        return wgs.advisory_stdout(
+            _SPEC_COVERAGE_GATE_ID,
+            reason=(
+                "no AT-corpus directory found for this feature (checked "
+                f"{checklist_path.parent} and {project_root / 'tests'})"
+            ),
+            advice=[
+                "author ATs under tests/ (or the feature's distill/ folder) "
+                "so the spec-coverage gate has a corpus to scan.",
+            ],
+        )
+
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        requirements_or_exit = spec_coverage_cli._parse_checklist(checklist_path)
+        if isinstance(requirements_or_exit, int):
+            return wgs.advisory_stdout(
+                _SPEC_COVERAGE_GATE_ID,
+                reason=(
+                    "the requirement checklist is malformed or unreadable -- "
+                    "degraded to advisory-indeterminate rather than a silent "
+                    f"pass ({buffer.getvalue().strip() or 'see checklist file'})"
+                ),
+                advice=[
+                    "fix the checklist grammar (one '| R<n> | text | category |'"
+                    " or '- R<n> [category] text' row per requirement) and "
+                    "re-run.",
+                ],
+            )
+        requirements = requirements_or_exit
+
+        files = sorted(
+            {path for at_dir in at_dirs for path in spec_coverage_cli._discover(at_dir)}
+        )
+        covered: set[str] = set()
+        for path in files:
+            ids_or_exit = spec_coverage_cli._covered_ids_in_file(path)
+            if isinstance(ids_or_exit, int):
+                # An unparseable AT file never blocks the advisory -- best
+                # effort: skip its (unknowable) contribution to coverage.
+                continue
+            covered |= ids_or_exit
+
+    counts = spec_coverage_cli._category_counts(requirements, covered)
+    uncovered = [req for req in requirements if req.req_id not in covered]
+    if not uncovered:
+        return wgs.pass_stdout(_SPEC_COVERAGE_GATE_ID)
+
+    mandatory_uncovered = sorted(
+        {
+            req.category
+            for req in uncovered
+            if req.category in spec_coverage_cli.MANDATORY_CATEGORIES
+        }
+    )
+    uncovered_rows = [
+        {"id": req.req_id, "category": req.category, "text": req.text}
+        for req in uncovered
+    ]
+    reason = (
+        f"{len(uncovered)} of {len(requirements)} requirement(s) have NO "
+        f"covering AT ({', '.join(row['id'] for row in uncovered_rows)})"
+        + (
+            f"; MANDATORY categories uncovered: {', '.join(mandatory_uncovered)}"
+            if mandatory_uncovered
+            else ""
+        )
+    )
+    return 0, json.dumps(
+        {
+            "verdict": "advisory",
+            "gate_id": _SPEC_COVERAGE_GATE_ID,
+            "reason": reason,
+            "uncovered": uncovered_rows,
+            "mandatory_categories_uncovered": mandatory_uncovered,
+            "counts": counts,
+            "recovery_suggestions": [spec_coverage_cli._HOW_TO_FIX],
+        }
+    )
 
 
 class SubagentStopService(SubagentStopPort):
@@ -150,6 +334,15 @@ class SubagentStopService(SubagentStopPort):
         gate_out_block = self._discuss_gate_out_declarative(context, hook_id=hook_id)
         if gate_out_block is not None:
             return gate_out_block
+
+        # Step -0.9: DISTILL gate-OUT verify-spec-coverage (evolution P3.1/P3.2,
+        # ADVISORY-ONLY). Fires on EVERY DISTILL return (active wave == 'distill'
+        # per the WaveActiveReader floor, never self-reported) independent of the
+        # still-unwired sibling registry rows (see the module-level DISCOVERY
+        # comment above `_distill_gate_out_spec_coverage`). Never returns a block
+        # -- it only surfaces an advisory audit record when the checklist is
+        # unarmed or a requirement is uncovered.
+        self._distill_gate_out_spec_coverage(context, hook_id=hook_id)
 
         # Step -0.5: wave-only Agent()-dispatch guard (WGO-001, ADD-not-mutate).
         # A wave-only return is execution-log-free AND step-free (a DES-WAVE
@@ -379,6 +572,79 @@ class SubagentStopService(SubagentStopPort):
         else:
             return
         self._wave_active_writer.clear(project_root)
+
+    def _distill_gate_out_spec_coverage(
+        self,
+        context: SubagentStopContext,
+        hook_id: str | None,
+    ) -> None:
+        """Fire the P3.2 spec-coverage gate on a DISTILL return -- NEVER blocks.
+
+        Keyed on the ACTIVE wave being ``"distill"`` (read from the
+        WaveActiveReader floor at cwd, never self-reported) -- mirrors the
+        discriminant style of ``_maybe_close_owner_floor`` /
+        ``_discuss_gate_out_declarative``. Additive DI / fail-safe: no
+        wave_active_reader wired, no cwd, no active-distill floor, or no
+        project_id -> no-op (never raises, never blocks -- this step has no
+        HookDecision to return).
+
+        The gate itself (`spec_coverage_gate_stdout`) always exits 0; when its
+        verdict is ``advisory`` this emits a `HOOK_SUBAGENT_STOP_ADVISORY`
+        audit record so the finding is surfaced LOUD (not a silent skip) even
+        though it never vetoes the return.
+        """
+        if self._wave_active_reader is None or not context.cwd:
+            return
+        if not context.project_id:
+            return
+
+        from des.domain.wave_active import WaveActiveRecord
+
+        project_root = Path(context.cwd)
+        wave_state = self._wave_active_reader.read(project_root)
+        if not isinstance(wave_state, WaveActiveRecord):
+            return
+        if wave_state.wave != _DISTILL_WAVE:
+            return
+
+        exit_code, stdout = spec_coverage_gate_stdout(project_root, context.project_id)
+        self._emit_spec_coverage_advisory(exit_code, stdout, context, hook_id=hook_id)
+
+    def _emit_spec_coverage_advisory(
+        self,
+        exit_code: int,
+        stdout: str,
+        context: SubagentStopContext,
+        *,
+        hook_id: str | None,
+    ) -> None:
+        """Audit-log the spec-coverage verdict when it is an advisory finding.
+
+        A clean ``pass`` (every requirement covered) emits nothing -- an
+        advisory record only exists to surface a NON-clean finding LOUD. Fail-
+        OPEN on unparseable stdout (never raises; the gate verdict already
+        stands as advisory-only, no HookDecision is affected either way).
+        """
+        try:
+            payload = json.loads(stdout)
+        except (json.JSONDecodeError, ValueError):
+            return
+        if not isinstance(payload, dict) or payload.get("verdict") != "advisory":
+            return
+        self._audit_writer.log_event(
+            AuditEvent(
+                event_type="HOOK_SUBAGENT_STOP_ADVISORY",
+                timestamp=self._time_provider.now_utc().isoformat(),
+                feature_name=context.project_id,
+                step_id=context.slice_id or "",
+                hook_id=hook_id,
+                data={
+                    "gate_id": str(payload.get("gate_id", _SPEC_COVERAGE_GATE_ID)),
+                    "reason": str(payload.get("reason", "")),
+                    "exit_code": str(exit_code),
+                },
+            )
+        )
 
     def _discuss_gate_out_declarative(
         self,
@@ -762,7 +1028,6 @@ class SubagentStopService(SubagentStopPort):
         Returns:
             Set of entry indices that were actually corrected.
         """
-        import json
         from datetime import datetime, timezone
 
         corrected_indices: set[int] = set()
@@ -870,7 +1135,7 @@ class SubagentStopService(SubagentStopPort):
 
     @staticmethod
     def _add_execution_stats(
-        data: dict,
+        data: dict[str, object],
         turns_used: int | None,
         tokens_used: int | None,
     ) -> None:
@@ -899,7 +1164,7 @@ class SubagentStopService(SubagentStopPort):
         tokens_used: int | None = None,
     ) -> None:
         """Log successful validation to the audit trail."""
-        data: dict = {}
+        data: dict[str, object] = {}
         self._add_execution_stats(data, turns_used, tokens_used)
         self._audit_writer.log_event(
             AuditEvent(
@@ -923,7 +1188,7 @@ class SubagentStopService(SubagentStopPort):
         tokens_used: int | None = None,
     ) -> None:
         """Log failed validation to the audit trail."""
-        data: dict = {
+        data: dict[str, object] = {
             "validation_errors": error_messages,
         }
         if allowed_despite_failure:
@@ -947,7 +1212,7 @@ class SubagentStopService(SubagentStopPort):
         hook_id: str | None = None,
     ) -> None:
         """Log successful commit verification to the audit trail."""
-        data: dict = {
+        data: dict[str, object] = {
             "commit_hash": result.commit_hash,
             "commit_date": result.commit_date,
             "commit_subject": result.commit_subject,

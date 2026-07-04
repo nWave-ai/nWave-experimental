@@ -1,0 +1,66 @@
+# Gate-contract: record-examine-verdict (evolution-plan P2.1/P1.2 — EXAMINE producer)
+#
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=record-examine-verdict.
+
+gate_id: record-examine-verdict
+responsibility: |
+  Record a User-Examiner (nw-user-examiner / "Vera") verdict for a delivered
+  slice as tamper-evident evidence (evolution P2.1). Appends one signed
+  ExamineVerdict record to the per-feature examine ledger
+  (.nwave/telemetry/examine/{feature-id}.jsonl) carrying the examiner identity,
+  the slice binding, the verdict (PASS|FAIL|INDETERMINATE) and a content seal
+  over the charter bytes (charter_seal) so a hand-edited markdown session log
+  cannot forge a PASS. The commit-slice examine gate is the CONSUMER that reads
+  this record before a slice commit lands: no PASS with a matching seal, no
+  commit. This is the execution-observation replacement for C_REVIEWER_AUDIT.
+module: des.cli.record_examine_verdict
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --repo
+    required: true
+    type: path
+    help: "Path to the repository."
+  - name: --feature-id
+    required: true
+    type: string
+    help: "Feature identifier; resolves the per-feature examine ledger."
+  - name: --slice
+    required: true
+    type: string
+    help: "The slice whose examination outcome is being recorded (slice-NN)."
+  - name: --charter
+    required: true
+    type: path
+    help: "Path to the expectation charter the examiner walked; its bytes are sealed into the record."
+  - name: --verdict
+    required: true
+    type: choice
+    choices: [PASS, FAIL, INDETERMINATE]
+    help: "The examiner outcome observed by walking the charter through the real surface."
+  - name: --observations
+    required: true
+    type: string
+    help: "Concrete observations backing the verdict (what was done, what was seen)."
+  - name: --examiner
+    required: true
+    type: string
+    help: "Identity of the examiner recording the verdict (e.g. nw-user-examiner)."
+
+log_events:
+  - ExamineVerdictRecorded
+
+failure_modes:
+  - error_class: CharterNotFound
+    exit_code: 2
+    remediation: "The --charter path does not exist: point it at the slice's expectation charter under docs/product/expectations/, or author the charter first."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

@@ -1,10 +1,10 @@
 # nWave Reference
 
-Auto-generated documentation for 50 agents, 28 commands, 276 skills, and 9 templates.
+Auto-generated documentation for 51 agents, 28 commands, 276 skills, and 9 templates.
 
 ## Contents
 
-- [Agents](agents/index.md) (50)
+- [Agents](agents/index.md) (51)
 - [Commands](commands/index.md) (28)
 - [Skills](skills/index.md) (276)
 - [Templates](templates/index.md) (9)

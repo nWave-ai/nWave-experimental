@@ -50,6 +50,22 @@ wave: distill
 # run them, so verify-test-runner is advisory at DISTILL-OUT. A warn surfaces the
 # signal LOUD without vetoing a legitimately record-/runner-absent DISTILL return
 # (the same don't-break-spine reasoning that put gate-design-at-coherence on warn).
+# evolution-plan P3.1/P3.2 (spec-coverage gate wiring, ADVISORY): the
+# ALREADY-BUILT `verify-spec-coverage` gate (src/des/cli/verify_spec_coverage.py,
+# verdicts SpecCoverageVerified/Refused/Indeterminate) is referenced here so a
+# DISTILL return is checked for requirement-checklist AT-coverage. `on_failure:
+# warn` -- matches the sibling rows above: DISTILL gate-out is a no-objection
+# boundary (§22.0), never an authorizing GO, and a feature shipping no
+# requirement-checklist.md yet (P3.1 is greenfield, no shipped feature has
+# produced one) has nothing for the gate to check -- an advisory skip, never a
+# veto. NOTE (this slice's DISCOVERY): unlike the four rows above, this row is
+# NOT dispatched through the shared `_discuss_gate_out_declarative` /
+# `_REVIEW_GATE_OUT_WAVES` path (that closed set excludes "distill" -- the four
+# rows above are DECLARED here but have no live invoker yet, see
+# subagent_stop_service.py's module-level DISCOVERY comment). `verify-spec-
+# coverage` gets its OWN narrow, always-exit-0 dispatch
+# (`SubagentStopService._distill_gate_out_spec_coverage`) so it fires live on
+# every DISTILL return without activating the still-unwired sibling rows.
 gate_stack:
   gate-out:
     - gate_id: check-slice-at-completeness
@@ -59,6 +75,8 @@ gate_stack:
     - gate_id: self-attest
       on_failure: warn
     - gate_id: verify-test-runner
+      on_failure: warn
+    - gate_id: verify-spec-coverage
       on_failure: warn
 
 # output_contract (SSOT-B) — what the DISTILL wave must produce (the [REF] section
