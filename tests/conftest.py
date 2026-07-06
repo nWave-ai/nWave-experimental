@@ -1301,6 +1301,24 @@ def pytest_collection_modifyitems(config, items):
         if item_path is not None and _item_depends_on_real_repo(Path(item_path)):
             item.add_marker(pytest.mark.xdist_group("real_repo_scan"))
 
+        # --- Docker-heavy e2e: run ONLY in CI, never locally (Ale 2026-07-06) ---
+        # tests/e2e/ install tests spin up testcontainers/Docker. Locally they
+        # contend for the Docker daemon + memory under `-n auto`, flake, and are
+        # slow -- and they reddened the DES feature-end full-suite leg twice,
+        # refusing the wire-p0-gates seal (F-E2E-INSTALL-FLAKY). Decision: run them
+        # ONLY in CI (fresh runners, no contention; ADR-PLAT-010). Locally they are
+        # SKIPPED unless NWAVE_RUN_DOCKER_E2E=1 forces them. When they DO run (CI),
+        # pin them to one xdist_group so they serialize among themselves.
+        if rel_path.startswith("tests/e2e/"):
+            item.add_marker(pytest.mark.xdist_group("e2e_docker_install"))
+            if not (os.environ.get("CI") or os.environ.get("NWAVE_RUN_DOCKER_E2E")):
+                item.add_marker(
+                    pytest.mark.skip(
+                        reason="Docker e2e runs only in CI (F-E2E-INSTALL-FLAKY / "
+                        "ADR-PLAT-010); set NWAVE_RUN_DOCKER_E2E=1 to run locally"
+                    )
+                )
+
 
 # ---------------------------------------------------------------------------
 # 3c: Rich terminal summary table

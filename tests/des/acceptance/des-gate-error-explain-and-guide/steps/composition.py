@@ -153,12 +153,13 @@ def _build_zero_collected_repo(tmp: Path, feature_id: FeatureId) -> None:
     The `_feature_tag_files` resolver will return an empty set -> the gate
     calls `_feature_scope_malformed(..., reason="zero-collected", ...)`.
 
-    The repo is git-init-ed because `run_contract_gate` resolves paths
-    relative to --repo; it does not require a real git history.
+    The repo only needs a `.git` directory marker because `run_contract_gate`
+    resolves paths relative to --repo; it does not require a real git history
+    or a real git binary -- an empty `.git/` directory suffices for this
+    malformed-scope early-exit path (no git subprocess is invoked before the
+    zero-collected/empty-intersection check).
     """
-    subprocess.run(
-        ["git", "init", "-q", str(tmp)], check=True, capture_output=True, text=True
-    )
+    (tmp / ".git").mkdir(parents=True, exist_ok=True)
     # A .feature file that is deliberately NOT tagged with @feature-<feature_id>.
     feature_dir = tmp / "tests" / "dummy"
     feature_dir.mkdir(parents=True)
@@ -180,9 +181,7 @@ def _build_empty_intersection_repo(
     will find no @<entering_slice> tag -> the gate calls
     `_feature_scope_malformed(..., reason="empty-intersection", ...)`.
     """
-    subprocess.run(
-        ["git", "init", "-q", str(tmp)], check=True, capture_output=True, text=True
-    )
+    (tmp / ".git").mkdir(parents=True, exist_ok=True)
     feature_dir = tmp / "tests" / "acceptance" / str(feature_id)
     feature_dir.mkdir(parents=True)
     # Tagged with @feature-<id> but with a DIFFERENT slice tag -- not the

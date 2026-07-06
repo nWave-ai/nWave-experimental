@@ -47,6 +47,17 @@ import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.adapters.drivers.hooks.carpaccio_intercept import (
+    _predecessor_slice,
+    _slice_number,
+)
+
+# Mechanical-seal alternative to the LLM AT-review verdict (evolution-plan
+# P1.1, pytest-regression mode only): the RED-observed seal predicates live in
+# their P0 SSOT modules; the gate imports them so seal-path/content-hash and
+# negative-AT semantics can never drift from `des verify-red-green` /
+# `des verify-negative-at`.
 from des.cli.carpaccio_format import (
     GateError,
     Scenario,
@@ -54,6 +65,7 @@ from des.cli.carpaccio_format import (
     _at_review_rejection,
     _config_slice_max,
     _feature_tag_files,
+    _lane_profile_for_slice,
     _read_feature_files,
     _slice_scenarios,
     check_carpaccio,
@@ -63,29 +75,27 @@ from des.cli.carpaccio_format import (
     pytest_regression_content_hash,
 )
 from des.cli.human_surface import Verdict, print_human_summary
-
-# Mechanical-seal alternative to the LLM AT-review verdict (evolution-plan
-# P1.1, pytest-regression mode only): the RED-observed seal predicates live in
-# their P0 SSOT modules; the gate imports them so seal-path/content-hash and
-# negative-AT semantics can never drift from `des verify-red-green` /
-# `des verify-negative-at`.
 from des.cli.verify_negative_at import _scan_file as _scan_negative_at_file
 from des.cli.verify_red_green import _content_sha as _red_seal_content_sha
 from des.cli.verify_red_green import _seal_path as _red_green_seal_path
 from des.domain.at_review_signing import (
     canonical_at_review_json,
 )
+from des.domain.lane_profile import GuardKind
 from des.domain.repo_path_resolver import (
     feature_delta_path as _feature_delta_path,
 )
 from des.domain.repo_path_resolver import (
     resolve_repo_root as _repo_root,
 )
+from des.ports.driven_ports.committed_scope_port import Indeterminate
 
 
 if TYPE_CHECKING:
     from pathlib import Path
     from typing import Literal
+
+    from des.ports.driven_ports.commit_diff_port import CommitDiffPort
 
 
 # Re-export the format predicates the gate composes with so existing importers
@@ -386,6 +396,16 @@ _AT_REVIEW_REJECTED_EXIT = 45
 _AT_EVIDENCE_REVIEWER_VERDICT = "reviewer-verdict"
 _AT_EVIDENCE_MECHANICAL_SEAL = "mechanical-seal"
 
+# Green-to-Green Seal attestation labels (D8, f-prefactoring-dispatch-clears-
+# honestly slice-02): a prefactoring (0-AT, behavior-preserving) has no
+# RED->GREEN seal analog, so its evidence is the 3 REUSED green-to-green facts
+# (green-before, green-after, no-test-file-in-diff) instead. DISTINCT from the
+# COMMIT-verified label so an honest ledger never conflates a provisional
+# ENTRY acceptance (substance verified later, at COMMIT) with a genuine
+# COMMIT-time verification.
+_AT_EVIDENCE_GREEN_TO_GREEN = "green-to-green-verified"
+_AT_EVIDENCE_GREEN_TO_GREEN_PENDING = "green-to-green-pending"
+
 _MECHANICAL_OR_VERDICT_HOW = (
     "satisfy assertion 5 by EITHER (a) minting an APPROVED ATReviewVerdict "
     "for this slice in the AT-completion ledger, OR (b) recording the "
@@ -403,8 +423,24 @@ def check_at_review(
     scenarios: list[Scenario],
     at_kind: Literal["gherkin", "pytest-regression"] = "gherkin",
     regression_test_file: Path | None = None,
+    *,
+    plan: SlicePlan | None = None,
+    commit_sha: str | None = None,
+    commit_diff_port: CommitDiffPort | None = None,
 ) -> str | None:
     """Run assertion 5 (ADR-029 D5). Raises ``GateError`` exit 45 on failure.
+
+    Green-to-Green Seal (D7-D12, ADD-not-mutate, keyword-only, all default
+    ``None``): ``plan``, ``commit_sha``, ``commit_diff_port`` thread the
+    lane-exemption evidence through the SAME seam both production callers use
+    (``carpaccio_slice_gate.main`` at ENTRY, ``verify_commit_trailers.
+    _audit_slice`` at COMMIT). Every existing caller (both production sites
+    and the pre-existing test caller) stays byte-identical -- none passes
+    these new kwargs. When ``plan`` is given AND the entering slice's Slice-
+    Plan row resolves (via the shared ``_lane_profile_for_slice`` helper) to a
+    lane whose ``guard_kind`` is ``GREEN_TO_GREEN``, the legacy ledger-record
+    check is BYPASSED entirely in favor of :func:`_check_green_to_green` --
+    see that function's docstring for the 3-fact substance-evidence.
 
     Record-presence is the whole control: an absent or non-APPROVED record
     refuses the slice fail-closed. No signing key is resolved -- the veto is
@@ -437,6 +473,15 @@ def check_at_review(
     fail, the verdict path's rejection is re-raised fail-closed with its
     ``how`` naming both remedies.
     """
+    if plan is not None:
+        lane_profile = _lane_profile_for_slice(plan, entering_slice)
+        if (
+            lane_profile is not None
+            and lane_profile.guard_kind is GuardKind.GREEN_TO_GREEN
+        ):
+            return _check_green_to_green(
+                repo, feature_id, entering_slice, commit_sha, commit_diff_port
+            )
     if at_kind == "pytest-regression" and regression_test_file is None:
         raise ValueError(
             "check_at_review: at_kind='pytest-regression' requires regression_test_file"
@@ -458,6 +503,87 @@ def check_at_review(
             return _AT_EVIDENCE_MECHANICAL_SEAL
         raise _with_mechanical_remedy(rejection) from None
     return _AT_EVIDENCE_REVIEWER_VERDICT
+
+
+def _check_green_to_green(
+    repo: Path,
+    feature_id: str,
+    entering_slice: str,
+    commit_sha: str | None,
+    commit_diff_port: CommitDiffPort | None,
+) -> str:
+    """The Green-to-Green Seal (D7-D12): the honest evidence for a 0-AT
+    behavior-preserving prefactoring.
+
+    A prefactoring has no RED->GREEN seal analog -- the honest substance-
+    evidence a commit-time gate can check is 3 REUSED facts:
+
+    1. green-before -- the predecessor slice's own `SliceCommitVerified`
+       ledger record already attests its full suite was green (D9). `slice-01`
+       has no predecessor and passes this fact vacuously.
+    2. green-after -- the entering slice ITSELF carries a `SliceCommitVerified`
+       record (D9) -- reusing the commit gate's own full-suite run.
+    3. no-test-file-in-diff -- the commit's diff touches no test path (D10,
+       anti-gaming): a "prefactoring" that also weakens/adds a test is a
+       disguised behavior change.
+
+    At ENTRY (``commit_sha=None``) the commit does not exist yet -- no diff to
+    read, no commit-time ledger record to expect yet -- so the lane clears
+    IMMEDIATELY with the PENDING label (D8): the lane's `at_requirement` is
+    EXEMPT, so entry never blocks on it; substance is verified at COMMIT,
+    where the evidence genuinely exists.
+
+    At COMMIT (``commit_sha`` given) all 3 facts are checked, in order; a
+    `commit_diff_port` degrading to ``Indeterminate`` (git absent, ANY
+    reason) surfaces `GateError(7, ATReviewIndeterminate)` -- fail-closed,
+    NEVER a silent pass.
+    """
+    if commit_sha is None:
+        return _AT_EVIDENCE_GREEN_TO_GREEN_PENDING
+    ledger = AtCompletionLedger(feature_id, repo)
+    verified = ledger.verified_slices()
+    try:
+        entering_number = _slice_number(entering_slice)
+    except ValueError as exc:
+        # D5 (friction #10 parity): `_SLICE_ID_RE` accepts a letter-suffixed
+        # slice id (`slice-02b`) as VALID throughout the rest of the carpaccio
+        # machinery, but `_slice_number`'s bare `int(...)` cannot parse one.
+        # A COMMIT-time green-to-green consultation for such an id must refuse
+        # cleanly (GateError), never let the raw ValueError escape uncaught.
+        raise _at_review_rejection("malformed-slice-id", entering_slice) from exc
+    if entering_number > 1:
+        predecessor = _predecessor_slice(entering_slice)
+        if predecessor not in verified:
+            raise _at_review_rejection("green-before-absent", entering_slice)
+    if entering_slice not in verified:
+        raise _at_review_rejection("green-after-red", entering_slice)
+    assert commit_diff_port is not None  # the CLI/hook seam always supplies one
+    changed_paths = commit_diff_port.changed_paths(repo, commit_sha)
+    if isinstance(changed_paths, Indeterminate):
+        raise GateError(
+            7,
+            {
+                "event": "ATReviewIndeterminate",
+                "slice_id": entering_slice,
+                "reason": changed_paths.reason,
+                "error": (
+                    f"green-to-green seal for slice {entering_slice} is "
+                    f"INDETERMINATE: {changed_paths.reason}"
+                ),
+            },
+        )
+    if any(_is_test_path(path) for path in changed_paths):
+        raise _at_review_rejection("test-file-in-diff", entering_slice)
+    return _AT_EVIDENCE_GREEN_TO_GREEN
+
+
+def _is_test_path(path: str) -> bool:
+    """True when ``path`` is a test file (a ``tests/`` segment or ``test_*``/``*_test``)."""
+    parts = path.split("/")
+    if "tests" in parts or "test" in parts:
+        return True
+    name = parts[-1] if parts else path
+    return name.startswith("test_") or name.endswith(("_test.py", "_test.ts"))
 
 
 def _check_verdict_record(
@@ -783,6 +909,7 @@ def main(argv: list[str] | None = None) -> int:
             scenarios,
             at_kind=at_kind,
             regression_test_file=regression_test_file,
+            plan=plan,
         )
     except GateError as gate_error:
         _emit(gate_error.payload)

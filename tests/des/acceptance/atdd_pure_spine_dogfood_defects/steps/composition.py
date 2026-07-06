@@ -106,6 +106,15 @@ class GateRunResult:
         return Digest(first[0] if first else "")
 
 
+#: velocity-v2 (<5min goal, G-143): cache the REAL-repo collect across the module.
+#: The killer scenarios (slice-00 probe + slice-01 digest) each collect the whole
+#: ~1677-test repo (~22s). The real repo is IMMUTABLE during a test session, so its
+#: collect result is stable and shareable -- N scenarios pay the ~22s cost ONCE.
+#: Synthetic tmp trees are per-test (unique paths) -> distinct keys, never stale.
+_PROBE_COLLECT_CACHE: dict[str, CollectProbeResult] = {}
+_DIGEST_COLLECT_CACHE: dict[str, GateRunResult] = {}
+
+
 @dataclass
 class SpineDogfoodComposition:
     """Production composition root for the three atdd_pure-spine defect fixes."""
@@ -134,6 +143,10 @@ class SpineDogfoodComposition:
         scope); passing a synthetic tree drives the AT(3) broken-import probe.
         """
         target = root if root is not None else self.repo
+        _cache_key = str(target.resolve())
+        if _cache_key in _PROBE_COLLECT_CACHE:
+            self.last_collect = _PROBE_COLLECT_CACHE[_cache_key]
+            return self.last_collect
         completed = subprocess.run(
             [
                 sys.executable,
@@ -165,6 +178,7 @@ class SpineDogfoodComposition:
             error_count=error_count,
             node_id_count=len(node_ids),
         )
+        _PROBE_COLLECT_CACHE[_cache_key] = self.last_collect
         return self.last_collect
 
     # --- slice-01: the E2 contract gate -----------------------------------
@@ -175,6 +189,10 @@ class SpineDogfoodComposition:
         Drives the real CLI entry point `run_contract_gate.main` -- the same
         definition the U2 G_COMMIT exit gate invokes.
         """
+        _cache_key = str(repo.resolve())
+        if _cache_key in _DIGEST_COLLECT_CACHE:
+            self.last_gate_run = _DIGEST_COLLECT_CACHE[_cache_key]
+            return self.last_gate_run
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             exit_code = run_contract_gate.main(
@@ -183,6 +201,7 @@ class SpineDogfoodComposition:
         self.last_gate_run = GateRunResult(
             exit_code=exit_code, stdout=out.getvalue(), stderr=err.getvalue()
         )
+        _DIGEST_COLLECT_CACHE[_cache_key] = self.last_gate_run
         return self.last_gate_run
 
     def test_tree_for_scope(self, root: Path, scope: CollectScope) -> Path:

@@ -30,6 +30,9 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from des.ports.driven_ports.contract_gate_port import ContractGatePort
+    from des.ports.driven_ports.environmental_e2e_port import EnvironmentalE2EPort
+    from des.ports.driven_ports.robustness_density_port import RobustnessDensityPort
     from des.ports.test_runner_port import ListScope, RunnerAdapter, RunVerdict
 
 
@@ -97,7 +100,66 @@ class RunnerRegistry:
         return self._list_facets.get(name)
 
 
-GLOBAL_REGISTRY = RunnerRegistry()
+class LanguageAdapterRegistry(RunnerRegistry):
+    """The unified registry -- ``RunnerRegistry`` PLUS 3 catalog-port slots.
+
+    ADR-ULAR-001 (unified-language-adapter-registry, slice-01 prefactoring):
+    a strict-superset subclass, not a composition-wrap, so the ONE shipped
+    concrete plugin (``NwaveLangRust.register_adapters``, whose body calls
+    ``registry.register(name, facet)`` directly) and all 19 Tsunami-verified
+    ``GLOBAL_REGISTRY`` read sites keep working byte-identical -- a subclass
+    is invisible to a caller that only ever touches the inherited
+    ``register``/``lookup``/``register_list``/``lookup_list`` surface.
+
+    The 3 new slot-pairs are named after the catalog ``port-id`` verbatim
+    (``nWave/data/language-adapter-ports.yaml``, DDD-U2): ``contract_gate``
+    (port-id ``run_contract_gate``), ``environmental_e2e`` (port-id
+    ``verify_environmental_e2e``), ``robustness_density`` (port-id
+    ``check_robustness_density``). Each slot is keyed at lookup time on the
+    RESOLVED TOOL-NAME string (``RunnerAdapter.name``, e.g. ``"pytest"`` /
+    ``"vitest"``) -- the SAME key ``lookup``/``lookup_list`` already use
+    (DDD-U5) -- NEVER on ``target_language``.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._contract_gate_facets: dict[str, ContractGatePort] = {}
+        self._e2e_facets: dict[str, EnvironmentalE2EPort] = {}
+        self._robustness_facets: dict[str, RobustnessDensityPort] = {}
+
+    def register_contract_gate(self, name: str, facet: ContractGatePort) -> None:
+        """Register a ``ContractGatePort`` facet under ``name`` (idempotent)."""
+        self._contract_gate_facets[name] = facet
+
+    def lookup_contract_gate(self, name: str) -> ContractGatePort | None:
+        """Return the contract-gate facet registered under ``name``, or ``None``."""
+        return self._contract_gate_facets.get(name)
+
+    def register_environmental_e2e(
+        self, name: str, facet: EnvironmentalE2EPort
+    ) -> None:
+        """Register an ``EnvironmentalE2EPort`` facet under ``name`` (idempotent)."""
+        self._e2e_facets[name] = facet
+
+    def lookup_environmental_e2e(self, name: str) -> EnvironmentalE2EPort | None:
+        """Return the environmental-e2e facet registered under ``name``, or ``None``."""
+        return self._e2e_facets.get(name)
+
+    def register_robustness_density(
+        self, name: str, facet: RobustnessDensityPort
+    ) -> None:
+        """Register a ``RobustnessDensityPort`` facet under ``name`` (idempotent)."""
+        self._robustness_facets[name] = facet
+
+    def lookup_robustness_density(self, name: str) -> RobustnessDensityPort | None:
+        """Return the robustness-density facet registered under ``name``, or ``None``."""
+        return self._robustness_facets.get(name)
+
+
+# ADR-ULAR-001: GLOBAL_REGISTRY's runtime type is the LanguageAdapterRegistry
+# subclass (a strict superset of RunnerRegistry) -- every existing caller that
+# only uses register/lookup/register_list/lookup_list is unaffected.
+GLOBAL_REGISTRY = LanguageAdapterRegistry()
 
 _ENTRY_POINTS_GROUP = "nwave.lang.adapter"
 
@@ -153,6 +215,7 @@ def seed_runner_registry() -> None:
 
 __all__ = [
     "GLOBAL_REGISTRY",
+    "LanguageAdapterRegistry",
     "ListFacet",
     "RunFacet",
     "RunnerRegistry",

@@ -34,7 +34,7 @@ You (the main Claude instance) run this directly. No subagent delegation.
 - `examine_swarm_n` (NEW): how many independent User-Examiners ("Vera") walk each slice's expectation charter at the DELIVER EXAMINE step. `1` = one exam; `≥3` = swarm, and **divergence between the session logs is itself a signal** (a charter that different examiners read differently is under-specified). The examiner runs on **haiku** (its work is walk/observe/describe, not code reasoning — model pinned in the `nw-user-examiner` agent, not a rigor knob).
 - `reviewer_model` is now the **FEATURE-END** deep-review model (P2.2). The per-slice code-reading `C_REVIEWER_AUDIT` is REPLACED by the EXAMINE step (execution-observation) — see nw-deliver. `reviewer_model` is retained (backward-compat + the feature-end review), not deleted.
 - `agent_model` is **UNCAPPED** — `thorough`/`exhaustive` legitimately offer `opus` for the user's high-stakes choice (vision principle 4). (The no-opus/fable rule governs Lyra's *own* migration dispatches + defaults, not the product ceiling.)
-- `mutation_enabled` is **no longer a rigor axis** — it is a standalone NIGHTLY CI job (mutmut on changed modules), not a per-feature knob. New profiles write it `false`; its 2 consumers skip on `false`.
+- The **mutation-testing knob** is **no longer a rigor axis**, and mutation testing is **DEPRECATED** (FR-1, velocity-v2) — NOT a per-feature knob and NOT a nightly job. New profiles disable it; its 2 consumers skip when it is off. The `mutation-test` task is explicit opt-in only; green ATs + EXAMINE are the truth.
 
 ## Execution-observing floor (ALWAYS on — NOT rigor-gated)
 

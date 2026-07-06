@@ -38,7 +38,10 @@ from des.application.flavor_dispatcher import (  # noqa: E402
     resolve_skill_load_set,
 )
 from des.application.workflow_mode import resolve_workflow_mode  # noqa: E402
-from des.domain.atdd_pure_phases import CANONICAL_PHASES  # noqa: E402
+from des.domain.atdd_pure_phases import (  # noqa: E402
+    CANONICAL_PHASES,
+    normalize_phase_token,
+)
 from scripts.shared.agent_catalog import (  # noqa: E402
     build_ownership_map,
     detect_command_skills,
@@ -1077,7 +1080,10 @@ def check_registry_runtime_agreement(root: Path) -> list[str]:
 
     if resolver_default in flavor_ids:
         shape = _authoritative_phase_shape(flavors_dir / f"{resolver_default}.yaml")
-        declared = _declared_phase_tokens(shape or "")
+        declared = tuple(
+            normalize_phase_token(token)
+            for token in _declared_phase_tokens(shape or "")
+        )
         if declared != tuple(CANONICAL_PHASES):
             disagreements.append(
                 "registry↔runtime disagreement: the default flavor's "

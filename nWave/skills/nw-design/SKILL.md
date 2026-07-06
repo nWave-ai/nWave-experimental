@@ -115,9 +115,12 @@ Every DESIGN wave that introduces ≥1 NEW component MUST author a
 > - **Columns**: exactly these 5, in this order — `Existing Component | File |
 >   Overlap | Decision | Justification`. A 4-column table or a re-order is
 >   `malformed-reuse-analysis`.
-> - **Decision cell**: a BARE token, EXACTLY `EXTEND` or `CREATE_NEW`. No
->   parenthetical — `CREATE_NEW (schema, not src/des/**)` is REJECTED. Put any
->   qualifier in the Overlap or Justification cell, never in Decision.
+> - **Decision cell**: the substantive token, `EXTEND` or `CREATE_NEW`. PREFER a
+>   bare token and put qualifiers in the Overlap/Justification cell. A trailing
+>   parenthetical qualifier is TOLERATED (DDD-7 leniency, 2026-07-05):
+>   `CREATE_NEW (companion)` normalises to `CREATE_NEW`. A cell that does not
+>   reduce to a canonical token (e.g. `MAYBE_REWRITE`) is still
+>   `malformed-reuse-analysis`.
 > - **Justification**: non-empty on every `CREATE_NEW` row (empty → `unjustified-create-new`).
 
 For each NEW class declared under the feature's scoped-path

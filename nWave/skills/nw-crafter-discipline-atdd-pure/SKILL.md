@@ -1,6 +1,6 @@
 ---
 name: nw-crafter-discipline-atdd-pure
-description: Crafter discipline contract for the ATDD-pure 7-phase workflow — what the slim crafter does in Phase A (GREEN-the-ATs), Phase B (coverage-driven dead-code elimination), and Phase E (batch L1-L6 refactor), plus hard prohibitions and the Phase B common-cuts taxonomy
+description: Crafter discipline contract for the ATDD-pure workflow — what the slim crafter does in Phase A (GREEN-the-ATs with AT-driven minimalism), Phase B (coverage-driven dead-code elimination — DEPRECATED velocity-v2, absorbed into A_GREEN), and Phase E (batch L1-L6 refactor), plus hard prohibitions
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -42,6 +42,16 @@ All ATs pass (full suite, not smoke). Output: production code + diff scope confi
 ---
 
 ## Phase B — Coverage-driven dead-code elimination (same crafter instance)
+
+> **DEPRECATED (FR-2 + FR-3 + deliver_phase_shape, velocity-v2, 2026-07-04)**: coverage-driven dead-code
+> elimination is REMOVED from the per-slice cycle. Green ATs + EXAMINE (independent outcome verification)
+> are the truth; a `pytest --cov` measurement after green and a ≥90% coverage target add cost, not signal
+> (Ale: "coverage dopo green inutile, eliminazione codice non coperto inutile"). The KEEP is **AT-driven
+> minimalism** — "no defensive code beyond AT-driven need" — which lives in **A_GREEN**: the per-slice
+> shape is now `A_GREEN -> EXAMINE -> COMMIT` (B_COVERAGE_CLEANUP dropped). The mechanical exit-gate items
+> below (zero try/except / defensive branch without a paired AT) are RETAINED as A_GREEN discipline, but
+> driven by AT-need, NOT by a coverage report. This section is reference only — do NOT run `pytest --cov`
+> as a per-slice gate or delete code because it lacks coverage.
 
 **Goal**: prove that every line of production code written in Phase A is **required** by at least one AT. Cut everything else.
 

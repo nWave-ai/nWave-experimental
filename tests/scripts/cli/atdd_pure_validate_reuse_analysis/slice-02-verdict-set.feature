@@ -55,5 +55,6 @@ Feature: The Reuse Analysis gate classifies every verdict in its closed set
     Examples: legitimately accepted feature-deltas
       | reuse section                            | verdict                            |
       | a CREATE NEW row spelled with a space    | structurally accepted              |
+      | a CREATE_NEW row with a trailing parenthetical qualifier | structurally accepted |
       | a methodology-exempt marker              | accepted as methodology-exempt     |
       | a no-overlap marker                      | accepted as declaring no overlap   |

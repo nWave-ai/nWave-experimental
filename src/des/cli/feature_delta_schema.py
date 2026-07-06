@@ -482,14 +482,57 @@ class RoleProjection:
     projected_words: int
 
 
+#: A wave-tagged section heading `## Wave: <WAVE> / [REF] <core>` — the
+#: authoring convention (lean-wave-documentation D2). Capturing group = the
+#: bare section name so a wave-tagged heading and a bare one compare equal.
+_WAVE_TAGGED_HEADING_RE = re.compile(
+    r"^#{2,4}\s+Wave:\s+\w+\s+/\s+\[REF\]\s+(?P<core>.+?)\s*$"
+)
+#: A bare section heading `## <core>` — the form several gate literals use.
+_BARE_HEADING_RE = re.compile(r"^#{2,4}\s+(?P<core>.+?)\s*$")
+
+
+def _heading_core(heading: str) -> str:
+    """The bare section name, with any `Wave: <W> / [REF]` prefix stripped."""
+    stripped = heading.rstrip()
+    m = _WAVE_TAGGED_HEADING_RE.match(stripped) or _BARE_HEADING_RE.match(stripped)
+    return m.group("core") if m else stripped
+
+
+def _heading_matches(line: str, heading_literal: str) -> bool:
+    """True when `line` IS the section `heading_literal` names, in EITHER the
+    bare (`## Reuse Analysis`) or the wave-tagged
+    (`## Wave: DESIGN / [REF] Reuse Analysis`) form.
+
+    heading-SSOT unification (velocity-fix, 2026-07-05): the authoring skills
+    emit the wave-tagged `## Wave: <W> / [REF] <core>` form while several gate
+    literals here are bare `## <core>` — two independent definitions of the
+    same heading that drifted, so a correctly-authored section was rejected on
+    grammar alone. This matcher accepts the two forms interchangeably
+    (ADD-not-mutate: the exact bare literal still matches; the wave-tagged
+    variant of the SAME core name now also matches) so the two sides can never
+    disagree on heading grammar. Match is by core-name equality, so an
+    unrelated section (`## Out of scope`) never matches `## Reuse Analysis`.
+    """
+    stripped = line.rstrip()
+    if stripped == heading_literal:
+        return True
+    m = _WAVE_TAGGED_HEADING_RE.match(stripped) or _BARE_HEADING_RE.match(stripped)
+    return m is not None and m.group("core") == _heading_core(heading_literal)
+
+
 def _section_body(content: str, heading_literal: str) -> str | None:
     """The raw text block beneath `heading_literal`, up to the next `##`
     heading (exclusive). Pure. Generic section-body extractor — the ONE seam
-    every role projection reuses (no per-role/per-section parser)."""
+    every role projection reuses (no per-role/per-section parser).
+
+    Heading match accepts the bare and wave-tagged forms interchangeably
+    (`_heading_matches`, heading-SSOT unification) so authoring convention and
+    gate never disagree on grammar."""
     lines = content.splitlines()
     start = None
     for idx, line in enumerate(lines):
-        if line.rstrip() == heading_literal:
+        if _heading_matches(line, heading_literal):
             start = idx + 1
             break
     if start is None:

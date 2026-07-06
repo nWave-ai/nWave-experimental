@@ -36,6 +36,26 @@ Scenarios are INDUCED from the design code-design contract via the 3-source indu
 - **Environment-aware scenarios** — DEVOPS environment inventory → ≥1 walking skeleton scenario per environment (clean install vs upgrade vs stale config).
 - **AT authoring granularity (atdd_pure)** — author ONLY the current slice's scenarios, JIT, active-RED; future slices ABSENT from disk; never `@skip`/`@pending` (ADR-GV-001 D6). <!-- mode-ref-ok -->
 
+## Coverage-verification via the code-analysis-port (velocity — do NOT hand-read prod code)
+
+Before authoring a NEW scenario, VERIFY whether an existing mechanism / test already covers the
+behaviour — but resolve that as a CODE-FACT through `nw-code-analysis-port` (Tsunami-first, declared
+fallback), NEVER by manually reading production files. This is the DOMINANT DISTILL time-cost:
+empirically the longest DISTILL phases are spent reading production code to check existing coverage,
+NOT writing Gherkin (sister dogfood 2026-07-04 — 4 of 7 slices needed zero new code because an
+existing mechanism already covered them; the cost was DISCOVERING that).
+
+- **Query** "what already covers behaviour X?": `mcp__tsunami__feature_analyze` returns
+  `{files, tests, coverage}` for a named feature — the direct what-covers-what answer; add
+  `reads_of` / `callers_of` for a specific symbol or load-bearing seam.
+- **Fallback (no Tsunami installed)**: the SAME `nw-code-analysis-port` degrades LOUD — generic AST
+  (defs / refs / test-imports of the symbol) → grep (last resort, tagged `noisy`). The guidance is
+  identical whichever tier answers; only the confidence label changes. Never leave the developer
+  without an answer because Tsunami is absent.
+- **Outcome**: already covered → REUSE the existing AT (Mandate-12), do NOT author a duplicate;
+  genuinely uncovered → author the induced scenario. Either way the decision is a CITED code-fact
+  (feature/test names), not a hunch from a manual read.
+
 ## Driving Adapter Verification (RCA fix P1)
 
 | # | Rule (MUST) | Gate |

@@ -211,7 +211,7 @@ BULK_HASHES = {
     # of pipx-only.
     "nw-buddy": "720a5634d2f2f333c854f1ac07de2624",
     "nw-buddy-command-catalog": "403ff4bf5cc44e73183e6021e0e3147d",
-    "nw-buddy-project-reading": "911fd5d795aee5acb100528d47fe2d4f",
+    "nw-buddy-project-reading": "63fccdf0187159a10205b3d85ce2729c",
     "nw-buddy-ssot-knowledge": "7a801cc1b1ab7379a258f621a08a71f5",
     # Hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation —
     # DELIVER wave description now cites 3-phase RED→GREEN→COMMIT with legacy fallback.
@@ -253,7 +253,7 @@ BULK_HASHES = {
     "nw-ddd-eventsourcing": "f014437fa2b76008896d3a83e4f48288",
     "nw-ddd-strategic": "1bee905e197ac9f2cacf4e5e37f3f8ef",
     "nw-ddd-tactical": "7ec690c487144de353ae7d01ba24cd6c",
-    "nw-deliver-orchestration": "319dc7db0b187c01dd2f92462f986a02",
+    "nw-deliver-orchestration": "dd6bc975556a7bb65bf5058581e7b1c4",
     "nw-deployment-strategies": "a73beb26bce3706db567f8cce3497b9b",
     "nw-design-methodology": "9f161d6ae6ad061a6a4eb7dcb63c082c",
     "nw-design-patterns": "b0e3f59bfde50d1a7bb6ada40ca9b3b4",
@@ -337,7 +337,7 @@ BULK_HASHES = {
     # Updated 2026-05-19: extended "When PBT Adds Value" with closed-world
     # falsifier-gate anti-pattern + empirical anchor (commit c2637f6c8). See
     # backlog F-TEST-SPEEDUP-PARADIGM-CATALOG for context.
-    "nw-property-based-testing": "605d22bd69e68109fbb2abe49c2bbf14",
+    "nw-property-based-testing": "f56c1435a56fcf34d16c9d346ddbbdd7",
     # Hash updated 2026-06-17: decompose-and-recompose into 2 nw-proposal-structure-*
     # modules (b2b, cialdini); core is a lean composing router. §22.0 reviewed.
     "nw-proposal-structure": "bec9dd508f567c847da44cd41ee56821",
@@ -386,7 +386,7 @@ BULK_HASHES = {
     # + mode-scoped execution-log prose for the roadmap-free spine.
     # Prior hash updated 2026-05-15: closed-source refs scrubbed (3ab776967).
     # Prior hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation.
-    "nw-tdd-review-enforcement": "d9c67c58f9c6842792e223b7c6328bf7",
+    "nw-tdd-review-enforcement": "40d1743e3a9ea73aa53c8ca806071e46",
     # Hash updated 2026-06-08: ADR-GV-001 D8 — back-ported Mandates 12-15
     # into the SSOT + added the numbering-convention frame + Mandate Registry.
     # Hash updated 2026-06-17: decompose-and-recompose into 3 nw-test-design-mandates-*

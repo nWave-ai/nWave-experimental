@@ -37,18 +37,44 @@ _DEFAULT_OUT = _REPO / "docs" / "analysis" / "jira-mirror-backlog.csv"
 _HEADING = re.compile(
     r"^###\s+(?P<id>[A-Z0-9][A-Za-z0-9-]*)\s*[—–-]\s*(?P<title>.+?)\s*$"
 )
+# Title-first form (2026-07-05 re-layout): ``### <Human Title>   `F-ID` `` — the
+# human title leads, the stable id trails in inline-code. Tried FIRST so the Jira
+# Story summary is the human title (the board shows meaning, not the F-id jargon);
+# the id-first ``_HEADING`` above stays as a fallback for any not-yet-flipped item.
+_HEADING_TITLE_FIRST = re.compile(
+    r"^###\s+(?P<title>.+?)\s+`(?P<id>[A-Za-z0-9][A-Za-z0-9-]*)`\s*$"
+)
 _STATUS_LINE = re.compile(r"\*\*STATUS:\s*(?P<status>.+?)\*\*", re.IGNORECASE)
 _ITEM_ID = re.compile(r"^(F-|f-|fix-|BUG)", re.IGNORECASE)
 
 
-def _priority(status_text: str) -> str:
+# The backlog SECTION heading (## Critical / ## High / ## Medium / ## Low) is the
+# AUTHORITATIVE priority -- the To Do column orders by it. Map section -> Jira priority.
+_SECTION_PRIORITY = {
+    "critical": "Highest",
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low",
+    "future": "Low",
+}
+
+
+def _priority(status_text: str, section: str = "") -> str:
+    # Section wins (authoritative); the status-text keyword heuristic is the fallback
+    # for items outside the 4 priority sections (Production Readiness, Release Pipeline).
+    sec = section.strip().lower()
+    for key, pri in _SECTION_PRIORITY.items():
+        if sec.startswith(key):
+            return pri
     t = status_text.lower()
-    if "molto alta" in t or "asap" in t or "massima" in t:
+    if "molto alta" in t or "asap" in t or "massima" in t or "critical" in t:
         return "Highest"
     if "alta" in t or "high" in t:
         return "High"
     if "media" in t or "medium" in t:
         return "Medium"
+    if "low" in t or "bassa" in t:
+        return "Low"
     return "Medium"
 
 
@@ -74,8 +100,15 @@ def parse(md: str) -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     i = 0
     n = len(lines)
+    current_section = ""
     while i < n:
-        m = _HEADING.match(lines[i])
+        # Track the current H2 priority section (## Critical / ## High / ## Medium /
+        # ## Low / ## Future) -- the authoritative priority for each item beneath it.
+        if lines[i].startswith("## "):
+            current_section = lines[i][3:].strip()
+            i += 1
+            continue
+        m = _HEADING_TITLE_FIRST.match(lines[i]) or _HEADING.match(lines[i])
         if not m:
             i += 1
             continue
@@ -90,7 +123,9 @@ def parse(md: str) -> list[dict[str, str]]:
         body: list[str] = []
         status_text = ""
         j = i + 1
-        while j < n and not lines[j].startswith("### "):
+        while (
+            j < n and not lines[j].startswith("### ") and not lines[j].startswith("## ")
+        ):
             if not status_text:
                 sm = _STATUS_LINE.search(lines[j])
                 if sm:
@@ -102,9 +137,9 @@ def parse(md: str) -> list[dict[str, str]]:
         items.append(
             {
                 "Issue Type": "Story",
-                "Summary": f"{fid} — {title}"[:250],
+                "Summary": title[:250],
                 "Description": desc,
-                "Priority": _priority(status_text),
+                "Priority": _priority(status_text, current_section),
                 "Status": _status(status_text),
                 "Labels": fid.lower(),
             }

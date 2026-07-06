@@ -174,6 +174,49 @@ FULL_SUITE_LEG_RAN = "FullSuiteLegRan"
 FULL_SUITE_LEG_NOT_APPLICABLE = "FullSuiteLegNotApplicable"
 _FULL_SUITE_LEG_EVENTS = frozenset({FULL_SUITE_LEG_RAN, FULL_SUITE_LEG_NOT_APPLICABLE})
 
+# Feature-end fresh-clone-leg event names (wire-p0-gates-at-feature-end
+# slice-01, D-3). The feature-end cycle's fresh-clone leg runs the REAL
+# `des verify-fresh-clone` gate; the cycle appends `FreshCloneGateRan` as a
+# heartbeat BEFORE it knows the verdict (RM-1 pattern), then
+# `FreshCloneVerified` on a genuine exit-0 pass or `FreshCloneNotApplicable`
+# when the target repo declares no `.nwave/demo-recipe.json` (D-2: the gate's
+# own exit-2 INDETERMINATE degrades to a non-blocking NA here). A real
+# recipe-step failure (exit 1) fail-closes the cycle (`CycleRefusal`) and
+# mints NEITHER record. All three are feature-scoped (`slice_id == ""`).
+FRESH_CLONE_GATE_RAN = "FreshCloneGateRan"
+FRESH_CLONE_VERIFIED = "FreshCloneVerified"
+FRESH_CLONE_NOT_APPLICABLE = "FreshCloneNotApplicable"
+
+# Feature-end execution-reach-leg event names (wire-p0-gates-at-feature-end
+# slice-02, D-3). The feature-end cycle's execution-reach leg runs the REAL
+# `des verify-execution-reach` gate; the cycle appends `ExecutionReachGateRan`
+# as a heartbeat BEFORE it knows the verdict (RM-1 pattern, mirrors
+# `FreshCloneGateRan`), then `ExecutionReachVerified` on a genuine exit-0 pass
+# or `ExecutionReachNotApplicable` when the target repo carries no coverage
+# XML at the conventional path (D-2: the gate's own exit-2 INDETERMINATE
+# degrades to a non-blocking NA here ONLY on genuine absence). A real
+# zero-hit-file / malformed-report refusal (exit 1, or exit 2 once a report
+# IS present) fail-closes the cycle (`CycleRefusal`) and mints NEITHER
+# record. All three are feature-scoped (`slice_id == ""`).
+EXECUTION_REACH_GATE_RAN = "ExecutionReachGateRan"
+EXECUTION_REACH_VERIFIED = "ExecutionReachVerified"
+EXECUTION_REACH_NOT_APPLICABLE = "ExecutionReachNotApplicable"
+
+# Feature-end doc-coherence-leg event names (wire-p0-gates-at-feature-end
+# slice-03, D-3). The feature-end cycle's doc-coherence leg runs the REAL
+# `des verify-doc-coherence` gate; the cycle appends `DocCoherenceGateRan` as a
+# heartbeat BEFORE it knows the verdict (RM-1 pattern, mirrors
+# `FreshCloneGateRan` / `ExecutionReachGateRan`), then `DocCoherenceVerified`
+# on a genuine exit-0 pass or `DocCoherenceNotApplicable` when the target
+# repo ships no README* / `docs/` at all (D-2: the gate's own exit-2
+# INDETERMINATE degrades to a non-blocking NA here ONLY on genuine absence). A
+# real false-doc-claim refusal (exit 1) fail-closes the cycle
+# (`CycleRefusal`) and mints NEITHER record. All three are feature-scoped
+# (`slice_id == ""`).
+DOC_COHERENCE_GATE_RAN = "DocCoherenceGateRan"
+DOC_COHERENCE_VERIFIED = "DocCoherenceVerified"
+DOC_COHERENCE_NOT_APPLICABLE = "DocCoherenceNotApplicable"
+
 # The silent-bypass debt event name (f-nonbypassable-attestation slice-02, DDD-3).
 # An LLM/developer-issued `git commit --no-verify` (or `-n`) skips git's own
 # pre-commit/commit-msg hooks, so the per-commit Gate-Scope stamping never runs and
@@ -831,6 +874,148 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         """
         return self._append_record(
             {"event": FULL_SUITE_LEG_NOT_APPLICABLE, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_fresh_clone_gate_ran(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `FreshCloneGateRan` heartbeat (wire-p0-gates-at-feature-end
+        slice-01, D-3).
+
+        Emitted by `run_feature_end_cycle` BEFORE it dispatches the REAL
+        `des verify-fresh-clone` gate (RM-1: absence means the leg never ran).
+        Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": FRESH_CLONE_GATE_RAN, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_fresh_clone_verified(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `FreshCloneVerified` record (wire-p0-gates-at-feature-end
+        slice-01, D-3).
+
+        Emitted ONLY after the REAL `des verify-fresh-clone` gate exits 0 (a
+        genuine fresh-export build pass) -- presence-of-proof, never a fake
+        pass. Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": FRESH_CLONE_VERIFIED, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_fresh_clone_not_applicable(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `FreshCloneNotApplicable` NA marker
+        (wire-p0-gates-at-feature-end slice-01, D-2/D-3).
+
+        Minted when the target repo declares no `.nwave/demo-recipe.json` --
+        the gate's own exit-2 INDETERMINATE degrades to a non-blocking NA here
+        (a repo never asked to have a demo recipe is not held to one).
+        Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": FRESH_CLONE_NOT_APPLICABLE, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_execution_reach_gate_ran(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `ExecutionReachGateRan` heartbeat
+        (wire-p0-gates-at-feature-end slice-02, D-3).
+
+        Emitted by `run_feature_end_cycle` BEFORE it dispatches the REAL
+        `des verify-execution-reach` gate (RM-1: absence means the leg never
+        ran). Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": EXECUTION_REACH_GATE_RAN, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_execution_reach_verified(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `ExecutionReachVerified` record
+        (wire-p0-gates-at-feature-end slice-02, D-3).
+
+        Emitted ONLY after the REAL `des verify-execution-reach` gate exits 0
+        (every production file under the conventional source root has >0
+        observed line hits) -- presence-of-proof, never a fake pass.
+        Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": EXECUTION_REACH_VERIFIED, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_execution_reach_not_applicable(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `ExecutionReachNotApplicable` NA marker
+        (wire-p0-gates-at-feature-end slice-02, D-2/D-3).
+
+        Minted when the target repo carries no coverage XML at the
+        conventional path -- the gate's own exit-2 INDETERMINATE degrades to
+        a non-blocking NA here (a repo never asked to instrument coverage is
+        not held to a reach check over it).
+
+        Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": EXECUTION_REACH_NOT_APPLICABLE, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_doc_coherence_gate_ran(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `DocCoherenceGateRan` heartbeat
+        (wire-p0-gates-at-feature-end slice-03, D-3).
+
+        Emitted by `run_feature_end_cycle` BEFORE it dispatches the REAL
+        `des verify-doc-coherence` gate (RM-1: absence means the leg never
+        ran). Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": DOC_COHERENCE_GATE_RAN, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_doc_coherence_verified(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `DocCoherenceVerified` record
+        (wire-p0-gates-at-feature-end slice-03, D-3).
+
+        Emitted ONLY after the REAL `des verify-doc-coherence` gate exits 0
+        (every checked doc claim is true of the tree) -- presence-of-proof,
+        never a fake pass. Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": DOC_COHERENCE_VERIFIED, "slice_id": ""},
+            feature_id=feature_id,
+        )
+
+    def append_doc_coherence_not_applicable(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `DocCoherenceNotApplicable` NA marker
+        (wire-p0-gates-at-feature-end slice-03, D-2/D-3).
+
+        Minted when the target repo ships no README* / `docs/` at all -- the
+        gate's own exit-2 INDETERMINATE degrades to a non-blocking NA here (a
+        repo never asked to ship docs claims is not held to this check).
+
+        Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": DOC_COHERENCE_NOT_APPLICABLE, "slice_id": ""},
             feature_id=feature_id,
         )
 
@@ -1617,10 +1802,19 @@ class AtCompletionLedgerFactory(LedgerFactoryPort):
 
 
 __all__ = [
+    "DOC_COHERENCE_GATE_RAN",
+    "DOC_COHERENCE_NOT_APPLICABLE",
+    "DOC_COHERENCE_VERIFIED",
     "EBATCH_REFACTOR_COMPLETED",
     "ENVIRONMENTAL_E2E_GATE_RAN",
     "ENVIRONMENTAL_E2E_VERIFIED",
+    "EXECUTION_REACH_GATE_RAN",
+    "EXECUTION_REACH_NOT_APPLICABLE",
+    "EXECUTION_REACH_VERIFIED",
     "FEATURE_END_REVIEW_VERDICT",
+    "FRESH_CLONE_GATE_RAN",
+    "FRESH_CLONE_NOT_APPLICABLE",
+    "FRESH_CLONE_VERIFIED",
     "FULL_SUITE_LEG_NOT_APPLICABLE",
     "FULL_SUITE_LEG_RAN",
     "WALKING_SKELETON_GATE_RAN",

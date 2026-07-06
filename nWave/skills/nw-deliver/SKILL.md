@@ -106,7 +106,7 @@ Per-mode descriptor + DELIVER phase shape — projected from the mode registry (
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
-  Deliver phase shape: `A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT`
+  Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
 - `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
   Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
@@ -191,7 +191,7 @@ The gate is a pure-function CLI (no filesystem mutation) implementing ADR-028 D2
 
 | Phase | Owner | Action | Gate |
 |-------|-------|--------|------|
-| A_GREEN | crafter (instance #1) | Make all DISTILL ATs pass with NO defensive code beyond AT-driven need, then coverage-driven dead-code elimination (the prior coverage-cleanup step is absorbed here) | Carpaccio `entry_gate` exit 0 (above); all ATs green; ≥90% line+branch OR justified misses in commit body |
+| A_GREEN | crafter (instance #1) | Make all DISTILL ATs pass with NO defensive code beyond AT-driven need (AT-driven minimalism; the coverage-driven dead-code elimination + ≥90% coverage gate are DEPRECATED per FR-2/FR-3 velocity-v2 — green ATs + EXAMINE are the truth, not a coverage %) | Carpaccio `entry_gate` exit 0 (above); all ATs green |
 | C_REVIEWER_AUDIT **(= EXAMINE slot)** | **armed**: `@nw-user-examiner` ("Vera"); **unarmed**: reviewer | **Armed** (charter present): dispatch Vera with ONLY the charter → she walks the promised outcome through the real surface and records the verdict via `des record-examine-verdict`. **Unarmed** (no charter): legacy 15-item AT-completeness audit via `nw-at-completeness-check`; gap routing per `ATGapKind` (see §Phase D Routing in `nw-deliver-atdd-pure-slice-gates`) | **Armed**: a PASS `ExamineVerdict` with a charter-seal matching current bytes — enforced at commit by `des commit-slice` (`ExamineVerdictRefused`/`Missing`/`Stale`/`Indeterminate`). **Unarmed**: `PhaseCReviewerVerdict` emitted; one Routing decision recorded |
 | D_REFACTOR_COMMIT | **crafter-B (separate instance)** then reviewer then crafter | L1-L6 batch refactor per `feedback_refactor_batch_when_test_suite_slow_2026_05_19`; final code review + refactor green check; conventional commit with `Step-Id:`/`Slice-Id:` + `Gate-Scope:` + `Reviewed-by:` (verdict_hash) trailers | Tests stay green; reviewer verdict with MANDATORY verdict_hash; `D_REFACTOR_COMMIT` `exit_gate` exit 0 (see `nw-deliver-atdd-pure-slice-gates`) |
 

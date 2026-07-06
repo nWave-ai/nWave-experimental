@@ -186,7 +186,7 @@
 
 ## nw-crafter-discipline-atdd-pure
 
-- [nw-crafter-discipline-atdd-pure](nw-crafter-discipline-atdd-pure.md) — Crafter discipline contract for the ATDD-pure 7-phase workflow — what the slim crafter does in Phase A (GREEN-the-ATs), Phase B (coverage-driven dead-code elimination), and Phase E (batch L1-L6 refactor), plus hard prohibitions and the Phase B common-cuts taxonomy
+- [nw-crafter-discipline-atdd-pure](nw-crafter-discipline-atdd-pure.md) — Crafter discipline contract for the ATDD-pure workflow — what the slim crafter does in Phase A (GREEN-the-ATs with AT-driven minimalism), Phase B (coverage-driven dead-code elimination — DEPRECATED velocity-v2, absorbed into A_GREEN), and Phase E (batch L1-L6 refactor), plus hard prohibitions
 
 ## nw-data-architecture-patterns
 
@@ -195,6 +195,10 @@
 ## nw-database-technology-selection
 
 - [nw-database-technology-selection](nw-database-technology-selection.md) — Database comparison catalogs, RDBMS vs NoSQL selection criteria, CAP/ACID/BASE theory, OLTP vs OLAP, and technology-specific characteristics
+
+## nw-ddd-architect
+
+- [nw-ddd-architect](nw-ddd-architect.md) — DDD architect design-time mandates — the Fixture-Fanout Enumeration Mandate for shared-substrate per-caller migration (enumerate production callers plus fixture sites plus atomic bundle scope, mechanically enforced) that both the ddd-architect and its reviewer load by name
 
 ## nw-ddd-event-modeling
 
@@ -382,7 +386,7 @@
 
 ## nw-finalize
 
-- [nw-finalize](nw-finalize.md) — Archives a completed feature to docs/evolution/, migrates lasting artifacts to permanent directories, and cleans up the temporary workspace. Use after all implementation steps pass and mutation testing completes.
+- [nw-finalize](nw-finalize.md) — Archives a completed feature to docs/evolution/, migrates lasting artifacts to permanent directories, and cleans up the temporary workspace. Use after all implementation steps pass.
 
 ## nw-five-whys-methodology
 
@@ -566,7 +570,7 @@
 
 ## nw-property-based-testing
 
-- [nw-property-based-testing](nw-property-based-testing.md) — Property-based testing strategies, mutation testing, shrinking, and combined PBT+mutation workflow for test quality validation
+- [nw-property-based-testing](nw-property-based-testing.md) — Property-based testing strategies (PBT — ACTIVE, authored by the acceptance-designer during DISTILL), shrinking, PBT+TDD integration. (Mutation testing is documented but DEPRECATED per FR-1 — PBT is not.)
 
 ## nw-quality-framework
 

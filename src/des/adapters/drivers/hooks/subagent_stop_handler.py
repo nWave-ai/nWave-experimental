@@ -464,7 +464,20 @@ def _resolve_wave_only_context(
         message = entry.get("message", {})
         if not isinstance(message, dict):
             continue
+        # FR-5: a wave-only self-declaration is something THIS agent EMITS (an
+        # assistant message), not user-injected context. A skill's DES-WAVE
+        # marker shown as copy-paste GUIDANCE for a FUTURE dispatch is prose,
+        # not a directive; scanning user-role messages false-positives on that
+        # documentation and emits a spurious WAVE_GATEOUT_INDETERMINATE for an
+        # agent that never dispatched. Scope the scan to the agent's own
+        # (assistant) messages.
+        if message.get("role") != "assistant":
+            continue
         content = _normalize_message_content(message.get("content", ""))
+        # FR-5 parity with extract_des_context_from_transcript (the C8 guard):
+        # strip fenced/quoted regions before the marker match so a fenced
+        # example marker reads as documentation, not a directive.
+        content = _strip_fenced_regions(content)
         if "DES-WAVE" not in content:
             continue
         saw_des_wave_marker = True

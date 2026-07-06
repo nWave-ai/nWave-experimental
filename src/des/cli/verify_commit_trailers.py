@@ -31,18 +31,22 @@ import json
 import sys
 from pathlib import Path
 
+from des.adapters.driven.git.git_commit_diff_adapter import GitCommitDiffAdapter
 from des.adapters.driven.git.git_commit_trailer_read_adapter import (
     GitCommitTrailerReadAdapter,
 )
 from des.cli.carpaccio_format import (
     GateError,
+    SlicePlan,
     _at_review_rejection,
     _read_feature_files,
 )
 from des.cli.carpaccio_slice_gate import (
     check_at_review,
     parse_scenarios,
+    parse_slice_plan,
 )
+from des.domain.repo_path_resolver import feature_delta_path as _feature_delta_path
 from des.domain.slice_id_trailer import extract_slice_ids
 from des.ports.driven_ports.commit_trailer_read_port import (
     CommitTrailerReadPort,
@@ -92,19 +96,56 @@ def _read_commit_body(
     return result.body
 
 
-def _audit_slice(repo: Path, slice_id: str) -> None:
+def _slice_plan_for_feature(repo: Path, feature_id: str) -> SlicePlan | None:
+    """Parse the feature's Slice Plan for the green-to-green lane consult (D1.2).
+
+    Returns ``None`` when the feature-delta is absent or its ``[REF] Slice
+    Plan`` section cannot be parsed -- ``check_at_review`` then falls back to
+    the legacy ledger-record check byte-identically (``plan=None`` is its
+    existing default), so a feature predating the Slice Plan convention (or
+    any malformed feature-delta) audits exactly as before this change.
+    """
+    delta_path = _feature_delta_path(repo, feature_id)
+    if not delta_path.is_file():
+        return None
+    try:
+        return parse_slice_plan(delta_path.read_text(encoding="utf-8"))
+    except GateError:
+        return None
+
+
+def _audit_slice(repo: Path, slice_id: str, commit_sha: str) -> None:
     """Audit one slice's review record. Raises ``GateError`` exit 45 on refusal.
 
     Discovers the owning feature from the ledger dir, then reuses
     ``check_at_review`` -- the carpaccio gate's own record-presence logic --
     to verify the record. A record the gate refuses is refused here with the
     same ``ATReviewGateRejected`` reason (one check, one home).
+
+    D1.2 (f-prefactoring-dispatch-clears-honestly slice-02, feature-end deep
+    review): threads ``plan=``/``commit_sha=``/``commit_diff_port=`` through
+    the SAME ``check_at_review`` seam ``carpaccio_slice_gate.main`` uses at
+    ENTRY, so a COMMIT-time ``@prefactoring`` slice's green-to-green proof
+    actually runs here too -- a real ``GitCommitDiffAdapter`` (git behind the
+    ``CommitDiffPort`` boundary, AD-21) reads the audited commit's changed
+    paths. ``commit_sha`` is the SAME commit identifier this module already
+    audits (``--commit``, default ``HEAD``) -- the commit whose trailers were
+    just resolved.
     """
     feature_id = _feature_id_for_slice(repo, slice_id)
     if feature_id is None:
         raise _at_review_rejection("absent", slice_id)
     scenarios = parse_scenarios(_read_feature_files(repo, feature_id))
-    check_at_review(repo, feature_id, slice_id, scenarios)
+    plan = _slice_plan_for_feature(repo, feature_id)
+    check_at_review(
+        repo,
+        feature_id,
+        slice_id,
+        scenarios,
+        plan=plan,
+        commit_sha=commit_sha,
+        commit_diff_port=GitCommitDiffAdapter(),
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -151,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for slice_id in slice_ids:
         try:
-            _audit_slice(repo, slice_id)
+            _audit_slice(repo, slice_id, args.commit)
         except GateError as gate_error:
             payload = gate_error.payload
             line = json.dumps(payload, sort_keys=True) + "\n"

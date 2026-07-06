@@ -76,7 +76,7 @@ skill_load_set:
 descriptor: >
   Per-slice carpaccio loop; no roadmap.json / execution-log.json;
   AT-completion ledger + commit trailers are the audit.
-deliver_phase_shape: "A_GREEN -> C_REVIEWER_AUDIT -> D_REFACTOR_COMMIT"
+deliver_phase_shape: "A_GREEN -> EXAMINE -> COMMIT"
 
 lifecycle_events:
 

@@ -26,6 +26,7 @@ stdlib + the resolved interpreter only.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from typing import TYPE_CHECKING
 
@@ -42,6 +43,23 @@ if TYPE_CHECKING:
 # pytest exit codes that mean "the scope is GREEN": 0 = passed, 5 = nothing
 # collected (an empty scope is not a red verdict).
 _GREEN_EXIT_CODES = frozenset({0, 5})
+
+
+def run_timeout_seconds() -> float:
+    """SSOT wall-clock ceiling for the pytest-RUN subprocesses (this scoped runner,
+    the arch RUN, and the feature-end full-suite leg -- all behind this run-facet).
+
+    These RUN tests, so the ceiling is GENEROUS (default 45 min) and env-overridable
+    via ``NWAVE_GATE_RUN_TIMEOUT`` -- it catches an infinite hang (a deadlocking test
+    blocking the gate forever, the empirical 61-min-at-0%-CPU full-suite hang) WITHOUT
+    false-killing a legitimate long run. A malformed override falls back to the default
+    rather than crashing the gate. Defined here (the shared run-facet boundary) so the
+    contract-gate and this adapter share ONE definition (no duplication).
+    """
+    try:
+        return float(os.environ.get("NWAVE_GATE_RUN_TIMEOUT", "2700"))
+    except ValueError:
+        return 2700.0
 
 
 def pytest_interpreter() -> str:
@@ -77,12 +95,18 @@ def run_pytest_scope(
     (``adapter.name``) so the gate can prove it ran in the RESOLVED runner.
     """
     interpreter = pytest_interpreter()
-    completed = subprocess.run(
-        [interpreter, "-m", "pytest", "-p", "no:cacheprovider", *scoped_node_ids],
-        capture_output=True,
-        text=True,
-        cwd=target_root,
-    )
+    try:
+        completed = subprocess.run(
+            [interpreter, "-m", "pytest", "-p", "no:cacheprovider", *scoped_node_ids],
+            capture_output=True,
+            text=True,
+            cwd=target_root,
+            timeout=run_timeout_seconds(),
+        )
+    except subprocess.TimeoutExpired:
+        # ZERO DEFECTS: a deadlocking scoped test must never block the runner
+        # forever -- fail LOUD as a non-green verdict on the ceiling.
+        return RunVerdict(passed=False, runner=adapter.name)
     passed = completed.returncode in _GREEN_EXIT_CODES
     return RunVerdict(passed=passed, runner=adapter.name)
 

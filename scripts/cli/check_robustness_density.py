@@ -66,7 +66,13 @@ from pathlib import Path
 
 import yaml
 
+from des.adapters.driven.runner.runner_registry import (
+    GLOBAL_REGISTRY,
+    seed_runner_registry,
+)
 from des.cli.human_surface import Verdict, print_human_summary
+from des.ports.test_runner_port import RunnerAdapter
+from des.ports.test_runner_port import resolve as resolve_runner
 
 
 _EXIT_PASS = 0
@@ -182,6 +188,34 @@ def _covered_domain_ids(at_scope_dir: Path) -> set[str]:
             if marker:
                 covered.add(marker)
     return covered
+
+
+def _maybe_route_through_registered_density_adapter(
+    at_scope_dir: Path,
+) -> set[str] | None:
+    """Route through a REGISTERED ``robustness_density`` facet; else ``None``.
+
+    unified-language-adapter-registry slice-01 (ADR-ULAR-001 prefactoring, C7):
+    sprout-and-fall-through seam mirroring ``run_contract_gate.py``'s
+    ``_maybe_route_through_cargo`` shape -- seed the registry, RESOLVE the
+    target's runner (by lockfile inspection of the staged AT scope), and look
+    up a ``RobustnessDensityPort`` facet under the resolved TOOL-NAME (never
+    ``target_language``, DDD-U5). Returns the facet's covered-domain-id set
+    when one is registered; ``None`` when no facet is registered for the
+    resolved tool-name (the case for EVERY target until a later slice's plugin
+    registers one), so the caller falls through to the EXISTING
+    ``_covered_domain_ids`` glob+scan body UNCHANGED. This file imported no
+    runner-resolution mechanism before this seam -- this is 1 NEW call site of
+    the EXISTING ``resolve()`` function, not a new resolution component.
+    """
+    seed_runner_registry()
+    resolution = resolve_runner(at_scope_dir, None)
+    if not isinstance(resolution, RunnerAdapter):
+        return None
+    facet = GLOBAL_REGISTRY.lookup_robustness_density(resolution.name)
+    if facet is None:
+        return None
+    return facet.covered_domain_ids(at_scope_dir)
 
 
 def _build_helper_return_index(module: ast.Module) -> dict[str, ast.expr]:
@@ -557,7 +591,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             return _EXIT_CHECK_FAILED
 
-    covered = _covered_domain_ids(at_scope_dir)
+    covered = _maybe_route_through_registered_density_adapter(at_scope_dir)
+    if covered is None:
+        covered = _covered_domain_ids(at_scope_dir)
     declared_ids = {str(entry["id"]) for entry in declared_entries}
     missing = declared_ids - covered
     if missing:

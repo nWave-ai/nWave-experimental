@@ -16,20 +16,28 @@ cache. The driving-port wrapper (``des.cli.check_slice_at_completeness``)
 inherits this read-only contract by construction (principle 12 effect-isolation
 -- arch-test enforced via the no-``AtCompletionLedger``-import rule).
 
-stdlib-only (per the DES-bundle contract). The only intra-package import is
-``feature_at_files.feature_tag_files`` -- the application-layer ``@feature-{id}``
-resolver ``run_contract_gate`` uses for its ``--feature-id`` scope, itself
-stdlib-only.
+stdlib-only (per the DES-bundle contract). The intra-package imports are all
+``feature_at_files`` resolvers: ``feature_tag_files`` (the application-layer
+``@feature-{id}`` resolver for Gherkin ``.feature`` files, itself stdlib-only),
+plus ``feature_tagged_test_files`` / ``resolve_test_file_attribution`` (the
+pytest-side mirror, WTBD-168) added to close
+F-FEATURE-END-COMPLETENESS-ORACLE-PYTEST-BLIND -- a slice delivered only by a
+head-comment-tagged pytest AT file was invisible to this oracle.
 """
 
 from __future__ import annotations
 
+import fnmatch
 import re
 import subprocess
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.git_subprocess import git_text as _git
-from des.application.feature_at_files import feature_tag_files
+from des.application.feature_at_files import (
+    feature_tag_files,
+    feature_tagged_test_files,
+    resolve_test_file_attribution,
+)
 
 
 if TYPE_CHECKING:
@@ -38,20 +46,65 @@ if TYPE_CHECKING:
 
 _SLICE_TAG_RE = re.compile(r"@(slice-\d+)\b")
 
+_PYTEST_COLLECTIBLE_PATTERNS = ("test_*.py", "*_test.py")
+
+
+def _is_pytest_collectible(path: Path) -> bool:
+    """True iff ``path``'s filename matches the pytest collection convention.
+
+    ``feature_tagged_test_files`` walks every file with no filename/extension
+    restriction, matching purely on a head-comment tag substring. Without this
+    filter a non-test file (a doc, an ADR, a plain module) whose head merely
+    *mentions* the tag convention is wrongly counted as a delivered AT --
+    F-FEATURE-END-COMPLETENESS-ORACLE-PYTEST-BLIND AT-D1. Restricting to the
+    pytest-collectible filename convention (``test_*.py`` / ``*_test.py``)
+    keeps this oracle bound to real, delivered test artifacts.
+    """
+    name = path.name
+    return any(
+        fnmatch.fnmatch(name, pattern) for pattern in _PYTEST_COLLECTIBLE_PATTERNS
+    )
+
 
 def feature_files_for_slice(
     repo: Path, slice_id: str, feature_id: str | None = None
 ) -> list[str]:
-    """Return repo-relative paths of `.feature` files tagging the slice.
+    """Return repo-relative paths of the AT files delivering the slice.
 
-    A `.feature` file belongs to the slice when any of its scenarios carry the
-    ``@slice-NN`` tag matching ``slice_id``. The working tree is walked, NOT just
-    ``git ls-files`` -- an authored-but-never-committed AT file is untracked yet
-    is exactly the RCA Branch-A defect this gate must catch. A file the slice
-    authored on disk but kept out of every commit MUST be reported missing.
+    Two discovery paths, UNIONed:
 
-    When ``feature_id`` is given the candidate set is scoped to that feature's
-    `.feature` files via the ``@feature-{id}`` tag (the
+    1. Gherkin -- `.feature` files tagging the slice. A `.feature` file
+       belongs to the slice when any of its scenarios carry the
+       ``@slice-NN`` tag matching ``slice_id``. The working tree is walked,
+       NOT just ``git ls-files`` -- an authored-but-never-committed AT file
+       is untracked yet is exactly the RCA Branch-A defect this gate must
+       catch. A file the slice authored on disk but kept out of every commit
+       MUST be reported missing.
+
+    2. pytest -- test files head-comment-tagged ``@feature-{feature_id}``
+       (``feature_at_files.feature_tagged_test_files``, WTBD-168) whose
+       ``@slice-NN`` sub-tag (``feature_at_files.resolve_test_file_attribution``)
+       matches ``slice_id``. Closes
+       F-FEATURE-END-COMPLETENESS-ORACLE-PYTEST-BLIND -- a slice delivered
+       exclusively by a pytest AT was previously invisible to this oracle.
+       Only active when ``feature_id`` is given: the ``@feature-{id}`` head
+       tag is the discovery key, so a pytest file with no such tag never
+       counts (no silent over-match; wall W5 -- ``@slice-NN`` alone is reused
+       across features). ``feature_tagged_test_files`` itself applies no
+       filename/extension restriction (any file's head window may match), so
+       this loop additionally restricts matches to the pytest-collectible
+       filename convention (``test_*.py`` / ``*_test.py``, see
+       ``_is_pytest_collectible``) -- a doc, an ADR, or a non-test module that
+       merely *mentions* the tag convention in its head must never count as a
+       delivered AT (the un-gameable truncation guard).
+
+    The unioned candidate set is deduplicated before returning: a `.feature`
+    file can legitimately be matched by BOTH paths (Gherkin tags precede
+    ``Feature:`` within the pytest head-window scan too), and each delivered
+    AT artifact must be reported EXACTLY ONCE.
+
+    When ``feature_id`` is given the Gherkin candidate set is likewise scoped
+    to that feature's `.feature` files via the ``@feature-{id}`` tag (the
     ``feature_at_files.feature_tag_files`` resolver) -- a ``@slice-NN`` tag
     is reused across features, so a global ``rglob`` would cross-bind another
     feature's slice file into this commit's completeness check (wall W5).
@@ -65,7 +118,14 @@ def feature_files_for_slice(
         text = path.read_text(encoding="utf-8", errors="replace")
         if slice_id in _SLICE_TAG_RE.findall(text):
             matched.append(str(path.relative_to(repo)))
-    return sorted(matched)
+    if feature_id is not None:
+        for test_path in feature_tagged_test_files(repo, feature_id):
+            if not _is_pytest_collectible(test_path):
+                continue
+            attribution = resolve_test_file_attribution(test_path)
+            if attribution.slice_id == slice_id:
+                matched.append(str(test_path.relative_to(repo)))
+    return sorted(set(matched))
 
 
 def files_in_commit(repo: Path, commit: str) -> set[str]:

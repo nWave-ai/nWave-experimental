@@ -267,6 +267,17 @@ uv run poe mutation-test                   # Run mutation tests
 
 > Task aliases live in `[tool.poe.tasks]` (`pyproject.toml`); run `uv run poe` to list them. See [ADR-PLAT-004](docs/product/architecture/ADR-PLAT-004-uv-dev-workflow.md) for the pipenv→uv decision.
 
+### Work-progress dashboard (visual status — the Jira alternative)
+
+A self-contained HTML dashboard of the backlog SSOT — To Do grouped by derived epic-theme and ordered by urgency (Critical→Low), master/detail (click an item → full description), In-Progress + Done-this-session. Published as a claude.ai Artifact (shareable link, no Jira board/cache friction). Regenerate in two steps:
+
+```bash
+uv run python scripts/backlog_to_jira_csv.py          # 1. refresh the data CSV from backlog.md
+uv run python scripts/gen_status_dashboard.py <out.html>   # 2. render the HTML (default: docs/analysis/nwave-status.html)
+```
+
+Then publish `<out.html>` via the Artifact tool (same file path redeploys to the same URL). Epics are DERIVED thematically by keyword in `gen_status_dashboard.py:EPICS` (the backlog has no formal epic field yet — edit that map to retune the grouping). Priority comes from the backlog `## Critical/High/Medium/Low` section. The Jira mirror (`scripts/backlog_to_jira_sync.py`, WTBD board) is the other view — it sets the priority field + reranks the To Do column by priority via the Agile API; run it with `~/.nwave/jira-mirror.env` sourced.
+
 ---
 
 ## Development Paradigm
@@ -277,9 +288,9 @@ Rationale: hexagonal architecture (`src/des/{domain,application,ports,adapters}/
 
 ## Mutation Testing Strategy
 
-nightly-delta
+DEPRECATED (FR-1, Ale 2026-07-04)
 
-Rationale: `.nwave/des-config.json` has `mutation_enabled=false` for per-feature gates (mutmut runs are slow). CI runs mutmut nightly on changed modules; thresholds reviewed on a release boundary.
+Mutation testing (mutmut) is a slow, deprecated post-green ceremony REMOVED from the velocity-v2 methodology — green ATs + EXAMINE (independent end-to-end verification) are the truth, and a coverage-after-green / mutation pass adds cost, not signal (see FR-1/FR-2/FR-3 in `docs/product/velocity-v2-progress-tracker.md`). `.nwave/des-config.json` keeps `mutation_enabled=false`; the `mutation-test` poe task remains available for an explicit, opt-in run only — it is NOT part of any per-feature or nightly gate. Do not run it as a default step.
 
 ## Conventions
 

@@ -27,7 +27,7 @@ packages = ["src/des", "nwave_ai"]
 
 [project]
 name = "nwave"
-version = "3.21.0+atddpure.04cab3f4d"
+version = "3.21.0+atddpure.c3cffab77"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -430,6 +430,7 @@ update_changelog_on_bump = true
 # Testing (alphabetical)
 mutation-test    = "mutmut run --paths-to-mutate=src/des,scripts/install"
 test             = "python -m pytest tests/ --pspec --tb=short --color=yes"
+test-fast        = "python -m pytest tests/ -n 4 --dist worksteal --tb=short --color=yes"
 test-acceptance  = "python -m pytest tests/des/acceptance/ tests/installer/acceptance/ tests/plugins/plugin-architecture/acceptance/ tests/bugs/ --pspec --tb=short --color=yes"
 test-allure      = "python -m pytest tests/ --pspec --tb=short --alluredir=reports/allure-results --color=yes"
 test-bugs        = "python -m pytest tests/bugs/ --pspec --tb=short --color=yes"

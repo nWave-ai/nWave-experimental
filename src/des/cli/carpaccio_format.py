@@ -35,6 +35,7 @@ from des.application.feature_at_files import (
 from des.application.feature_at_files import (
     feature_tag_files as _feature_tag_files,
 )
+from des.domain.lane_profile import LANE_PROFILES, AtRequirement, LaneProfile
 
 
 if TYPE_CHECKING:
@@ -72,8 +73,9 @@ _SLICE_TAG_RE = re.compile(r"@(slice-\d+(?:[a-z])?)\b")
 _COUPLED_TAG_RE = re.compile(r"@coupled\b")
 _WALKING_SKELETON_RE = re.compile(r"@walking-skeleton|@walking_skeleton")
 _ANNOTATION_ESCAPE_RE = re.compile(
-    r"@coupled|@walking-skeleton|@walking_skeleton|@infrastructure"
+    r"@coupled|@walking-skeleton|@walking_skeleton|@infrastructure|@prefactoring"
 )
+_PREFACTORING_TAG_RE = re.compile(r"@prefactoring\b")
 
 
 class GateError(Exception):
@@ -619,13 +621,38 @@ def check_carpaccio(
             plan, entering_slice, slice_max, at_count, all_coupled=False
         )
     _check_total_coverage(plan, scenarios)
+    _check_walking_skeleton_first(plan)
+    _check_value_annotation(plan)
     if not _slice_scenarios(scenarios, entering_slice):
+        profile = _lane_profile_for_slice(plan, entering_slice)
+        if profile is not None and profile.at_requirement is AtRequirement.EXEMPT:
+            return {
+                "event": "LaneAtExemptionAccepted",
+                "slice_id": entering_slice,
+                "lane": profile.lane_id,
+            }
         if repo is not None and feature_id is not None:
             raise _no_scenarios_rejection(repo, feature_id, entering_slice)
         raise _at_review_rejection("no-scenarios-for-slice", entering_slice)
-    _check_walking_skeleton_first(plan)
-    _check_value_annotation(plan)
     return _check_slice_size(plan, scenarios, entering_slice, slice_max)
+
+
+def _lane_profile_for_slice(plan: SlicePlan, slice_id: str) -> LaneProfile | None:
+    """Resolve a Slice-Plan row's Annotation cell to a `LANE_PROFILES` entry.
+
+    The single shared consulting mechanism (D11/D12, green-to-green-seal-
+    design.md): both `check_carpaccio`'s no-scenarios-for-slice branch (here)
+    and `check_at_review` (`carpaccio_slice_gate.py`) resolve the SAME lane
+    profile through this ONE helper, so the AT-exemption never diverges
+    between the two consulting loci. Returns ``None`` when the row is absent
+    or carries no `@prefactoring` annotation -- the negative path (an
+    unannotated 0-AT slice) then falls through to the existing rejection,
+    byte-identical to today.
+    """
+    row = plan.row_for(slice_id)
+    if row is None or not _PREFACTORING_TAG_RE.search(row.annotation):
+        return None
+    return LANE_PROFILES.get("prefactoring")
 
 
 def _slice_scenarios(scenarios: list[Scenario], slice_id: str) -> list[Scenario]:

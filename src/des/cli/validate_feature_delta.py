@@ -200,6 +200,11 @@ _REUSE_MARKER_NO_OVERLAP_RE = re.compile(r"^Reuse-Analysis:\s*no-overlap\s*$")
 #: Collapse every run of whitespace to a single `_` (DDD-7 normalization step).
 _WHITESPACE_RUN_RE = re.compile(r"\s+")
 
+#: Strip a single trailing parenthetical qualifier from a Decision cell (DDD-7
+#: leniency): `CREATE_NEW (companion)` -> `CREATE_NEW`. The qualifier is a benign
+#: human annotation; the substantive token is what the gate classifies.
+_TRAILING_PARENTHETICAL_RE = re.compile(r"\s*\([^)]*\)\s*$")
+
 #: Match a Wave-prefixed `##` heading. Captures (wave_name, type_token, tail).
 #: Anchored on the schema separator ` / ` so non-conforming headings still
 #: parse but flag a violation.
@@ -745,6 +750,14 @@ def _normalise_decision_token(raw_cell: str) -> str:
     unbolded = raw_cell.strip()
     if unbolded.startswith("**") and unbolded.endswith("**") and len(unbolded) >= 4:
         unbolded = unbolded[2:-2]
+    # DDD-7 leniency (SUBSTANCE-AWARE, 2026-07-05): a trailing parenthetical
+    # qualifier (`CREATE_NEW (companion)`, `EXTEND (in place)`) is tolerated ->
+    # the bare substantive token is extracted. The qualifier belongs in the
+    # Overlap/Justification cell, but rejecting the whole row on a benign
+    # human annotation is a form-proxy breaking on an edge case; consult the
+    # substance (the leading token), do not brittle-fail. A cell that does not
+    # reduce to a canonical token (e.g. `MAYBE_REWRITE`) still fails.
+    unbolded = _TRAILING_PARENTHETICAL_RE.sub("", unbolded.strip())
     return _WHITESPACE_RUN_RE.sub("_", unbolded.strip().upper())
 
 

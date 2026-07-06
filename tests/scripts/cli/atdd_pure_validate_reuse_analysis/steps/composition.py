@@ -357,6 +357,19 @@ def _build_create_new_space_spelling(comp: ReuseAnalysisComposition) -> None:
     comp._write(_doc(_reuse_section(row)))
 
 
+def _build_create_new_parenthetical_qualifier(
+    comp: ReuseAnalysisComposition,
+) -> None:
+    # A CREATE_NEW row whose Decision cell carries a trailing parenthetical
+    # qualifier (DDD-7 leniency) -- the bare token is extracted, so it
+    # normalises to CREATE_NEW; with a non-empty justification -> accepted.
+    row = (
+        "| companion.py | src/companion.py | a genuine overlapping "
+        "component | CREATE_NEW (companion) | a real justification for the new path |"
+    )
+    comp._write(_doc(_reuse_section(row)))
+
+
 def _build_methodology_exempt_marker(comp: ReuseAnalysisComposition) -> None:
     # No table; a `Reuse-Analysis: methodology-exempt` marker directly under
     # the canonical heading (DDD-9) -> methodology-exempt (accepted).
@@ -391,6 +404,9 @@ _FEATURE_DELTA_BUILDERS: dict[
         _build_create_new_empty_justification
     ),
     ReuseTableShape.CREATE_NEW_SPACE_SPELLING: _build_create_new_space_spelling,
+    ReuseTableShape.CREATE_NEW_PARENTHETICAL_QUALIFIER: (
+        _build_create_new_parenthetical_qualifier
+    ),
     ReuseTableShape.METHODOLOGY_EXEMPT_MARKER: _build_methodology_exempt_marker,
     ReuseTableShape.NO_OVERLAP_MARKER: _build_no_overlap_marker,
     ReuseTableShape.DUPLICATE_HEADING: _build_duplicate_heading,

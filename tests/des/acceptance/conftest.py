@@ -8,6 +8,7 @@ This module provides test fixtures following hexagonal architecture principles:
 """
 
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -16,6 +17,12 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+
+
+# velocity-v2 (<5min goal G-143): memoize the real-repo whole-tree collect across the
+# acceptance session (run_contract_gate honors NWAVE_COLLECT_MEMO; only the immutable
+# real repo is cached — verified in tests/des/unit/cli/test_run_contract_gate_collect_memo.py).
+os.environ.setdefault("NWAVE_COLLECT_MEMO", "1")
 
 
 @pytest.fixture(autouse=True)

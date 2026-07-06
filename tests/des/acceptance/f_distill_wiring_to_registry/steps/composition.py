@@ -23,7 +23,11 @@ the expected stack (the shipped artifact, or its absence, IS the contract):
 GROUND-TRUTH at HEAD (verified live this session -- the active-RED):
   * ``resolve_stack("distill","gate-out") == ["check-slice-at-completeness",
     "gate-design-at-coherence"]`` -- ``self-attest`` + ``verify-test-runner`` ABSENT
-    -> CT-1 / CT-2 RED.
+    -> CT-1 / CT-2 RED. (Post-DELIVER the live stack also carries the unrelated
+    advisory gate ``verify-spec-coverage``, wired later by the evolution-plan P3.1
+    spec-coverage feature -- CT-1 checks presence + THIS feature's relative order
+    of its four gates, tolerating that and any other legitimately-added advisory
+    gate; it never re-asserts an exact, closed gate-out list.)
   * ``atdd_pure.yaml`` STILL carries the ``wave_gate_stacks.distill`` co-tenant
     block -> CT-3 RED.
   * the scorecard ``_module_wired`` matches flavor strings, not live-resolution:
@@ -140,14 +144,34 @@ class DistillWiringComposition:
     # =====================================================================
 
     def then_the_four_gates_resolve_in_declared_order(self) -> None:
-        """The resolved stack is EXACTLY the four DISTILL-OUT gates, in order (CT-1)."""
+        """The four DISTILL-OUT gates THIS feature wires are ALL present, in their
+        declared RELATIVE order (CT-1) -- a subsequence check, not an exact-``==``
+        full-stack match. Extra advisory gates legitimately added by other
+        features (e.g. ``verify-spec-coverage``) are TOLERATED; the assertion
+        proves only that this feature's four gates are live-resolved AND in the
+        right relative order among themselves.
+        """
         assert self._stack is not None, "the gate-out stack must be resolved first."
-        assert self._stack.gate_ids_in_order == DISTILL_GATE_OUT_DECLARED_ORDER, (
-            "the DISTILL gate-out stack must LIVE-resolve all four gates in declared "
-            f"order {list(DISTILL_GATE_OUT_DECLARED_ORDER)!r}; "
-            f"resolve_stack returned {list(self._stack.gate_ids_in_order)!r}. "
-            "At HEAD self-attest + verify-test-runner are ABSENT (active-RED); "
-            "DELIVER appends the two GateInvocation rows to nWave/waves/distill.yaml."
+        resolved = list(self._stack.gate_ids_in_order)
+        required = list(DISTILL_GATE_OUT_DECLARED_ORDER)
+        present_indices = {
+            gate_id: (resolved.index(gate_id) if gate_id in resolved else None)
+            for gate_id in required
+        }
+        missing = [gate_id for gate_id, idx in present_indices.items() if idx is None]
+        assert not missing, (
+            "the DISTILL gate-out stack must LIVE-resolve all four gates this "
+            f"feature wires {required!r}; missing from the resolved stack "
+            f"{resolved!r}: {missing!r}. At HEAD self-attest + verify-test-runner "
+            "are ABSENT (active-RED); DELIVER appends the two GateInvocation rows "
+            "to nWave/waves/distill.yaml."
+        )
+        found_indices = [present_indices[gate_id] for gate_id in required]
+        assert found_indices == sorted(found_indices), (
+            "the four DISTILL-OUT gates this feature wires must LIVE-resolve in "
+            f"their declared relative order {required!r}; resolved positions "
+            f"{dict(zip(required, found_indices, strict=True))!r} in stack "
+            f"{resolved!r} are out of order."
         )
 
     def then_both_new_rows_are_warn(self) -> None:

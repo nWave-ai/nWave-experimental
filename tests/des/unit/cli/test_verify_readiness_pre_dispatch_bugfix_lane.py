@@ -150,3 +150,49 @@ def test_bugfix_lane_vacuous_justification_refused(tmp_path: Path) -> None:
         "the safety mechanism for the one skipped quality gate (at_review_verdict). "
         f"observed code={code}, verdict={report.get('verdict')}"
     )
+
+
+def test_bugfix_lane_zero_red_evidence_and_no_expectation_refused(
+    tmp_path: Path,
+) -> None:
+    """Regression (nw-user-examiner Vera, verdict FAIL, seal 6d182a2a, NEGATIVE-2):
+    a bugfix lane with a VALID (anti-abuse-passing) justification but ZERO
+    RED->GREEN mechanical-seal evidence (no `.nwave/telemetry/red-green/*.json`
+    seal — see `des verify-red-green --record-red`) and NO expectation charter
+    authored under `docs/product/expectations/` must be REFUSED.
+
+    Charter (the oracle): `docs/product/expectations/
+    v2-readiness-gate-lightweight-for-small-slices/
+    a-tiny-bugfix-slice-closes-without-heavy-feature-delta-ceremony.md`,
+    NEGATIVE: "the mechanical seal is still required — a slice with NO RED
+    evidence and NO expectation still CANNOT close (we lighten ceremony, we do
+    not remove the evidence floor)."
+
+    Today the bugfix lane only re-checks the 2 mechanical guards
+    (`gate_output_produceable`, `pre_commit_scope`) and never looks at the
+    RED->GREEN seal or the expectation charter at all -- so this dispatch
+    wrongly CLEARS. The `.git` marker below satisfies `gate_output_produceable`
+    by construction (and no `tests/` dir exists, vacuously satisfying
+    `pre_commit_scope`), isolating the missing evidence-floor check as the sole
+    cause of the wrong `cleared` verdict.
+    """
+    (tmp_path / ".git").mkdir()
+    # No docs/product/expectations/** authored, no .nwave/telemetry/red-green/
+    # seal recorded -- zero RED->GREEN mechanical-seal evidence, zero expectation.
+    code, report = _run(
+        tmp_path, "--lane", "bugfix", "--lane-justification", _VALID_JUSTIFICATION
+    )
+    assert report.get("verdict") == "refused" and code != 0, (
+        "a DES-LANE: bugfix dispatch with NO RED->GREEN seal and NO expectation "
+        "charter must be REFUSED — the evidence floor holds even when the heavy "
+        "feature-readiness ceremony is lightened. "
+        f"observed verdict={report.get('verdict')!r}, code={code}, "
+        f"invariants={report.get('invariants')}"
+    )
+    assert any(
+        not inv["satisfied"] and inv.get("remediation")
+        for inv in report.get("invariants", [])
+    ), (
+        "the refusal must carry a diagnostic naming the missing evidence floor "
+        f"(what/why/how). observed invariants={report.get('invariants')}"
+    )

@@ -4,7 +4,7 @@
 
 | Name | Description | Skills |
 | --- | --- | --- |
-| [nw-ddd-architect](nw-ddd-architect.md) | Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggregates, facilitates Event Modeling sessions, and recommends ES/CQRS when warranted. Writes to architecture SSOT. | 7 |
+| [nw-ddd-architect](nw-ddd-architect.md) | Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggregates, facilitates Event Modeling sessions, and recommends ES/CQRS when warranted. Writes to architecture SSOT. | 8 |
 | [nw-ddd-architect-reviewer](nw-ddd-architect-reviewer.md) | Use for reviewing DDD domain models. Validates bounded context boundaries, aggregate design, context mapping, ES/CQRS recommendations, and ubiquitous language consistency. | 3 |
 | [nw-platform-architect](nw-platform-architect.md) | Use for DESIGN wave (infrastructure design) and DEVOPS wave (deployment execution, production readiness, stakeholder sign-off). Transforms architecture into deployable infrastructure, then coordinates production delivery and outcome measurement. | 7 |
 | [nw-platform-architect-reviewer](nw-platform-architect-reviewer.md) | Use for review and critique tasks - Platform design, CI/CD pipeline, infrastructure, observability, deployment readiness, and production handoff review specialist. Runs on Haiku for cost efficiency. | 3 |
@@ -65,7 +65,7 @@
 | [nw-agent-builder-reviewer](nw-agent-builder-reviewer.md) | Other | Use for review and critique tasks - Agent design and quality review specialist. Runs on Haiku for cost efficiency. | 4 |
 | [nw-data-engineer](nw-data-engineer.md) | Other | Use for database technology selection, data architecture design, query optimization, schema design, security implementation, and governance guidance. Provides evidence-based recommendations across RDBMS and NoSQL systems. | 4 |
 | [nw-data-engineer-reviewer](nw-data-engineer-reviewer.md) | Other | Use for review and critique tasks - Data architecture and pipeline review specialist. Runs on Haiku for cost efficiency. | 1 |
-| [nw-ddd-architect](nw-ddd-architect.md) | DESIGN | Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggregates, facilitates Event Modeling sessions, and recommends ES/CQRS when warranted. Writes to architecture SSOT. | 7 |
+| [nw-ddd-architect](nw-ddd-architect.md) | DESIGN | Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggregates, facilitates Event Modeling sessions, and recommends ES/CQRS when warranted. Writes to architecture SSOT. | 8 |
 | [nw-ddd-architect-reviewer](nw-ddd-architect-reviewer.md) | DESIGN | Use for reviewing DDD domain models. Validates bounded context boundaries, aggregate design, context mapping, ES/CQRS recommendations, and ubiquitous language consistency. | 3 |
 | [nw-diverger](nw-diverger.md) | Other | Use before DISCUSS — runs JTBD analysis, competitive research, structured brainstorming, and taste-filtered evaluation to produce 3-5 design directions before the team converges on one. Use when the team has a validated problem but hasn't chosen a solution approach. | 3 |
 | [nw-diverger-reviewer](nw-diverger-reviewer.md) | Other | Use as peer reviewer for nw-diverger outputs — validates JTBD rigor, research evidence quality, option structural diversity, taste application correctness, and recommendation coherence. Runs on Haiku for cost efficiency. | 1 |

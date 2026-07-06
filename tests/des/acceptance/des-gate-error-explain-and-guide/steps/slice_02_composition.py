@@ -143,9 +143,7 @@ def _build_collection_failed_repo(
     runs pytest --collect-only on that directory, the ImportError raises
     _CollectionError -> reason="collection-failed".
     """
-    subprocess.run(
-        ["git", "init", "-q", str(tmp)], check=True, capture_output=True, text=True
-    )
+    (tmp / ".git").mkdir(parents=True, exist_ok=True)
     feature_dir = _build_base_tagged_feature_file(tmp, feature_id, slice_tag)
     # A Python step file with an ImportError that pytest will discover.
     # The broken import prevents collection from completing.
@@ -170,9 +168,7 @@ def _build_arch_scope_zero_collected_repo(
     _ArchVerdict(collected=0, passed=True) -> arch.collected == 0 ->
     reason="arch-scope-zero-collected".
     """
-    subprocess.run(
-        ["git", "init", "-q", str(tmp)], check=True, capture_output=True, text=True
-    )
+    (tmp / ".git").mkdir(parents=True, exist_ok=True)
     feature_dir = _build_base_tagged_feature_file(tmp, feature_id, slice_tag)
     # A valid (no-error) test file so the feature scope M-1 floor passes.
     (feature_dir / "test_passing_scope.py").write_text(
@@ -199,9 +195,7 @@ def _build_arch_invariant_failed_repo(
     _ArchVerdict(collected=1, passed=False) -> not arch.passed ->
     reason="arch-invariant-failed".
     """
-    subprocess.run(
-        ["git", "init", "-q", str(tmp)], check=True, capture_output=True, text=True
-    )
+    (tmp / ".git").mkdir(parents=True, exist_ok=True)
     feature_dir = _build_base_tagged_feature_file(tmp, feature_id, slice_tag)
     (feature_dir / "test_passing_scope.py").write_text(
         textwrap.dedent("""\

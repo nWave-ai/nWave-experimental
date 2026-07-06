@@ -1,13 +1,21 @@
 ---
 name: nw-property-based-testing
-description: Property-based testing strategies, mutation testing, shrinking, and combined PBT+mutation workflow for test quality validation
+description: Property-based testing strategies (PBT — ACTIVE, authored by the acceptance-designer during DISTILL), shrinking, PBT+TDD integration. (Mutation testing is documented but DEPRECATED per FR-1 — PBT is not.)
 user-invocable: false
 disable-model-invocation: true
 ---
 
-# Property-Based Testing and Mutation Testing
+# Property-Based Testing (ACTIVE) + Mutation Testing (deprecated appendix)
 
-> Deferred to Phase 2.25: Mutation testing runs ONCE per feature as final quality gate at orchestrator Phase 2.25 (after all steps complete). Do NOT run mutation testing during inner TDD loop.
+> **PBT IS ACTIVE — NOT deprecated.** Property-based testing remains a first-class technique: the
+> **acceptance-designer authors PBT during DISTILL** (max PBT + parametrize density is a standing
+> mandate). Everything in the `Property-Based Testing` sections below is CURRENT.
+>
+> **ONLY the MUTATION-TESTING appendix is DEPRECATED (FR-1, velocity-v2, 2026-07-04)**: mutation testing
+> (mutmut) is REMOVED from the methodology — green ATs + EXAMINE (independent end-to-end verification)
+> are the truth; a mutation pass adds cost, not signal. The `## Mutation Testing` sections below are
+> retained as reference only; do NOT run mutation testing as a per-feature or nightly gate. See
+> `docs/product/velocity-v2-progress-tracker.md` (FR-1).
 
 ## Property-Based Testing (PBT)
 
@@ -65,7 +73,7 @@ See `nw-test-optimization` §4-bis Paradigm-Match Decision Rule for the full sha
 
 Properties = higher-level spec that survives refactoring better than examples.
 
-## Mutation Testing
+## Mutation Testing (DEPRECATED — FR-1, reference only, not a methodology gate)
 
 Evaluates test suite quality by introducing artificial bugs (mutations) and checking if tests catch them.
 Mutation score = killed mutants / total mutants. Stronger metric than code coverage.

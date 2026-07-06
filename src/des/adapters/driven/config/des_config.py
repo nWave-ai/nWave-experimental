@@ -372,6 +372,22 @@ class DESConfig:
         return self._rigor().get("reviewer_model", "haiku")
 
     @property
+    def rigor_human_authorization(self) -> bool:
+        """Whether a two-party HUMAN authorization (GO) is required for the
+        AT-review verdict. Default: ``False`` (velocity-v2, Ale 2026-07-04).
+
+        Off by default: EXAMINE (the independent examiner) provides the default
+        outcome-independence, and the mechanical seal + the AT-completeness check
+        provide the AT attestation, so the two-party human GO is an OPT-IN
+        compliance layer (regulated industry), not the baseline. When ``True`` the
+        readiness gate hard-requires a recorded ``ATReviewVerdict APPROVED``; when
+        ``False`` that invariant is advisory (the carpaccio seal-check covers the
+        attestation at the same dispatch.pre) -- this closes the beta-tester
+        "asked several times per slice" grind.
+        """
+        return bool(self._rigor().get("human_authorization", False))
+
+    @property
     def rigor_tdd_phases(self) -> tuple[str, ...]:
         """Get TDD phases as tuple.
 

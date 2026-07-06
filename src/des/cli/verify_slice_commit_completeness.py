@@ -63,14 +63,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+from des.adapters.driven.git.git_subprocess import git_text as _git
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.application.slice_at_completeness import (
-    _git,
     feature_files_for_slice,
     files_in_commit,
     missing_at_files,
 )
+from des.cli.carpaccio_format import _lane_profile_for_slice, parse_slice_plan
 from des.cli.human_surface import Verdict, print_human_summary
+from des.domain.lane_profile import AtRequirement
+from des.domain.repo_path_resolver import feature_delta_path
 from des.domain.slice_id_trailer import (
     _SLICE_ID_TRAILER_RE,
     extract_slice_id,
@@ -161,7 +164,9 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _commit_head_raced(repo: Path, expected_head: str | None) -> dict[str, str] | None:
+def _commit_head_raced(
+    repo: Path, expected_head: str | None
+) -> dict[str, object] | None:
     """Detect a HEAD that has raced off the pinned ``expected_head`` SHA (M9 / F3).
 
     Returns a `CommitHeadRaced` payload when HEAD has moved off the pinned SHA;
@@ -250,6 +255,27 @@ def _emit_with_human_surface(payload: dict[str, object]) -> None:
     _emit(payload)
     verdict, summary = _human_summary_for(payload)
     print_human_summary(verdict, summary)
+
+
+def _is_at_exempt_lane(repo: Path, feature_id: str, slice_id: str) -> bool:
+    """Resolve whether ``slice_id`` is AT-EXEMPT, mirroring the entry gate.
+
+    Reads the SAME `[REF] Slice Plan` datum the carpaccio ENTRY gate consults
+    (`_lane_profile_for_slice`, `carpaccio_format.py:640-655`) via the SAME
+    `feature_delta_path` + `parse_slice_plan` resolution
+    (`carpaccio_slice_gate.py:880-892`) -- the single shared consulting
+    mechanism (D11/D12), so the exit gate's lane awareness never diverges
+    from the entry gate's. Returns ``False`` (never exempt) when the
+    feature-delta is absent or the slice carries no `@prefactoring`
+    annotation -- the fail-closed default that leaves the non-exempt path
+    byte-identical.
+    """
+    delta_path = feature_delta_path(repo, feature_id)
+    if not delta_path.is_file():
+        return False
+    plan = parse_slice_plan(delta_path.read_text(encoding="utf-8"))
+    profile = _lane_profile_for_slice(plan, slice_id)
+    return profile is not None and profile.at_requirement is AtRequirement.EXEMPT
 
 
 def _run_contract_gate(repo: Path, feature_id: str, slice_id: str) -> int:
@@ -505,6 +531,15 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
 
     # E2 -- the feature-scoped contract gate, one run per listed slice.
     for slice_id in slice_ids:
+        if _is_at_exempt_lane(repo, feature_id, slice_id):
+            # Mirrors the entry gate's `LaneAtExemptionAccepted` early-return
+            # (carpaccio_format.py:627-633): a 0-AT `@prefactoring` slice has
+            # no `@slice-NN` scenarios to intersect, so `run_contract_gate`'s
+            # M-8 non-vacuity floor would refuse it `empty-intersection`. The
+            # SAME lane exemption the entry gate honors is honored here --
+            # short-circuit E2 to an honest clear instead of spawning the
+            # vacuous feature-scoped contract-gate subprocess.
+            continue
         contract_code = _run_contract_gate(repo, feature_id, slice_id)
         # DDD-2 degrade-LOUD: an INDETERMINATE gate (no usable interpreter on
         # this machine) is NOT a refusal -- record the honest
@@ -531,7 +566,38 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
             )
             return 1
 
-    # E1 and E2 both cleared -- record one SliceCommitVerified per slice.
+    # E3 -- the examine-verdict DoD gate (evolution-plan P1.2, hard-wired into
+    # the verify-then-record path too, not only `des commit-slice`). EXAMINE is
+    # the true Definition of DONE: green tests verify the CODE, EXAMINE (Vera)
+    # verifies the running SYSTEM through the real surface and attaches the
+    # observed artifact -- the two diverge (isolated-green != assembled-green).
+    # `check_examine_verdict` is a NO-OP unless ARMED (a charter dir exists under
+    # `docs/product/expectations/{feature_id}/`, or the opt-in env); when armed,
+    # EVERY entering slice must carry a fresh PASS ExamineVerdict whose
+    # charter_seal still matches the charter's CURRENT bytes, else the slice is
+    # refused fail-closed and NO SliceCommitVerified is recorded. A
+    # behavior-preserving prefactoring/refactoring slice carries no charter ->
+    # unarmed -> green-to-green suffices (it goes through a separate path anyway).
+    # This closes the bypass where a slice committed via `git commit` + `des
+    # verify-slice-commit` skipped the examine gate that only `des commit-slice`
+    # enforced (Ale 2026-07-05: "without evidence the slice is not implemented").
+    from des.cli.commit_slice import check_examine_verdict
+
+    for slice_id in slice_ids:
+        examine_rejection = check_examine_verdict(repo, feature_id, slice_id)
+        if examine_rejection is not None:
+            exit_code = examine_rejection.pop("exit_code")
+            examine_rejection["refused_half"] = "E3"
+            examine_rejection.setdefault(
+                "error",
+                f"{examine_rejection.get('what', '')} -- "
+                f"FIX: {examine_rejection.get('how', '')}",
+            )
+            _emit_with_human_surface(examine_rejection)
+            assert isinstance(exit_code, int)
+            return exit_code
+
+    # E1, E2 and E3 all cleared -- record one SliceCommitVerified per slice.
     _append_slice_commit_verified(repo, feature_id, slice_ids)
     _emit_with_human_surface(
         {

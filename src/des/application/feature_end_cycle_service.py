@@ -54,6 +54,7 @@ subprocess), so the use-case is bundle-safe and host-agnostic.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -77,6 +78,7 @@ from des.application.feature_end_sign_service import (
     sign_feature_end_review,
 )
 from des.cli.record_examine_verdict import examine_ledger_path
+from des.cli.verify_fresh_clone import RECIPE_RELPATH
 from des.domain.examine_verdict_signing import charter_seal as _charter_seal
 from des.runtime.interpreter import des_spawn
 
@@ -142,6 +144,59 @@ class FullSuiteLegNotApplicable:
 
     Anti-theater is preserved: a PRESENT-but-RED full suite still fail-closes
     (``CycleRefusal``); only a genuinely-ABSENT suite is NA.
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True)
+class FreshCloneLegRan:
+    """The fresh-clone leg ran the REAL ``des verify-fresh-clone`` gate and the
+    committed tree verified in a fresh export (exit 0, slice-01, D-2/D-3)."""
+
+
+@dataclass(frozen=True)
+class FreshCloneLegNotApplicable:
+    """The fresh-clone leg found no ``.nwave/demo-recipe.json`` declared
+    (slice-01, D-2). The gate's own exit-2 INDETERMINATE degrades to a
+    non-blocking NA here: a repo never asked to have a demo recipe is not
+    held to one, and the cycle PROCEEDS.
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True)
+class ExecutionReachLegRan:
+    """The execution-reach leg ran the REAL ``des verify-execution-reach``
+    gate and every production file under the conventional source root showed
+    >0 observed line hits (exit 0, slice-02, D-2/D-3)."""
+
+
+@dataclass(frozen=True)
+class ExecutionReachLegNotApplicable:
+    """The execution-reach leg found no coverage XML at the conventional path
+    (slice-02, D-2). The gate's own exit-2 INDETERMINATE degrades to a
+    non-blocking NA here: a repo never asked to instrument coverage is not
+    held to a reach check over it, and the cycle PROCEEDS.
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True)
+class DocCoherenceLegRan:
+    """The doc-coherence leg ran the REAL ``des verify-doc-coherence``
+    gate and every checked doc claim is true of the tree (exit 0, slice-03,
+    D-2/D-3)."""
+
+
+@dataclass(frozen=True)
+class DocCoherenceLegNotApplicable:
+    """The doc-coherence leg found no README* / ``docs/`` at all (slice-03,
+    D-2). The gate's own exit-2 INDETERMINATE degrades to a non-blocking NA
+    here: a repo that ships no docs claims at all is not held to this check,
+    and the cycle PROCEEDS.
     """
 
     reason: str
@@ -245,6 +300,40 @@ def run_feature_end_cycle(
         ledger.append_full_suite_leg_ran(feature_id=feature_id)
     else:
         ledger.append_full_suite_leg_not_applicable(feature_id=feature_id)
+
+    # P0 evidence-by-execution gate block (evolution-plan P0.1/P0.4/P0.5,
+    # "wiring into the feature-end stack = P2.2"): ordered
+    # doc-coherence -> execution-reach -> fresh-clone (D-1, the cheapest
+    # static check runs first).
+    doc_coherence = _run_doc_coherence_gate(
+        ledger=ledger, repo_root=repo_root, feature_id=feature_id
+    )
+    if isinstance(doc_coherence, CycleRefusal):
+        return doc_coherence
+    if isinstance(doc_coherence, DocCoherenceLegRan):
+        ledger.append_doc_coherence_verified(feature_id=feature_id)
+    else:
+        ledger.append_doc_coherence_not_applicable(feature_id=feature_id)
+
+    execution_reach = _run_execution_reach_gate(
+        ledger=ledger, repo_root=repo_root, feature_id=feature_id
+    )
+    if isinstance(execution_reach, CycleRefusal):
+        return execution_reach
+    if isinstance(execution_reach, ExecutionReachLegRan):
+        ledger.append_execution_reach_verified(feature_id=feature_id)
+    else:
+        ledger.append_execution_reach_not_applicable(feature_id=feature_id)
+
+    fresh_clone = _run_fresh_clone_gate(
+        ledger=ledger, repo_root=repo_root, feature_id=feature_id
+    )
+    if isinstance(fresh_clone, CycleRefusal):
+        return fresh_clone
+    if isinstance(fresh_clone, FreshCloneLegRan):
+        ledger.append_fresh_clone_verified(feature_id=feature_id)
+    else:
+        ledger.append_fresh_clone_not_applicable(feature_id=feature_id)
 
     feature_end_examine = _run_feature_end_examine_leg(
         repo_root=repo_root, feature_id=feature_id
@@ -544,6 +633,184 @@ def _repo_has_contract_suite(repo_root: Path) -> bool:
         return False
 
 
+_DOC_COHERENCE_DOCS_DIRNAME = "docs"
+
+
+def _run_doc_coherence_gate(
+    *, ledger: AtCompletionLedger, repo_root: Path, feature_id: str
+) -> DocCoherenceLegRan | DocCoherenceLegNotApplicable | CycleRefusal:
+    """Run the REAL ``des verify-doc-coherence`` gate (slice-03, evolution-plan
+    P0.5, L-2). Derives the verdict from the gate's REAL exit code -- never an
+    input flag (anti-theater, DDD-6). Mirrors :func:`_run_execution_reach_gate`'s
+    ``LegRan | LegNotApplicable | CycleRefusal`` three-arm shape; runs FIRST of
+    the three P0 legs (D-1: the cheapest static check runs first).
+
+    D-2 PRECONDITION-FIRST (L-4 NA rule): a target repo shipping no README* at
+    its root and no ``docs/`` directory has nothing honest for the
+    doc-coherence gate to check -- so the leg returns
+    :class:`DocCoherenceLegNotApplicable` and the cycle PROCEEDS WITHOUT
+    spawning the gate (never a false hard-block on a repo that ships no docs
+    claims at all). The presence check runs FIRST, before ANY subprocess,
+    mirroring the gate's own default doc-location convention (L-5: this reads
+    the same convention without importing ``verify_doc_coherence.py``).
+
+    When docs ARE present, RM-1 appends the ``DocCoherenceGateRan`` heartbeat
+    BEFORE the verdict is known (its presence means "the cycle reached and ran
+    this leg"), then dispatches the REAL gate and derives the verdict from its
+    REAL exit code (anti-theater, DDD-6): exit 0 -> :class:`DocCoherenceLegRan`
+    (every checked doc claim is true of the tree); exit 2 ->
+    :class:`DocCoherenceLegNotApplicable` (the gate's own INDETERMINATE, e.g.
+    an unreadable docs location surviving the presence check); any OTHER
+    non-zero exit (1: >=1 doc claim is false of the actual tree) fail-closes
+    the cycle carrying the gate's own diagnostic (which names every false
+    claim).
+    """
+    if not _repo_has_doc_claims(repo_root):
+        return DocCoherenceLegNotApplicable(
+            "no README or docs/ directory found; the doc-coherence gate is "
+            "not applicable"
+        )
+    ledger.append_doc_coherence_gate_ran(feature_id=feature_id)
+    completed = _dispatch(repo_root, ["verify-doc-coherence", "--repo", str(repo_root)])
+    if completed.returncode == 2:
+        return DocCoherenceLegNotApplicable(
+            "the doc-coherence gate degraded to INDETERMINATE; not applicable"
+        )
+    if completed.returncode != 0:
+        return CycleRefusal(
+            "the feature-end doc-coherence gate failed; the feature-end "
+            "cycle refuses to certify the feature-end is complete "
+            "(anti-theater): " + _gate_diagnostic(completed)
+        )
+    return DocCoherenceLegRan()
+
+
+def _repo_has_doc_claims(repo_root: Path) -> bool:
+    """Whether ``repo_root`` ships any README* file or a ``docs/`` directory
+    (mirrors ``verify_doc_coherence._find_doc_files``'s default doc-location
+    convention; L-5: does not import ``verify_doc_coherence.py``)."""
+    if any(repo_root.glob("README*")):
+        return True
+    return (repo_root / _DOC_COHERENCE_DOCS_DIRNAME).is_dir()
+
+
+_COVERAGE_XML_RELPATH = "coverage.xml"
+_EXECUTION_REACH_SRC_DIR = "src"
+
+
+def _run_execution_reach_gate(
+    *, ledger: AtCompletionLedger, repo_root: Path, feature_id: str
+) -> ExecutionReachLegRan | ExecutionReachLegNotApplicable | CycleRefusal:
+    """Run the REAL ``des verify-execution-reach`` gate (slice-02, evolution-plan
+    P0.4, L-2). Derives the verdict from the gate's REAL exit code -- never an
+    input flag (anti-theater, DDD-6). Mirrors :func:`_run_fresh_clone_gate`'s
+    ``LegRan | LegNotApplicable | CycleRefusal`` three-arm shape.
+
+    D-2 PRECONDITION-FIRST (L-4 NA rule): a target repo that never produced a
+    Cobertura coverage report at the conventional path (``<repo>/coverage.xml``)
+    has nothing honest for the execution-reach gate to judge -- so the leg
+    returns :class:`ExecutionReachLegNotApplicable` and the cycle PROCEEDS
+    WITHOUT spawning the gate (never a false hard-block on a repo that never
+    opted into coverage instrumentation). The presence check runs FIRST,
+    before ANY subprocess, so a minimal target tree (no coverage XML) is NA
+    rather than a spurious refusal on the gate's own environment-degrade exit
+    code.
+
+    When the coverage XML IS present, RM-1 appends the ``ExecutionReachGateRan``
+    heartbeat BEFORE the verdict is known (its presence means "the cycle
+    reached and ran this leg"), then dispatches the REAL gate and derives the
+    verdict from its REAL exit code (anti-theater, DDD-6): exit 0 ->
+    :class:`ExecutionReachLegRan` (every production file under the
+    conventional source root shows >0 observed line hits); exit 2 ->
+    :class:`ExecutionReachLegNotApplicable` (the gate's own INDETERMINATE,
+    e.g. a ``--src-dir`` that does not resolve under a non-conventional
+    source layout, or a malformed/empty coverage report -- a repo the gate
+    cannot judge, per R8 genericita -- mirrors :func:`_run_doc_coherence_gate`
+    and :func:`_run_fresh_clone_gate`'s own ``== 2`` NA branch); any OTHER
+    non-zero exit (1: >=1 production file with zero hits or absent from the
+    report) fail-closes the cycle carrying the gate's own diagnostic (which
+    names every unreached file).
+    """
+    coverage_xml_path = repo_root / _COVERAGE_XML_RELPATH
+    if not coverage_xml_path.is_file():
+        return ExecutionReachLegNotApplicable(
+            "no coverage XML found at the conventional path; the "
+            "execution-reach gate is not applicable"
+        )
+    ledger.append_execution_reach_gate_ran(feature_id=feature_id)
+    completed = _dispatch(
+        repo_root,
+        [
+            "verify-execution-reach",
+            "--coverage-xml",
+            str(coverage_xml_path),
+            "--src-dir",
+            _EXECUTION_REACH_SRC_DIR,
+            "--repo",
+            str(repo_root),
+        ],
+    )
+    if completed.returncode == 2:
+        return ExecutionReachLegNotApplicable(
+            "the execution-reach gate degraded to INDETERMINATE; not applicable"
+        )
+    if completed.returncode != 0:
+        return CycleRefusal(
+            "the feature-end execution-reach gate failed; the feature-end "
+            "cycle refuses to certify the feature-end is complete "
+            "(anti-theater): " + _gate_diagnostic(completed)
+        )
+    return ExecutionReachLegRan()
+
+
+def _run_fresh_clone_gate(
+    *, ledger: AtCompletionLedger, repo_root: Path, feature_id: str
+) -> FreshCloneLegRan | FreshCloneLegNotApplicable | CycleRefusal:
+    """Run the REAL ``des verify-fresh-clone`` gate (slice-01, evolution-plan
+    P0.1, L-2). Derives the verdict from the gate's REAL exit code -- never an
+    input flag (anti-theater, DDD-6). Mirrors :func:`_run_full_suite_leg`'s
+    ``LegRan | LegNotApplicable | CycleRefusal`` three-arm shape.
+
+    D-2 PRECONDITION-FIRST (L-4 NA rule): a target repo that never declared a
+    ``.nwave/demo-recipe.json`` has nothing honest for the fresh-clone gate to
+    execute -- so the leg returns :class:`FreshCloneLegNotApplicable` and the
+    cycle PROCEEDS WITHOUT spawning the gate (never a false hard-block on a repo
+    that was never asked to have a demo recipe). The presence check runs FIRST,
+    before ANY subprocess, so a minimal target tree (no recipe, no
+    git-archivable install manifest -- the exact shape of the examine-leg unit
+    fixtures) is NA rather than a spurious refusal on the gate's own
+    environment-degrade exit code.
+
+    When the recipe IS present, RM-1 appends the ``FreshCloneGateRan`` heartbeat
+    BEFORE the verdict is known (its presence means "the cycle reached and ran
+    this leg"), then dispatches the REAL gate and derives the verdict from its
+    REAL exit code (anti-theater, DDD-6): exit 0 -> :class:`FreshCloneLegRan` (a
+    genuine fresh-export build pass); exit 2 -> :class:`FreshCloneLegNotApplicable`
+    (the gate's own INDETERMINATE on a malformed/absent recipe); any OTHER
+    non-zero exit (1: a real recipe step failed in the fresh export of the
+    committed tree; 78: an environment degrade) fail-closes the cycle carrying
+    the gate's own diagnostic.
+    """
+    recipe_path = repo_root / RECIPE_RELPATH
+    if not recipe_path.is_file():
+        return FreshCloneLegNotApplicable(
+            "no demo recipe declared; the fresh-clone gate is not applicable"
+        )
+    ledger.append_fresh_clone_gate_ran(feature_id=feature_id)
+    completed = _dispatch(repo_root, ["verify-fresh-clone", "--repo", str(repo_root)])
+    if completed.returncode == 2:
+        return FreshCloneLegNotApplicable(
+            "the fresh-clone gate degraded to INDETERMINATE; not applicable"
+        )
+    if completed.returncode != 0:
+        return CycleRefusal(
+            "the feature-end fresh-clone gate failed; the feature-end cycle "
+            "refuses to certify the feature-end is complete (anti-theater): "
+            + _gate_diagnostic(completed)
+        )
+    return FreshCloneLegRan()
+
+
 def _charter_dir(repo_root: Path, feature_id: str) -> Path:
     """Where a feature's User-Examiner charters live, per the P1.2 convention."""
     return repo_root / "docs" / "product" / "expectations" / feature_id
@@ -766,7 +1033,19 @@ def _gate_diagnostic(completed: subprocess.CompletedProcess[str]) -> str:
 
 
 def _dispatch(repo_root: Path, argv: list[str]) -> subprocess.CompletedProcess[str]:
-    """Run a ``des <argv>`` subcommand over the real ``des`` dispatcher."""
+    """Run a ``des <argv>`` subcommand over the real ``des`` dispatcher.
+
+    Nested gate dispatches run with the des-runtime freshness gate DISABLED
+    (``NWAVE_FRESHNESS=skip``): the feature-end cycle is the OUTER command and
+    owns freshness once, at its own entry -- a nested ``des <gate>`` spawned
+    against a TARGET repo (a plain tmp fixture with no ``_install_manifest.json``
+    and no ``.git/`` adjacency to auto-skip) would otherwise trip the freshness
+    gate's DEGRADED exit 78 and mask the gate's OWN execution verdict (0/1/2).
+    Skipping freshness here lets each leg derive its verdict from the REAL gate
+    exit code (anti-theater, DDD-6) -- the audit-bearing ``des.runtime.freshness.
+    skipped`` event still records the bypass on the child's stderr.
+    """
+    env = {**os.environ, "NWAVE_FRESHNESS": "skip"}
     return des_spawn(
         None,
         "des.cli.__main__",
@@ -774,12 +1053,19 @@ def _dispatch(repo_root: Path, argv: list[str]) -> subprocess.CompletedProcess[s
         capture_output=True,
         text=True,
         cwd=str(repo_root),
+        env=env,
     )
 
 
 __all__ = [
     "CycleRefusal",
     "CycleSuccess",
+    "DocCoherenceLegNotApplicable",
+    "DocCoherenceLegRan",
+    "ExecutionReachLegNotApplicable",
+    "ExecutionReachLegRan",
+    "FreshCloneLegNotApplicable",
+    "FreshCloneLegRan",
     "FullSuiteLegNotApplicable",
     "FullSuiteLegRan",
     "WalkingSkeletonNotApplicable",

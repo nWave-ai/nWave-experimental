@@ -54,7 +54,14 @@ Cohort = Literal["S", "M", "L", "XL"]
 class ATDDPurePhase(str, Enum):
     """The 3 canonical ATDD-pure delivery phases (ADR-001 7→3 reduction).
 
-    Execution order: A_GREEN → C_REVIEWER_AUDIT → D_REFACTOR_COMMIT.
+    Per-slice carpaccio order (deliver_phase_shape, velocity-v2): A_GREEN → EXAMINE
+    → COMMIT. The middle slot is now EXAMINE (cleared via an ExamineVerdict — see
+    EXAMINE below — an independent execution-observation, NOT an LLM reviewer-audit).
+    D_REFACTOR_COMMIT is RETAINED as the per-slice COMMIT step (it lands the code);
+    only the MANDATORY empty refactor is dropped — the refactor is now OPTIONAL
+    (skip when there is nothing to refactor). Grinding was slice-07's retag-only
+    D_REFACTOR_COMMIT, but slice-09-class D_REFACTOR_COMMITs land real production
+    code, so the commit step must stay (sister dogfood counter-data 2026-07-04).
     The per-slice DELIVER carpaccio collapses the legacy 7-phase vocabulary
     (A_GREEN_ATS, B_COVERAGE_CLEANUP, D_GAP_ROUTING, E_BATCH_REFACTOR,
     F_FINAL_REVIEW, G_COMMIT) onto these three; the legacy names replay
@@ -112,7 +119,10 @@ class PhaseExit(str, Enum):
 # ---------------------------------------------------------------------------
 
 # The canonical 3-link DELIVER transition matrix (ADR-001 §Sequencing).
-# A_GREEN → C_REVIEWER_AUDIT → D_REFACTOR_COMMIT → TERMINAL. The reviewer-audit
+# A_GREEN → EXAMINE (= C_REVIEWER_AUDIT) → D_REFACTOR_COMMIT → TERMINAL. deliver_phase_shape
+# (velocity-v2): the middle slot is EXAMINE (execution-observation, not an LLM reviewer-audit);
+# the refactor in D_REFACTOR_COMMIT is OPTIONAL but the COMMIT step STAYS (it lands the code).
+# The EXAMINE/reviewer-audit
 # node may also halt to HUMAN_ESCALATION. ``D_DISTILL`` is an EXPLICIT ASSERTED
 # EXCLUSION from this matrix (it is an upstream-wave routing node, not a
 # per-slice carpaccio edge — see oss-hook-side-phase-injection slice-01).
@@ -314,6 +324,39 @@ FEATURE_END_PHASES: frozenset[str] = frozenset(
 # return; selecting it from the alias map keeps it bound to the SSOT vocabulary
 # rather than a bare literal at the dispatch call site.
 FEATURE_END_RETURN_PHASE: str = next(iter(_legacy_words("F_FINAL_REVIEW")))
+
+
+# ---------------------------------------------------------------------------
+# Display-vocab -> canonical-slot alias (velocity-v2 EXAMINE/COMMIT rename,
+# fix-docgen-phase-vocab-comparator)
+# ---------------------------------------------------------------------------
+#
+# The `deliver_phase_shape` registry field (`nWave/flavors/*.yaml`) speaks the
+# velocity-v2 DISPLAY vocabulary ("A_GREEN -> EXAMINE -> COMMIT"), never the
+# internal canonical slot names. A literal string compare against
+# `CANONICAL_PHASES` is alias-blind and false-fails on every display token.
+# This map is the single SSOT a consumer (e.g. `scripts/docgen.py`) normalizes
+# a declared display token through before comparing against the canonical
+# vocabulary — no second hand-restated table.
+#
+# "EXAMINE" reuses the ATDDPurePhase enum's OWN existing value-alias (attribute
+# lookup, since ``EXAMINE`` shares ``C_REVIEWER_AUDIT``'s value rather than
+# being independently constructible via `ATDDPurePhase("EXAMINE")`).
+# "COMMIT" has no enum-level alias (D_REFACTOR_COMMIT never gained one) — it is
+# the missing entry this fix adds.
+DISPLAY_VOCAB_ALIASES: dict[str, str] = {
+    "EXAMINE": ATDDPurePhase["EXAMINE"].value,
+    "COMMIT": ATDDPurePhase.D_REFACTOR_COMMIT.value,
+}
+
+
+def normalize_phase_token(token: str) -> str:
+    """Resolve a (possibly display-vocab) phase token to its canonical slot.
+
+    A token already spelling a canonical name (or an unrecognised token) is
+    returned unchanged — only known display-vocab aliases are rewritten.
+    """
+    return DISPLAY_VOCAB_ALIASES.get(token, token)
 
 
 # ---------------------------------------------------------------------------
@@ -558,6 +601,7 @@ __all__ = [
     "CANONICAL_TRANSITIONS",
     "CARPACCIO_ENTRY_PHASES",
     "COMMIT_GATE_PHASES",
+    "DISPLAY_VOCAB_ALIASES",
     "FEATURE_END_PHASES",
     "FEATURE_END_RETURN_PHASE",
     "LEGACY_PHASE_ALIASES",
@@ -583,5 +627,6 @@ __all__ = [
     "StepId",
     "UnknownPhaseName",
     "WorkflowMode",
+    "normalize_phase_token",
     "resolve_phase",
 ]

@@ -5,6 +5,7 @@ model: inherit
 maxTurns: 45
 tools: Read, Write, Edit, Glob, Grep, Bash, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:
+  - nw-ddd-architect
   - nw-ddd-strategic
   - nw-ddd-tactical
   - nw-ddd-event-modeling

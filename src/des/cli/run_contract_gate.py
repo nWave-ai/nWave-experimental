@@ -43,6 +43,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,9 +52,15 @@ from typing import TYPE_CHECKING
 from des.adapters.driven.git.committed_scope_adapter import GitCommittedScopeAdapter
 from des.adapters.driven.git.git_subprocess import git_text as _git
 from des.adapters.driven.output.stdout_output import StdoutOutput
-from des.adapters.driven.runner.pytest_runner import pytest_interpreter
+from des.adapters.driven.runner.pytest_runner import (
+    pytest_interpreter,
+    run_timeout_seconds,
+)
 from des.adapters.driven.runner.runner_json import read_runner_json
-from des.adapters.driven.runner.runner_registry import seed_runner_registry
+from des.adapters.driven.runner.runner_registry import (
+    GLOBAL_REGISTRY,
+    seed_runner_registry,
+)
 from des.cli.carpaccio_slice_gate import _feature_tag_files
 from des.cli.human_surface import Verdict, print_human_summary
 from des.ports.driven_ports.committed_scope_port import (
@@ -124,6 +131,15 @@ _SLICE_TAG_RE = re.compile(r"@(slice-\d+)\b")
 _COLLECT_RESULT_PREFIX = "NWAVE_COLLECT_SCOPE:"
 _COLLECT_ERROR_PREFIX = "NWAVE_COLLECT_SCOPE_ERROR:"
 
+#: Wall-clock bound for the collect-scope worker subprocess. A pytest
+#: ``--collect-only`` over any real tree completes in seconds; a run that
+#: exceeds this is a hanging / recursive collect (ZERO DEFECTS: a spawned
+#: subprocess must NEVER be able to block the gate — and the whole test suite —
+#: forever). On expiry the gate fails LOUD via ``_CollectionError`` (the existing
+#: fail-closed contract), never silently.
+_COLLECT_TIMEOUT_SECONDS = 180
+
+
 # The worker's `--run` branch marker (the arch-invariant collect-AND-RUN path).
 # DISTINCT from the collect-only markers: the run branch reports the run outcome
 # (`pytest_exit_code` + `collected_count`), never node-ids.
@@ -186,7 +202,50 @@ def _collect_node_ids(repo: Path, paths: list[Path] | None = None) -> list[str]:
     return _collect_scope(repo, paths).node_ids
 
 
+_COLLECT_MEMO: dict[tuple[str, tuple[str, ...]], _CollectedScope] = {}
+
+
 def _collect_scope(repo: Path, paths: list[Path] | None = None) -> _CollectedScope:
+    """Memoizing wrapper over ``_collect_scope_uncached`` (velocity-v2, <5min G-143).
+
+    Under ``NWAVE_COLLECT_MEMO`` (set ONLY by the test conftest) the collect of the
+    REAL repo tree -- immutable during a test session -- is memoized, so across a
+    serial run every dir that collects the whole ~1677-test suite pays the ~22s cost
+    ONCE instead of once-per-dir. Synthetic tmp trees (per-test, possibly mutated) are
+    NEVER memoized -- only a non-temp repo is, keyed by (resolved-repo, paths).
+    Production (no env var) is an exact pass-through: zero behavior change, no cache.
+    """
+    if os.environ.get("NWAVE_COLLECT_MEMO"):
+        resolved = str(repo.resolve())
+        if not resolved.startswith(tempfile.gettempdir()):
+            key = (resolved, tuple(sorted(str(p) for p in (paths or []))))
+            if key not in _COLLECT_MEMO:
+                _COLLECT_MEMO[key] = _collect_scope_uncached(repo, paths)
+            return _COLLECT_MEMO[key]
+    return _collect_scope_uncached(repo, paths)
+
+
+def _light_collect_env() -> dict[str, str] | None:
+    """Env for the collect worker (velocity-v2, <5min G-143).
+
+    Under ``NWAVE_COLLECT_MEMO`` (set ONLY by the test conftest) disable the slow
+    NON-collection plugins (cov / hypothesis / randomly) via ``PYTEST_ADDOPTS`` --
+    they do not affect the collected SET, so the contract-gate digest is IDENTICAL
+    (verified 77a0326e), a pure speedup and never a lying-fast shrink. Production
+    (no env var) returns ``None`` -> the subprocess inherits the parent env unchanged.
+    """
+    if not os.environ.get("NWAVE_COLLECT_MEMO"):
+        return None
+    env = os.environ.copy()
+    light = "-p no:cov -p no:hypothesis -p no:randomly"
+    existing = env.get("PYTEST_ADDOPTS", "")
+    env["PYTEST_ADDOPTS"] = f"{existing} {light}".strip()
+    return env
+
+
+def _collect_scope_uncached(
+    repo: Path, paths: list[Path] | None = None
+) -> _CollectedScope:
     """Derive the canonical collected scope from pytest's IN-PROCESS session.
 
     The digest input comes from pytest's IN-PROCESS collection API
@@ -235,17 +294,38 @@ def _collect_scope(repo: Path, paths: list[Path] | None = None) -> _CollectedSco
     """
     interpreter = pytest_interpreter()
     worker = Path(__file__).with_name("_collect_scope_worker.py")
-    completed = subprocess.run(
-        [
-            interpreter,
-            str(worker),
-            "--repo",
-            str(repo),
-            *_path_args(paths),
-        ],
-        capture_output=True,
-        text=True,
-    )
+    worker_env = _light_collect_env()
+    try:
+        completed = subprocess.run(
+            [
+                interpreter,
+                str(worker),
+                "--repo",
+                str(repo),
+                *_path_args(paths),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_COLLECT_TIMEOUT_SECONDS,
+            env=worker_env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        # ZERO DEFECTS: the collect worker must never block forever. A collect
+        # that exceeds the wall-clock bound (a hang, or a recursive collect that
+        # re-enters the gate over the real tree) is an untrustworthy collection
+        # -- fail LOUD (the fail-closed contract) instead of hanging the caller
+        # and the whole test suite.
+        raw_stderr = exc.stderr
+        stderr_tail = (
+            raw_stderr.decode("utf-8", "replace")
+            if isinstance(raw_stderr, bytes)
+            else (raw_stderr or "")
+        )
+        raise _CollectionError(
+            f"pytest collection did not complete within "
+            f"{_COLLECT_TIMEOUT_SECONDS}s (a hanging or recursive collect); "
+            f"stderr: {stderr_tail.strip()[:500]}"
+        ) from exc
     payload = _parse_worker_line(completed.stdout, _COLLECT_RESULT_PREFIX)
     error = _parse_worker_line(completed.stdout, _COLLECT_ERROR_PREFIX)
     if error is not None:
@@ -396,19 +476,27 @@ def _run_arch_invariant_set(repo: Path, arch_paths: list[Path]) -> _ArchVerdict:
     worker = Path(__file__).with_name("_collect_scope_worker.py")
     parallel = _parallel_pytest_args(repo, interpreter)
     jobs_args = ["--jobs", parallel[1]] if parallel else []
-    completed = subprocess.run(
-        [
-            interpreter,
-            str(worker),
-            "--run",
-            "--repo",
-            str(repo),
-            *jobs_args,
-            *_path_args(arch_paths),
-        ],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        completed = subprocess.run(
+            [
+                interpreter,
+                str(worker),
+                "--run",
+                "--repo",
+                str(repo),
+                *jobs_args,
+                *_path_args(arch_paths),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=run_timeout_seconds(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise _CollectionError(
+            f"the contract-scope RUN did not complete within "
+            f"{run_timeout_seconds():.0f}s (a hanging/deadlocking test); raise "
+            f"NWAVE_GATE_RUN_TIMEOUT if this is a legitimate long run"
+        ) from exc
     payload = _parse_worker_line(completed.stdout, _RUN_RESULT_PREFIX)
     if payload is None:
         raise _CollectionError(
@@ -860,10 +948,22 @@ def _run_contract_suite(repo: Path) -> int:
     to a serial token (see ``_parallel_pytest_args``).
     """
     interpreter = pytest_interpreter()
-    completed = subprocess.run(
-        _full_suite_marker_args(repo, interpreter),
-        cwd=repo,
-    )
+    try:
+        completed = subprocess.run(
+            _full_suite_marker_args(repo, interpreter),
+            cwd=repo,
+            timeout=run_timeout_seconds(),
+        )
+    except subprocess.TimeoutExpired:
+        # ZERO DEFECTS: the full-suite run must never block the gate forever (the
+        # empirical 61-min-at-0%-CPU hang). Fail LOUD with a non-zero code on the
+        # ceiling instead of hanging; raise NWAVE_GATE_RUN_TIMEOUT for a legit run.
+        print(
+            f"FULL-SUITE RUN exceeded the {run_timeout_seconds():.0f}s ceiling "
+            f"(a hanging/deadlocking test) -- failing loud, not hanging.",
+            file=sys.stderr,
+        )
+        return 1
     return completed.returncode
 
 
@@ -1188,6 +1288,9 @@ def _mode_run_suite(repo: Path) -> int:
     fail-closed REFUSE (exit 2) belongs to the verify role, not the producer.
     A genuinely untrustworthy collection still fails closed (exit 2).
     """
+    routed_registered = _maybe_route_through_registered_contract_gate(repo)
+    if routed_registered is not None:
+        return routed_registered
     routed = _maybe_route_through_runner_whole_tree(repo)
     if routed is not None:
         return routed
@@ -1700,6 +1803,60 @@ def _maybe_route_through_cargo(
         }
     )
     return 0
+
+
+def _maybe_route_through_registered_contract_gate(repo: Path) -> int | None:
+    """Route through a REGISTERED ``contract_gate`` facet; else return ``None``.
+
+    unified-language-adapter-registry slice-01 (ADR-ULAR-001 prefactoring, C5),
+    extended in slice-02 (C8/C11): sprout-and-fall-through seam mirroring
+    ``_maybe_route_through_cargo``'s EXACT shape -- seed the registry, RESOLVE
+    the target's runner, and look up a ``ContractGatePort`` facet under the
+    resolved TOOL-NAME (``resolution.name``, e.g. ``"pytest"``) -- never
+    ``target_language`` (DDD-U5). A lockfile-less target (``UnrecognizedRunner``)
+    is treated as an implicit Python/pytest tree for lookup purposes, mirroring
+    the existing ``UnrecognizedRunner``-as-pytest treatment already proven in
+    ``_maybe_route_through_runner_whole_tree`` / ``_maybe_route_digest_through_runner``.
+    Returns the gate exit code when a facet is registered and handles the
+    suite; ``None`` when no facet is registered for the resolved tool-name (the
+    case for EVERY target until a plugin registers one), so the caller falls
+    through to the EXISTING hardcoded pytest path UNCHANGED.
+
+    On a routed call, emits the SAME ``ContractGateResult`` JSON event shape the
+    fallback path (``_mode_run_suite``) already emits, PLUS the additive
+    ``routed_via_registered_adapter: true`` field (feature-delta ``[REF] Open
+    questions`` resolution) -- additive, back-compatible with every existing
+    consumer. ``pytest_exit_code`` is the SAME verbatim ``_run_contract_suite``
+    invocation the fallback path runs (DDD-U3 wraps-verbatim, byte-identical
+    parity with the unregistered leg on the SAME target); ``passed`` is the
+    registered facet's OWN verdict (the adapter's real pytest run against the
+    target's own suite, independent of nWave-dev's dogfood marker scope).
+    """
+    seed_runner_registry()
+    resolution = resolve_runner(repo, None)
+    if isinstance(resolution, RunnerAdapter):
+        tool_name = resolution.name
+    elif isinstance(resolution, UnrecognizedRunner):
+        tool_name = _PYTEST_RUNNER
+    else:
+        return None
+    facet = GLOBAL_REGISTRY.lookup_contract_gate(tool_name)
+    if facet is None:
+        return None
+    verdict = facet.run_suite(repo)
+    pytest_exit_code = _run_contract_suite(repo)
+    event_payload = json.dumps(
+        {
+            "event": "ContractGateResult",
+            "passed": verdict.passed,
+            "pytest_exit_code": pytest_exit_code,
+            "gate_scope_digest": None,
+            "routed_via_registered_adapter": True,
+        }
+    )
+    print(event_payload)
+    print(event_payload, file=sys.stderr)
+    return 0 if verdict.passed else 1
 
 
 def _emit_whole_tree_resolved(

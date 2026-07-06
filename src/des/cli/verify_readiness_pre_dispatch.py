@@ -51,9 +51,16 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+from des.adapters.driven.config.des_config import DESConfig
 from des.cli.axis_b_levers import (
     LayoutRoots,
+    LeverResult,
     check_contract_per_port,
     check_integration_per_adapter,
     check_non_ws_spawn,
@@ -72,6 +79,20 @@ from des.cli.validate_feature_delta import (
     validate_reuse_analysis_content,
     validate_sustainability_content,
 )
+from des.domain.lane_profile import LANE_PROFILES, LaneProfile
+
+
+def _lane_profile_for(lane_name: str | None) -> LaneProfile | None:
+    """Live LANE_PROFILES lookup (slice-02) -- never a hardcoded branch.
+
+    Returns the datum entry for ``lane_name`` when it is a recognized lane
+    (e.g. ``"prefactoring"``), else ``None``. ``None``/unrecognized lane names
+    fall through to the full 7-invariant default path in ``main`` -- the
+    exemption must never leak to an ordinary dispatch.
+    """
+    if lane_name is None:
+        return None
+    return LANE_PROFILES.get(lane_name)
 
 
 # --- Invariant identifiers (mirrors test domain_types.FirstDispatchInvariantId) ---
@@ -109,6 +130,13 @@ _BUGFIX_LANE_SKIPPED: tuple[str, ...] = (
     _INV_REUSE_FIRST,
     _INV_SUSTAINABILITY,
 )
+
+# Evidence-floor invariant (NEGATIVE-2, nw-user-examiner Vera FAIL seal 6d182a2a):
+# the bugfix lane lightens ceremony, it never removes the evidence floor. ADDED
+# (not folded into `_BUGFIX_LANE_SKIPPED`/`_KEPT_TWO` -- ADD-not-mutate) as a
+# third check, run ONLY once the 2 mechanical guards clear (a dispatch already
+# refused by those guards gets no further diagnostic noise).
+_INV_BUGFIX_EVIDENCE_FLOOR = "bugfix_lane_evidence_floor"
 
 _SLICE_PLAN_HEADING = "## Wave: DISCUSS / [REF] Slice Plan"
 
@@ -275,23 +303,15 @@ def _collect_untagged_scenarios(feature_files: list[Path]) -> list[str]:
     return untagged
 
 
-def _check_at_review_verdict(
+def _at_review_verdict_recorded(
     repo_root: Path, feature_id: str, slice_id: str
-) -> _InvariantResult:
-    """Invariant 3: ATReviewVerdict ledger record exists for the entering slice.
-
-    Reads `.nwave/telemetry/atdd-pure/{feature_id}.jsonl` and looks for a
-    record with `event == "ATReviewVerdict"` AND `slice_id == <slice_id>` AND
-    `verdict == "APPROVED"`. Missing file, missing record, or REJECTED
-    verdict all fail the invariant.
-    """
+) -> bool:
+    """True iff an ``ATReviewVerdict APPROVED`` record for the entering slice
+    exists in ``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``. Missing file,
+    missing record, or a REJECTED verdict all return False."""
     ledger = repo_root / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
     if not ledger.is_file():
-        return _InvariantResult(
-            invariant_id=_INV_AT_VERDICT,
-            satisfied=False,
-            remediation=_REMEDIATIONS[_INV_AT_VERDICT],
-        )
+        return False
     for line in ledger.read_text().splitlines():
         if not line.strip():
             continue
@@ -304,7 +324,37 @@ def _check_at_review_verdict(
             and record.get("slice_id") == slice_id
             and record.get("verdict") == "APPROVED"
         ):
-            return _InvariantResult(invariant_id=_INV_AT_VERDICT, satisfied=True)
+            return True
+    return False
+
+
+def _human_authorization_required(repo_root: Path) -> bool:
+    """Read the ``rigor.human_authorization`` axis (velocity-v2, default OFF).
+
+    Off by default: EXAMINE provides the outcome-independence and the carpaccio
+    mechanical-seal + AT-completeness check cover the AT attestation, so the
+    two-party human GO is an opt-in compliance layer, not the baseline.
+    """
+    return DESConfig(cwd=repo_root).rigor_human_authorization
+
+
+def _check_at_review_verdict(
+    repo_root: Path, feature_id: str, slice_id: str
+) -> _InvariantResult:
+    """Invariant 3: AT-review attestation for the entering slice.
+
+    A recorded ``ATReviewVerdict APPROVED`` always satisfies it. When ABSENT,
+    whether the invariant BLOCKS depends on the ``rigor.human_authorization`` axis
+    (velocity-v2, Ale 2026-07-04): OFF (default) -> advisory (satisfied) -- the
+    carpaccio mechanical-seal + AT-completeness check attest the AT at the same
+    dispatch.pre and EXAMINE provides the outcome-independence downstream, so the
+    two-party human GO is opt-in compliance only (this closes the beta-tester
+    "asked several times per slice" grind); ON (regulated) -> hard-require the GO.
+    """
+    if _at_review_verdict_recorded(repo_root, feature_id, slice_id):
+        return _InvariantResult(invariant_id=_INV_AT_VERDICT, satisfied=True)
+    if not _human_authorization_required(repo_root):
+        return _InvariantResult(invariant_id=_INV_AT_VERDICT, satisfied=True)
     return _InvariantResult(
         invariant_id=_INV_AT_VERDICT,
         satisfied=False,
@@ -519,7 +569,7 @@ def _check_sustainability(repo_root: Path, feature_id: str) -> _InvariantResult:
 # --- AXIS-B enforcement levers (at-in-process-port-default slice-03) --------
 
 
-def _lever_to_invariant(lever) -> _InvariantResult:
+def _lever_to_invariant(lever: LeverResult) -> _InvariantResult:
     """Translate a shared ``LeverResult`` into a readiness ``_InvariantResult``.
 
     A flagged lever is a FAILED invariant carrying its remediation + (for the
@@ -581,6 +631,48 @@ def _lane_justification_names_defect_and_test(justification: str) -> bool:
     )
 
 
+def _has_red_green_seal(repo_root: Path) -> bool:
+    """True iff at least one RED->GREEN mechanical-seal JSON is on record under
+    ``.nwave/telemetry/red-green/`` (written by ``des verify-red-green
+    --record-red``)."""
+    seal_dir = repo_root / ".nwave" / "telemetry" / "red-green"
+    return seal_dir.is_dir() and any(seal_dir.glob("*.json"))
+
+
+def _has_expectation_charter(repo_root: Path, feature_id: str) -> bool:
+    """True iff an expectation charter is authored for the feature under
+    ``docs/product/expectations/{feature_id}/``."""
+    charter_dir = repo_root / "docs" / "product" / "expectations" / feature_id
+    return charter_dir.is_dir() and any(charter_dir.glob("*.md"))
+
+
+def _check_bugfix_lane_evidence_floor(
+    repo_root: Path, feature_id: str
+) -> _InvariantResult:
+    """Evidence-floor invariant (NEGATIVE-2, Vera FAIL seal 6d182a2a): the
+    charter's NEGATIVE requirement is "the mechanical seal is still required --
+    a slice with NO RED evidence and NO expectation still CANNOT close (we
+    lighten ceremony, we do not remove the evidence floor)." Satisfied by
+    EITHER a recorded RED->GREEN mechanical seal OR an expectation charter --
+    absent both, the lane fails closed.
+    """
+    if _has_red_green_seal(repo_root) or _has_expectation_charter(
+        repo_root, feature_id
+    ):
+        return _InvariantResult(invariant_id=_INV_BUGFIX_EVIDENCE_FLOOR, satisfied=True)
+    return _InvariantResult(
+        invariant_id=_INV_BUGFIX_EVIDENCE_FLOOR,
+        satisfied=False,
+        remediation=(
+            "the bugfix lane lightens ceremony but keeps the evidence floor: "
+            "record a RED->GREEN mechanical seal (`des verify-red-green "
+            "--record-red`, written to `.nwave/telemetry/red-green/*.json`) OR "
+            f"author an expectation charter under "
+            f"docs/product/expectations/{feature_id}/ before this dispatch can clear"
+        ),
+    )
+
+
 def _run_bugfix_lane(
     repo_root: Path, feature_id: str, slice_id: str, justification: str
 ) -> _ReadinessReport:
@@ -590,7 +682,9 @@ def _run_bugfix_lane(
     fail-closed: a single named anti-abuse invariant, none of the feature-
     readiness checks run. Valid justification -> run ONLY the 2 mechanical
     guards, SKIP the 5 feature-readiness invariants, and attach the LOUD lane
-    audit record naming the skip.
+    audit record naming the skip. Once the 2 mechanical guards clear, the
+    evidence-floor invariant additionally fires (NEGATIVE-2): a dispatch
+    already refused by the mechanical guards gets no further diagnostic noise.
     """
     report = _ReadinessReport(feature_id=feature_id, slice_id=slice_id)
     if not _lane_justification_names_defect_and_test(justification):
@@ -613,6 +707,57 @@ def _run_bugfix_lane(
         "lane": _BUGFIX_LANE,
         "justification": justification,
         "skipped": list(_BUGFIX_LANE_SKIPPED),
+    }
+    if all(r.satisfied for r in report.invariants):
+        report.invariants.append(
+            _check_bugfix_lane_evidence_floor(repo_root, feature_id)
+        )
+    return report
+
+
+# --- LANE_PROFILES-driven lane logic (slice-02, ADD-not-mutate sibling of the
+# bugfix lane above) --------------------------------------------------------
+
+
+def _run_lane_profile(
+    repo_root: Path,
+    feature_id: str,
+    slice_id: str,
+    workspace: Path,
+    profile: LaneProfile,
+) -> _ReadinessReport:
+    """Build the readiness report for a ``--lane`` value recognized by the
+    LIVE ``LANE_PROFILES`` datum (slice-02).
+
+    Runs ONLY the invariants NOT named in ``profile.skipped_invariants`` --
+    read from the datum at call time, never a hardcoded skip-set -- and
+    attaches a LOUD, durable ``lane`` audit record naming the lane id, the
+    skipped invariants, and the datum's declared ``guard_kind`` (mirrors the
+    bugfix lane's own audit record shape, one level up).
+    """
+    checks: dict[str, Callable[[], _InvariantResult]] = {
+        _INV_SLICE_PLAN: lambda: _check_slice_plan_section(workspace),
+        _INV_SCENARIO_TAGS: lambda: _check_scenario_slice_tags(repo_root, feature_id),
+        _INV_AT_VERDICT: lambda: _check_at_review_verdict(
+            repo_root, feature_id, slice_id
+        ),
+        _INV_GATE_OUTPUT: lambda: _check_gate_output_produceable(repo_root),
+        _INV_PRE_COMMIT: lambda: _check_pre_commit_scope(repo_root, feature_id),
+        _INV_REUSE_FIRST: lambda: _check_reuse_first_or_design_skip(
+            repo_root, feature_id
+        ),
+        _INV_SUSTAINABILITY: lambda: _check_sustainability(repo_root, feature_id),
+    }
+    skipped = set(profile.skipped_invariants)
+    report = _ReadinessReport(feature_id=feature_id, slice_id=slice_id)
+    for invariant_id in _ALL_INVARIANTS:
+        if invariant_id in skipped:
+            continue
+        report.invariants.append(checks[invariant_id]())
+    report.lane = {
+        "lane": profile.lane_id,
+        "skipped": list(profile.skipped_invariants),
+        "guard_kind": profile.guard_kind.value,
     }
     return report
 
@@ -723,6 +868,7 @@ def _emit_report(report: _ReadinessReport) -> None:
             {
                 "id": inv.invariant_id,
                 "status": "satisfied" if inv.satisfied else "failed",
+                "satisfied": inv.satisfied,
                 "remediation": inv.remediation,
                 "confidence": inv.confidence,
             }
@@ -764,12 +910,27 @@ def main(argv: list[str] | None = None) -> int:
     slice_id = args.slice_id
     workspace = repo_root / "docs" / "feature" / feature_id
 
-    if getattr(args, "lane", None) == _BUGFIX_LANE:
+    lane_name = getattr(args, "lane", None)
+
+    if lane_name == _BUGFIX_LANE:
         # RC4-b: a declared bugfix lane skips the heavy feature-readiness
         # ceremony (gated by a strict anti-abuse justification). The default
         # 7-invariant path below stays byte-identical (ADD-not-mutate).
         report = _run_bugfix_lane(
             repo_root, feature_id, slice_id, args.lane_justification
+        )
+        _emit_report(report)
+        return 0 if report.verdict == "cleared" else 1
+
+    lane_profile = _lane_profile_for(lane_name)
+    if lane_profile is not None:
+        # slice-02: a `--lane` value recognized by the LIVE LANE_PROFILES
+        # datum (e.g. `prefactoring`) skips exactly the invariants the datum
+        # names, sibling of the bugfix branch above (ADD-not-mutate). An
+        # unrecognized/absent lane falls through to the full 7-invariant
+        # default path below -- the exemption never leaks.
+        report = _run_lane_profile(
+            repo_root, feature_id, slice_id, workspace, lane_profile
         )
         _emit_report(report)
         return 0 if report.verdict == "cleared" else 1

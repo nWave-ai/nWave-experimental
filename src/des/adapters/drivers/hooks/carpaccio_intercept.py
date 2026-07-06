@@ -712,6 +712,32 @@ def _gate_invoker_for(
         if verdict == "valid":
             return _bootstrap_exempt(gate_id, bootstrap_markers, context)
 
+        # RC4-b bugfix lane (charter: readiness-gate-lightweight for small
+        # slices): a declared `DES-LANE: bugfix` skips the carpaccio Slice-Plan
+        # CEREMONY gate. A single-slice bugfix has NO feature-delta, so the
+        # carpaccio-slice-gate's `## ... Slice Plan` requirement is structurally
+        # unsatisfiable (SlicePlanSectionMissing) -- disproportionate ceremony
+        # for a one-defect fix. The verify-readiness-pre-dispatch bugfix lane
+        # (run as its own composed gate) remains the lane's VALIDITY guard: it
+        # REFUSES a vacuous justification and enforces the 2 mechanical safety
+        # guards, so an invalid lane is still blocked there. The AT-completeness
+        # BACKSTOP gate is NOT skipped -- the mechanical quality floor stays.
+        lane, _lane_just = _parse_lane_from_prompt(context.get("prompt", ""))
+        if lane == "bugfix" and gate_id == _CARPACCIO_SLICE_GATE_ID:
+            return 0, json.dumps(
+                {
+                    "event": "BugfixLaneCarpaccioSkipped",
+                    "gate_id": gate_id,
+                    "lane": "bugfix",
+                    "reason": (
+                        "DES-LANE: bugfix skips the carpaccio Slice-Plan ceremony "
+                        "(no feature-delta on a single-slice bugfix); "
+                        "verify-readiness-pre-dispatch validates the lane + "
+                        "enforces the mechanical guards."
+                    ),
+                }
+            )
+
         # The wave-dispatch guard reads its OWN context keys (subagent_type +
         # prompt), distinct from the (feature_id, slice_id) gates.
         if (
@@ -1124,6 +1150,21 @@ def intercept_atdd_pure_dispatch(
         )
 
 
+# FR-7 (discoverability): when a gate refuses a dispatch for a MISSING
+# feature-delta ceremony (SlicePlanSectionMissing / the feature-readiness
+# invariants), the human-facing reason must SURFACE the bugfix-lane escape + its
+# exact marker format -- so a single-slice bugfix does not thrash through the
+# gate cascade discovering the lane by reading source (as happened during
+# charter #1's own dogfood).
+_BUGFIX_LANE_HINT = (
+    " | If this is a SINGLE-SLICE BUGFIX (no feature-delta / Slice Plan by"
+    " design), skip this feature-readiness ceremony by re-dispatching with the"
+    " marker pair `<!-- DES-LANE: bugfix -->` + `<!-- DES-LANE-JUSTIFICATION:"
+    " <names the defect + the regression test test_...> -->`. The mechanical"
+    " RED->GREEN safety guard still applies."
+)
+
+
 def _carpaccio_reason(stdout: str) -> str:
     """Extract a human-readable reason from the carpaccio CLI JSON output."""
     try:
@@ -1131,7 +1172,10 @@ def _carpaccio_reason(stdout: str) -> str:
     except (json.JSONDecodeError, ValueError):
         return stdout.strip() or "no gate output"
     if isinstance(payload, dict):
-        return str(payload.get("event") or payload.get("error") or stdout.strip())
+        reason = str(payload.get("event") or payload.get("error") or stdout.strip())
+        if payload.get("event") == "SlicePlanSectionMissing":
+            reason += _BUGFIX_LANE_HINT
+        return reason
     return stdout.strip() or "no gate output"
 
 
@@ -1175,6 +1219,17 @@ def _readiness_reason(stdout: str) -> str:
         remediation = inv.get("remediation")
         how = str(remediation).strip() if remediation else "(no remediation provided)"
         lines.append(f"  - {inv_id}: {how}")
+    # FR-7: when the failures are the feature-delta ceremony invariants, surface
+    # the bugfix-lane escape -- a single-slice bugfix has no feature-delta by
+    # design and should not have to discover the lane by reading source.
+    failed_ids = {str(inv.get("id")) for inv in failed}
+    if failed_ids & {
+        "slice_plan_section",
+        "reuse_first_or_design_skip",
+        "sustainability",
+        "at_review_verdict",
+    }:
+        lines.append(_BUGFIX_LANE_HINT.strip())
     return "\n".join(lines)
 
 

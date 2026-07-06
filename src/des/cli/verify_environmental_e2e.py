@@ -44,6 +44,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from xml.etree import ElementTree
 
+from des.adapters.driven.runner.runner_registry import (
+    GLOBAL_REGISTRY,
+    seed_runner_registry,
+)
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.environmental_e2e import (
     GateExit,
@@ -57,6 +61,8 @@ from des.domain.environmental_e2e import (
     serialize_results_record,
     write_deferral_marker,
 )
+from des.ports.test_runner_port import RunnerAdapter
+from des.ports.test_runner_port import resolve as resolve_runner
 from des.runtime.interpreter import des_spawn, python_for
 
 
@@ -64,6 +70,41 @@ _CLI_VERSION = "1.0.0"
 
 _E2E_BLOCK_HEADER_RE = re.compile(r"^##\s+Environmental\s+E2E\s*$", re.MULTILINE)
 _E2E_TEST_LINE_RE = re.compile(r"^\s*-\s*test:\s*(?P<path>\S+)\s*$", re.MULTILINE)
+
+
+def _maybe_route_through_registered_e2e_adapter(
+    repo: Path, e2e_abs: Path
+) -> int | None:
+    """Route through a REGISTERED ``environmental_e2e`` facet; else ``None``.
+
+    unified-language-adapter-registry slice-01 (ADR-ULAR-001 prefactoring, C6):
+    sprout-and-fall-through seam mirroring ``run_contract_gate.py``'s
+    ``_maybe_route_through_cargo`` shape -- seed the registry, RESOLVE the
+    target's runner, and look up an ``EnvironmentalE2EPort`` facet under the
+    resolved TOOL-NAME (never ``target_language``, DDD-U5). Returns ``None``
+    when no facet is registered for the resolved tool-name (the case for
+    EVERY target until a later slice's plugin registers one), so the caller
+    falls through to the EXISTING build/install/run path UNCHANGED. This file
+    imported no runner-resolution mechanism before this seam (Tsunami
+    re-verified, 0 prior call sites) -- this is 1 NEW call site of the
+    EXISTING ``resolve()`` function, not a new resolution component.
+    """
+    seed_runner_registry()
+    resolution = resolve_runner(repo, None)
+    if not isinstance(resolution, RunnerAdapter):
+        return None
+    facet = GLOBAL_REGISTRY.lookup_environmental_e2e(resolution.name)
+    if facet is None:
+        return None
+    with tempfile.TemporaryDirectory(prefix="env-e2e-registered-") as work_dir_str:
+        work_dir = Path(work_dir_str)
+        artifact = facet.build(repo)
+        prefix = _resolve_clean_prefix(None)
+        facet.install(artifact, prefix)
+        junit_path = work_dir / "junit.xml"
+        facet.run_against_installed(e2e_abs, prefix, junit_path, work_dir)
+        verdict, _collected = _verdict_from_junit(junit_path, [])
+    return 0 if verdict is GateVerdict.PASS else 1
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -445,6 +486,12 @@ def _run_mode(args: argparse.Namespace) -> int:
 
     source_tree = _resolve_source_tree(args)
     e2e_abs = (source_tree / e2e_rel).resolve()
+
+    routed_registered = _maybe_route_through_registered_e2e_adapter(
+        source_tree, e2e_abs
+    )
+    if routed_registered is not None:
+        return routed_registered
 
     with tempfile.TemporaryDirectory(prefix="env-e2e-build-") as build_outdir_str:
         build_outdir = Path(build_outdir_str)

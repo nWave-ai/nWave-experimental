@@ -122,6 +122,7 @@ class ReuseTableShape(str, Enum):
     UN_NORMALISABLE_DECISION = "un_normalisable_decision"
     CREATE_NEW_EMPTY_JUSTIFICATION = "create_new_empty_justification"
     CREATE_NEW_SPACE_SPELLING = "create_new_space_spelling"
+    CREATE_NEW_PARENTHETICAL_QUALIFIER = "create_new_parenthetical_qualifier"
     METHODOLOGY_EXEMPT_MARKER = "methodology_exempt_marker"
     NO_OVERLAP_MARKER = "no_overlap_marker"
     DUPLICATE_HEADING = "duplicate_heading"
@@ -143,6 +144,9 @@ REUSE_TABLE_SHAPE_BY_PHRASE: dict[str, ReuseTableShape] = {
     ),
     "a CREATE NEW row spelled with a space": (
         ReuseTableShape.CREATE_NEW_SPACE_SPELLING
+    ),
+    "a CREATE_NEW row with a trailing parenthetical qualifier": (
+        ReuseTableShape.CREATE_NEW_PARENTHETICAL_QUALIFIER
     ),
     "a methodology-exempt marker": ReuseTableShape.METHODOLOGY_EXEMPT_MARKER,
     "a no-overlap marker": ReuseTableShape.NO_OVERLAP_MARKER,

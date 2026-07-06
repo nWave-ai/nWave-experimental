@@ -26,6 +26,7 @@ from des.domain.atdd_pure_phases import FEATURE_END_RETURN_PHASE
 from des.domain.design_context_content_check import (
     design_context_carries_architecture,
 )
+from des.domain.lane_profile import LANE_PROFILES
 from des.ports.driver_ports.validator_port import ValidationResult, ValidatorPort
 
 
@@ -94,6 +95,13 @@ _REVIEW_PROFILE_SECTIONS: tuple[str, ...] = tuple(
 # function with no I/O.
 _DES_PHASE_MARKER = re.compile(r"<!--\s*DES-PHASE\s*:\s*(\S+)\s*-->")
 
+# Raw DES-LANE marker (first match). A dispatch may declare a non-slice lane
+# (``prefactoring`` today) whose ceremony profile is read from the LANE_PROFILES
+# datum — the section validator CONSULTS the datum, it never hardcodes a lane
+# branch, so substituting the datum substitutes the decision (the AT-2 structural
+# guarantee).
+_DES_LANE_MARKER = re.compile(r"<!--\s*DES-LANE\s*:\s*(\S+)\s*-->")
+
 
 def _required_sections(prompt: str) -> tuple[str, ...]:
     """Select the required-section profile for ``prompt`` by its dispatch role.
@@ -101,13 +109,21 @@ def _required_sections(prompt: str) -> tuple[str, ...]:
     Reads the RAW ``<!-- DES-PHASE : X -->`` marker (first match, un-normalised):
       * a REVIEW phase (``C_REVIEWER_AUDIT`` / the feature-end review return
         phase ``F_FINAL_REVIEW``) → the 7-section light REVIEW profile;
-      * any other phase, OR NO marker at all → the full 12 (fail-closed default:
-        an unclassified dispatch is treated as implementation, never silently
-        downgraded to the light profile).
+      * else a recognized ``<!-- DES-LANE : X -->`` whose entry EXISTS in the
+        LANE_PROFILES datum → that lane's ``required_sections`` (a datum lookup,
+        never a hardcoded lane branch);
+      * any other phase/lane, OR NO marker at all → the full 12 (fail-closed
+        default: an unclassified or unknown-lane dispatch is treated as
+        implementation, never silently downgraded to a lighter profile).
     """
     match = _DES_PHASE_MARKER.search(prompt)
     if match is not None and match.group(1) in _REVIEW_DISPATCH_PHASES:
         return _REVIEW_PROFILE_SECTIONS
+    lane_match = _DES_LANE_MARKER.search(prompt)
+    if lane_match is not None:
+        profile = LANE_PROFILES.get(lane_match.group(1))
+        if profile is not None:
+            return profile.required_sections
     return ATDD_PURE_MANDATORY_SECTIONS
 
 

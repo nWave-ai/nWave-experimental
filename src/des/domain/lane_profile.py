@@ -1,0 +1,85 @@
+"""LaneProfile -- queryable lane-definition datum (RED scaffold, slice-01).
+
+DISTILL scaffold for feature `f-prefactoring-dispatch-clears-honestly`
+(epic `non-slice-dispatch-exemption-model`, row 1 keystone). Real shape per
+`docs/feature/f-prefactoring-dispatch-clears-honestly/feature-delta.md`
+(`Wave: DESIGN / [REF] LANE_PROFILES Datum Shape`). DELIVER populates the
+`"prefactoring"` entry with the exact fields the DESIGN table names; this
+scaffold defines the enums + frozen dataclass shape and an EMPTY registry so
+slice-01's ATs fail with ``AssertionError`` (impl missing), never
+``ImportError`` (Mandate 7 -- RED-not-BROKEN).
+
+Pure, stdlib-only (`dataclasses`, `enum`) -- zero I/O, zero upward dependency
+(D1: domain must not import the application/cli layers that consult this
+datum).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+
+class GuardKind(Enum):
+    """The mechanical guard a lane's dispatch is verified against."""
+
+    RED_TO_GREEN = "RED_TO_GREEN"  # bugfix lane shape (epic row 3, not populated here)
+    GREEN_TO_GREEN = "GREEN_TO_GREEN"  # prefactoring: suite green before AND after
+    NONE = "NONE"
+
+
+class AtRequirement(Enum):
+    """Whether a lane's dispatch is required to own at least one AT."""
+
+    EXEMPT = "EXEMPT"
+    REQUIRED = "REQUIRED"
+
+
+@dataclass(frozen=True)
+class LaneProfile:
+    """One row of the queryable lane-definition datum every consulting locus reads."""
+
+    lane_id: str
+    required_sections: tuple[str, ...]
+    guard_kind: GuardKind
+    feature_readiness: bool
+    at_requirement: AtRequirement
+    skipped_invariants: tuple[str, ...]
+    annotation_token: str
+
+
+# The queryable lane-definition datum. slice-01 (keystone) populates exactly ONE
+# lane -- ``prefactoring`` -- with its ceremony profile; the section validator
+# CONSULTS this datum (it never hand-branches ``if lane == "prefactoring"``).
+# ``required_sections`` is a LITERAL tuple (D2: the domain must not import the
+# application-layer ATDD_PURE_MANDATORY_SECTIONS to derive it) = the full 12 MINUS
+# the 2 AT-recording sections a behavior-preserving prefactoring never writes
+# (AT_COMPLETION_LEDGER, RECORDING_INTEGRITY), in the same order as the full set.
+LANE_PROFILES: dict[str, LaneProfile] = {
+    "prefactoring": LaneProfile(
+        lane_id="prefactoring",
+        required_sections=(
+            "DES_METADATA",
+            "AGENT_IDENTITY",
+            "SKILL_LOADING",
+            "TASK_CONTEXT",
+            "DESIGN_CONTEXT",
+            "ATDD_PURE_PHASES",
+            "QUALITY_GATES",
+            "BOUNDARY_RULES",
+            "TERMINATING_RUN",
+            "TIMEOUT_INSTRUCTION",
+        ),
+        guard_kind=GuardKind.GREEN_TO_GREEN,
+        feature_readiness=False,
+        at_requirement=AtRequirement.EXEMPT,
+        skipped_invariants=(
+            "slice_plan_section",
+            "scenario_slice_tags",
+            "at_review_verdict",
+            "reuse_first_or_design_skip",
+            "sustainability",
+        ),
+        annotation_token="prefactoring",
+    ),
+}
