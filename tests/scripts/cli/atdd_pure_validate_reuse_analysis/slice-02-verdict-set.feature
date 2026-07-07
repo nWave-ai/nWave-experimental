@@ -39,6 +39,18 @@ Feature: The Reuse Analysis gate classifies every verdict in its closed set
     Then the Reuse Analysis is rejected for an unjustified CREATE_NEW
     And the check leaves the feature-delta unchanged
 
+  # F-fix-reuse-analysis-content-grounding (WS-9) regression lock: a
+  # structurally well-formed row is still rejected when its `Existing
+  # Component | File` citation is a phantom -- it does not resolve through
+  # the CodeFactPort chain. Catches a table that "looks right" but names a
+  # component that does not exist.
+  @slice-02 @error @driving_port @contract-shape:pure-function
+  Scenario: A component row citing a phantom component is rejected as ungrounded
+    Given the feature-delta carries a component row citing a phantom component absent from its file
+    When the architect runs the Reuse Analysis check on the feature-delta
+    Then the Reuse Analysis is rejected for an ungrounded reuse analysis
+    And the check leaves the feature-delta unchanged
+
   @slice-02 @driving_port @contract-shape:pure-function
   Scenario Outline: A feature-delta reaches its accepted verdict
     Given the feature-delta carries <reuse section>

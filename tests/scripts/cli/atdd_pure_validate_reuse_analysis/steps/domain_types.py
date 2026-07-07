@@ -67,6 +67,13 @@ class ReuseVerdict(str, Enum):
     MALFORMED_WAVE_HEADING -- token ``malformed-wave-heading``: a ``## Wave:``
                               heading violates the [REF|WHY|HOW] schema (the
                               pre-existing check, still enforced).
+    UNGROUNDED_REUSE_ANALYSIS -- token ``ungrounded-reuse-analysis``
+                              (F-fix-reuse-analysis-content-grounding, WS-9):
+                              a row's ``Existing Component | File`` citation
+                              does NOT resolve through the CodeFactPort chain
+                              -- a phantom citation. Catches a table that is
+                              structurally well formed but names a component
+                              that does not exist.
 
     UNRECOGNISED_INVOCATION -- NO structured ``verdict`` token in stdout: the
                               CLI did not produce JSON. On master the
@@ -82,6 +89,7 @@ class ReuseVerdict(str, Enum):
     MALFORMED_REUSE_ANALYSIS = "malformed_reuse_analysis"
     UNJUSTIFIED_CREATE_NEW = "unjustified_create_new"
     MALFORMED_WAVE_HEADING = "malformed_wave_heading"
+    UNGROUNDED_REUSE_ANALYSIS = "ungrounded_reuse_analysis"
     UNRECOGNISED_INVOCATION = "unrecognised_invocation"
 
 
@@ -114,6 +122,11 @@ class ReuseTableShape(str, Enum):
                           under the heading (DDD-9).
     DUPLICATE_HEADING  -- two ``## Reuse Analysis`` headings -- the second
                           occurrence is malformed (DDD-11).
+    PHANTOM_COMPONENT_CITATION -- an otherwise well-formed row whose
+                          ``Existing Component`` names a symbol that does NOT
+                          exist in the cited ``File`` -- the phantom citation
+                          content-grounding (WS-9,
+                          F-fix-reuse-analysis-content-grounding) catches.
     """
 
     WELL_FORMED = "well_formed"
@@ -126,6 +139,7 @@ class ReuseTableShape(str, Enum):
     METHODOLOGY_EXEMPT_MARKER = "methodology_exempt_marker"
     NO_OVERLAP_MARKER = "no_overlap_marker"
     DUPLICATE_HEADING = "duplicate_heading"
+    PHANTOM_COMPONENT_CITATION = "phantom_component_citation"
 
 
 # Gherkin-phrase -> typed-value lookups. Module-level dicts keep each step body
@@ -151,6 +165,9 @@ REUSE_TABLE_SHAPE_BY_PHRASE: dict[str, ReuseTableShape] = {
     "a methodology-exempt marker": ReuseTableShape.METHODOLOGY_EXEMPT_MARKER,
     "a no-overlap marker": ReuseTableShape.NO_OVERLAP_MARKER,
     "a duplicate Reuse Analysis heading": ReuseTableShape.DUPLICATE_HEADING,
+    "a component row citing a phantom component absent from its file": (
+        ReuseTableShape.PHANTOM_COMPONENT_CITATION
+    ),
 }
 
 VERDICT_BY_PHRASE: dict[str, ReuseVerdict] = {
@@ -160,6 +177,9 @@ VERDICT_BY_PHRASE: dict[str, ReuseVerdict] = {
     "rejected for a missing Reuse Analysis": ReuseVerdict.MISSING_REUSE_ANALYSIS,
     "rejected for a malformed Reuse Analysis": (ReuseVerdict.MALFORMED_REUSE_ANALYSIS),
     "rejected for an unjustified CREATE_NEW": ReuseVerdict.UNJUSTIFIED_CREATE_NEW,
+    "rejected for an ungrounded reuse analysis": (
+        ReuseVerdict.UNGROUNDED_REUSE_ANALYSIS
+    ),
 }
 
 CHECK_MODE_BY_PHRASE: dict[str, CheckMode] = {

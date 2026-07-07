@@ -1,0 +1,125 @@
+# Dispatch SSOT — atdd_pure mode.
+#
+# THE single source for "what an atdd_pure dispatch must contain". Consumed by:
+#   - `des dispatch`               (RENDERS a dispatch from this)
+#   - atdd_pure_prompt_validator   (CHECKS a dispatch against this — via the
+#                                   LANE_PROFILES projection, drift-checked)
+#   - skills nw-execute/nw-deliver (POINT here via dispatch-ref; no inline template)
+#
+# Generator and checker share ONE source → they cannot drift. The operator supplies
+# only the fuzzy fills ({intent}, task specifics); the SYSTEM produces the checked
+# artifact (system-pays principle, 2026-07-06).
+#
+# Design: docs/feature/des-dispatch-ssot-renderer/design/dispatch-ssot-design.md
+# Vendor rendering (marker syntax / command form / paths): nWave/dispatch/vendors.yaml
+version: 1
+mode: atdd_pure
+
+# The DES-* marker set, in emission order. `value` = literal; `placeholder` = filled.
+markers:
+  - {key: "DES-VALIDATION", value: "required"}
+  - {key: "DES-PROJECT-ID", placeholder: "{feature_id}"}
+  - {key: "DES-MODE", value: "atdd_pure"}
+  - {key: "DES-PHASE", placeholder: "{phase}"}
+  - {key: "DES-SLICE", placeholder: "{slice}"}
+  - {key: "DES-WAVE", value: "deliver"}
+  # lane dispatches additionally emit (appended by the lane profile, see `profiles.lane`):
+  #   DES-LANE + DES-LANE-JUSTIFICATION (when the lane sets requires: [lane_justification])
+
+# The canonical ordered section set + each section's scaffold template.
+# Placeholders: {feature_id} {slice} {phase} {agent} {command} {lane_title} {intent}
+# {task_context} {design_context} {boundary} — filled by the renderer.
+sections:
+  - id: DES_METADATA
+    template: |
+      Slice: {slice}
+      Feature: {feature_id}
+      Phase: {phase}
+      Command: {command}
+  - id: AGENT_IDENTITY
+    template: |
+      Agent: {agent}
+  - id: SKILL_LOADING
+    template: |
+      Before starting, read your skill files for methodology guidance.
+      Skills path: ~/.claude/skills/nw-{skill-name}/SKILL.md
+      Always load at phase entry: nw-tdd-methodology, nw-quality-framework.
+      In atdd_pure mode also load nw-crafter-discipline-atdd-pure at phase entry.
+      Resolve structural facts via mcp__tsunami__* (callers_of / reads_of), never ad-hoc grep.
+  - id: TASK_CONTEXT
+    template: |
+      {task_context}
+  - id: DESIGN_CONTEXT
+    template: |
+      {design_context}
+  - id: ATDD_PURE_PHASES
+    template: |
+      atdd_pure per-slice cycle (ADR-028 D6). This dispatch executes the phase named in
+      the DES-PHASE marker.
+      - A_GREEN: activate the slice's DISTILL-authored ATs and implement the MINIMUM
+        production code that turns them GREEN. Do NOT author tests. No defensive code
+        beyond AT-driven need.
+      - {intent}
+  - id: QUALITY_GATES
+    template: |
+      - All the slice's ATs pass before commit (RAW summary, -n0; check `uptime`, pause if load>10).
+      - No new tests authored by the crafter (DISTILL owns AT authorship).
+      - Coverage maintained or improved.
+      - src/des/** must NOT import scripts.* (F-D-09). ruff + mypy clean on touched files.
+  - id: AT_COMPLETION_LEDGER
+    template: |
+      atdd_pure records phase outcomes to the AT-completion ledger
+      (.nwave/telemetry/atdd-pure/{feature_id}.jsonl) — the crafter does not hand-write it.
+      Do NOT commit (the orchestrator drives commit / EXAMINE / feature-end).
+  - id: RECORDING_INTEGRITY
+    template: |
+      Do not fake green. State the RAW pass/fail explicitly. NEVER weaken, skip, or rewrite
+      a DISTILL-authored AT — if one cannot be satisfied, escalate to nw-acceptance-designer,
+      do not edit it.
+  - id: BOUNDARY_RULES
+    template: |
+      {boundary}
+      Stay within the slice's value statement — do NOT implement adjacent slices.
+  - id: TERMINATING_RUN
+    template: |
+      Report: files created/modified (paths); RAW pass/fail of the slice's ATs; ruff+mypy
+      clean; confirmation of zero test edits.
+  - id: TIMEOUT_INSTRUCTION
+    template: |
+      Target ~30 turns. Machine load-sensitive (`uptime`; pause if load>10). STOP after the
+      ATs are green + non-regression confirmed. Do NOT commit.
+
+# Section-SELECTION profiles. `full` = every section. `review` = full minus the 5
+# implementation-only sections (a read-only review writes no code). `lane.*` rows are
+# the SSOT projected into src/des/domain/lane_profile.py::LANE_PROFILES (drift-checked).
+profiles:
+  full:
+    sections: [DES_METADATA, AGENT_IDENTITY, SKILL_LOADING, TASK_CONTEXT, DESIGN_CONTEXT,
+               ATDD_PURE_PHASES, QUALITY_GATES, AT_COMPLETION_LEDGER, RECORDING_INTEGRITY,
+               BOUNDARY_RULES, TERMINATING_RUN, TIMEOUT_INSTRUCTION]
+  # Applied when DES-PHASE ∈ {C_REVIEWER_AUDIT, F_FINAL_REVIEW}.
+  review:
+    drop_sections: [ATDD_PURE_PHASES, QUALITY_GATES, AT_COMPLETION_LEDGER,
+                    RECORDING_INTEGRITY, TERMINATING_RUN]
+  lane:
+    prefactoring:
+      # behavior-preserving prefactoring never writes AT-recording sections.
+      drop_sections: [AT_COMPLETION_LEDGER, RECORDING_INTEGRITY]
+      guard_kind: GREEN_TO_GREEN
+      at_requirement: EXEMPT
+      feature_readiness: false
+      skipped_invariants: [slice_plan_section, scenario_slice_tags, at_review_verdict,
+                           reuse_first_or_design_skip, sustainability]
+      annotation_token: prefactoring
+      requires: []
+    bugfix:
+      # a bugfix writes code + records ATs → the FULL section set (unchanged from the
+      # previous fall-through-to-full behavior); adds the readiness justification req.
+      drop_sections: []
+      guard_kind: RED_TO_GREEN
+      at_requirement: REQUIRED
+      feature_readiness: true
+      skipped_invariants: []
+      annotation_token: bugfix
+      # names the defect + the regression test test_<name> (readiness gate: bugfix_lane_justification).
+      requires: [lane_justification]

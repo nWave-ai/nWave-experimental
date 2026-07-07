@@ -97,6 +97,7 @@ ALLOWLIST: frozenset[str] = frozenset(
     {
         "src/des/runtime/interpreter.py",
         "src/des/adapters/driven/runner/pytest_runner.py",
+        "src/des/adapters/driven/contract_gate/pytest_contract_gate_adapter.py",
         "src/des/cli/verify_deliver_entry_contract.py",
         "src/des/cli/verify_environmental_e2e.py",
     }
@@ -114,6 +115,14 @@ ALLOWLIST_RATIONALE: dict[str, str] = {
         "only when the TARGET is python via the runner registry; the SINGLE "
         "sanctioned python-interpreter resolution the rerouted gate sites obtain "
         "their interpreter through (never an inline python_for in gate logic)"
+    ),
+    "src/des/adapters/driven/contract_gate/pytest_contract_gate_adapter.py": (
+        "the python CONTRACT-GATE run-facet (PythonContractGateAdapter) -- reached "
+        "ONLY when the TARGET is python via the registered `nwave.lang.adapter` "
+        "seam (a non-python target routes to a DIFFERENT language adapter, e.g. "
+        "vitest, so genericity is preserved by the SEAM, not this adapter); it runs "
+        "the target's own pytest suite, so python_for is the sanctioned interpreter "
+        "here -- the same per-language run-facet category as pytest_runner.py"
     ),
     "src/des/cli/verify_deliver_entry_contract.py": (
         "DES-OWN python (_run_manifest_validator) -- runs nWave's OWN code-design "

@@ -53,14 +53,28 @@ class NormativeClause:
 
 @dataclass(frozen=True)
 class FailingClause:
-    """A clause whose marker is absent from its resolved asset (→ FAIL)."""
+    """A clause whose marker is absent from its resolved asset (→ FAIL).
+
+    Names the skill, clause, the ABSENT marker text, WHY it matters (it is a
+    normative clause the skill must state), a concrete HOW (re-add the marker
+    to the named skill asset, per the cited clause manifest), and the skill
+    asset path to edit — so a FAIL is never silently under-explained.
+    """
 
     skill: str
     clause_id: str
+    marker: str
+    skill_path: str
+    manifest_path: str
 
     def render(self) -> str:
-        """The verdict line naming the failing skill and clause."""
-        return f"{self.skill} — {self.clause_id}"
+        """The verdict line naming skill/clause + absent marker + why + how."""
+        return (
+            f"{self.skill} — {self.clause_id}: marker {self.marker!r} is "
+            f"absent. WHY: this is a normative clause — the skill must state "
+            f"it. HOW: add the marker back to {self.skill_path} (see the "
+            f"clause manifest {self.manifest_path})."
+        )
 
 
 @dataclass(frozen=True)

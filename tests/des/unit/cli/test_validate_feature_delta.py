@@ -11,6 +11,7 @@ from __future__ import annotations
 # subcommand via `python -m des.cli.validate_feature_delta` as its hermetic
 # Layer-3 SUT -- P3-sanctioned per the rescoped single-entry-point migration gate
 # (docs/feature/single-entry-point/feature-delta.md slice-04, AT-07).
+import json
 import os
 import subprocess
 import sys
@@ -471,4 +472,360 @@ class TestCohesionMECC:
         assert result.verdict == VERDICT_ACCEPTED, (
             f"A mixed plan with ≥1 value-bearing row must remain `accepted`; "
             f"got {result.verdict!r}. The MECC veto must only fire on the all-infra case."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Regression: Reuse Analysis content-grounding
+# (F-fix-reuse-analysis-content-grounding, WS-9, 2026-07-07)
+#
+# RCA: `--require-reuse-analysis` validates the Reuse Analysis table's SHAPE
+# only (heading / columns / decision-token, `validate_reuse_analysis_content`
+# above) but never grounds the `Existing Component | File` citation against
+# the real file the row claims to reuse -- a row can cite a symbol that DOES
+# NOT EXIST in the named file and the gate accepts it exactly like a real
+# citation. The sibling `component-manifest.yaml` gate IS grep-grounded
+# (`scripts/cli/validate_component_manifest.py:37 _ground_sut`); Reuse
+# Analysis is not -- this is the asymmetry the fix closes.
+#
+# Fix direction (Ale 2026-07-07, tool-agnostic outcome, no bespoke grep):
+# ground the citation THROUGH the `CodeFactPort` chain
+# (`des.ports.code_fact_port` + `des.adapters.driven.codefact.code_fact_chain`)
+# -- Tsunami-first, AST fallback, textsearch floor, degrade-LOUD. An
+# unresolvable citation REFUSES the feature-delta with a NEW closed-set
+# verdict token this AT pins as `ungrounded-reuse-analysis` (kebab-case,
+# mirrors the existing `missing-reuse-analysis` / `malformed-reuse-analysis`
+# family).
+#
+# `VERDICT_UNGROUNDED_REUSE_ANALYSIS` below is deliberately a PLAIN STRING
+# LITERAL, NOT an import from `des.cli.validate_feature_delta` -- the constant
+# does not exist yet. Importing a name that isn't there would raise
+# `ImportError` at collection time (a BROKEN failure), not the semantic
+# `AssertionError` active-RED requires (ADR-025 / nw-distill-red-scaffolding).
+# AT-a below fails RED-for-the-right-reason today: the CLI answers
+# `structurally-accepted` (shape-only), not the new token.
+# ---------------------------------------------------------------------------
+
+#: The new closed-set verdict token this AT pins for the content-grounding
+#: fix. Chosen (not yet implemented) name; the crafter's fix must emit this
+#: exact string on an unresolvable `Existing Component | File` citation.
+VERDICT_UNGROUNDED_REUSE_ANALYSIS = "ungrounded-reuse-analysis"
+
+#: A REAL, port-resolvable citation: `validate_reuse_analysis_content` is a
+#: real module-level function DEFINED in this very file
+#: (`src/des/cli/validate_feature_delta.py`, confirmed by direct Read
+#: 2026-07-07) -- any CodeFactPort tier (Tsunami / AST / textsearch) resolves
+#: it.
+_REAL_SYMBOL = "validate_reuse_analysis_content"
+_REAL_FILE = "src/des/cli/validate_feature_delta.py"
+
+#: A symbol GUARANTEED ABSENT from `_REAL_FILE` -- no CodeFactPort tier can
+#: resolve it; the file exists, the symbol inside it does not (the "phantom
+#: component" class the RCA names).
+_PHANTOM_SYMBOL = "PhantomReuseAnalysisComponentNeverDefined"
+
+
+def _reuse_analysis_feature_delta(existing_component: str, file_cell: str) -> str:
+    """Build a minimal well-formed-SHAPE Reuse Analysis section. Pure helper.
+
+    `validate_reuse_analysis_content` (the pure core `--require-reuse-analysis`
+    drives) parses the bare `## Reuse Analysis` section directly -- unlike
+    `validate_slice_plan_content` it does NOT require a preceding Wave
+    heading. One CREATE_NEW data row with a non-empty Justification keeps the
+    row shape-valid (DDD-3) so ONLY the new content-grounding check can reject
+    it -- isolating the regression from every pre-existing shape check.
+    """
+    return (
+        "## Reuse Analysis\n\n"
+        "| Existing Component | File | Overlap | Decision | Justification |\n"
+        "|---|---|---|---|---|\n"
+        f"| `{existing_component}` | `{file_cell}` | none | CREATE_NEW | "
+        "fixture row for the content-grounding regression AT |\n"
+    )
+
+
+def _run_require_reuse_analysis_json(
+    target: Path, project_root: Path
+) -> tuple[int, dict[str, object]]:
+    """Invoke `des validate-feature-delta --require-reuse-analysis --format=json`.
+
+    `cwd=project_root` pins the repo root as the resolution base for `File`
+    citations (e.g. `src/des/cli/validate_feature_delta.py`) -- the SAME base
+    `_ground_sut` uses for `sut:` citations
+    (`scripts/cli/validate_component_manifest.py:34 _REPO_ROOT`), so a
+    repo-relative `File` cell grounds identically to the sibling gate.
+    """
+    result = subprocess.run(
+        _validator_argv("--require-reuse-analysis", "--format=json", str(target)),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_validator_env(),
+        cwd=project_root,
+    )
+    payload = json.loads(result.stdout) if result.stdout.strip() else {}
+    return result.returncode, payload
+
+
+class TestReuseAnalysisContentGrounding:
+    """Regression: `--require-reuse-analysis` must ground `Existing Component |
+    File` citations, not just validate the table's shape (WS-9,
+    F-fix-reuse-analysis-content-grounding).
+
+    Driving port: Layer-3 subprocess CLI boundary (`des validate-feature-delta
+    --require-reuse-analysis --format=json`) -- the real entry point the
+    crafter's fix wires the CodeFactPort grounding onto, and the AC-5.c JSON
+    verdict-token contract the AT reads (never a free-text stdout substring).
+
+    @contract-shape:bounded-change (AT-a): a phantom `Existing Component |
+    File` citation moves the verdict from `structurally-accepted` (today,
+    shape-only) to `ungrounded-reuse-analysis` (the new content-grounded
+    rejection).
+
+    @contract-shape:unbounded-preservation (AT-b): any REAL, port-resolvable
+    citation stays `structurally-accepted` -- the fix must not over-reject
+    legitimate reuse rows.
+    """
+
+    # ------------------------------------------------------------------
+    # AT-a (active-RED) -- phantom citation -> ungrounded-reuse-analysis
+    #
+    # CURRENT: the gate is shape-only and answers `structurally-accepted` for
+    # ANY well-formed row regardless of whether the citation is real --
+    # `validate_reuse_analysis_content` never touches the filesystem /
+    # CodeFactPort (confirmed by direct Read of the function body, 2026-07-07).
+    # ------------------------------------------------------------------
+    def test_phantom_citation_is_rejected_as_ungrounded(self, tmp_path: Path) -> None:
+        """A row citing a symbol absent from a real file is REFUSED.
+
+        `PhantomReuseAnalysisComponentNeverDefined` does not exist anywhere in
+        `src/des/cli/validate_feature_delta.py` (a real, existing file) -- no
+        CodeFactPort tier can resolve it. The gate must REFUSE the
+        feature-delta with the new `ungrounded-reuse-analysis` verdict and a
+        non-zero exit.
+
+        ACTIVE-RED: today's gate has no content-grounding step and answers
+        `structurally-accepted` (shape-only) for this same fixture.
+        """
+        target = tmp_path / "feature-delta.md"
+        target.write_text(
+            _reuse_analysis_feature_delta(_PHANTOM_SYMBOL, _REAL_FILE),
+            encoding="utf-8",
+        )
+        project_root = Path(__file__).resolve().parents[4]
+
+        exit_code, payload = _run_require_reuse_analysis_json(target, project_root)
+
+        assert payload.get("verdict") == VERDICT_UNGROUNDED_REUSE_ANALYSIS, (
+            f"Expected the new {VERDICT_UNGROUNDED_REUSE_ANALYSIS!r} verdict for "
+            f"a phantom citation ({_PHANTOM_SYMBOL!r} is absent from "
+            f"{_REAL_FILE}); got {payload.get('verdict')!r}. (No content-"
+            f"grounding step exists yet -- this is the active-RED signal; the "
+            f"gate is shape-only per validate_reuse_analysis_content, DDD-8.)"
+        )
+        assert exit_code != 0, (
+            "A phantom / ungrounded citation must REFUSE the feature-delta "
+            f"(non-zero exit); got exit_code={exit_code}."
+        )
+
+    # ------------------------------------------------------------------
+    # AT-b (guard, may already pass) -- real citation -> stays accepted
+    #
+    # Locks the no-over-reject invariant: once grounding lands, a row citing a
+    # symbol that genuinely exists in the named file must NOT be rejected.
+    # ------------------------------------------------------------------
+    def test_real_citation_stays_structurally_accepted(self, tmp_path: Path) -> None:
+        """A row citing a REAL, port-resolvable symbol stays accepted.
+
+        `validate_reuse_analysis_content` is a real module-level function
+        DEFINED in `src/des/cli/validate_feature_delta.py` -- every
+        CodeFactPort tier (Tsunami / AST / textsearch) resolves it. The
+        grounding fix must NOT reject this row: over-rejecting a legitimate
+        reuse citation is the exact regression this guard exists to catch.
+        """
+        target = tmp_path / "feature-delta.md"
+        target.write_text(
+            _reuse_analysis_feature_delta(_REAL_SYMBOL, _REAL_FILE),
+            encoding="utf-8",
+        )
+        project_root = Path(__file__).resolve().parents[4]
+
+        exit_code, payload = _run_require_reuse_analysis_json(target, project_root)
+
+        assert payload.get("verdict") == "structurally-accepted", (
+            f"A REAL, port-resolvable citation ({_REAL_SYMBOL!r} genuinely "
+            f"defined in {_REAL_FILE}) must stay `structurally-accepted`; got "
+            f"{payload.get('verdict')!r}. The content-grounding fix must not "
+            f"over-reject a legitimate reuse row."
+        )
+        assert exit_code == 0, (
+            f"A structurally-accepted, content-grounded citation must exit 0; "
+            f"got exit_code={exit_code}."
+        )
+
+    # ------------------------------------------------------------------
+    # AT-c (guard, passes today) -- the grounding fact is CodeFactPort-
+    # derivable WITHOUT Tsunami (tool-agnostic per the fix direction).
+    #
+    # Drives the REAL `CodeFactChain` -- the composition the fix is directed
+    # to ground through -- with `tsunami_present=False` forced (never mocked:
+    # `TsunamiAdapter.probe()` returns exactly its constructor `present` flag,
+    # verified by direct Read 2026-07-07), so the query is answered by the
+    # AST / textsearch floor tiers alone. Proves the phantom-vs-real
+    # distinction AT-a / AT-b need is derivable on a machine with NO Tsunami:
+    # the floor alone tells the phantom symbol apart from the real one. This
+    # is the enabling mechanism the fix wires the gate onto -- the genuine
+    # port entrypoint (`CodeFactChain.query`), callable directly from a pytest
+    # AT, per the RCA's "assert at the CLI boundary only if the port
+    # entrypoint isn't callable" guidance.
+    # ------------------------------------------------------------------
+    def test_grounding_fact_resolves_via_codefactport_without_tsunami(self) -> None:
+        from des.adapters.driven.codefact.code_fact_chain import CodeFactChain
+        from des.ports.code_fact_port import (
+            CAPABILITY_ATOMS_IN_FILE,
+            CapabilityDescriptor,
+        )
+
+        project_root = Path(__file__).resolve().parents[4]
+        target_file = project_root / _REAL_FILE
+        assert target_file.is_file(), (
+            f"fixture assumption broken: {_REAL_FILE} must exist under the "
+            f"repo root for this AT to mean anything; checked {target_file}"
+        )
+
+        chain = CodeFactChain(root=target_file, tsunami_present=False)
+        descriptor = CapabilityDescriptor(
+            id=CAPABILITY_ATOMS_IN_FILE,
+            stability="stable",
+            contract_version="1.0.0",
+            io_schema="atoms-in-file/1",
+            providing_adapter="ast",
+        )
+
+        result = chain.query(descriptor, {})
+
+        assert result is not None, (
+            "the atoms-in-file stable-core capability must always answer "
+            "(the universal floor guarantees a non-empty answer on any "
+            "Python-only target, ADR-LA-001 §5)"
+        )
+        assert result.confidence != "binding-resolved", (
+            f"tsunami_present=False must force the floor tiers (ast/"
+            f"textsearch), never the paid tier; got "
+            f"confidence={result.confidence!r}"
+        )
+        atoms = (
+            result.payload.get("atoms", []) if isinstance(result.payload, dict) else []
+        )
+        assert _REAL_SYMBOL in atoms, (
+            f"the real symbol {_REAL_SYMBOL!r} must resolve as an atom of "
+            f"{_REAL_FILE} via the Tsunami-absent floor chain; got "
+            f"atoms={atoms!r}"
+        )
+        assert _PHANTOM_SYMBOL not in atoms, (
+            f"the phantom symbol {_PHANTOM_SYMBOL!r} must NOT resolve as an "
+            f"atom of {_REAL_FILE} -- it does not exist there; got "
+            f"atoms={atoms!r}"
+        )
+        assert any(
+            event.endswith("tsunami-absent") for event in chain.health_events()
+        ), (
+            "the chain must record a LOUD health-event when it skips the "
+            "absent Tsunami tier (degrade-LOUD, never a silent skip); got "
+            f"health_events={chain.health_events()!r}"
+        )
+
+    # ------------------------------------------------------------------
+    # AT-d (active-RED, WS-9b hardening) -- a citation naming a REAL but
+    # NON-PYTHON / unparseable file must degrade LOUD to the closed-set
+    # verdict, never CRASH the CLI (Vera examine 2026-07-07, regression).
+    #
+    # RCA (empirically confirmed 2026-07-07): `_component_citation_is_grounded`
+    # builds `CodeFactChain(root=file_path)` and queries
+    # `CAPABILITY_ATOMS_IN_FILE`. With Tsunami absent (the default OSS case)
+    # the chain falls to `AstAdapter`, whose `_iter_files` returns
+    # `[self._root]` unconditionally when `root.is_file()` -- NO extension /
+    # filetype check -- and `_parse` calls the delegated
+    # `PythonAstAdapter.parse`, a bare `ast.parse(source, filename=filename)`
+    # with NO `except SyntaxError`. Citing `pyproject.toml` (a REAL file at
+    # the repo root, valid TOML, NOT valid Python syntax -- direct repro:
+    # `ast.parse(open("pyproject.toml").read())` raises `SyntaxError: cannot
+    # assign to expression here...` at line 3) propagates that SyntaxError,
+    # uncaught, through `validate_reuse_analysis_content` ->
+    # `_run_require_reuse_analysis` -> `main` -- crashing the CLI with a
+    # Python traceback instead of a clean gate refusal.
+    #
+    # This is an AGNOSTICISM defect, not a one-off: `AstAdapter` always
+    # speaks Python `ast` regardless of the cited file's real language, so a
+    # TypeScript project's Reuse Analysis citing a `.ts` file hits the
+    # identical crash class.
+    #
+    # ACTIVE-RED: today's gate has no parse-failure guard -- it crashes. The
+    # fix must catch the unparseable-citation case and degrade LOUD to the
+    # SAME `ungrounded-reuse-analysis` verdict AT-a already pins for a
+    # phantom symbol -- an unresolvable-because-unparseable citation is the
+    # SAME failure CLASS as a phantom citation from the gate's point of view.
+    # ------------------------------------------------------------------
+    def test_nonpython_citation_degrades_loud_instead_of_crashing(
+        self, tmp_path: Path
+    ) -> None:
+        """A citation naming a real-but-non-Python file REFUSES cleanly, never crashes.
+
+        `pyproject.toml` is a REAL file at the repo root (guaranteed present in
+        every dev/CI checkout) that is NOT valid Python syntax. The gate must
+        REFUSE with `ungrounded-reuse-analysis` (non-zero exit) and MUST NOT
+        print an uncaught Python traceback -- the crash this AT pins as the
+        regression.
+
+        ACTIVE-RED: today the gate raises an unhandled `SyntaxError` from
+        `ast.parse` deep inside `AstAdapter._atoms()` (no filetype/parse-
+        failure guard) -- this assertion fails on the traceback check before
+        it can even reach the verdict-token check.
+        """
+        project_root = Path(__file__).resolve().parents[4]
+        non_python_file = project_root / "pyproject.toml"
+        assert non_python_file.is_file(), (
+            f"fixture assumption broken: {non_python_file} must exist at the "
+            f"repo root for this AT to mean anything"
+        )
+
+        target = tmp_path / "feature-delta.md"
+        target.write_text(
+            _reuse_analysis_feature_delta("SomeComponent", "pyproject.toml"),
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            _validator_argv("--require-reuse-analysis", "--format=json", str(target)),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=_validator_env(),
+            cwd=project_root,
+        )
+        combined_output = result.stdout + result.stderr
+
+        assert "Traceback (most recent call last)" not in combined_output, (
+            "the gate must degrade LOUD to a closed-set verdict on an "
+            "unparseable citation, never crash with an uncaught Python "
+            f"traceback; got exit_code={result.returncode}, "
+            f"stdout={result.stdout!r}, stderr={result.stderr!r}"
+        )
+        assert "SyntaxError" not in combined_output, (
+            "the underlying SyntaxError from ast.parse on a non-Python "
+            "citation must be caught and degraded, not leaked to the CLI "
+            f"surface; got stderr={result.stderr!r}"
+        )
+
+        payload = json.loads(result.stdout) if result.stdout.strip() else {}
+        assert payload.get("verdict") == VERDICT_UNGROUNDED_REUSE_ANALYSIS, (
+            f"Expected the {VERDICT_UNGROUNDED_REUSE_ANALYSIS!r} verdict for "
+            f"a citation naming a real-but-non-Python file (pyproject.toml is "
+            f"not valid Python syntax); got verdict={payload.get('verdict')!r} "
+            f"(exit_code={result.returncode}, stdout={result.stdout!r})."
+        )
+        assert result.returncode != 0, (
+            "an unresolvable (because unparseable) citation must REFUSE the "
+            f"feature-delta with a non-zero exit; got "
+            f"exit_code={result.returncode}"
         )

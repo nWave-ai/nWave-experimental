@@ -7,6 +7,7 @@ docs/analysis/jira-mirror-backlog.csv (regenerate that first with
 `uv run python scripts/backlog_to_jira_csv.py`). Epics are DERIVED thematically (the
 backlog has no formal epic field yet); priority comes from the backlog ## section.
 """
+
 import csv
 import html
 import json
@@ -16,18 +17,109 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 CSV = REPO / "docs/analysis/jira-mirror-backlog.csv"
-OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / "docs/analysis/nwave-status.html"
+OUT = (
+    Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / "docs/analysis/nwave-status.html"
+)
 
 # Derived thematic epics (first match wins; keyword on id+title lowercased).
 EPICS = [
-    ("Gates &amp; Feature-End", ["gate", "feature-end", "seal", "examine", "readiness", "commit-slice", "slice-commit", "oracle", "carpaccio"]),
-    ("Wave Methodology", ["wave", "discuss", "design", "devops", "distill", "deliver", "discover", "diverge", "scorecard", "density", "ceremony"]),
-    ("Dispatch &amp; Spine", ["dispatch", "spine", "agent", "crafter", "bare", "reviewer", "swarm", "hoist"]),
-    ("Testing &amp; Quality", ["test", "-at-", "coverage", "mutation", "pbt", "corpus", "pollution", "runner", "-ats", "flaky"]),
-    ("Acceleration &amp; Tooling", ["accel", "lever", "jira", "mirror", "dashboard", "scaffold", "docgen", "prompt", "token", "compaction", "friction"]),
-    ("Language &amp; Runtime", ["language", "adapter", "runtime", "python", "target", "agnostic", "polyglot", "rust", "pyc"]),
-    ("Adoption &amp; Product", ["adoption", "value", "product", "vision", "roadmap", "beta", "experimental", "publish", "release", "ferrari", "multiplier"]),
+    (
+        "Gates &amp; Feature-End",
+        [
+            "gate",
+            "feature-end",
+            "seal",
+            "examine",
+            "readiness",
+            "commit-slice",
+            "slice-commit",
+            "oracle",
+            "carpaccio",
+        ],
+    ),
+    (
+        "Wave Methodology",
+        [
+            "wave",
+            "discuss",
+            "design",
+            "devops",
+            "distill",
+            "deliver",
+            "discover",
+            "diverge",
+            "scorecard",
+            "density",
+            "ceremony",
+        ],
+    ),
+    (
+        "Dispatch &amp; Spine",
+        ["dispatch", "spine", "agent", "crafter", "bare", "reviewer", "swarm", "hoist"],
+    ),
+    (
+        "Testing &amp; Quality",
+        [
+            "test",
+            "-at-",
+            "coverage",
+            "mutation",
+            "pbt",
+            "corpus",
+            "pollution",
+            "runner",
+            "-ats",
+            "flaky",
+        ],
+    ),
+    (
+        "Acceleration &amp; Tooling",
+        [
+            "accel",
+            "lever",
+            "jira",
+            "mirror",
+            "dashboard",
+            "scaffold",
+            "docgen",
+            "prompt",
+            "token",
+            "compaction",
+            "friction",
+        ],
+    ),
+    (
+        "Language &amp; Runtime",
+        [
+            "language",
+            "adapter",
+            "runtime",
+            "python",
+            "target",
+            "agnostic",
+            "polyglot",
+            "rust",
+            "pyc",
+        ],
+    ),
+    (
+        "Adoption &amp; Product",
+        [
+            "adoption",
+            "value",
+            "product",
+            "vision",
+            "roadmap",
+            "beta",
+            "experimental",
+            "publish",
+            "release",
+            "ferrari",
+            "multiplier",
+        ],
+    ),
 ]
+
 
 def epic_of(text):
     t = text.lower()
@@ -36,6 +128,7 @@ def epic_of(text):
             return name
     return "Other"
 
+
 PRI_ORDER = {"Highest": 0, "High": 1, "Medium": 2, "Low": 3}
 PRI_LABEL = {"Highest": "Critical", "High": "High", "Medium": "Medium", "Low": "Low"}
 
@@ -43,14 +136,24 @@ rows = list(csv.DictReader(open(CSV)))
 items = []
 for r in rows:
     st = (r.get("Status") or "").strip().lower()
-    status = "done" if st in ("done", "completata", "completato") else ("prog" if ("cors" in st or "progress" in st) else "todo")
+    status = (
+        "done"
+        if st in ("done", "completata", "completato")
+        else ("prog" if ("cors" in st or "progress" in st) else "todo")
+    )
     fid = (r.get("Labels") or "").upper()
     title = r.get("Summary", "")
-    items.append({
-        "id": fid, "title": title, "desc": r.get("Description", ""),
-        "pri": r.get("Priority", "Medium"), "prilabel": PRI_LABEL.get(r.get("Priority", "Medium"), "Medium"),
-        "status": status, "epic": epic_of(fid + " " + title),
-    })
+    items.append(
+        {
+            "id": fid,
+            "title": title,
+            "desc": r.get("Description", ""),
+            "pri": r.get("Priority", "Medium"),
+            "prilabel": PRI_LABEL.get(r.get("Priority", "Medium"), "Medium"),
+            "status": status,
+            "epic": epic_of(fid + " " + title),
+        }
+    )
 
 todo = [i for i in items if i["status"] == "todo"]
 todo.sort(key=lambda i: PRI_ORDER.get(i["pri"], 2))
@@ -73,7 +176,7 @@ session_done = [
 DATA = json.dumps(items, ensure_ascii=False)
 ts = "2026-07-06"
 
-HTML = f'''<title>nWave — Stato Avanzamento Lavori</title>
+HTML = f"""<title>nWave — Stato Avanzamento Lavori</title>
 <style>
 :root{{--bg:#f6f8f9;--panel:#fff;--panel2:#eef2f4;--ink:#16212b;--muted:#5c6b78;--line:#e3e9ed;--accent:#0ea5a4;--crit:#e5484d;--high:#e08704;--med:#4a7bd0;--low:#8b94a0;--done:#3a9e52;--prog:#e08704;}}
 @media(prefers-color-scheme:dark){{:root{{--bg:#0e1519;--panel:#15201f;--panel2:#1b2827;--ink:#e7eef1;--muted:#93a3ac;--line:#233230;--accent:#2dd4bf;--crit:#ff6369;--high:#f5a623;--med:#6ba0f0;--low:#98a2ad;--done:#54c46a;--prog:#f5a623;}}}}
@@ -133,7 +236,7 @@ h1{{font-size:25px;font-weight:750;margin:0;letter-spacing:-.02em}} h1 .w{{color
   <aside class="detail" id="detail"><button class="close" onclick="hideDetail()">×</button><p class="empty">Clicca un item a sinistra per vederne la descrizione completa.</p></aside>
 </div>
 <div class="foot">Generato da <code>scripts/gen_status_dashboard.py</code> ← <code>docs/product/backlog.md</code>. Epic = temi DERIVATI (il backlog non ha ancora un campo epic formale). To Do ordinato per urgenza.
-<br>Fatto questa sessione: {" · ".join(html.escape(t) for _,t in session_done)}.</div>
+<br>Fatto questa sessione: {" · ".join(html.escape(t) for _, t in session_done)}.</div>
 </div>
 <script>
 const ITEMS={DATA};
@@ -160,7 +263,11 @@ function showDetail(it,card){{
   detail.classList.add('show');
 }}
 function hideDetail(){{detail.classList.remove('show'); if(selCard){{selCard.classList.remove('sel');selCard=null;}}}}
-</script>'''
+</script>"""
 
 OUT.write_text(HTML, encoding="utf-8")
-print(f"wrote {OUT} ({{}}KB) | To Do {len(todo)} · crit {n_crit} · epics {len(epic_names)}: {{}}".format(len(HTML)//1024, ", ".join(f"{e}({epic_counts[e]})" for e in epic_names)))
+print(
+    f"wrote {OUT} ({{}}KB) | To Do {len(todo)} · crit {n_crit} · epics {len(epic_names)}: {{}}".format(
+        len(HTML) // 1024, ", ".join(f"{e}({epic_counts[e]})" for e in epic_names)
+    )
+)

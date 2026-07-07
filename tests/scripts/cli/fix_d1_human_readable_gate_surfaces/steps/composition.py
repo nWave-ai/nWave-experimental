@@ -522,8 +522,9 @@ class SpineTripleSurfaceFixture:
         """Stage a feature-delta with a slice plan + scenarios.
 
         Success path: slice-01 has exactly 1 scenario carrying ``@slice-01``
-        (≤ carpaccio ceiling of 3) → SliceCleared. Negative path: slice-01 has
-        4 scenarios (> 3) without a ``@coupled`` annotation →
+        (≤ carpaccio ceiling of 7, ``.nwave/config.yaml``
+        ``atdd_pure.carpaccio_slice_max``) → SliceCleared. Negative path:
+        slice-01 has 8 scenarios (> 7) without a ``@coupled`` annotation →
         CARPACCIO_SLICE_TOO_LARGE.
 
         Also stages an AT-review APPROVED ledger record so the at-review check
@@ -554,11 +555,13 @@ class SpineTripleSurfaceFixture:
                 "    Given a stub\n    When stuff happens\n    Then it works\n"
             )
         else:
-            # Four scenarios under slice-01, no @coupled — size assertion fires.
+            # Eight scenarios under slice-01 (> carpaccio_slice_max: 7), no
+            # @coupled — size assertion (assertion 1) fires before the
+            # at-review assertion (assertion 5) is ever reached.
             scenarios = "\n".join(
                 f"  @slice-01\n  Scenario: stub {n}\n"
                 "    Given a stub\n    When stuff happens\n    Then it works\n"
-                for n in range(1, 5)
+                for n in range(1, 9)
             )
             scenario_block = (
                 "@feature-slice02-fixture-feature @slice-01\n"

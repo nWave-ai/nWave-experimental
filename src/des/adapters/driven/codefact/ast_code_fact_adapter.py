@@ -200,7 +200,10 @@ class AstAdapter:
         near_duplicate_groups = 0
         total_step_definitions = 0
         for source_file in self._iter_files():
-            census = self._parser.step_shapes_in_module(self._parse(source_file))
+            tree = self._parse(source_file)
+            if tree is None:
+                continue
+            census = self._parser.step_shapes_in_module(tree)
             near_duplicate_groups += census.near_duplicate_groups
             total_step_definitions += census.total_step_definitions
         reason = (
@@ -238,9 +241,13 @@ class AstAdapter:
         """True iff a function in ``source_file`` calls ``callable_name`` externally.
 
         A function whose own name is ``callable_name`` is its definition, not a
-        call-site, and is skipped — so a def line never counts as a usage.
+        call-site, and is skipped — so a def line never counts as a usage. An
+        unparseable ``source_file`` (``_parse`` returns ``None``) has no
+        structural call-sites to report and degrades to ``False``.
         """
         tree = self._parse(source_file)
+        if tree is None:
+            return False
         for function in self._parser.functions_in_module(tree):
             if function.name == callable_name:
                 continue
@@ -258,12 +265,34 @@ class AstAdapter:
         return False
 
     def _functions_in(self, source_file: Path) -> list[FunctionInfo]:
-        """Every function/method defined in ``source_file`` (structural)."""
-        return self._parser.functions_in_module(self._parse(source_file))
+        """Every function/method defined in ``source_file`` (structural).
 
-    def _parse(self, source_file: Path) -> object:
-        """Parse ``source_file`` into the opaque tree handle (delegated parser)."""
-        return self._parser.parse(self._read(source_file), str(source_file))
+        An unparseable ``source_file`` (``_parse`` returns ``None``, e.g. a
+        real-but-non-Python file) contributes no functions -- degrade-LOUD via
+        the empty list, never a crash.
+        """
+        tree = self._parse(source_file)
+        if tree is None:
+            return []
+        return self._parser.functions_in_module(tree)
+
+    def _parse(self, source_file: Path) -> object | None:
+        """Parse ``source_file`` into the opaque tree handle (delegated parser).
+
+        Returns ``None`` when ``source_file`` is not valid Python (e.g. a real
+        but non-Python file such as ``pyproject.toml`` or a ``.ts`` module) --
+        the delegated parser's ``SyntaxError`` / ``ValueError`` is caught here
+        so an unparseable citation degrades LOUD (an empty structural answer,
+        already tagged ``approx``) instead of propagating an uncaught
+        traceback through the whole ``CodeFactChain`` call stack
+        (WS-9b, F-fix-reuse-analysis-content-grounding). Every caller of
+        ``_parse`` MUST treat ``None`` as "no structural fact here" and skip
+        the file, never re-raise.
+        """
+        try:
+            return self._parser.parse(self._read(source_file), str(source_file))
+        except (SyntaxError, ValueError):
+            return None
 
     @staticmethod
     def _callee_matches(callee: str, callable_name: str) -> bool:

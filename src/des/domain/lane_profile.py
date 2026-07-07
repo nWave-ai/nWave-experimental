@@ -82,4 +82,31 @@ LANE_PROFILES: dict[str, LaneProfile] = {
         ),
         annotation_token="prefactoring",
     ),
+    # A bugfix writes code + records ATs -> the FULL section set (mirrors the
+    # dispatch SSOT's `profiles.lane.bugfix` row under `nWave/dispatch/`,
+    # which declares an empty drop set). See des-dispatch-ssot-renderer
+    # Fase-1: this literal is a drift-checked PROJECTION of that SSOT row,
+    # verified by `des.application.dispatch_lane_ssot.check_lane_profile_drift`.
+    "bugfix": LaneProfile(
+        lane_id="bugfix",
+        required_sections=(
+            "DES_METADATA",
+            "AGENT_IDENTITY",
+            "SKILL_LOADING",
+            "TASK_CONTEXT",
+            "DESIGN_CONTEXT",
+            "ATDD_PURE_PHASES",
+            "QUALITY_GATES",
+            "AT_COMPLETION_LEDGER",
+            "RECORDING_INTEGRITY",
+            "BOUNDARY_RULES",
+            "TERMINATING_RUN",
+            "TIMEOUT_INSTRUCTION",
+        ),
+        guard_kind=GuardKind.RED_TO_GREEN,
+        feature_readiness=True,
+        at_requirement=AtRequirement.REQUIRED,
+        skipped_invariants=(),
+        annotation_token="bugfix",
+    ),
 }

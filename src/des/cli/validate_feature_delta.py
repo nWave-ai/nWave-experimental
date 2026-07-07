@@ -130,6 +130,14 @@ VERDICT_UNJUSTIFIED_CREATE_NEW = "unjustified-create-new"
 VERDICT_METHODOLOGY_EXEMPT = "methodology-exempt"
 VERDICT_NO_OVERLAP_DECLARED = "no-overlap-declared"
 
+#: content-grounding verdict (F-fix-reuse-analysis-content-grounding, WS-9):
+#: a well-formed row whose `Existing Component | File` citation is NOT
+#: resolvable through the CodeFactPort chain (Tsunami-first, AST/textsearch
+#: fallback, degrade-LOUD -- ADR-LA-001). Closes the phantom-citation gap: a
+#: shape-only pass previously accepted a component name absent from its cited
+#: file.
+VERDICT_UNGROUNDED_REUSE_ANALYSIS = "ungrounded-reuse-analysis"
+
 #: The two canonical Decision tokens accepted in a Reuse Analysis row (DDD-7).
 #: Any other normalized token is `malformed-reuse-analysis`.
 _REUSE_DECISION_TOKENS: frozenset[str] = frozenset({"EXTEND", "CREATE_NEW"})
@@ -228,9 +236,28 @@ _FEATURE_PLAN_HEADING_RE = re.compile(
     r"^##\s+Wave:\s+DISCUSS\s*/\s*\[REF\]\s+Feature\s+Plan\s*$"
 )
 
+
+def _exact_heading_regex(heading_literal: str) -> re.Pattern[str]:
+    """Build an exact-form, whitespace-tolerant H2 heading regex from a
+    canonical heading literal (e.g. ``"## Reuse Analysis"``). Pure.
+
+    The SSOT-derivation half of the FR-11 fix: an independently hardcoded
+    regex for the SAME heading text is exactly the drift class FR-11 traced
+    (one grammar concept, two definitions). Deriving the regex from the
+    literal means changing the constant automatically changes what the regex
+    matches -- there is nowhere left for a second definition to hide.
+    """
+    words = heading_literal.removeprefix("##").split()
+    return re.compile(
+        r"^##\s+" + r"\s+".join(re.escape(word) for word in words) + r"\s*$"
+    )
+
+
 #: Match the canonical Reuse Analysis heading (DDD-8). Exact-form match;
-#: variant headings (wrong level, prefix, suffix) are not accepted.
-_REUSE_ANALYSIS_HEADING_RE = re.compile(r"^##\s+Reuse\s+Analysis\s*$")
+#: variant headings (wrong level, prefix, suffix) are not accepted. Derived
+#: from `REUSE_ANALYSIS_HEADING` (the SSOT constant) via `_exact_heading_regex`
+#: -- not an independent hardcoded literal.
+_REUSE_ANALYSIS_HEADING_RE = _exact_heading_regex(REUSE_ANALYSIS_HEADING)
 
 #: Match any `##` markdown heading (level-2 only, not `###` or deeper).
 _H2_RE = re.compile(r"^##\s+(?!#)(?P<text>.+?)\s*$")
@@ -795,6 +822,51 @@ def _classify_component_row(
     return None
 
 
+def _strip_inline_code(cell: str) -> str:
+    """Strip one surrounding pair of `` ` `` markers from a table cell. Pure."""
+    stripped = cell.strip()
+    if stripped.startswith("`") and stripped.endswith("`") and len(stripped) >= 2:
+        return stripped[1:-1]
+    return stripped
+
+
+def _component_citation_is_grounded(
+    existing_component: str, file_cell: str, project_root: Path
+) -> bool:
+    """Resolve one `Existing Component | File` citation THROUGH the CodeFactPort.
+
+    Re-derives the fact via `CodeFactChain` (Tsunami-first, AST fallback,
+    textsearch floor -- ADR-LA-001), never a bespoke grep. `file_cell` is
+    resolved relative to `project_root` (the same base `_ground_sut` uses for
+    `sut:` citations, `scripts/cli/validate_component_manifest.py:34
+    _REPO_ROOT`). Returns True iff the cited file exists AND the named symbol
+    resolves as one of its atoms.
+    """
+    from des.adapters.driven.codefact.code_fact_chain import CodeFactChain
+    from des.ports.code_fact_port import (
+        CAPABILITY_ATOMS_IN_FILE,
+        CapabilityDescriptor,
+    )
+
+    symbol = _strip_inline_code(existing_component)
+    file_path = project_root / _strip_inline_code(file_cell)
+    if not symbol or not file_path.is_file():
+        return False
+
+    descriptor = CapabilityDescriptor(
+        id=CAPABILITY_ATOMS_IN_FILE,
+        stability="stable",
+        contract_version="1.0.0",
+        io_schema="atoms-in-file/1",
+        providing_adapter="ast",
+    )
+    result = CodeFactChain(root=file_path).query(descriptor, {})
+    if result is None or not isinstance(result.payload, dict):
+        return False
+    atoms = result.payload.get("atoms", [])
+    return isinstance(atoms, list) and symbol in atoms
+
+
 def _classify_exemption_marker(content: str) -> ReuseAnalysisResult | None:
     """Detect a DDD-9 exemption marker under the canonical heading. Pure.
 
@@ -815,8 +887,11 @@ def _classify_exemption_marker(content: str) -> ReuseAnalysisResult | None:
     return None
 
 
-def validate_reuse_analysis_content(content: str) -> ReuseAnalysisResult:
-    """Structurally validate the Reuse Analysis section. Pure function.
+def validate_reuse_analysis_content(
+    content: str, project_root: Path | None = None
+) -> ReuseAnalysisResult:
+    """Structurally validate the Reuse Analysis section. Pure when `project_root`
+    is None; otherwise the impure content-grounding leg is active.
 
     Closes the DDD-2 verdict set:
 
@@ -832,12 +907,18 @@ def validate_reuse_analysis_content(content: str) -> ReuseAnalysisResult:
       normalization -> malformed-reuse-analysis;
     - any CREATE_NEW row with an empty Justification -> unjustified-create-new
       (DDD-3);
-    - all component rows well formed -> structurally-accepted (DDD-3 — NOT a
-      claim that reuse-first was honoured; only that the table is well
-      formed).
+    - when `project_root` is given: any row whose `Existing Component | File`
+      citation does NOT resolve through the CodeFactPort chain ->
+      ungrounded-reuse-analysis (F-fix-reuse-analysis-content-grounding);
+    - all component rows well formed (and, when checked, grounded) ->
+      structurally-accepted (DDD-3 — NOT a claim that reuse-first was
+      honoured; only that the table is well formed).
 
     Args:
         content: feature-delta.md body (UTF-8 text).
+        project_root: base directory `File` citations resolve against. When
+            None (the default, preserving the pure-function contract for
+            existing callers), content-grounding is skipped.
 
     Returns:
         ReuseAnalysisResult carrying the closed-set verdict token + a
@@ -889,6 +970,19 @@ def validate_reuse_analysis_content(content: str) -> ReuseAnalysisResult:
         rejection = _classify_component_row(row_no, _parse_table_cells(row))
         if rejection is not None:
             return rejection
+
+    if project_root is not None:
+        for row_no, row in enumerate(component_rows, start=1):
+            cells = _parse_table_cells(row)
+            if not _component_citation_is_grounded(cells[0], cells[1], project_root):
+                return ReuseAnalysisResult(
+                    verdict=VERDICT_UNGROUNDED_REUSE_ANALYSIS,
+                    detail=(
+                        f"row {row_no} cites {cells[0]!r} in {cells[1]!r} but "
+                        f"no CodeFactPort tier resolves that symbol in that "
+                        f"file (phantom component citation)"
+                    ),
+                )
 
     return ReuseAnalysisResult(
         verdict=VERDICT_STRUCTURALLY_ACCEPTED,
@@ -1553,9 +1647,14 @@ def _run_require_reuse_analysis(target: Path, json_format: bool) -> int:
     Emits a single JSON object carrying the closed-set `verdict` token (when
     `--format=json` is set) and returns exit 0 on `structurally-accepted`,
     1 on rejection. Mirrors `_run_require_slice_plan` per DDD-1.
+
+    Passes the current working directory as `project_root` so `Existing
+    Component | File` citations are content-grounded THROUGH the
+    CodeFactPort chain (F-fix-reuse-analysis-content-grounding) -- the same
+    resolution base `_ground_sut` uses for `sut:` citations.
     """
     content = target.read_text(encoding="utf-8")
-    result = validate_reuse_analysis_content(content)
+    result = validate_reuse_analysis_content(content, project_root=Path.cwd())
     if json_format:
         print(json.dumps({"verdict": result.verdict, "detail": result.detail}))
     else:

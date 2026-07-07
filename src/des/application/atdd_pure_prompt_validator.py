@@ -127,25 +127,65 @@ def _required_sections(prompt: str) -> tuple[str, ...]:
     return ATDD_PURE_MANDATORY_SECTIONS
 
 
+# The generator command that PRODUCES a valid atdd_pure dispatch by
+# construction -- see docs/product/expectations/fix-dispatch-guard-routes-to-
+# generator/the-dispatch-guard-tells-you-to-run-des-dispatch.md. A rejection's
+# recovery guidance must route HERE first, never to manual section repair.
+_GENERATOR_INVOCATION = (
+    "des dispatch --mode atdd_pure --project-id <id> --slice <slice> "
+    "--phase <phase> [--lane <lane>] --intent '<task>'"
+)
+
+
+def _generator_routed_guidance(missing_section_context: str) -> str:
+    """Recovery guidance that ROUTES to the ``des dispatch`` generator.
+
+    The primary remedy is never "hand-add the section" -- it is "regenerate
+    via the tool that cannot omit a mandatory section". The specific
+    missing-section name is kept as secondary context so nothing is lost.
+    """
+    return (
+        f"Do not hand-add sections -- run `{_GENERATOR_INVOCATION}` to "
+        "generate a valid atdd_pure dispatch by construction (this dispatch "
+        f"is missing {missing_section_context})."
+    )
+
+
 _RECOVERY_GUIDANCE = {
-    "DES_METADATA": "Add DES_METADATA section with slice / feature / phase",
-    "AGENT_IDENTITY": "Add AGENT_IDENTITY section specifying the dispatched agent",
-    "SKILL_LOADING": "Add SKILL_LOADING section listing the skills to load at phase entry",
-    "TASK_CONTEXT": "Add TASK_CONTEXT section describing the slice and its ATs",
-    "DESIGN_CONTEXT": "Add DESIGN_CONTEXT section summarising relevant design decisions",
-    "ATDD_PURE_PHASES": (
-        "Add ATDD_PURE_PHASES section enumerating the A→G ATDD-pure phases"
+    "DES_METADATA": _generator_routed_guidance(
+        "DES_METADATA -- slice / feature / phase"
     ),
-    "QUALITY_GATES": "Add QUALITY_GATES section defining the slice quality criteria",
-    "AT_COMPLETION_LEDGER": (
-        "Add AT_COMPLETION_LEDGER section describing the ledger recording contract"
+    "AGENT_IDENTITY": _generator_routed_guidance(
+        "AGENT_IDENTITY -- the dispatched agent"
     ),
-    "RECORDING_INTEGRITY": (
-        "Add RECORDING_INTEGRITY section with anti-fraud rules for AT outcomes"
+    "SKILL_LOADING": _generator_routed_guidance(
+        "SKILL_LOADING -- the skills to load at phase entry"
     ),
-    "BOUNDARY_RULES": "Add BOUNDARY_RULES section with the slice-scoped boundary",
-    "TERMINATING_RUN": "Add TERMINATING_RUN section with the terminating-test-run instruction",
-    "TIMEOUT_INSTRUCTION": "Add TIMEOUT_INSTRUCTION section with turn budget guidance",
+    "TASK_CONTEXT": _generator_routed_guidance("TASK_CONTEXT -- the slice and its ATs"),
+    "DESIGN_CONTEXT": _generator_routed_guidance(
+        "DESIGN_CONTEXT -- relevant design decisions"
+    ),
+    "ATDD_PURE_PHASES": _generator_routed_guidance(
+        "ATDD_PURE_PHASES -- the A-G ATDD-pure phases"
+    ),
+    "QUALITY_GATES": _generator_routed_guidance(
+        "QUALITY_GATES -- the slice quality criteria"
+    ),
+    "AT_COMPLETION_LEDGER": _generator_routed_guidance(
+        "AT_COMPLETION_LEDGER -- the ledger recording contract"
+    ),
+    "RECORDING_INTEGRITY": _generator_routed_guidance(
+        "RECORDING_INTEGRITY -- anti-fraud rules for AT outcomes"
+    ),
+    "BOUNDARY_RULES": _generator_routed_guidance(
+        "BOUNDARY_RULES -- the slice-scoped boundary"
+    ),
+    "TERMINATING_RUN": _generator_routed_guidance(
+        "TERMINATING_RUN -- the terminating-test-run instruction"
+    ),
+    "TIMEOUT_INSTRUCTION": _generator_routed_guidance(
+        "TIMEOUT_INSTRUCTION -- turn budget guidance"
+    ),
 }
 
 

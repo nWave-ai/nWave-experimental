@@ -46,11 +46,15 @@ Feature: Gate-contract catalog YAML mirrors _REGISTRY (D4 Phase 1 slice-01)
   # Count 43 -> 48 -> 51 (2026-07-03, P0.1-P0.5 reconcile + P1.3 verify-refactor-trigger): the six
   # evidence-by-execution gates (verify-fresh-clone/red-green/negative-at/doc-coherence/
   # execution-reach) landed in _REGISTRY without catalog rows; reconciled 1:1.
-  Scenario: Catalog row count equals registry count (51 total, adds the P0 evidence gates)
+  # Count 51 -> 52 (2026-07-06, feature-delta-doctor-and-ssot slice-01, WS-2 / M2):
+  # feature-delta-doctor landed in _REGISTRY without its catalog row; reconciled 1:1.
+  # Count 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2): dispatch
+  # landed in _REGISTRY without its catalog row; reconciled 1:1.
+  Scenario: Catalog row count equals registry count (53 total, adds dispatch)
     Given the gate catalog loaded from "nWave/gates/_catalog.yaml"
     And the production _REGISTRY loaded from `src.des.cli.__main__`
     When the row counts are compared
-    Then both contain exactly 51 entries
+    Then both contain exactly 53 entries
     And every gate_id in the catalog is also a SubcommandRow.name in _REGISTRY
     And every SubcommandRow.name in _REGISTRY is also a gate_id in the catalog
 

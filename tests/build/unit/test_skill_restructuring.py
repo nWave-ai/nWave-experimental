@@ -224,7 +224,11 @@ BULK_HASHES = {
     # in the routing table + recognition list, and moved the DIVERGE recommendation
     # to DISCUSS inputs (its documented consumer, per nw-diverger.md:93) — DESIGN
     # now carries it through rather than owning the handoff.
-    "nw-buddy-wave-knowledge": "f3ccd8215e8ce60e5316664a99582abd",
+    # Re-pinned 2026-07-06: mode-locus fix — the carpaccio-ceiling sentence's
+    # `workflow.mode == atdd_pure` mention now carries a trailing
+    # `<!-- mode-ref-ok -->` annotation (it is a legitimate referential mention,
+    # not a hand-restatement), per the mode_registry_single_locus bulk sweep.
+    "nw-buddy-wave-knowledge": "ed37ff323e81dcf90cf4642e7ffb4697",
     "nw-cialdini-outreach": "90aea943d1a2eb313561ecbd0f2c5915",
     "nw-cicd-and-deployment": "2195ace1646b4c0ced64070d57bb542a",
     "nw-cognitive-load-management": "3e06303c46182b62288a7bffeb342909",

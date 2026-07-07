@@ -83,6 +83,23 @@ Each wave has a slash command (`/nw-<wave>`) and a primary agent. Waves run top-
 - **Typical artifacts**: commits following the TDD 3-phase canon (RED -> GREEN -> COMMIT, ADR-025 2026-05-07; legacy 5-phase PREPARE -> RED_ACCEPTANCE -> RED_UNIT -> GREEN -> COMMIT preserved for pre-2026-05-07 audit-log replay), updated tests, updated source files.
 - **Common questions**: "is this feature done?", "what step are we on?", "is the test suite green?"
 
+## Carpaccio slice-size ceiling and the `@coupled` escape
+
+Under `workflow.mode == atdd_pure`, DISTILL/DELIVER slices are constrained by a <!-- mode-ref-ok -->
+carpaccio slice-size ceiling (ratified 7 ATs per slice, ADR-028 D2-bis) enforced
+by the carpaccio entry gate. A slice's AT count may exceed the ceiling and still
+clear the gate when it is genuinely cohesive: annotate the Slice Plan row
+`@coupled` (Annotation column) with a recorded coupling justification
+(Justification column) — the DESIGNED escape path (`CoupledSliceAccepted`, ADR-028
+D2), not a hack or a violation. It exists because some AT groups cannot be
+decomposed further without breaking the single end-to-end vertical they prove
+(e.g. an adapter's full error-taxonomy coverage matrix).
+
+Prefer splitting into thinner slices first when a natural seam exists (e.g. by
+property, by error class). Reach for `@coupled` only when the AT group is truly
+inseparable. A slice that is over-ceiling and not cleanly re-sliceable warrants a
+deep-review + refactor conversation at FEATURE scope, not a per-slice patch.
+
 ## Cross-wave agents
 
 Some agents operate across waves:

@@ -165,6 +165,17 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
+  # feature-delta-doctor-and-ssot slice-01 (WS-2 / M2, FR-11 root fix): the
+  # one-pass structural gap aggregator over a feature-delta.md -- composes the
+  # existing validate_feature_delta validators in ONE invocation so a
+  # contributor sees every gap at once instead of one gate rejection at a
+  # time. 1:1 mirror of the _REGISTRY row. Filesystem-only (no git dependency).
+  - gate_id: feature-delta-doctor
+    responsibility: "One-pass structural gap aggregator over a feature-delta.md (WS-2 / M2, FR-11 root fix): composes the existing validate_feature_delta_content / locked_sections_present / validate_reuse_analysis_content validators in ONE invocation, reporting every gap (missing mandatory sections, malformed Wave headings, malformed/unjustified Reuse Analysis rows) as a self-explaining what/why/how JSON payload instead of one gate rejection at a time. Filesystem-only, no git dependency."
+    module: des.cli.feature_delta_doctor
+    entry_function: main
+    language_neutral_contract: true
+
   - gate_id: record-discuss-review
     responsibility: "Record a DISCUSS product-owner review verdict (DiscussReviewVerdict, O-4 producer): keyless content seal over DISCUSS_SIGNED_FIELDS bound to the feature-delta content hash; writes BOTH approved and needs-revision so the DISCUSS gate-OUT can mechanically honor a reviewer veto."
     module: des.cli.discuss_review_verdict
@@ -349,5 +360,16 @@ gates:
   - gate_id: record-examine-verdict
     responsibility: "User-Examiner verdict PRODUCER (evolution P2.1/P1.2): appends a charter-sealed tamper-evident ExamineVerdict to the per-feature examine ledger; the commit-slice examine gate consumes it. The execution-observation replacement for the code-reading C_REVIEWER_AUDIT."
     module: des.cli.record_examine_verdict
+    entry_function: main
+    language_neutral_contract: true
+
+  # des-dispatch-ssot-renderer Fase-2 (the GENERATOR, system-pays principle
+  # 2026-07-06): renders a gate-valid atdd_pure dispatch prompt from
+  # nWave/dispatch/atdd_pure.yaml + vendors.yaml + LANE_PROFILES, so the
+  # generator and AtddPurePromptValidator share ONE source and cannot
+  # silently diverge. 1:1 mirror of the _REGISTRY row.
+  - gate_id: dispatch
+    responsibility: "Generates a gate-valid atdd_pure dispatch prompt (des-dispatch-ssot-renderer Fase-2, system-pays principle): renders the marker block + mandatory section headers directly from nWave/dispatch/atdd_pure.yaml + vendors.yaml + LANE_PROFILES, so the produced prompt passes AtddPurePromptValidator and the readiness gate BY CONSTRUCTION instead of the operator hand-assembling it and being rejected one requirement at a time."
+    module: des.cli.dispatch
     entry_function: main
     language_neutral_contract: true

@@ -112,7 +112,7 @@ Each property declared as one of:
 
 ### Carpaccio ceiling escape
 
-Adapter-integration coverage matrices often yield 10-15 ATs — exceeds `carpaccio_slice_max: 3`. **Option B (preferred)**: split coverage across N carpaccio slices grouped by property (one slice = "JsonlLogAdapter error taxonomy", etc.). **Option A (fallback)**: `@adapter-integration @coupled` tags, adapter contract closure = coupling justification. **Option C (deferred)**: raise ceiling to 5 (requires `carpaccio_slice_gate` update; avoid ceiling-creep).
+Adapter-integration coverage matrices often yield 10-15 ATs — exceeds the ratified `carpaccio_slice_max: 7` (ADR-028 D2). **Option B (preferred)**: split coverage across N carpaccio slices grouped by property (one slice = "JsonlLogAdapter error taxonomy", etc.). **Option A (the designed path, not a fallback hack)**: `@adapter-integration @coupled` tags with a recorded coupling justification — adapter contract closure legitimately clears via `CoupledSliceAccepted` when the AT group cannot be decomposed without breaking the single end-to-end vertical it proves. **Option C**: N/A — the ceiling is already at its ratified value (7); a further raise is a fresh ratification decision, not a per-feature escape.
 
 ## Register Outcomes (per DISCUSS#D-5 grain)
 

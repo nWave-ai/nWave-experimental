@@ -150,10 +150,14 @@ def when_enumerate_bound(per_gate_comp) -> None:
 # bundled-slice attestation command (attest-bundled-slice), 1:1 with its catalog entry.
 # Count 43 -> 51 (2026-07-03, evolution-plan P0.1-P0.5): five per-gate files for
 # the evidence-by-execution gate family, 1:1 with catalog + _REGISTRY.
-@then("exactly 51 per-gate files exist (one per catalog entry)")
+# Count 51 -> 52 (2026-07-06, feature-delta-doctor-and-ssot slice-01, WS-2 / M2):
+# per-gate file for feature-delta-doctor, 1:1 with its catalog entry.
+# Count 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2):
+# per-gate file for dispatch, 1:1 with its catalog entry.
+@then("exactly 53 per-gate files exist (one per catalog entry)")
 def then_per_gate_file_count(per_gate_comp) -> None:
-    assert per_gate_comp.file_count == 51, (
-        f"Found {per_gate_comp.file_count} per-gate files, expected 51"
+    assert per_gate_comp.file_count == 53, (
+        f"Found {per_gate_comp.file_count} per-gate files, expected 53"
     )
 
 

@@ -48,6 +48,7 @@ import sys
 from pathlib import Path
 
 from des.cli.human_surface import Verdict, print_human_summary
+from des.cli.validate_feature_delta import REUSE_ANALYSIS_HEADING
 
 
 _EXIT_PASS = 0
@@ -71,11 +72,16 @@ _DEFAULT_METHODOLOGY_PATHS = ("nWave/data", "nWave/skills", "scripts/cli")
 _CLASS_DECLARATION_RE = re.compile(r"^class\s+(?P<name>\w+)\s*\(", re.MULTILINE)
 
 
-# Matches a Markdown level-2 heading whose text is "Reuse Analysis" -- either
-# the canonical ``## Reuse Analysis`` or the carpaccio variant
-# ``## Wave: DESIGN / [REF] Reuse Analysis`` (DDD-6).
+# The lenient superset matcher (DDD-6) DERIVES its core text from the
+# canonical `des.cli.validate_feature_delta.REUSE_ANALYSIS_HEADING` constant
+# -- never an independent hardcoded literal (FR-11 root fix: the SSOT drift
+# a duplicated grammar concept caused). Matches a Markdown level-2 heading
+# whose text CONTAINS the canonical core -- either the bare canonical
+# ``## Reuse Analysis`` or the carpaccio variant
+# ``## Wave: DESIGN / [REF] Reuse Analysis``.
+_REUSE_ANALYSIS_HEADING_CORE = REUSE_ANALYSIS_HEADING.removeprefix("##").strip()
 _REUSE_ANALYSIS_HEADING_RE = re.compile(
-    r"^##\s+(?:.*\bReuse Analysis\b.*)$",
+    rf"^##\s+(?:.*\b{re.escape(_REUSE_ANALYSIS_HEADING_CORE)}\b.*)$",
     re.MULTILINE,
 )
 

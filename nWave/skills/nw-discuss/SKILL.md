@@ -54,7 +54,7 @@ Under `## Wave: DISCUSS / [REF] <Section>` headings:
 - JTBD one-liner — single-sentence Job-to-be-Done statement
 - Locked decisions — D-numbered design decisions with verdicts
 - User stories with elevator pitches — every story has Before/After/Decision-enabled triplet
-- Slice Plan — `## Wave: DISCUSS / [REF] Slice Plan`, a five-column fixed-order carpaccio table (Slice, Value statement, Status, Annotation, Justification). Emitted when `workflow.mode == atdd_pure` (ADR-028 D2 / ADR-029 D3); the PO authors it in place of UAT-scenario user stories, and it replaces the user-story + AC sections as the decomposition + value SSOT. Structurally checked by the feature-delta validator (gate-id in `nWave/gates/_catalog.yaml`) with `--require-slice-plan` (verdict `accepted`). <!-- mode-ref-ok -->
+- Slice Plan — `## Wave: DISCUSS / [REF] Slice Plan`, a five-column fixed-order carpaccio table (Slice, Value statement, Status, Annotation, Justification). Emitted when `workflow.mode == atdd_pure` (ADR-028 D2 / ADR-029 D3); the PO authors it in place of UAT-scenario user stories, and it replaces the user-story + AC sections as the decomposition + value SSOT. Structurally checked by the feature-delta validator (gate-id in `nWave/gates/_catalog.yaml`) with `--require-slice-plan` (verdict `accepted`). Annotation-column vocabulary includes `@coupled` — the DESIGNED escape when a slice's AT group exceeds the carpaccio slice-size ceiling (ratified 7, ADR-028 D2) but cannot be decomposed without breaking the single end-to-end vertical it proves; use it WITH a recorded Justification-column entry, never a bare tag. This is legitimate authoring, not a violation of carpaccio discipline. <!-- mode-ref-ok -->
 - Expectation Charters — one per slice that promises observable value (evolution-plan P2.0/P2.1). The PO derives each charter from that slice's Value statement and writes it to `docs/product/expectations/{feature-id}/{intent-name}.md` using `nWave/templates/expectation-charter.md`. See §Expectation Charter below. Authoring the charter is what ARMS the DELIVER EXAMINE step + the commit-slice examine-verdict gate for that feature (no charter → the gate is unarmed and DELIVER falls back to the legacy reviewer audit). <!-- mode-ref-ok -->
 - Acceptance criteria (ACs) — testable, embedded per story (classic mode; under `atdd_pure` the per-slice `.feature` ATs are the AC SSOT, authored downstream in DISTILL) <!-- mode-ref-ok -->
 - Definition of Done (DoD) — 9-item checklist
@@ -180,7 +180,7 @@ Epic-mode produces ONLY the plan — `docs/epic/{id}/epic-delta.md`. It does NOT
 | EDC-2 | Title line `# Epic Delta: {epic-id}` |
 | EDC-3 | Epic-JTBD section under `## Wave: DISCUSS / [REF] Epic Job & Intent` (When-I-want-so-that + persona) |
 | EDC-4 | Feature Plan under the EXACT heading `## Wave: DISCUSS / [REF] Feature Plan`, five fixed columns `Feature \| Value statement \| Status \| Annotation \| Justification` (the Slice Plan grammar reused at feature granularity) |
-| EDC-5 | Keystone = exactly ONE row annotated `@walking-skeleton` (Slice Plan annotation token reused — no new token) |
+| EDC-5 | Keystone = exactly ONE row annotated `@walking_skeleton` (Slice Plan annotation token reused — no new token) |
 | EDC-6 | Dependency order = ROW ORDER, backward-only (row K depends only on rows < K); optional explicit `depends-on {feature-id}` in Annotation for a non-adjacent dependency, referencing an earlier row only |
 | EDC-7 | Status tokens = closed set `pending \| in-flight \| shipped`; authored rows start `pending` |
 | EDC-8 | Gate-OUT: the run ends with the feature-delta validator (gate-id in `nWave/gates/_catalog.yaml`) run `--require-feature-plan --format=json` over `docs/epic/{id}/epic-delta.md`, verdict `accepted` (slice-01 keystone validator) |
@@ -190,7 +190,7 @@ Epic-mode produces ONLY the plan — `docs/epic/{id}/epic-delta.md`. It does NOT
 
 A feature is right-sized when it is independently shippable + walking-skeleton-able + single JTBD outcome + ≈≤2 weeks. Carpaccio taste tests scale up to feature granularity:
 
-- Keystone-abstraction-first: the `@walking-skeleton` feature ships the thinnest end-to-end vertical every later feature hangs on.
+- Keystone-abstraction-first: the `@walking_skeleton` feature ships the thinnest end-to-end vertical every later feature hangs on.
 - Merge-if-identical-except-scale: two Feature Plan rows that differ only by scale → merge into one (name the merge in that row's Justification).
 - A Feature Plan whose every row is `@infrastructure` carries no user value → `rejected-infra-only` (cohesion-MECC, slice-03). Mechanically non-representable.
 

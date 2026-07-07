@@ -132,7 +132,9 @@ $defs:
         type: array
         description: |
           Ordered list of argparse arguments the gate accepts. Each entry is
-          {name, required, type, help, default?}.
+          {name, required, type, help, default?}. `name` is either an optional
+          flag ("--foo") or a bare positional argparse name ("foo", e.g.
+          `parser.add_argument("path", ...)`).
         items:
           type: object
           required: [name, required, type]
@@ -140,7 +142,7 @@ $defs:
           properties:
             name:
               type: string
-              pattern: "^--[a-z][a-z0-9-]*$"
+              pattern: "^(--[a-z][a-z0-9-]*|[a-z][a-z0-9_]*)$"
             required:
               type: boolean
             type:

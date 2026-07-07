@@ -28,6 +28,7 @@ crafter MUST implement, not a guess):
         structurally-accepted | no-overlap-declared | methodology-exempt
         | missing-reuse-analysis | malformed-reuse-analysis
         | unjustified-create-new | malformed-wave-heading
+        | ungrounded-reuse-analysis
 
     The verdict mapping below reads that ``verdict`` token -- a STRUCTURED
     contract -- never free-text stdout substrings. An unknown or absent token
@@ -75,6 +76,12 @@ _VERDICT_TOKEN: dict[str, ReuseVerdict] = {
     "malformed-reuse-analysis": ReuseVerdict.MALFORMED_REUSE_ANALYSIS,
     "unjustified-create-new": ReuseVerdict.UNJUSTIFIED_CREATE_NEW,
     "malformed-wave-heading": ReuseVerdict.MALFORMED_WAVE_HEADING,
+    # F-fix-reuse-analysis-content-grounding (WS-9): a row's `Existing
+    # Component | File` citation does not resolve through the CodeFactPort
+    # chain (a phantom citation) -- caught regardless of Decision (EXTEND or
+    # CREATE_NEW), since even a CREATE_NEW row names the nearest existing
+    # component it was compared against and rejected.
+    "ungrounded-reuse-analysis": ReuseVerdict.UNGROUNDED_REUSE_ANALYSIS,
 }
 
 # The canonical Reuse Analysis heading + five columns (DDD-8 / R1). Mirrors
@@ -275,8 +282,16 @@ def _doc(*sections: str) -> str:
 
 
 # An EXTEND row -- the structural happy path. Every cell populated.
+#
+# `Existing Component` cites a REAL, resolvable atom (a top-level function,
+# per the AST CodeFact tier -- classes are not atoms there) so the row clears
+# the F-fix-reuse-analysis-content-grounding (WS-9) content-grounding leg the
+# CLI runs under `--require-reuse-analysis --format=json` (`project_root`
+# is `Path.cwd()`, so `File` resolves relative to the repo root pytest is
+# invoked from). A citation naming the FILE itself (not a symbol inside it)
+# is a phantom citation and is correctly rejected as `ungrounded`.
 _EXTEND_ROW = (
-    "| validate_feature_delta.py | src/des/cli/validate_feature_delta.py "
+    "| validate_reuse_analysis_content | src/des/cli/validate_feature_delta.py "
     "| structural validation | EXTEND | a third validation aspect of the same "
     "artifact |"
 )
@@ -298,32 +313,39 @@ def _build_section_absent(comp: ReuseAnalysisComposition) -> None:
 
 
 def _build_this_feature_gold(comp: ReuseAnalysisComposition) -> None:
-    # Gold test: a verbatim-shaped copy of THIS feature's own Reuse Analysis
-    # table -- five EXTEND rows, canonical `## Reuse Analysis` heading, the
-    # bold-cell variant exercised on the first cell to prove DDD-11 parser
-    # hardening accepts what the real feature-delta carries.
+    # Gold test: a multi-row Reuse Analysis table shaped like this feature's
+    # own (five EXTEND rows, canonical `## Reuse Analysis` heading), proving
+    # multi-row content-grounding clears when every `Existing Component`
+    # names a REAL, resolvable atom (a top-level function -- classes are not
+    # atoms under the AST CodeFact tier) in its `File`. A `File` cell carries
+    # a bare repo-relative path (no `:line,col` suffix) -- that suffix would
+    # make the cited path unresolvable and the row would be (correctly)
+    # rejected as `ungrounded` (F-fix-reuse-analysis-content-grounding, WS-9).
+    # Markdown-prose citations (a SKILL.md step, an agent .md file) cannot
+    # ground -- the AST tier parses Python only -- so this fixture cites five
+    # distinct functions of the gate's own module instead of prose assets.
     rows = "\n".join(
         [
-            "| **validate_feature_delta.py** | "
+            "| validate_reuse_analysis_content | "
             "src/des/cli/validate_feature_delta.py | structural "
-            "validation; pure-core + thin-shell | EXTEND | the slice-plan "
-            "check was added as a mode on this same file |",
-            "| validate_slice_plan_content / SlicePlanResult | "
-            "src/des/cli/validate_feature_delta.py:243,100 | closed-set "
-            "verdict value object | EXTEND | ReuseAnalysisResult copies the "
-            "SlicePlanResult NamedTuple shape verbatim |",
-            "| _parse_args / _run_require_slice_plan | "
-            "src/des/cli/validate_feature_delta.py:348,386 | CLI flag "
+            "validation; pure-core + thin-shell | EXTEND | the content-grounding "
+            "check was added as a mode on this same function |",
+            "| _component_citation_is_grounded | "
+            "src/des/cli/validate_feature_delta.py | phantom-citation "
+            "resolution through the CodeFactPort chain | EXTEND | the "
+            "grounding leg reuses this lookup rather than a bespoke resolver |",
+            "| _parse_args | "
+            "src/des/cli/validate_feature_delta.py | CLI flag "
             "parsing + mode dispatch | EXTEND | add one --require-reuse-analysis "
             "branch mirroring _run_require_slice_plan |",
-            "| nw-design/SKILL.md Reuse Analysis step | "
-            "nWave/skills/nw-design/SKILL.md:93,246 | the upstream "
-            "artifact-producing skill | EXTEND | the skill emits the table the "
-            "gate consumes; scope the upstream skill change |",
-            "| nw-solution-architect-reviewer | "
-            "nWave/agents/nw-solution-architect-reviewer.md:56 | peer-review "
-            "veto over architecture quality | EXTEND | add one critique "
-            "dimension; no new reviewer |",
+            "| _classify_component_row | "
+            "src/des/cli/validate_feature_delta.py | per-row Decision / "
+            "Justification well-formedness classification | EXTEND | reuse "
+            "the same row classifier ahead of the grounding leg |",
+            "| main | "
+            "src/des/cli/validate_feature_delta.py | CLI entry point "
+            "dispatch | EXTEND | the --require-reuse-analysis mode is one "
+            "more branch on the same entry point |",
         ]
     )
     comp._write(_doc(_reuse_section(rows)))
@@ -349,10 +371,16 @@ def _build_create_new_empty_justification(comp: ReuseAnalysisComposition) -> Non
 def _build_create_new_space_spelling(comp: ReuseAnalysisComposition) -> None:
     # A `CREATE NEW` (space) row -- DDD-7 normalisation collapses internal
     # whitespace to `_`, so it normalises to CREATE_NEW. With a non-empty
-    # justification it is accepted -> structurally-accepted.
+    # justification it is accepted -> structurally-accepted. `Existing
+    # Component` cites a REAL, resolvable atom -- even a CREATE_NEW row names
+    # the nearest existing component it was compared against and rejected,
+    # so it must still clear content-grounding (WS-9); `brand_new.py` /
+    # `src/brand_new.py` would be a phantom citation (neither the file nor
+    # the "component" exist) and is correctly rejected as `ungrounded`.
     row = (
-        "| brand_new.py | src/brand_new.py | genuinely no overlapping "
-        "component | CREATE NEW | a real justification for the new path |"
+        "| validate_reuse_analysis_content | src/des/cli/validate_feature_delta.py "
+        "| the nearest existing validator; insufficient overlap to extend "
+        "| CREATE NEW | a real justification for the new path |"
     )
     comp._write(_doc(_reuse_section(row)))
 
@@ -363,8 +391,12 @@ def _build_create_new_parenthetical_qualifier(
     # A CREATE_NEW row whose Decision cell carries a trailing parenthetical
     # qualifier (DDD-7 leniency) -- the bare token is extracted, so it
     # normalises to CREATE_NEW; with a non-empty justification -> accepted.
+    # `Existing Component` cites a different real, resolvable atom (the
+    # CodeFactPort's own `query` method) than the sibling scenario above, to
+    # prove content-grounding (WS-9) resolves across distinct files, not just
+    # the gate's own module.
     row = (
-        "| companion.py | src/companion.py | a genuine overlapping "
+        "| query | src/des/ports/code_fact_port.py | a genuine overlapping "
         "component | CREATE_NEW (companion) | a real justification for the new path |"
     )
     comp._write(_doc(_reuse_section(row)))
@@ -393,6 +425,19 @@ def _build_duplicate_heading(comp: ReuseAnalysisComposition) -> None:
     )
 
 
+def _build_phantom_component_citation(comp: ReuseAnalysisComposition) -> None:
+    # An otherwise well-formed EXTEND row whose `Existing Component` names a
+    # symbol absent from the cited (real) `File` -- the phantom-citation
+    # regression lock for F-fix-reuse-analysis-content-grounding (WS-9):
+    # ungrounded-reuse-analysis.
+    row = (
+        "| this_symbol_does_not_exist_anywhere | "
+        "src/des/cli/validate_feature_delta.py | structural validation "
+        "| EXTEND | a citation naming a component absent from the file |"
+    )
+    comp._write(_doc(_reuse_section(row)))
+
+
 _FEATURE_DELTA_BUILDERS: dict[
     ReuseTableShape, Callable[[ReuseAnalysisComposition], None]
 ] = {
@@ -410,4 +455,5 @@ _FEATURE_DELTA_BUILDERS: dict[
     ReuseTableShape.METHODOLOGY_EXEMPT_MARKER: _build_methodology_exempt_marker,
     ReuseTableShape.NO_OVERLAP_MARKER: _build_no_overlap_marker,
     ReuseTableShape.DUPLICATE_HEADING: _build_duplicate_heading,
+    ReuseTableShape.PHANTOM_COMPONENT_CITATION: _build_phantom_component_citation,
 }

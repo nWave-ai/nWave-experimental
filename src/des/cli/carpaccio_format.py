@@ -54,7 +54,11 @@ __all__ = [
 
 
 # Default carpaccio slice-size ceiling when .nwave/config.yaml omits it.
-_DEFAULT_SLICE_MAX = 3
+# Ratified 7 (Ale, 2026-07-05, F-CARPACCIO-CEILING-7-AND-COUPLED-SURFACE) --
+# the ONE canonical locus; .nwave/config.yaml MUST agree (never a diverging
+# project override) and the docstring example below MUST NOT hardcode a
+# second, independently-stale copy of this literal.
+_DEFAULT_SLICE_MAX = 7
 
 _SLICE_PLAN_HEADING_RE = re.compile(
     r"^#{2,4}\s+Wave:\s+DISCUSS\s+/\s+\[REF\]\s+Slice Plan\s*$"
@@ -162,7 +166,7 @@ def _scan_atdd_pure_int(text: str, key: str) -> int | None:
     Reads the two-level block-mapping shape ``.nwave/config.yaml`` carries::
 
         atdd_pure:
-          carpaccio_slice_max: 3
+          carpaccio_slice_max: <N>
 
     Returns the integer when the nested key is found under the ``atdd_pure:``
     top-level block, or None when absent / non-integer. Deliberately narrow:
@@ -801,9 +805,17 @@ def _check_slice_size_count(
                 f"carpaccio ceiling of {slice_max}"
             ),
             "instruction": (
-                "re-slice into thinner end-to-end verticals each within the "
-                f"ceiling of {slice_max}, or annotate the slice as @coupled / "
-                "@walking-skeleton / @infrastructure with a recorded justification"
+                "a cohesive over-ceiling slice is LEGITIMATE, not a violation: "
+                "if the AT group cannot be decomposed without breaking the "
+                "single end-to-end vertical it proves, annotate the slice-plan "
+                "row @coupled with a recorded justification (ADR-028 D2) -- "
+                "this is the DESIGNED escape path, not a workaround. Otherwise "
+                f"re-slice into thinner end-to-end verticals each within the "
+                f"ceiling of {slice_max}. A slice that is over-ceiling AND not "
+                "cleanly re-sliceable warrants deep-review + refactor at "
+                "FEATURE scope, not a per-slice patch. @walking-skeleton / "
+                "@infrastructure annotations govern ordering, not this size "
+                "escape -- only @coupled + justification lifts the ceiling"
             ),
         },
     )

@@ -63,8 +63,21 @@ class SkillNormativeGateService:
         if unreadable:
             return NormativeVerdict.indeterminate_for(unreadable)
         return NormativeVerdict.over(
-            tuple(FailingClause(skill=c.skill, clause_id=c.clause_id) for c in failing)
+            tuple(
+                FailingClause(
+                    skill=c.skill,
+                    clause_id=c.clause_id,
+                    marker=c.marker,
+                    skill_path=self._skill_path_for(c),
+                    manifest_path=str(manifest_path),
+                )
+                for c in failing
+            )
         )
+
+    def _skill_path_for(self, clause: NormativeClause) -> str:
+        """The resolved asset path(s) a maintainer must edit to restore the marker."""
+        return ", ".join(str(asset) for asset in self._resolve_assets(clause))
 
     def _check_assets(
         self, clauses: tuple[NormativeClause, ...]

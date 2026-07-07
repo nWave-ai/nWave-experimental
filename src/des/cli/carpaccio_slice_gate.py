@@ -714,7 +714,9 @@ def _at_content_hash(slice_scenarios: list[Scenario]) -> str:
 # ---------------------------------------------------------------------------
 
 
-_CLEAR_CLASS_EVENTS = frozenset({"SliceCleared", "CoupledSliceAccepted"})
+_CLEAR_CLASS_EVENTS = frozenset(
+    {"SliceCleared", "CoupledSliceAccepted", "LaneAtExemptionAccepted"}
+)
 
 
 def _emit(payload: dict[str, object]) -> None:
@@ -751,6 +753,13 @@ def _emit(payload: dict[str, object]) -> None:
             f"carpaccio slice {slice_id} cleared via coupled-AT-group escape"
             if slice_id
             else "carpaccio slice cleared via coupled-AT-group escape"
+        )
+    elif event == "LaneAtExemptionAccepted":
+        lane = payload.get("lane")
+        summary = (
+            f"carpaccio slice {slice_id} cleared via the {lane} lane exemption"
+            if slice_id
+            else "carpaccio slice cleared via the lane exemption"
         )
     else:
         error = payload.get("error")

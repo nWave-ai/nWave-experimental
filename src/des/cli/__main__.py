@@ -108,6 +108,16 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.feature_delta_schema",
         "main",
     ),
+    # feature-delta-doctor-and-ssot slice-01 (WS-2 / M2, FR-11 root fix): the
+    # one-pass structural gap aggregator over a feature-delta.md -- composes
+    # the existing validate_feature_delta validators in ONE invocation so a
+    # contributor sees every gap at once instead of one gate rejection at a
+    # time. Filesystem-only (no git dependency).
+    _SubcommandRow(
+        "feature-delta-doctor",
+        "des.cli.feature_delta_doctor",
+        "main",
+    ),
     _SubcommandRow(
         "record-discuss-review",
         "des.cli.discuss_review_verdict",
@@ -297,6 +307,11 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.attest_bundled_slice",
         "main",
     ),
+    # des-dispatch-ssot-renderer Fase-2 (the GENERATOR): renders a gate-valid
+    # atdd_pure dispatch prompt from nWave/dispatch/atdd_pure.yaml + vendors.yaml
+    # + LANE_PROFILES, so the generator and AtddPurePromptValidator share ONE
+    # source and cannot silently diverge.
+    _SubcommandRow("dispatch", "des.cli.dispatch", "main"),
 )
 
 
@@ -332,7 +347,8 @@ def main(argv: list[str] | None = None) -> int:
     row = next(r for r in _REGISTRY if r.name == parsed.subcommand)
     module = importlib.import_module(row.module_path)
     subcommand_main = getattr(module, row.function_name)
-    return subcommand_main(remaining)
+    exit_code: int = subcommand_main(remaining)
+    return exit_code
 
 
 if __name__ == "__main__":  # pragma: no cover

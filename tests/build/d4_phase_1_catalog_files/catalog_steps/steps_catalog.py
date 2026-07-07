@@ -98,13 +98,17 @@ def then_no_errors(composition) -> None:
 # registry-coherence drift class the per-slice build-tier exit gate now catches
 # (F-CONTRACT-GATE-EXCLUDES-BUILD-TIER-ARCH-TESTS). Reconciled 1:1 across all
 # three surfaces.
-@then("both contain exactly 51 entries")
+# Count 51 -> 52 (2026-07-06, feature-delta-doctor-and-ssot slice-01, WS-2 / M2):
+# feature-delta-doctor was added to _REGISTRY without its catalog row; reconciled 1:1.
+# Count 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2): dispatch was
+# added to _REGISTRY without its catalog row; reconciled 1:1.
+@then("both contain exactly 53 entries")
 def then_both_counts_match(composition) -> None:
-    assert len(composition.catalog_gate_ids) == 51, (
-        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 51"
+    assert len(composition.catalog_gate_ids) == 53, (
+        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 53"
     )
-    assert len(composition.registry_names) == 51, (
-        f"_REGISTRY has {len(composition.registry_names)} entries, expected 51"
+    assert len(composition.registry_names) == 53, (
+        f"_REGISTRY has {len(composition.registry_names)} entries, expected 53"
     )
 
 

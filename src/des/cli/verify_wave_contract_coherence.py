@@ -68,6 +68,16 @@ _GATE_ID_LINE = re.compile(r"^\s*-?\s*gate_id:\s*([A-Za-z0-9_-]+)\s*$")
 # enumeration written as a bullet list of bare catalog gate_ids (ADR-003 D1 shape 2).
 _MARKDOWN_LIST_ITEM = re.compile(r"^\s*[-*]\s+(.+?)\s*$")
 
+# A backtick-code span (`` `...` ``) — Shape 2's genuine-enumeration signal
+# (F-COHERENCE-GATE-PRECISION). A wave's gate-stack re-enumerated inline is always
+# written as backtick-code (the registry's `gate_id` values pasted as code, e.g.
+# "runs `a` then `b`"); a common-English-word catalog gate_id (`dispatch`,
+# `feature-end`, ...) used as ordinary running-prose vocabulary is bare, unbackticked
+# text. Restricting the Shape-2 tally to backtick-wrapped occurrences keeps the
+# command-form (`des <gate-id>`) and artifact-noun (`roadmap.json`) exclusions intact
+# (they still apply inside a span) while removing the command/common-word collision.
+_BACKTICK_SPAN = re.compile(r"`([^`]+)`")
+
 # A top-level YAML key (zero-indent ``key:``) — used to detect the presence of the
 # two SSOT blocks (``gate_stack`` / ``output_contract``) in a registry file.
 _TOP_LEVEL_KEY = re.compile(r"^([A-Za-z0-9_-]+):\s*$")
@@ -195,7 +205,8 @@ def _inline_restatement(
         if yaml_line is not None and yaml_line.group(1) in catalog_gate_ids:
             return yaml_line.group(1)
 
-    # Shape 2 — a single line naming >=2 distinct bare catalog gate_ids (inline stack).
+    # Shape 2 — a single line naming >=2 distinct bare catalog gate_ids, restricted to
+    # backtick-code occurrences (the genuine-enumeration signal; see _BACKTICK_SPAN).
     for line in lines:
         distinct = _distinct_bare_gate_ids(line, catalog_gate_ids)
         if len(distinct) >= 2:
@@ -218,20 +229,31 @@ def _inline_restatement(
 def _distinct_bare_gate_ids(line: str, catalog_gate_ids: frozenset[str]) -> list[str]:
     """The distinct catalog gate_ids appearing as bare tokens on ``line``, in order.
 
-    A token is bare when the retained word-boundary scan matches AND it is neither a
+    A token counts ONLY when it sits inside a backtick-code span (F-COHERENCE-GATE-
+    PRECISION) -- the genuine-enumeration signal (see :data:`_BACKTICK_SPAN`). A
+    common-word catalog gate_id (``dispatch``, ``feature-end``, ...) mentioned as
+    ordinary running prose is never backticked and so never tallies here -- only the
+    registry's re-enumerated ``gate_id`` values, pasted as code, are. Within a span, a
+    token is bare when the retained word-boundary scan matches AND it is neither a
     ``des <gate-id>`` invocation (``des `` immediately before) nor an artifact stem
     (``.`` immediately after) — the two mention forms ADR-003 D1 keeps PASSing.
     """
     found: dict[str, int] = {}
-    for gate_id in catalog_gate_ids:
-        for match in re.finditer(rf"(?<![\w-]){re.escape(gate_id)}(?![\w-])", line):
-            start = match.start()
-            if line[max(0, start - 4) : start] == "des ":
-                continue
-            if match.end() < len(line) and line[match.end()] == ".":
-                continue
-            found.setdefault(gate_id, start)
-            break
+    for span in _BACKTICK_SPAN.finditer(line):
+        span_text = span.group(1)
+        span_start = span.start(1)
+        for gate_id in catalog_gate_ids:
+            for match in re.finditer(
+                rf"(?<![\w-]){re.escape(gate_id)}(?![\w-])", span_text
+            ):
+                local_start = match.start()
+                absolute_start = span_start + local_start
+                if line[max(0, absolute_start - 4) : absolute_start] == "des ":
+                    continue
+                if match.end() < len(span_text) and span_text[match.end()] == ".":
+                    continue
+                found.setdefault(gate_id, absolute_start)
+                break
     return [gate_id for gate_id, _ in sorted(found.items(), key=lambda kv: kv[1])]
 
 
