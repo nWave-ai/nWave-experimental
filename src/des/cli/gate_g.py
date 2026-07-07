@@ -408,13 +408,20 @@ def _passed() -> GateGEnvelope:
 
 
 def _failed(dropped: list[str], undeclared: list[str]) -> GateGEnvelope:
-    """A confirmable divergence → FAIL + a diagnostic naming the mechanical witness."""
+    """A confirmable divergence → FAIL + a diagnostic naming the mechanical witness
+    AND a concrete HOW (GDP-3 — a FAIL/UNVERIFIED verdict must carry an actionable
+    remediation, not only the mechanical WHAT)."""
     parts: list[str] = []
     for row in dropped:
-        parts.append(f"ExampleTableRow {row!r} has no covering scenario")
+        parts.append(
+            f"ExampleTableRow {row!r} has no covering scenario -- author a "
+            f"scenario tagged @row:{row}"
+        )
     for scenario in undeclared:
         parts.append(
-            f"AT scenario {scenario!r} references a symbol the design never declared"
+            f"AT scenario {scenario!r} references a symbol the design never "
+            f"declared -- declare {scenario!r} on the design contract, or "
+            "retarget the scenario to an existing row"
         )
     return GateGEnvelope(
         verdict=GateVerdict.FAIL,
@@ -425,14 +432,16 @@ def _failed(dropped: list[str], undeclared: list[str]) -> GateGEnvelope:
 
 
 def _unverified(design_rows: list[str], at_scenarios: list[str]) -> GateGEnvelope:
-    """Too loose to confirm → UNVERIFIED + the North-Star cap surfaced LOUD."""
+    """Too loose to confirm → UNVERIFIED + the North-Star cap surfaced LOUD, with a
+    concrete HOW (GDP-3): declare the port on the design contract, or retarget the AT."""
     diagnostic = (
         "design↔AT row-level bijection UNCONFIRMABLE against the prose "
         f"`{_DESIGN_SECTION_HEADING}` contract (D3 manifest deferred, OB-G): "
         f"{len(design_rows)} example-table rows {design_rows!r} and "
         f"{len(at_scenarios)} AT scenarios {at_scenarios!r} match in count but no "
         "row identifier aligns to a scenario -- neither a clean bijection nor a "
-        "concrete divergence is mechanically pinnable. North-Star cap surfaced."
+        "concrete divergence is mechanically pinnable. North-Star cap surfaced -- "
+        "declare the port on the design contract, or retarget the AT."
     )
     return GateGEnvelope(
         verdict=GateVerdict.UNVERIFIED,
@@ -504,9 +513,13 @@ def main(argv: list[str] | None = None) -> int:
     """Drive gate-G over a design contract + AT module → print the §17 verdict.
 
     Emits one JSON line ``{"verdict": <token>, "diagnostic": <str>}`` on stdout
-    (the verdict token is the §17 ``GateVerdict.value``). The exit code is 0 — the
-    verdict, not the process code, carries the gate outcome (asymmetric authority:
-    a PASS is "no objection found", never an authorizing GO).
+    (the verdict token is the §17 ``GateVerdict.value``), followed by a
+    human-readable ``✗ <verdict>: <diagnostic>`` line whenever the diagnostic is
+    non-empty (FAIL / UNVERIFIED / INDETERMINATE / NOT_APPLICABLE — GDP-3: a
+    machine-only JSON blob is not a self-explaining failure surface). A PASS
+    carries an empty diagnostic, so no human line is emitted for it. The exit
+    code is 0 — the verdict, not the process code, carries the gate outcome
+    (asymmetric authority: a PASS is "no objection found", never an authorizing GO).
     """
     args = _build_gate_g_parser().parse_args(argv)
     envelope = evaluate_gate_g(args.design_contract, args.at_module)
@@ -515,6 +528,8 @@ def main(argv: list[str] | None = None) -> int:
             {"verdict": envelope.verdict.value, "diagnostic": envelope.diagnostic}
         )
     )
+    if envelope.diagnostic:
+        print(f"✗ {envelope.verdict.value}: {envelope.diagnostic}")
     return 0
 
 

@@ -398,6 +398,18 @@ DISCOVER(opt) → DIVERGE(opt) → DISCUSS(opt) → DESIGN(opt) → DEVOPS(opt) 
 
 These are hard, non-negotiable constraints. Violations are tech-debt tracked in [`ARCH_TECH_DEBT.md`](ARCH_TECH_DEBT.md). Re-read before any gate/wave/design proposal.
 
+### Gate Design Principles — GDP-1..7 (STANDING, Ale 2026-07-07)
+
+The design contract EVERY gate must satisfy. Audit every gate against this checklist; a gap is a plan item to correct that gate.
+
+- **GDP-1 — Intercept EARLY (timing).** Fire at the earliest point the defect is detectable — BEFORE the effort it guards is spent and the value delivered. A gate that fires after delivery only COMMENTS, it cannot prevent. Efficacy ladder: **proactive-inline ≫ reactive-before-completion ≫ advisory-after-completion**.
+- **GDP-2 — Proactive INLINE affordance.** Pair the reactive gate with guidance inline at the authoring surface, so the block is rarely reached — a gate that fires is already too late to teach. Keep the gate, ADD the inline guidance.
+- **GDP-3 — Self-explaining (WHAT/WHY/HOW).** Every rejection states WHAT failed, WHY, and HOW to fix — directly, no investigation needed. A bare `FAILED`/exit-code is itself a defect.
+- **GDP-4 — The HOW invokes the PRODUCING TOOL.** The HOW routes to the system tool that produces the valid artifact (`des dispatch`, `des feature-delta-doctor`), never manual repair. No producing tool yet → the gate is the signal to build one (M2).
+- **GDP-5 — Cost on the SYSTEM.** The system produces/generates the checked artifact (hook injects / script generates / gate verifies); the operator never hand-assembles it. System-pays = capability; operator-pays = ceremony. The fix relocates the production, never removes the check.
+- **GDP-6 — Reliability: NO silent-wrong.** Degrade-LOUD / INDETERMINATE, never false-green nor silently-wrong. Silent-wrong destroys trust worse than loud-fail; fix correctness before pushing adoption.
+- **GDP-7 — Agnostic + execution-observing.** Python-only / language-agnostic (no `git`/tool hard-dep in gate logic — behind an optional degrade-loud port); where it can, OBSERVE real execution (the fixed floor), not merely asserted state.
+
 ### Spine-driven dispatch — NEVER bare-invoke an agent (Ale 2026-06-21)
 
 - **NEVER invoke an agent directly without explicit HUMAN permission — epic & feature

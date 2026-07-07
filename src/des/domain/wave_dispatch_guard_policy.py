@@ -283,7 +283,12 @@ def decide_dispatch(
                 "while NOT entering the wave -- a wave-owned child that dropped "
                 "its markers is a wave bypass the PreToolUse AT-3 floor check "
                 "already blocks; verify-wave-dispatch agrees (one exemption SSOT, "
-                "not a reopened bypass)"
+                "not a reopened bypass). To fix: run `des dispatch --mode "
+                "atdd_pure --project-id <id> --slice <slice> --phase <phase>` "
+                "(emits a gate-valid dispatch carrying the full marker set -- "
+                f"including `<!-- DES-WAVE: {owner_wave} -->` and "
+                "`DES-VALIDATION` -- by construction), or embed both markers "
+                "yourself in the sub-dispatch prompt."
             ),
         )
 
@@ -314,6 +319,11 @@ def decide_dispatch(
             f"block: {subagent_type} dispatched off-spine with no DES-WAVE marker, "
             "no form-valid skip witness, and no valid session pre-grant -- refused "
             "(warn+ask: entering a wave off-spine is a human-conceded exception, "
-            "never a silent default)"
+            "never a silent default). To proceed: run `des dispatch --mode "
+            "atdd_pure --project-id <id> --slice <slice> --phase <phase>` (the "
+            "producing tool -- emits a gate-valid dispatch carrying the "
+            f"`<!-- DES-WAVE: {owner_wave} -->` marker by construction), or embed "
+            f"`<!-- DES-WAVE: {owner_wave} -->` in the prompt yourself, or route "
+            f"through `/nw-{owner_wave}`."
         ),
     )

@@ -196,7 +196,9 @@ def _evaluate_structural(
             f"the feature-delta for {feature_id!r} is MISSING locked section(s) "
             f"{missing_sections!r} — every named [REF] section "
             f"(Architecture & Contract Tests / ADR Refs / Reuse Analysis / Slice "
-            f"Plan) must be present for the contract to freeze."
+            f"Plan) must be present for the contract to freeze. Run `des "
+            f"feature-delta-doctor docs/feature/{feature_id}/feature-delta.md` for "
+            f"a one-pass report of every missing/malformed section."
         )
 
     slice_plan = validate_slice_plan_content(content)
@@ -293,8 +295,10 @@ def _fold_code_design_manifest(feature_id: str, repo_root: Path) -> FreezeOutcom
             f"the code-design manifest for {feature_id!r} ({manifest_path}) is "
             f"INVALID (validator exit {exit_code}): {detail} — an invalid manifest "
             f"(stale sut symbol or bad schema) FAILs the DELIVER-entry freeze "
-            f"(ADR-FLOW-004 DDD-5). The contract cannot freeze until the manifest "
-            f"is repaired."
+            f"(ADR-FLOW-004 DDD-5). Repair it: update the manifest's `sut:` symbol "
+            f"(or fix the schema per the detail above), then re-run `python -m "
+            f"scripts.cli.validate_component_manifest {manifest_path}` to confirm "
+            f"before re-driving this gate."
         )
 
     return FreezeOutcome(verdict=GateVerdict.PASS, diagnostic="")
