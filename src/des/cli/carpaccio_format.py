@@ -827,6 +827,25 @@ def _check_slice_size_count(
 
 
 def _at_review_rejection(reason: str, slice_id: str) -> GateError:
+    """Self-describing ``ATReviewGateRejected`` (GDP-3/GDP-4, fix-carpaccio-
+    at-review-rejection-self-explains): every-failure-explains-what-why-how --
+    WHAT (``reason``) and WHY are unchanged; this adds the missing HOW,
+    naming the two producing tools that clear assertion 5 (mirrors
+    ``carpaccio_slice_gate._MECHANICAL_OR_VERDICT_HOW``, which OVERWRITES
+    this ``how`` with the fuller pytest-regression wording via
+    ``_with_mechanical_remedy`` -- this default covers every OTHER caller,
+    principally the plain Gherkin path that today reaches this function
+    unwrapped).
+    """
+    how = (
+        "satisfy assertion 5 by EITHER (a) minting an APPROVED "
+        "ATReviewVerdict: `des record-at-review-verdict --feature-id "
+        f"<feature-id> --slice-id {slice_id} --verdict APPROVED "
+        "--reviewer-agent-id <reviewer-id>`, OR (b) the mechanical pair "
+        "(pytest-regression mode only): `des verify-red-green --record-red "
+        "--test-file <regression-test-file>` AND `des verify-negative-at "
+        "--test-file <regression-test-file> --all-critical`."
+    )
     return GateError(
         45,
         {
@@ -834,6 +853,7 @@ def _at_review_rejection(reason: str, slice_id: str) -> GateError:
             "slice_id": slice_id,
             "reason": reason,
             "error": f"AT-review gate rejected slice {slice_id}: {reason}",
+            "how": how,
         },
     )
 

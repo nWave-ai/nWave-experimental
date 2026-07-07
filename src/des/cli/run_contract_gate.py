@@ -1232,6 +1232,10 @@ def _mode_verify_gate_scope(repo: Path, commit: str) -> int:
                     "commit carries no Gate-Scope: trailer -- the contract "
                     "gate scope is unverified"
                 ),
+                "how": (
+                    "re-commit the slice through `des commit-slice` -- it "
+                    "stamps the Gate-Scope: trailer mechanically"
+                ),
             }
         )
         return 1
@@ -1248,6 +1252,11 @@ def _mode_verify_gate_scope(repo: Path, commit: str) -> int:
                     "commit Gate-Scope: digest does not match a fresh "
                     "run_contract_gate --collect-only digest -- the "
                     "terminating run was narrower than the contract"
+                ),
+                "how": (
+                    "re-run the full gate `run_contract_gate --repo .` so "
+                    "the terminating run covers the whole contract, then "
+                    "re-commit"
                 ),
             }
         )
