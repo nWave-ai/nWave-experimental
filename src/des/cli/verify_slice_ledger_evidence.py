@@ -43,8 +43,8 @@ record cannot be located on the timeline).
 
 Stdlib-only (no PyYAML, no third-party deps) per DES-bundle hygiene
 contract. The subcommand module imports only ``argparse``, ``json``,
-``os``, ``sys`` and ``pathlib`` -- mirrors the pattern of the
-``carpaccio_slice_gate`` and ``health_check`` peer subcommands.
+``os``, ``sys``, ``datetime`` and ``pathlib`` -- mirrors the pattern of
+the ``carpaccio_slice_gate`` and ``health_check`` peer subcommands.
 
 Exit codes:
     0 = report emitted to stdout (always the success path)
@@ -57,6 +57,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 
@@ -118,7 +119,7 @@ def _audit_log_files(target_root: Path) -> list[Path]:
     return sorted(log_dir.glob(_AUDIT_LOG_GLOB))
 
 
-def _parse_event(line: str) -> dict | None:
+def _parse_event(line: str) -> dict[str, object] | None:
     """Parse one JSONL line into a dict event, or None on malformed input."""
     stripped = line.strip()
     if not stripped:
@@ -132,7 +133,7 @@ def _parse_event(line: str) -> dict | None:
     return parsed
 
 
-def _event_date_prefix(event: dict) -> str | None:
+def _event_date_prefix(event: dict[str, object]) -> str | None:
     """Extract the ``YYYY-MM-DD`` date prefix from an event's timestamp."""
     timestamp = event.get("timestamp")
     if not isinstance(timestamp, str):
@@ -149,9 +150,9 @@ def _event_date_prefix(event: dict) -> str | None:
     return prefix
 
 
-def _read_audit_events(target_root: Path) -> list[dict]:
+def _read_audit_events(target_root: Path) -> list[dict[str, object]]:
     """Read all audit events from every ``audit-*.log`` file under the target."""
-    events: list[dict] = []
+    events: list[dict[str, object]] = []
     for path in _audit_log_files(target_root):
         try:
             content = path.read_text(encoding="utf-8")
@@ -164,7 +165,9 @@ def _read_audit_events(target_root: Path) -> list[dict]:
     return events
 
 
-def _count_by_event_since(events: list[dict], since: str) -> dict[str, int]:
+def _count_by_event_since(
+    events: list[dict[str, object]], since: str
+) -> dict[str, int]:
     """Return per-report-field counts of events on or after ``since``.
 
     Initializes every reported field to 0 so the JSON envelope always
@@ -174,7 +177,11 @@ def _count_by_event_since(events: list[dict], since: str) -> dict[str, int]:
     counts: dict[str, int] = dict.fromkeys(_EVENT_TO_REPORT_FIELD.values(), 0)
     for event in events:
         event_name = event.get("event")
-        report_field = _EVENT_TO_REPORT_FIELD.get(event_name)
+        report_field = (
+            _EVENT_TO_REPORT_FIELD.get(event_name)
+            if isinstance(event_name, str)
+            else None
+        )
         if report_field is None:
             continue
         date_prefix = _event_date_prefix(event)
@@ -185,17 +192,46 @@ def _count_by_event_since(events: list[dict], since: str) -> dict[str, int]:
     return counts
 
 
-def _build_report(since: str, counts: dict[str, int]) -> dict:
+def _build_report(since: str, counts: dict[str, int]) -> dict[str, object]:
     """Compose the JSON report envelope -- ``since`` + the 4 count fields."""
-    report: dict = {"since": since}
+    report: dict[str, object] = {"since": since}
     report.update(counts)
     return report
+
+
+def _reject_malformed_since(since: str) -> int:
+    """Emit a degrade-LOUD diagnostic for a malformed ``--since`` and return 2.
+
+    WHAT: the ``--since`` value is not a valid ``YYYY-MM-DD`` calendar date.
+    WHY: an unvalidated ``since`` participates in a lexicographic comparison
+    against every event's date prefix -- a malformed value silently sorts
+    above every real date, so the report would drop every event and report
+    all-zero counts as if the run succeeded (GDP-6 silent-undercount).
+    HOW: pass ``--since`` as a real ``YYYY-MM-DD`` calendar date, e.g.
+    ``2026-07-01``.
+    """
+    diagnostic = {
+        "error": "invalid --since",
+        "what": f"--since value {since!r} is not a valid YYYY-MM-DD calendar date",
+        "why": (
+            "an unvalidated --since would silently drop every audit event and "
+            "report all-zero counts as if the run succeeded (GDP-6 "
+            "silent-undercount)"
+        ),
+        "how": "pass --since as a real YYYY-MM-DD calendar date, e.g. 2026-07-01",
+    }
+    sys.stderr.write(json.dumps(diagnostic, sort_keys=True) + "\n")
+    return 2
 
 
 def main(argv: list[str] | None = None) -> int:
     """Aggregator subcommand entry point -- read audit log, emit JSON report."""
     parser = _build_parser()
     parsed = parser.parse_args(argv)
+    try:
+        date.fromisoformat(parsed.since)
+    except ValueError:
+        return _reject_malformed_since(parsed.since)
     target_root = _resolve_target_root()
     events = _read_audit_events(target_root)
     counts = _count_by_event_since(events, parsed.since)
