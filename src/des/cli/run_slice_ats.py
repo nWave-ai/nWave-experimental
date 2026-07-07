@@ -84,6 +84,16 @@ _EMPTY_SCOPE = SliceGateRunScope(
 )
 
 
+# GDP-3/GDP-4 (self-explaining + HOW-invokes-the-producing-tool): the concrete
+# remediation named on a FAIL verdict -- green the failing slice acceptance
+# test(s) (fix the implementation, not the test), then re-run the SAME
+# producing tool (`des run-slice-ats`) and re-commit. Never emitted on PASS.
+_FAIL_HOW = (
+    "green the failing slice acceptance test(s) -- fix the implementation "
+    "until they pass -- then re-run `des run-slice-ats` and re-commit."
+)
+
+
 def _emit_verdict(
     *,
     entering_slice: str,
@@ -91,22 +101,27 @@ def _emit_verdict(
     runner: str,
     scope: SliceGateRunScope,
     reason: str = "",
+    how: str | None = None,
 ) -> None:
-    """Print exactly one machine-readable JSON line naming the slice-AT verdict."""
-    print(
-        json.dumps(
-            {
-                "event": _EVENT,
-                "entering_slice": entering_slice,
-                "verdict": verdict,
-                "runner": runner,
-                "reason": reason,
-                "ran_node_ids": list(scope.ran_node_ids),
-                "ran_whole_tree": scope.ran_whole_tree,
-                "out_of_slice_ran": list(scope.out_of_slice_ran),
-            }
-        )
-    )
+    """Print exactly one machine-readable JSON line naming the slice-AT verdict.
+
+    ``how`` names the concrete remediation on a FAIL verdict (GDP-3/GDP-4) --
+    omitted entirely (no key at all) on every other verdict, so PASS stays
+    clean.
+    """
+    payload: dict[str, object] = {
+        "event": _EVENT,
+        "entering_slice": entering_slice,
+        "verdict": verdict,
+        "runner": runner,
+        "reason": reason,
+        "ran_node_ids": list(scope.ran_node_ids),
+        "ran_whole_tree": scope.ran_whole_tree,
+        "out_of_slice_ran": list(scope.out_of_slice_ran),
+    }
+    if how is not None:
+        payload["how"] = how
+    print(json.dumps(payload))
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -238,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
         verdict=verdict,
         runner=run_verdict.runner,
         scope=scope,
+        how=None if run_verdict.passed else _FAIL_HOW,
     )
     human = Verdict.PASS if run_verdict.passed else Verdict.FAIL
     print_human_summary(
