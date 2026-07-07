@@ -1610,6 +1610,55 @@ def _run_plain(target: Path) -> int:
     return 1
 
 
+#: fix-validate-feature-delta-routes-to-doctor: the routing pointer added to
+#: every `--require-*` REJECTION path. `des feature-delta-doctor <path>`
+#: reports EVERY structural gap in ONE pass (per-gap what/why/how) instead of
+#: the author fixing one rejection, re-running, hitting the next, N times
+#: across N separate gate invocations. The specific rule/verdict violated
+#: stays named as context -- this is an ADDED primary remedy, never a
+#: replacement of it.
+def _doctor_routing_hint(target: Path) -> str:
+    """The primary-remedy pointer text naming `des feature-delta-doctor`. Pure."""
+    return (
+        f"run `des feature-delta-doctor {target}` for a one-pass report of "
+        "every gap (not just this one)"
+    )
+
+
+def _routing_suffix(target: Path, *, accepted: bool) -> tuple[str, dict[str, str]]:
+    """The (plain-text suffix, JSON extra-fields) pair for one verdict print. Pure.
+
+    Empty on an ACCEPTED verdict (`accepted=True`) -- a well-formed feature-
+    delta must never mention the doctor-routing remedy (no false steer on a
+    clean delta). On REJECTION, returns the shared routing line -- the SAME
+    line for every rejection verdict (malformed-wave-heading,
+    unjustified-create-new, ungrounded-reuse-analysis, missing-*-section,
+    etc.); never a per-verdict copy.
+    """
+    if accepted:
+        return "", {}
+    hint = _doctor_routing_hint(target)
+    return f" -- {hint}", {"remedy": hint}
+
+
+def _print_verdict_result(
+    target: Path, verdict: str, detail: str, json_format: bool, *, accepted: bool
+) -> None:
+    """Print one (verdict, detail) result -- the shared print every
+    `--require-*` mode funnels its terminal output through.
+
+    On rejection (`accepted=False`), appends the `des feature-delta-doctor
+    <path>` routing pointer as the PRIMARY remedy while keeping the specific
+    `verdict` named as context (never replaced). On an accepted verdict,
+    prints unchanged.
+    """
+    suffix, extra = _routing_suffix(target, accepted=accepted)
+    if json_format:
+        print(json.dumps({"verdict": verdict, "detail": detail, **extra}))
+    else:
+        print(f"{verdict}: {detail}{suffix}")
+
+
 def _run_require_slice_plan(target: Path, json_format: bool) -> int:
     """Run the structural slice-plan check (slice-06).
 
@@ -1618,11 +1667,11 @@ def _run_require_slice_plan(target: Path, json_format: bool) -> int:
     """
     content = target.read_text(encoding="utf-8")
     result = validate_slice_plan_content(content)
-    if json_format:
-        print(json.dumps({"verdict": result.verdict, "detail": result.detail}))
-    else:
-        print(f"{result.verdict}: {result.detail}")
-    return 0 if result.verdict == VERDICT_ACCEPTED else 1
+    accepted = result.verdict == VERDICT_ACCEPTED
+    _print_verdict_result(
+        target, result.verdict, result.detail, json_format, accepted=accepted
+    )
+    return 0 if accepted else 1
 
 
 def _run_require_feature_plan(target: Path, json_format: bool) -> int:
@@ -1634,11 +1683,11 @@ def _run_require_feature_plan(target: Path, json_format: bool) -> int:
     """
     content = target.read_text(encoding="utf-8")
     result = validate_feature_plan_content(content)
-    if json_format:
-        print(json.dumps({"verdict": result.verdict, "detail": result.detail}))
-    else:
-        print(f"{result.verdict}: {result.detail}")
-    return 0 if result.verdict == VERDICT_ACCEPTED else 1
+    accepted = result.verdict == VERDICT_ACCEPTED
+    _print_verdict_result(
+        target, result.verdict, result.detail, json_format, accepted=accepted
+    )
+    return 0 if accepted else 1
 
 
 def _run_require_reuse_analysis(target: Path, json_format: bool) -> int:
@@ -1652,14 +1701,20 @@ def _run_require_reuse_analysis(target: Path, json_format: bool) -> int:
     Component | File` citations are content-grounded THROUGH the
     CodeFactPort chain (F-fix-reuse-analysis-content-grounding) -- the same
     resolution base `_ground_sut` uses for `sut:` citations.
+
+    On REJECTION the printed message routes the author to `des
+    feature-delta-doctor <path>` as the primary remedy -- the one-pass tool
+    that reports every structural gap at once -- while still naming the
+    specific verdict violated as context
+    (fix-validate-feature-delta-routes-to-doctor).
     """
     content = target.read_text(encoding="utf-8")
     result = validate_reuse_analysis_content(content, project_root=Path.cwd())
-    if json_format:
-        print(json.dumps({"verdict": result.verdict, "detail": result.detail}))
-    else:
-        print(f"{result.verdict}: {result.detail}")
-    return 0 if result.verdict == VERDICT_STRUCTURALLY_ACCEPTED else 1
+    accepted = result.verdict == VERDICT_STRUCTURALLY_ACCEPTED
+    _print_verdict_result(
+        target, result.verdict, result.detail, json_format, accepted=accepted
+    )
+    return 0 if accepted else 1
 
 
 def _run_require_sustainability(target: Path, json_format: bool) -> int:
@@ -1672,16 +1727,16 @@ def _run_require_sustainability(target: Path, json_format: bool) -> int:
     """
     content = target.read_text(encoding="utf-8")
     result = validate_sustainability_content(content)
-    if json_format:
-        print(json.dumps({"verdict": result.verdict, "detail": result.detail}))
-    else:
-        print(f"{result.verdict}: {result.detail}")
-    accepted = {
+    accepted_verdicts = {
         VERDICT_STRUCTURALLY_ACCEPTED,
         VERDICT_METHODOLOGY_EXEMPT,
         VERDICT_NO_NEW_TESTS,
     }
-    return 0 if result.verdict in accepted else 1
+    accepted = result.verdict in accepted_verdicts
+    _print_verdict_result(
+        target, result.verdict, result.detail, json_format, accepted=accepted
+    )
+    return 0 if accepted else 1
 
 
 #: The section-content verdicts the metrics mode treats as a structurally-accepted base
@@ -1960,10 +2015,9 @@ def _run_require_sustainability_with_metrics(
     content = target.read_text(encoding="utf-8")
     section = validate_sustainability_content(content)
     if section.verdict not in _SUSTAINABILITY_ACCEPTED_VERDICTS:
-        if json_format:
-            print(json.dumps({"verdict": section.verdict, "detail": section.detail}))
-        else:
-            print(f"{section.verdict}: {section.detail}")
+        _print_verdict_result(
+            target, section.verdict, section.detail, json_format, accepted=False
+        )
         return 1
 
     from des.adapters.driven.git.git_test_loc_diff_adapter import GitTestLocDiffAdapter
@@ -2049,10 +2103,12 @@ def _run_require_sustainability_with_metrics(
         payload["verdict"] = verdict
         payload["detail"] = detail
 
+    suffix, extra = _routing_suffix(target, accepted=exit_code == 0)
+    payload.update(extra)
     if json_format:
         print(json.dumps(payload))
     else:
-        print(f"{verdict}: {detail}")
+        print(f"{verdict}: {detail}{suffix}")
     return exit_code
 
 
@@ -2061,7 +2117,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _WAVES_DIR = _REPO_ROOT / "nWave" / "waves"
 
 
-def _emit_boundary_verdict(wave: str, json_format: bool) -> int:
+def _emit_boundary_verdict(target: Path, wave: str, json_format: bool) -> int:
     """Emit the slice-05 fail-closed boundary verdict for an unreadable registry.
 
     Discriminates by the canonical-wave universe (the `None` return alone cannot):
@@ -2084,10 +2140,7 @@ def _emit_boundary_verdict(wave: str, json_format: bool) -> int:
             f"({sorted(_CANONICAL_WAVE_NAMES)}); the registry never declared it — "
             f"a deterministic refusal, not a guess"
         )
-    if json_format:
-        print(json.dumps({"verdict": verdict, "detail": detail}))
-    else:
-        print(f"{verdict}: {detail}")
+    _print_verdict_result(target, verdict, detail, json_format, accepted=False)
     return 1
 
 
@@ -2118,7 +2171,7 @@ def _run_require_registry_sections(
     content = target.read_text(encoding="utf-8")
     contract = read_wave_output_contract(wave, waves_dir)
     if contract is None:
-        return _emit_boundary_verdict(wave, json_format)
+        return _emit_boundary_verdict(target, wave, json_format)
     # DISTILL-DETECTED DESIGN-DEFECT (slice-02, NOT wired): direction (b)
     # (`missing_registry_sections`) CANNOT compose onto this shared
     # `--require-registry-sections <wave>` surface without regressing slice-01.
@@ -2131,11 +2184,11 @@ def _run_require_registry_sections(
     # is BLOCKED on a DESIGN disposition (see distill/red-classification.md). Until
     # resolved, this surface stays direction-(a)-only (slice-01 byte-stable).
     result = classify_registry_sections(content, contract)
-    if json_format:
-        print(json.dumps({"verdict": result.verdict, "detail": result.detail}))
-    else:
-        print(f"{result.verdict}: {result.detail}")
-    return 0 if result.verdict == VERDICT_REGISTRY_SECTIONS_ACCEPTED else 1
+    accepted = result.verdict == VERDICT_REGISTRY_SECTIONS_ACCEPTED
+    _print_verdict_result(
+        target, result.verdict, result.detail, json_format, accepted=accepted
+    )
+    return 0 if accepted else 1
 
 
 def main(argv: list[str] | None = None) -> int:

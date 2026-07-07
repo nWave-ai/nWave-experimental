@@ -40,7 +40,9 @@ from pathlib import Path
 from typing import TypedDict
 
 from des.cli.validate_feature_delta import (
+    _SUSTAINABILITY_ACCEPTED_VERDICTS,
     LOCKED_REF_SECTIONS,
+    SUSTAINABILITY_HEADING,
     VERDICT_MALFORMED_REUSE_ANALYSIS,
     VERDICT_MALFORMED_WAVE_HEADING,
     VERDICT_METHODOLOGY_EXEMPT,
@@ -51,6 +53,7 @@ from des.cli.validate_feature_delta import (
     locked_sections_present,
     validate_feature_delta_content,
     validate_reuse_analysis_content,
+    validate_sustainability_content,
 )
 
 
@@ -164,16 +167,58 @@ def _reuse_analysis_gaps(content: str) -> list[Gap]:
     ]
 
 
+def _sustainability_gaps(content: str) -> list[Gap]:
+    """Missing/malformed sustainability-section gaps, reusing
+    `validate_sustainability_content` -- the SAME parser
+    `des verify-readiness-pre-dispatch`'s `sustainability` invariant enforces
+    (M1 shared-SSOT: `SUSTAINABILITY_HEADING` / `_SUSTAINABILITY_ACCEPTED_VERDICTS`
+    imported verbatim from `des.cli.validate_feature_delta`, never re-literalled).
+
+    A missing section, a malformed section (wrong columns / bad Decision /
+    unjustified CREATE_NEW), or a duplicate heading all surface as ONE gap here
+    -- the doctor's covered-section set must MATCH the readiness gate's."""
+    result = validate_sustainability_content(content)
+    if result.verdict in _SUSTAINABILITY_ACCEPTED_VERDICTS:
+        return []
+    return [
+        Gap(
+            id=result.verdict,
+            what=(
+                f"missing or malformed '{SUSTAINABILITY_HEADING}' section: "
+                f"{result.detail}"
+            ),
+            why=(
+                "the readiness gate's sustainability invariant "
+                "(`des verify-readiness-pre-dispatch`) requires a well-formed "
+                f"'{SUSTAINABILITY_HEADING}' section on every feature-delta; "
+                "a missing or malformed section is REJECTED there."
+            ),
+            how=(
+                f"Add the canonical '{SUSTAINABILITY_HEADING}' heading with "
+                "the canonical five-column Test Reuse table (well-formed "
+                "REUSE/EXTEND/CONSOLIDATE/CREATE_NEW rows, Justification "
+                "required on CREATE_NEW), or a "
+                "'Test-Reuse-Analysis: methodology-exempt' marker if no new "
+                "tests were authored."
+            ),
+        )
+    ]
+
+
 def diagnose(content: str) -> list[Gap]:
     """Aggregate every structural gap for one feature-delta body in ONE pass.
 
-    Pure function -- filesystem I/O lives only in `main`. Composes the three
-    existing validators; never re-implements their classification logic.
+    Pure function -- filesystem I/O lives only in `main`. Composes the four
+    existing validators; never re-implements their classification logic. The
+    covered-section set MUST match `des verify-readiness-pre-dispatch`'s
+    (LOCKED_REF_SECTIONS + sustainability) -- see
+    fix-doctor-covers-sustainability-section.
     """
     return [
         *_wave_heading_gaps(content),
         *_missing_section_gaps(content),
         *_reuse_analysis_gaps(content),
+        *_sustainability_gaps(content),
     ]
 
 

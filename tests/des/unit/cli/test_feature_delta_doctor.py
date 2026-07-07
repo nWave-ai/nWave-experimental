@@ -72,12 +72,19 @@ GAPPY_FEATURE_DELTA = (
 )
 
 #: Zero-gap fixture: every LOCKED_REF_SECTIONS heading present and
-#: well-formed, every Wave heading carries a valid `[TYPE]` token, and the
+#: well-formed, every Wave heading carries a valid `[TYPE]` token, the
 #: Reuse Analysis section declares the DDD-9 `no-overlap` exemption marker
-#: (an ACCEPTED verdict -- `no-overlap-declared` -- never a gap). Verified
-#: empirically: validate_feature_delta_content -> is_valid=True, zero
+#: (an ACCEPTED verdict -- `no-overlap-declared` -- never a gap), AND a
+#: well-formed `## Test Reuse & Consolidation Analysis` (sustainability)
+#: section carrying the DDD-9 `methodology-exempt` marker. The sustainability
+#: section is REQUIRED to be genuinely clean under the widened contract: the
+#: doctor now mirrors `des verify-readiness-pre-dispatch`'s `sustainability`
+#: invariant (`validate_sustainability_content` -> `methodology-exempt`,
+#: an accepted verdict), so a delta lacking the section is no longer "clean".
+#: Verified empirically: validate_feature_delta_content -> is_valid=True, zero
 #: offenders; validate_reuse_analysis_content -> no-overlap-declared;
-#: locked_sections_present -> [].
+#: locked_sections_present -> []; validate_sustainability_content ->
+#: methodology-exempt.
 CLEAN_FEATURE_DELTA = (
     "## Wave: DESIGN / [REF] Architecture & Contract Tests\n"
     "\n"
@@ -96,6 +103,10 @@ CLEAN_FEATURE_DELTA = (
     "## Reuse Analysis\n"
     "\n"
     "Reuse-Analysis: no-overlap\n"
+    "\n"
+    "## Test Reuse & Consolidation Analysis\n"
+    "\n"
+    "Test-Reuse-Analysis: methodology-exempt\n"
 )
 
 

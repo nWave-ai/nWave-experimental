@@ -112,6 +112,37 @@ Red Gate Snapshot (`src/des/application/red_gate_snapshot.py`) classifies failur
 
 Only RED tests proceed to the DELIVER TDD cycle. BROKEN tests block the upstream gate.
 
+### Negative ATs — the detection convention (author them detectably the FIRST time)
+
+Every critical scope MUST carry ≥1 **negative AT** — an assertion that the WRONG outcome is NOT
+produced (the GS-8 class: presence-only ATs go red once, then green forever while asserting almost
+nothing; weak assertions die only to negative ATs). The `des verify-negative-at` gate enforces this,
+but it detects a negative AT **by NAME or MARKER, not by assertion shape**:
+
+- **pytest**: the test carries `@pytest.mark.negative_at`, OR its function name contains one of
+  `_not_` / `_never_` / `_rejects_` / `_refuses_` / `_fails_`.
+- **Gherkin**: the scenario carries a `@negative` tag OR its name contains one of the same stems.
+
+Author the negative AT with a matching NAME or the `@pytest.mark.negative_at` marker from the start —
+a substantively-correct negative AT with a non-matching name (e.g. `test_..._passes_with_no_...`) is
+NOT detected and the gate refuses, forcing a rename round-trip. `negative_at` is a registered marker
+(`pyproject.toml [tool.pytest.ini_options] markers`), so the explicit marker is always available.
+
+### Test-evidence contract — the runner MUST emit JUnit XML
+
+The `des verify-red-green` gate (the RED-observed seal + the RED→GREEN mechanical proof) reads
+per-test outcomes from **JUnit XML** — without it there is nothing to seal. So the test runner the
+slice declares MUST emit JUnit XML:
+- pytest: `--junitxml=<path>` (the gate's default when no run-cmd is given);
+- Rust: `cargo nextest run --message-format ...` / a JUnit reporter;
+- TypeScript: `vitest --reporter=junit` (or jest-junit);
+- other languages: the equivalent JUnit-reporter flag.
+
+If a declared `--run-cmd` does NOT emit JUnit XML, `verify-red-green` degrades LOUD ("no parseable
+JUnit XML produced") and cannot seal — surface the runner's JUnit flag in the slice's test-evidence
+setup so the seal is producible the first time. This is the proactive (GDP-2) complement to that
+reactive degrade.
+
 ## The in-process active-RED pattern (the L2 default — drive the shipped entry, never import the SUT)
 
 The default acceptance level (L2 in-process, per `nw-test-design-mandates-composition-contract`) drives the real entry IN-PROCESS rather than scaffolding the absent SUT module and importing it. This raises a problem the scaffold approach above does not face: **an absent SUT module imported at the test module top fails at COLLECTION → BROKEN, not active-RED.** subprocess-e2e dodged this by importing the SUT inside a forked child (so the ImportError became child-stderr) — at the cost of one interpreter fork per AT. The in-process cure keeps active-RED WITHOUT the fork.

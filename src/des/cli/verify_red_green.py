@@ -123,7 +123,7 @@ def _run_and_collect(
                 what="no parseable JUnit XML produced",
                 why=f"{exc} — without per-test outcomes there is nothing to seal.",
                 how=(
-                    "ensure the run command emits JUnit XML at {junit_out} "
+                    f"ensure the run command emits JUnit XML at {junit_out} "
                     "(pytest --junitxml / cargo-nextest / vitest all can)."
                 ),
             )

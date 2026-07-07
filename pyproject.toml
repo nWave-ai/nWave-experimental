@@ -27,7 +27,7 @@ packages = ["src/des", "nwave_ai"]
 
 [project]
 name = "nwave"
-version = "3.21.0+atddpure.5b618f722"
+version = "3.21.0+atddpure.edbf19ed4"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -213,6 +213,7 @@ markers = [
     "fast_gate: Fast source-level regression guards run pre-commit/pre-push",
     "integration: Integration tests (may use external resources)",
     "live_api: Tests that call paid external APIs (e.g. OpenAI); skipped unless relevant API key env var is set",
+    "negative_at: Negative acceptance test -- asserts the WRONG outcome is NOT produced (GS-8). Detected by `des verify-negative-at` (explicit alternative to the _not_/_never_/_rejects_/_refuses_/_fails_ name convention).",
     "polyglot_smoke: Polyglot pilot smoke tests (per-pilot toolchain required: Node/npm for TS, dotnet for C#, cargo for Rust). Skipped automatically when toolchain absent.",
     "probe_test: Tests that exercise substrate probe wiring (opt-out from _silence_probe autouse)",
     "slice_01: Slice-01 traceability marker applied as a Python marker (pytest.mark.slice_01).",
