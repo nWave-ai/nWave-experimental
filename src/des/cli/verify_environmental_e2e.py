@@ -407,6 +407,41 @@ def _emit_misscoped(mode: str, feature_id: str) -> None:
     )
 
 
+def _emit_real_fail_diagnostic(
+    feature_id: str,
+    feature_delta: Path,
+    verdict: GateVerdict,
+    collected: int,
+    rerun_results: list[str],
+) -> None:
+    """Print a human WHAT/WHY/HOW diagnostic for the genuine test-FAIL branch.
+
+    Slice-01 surface (fix-env-e2e-real-fail-emits-diagnostic, GDP-3): the
+    CHECK_FAILED branch of `--mode run` previously returned bare -- only the
+    L1.4 machine `StdoutToken` on stdout, no human-readable explanation. This
+    mirrors `_emit_parse_error` / `_emit_misscoped`: a `diagnostic: ...` line
+    on stderr plus a colored `print_human_summary` line. The check itself
+    (exit stays CHECK_FAILED, verdict logic unchanged) is untouched -- this
+    only adds the explanation before the pre-existing return.
+    """
+    non_passing = sum(1 for outcome in rerun_results if outcome != "pass")
+    total_reruns = len(rerun_results)
+    print(
+        f"diagnostic: environmental e2e for {feature_id} did not pass "
+        f"(verdict={verdict.value}, {collected} case(s) collected, "
+        f"{non_passing}/{total_reruns} rerun(s) non-passing)",
+        file=sys.stderr,
+    )
+    print_human_summary(
+        Verdict.FAIL,
+        f"environmental e2e run failed for {feature_id} "
+        f"(verdict={verdict.value}) -- reproduce with "
+        "'des verify-environmental-e2e --mode run --feature-delta "
+        f"{feature_delta}'; per-test outcomes are in the JUnit XML produced "
+        "by that run",
+    )
+
+
 def _try_write_deferral_marker(marker_arg: str | None, reason: str) -> None:
     """Write the L1.7 deferral marker for fail-mode D when requested; fail-closed.
 
@@ -580,6 +615,9 @@ def _run_mode(args: argparse.Namespace) -> int:
 
     if verdict is GateVerdict.PASS:
         return int(GateExit.PASS)
+    _emit_real_fail_diagnostic(
+        args.feature_id, feature_delta, verdict, collected, rerun_results
+    )
     return int(GateExit.CHECK_FAILED)
 
 
