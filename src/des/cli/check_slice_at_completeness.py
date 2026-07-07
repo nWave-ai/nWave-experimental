@@ -97,6 +97,13 @@ def main(argv: list[str] | None = None) -> int:
                 "slice_id": args.slice_id,
                 "feature_id": args.feature_id,
                 "error": f"cannot inspect repository: {exc}",
+                "how": (
+                    "cannot inspect the repository/commit -- verify --repo "
+                    f"({args.repo!r}) points at a real, readable git "
+                    f"repository and --commit ({args.commit!r}) resolves to "
+                    "an inspectable commit-ish in it, then re-run "
+                    "`des check-slice-at-completeness`"
+                ),
             }
         )
         return 2
@@ -108,6 +115,12 @@ def main(argv: list[str] | None = None) -> int:
                 "commit": args.commit,
                 "missing": missing,
                 "verdict": "incomplete",
+                "how": (
+                    "stage and land the missing .feature AT files "
+                    f"({', '.join(missing)}) into the slice commit via "
+                    "`des commit-slice` -- re-run it so the slice commit "
+                    "carries every declared .feature file"
+                ),
             }
         )
         return 1
