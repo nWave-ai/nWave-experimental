@@ -525,6 +525,10 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                     f"{len(missing)} .feature AT file(s): " + ", ".join(missing)
                     for slice_id, missing in deficient.items()
                 ),
+                "how": (
+                    "stage and land the missing .feature AT file(s) into the "
+                    "slice commit via `des commit-slice`"
+                ),
             }
         )
         return 1
@@ -561,6 +565,12 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                     "error": (
                         f"slice {slice_id} failed the feature-scoped contract "
                         f"gate (exit {contract_code})"
+                    ),
+                    "how": (
+                        f"inspect the failure with `run_contract_gate --repo .` "
+                        f"(feature {feature_id}, slice {slice_id}), green the "
+                        "failing feature-scoped acceptance test(s), then "
+                        "re-commit via `des commit-slice`"
                     ),
                 }
             )
