@@ -73,6 +73,27 @@ _EXIT_BY_VERDICT: dict[GateVerdict, int] = {
     GateVerdict.INDETERMINATE: 4,
 }
 
+# The facet-specific remediation (GDP-3 HOW) for each D6 facet violation.
+_HOW_BY_FACET: dict[FacetViolation, str] = {
+    FacetViolation.ENTRY_POINT_ABSENT: (
+        "ship the entry point so it resolves within the staged prefix"
+    ),
+    FacetViolation.RESOLVED_OUTSIDE: (
+        "import the installed `des`, not the src/-shadowed one"
+    ),
+    FacetViolation.NO_SUBPROCESS: (
+        "the @walking-skeleton AT must invoke the installed entry point via subprocess"
+    ),
+    FacetViolation.NO_TRANSFORM: (
+        "add the build-transform step so the staged tree carries its signature"
+    ),
+}
+
+_AT_FAILURE_HOW = (
+    "green the @walking-skeleton AT at its tier of record (fix the "
+    "implementation until it passes), then re-run"
+)
+
 
 @dataclass(frozen=True)
 class GateOutcome:
@@ -86,6 +107,7 @@ class GateOutcome:
     reason: str = ""
     facet_violation: FacetViolation | None = None
     diagnostic: str = ""
+    how: str = ""
 
     @property
     def exit_code(self) -> int:
@@ -107,12 +129,18 @@ class GateOutcome:
             tier_of_record=tier,
             facet_violation=facet,
             diagnostic=diagnostic,
+            how=_HOW_BY_FACET[facet],
         )
 
     @classmethod
     def at_failure(cls, tier: GateTier, diagnostic: str) -> GateOutcome:
         """A FAIL outcome caused by the walking-skeleton AT running red."""
-        return cls(verdict=GateVerdict.FAIL, tier_of_record=tier, diagnostic=diagnostic)
+        return cls(
+            verdict=GateVerdict.FAIL,
+            tier_of_record=tier,
+            diagnostic=diagnostic,
+            how=_AT_FAILURE_HOW,
+        )
 
     @classmethod
     def not_applicable(cls, rationale: str) -> GateOutcome:

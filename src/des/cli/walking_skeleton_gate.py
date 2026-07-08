@@ -288,6 +288,8 @@ def _emit(outcome: GateOutcome) -> None:
     }
     if outcome.facet_violation is not None:
         payload["facet"] = outcome.facet_violation.value
+    if outcome.how:
+        payload["how"] = outcome.how
     print(json.dumps(payload, separators=(",", ":"), sort_keys=True))
 
 
