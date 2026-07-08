@@ -100,6 +100,27 @@ property, by error class). Reach for `@coupled` only when the AT group is truly
 inseparable. A slice that is over-ceiling and not cleanly re-sliceable warrants a
 deep-review + refactor conversation at FEATURE scope, not a per-slice patch.
 
+## Gate expectations + the producing tool for each (ask before you hit the wall)
+
+Every gate fires the earliest it can, but the point is to satisfy it BEFORE it fires — so
+when someone asks "what does gate X expect / how do I author for it / what tool produces the
+artifact", answer with the expectation AND the producing tool (the gate's rejection routes there
+too — you never hand-assemble the checked artifact):
+
+| Gate (when it fires) | What it expects | Producing tool (the how) |
+|---|---|---|
+| readiness-pre-dispatch (before crafter dispatch) | the feature-delta carries the required sections (Reuse Analysis, Test Reuse & Consolidation, Slice Plan) with canonical headings/tokens | `des feature-delta-doctor` lists every gap in one pass; author the section from the schema |
+| dispatch guard (at crafter dispatch) | the 12-section atdd_pure dispatch, marker-triple, correct lane | `des dispatch --mode atdd_pure --project-id … --slice … --phase … [--lane …] --intent …` GENERATES a valid dispatch by construction — never hand-assemble it |
+| carpaccio slice gate (before A_GREEN) | slice ≤ ceiling (or `@coupled`+justification), an APPROVED AT-review or a mechanical-seal pair | re-slice, or `des verify-red-green --record-red` + `des verify-negative-at` for the seal |
+| slice commit (at commit) | E1 completeness + E2 contract + E3 examine; the record is written by `des commit-slice` itself | `des commit-slice` stamps the Gate-Scope trailer AND folds in the verify-then-record (writes SliceCommitVerified) — no hook to miss |
+| DISTILL gate-out (spec-coverage, gate-G, at DISTILL return) | every requirement row covered by a marked AT; every contract obligation has exactly one inducing AT tracing to a contract row | tag each AT `@covers Rn`; induce from the 3-source map (see DISTILL); do not over-author |
+| mode-registry-completeness (pre-commit) | every flavor declares the full field set, exactly one `default: true` | `des flavor-scaffold --flavor-id <id>` PRODUCES a structurally-complete flavor skeleton — fill the placeholders, never hand-assemble the field set |
+| feature-end (execution-reach, fresh-clone, env-e2e, at feature-end) | every prod file executed; the demo-recipe builds clean on a fresh clone; the env-e2e passes after real build+install | author each so its code is exercised by its own AT; keep `.nwave/demo-recipe.json` current; write the e2e alongside the code (surfaced inline at DELIVER-open) |
+
+The rule the buddy repeats: **a gate names its producing tool in the rejection; run that tool, don't
+hand-repair.** If a gate blocks and you're unsure why, run the gate directly and read its
+`how`/`recovery_suggestions` field — every gate self-explains what/why/how.
+
 ## Cross-wave agents
 
 Some agents operate across waves:
