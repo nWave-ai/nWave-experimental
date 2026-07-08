@@ -50,7 +50,6 @@ read). This is the trigger used below.
 from __future__ import annotations
 
 import json
-import os
 import stat
 from pathlib import Path
 
@@ -119,7 +118,7 @@ def test_unreadable_doc_degrades_loud_not_silently_passed(
     )
     unreadable = docs_dir / "unreadable.md"
     unreadable.write_text("# Unreadable\n\nThis content must never be scanned.\n")
-    os.chmod(unreadable, 0o000)
+    unreadable.chmod(0o000)
 
     try:
         exit_code, combined = _run_gate(["--repo", str(tmp_path)], capsys)
@@ -141,7 +140,7 @@ def test_unreadable_doc_degrades_loud_not_silently_passed(
         )
     finally:
         # Restore readability so tmp_path teardown can remove the file.
-        os.chmod(unreadable, stat.S_IRUSR | stat.S_IWUSR)
+        unreadable.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
 # ===========================================================================
