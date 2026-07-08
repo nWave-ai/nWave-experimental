@@ -189,7 +189,9 @@ BULK_HASHES = {
     # nw-buddy-wave-knowledge, nw-deliver-orchestration, nw-tdd-methodology,
     # nw-tdd-review-enforcement, nw-test-design-mandates. From slice-05 on,
     # the mode_locus_gate + docgen --check own this guard.
-    "nw-agent-creation-workflow": "9c18760734ef8702c68581e940c57df1",
+    # Prior hash updated 2026-07-08: added Skill-addressing-tables (load-by-trigger)
+    # section (directive).
+    "nw-agent-creation-workflow": "d4e7abc894ce58ec342949f3c96d665d",
     "nw-agent-testing": "58093930e354b85b07be5fe0a08fc4ed",
     "nw-ai-workflow-tutorials": "93e15d83c8b2042102785dff4c677bb7",
     "nw-architectural-styles-tradeoffs": "f6dc4a1e0f1ac40d9d1dd0d25d9c90f4",
