@@ -191,6 +191,23 @@ wave-entry nudge may re-inject "enter plan mode and derive the plan from the
 feature-delta" at SessionStart/clear/compact so the discipline survives a context
 reset (re-injection beats recall).
 
+**Surface the DISTILL-out gate expectations INLINE at DISTILL-open (GDP-2 inline affordance).**
+The DISTILL gate-out gates fire only when DISTILL returns — a coverage hole or a design↔AT
+incoherence they catch existed while the ATs were being authored. So the DISTILL-open plan also
+surfaces, up front, the checklist those gate-out gates will apply, so the author writes WITH them
+in mind rather than hitting them at gate-OUT:
+- **`verify-spec-coverage`** — every requirement row in `docs/feature/{id}/distill/requirement-checklist.md`
+  must be covered by ≥1 AT carrying its `@covers`/`# covers: Rn` marker; the six mandatory
+  categories (ui, e2e, nfr, security, validation, build) are called out LOUD when uncovered. Tag
+  each scaffolded AT with the requirement row(s) it covers AS you author it.
+- **`gate-design-at-coherence` (gate-G)** — every design contract obligation must have exactly one
+  inducing AT, and every AT must trace to a contract row or the DEVOPS status (an AT coupling to an
+  un-contracted port is UNVERIFIED, never a silent pass). Induce from the 3-source map; do not
+  reinvent or over-author.
+These are the floor at DISTILL gate-OUT; naming them at DISTILL-open is the proactive-inline half —
+the gate stays the reactive floor, the affordance moves the knowledge before the effort. Same shape
+as DELIVER-open (nw-deliver §feature-end gate expectations).
+
 ## The gate-G review-rubric — design↔AT coherence at DISTILL gate-OUT (JOB-025)
 
 Gate-IN induces the AT set from the contract; gate-OUT proves the induced set is
