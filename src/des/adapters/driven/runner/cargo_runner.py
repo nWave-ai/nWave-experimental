@@ -20,16 +20,19 @@ dependency (D3) -- stdlib + the resolved cargo binary only.
 3. Shell the resolved cargo + the declared subcommand with ``cwd=target_root`` and
    the resolved cargo's directory prepended to a copied ``PATH`` (so the
    subprocess finds its own subcommands, e.g. ``cargo-nextest``).
-4. Map the exit code (the 4 §C1 exit-semantics, each pinned by an AT):
+4. Map the exit code (the §C1 exit-semantics, each pinned by an AT):
 
    * exit 0                          -> ``RunVerdict(passed=True)``  (PASS)
    * exit 4 (declared command ran 0 tests) -> raise ``RunnerAdapterUnavailable``
      (INDETERMINATE empty-scope -- NOT a vacuous pass)
+   * exit 94 (nextest filterset matched no binary names) -> raise
+     ``RunnerAdapterUnavailable`` (INDETERMINATE empty-scope -- NOT a cargo-red;
+     the feature-scoped selector matched no crate binary, no tests ran)
    * any other non-zero (legit RED, tests executed) -> ``RunVerdict(passed=False)``
      (FAIL -- PROPAGATED, never swallowed into INDETERMINATE)
 
-cargo unresolvable / exit 4 -> INDETERMINATE; a legit RED -> FAIL. NEVER a pytest
-fallback, NEVER a silent pass.
+cargo unresolvable / exit 4 / exit 94 -> INDETERMINATE; a legit RED -> FAIL. NEVER
+a pytest fallback, NEVER a silent pass.
 """
 
 from __future__ import annotations
@@ -69,6 +72,14 @@ CARGO_KNOWN_LOCATIONS: tuple[str, ...] = (
 # legit RED (any other non-zero exit -> FAIL).
 _NO_MATCH_EXIT = 4
 
+# nextest's "filterset matched no binary names" exit code -> INDETERMINATE
+# empty-scope, mirroring _NO_MATCH_EXIT. EMPIRICALLY (real cargo 1.95 + nextest
+# 0.9.137): when the feature-scoped selector (e.g. ``-E 'binary(/<feature_id>/)'``)
+# matches NO crate binary, nextest exits 94 -- no tests ran, so this is an
+# empty-scope INDETERMINATE, NOT a test-red. Without this, exit 94 falls into the
+# "any other non-zero -> FAIL" arm and is misreported as a false cargo-red.
+_NO_BINARY_MATCH_EXIT = 94
+
 
 def run_cargo_scope(
     adapter: RunnerAdapter,
@@ -107,6 +118,16 @@ def run_cargo_scope(
                 "declare a cargo test_command that selects tests and retry"
             ),
         )
+    if completed.returncode == _NO_BINARY_MATCH_EXIT:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                f"the feature-scoped selector matched no cargo binary "
+                f"(exit {_NO_BINARY_MATCH_EXIT}, empty-scope) in the target -- "
+                "INDETERMINATE, not a cargo-red; provide a runner.json with an "
+                "explicit test_command that selects the crate's tests and retry"
+            ),
+        )
 
     return RunVerdict(passed=completed.returncode == 0, runner=adapter.name)
 
@@ -130,6 +151,9 @@ def list_cargo_scope(
       INDETERMINATE channel naming the remediation).
     * exit 4 (zero tests enumerated) -> raise ``RunnerAdapterUnavailable``
       (empty-scope INDETERMINATE -- NOT an empty digest).
+    * exit 94 (nextest filterset matched no binary names) -> raise
+      ``RunnerAdapterUnavailable`` (empty-scope INDETERMINATE, distinctly reasoned
+      -- NOT an empty digest).
     * any other non-zero (the enumeration itself failed) -> raise
       ``RunnerAdapterUnavailable`` -- a digest over an untrustworthy enumeration is
       worse than a LOUD refusal.
@@ -153,6 +177,16 @@ def list_cargo_scope(
             reason=(
                 f"`cargo nextest list` enumerated zero tests (exit {_NO_MATCH_EXIT}, "
                 "empty-scope) in the target -- INDETERMINATE, not an empty digest"
+            ),
+        )
+    if completed.returncode == _NO_BINARY_MATCH_EXIT:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                f"`cargo nextest list` matched no cargo binary "
+                f"(exit {_NO_BINARY_MATCH_EXIT}, empty-scope) in the target -- "
+                "INDETERMINATE, not an empty digest; provide a runner.json with an "
+                "explicit test_command that selects the crate's tests and retry"
             ),
         )
     if completed.returncode != 0:
