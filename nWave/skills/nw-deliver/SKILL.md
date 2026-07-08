@@ -127,6 +127,8 @@ mkdir -p .nwave/telemetry/atdd-pure/
 
 The DES sequencer creates `.nwave/telemetry/atdd-pure/{feature-id}.jsonl` on first append. The per-phase-boundary JSONL record uses `telemetry_schema_version` `1.1.0` (adds `slice_id` + `at_ids` over the classic `1.0.0` record — ADR-028 D5).
 
+**Auto plan-mode at DELIVER-open — derive the delivery plan from the Slice Plan.** Before the first slice dispatch, the orchestrator enters plan mode (native `EnterPlanMode`) and derives a followable delivery plan from the feature-delta's `[REF] Slice Plan` — one plan item per `pending` slice, in Slice-Plan order. The plan is read from the delta (zero drift, never invented); the human approves (or requests a correction) via plan mode's native gate BEFORE delivery; on approval `TaskCreate` projects one todo per slice (its value statement + entry-gate verification + `A_GREEN` dispatch, through `EXAMINE`→`COMMIT`) so the wave is followable. Same shape as DISTILL-open (nw-distill §Auto plan-mode) — proactive-inline, enforcement-cost on the system, no `des plan` CLI.
+
 **Per-slice carpaccio loop in place of Phase 1.** There is no whole-feature roadmap-step extraction. In place of Phase 1 roadmap creation, the spine runs the carpaccio entry_gate followed by a **per-slice** DISTILL→DELIVER loop — one A_GREEN→C_REVIEWER_AUDIT→D_REFACTOR_COMMIT pass per slice:
 
 1. Read the next `pending` slice from the feature-delta `[REF] Slice Plan` table; read its `Class` column.

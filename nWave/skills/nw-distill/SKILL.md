@@ -156,6 +156,41 @@ This is the gate-IN consume discipline: the design contract is the input, the AT
 set is the induced output, and the correspondence above is the witness that no AT
 was reinvented and no contract obligation was dropped.
 
+### Auto plan-mode at DISTILL-open — derive the followable plan from the feature-delta
+
+The induction map is not only the authoring discipline — it is the source of a
+**followable plan the human approves before any AT is written**. At DISTILL-open,
+the orchestrator does NOT start authoring scenarios blind: it first makes the
+derivation visible and approvable.
+
+1. **Enter plan mode (native `EnterPlanMode`) at DISTILL-open.** The affordance is
+   proactive-inline (the orchestrator enters it automatically at wave-entry, so the
+   operator never has to remember to plan) — enforcement-cost on the system, not the
+   operator.
+2. **Derive the wave plan from the feature-delta — do NOT invent it.** Read the
+   feature-delta and project the 3-source induction map into the plan: each
+   `[REF] Slice Plan` row → the AT scaffold to author for that slice; each Example
+   table → its Given-When-Then scenarios; each declared law / error-encoding on a
+   contract shape → its property test / sad-path scenario. The plan IS the induction
+   map made explicit (zero drift by construction — it is read from the delta, never
+   reinvented). If no feature-delta is present, a lean plan of the ATs to author.
+3. **Human approves via plan mode's native gate.** Plan mode supplies the approval
+   surface — the human sees WHAT will be authored BEFORE the work, not after, and
+   either approves the plan as-is OR requests a correction (which re-derives the
+   plan from the delta and re-presents it). Asymmetric authority: the plan is a
+   projection, the human authorizes.
+4. **On approval, `TaskCreate` projects the plan into followable todos.** Reuse the
+   existing task mechanism — one todo per induced AT-obligation (one per slice's
+   AT scaffold, plus one per property/sad-path the contract shape induces) — so the
+   wave is followable and the human sees progress without juggling the feature-delta.
+
+No `des plan` CLI (over-engineering) — this is native plan mode + `TaskCreate`, the
+induction map read from the delta. DELIVER applies the same shape at its wave-entry
+(the Slice Plan → the per-slice delivery todos). Home: this orchestration core; a
+wave-entry nudge may re-inject "enter plan mode and derive the plan from the
+feature-delta" at SessionStart/clear/compact so the discipline survives a context
+reset (re-injection beats recall).
+
 ## The gate-G review-rubric — design↔AT coherence at DISTILL gate-OUT (JOB-025)
 
 Gate-IN induces the AT set from the contract; gate-OUT proves the induced set is
