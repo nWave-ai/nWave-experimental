@@ -1,0 +1,61 @@
+# Gate-contract: charter-scaffold (charter-scaffold feature, slice-01,
+# GDP-1/5 producing-tool principle)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=charter-scaffold.
+
+gate_id: charter-scaffold
+responsibility: |
+  The PRODUCING tool for expectation-charter scaffolds (GDP-5, system-pays;
+  GDP-1, fires at Slice-Plan-known instead of at DELIVER-entry). Reads a
+  feature's `## Wave: DISCUSS / [REF] Slice Plan` table and, for each
+  OBSERVABLE-value slice (Annotation NOT `@infrastructure` /
+  `@prefactoring`), generates a charter scaffold at
+  `docs/product/expectations/<feature-id>/<intent-name>.md` using
+  `nWave/templates/expectation-charter.md` as the skeleton, Intent pre-filled
+  from the slice's Value statement VERBATIM -- uncontaminated by construction
+  (it only ever sees the user-side Value statement column, never
+  design/impl vocabulary). Idempotent: never overwrites an existing charter.
+  Degrades LOUD on a missing/malformed feature-delta or absent Slice Plan --
+  a JSON verdict/detail, never a silent no-op nor a partial scaffold that
+  looks complete. Reuses the existing feature-delta Slice-Plan parser
+  (`des.cli.validate_feature_delta`) verbatim -- no parallel table parser.
+module: des.cli.charter_scaffold
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "The feature id whose Slice Plan is scaffolded."
+  - name: --repo-root
+    required: false
+    type: path
+    help: "Repository root to read/write under (default: cwd)."
+  - name: --format
+    required: false
+    type: string
+    help: "Output format (only 'json' is supported)."
+
+log_events: []
+
+failure_modes:
+  - error_class: MissingFeatureDelta
+    exit_code: 1
+    remediation: "The JSON verdict names 'missing-feature-delta'; create docs/feature/<feature-id>/feature-delta.md before scaffolding."
+  - error_class: MissingOrMalformedSlicePlan
+    exit_code: 1
+    remediation: "The JSON verdict reuses des.cli.validate_feature_delta's own token (missing-slice-plan / malformed-slice-plan / rejected-infra-only / malformed-wave-heading); the 'detail' field names the exact defect -- fix the '## Wave: DISCUSS / [REF] Slice Plan' section per ADR-028 D2."
+  - error_class: MissingCharterTemplate
+    exit_code: 1
+    remediation: "The JSON verdict names 'missing-charter-template'; verify nWave/templates/expectation-charter.md exists and is readable at --repo-root."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

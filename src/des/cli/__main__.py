@@ -340,6 +340,11 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.check_contract_shape_declarations",
         "main",
     ),
+    # charter-scaffold slice-01 (GDP-1/5): the PRODUCING tool for expectation-
+    # charter scaffolds -- generates a charter per OBSERVABLE Slice Plan row
+    # (Intent pre-filled from the Value statement verbatim), idempotent,
+    # degrade-LOUD on a missing/malformed feature-delta or absent Slice Plan.
+    _SubcommandRow("charter-scaffold", "des.cli.charter_scaffold", "main"),
 )
 
 

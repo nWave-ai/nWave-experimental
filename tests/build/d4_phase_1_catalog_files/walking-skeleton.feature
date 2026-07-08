@@ -56,11 +56,16 @@ Feature: Gate-contract catalog YAML mirrors _REGISTRY (D4 Phase 1 slice-01)
   # Count 55 -> 56 (2026-07-08, check-contract-shape-declarations slice-01):
   # adds check-contract-shape, the producing tool for Principle-11's 3
   # mechanical Contract-Shape checks, 1:1 across registry/catalog/files.
-  Scenario: Catalog row count equals registry count (56 total, adds check-contract-shape)
+  # Count 56 -> 57 (2026-07-09, charter-scaffold slice-01): adds
+  # charter-scaffold, the producing tool for expectation-charter scaffolds,
+  # 1:1 across registry/catalog/files (same producing-tool precedent as
+  # roadmap/doctor/dispatch/feature-delta-doctor/flavor-scaffold -- every
+  # _REGISTRY row gets a catalog row + per-gate file, no tooling exclusion).
+  Scenario: Catalog row count equals registry count (57 total, adds charter-scaffold)
     Given the gate catalog loaded from "nWave/gates/_catalog.yaml"
     And the production _REGISTRY loaded from `src.des.cli.__main__`
     When the row counts are compared
-    Then both contain exactly 56 entries
+    Then both contain exactly 57 entries
     And every gate_id in the catalog is also a SubcommandRow.name in _REGISTRY
     And every SubcommandRow.name in _REGISTRY is also a gate_id in the catalog
 

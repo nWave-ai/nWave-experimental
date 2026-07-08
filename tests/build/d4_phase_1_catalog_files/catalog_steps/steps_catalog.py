@@ -108,13 +108,15 @@ def then_no_errors(composition) -> None:
 # Count 55 -> 56 (2026-07-08, check-contract-shape-declarations slice-01):
 # adds check-contract-shape, the producing tool for Principle-11's 3
 # mechanical Contract-Shape checks, wired across all three surfaces.
-@then("both contain exactly 56 entries")
+# Count 56 -> 57 (2026-07-09, charter-scaffold slice-01): adds
+# charter-scaffold, wired across all three surfaces.
+@then("both contain exactly 57 entries")
 def then_both_counts_match(composition) -> None:
-    assert len(composition.catalog_gate_ids) == 56, (
-        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 56"
+    assert len(composition.catalog_gate_ids) == 57, (
+        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 57"
     )
-    assert len(composition.registry_names) == 56, (
-        f"_REGISTRY has {len(composition.registry_names)} entries, expected 56"
+    assert len(composition.registry_names) == 57, (
+        f"_REGISTRY has {len(composition.registry_names)} entries, expected 57"
     )
 
 

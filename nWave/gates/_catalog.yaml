@@ -398,3 +398,12 @@ gates:
     module: des.cli.check_contract_shape_declarations
     entry_function: main
     language_neutral_contract: true
+
+  # charter-scaffold slice-01 (GDP-1/5): the PRODUCING tool for expectation-
+  # charter scaffolds. 1:1 mirror of the new _REGISTRY row; matching per-gate
+  # file charter-scaffold.yaml.
+  - gate_id: charter-scaffold
+    responsibility: "Reads a feature's `## Wave: DISCUSS / [REF] Slice Plan` table and generates an expectation-charter scaffold (Intent pre-filled from the Value statement verbatim, using nWave/templates/expectation-charter.md as the skeleton) for each OBSERVABLE slice (Annotation NOT @infrastructure/@prefactoring); skips @infrastructure/@prefactoring rows. Idempotent (never overwrites); degrades LOUD (non-zero + JSON verdict/detail) on a missing/malformed feature-delta or absent Slice Plan. Reuses the existing Slice-Plan parser (des.cli.validate_feature_delta) -- no parallel table parser. Filesystem-only, no git."
+    module: des.cli.charter_scaffold
+    entry_function: main
+    language_neutral_contract: true
