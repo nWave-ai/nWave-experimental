@@ -110,7 +110,7 @@ too — you never hand-assemble the checked artifact):
 | Gate (when it fires) | What it expects | Producing tool (the how) |
 |---|---|---|
 | readiness-pre-dispatch (before crafter dispatch) | the feature-delta carries the required sections (Reuse Analysis, Test Reuse & Consolidation, Slice Plan) with canonical headings/tokens | `des feature-delta-doctor` lists every gap in one pass; author the section from the schema |
-| dispatch guard (at crafter dispatch) | the 12-section atdd_pure dispatch, marker-triple, correct lane | `des dispatch --mode atdd_pure --project-id … --slice … --phase … [--lane …] --intent …` GENERATES a valid dispatch by construction — never hand-assemble it |
+| dispatch guard (at crafter dispatch) | the 12-section atdd_pure dispatch, marker-triple, correct lane | `des dispatch --mode atdd_pure --project-id … --slice … --phase … [--lane …] --intent …` GENERATES a valid dispatch by construction — never hand-assemble it | <!-- mode-ref-ok -->
 | carpaccio slice gate (before A_GREEN) | slice ≤ ceiling (or `@coupled`+justification), an APPROVED AT-review or a mechanical-seal pair | re-slice, or `des verify-red-green --record-red` + `des verify-negative-at` for the seal |
 | slice commit (at commit) | E1 completeness + E2 contract + E3 examine; the record is written by `des commit-slice` itself | `des commit-slice` stamps the Gate-Scope trailer AND folds in the verify-then-record (writes SliceCommitVerified) — no hook to miss |
 | DISTILL gate-out (spec-coverage, gate-G, at DISTILL return) | every requirement row covered by a marked AT; every contract obligation has exactly one inducing AT tracing to a contract row | tag each AT `@covers Rn`; induce from the 3-source map (see DISTILL); do not over-author |
