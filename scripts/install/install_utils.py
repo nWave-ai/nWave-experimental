@@ -656,6 +656,7 @@ class ManifestWriter:
 
         agents_count = PathUtils.count_files(claude_config_dir / "agents", "*.md")
         commands_count = PathUtils.count_files(claude_config_dir / "commands", "*.md")
+        skills_count = PathUtils.count_files(claude_config_dir / "skills", "*.md")
 
         backup_info = (
             f"- Backup directory: {backup_dir}" if backup_dir else "- No backup created"
@@ -670,6 +671,7 @@ Version: Production Ready
 Installation Summary:
 - Total agents: {agents_count}
 - Total commands: {commands_count}
+- Total skills: {skills_count}
 - Installation directory: {claude_config_dir}
 {backup_info}
 
