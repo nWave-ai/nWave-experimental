@@ -229,10 +229,18 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(
             f"mode-registry-completeness: no nWave/flavors/ under root {root}\n"
         )
+        sys.stderr.write(
+            "Fix: ensure nWave/flavors/ exists with *.yaml flavor files, or "
+            "pass --root at the tree containing it.\n"
+        )
         return 1
     if not _flavor_files(flavors_dir):
         sys.stderr.write(
             f"mode-registry-completeness: no flavor files under {flavors_dir}\n"
+        )
+        sys.stderr.write(
+            "Fix: ensure nWave/flavors/ contains at least one *.yaml flavor "
+            "file, or pass --root at the tree containing them.\n"
         )
         return 1
     defects = check_registry_completeness(root)

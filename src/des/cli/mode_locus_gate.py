@@ -167,6 +167,10 @@ def main(argv: list[str] | None = None) -> int:
     root = _repo_root(args.root)
     if not (root / "nWave").is_dir():
         sys.stderr.write(f"mode-locus-gate: no nWave/ tree under root {root}\n")
+        sys.stderr.write(
+            "Fix: pass --root pointing at the tree containing nWave/, or run "
+            "this gate from the repo root.\n"
+        )
         return 1
     offenders = scan_for_naked_literals(root)
     if not offenders:

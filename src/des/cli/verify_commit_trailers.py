@@ -185,7 +185,11 @@ def main(argv: list[str] | None = None) -> int:
     slice_ids = extract_slice_ids(body)
     if not slice_ids:
         print(
-            f"INDETERMINATE: {_NO_SLICE_ID_REASON}",
+            f"INDETERMINATE: {_NO_SLICE_ID_REASON}\n"
+            "Fix: if this is meant to be a slice commit, re-commit through "
+            "`des commit-slice` -- it stamps the Slice-Id trailer for you; "
+            "otherwise a non-slice commit carrying no Slice-Id is expected "
+            "and this INDETERMINATE is correct.",
             file=sys.stderr,
         )
         return 7
