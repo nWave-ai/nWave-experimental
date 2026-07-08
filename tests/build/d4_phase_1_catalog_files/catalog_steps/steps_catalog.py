@@ -100,15 +100,15 @@ def then_no_errors(composition) -> None:
 # three surfaces.
 # Count 51 -> 52 (2026-07-06, feature-delta-doctor-and-ssot slice-01, WS-2 / M2):
 # feature-delta-doctor was added to _REGISTRY without its catalog row; reconciled 1:1.
-# Count 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2): dispatch was
+# Count 53 -> 54 (2026-07-08, fix-flavor-scaffold-catalog-reconciliation): flavor-scaffold was in _REGISTRY without its catalog row + per-gate file; reconciled 1:1. Prior 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2): dispatch was
 # added to _REGISTRY without its catalog row; reconciled 1:1.
-@then("both contain exactly 53 entries")
+@then("both contain exactly 54 entries")
 def then_both_counts_match(composition) -> None:
-    assert len(composition.catalog_gate_ids) == 53, (
-        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 53"
+    assert len(composition.catalog_gate_ids) == 54, (
+        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 54"
     )
-    assert len(composition.registry_names) == 53, (
-        f"_REGISTRY has {len(composition.registry_names)} entries, expected 53"
+    assert len(composition.registry_names) == 54, (
+        f"_REGISTRY has {len(composition.registry_names)} entries, expected 54"
     )
 
 

@@ -373,3 +373,8 @@ gates:
     module: des.cli.dispatch
     entry_function: main
     language_neutral_contract: true
+  - gate_id: flavor-scaffold
+    responsibility: "The PRODUCING tool for a new workflow-flavor 4-tuple (fix-flavor-scaffold-producing-tool slice-01, GDP-4/5 system-pays): emits a structurally-complete flavor YAML skeleton carrying the 9 nWave/flavors/_schema.yaml required fields (each exactly once, default:false), so mode-registry-completeness's HOW routes to a producing tool instead of a manual hand-assembled edit rejected one field at a time."
+    module: des.cli.flavor_scaffold
+    entry_function: main
+    language_neutral_contract: true

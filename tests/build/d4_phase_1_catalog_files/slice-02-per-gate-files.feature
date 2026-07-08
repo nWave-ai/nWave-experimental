@@ -37,12 +37,12 @@ Feature: Per-gate YAML files validate against GateContractFull schema (slice-02)
   # evidence-by-execution gates, 1:1 with their catalog entries.
   # Count 51 -> 52 (2026-07-06, feature-delta-doctor-and-ssot slice-01, WS-2 / M2):
   # per-gate file for feature-delta-doctor, 1:1 with its catalog entry.
-  # Count 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2):
+  # Count 53 -> 54 (2026-07-08, fix-flavor-scaffold-catalog-reconciliation): flavor-scaffold was in _REGISTRY without its catalog row + per-gate file; reconciled 1:1. Prior 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2):
   # per-gate file for dispatch, 1:1 with its catalog entry.
-  Scenario: All 53 per-gate files exist and validate against GateContractFull schema
+  Scenario: All 54 per-gate files exist and validate against GateContractFull schema
     Given the per-gate file directory at "nWave/gates/"
     When each per-gate file is loaded and validated
-    Then exactly 53 per-gate files exist (one per catalog entry)
+    Then exactly 54 per-gate files exist (one per catalog entry)
     And every per-gate file validates against the GateContractFull schema
 
   @driving_port @in-process @real-io @slice-02 @contract-shape:pure-function

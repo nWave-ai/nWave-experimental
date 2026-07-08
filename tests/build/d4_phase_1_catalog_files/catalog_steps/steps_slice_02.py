@@ -152,12 +152,12 @@ def when_enumerate_bound(per_gate_comp) -> None:
 # the evidence-by-execution gate family, 1:1 with catalog + _REGISTRY.
 # Count 51 -> 52 (2026-07-06, feature-delta-doctor-and-ssot slice-01, WS-2 / M2):
 # per-gate file for feature-delta-doctor, 1:1 with its catalog entry.
-# Count 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2):
+# Count 53 -> 54 (2026-07-08, fix-flavor-scaffold-catalog-reconciliation): flavor-scaffold was in _REGISTRY without its catalog row + per-gate file; reconciled 1:1. Prior 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2):
 # per-gate file for dispatch, 1:1 with its catalog entry.
-@then("exactly 53 per-gate files exist (one per catalog entry)")
+@then("exactly 54 per-gate files exist (one per catalog entry)")
 def then_per_gate_file_count(per_gate_comp) -> None:
-    assert per_gate_comp.file_count == 53, (
-        f"Found {per_gate_comp.file_count} per-gate files, expected 53"
+    assert per_gate_comp.file_count == 54, (
+        f"Found {per_gate_comp.file_count} per-gate files, expected 54"
     )
 
 
