@@ -1166,17 +1166,48 @@ _BUGFIX_LANE_HINT = (
 
 
 def _carpaccio_reason(stdout: str) -> str:
-    """Extract a human-readable reason from the carpaccio CLI JSON output."""
+    """Extract a human-readable reason from the carpaccio CLI JSON output.
+
+    Prefers the gate's rich ``error`` (already carries the actionable
+    "To fix: ..." HOW) and folds in ``instruction`` when present and not
+    already covered by ``error``, over the bare ``event`` name (GDP-3: a
+    bare event name is not self-explaining). ``event`` is still surfaced
+    for identification -- prefixed onto the rich content -- but is never a
+    substitute for it. Falls back to the bare ``event`` only when the
+    payload carries no ``error``/``instruction`` at all (graceful
+    degrade), and degrades further to stripped stdout / a sane default
+    when the payload is unparseable or non-dict. Never raises.
+    """
     try:
         payload = json.loads(stdout)
     except (json.JSONDecodeError, ValueError):
         return stdout.strip() or "no gate output"
-    if isinstance(payload, dict):
-        reason = str(payload.get("event") or payload.get("error") or stdout.strip())
-        if payload.get("event") == "SlicePlanSectionMissing":
-            reason += _BUGFIX_LANE_HINT
-        return reason
-    return stdout.strip() or "no gate output"
+    if not isinstance(payload, dict):
+        return stdout.strip() or "no gate output"
+
+    event = payload.get("event")
+    error = payload.get("error")
+    instruction = payload.get("instruction")
+
+    rich_parts: list[str] = []
+    if error:
+        rich_parts.append(str(error))
+    if instruction:
+        instruction_str = str(instruction)
+        if not any(instruction_str in part for part in rich_parts):
+            rich_parts.append(instruction_str)
+
+    if rich_parts:
+        rich_content = " | ".join(rich_parts)
+        reason = f"{event}: {rich_content}" if event else rich_content
+    elif event:
+        reason = str(event)
+    else:
+        reason = stdout.strip() or "no gate output"
+
+    if payload.get("event") == "SlicePlanSectionMissing":
+        reason += _BUGFIX_LANE_HINT
+    return reason
 
 
 def _readiness_reason(stdout: str) -> str:
