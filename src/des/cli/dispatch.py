@@ -150,6 +150,8 @@ def _build_prompt(
     defect: str | None,
     regression_test: str | None,
     section_ids: tuple[str, ...],
+    at_kind: str,
+    regression_test_file: str | None,
 ) -> str:
     """Assemble the full dispatch prompt: marker block, then section headers."""
 
@@ -169,6 +171,9 @@ def _build_prompt(
         if lane in _LANES_REQUIRING_JUSTIFICATION:
             justification = f"{defect} -- regression test: {regression_test}"
             marker_lines.append(marker("DES-LANE-JUSTIFICATION", justification))
+    if at_kind == "pytest-regression" and regression_test_file is not None:
+        marker_lines.append(marker("DES-AT-KIND", at_kind))
+        marker_lines.append(marker("DES-REGRESSION-TEST-FILE", regression_test_file))
 
     section_lines = [
         f"# {section_id}\n"
@@ -244,6 +249,27 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Repo root holding nWave/dispatch/*.yaml (default: cwd).",
     )
+    parser.add_argument(
+        "--at-kind",
+        dest="at_kind",
+        default="gherkin",
+        choices=("gherkin", "pytest-regression"),
+        help=(
+            "The acceptance-test kind driving this slice (default: gherkin). "
+            "'pytest-regression' + --regression-test-file emits the "
+            "DES-AT-KIND/DES-REGRESSION-TEST-FILE markers so "
+            "carpaccio_intercept runs its pytest-regression entry-gate path."
+        ),
+    )
+    parser.add_argument(
+        "--regression-test-file",
+        dest="regression_test_file",
+        default=None,
+        help=(
+            "Repo-relative path to the pytest regression file (paired with "
+            "--at-kind pytest-regression)."
+        ),
+    )
     return parser
 
 
@@ -306,6 +332,8 @@ def main(argv: list[str] | None = None) -> int:
         defect=args.defect,
         regression_test=args.regression_test,
         section_ids=section_ids,
+        at_kind=args.at_kind,
+        regression_test_file=args.regression_test_file,
     )
     print(prompt, end="")
     return 0
