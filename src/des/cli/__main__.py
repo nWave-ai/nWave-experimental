@@ -118,6 +118,16 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.feature_delta_doctor",
         "main",
     ),
+    # fix-flavor-scaffold-producing-tool slice-01 (GDP-4/5): the PRODUCING
+    # tool for the mode 4-tuple -- emits a structurally-complete flavor YAML
+    # skeleton (nWave/flavors/_schema.yaml's 9 required fields) so
+    # mode-registry-completeness's HOW routes to a producing tool instead of
+    # a manual hand-assembled edit.
+    _SubcommandRow(
+        "flavor-scaffold",
+        "des.cli.flavor_scaffold",
+        "main",
+    ),
     _SubcommandRow(
         "record-discuss-review",
         "des.cli.discuss_review_verdict",
