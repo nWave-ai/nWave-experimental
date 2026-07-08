@@ -162,6 +162,48 @@ def check_references(nwave_dir: Path) -> list[str]:
     return sorted(dangling)
 
 
+def check_frontmatter_completeness(nwave_dir: Path) -> list[str]:
+    """Return agents whose frontmatter ``skills:`` omits a skill they LOAD.
+
+    An agent that references ``skills/nw-X/SKILL.md`` in its body (its
+    loading-table / load instruction) but does not list ``nw-X`` in its
+    frontmatter ``skills:`` list is drifted: the frontmatter is packaging +
+    docs authoritative (which skills bundle with the agent, the used-by
+    cross-refs), so a loaded-but-undeclared skill ships incompletely. The
+    union-based ``check_references`` MISSES this class (the body reference
+    itself counts as satisfying the reference). Empty == every loaded skill is
+    declared; a non-empty entry names the agent + the missing skill.
+    """
+    agents_dir = nwave_dir / "agents"
+    skills_dir = nwave_dir / "skills"
+    if not agents_dir.exists():
+        return []
+    existing_skills: set[str] = set()
+    if skills_dir.exists():
+        existing_skills = {
+            child.name
+            for child in skills_dir.iterdir()
+            if child.is_dir() and child.name.startswith("nw-")
+        }
+
+    drift: list[str] = []
+    for agent_file in sorted(agents_dir.glob("nw-*.md")):
+        text = _read_text(agent_file)
+        declared = {
+            s if s.startswith("nw-") else f"nw-{s}" for s in _frontmatter_skills(text)
+        }
+        loaded = {
+            m for m in _BODY_SKILL_REFERENCE.findall(text) if m in existing_skills
+        }
+        for missing in sorted(loaded - declared):
+            drift.append(
+                f"agent {agent_file.name} loads skill {missing} via a "
+                f"skills/{missing}/SKILL.md reference but omits it from its "
+                f"frontmatter skills: list"
+            )
+    return sorted(drift)
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <nwave-dir>", file=sys.stderr)
@@ -172,14 +214,17 @@ def main() -> None:
         print(f"ERROR: not a directory: {nwave_dir}", file=sys.stderr)
         sys.exit(1)
 
-    dangling = check_references(nwave_dir)
-    if dangling:
-        print(f"FAIL: {len(dangling)} dangling skill reference(s):")
-        for entry in dangling:
+    failures = check_references(nwave_dir) + check_frontmatter_completeness(nwave_dir)
+    if failures:
+        print(f"FAIL: {len(failures)} skill-reference issue(s):")
+        for entry in failures:
             print(f"  - {entry}")
         sys.exit(1)
 
-    print("PASS: every skill referenced by a public artifact survives the strip")
+    print(
+        "PASS: every public-artifact skill reference survives the strip AND "
+        "every loaded skill is declared in its agent's frontmatter"
+    )
 
 
 if __name__ == "__main__":
