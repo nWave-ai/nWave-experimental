@@ -212,7 +212,9 @@ BULK_HASHES = {
     "nw-buddy": "720a5634d2f2f333c854f1ac07de2624",
     # Hash updated 2026-07-08: FR-1 mutation-test deprecation alignment (EXAMINE/Vera
     # routing) + /nw-roadmap deprecation (classic-only, removed in v4) row framing.
-    "nw-buddy-command-catalog": "bb4077858a1eb6e5383e05e575e2f079",
+    # Prior hash updated 2026-07-08: mode_registry FR-1 mutation-test alignment
+    # (naked-literal reword).
+    "nw-buddy-command-catalog": "8464f81d06dfbedf451974c67611b839",
     "nw-buddy-project-reading": "63fccdf0187159a10205b3d85ce2729c",
     "nw-buddy-ssot-knowledge": "7a801cc1b1ab7379a258f621a08a71f5",
     # Hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation —

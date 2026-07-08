@@ -1,7 +1,8 @@
 # Expectation Charter — canonical template
 
-One expectation = one file at `docs/product/expectations/<intent-name>.md`. The filename is
-a human sentence describing the intent (e.g. `visitor-holds-two-seats-and-sees-countdown.md`).
+One expectation = one file at `docs/product/expectations/<feature-id>/<intent-name>.md`. The
+filename is a human sentence describing the intent (e.g.
+`visitor-holds-two-seats-and-sees-countdown.md`), nested under the feature-id it belongs to.
 **One page, hard limit.** This is a re-executable product artifact, not process exhaust: the
 session log is the only part that grows, and a template that grows sections is regression to
 the disease.
