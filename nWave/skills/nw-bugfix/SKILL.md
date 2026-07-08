@@ -36,11 +36,17 @@ INPUT: "{bug-description}"
   │   └─ Author the regression test from the RCA's root cause + proposed fix
   │   └─ Test MUST fail against current code for the diagnosed reason (not import/syntax error)
   │
-  └─ Phase 3b: Fix (branches on workflow.mode, paradigm-selected crafter, GREEN → COMMIT) <!-- mode-ref-ok -->
-      └─ classic   → /nw-deliver "fix-{bug-id}" — roadmap-based bugfix flow
-      └─ atdd_pure → single carpaccio slice via the /nw-execute per-slice cycle, A_GREEN onward <!-- mode-ref-ok -->
-      └─ Paradigm detection determines crafter (OOP or FP)
-      └─ Crafter implements against the already-RED test only — never authors or edits the test
+  ├─ Phase 3b: Fix (branches on workflow.mode, paradigm-selected crafter, GREEN) <!-- mode-ref-ok -->
+  │   └─ classic   → /nw-deliver "fix-{bug-id}" — roadmap-based bugfix flow
+  │   └─ atdd_pure → single carpaccio slice via the /nw-execute per-slice cycle, A_GREEN <!-- mode-ref-ok -->
+  │   └─ Paradigm detection determines crafter (OOP or FP)
+  │   └─ Crafter implements against the already-RED test only — never authors or edits the test
+  │
+  └─ Phase 3c: EXAMINE (@nw-user-examiner "Vera") — BEFORE the commit
+      └─ Author a light expectation charter: the bug's OBSERVABLE (what a user sees when it is fixed)
+      └─ Vera runs the FIXED product through its real surface (CLI/HTTP/browser) — not the unit test
+      └─ Record the verdict via `des record-examine-verdict` BEFORE COMMIT; PASS gates the commit
+      └─ A_GREEN → EXAMINE → COMMIT — the same DoD as /nw-execute; examine is NEVER skipped
 ```
 
 ## Execution Steps
@@ -186,15 +192,63 @@ as any other atdd_pure slice, no carve-out): <!-- mode-ref-ok -->
 /nw-execute "fix-{bug-summary}"
 ```
 
-The per-slice cycle drives the standard A_GREEN → B_COVERAGE_CLEANUP → G_COMMIT
-shape (light single-slice bugfix cycle — no C_REVIEWER_AUDIT/E_BATCH_REFACTOR/
-F_FINAL_REVIEW, those belong to a full feature's feature-end cycle) against the
-already-authored, already-RED regression AT.
+The per-slice cycle drives the `A_GREEN → EXAMINE → COMMIT` shape (light
+single-slice bugfix cycle) against the already-authored, already-RED regression
+AT. EXAMINE (Phase 3c, `@nw-user-examiner`) is part of the light cycle — it is the
+DoD, never skipped. What the light cycle drops are the FEATURE-scope passes (deep
+`E_BATCH_REFACTOR`/`F_FINAL_REVIEW` code-reading + whole-feature refactor), which
+belong to a full feature's feature-end cycle, not to a single-slice bugfix.
 
 The crafter handles the TDD cycle (3-phase canon RED → GREEN → COMMIT per
 ADR-025, or legacy 5-phase PREPARE → RED_ACCEPTANCE → RED_UNIT → GREEN → COMMIT
 for pre-2026-05-07 audit-log replay) with DES monitoring in either mode — RED
 here means activating/running the already-authored test, never authoring it.
+
+**The light single-slice bugfix cycle is `A_GREEN → EXAMINE → COMMIT`** — the SAME
+DoD as `/nw-execute`. What the light cycle drops are the FEATURE-scope passes
+(deep `C_REVIEWER_AUDIT` code-reading, `E_BATCH_REFACTOR`, `F_FINAL_REVIEW` — those
+belong to a full feature's feature-end cycle). It does NOT drop **EXAMINE**: the
+green regression test proves the CODE, EXAMINE (Vera) proves the running SYSTEM
+through the real surface, and the two diverge (isolated-green ≠ assembled-green).
+Examine is the Definition of DONE and is NEVER skipped for a bugfix — see Phase 3c.
+
+### Phase 3c: EXAMINE (@nw-user-examiner "Vera") — runs BEFORE the commit
+
+The fix is not done when the regression test is green — it is done when a demanding
+user, running the FIXED product through its real surface, observes the bug gone.
+Phase 3c runs after Phase 3b's GREEN and BEFORE the commit:
+
+1. **Author a light expectation charter** — one short file under
+   `docs/product/expectations/fix-{bug-summary}/` naming the bug's OBSERVABLE: what
+   a user sees/does that is now correct (the symptom gone), and how a demanding
+   user checks it from the outside (CLI/HTTP/browser, no source reading). This is
+   cheap (a paragraph) and high-value — it is the oracle Vera examines against.
+2. **Dispatch @nw-user-examiner (Vera)** on the charter against the REAL fixed
+   product (the installed `des` / the running surface), Haiku model. Build a
+   concrete repro first and verify it yourself, then hand Vera the exact commands.
+   Vera cannot read source — the verdict is PASS/FAIL/INDETERMINATE from observed
+   behaviour only.
+3. **Record the verdict** via `des record-examine-verdict --feature-id fix-{...}
+   --slice slice-01 --charter <path> --verdict PASS --examiner nw-user-examiner`
+   BEFORE the commit. The examine gate arms on charter presence: `des commit-slice`
+   refuses the commit without a fresh Vera PASS.
+
+**Verdict strictness (never gamed, never a silent ship):**
+- Vera flags EVERYTHING — there is no "out-of-charter" category. A defect, a
+  degradation, an INDETERMINATE, or a nitpick are all flags.
+- **PASS = ZERO flags**, computed MECHANICALLY: `des record-examine-verdict`
+  REFUSES a PASS carrying ≥1 flag of any kind. The orchestrator does not decide
+  it.
+- **Every flag → an explicit, RECORDED disposition**, never silent-ship: either
+  fix-now (re-loop `acceptance-designer → crafter → re-examine`, BOUNDED to N
+  attempts) OR a named-owned residue (backlog entry, gate-or-residue).
+- **Never deadlock — always escalate.** If the bounded re-loop does not converge,
+  or a disposition is contested, ESCALATE to the human with the flag + options
+  (asymmetric authority: controls VETO, the human decides). The strictness holds
+  (the flag stays tracked, nothing silent-ships); the valve is escalation, not
+  a spin.
+
+Only after a recorded Vera PASS does the bugfix proceed to COMMIT.
 
 ## Success Criteria
 
@@ -203,6 +257,7 @@ here means activating/running the already-authored test, never authoring it.
 - [ ] Regression test authored by @nw-acceptance-designer, fails with the bug
 - [ ] Fix implemented by the paradigm-selected crafter that makes the regression test pass, without the crafter touching the test itself
 - [ ] All existing tests still pass (no regressions)
+- [ ] **EXAMINE (Phase 3c): a light charter authored + @nw-user-examiner (Vera) PASS recorded via `des record-examine-verdict` BEFORE the commit — examine is the DoD, never skipped**
 - [ ] Commit with conventional message: `fix(scope): description`
 
 ## Examples
@@ -241,3 +296,4 @@ Phase 3b: `/nw-deliver "fix-compose-none-guard"` → paradigm detected as FP →
 - Keep the fix minimal. Refactoring belongs in `/nw-refactor`, not here.
 - If the RCA reveals a design flaw (not just a code bug), escalate to `/nw-design` before fixing.
 - Phase 3a (@nw-acceptance-designer, regression test) always runs first, regardless of mode. Phase 3b branches on `workflow.mode`: `classic` delegates to `/nw-deliver` (one-step roadmap, GREEN only); `atdd_pure` runs a single carpaccio slice via the `/nw-execute` per-slice cycle starting at `A_GREEN`. <!-- mode-ref-ok --> Both modes handle paradigm detection, DES enforcement, and rigor profile automatically for the fix implementor; neither touches the test.
+- **Phase 3c (EXAMINE) always runs before the commit, in BOTH modes.** The `A_GREEN → EXAMINE → COMMIT` DoD is not waived for a bugfix: a light charter is authored + @nw-user-examiner (Vera) records a PASS via `des record-examine-verdict` before `des commit-slice` will commit. Green regression tests prove the code; EXAMINE proves the running system through the real surface. Skipping examine on the "light" bugfix cycle is the spec-drift this closes — examine is high-value and low-cost, never skipped.

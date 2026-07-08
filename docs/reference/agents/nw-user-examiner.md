@@ -6,3 +6,7 @@ Use at the DELIVER wave EXAMINE step to examine an expectation charter by execut
 **Model:** haiku
 **Max turns:** 30
 **Tools:** Read, Edit, Bash
+
+## Commands
+
+- [`/nw-bugfix`](../commands/index.md)

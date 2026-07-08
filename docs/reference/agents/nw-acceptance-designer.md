@@ -9,6 +9,7 @@ Use for DISTILL wave — designs E2E acceptance tests from user stories and arch
 
 ## Commands
 
+- [`/nw-bugfix`](../commands/index.md)
 - [`/nw-devops`](../commands/index.md)
 - [`/nw-distill`](../commands/index.md)
 - [`/nw-finalize`](../commands/index.md)
