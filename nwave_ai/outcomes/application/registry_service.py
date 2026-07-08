@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from jsonschema import Draft7Validator
 from jsonschema import ValidationError as JsonSchemaValidationError
@@ -22,6 +23,10 @@ from nwave_ai.outcomes.ports.registry_io import (  # noqa: TC001  # runtime DI
     RegistryReader,
     RegistryWriter,
 )
+
+
+if TYPE_CHECKING:
+    from nwave_ai.outcomes.application.collision_detector import CollisionReport
 
 
 _SCHEMA_PATH = (

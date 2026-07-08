@@ -422,8 +422,9 @@ commands:
     - visual_architecture
   roadmap:
     description: "DEPRECATED (classic-mode only, removed in v4). Creates a phased\
-      \ roadmap.json \u2014 a classic-mode artifact; under atdd_pure the feature-delta\
-      \ Slice Plan + per-slice ATs replace it. Run only under explicit classic authorization."
+      \ roadmap.json \u2014 a classic-mode artifact; under the atdd-pure workflow\
+      \ the feature-delta Slice Plan + per-slice ATs replace it. Run only under explicit\
+      \ classic authorization."
     argument_hint: '[agent] [goal-description] - Example: @solution-architect "Migrate
       to microservices"'
     outputs:

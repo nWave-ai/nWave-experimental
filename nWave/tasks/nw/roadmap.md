@@ -1,5 +1,5 @@
 ---
-description: DEPRECATED (classic-mode only, removed in v4). Creates a phased roadmap.json — a classic-mode artifact; under atdd_pure the feature-delta Slice Plan + per-slice ATs replace it. Run only under explicit classic authorization.
+description: DEPRECATED (classic-mode only, removed in v4). Creates a phased roadmap.json — a classic-mode artifact; under the atdd-pure workflow the feature-delta Slice Plan + per-slice ATs replace it. Run only under explicit classic authorization.
 disable-model-invocation: true
 argument-hint: '[agent] [goal-description] - Example: @solution-architect "Migrate to microservices"'
 ---
@@ -9,9 +9,9 @@ argument-hint: '[agent] [goal-description] - Example: @solution-architect "Migra
 
 > **DEPRECATED (classic-mode only, removed in v4).** `/nw-roadmap` produces
 > `roadmap.json`, a **classic-mode** artifact. The classic workflow is deprecated
-> (ADR-028 D6) and will be **removed in v4** — under the `atdd_pure` workflow the
+> (ADR-028 D6) and will be **removed in v4** — under the `atdd_pure` workflow the <!-- mode-ref-ok -->
 > feature-delta `[REF] Slice Plan` section + per-slice ATs replace roadmap.json
-> entirely. Run this ONLY when `.nwave/config.yaml:workflow.mode` is `classic`,
+> entirely. Run this ONLY when `.nwave/config.yaml:workflow.mode` is `classic`, <!-- mode-ref-ok -->
 > under explicit per-instance authorization; it is not part of the default path.
 
 **Wave**: CROSS_WAVE
