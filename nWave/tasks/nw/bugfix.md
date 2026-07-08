@@ -40,7 +40,8 @@ INPUT: "{bug-description}"
   │   └─ Crafter implements against the already-RED test only — never authors or edits the test
   │
   └─ Phase 3c: EXAMINE (@nw-user-examiner "Vera") — BEFORE the commit
-      └─ Light expectation charter (the bug's observable) → Vera runs the FIXED product
+      └─ A FRESH @nw-product-owner dispatch authors a light expectation charter from the
+         bug's observable only (never the RCA/fix diff) → Vera runs the FIXED product
       └─ `des record-examine-verdict` PASS BEFORE COMMIT (the commit gate arms on the charter)
       └─ A_GREEN → EXAMINE → COMMIT — examine is the DoD, never skipped for a bugfix
 ```
@@ -184,7 +185,7 @@ The invoked agent MUST create a task list from its workflow phases at the start 
 - [ ] Regression test authored by @nw-acceptance-designer, fails with the bug
 - [ ] Fix implemented by the paradigm-selected crafter that makes the regression test pass, without the crafter touching the test itself
 - [ ] All existing tests still pass (no regressions)
-- [ ] EXAMINE (Phase 3c): light charter authored + @nw-user-examiner (Vera) PASS recorded via `des record-examine-verdict` BEFORE the commit — examine is the DoD, never skipped
+- [ ] EXAMINE (Phase 3c): light charter authored by a FRESH `nw-product-owner` dispatch (never inline) + @nw-user-examiner (Vera) PASS recorded via `des record-examine-verdict` BEFORE the commit — examine is the DoD, never skipped
 - [ ] Commit with conventional message: `fix(scope): description`
 
 ## Examples
