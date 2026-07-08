@@ -32,7 +32,7 @@ disable-model-invocation: true
 | Command | Purpose | When to Use |
 |---------|---------|-------------|
 | `/nw-execute` | Run single roadmap step | Implementing one step at a time (learning mode) |
-| `/nw-roadmap` | Create implementation plan | Planning steps before execution |
+| `/nw-roadmap` | Create implementation plan (DEPRECATED, classic-only) | Classic-mode only, removed in v4 — under atdd_pure the feature-delta Slice Plan + per-slice ATs replace roadmap.json. Opt-in under explicit classic authorization. |
 | `/nw-review` | Expert review of artifacts | Quality check on roadmap, code, or step output |
 | `/nw-mutation-test` | Test suite effectiveness (DEPRECATED, FR-1) | Opt-in only — NOT a default step. Deprecated 2026-07-04: green ATs + EXAMINE (Vera) are the truth; a post-green mutation pass adds cost, not signal. Run explicitly only when you specifically want a mutmut kill-rate. |
 | `/nw-finalize` | Archive completed feature | After all steps pass — creates evolution document |

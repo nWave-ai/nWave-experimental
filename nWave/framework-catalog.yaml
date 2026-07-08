@@ -421,8 +421,9 @@ commands:
     - updated_diagrams
     - visual_architecture
   roadmap:
-    description: Creates a phased roadmap.json for a feature goal with acceptance
-      criteria and TDD steps. Use when planning implementation steps before execution.
+    description: "DEPRECATED (classic-mode only, removed in v4). Creates a phased\
+      \ roadmap.json \u2014 a classic-mode artifact; under atdd_pure the feature-delta\
+      \ Slice Plan + per-slice ATs replace it. Run only under explicit classic authorization."
     argument_hint: '[agent] [goal-description] - Example: @solution-architect "Migrate
       to microservices"'
     outputs:
