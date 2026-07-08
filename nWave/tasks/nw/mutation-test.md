@@ -1,9 +1,16 @@
 ---
-description: "Runs feature-scoped mutation testing to validate test suite quality. Use after implementation to verify tests catch real bugs (kill rate >= 80%)."
+description: "DEPRECATED (FR-1, opt-in only, not a default step). Runs feature-scoped mutation testing (kill rate >= 80%) when a project explicitly opts in; green ATs + EXAMINE are the methodology truth."
 argument-hint: "[feature-id] - Optional: --threshold=[75|80|85] --language=[auto|python|java|javascript]"
 ---
 
 # NW-MUTATION-TEST: Feature-Scoped Mutation Testing
+
+> **DEPRECATED (FR-1, 2026-07-04).** Mutation testing is a slow post-green ceremony REMOVED from the
+> velocity-v2 methodology — green ATs + EXAMINE (independent end-to-end verification by Vera) are the
+> truth; a coverage-after-green / mutation pass adds cost, not signal. `.nwave/des-config.json` keeps
+> `mutation_enabled=false`; this command remains available for an **explicit, opt-in** run only. It is
+> **NOT** part of any per-feature or nightly gate — do not run it as a default step. The strategy prose
+> below is retained for that opt-in use, not as a recommended default.
 
 **Wave**: QUALITY_GATE
 **Agent**: Crafter (nw-software-crafter)
@@ -14,7 +21,7 @@ Run mutation testing against implementation files from the current feature. Extr
 
 ## Mutation Testing Strategy
 
-Projects declare a strategy via `## Mutation Testing Strategy` in `CLAUDE.md`: `per-feature` | `nightly-delta` | `pre-release` | `disabled`. **Default when unspecified: `nightly-delta`** (recommended — CI runs mutmut nightly on changed modules; keeps per-feature delivery gates fast). `/nw-mutation-test` is an explicit on-demand run independent of strategy.
+Projects declare a strategy via `## Mutation Testing Strategy` in `CLAUDE.md`: `per-feature` | `nightly-delta` | `pre-release` | `disabled`. Per FR-1 the methodology default is **`disabled`** (`mutation_enabled=false`) — mutation is NOT a default step. When a project explicitly opts in, `/nw-mutation-test` runs on-demand independent of strategy.
 
 ## Context Files Required
 

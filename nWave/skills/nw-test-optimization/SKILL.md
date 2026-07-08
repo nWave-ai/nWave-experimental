@@ -46,7 +46,7 @@ Path form: `~/.claude/skills/{module}/SKILL.md`.
 
 - `nw-tdd-methodology` — Mandate 1 (Observable Behavioral Outcomes), Mandate 5 (Parametrize Input Variations)
 - `nw-tdd-review-enforcement` — reviewer block conditions
-- `nw-mutation-test` — coverage-preserving validation via mutation kill rate
+- `nw-mutation-test` — coverage-preserving validation via mutation kill rate (DEPRECATED/opt-in, FR-1 — not a default step; green ATs + EXAMINE are the truth)
 - `nw-property-based-testing` — PBT paradigm, falsifier-gate for closed-world domains
 - `nw-test-design-mandates` — universe-per-layer, state-delta + Universe matrix (§263-270)
 - `nw-test-refactoring-catalog` — refactoring patterns for test code structure

@@ -34,7 +34,7 @@ disable-model-invocation: true
 | `/nw-execute` | Run single roadmap step | Implementing one step at a time (learning mode) |
 | `/nw-roadmap` | Create implementation plan | Planning steps before execution |
 | `/nw-review` | Expert review of artifacts | Quality check on roadmap, code, or step output |
-| `/nw-mutation-test` | Test suite effectiveness | After implementation — verifies tests catch real bugs |
+| `/nw-mutation-test` | Test suite effectiveness (DEPRECATED, FR-1) | Opt-in only — NOT a default step. Deprecated 2026-07-04: green ATs + EXAMINE (Vera) are the truth; a post-green mutation pass adds cost, not signal. Run explicitly only when you specifically want a mutmut kill-rate. |
 | `/nw-finalize` | Archive completed feature | After all steps pass — creates evolution document |
 
 ## Cross-Wave Commands (any time)
@@ -71,4 +71,4 @@ disable-model-invocation: true
 | "I need documentation" | `/nw-document` |
 | "Something is broken" | `/nw-bugfix` or `/nw-root-why` |
 | "My code needs cleanup" | `/nw-refactor` |
-| "How good are my tests?" | `/nw-mutation-test` |
+| "How good are my tests?" | EXAMINE (Vera, `nw-user-examiner`) is the truth — green ATs + independent end-to-end examine. (`/nw-mutation-test` is DEPRECATED/opt-in, FR-1.) |
