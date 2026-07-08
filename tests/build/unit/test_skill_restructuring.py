@@ -210,7 +210,10 @@ BULK_HASHES = {
     # diagnostic hint now checks both `uv tool list` and `pipx list` instead
     # of pipx-only.
     "nw-buddy": "720a5634d2f2f333c854f1ac07de2624",
-    "nw-buddy-command-catalog": "403ff4bf5cc44e73183e6021e0e3147d",
+    # Hash updated 2026-07-08: FR-1 mutation-test deprecation alignment — the
+    # /nw-mutation-test rows now carry the DEPRECATED/opt-in framing + "How good
+    # are my tests?" routes to EXAMINE/Vera (matches the CLAUDE.md SSOT).
+    "nw-buddy-command-catalog": "a2c9f6e83449d0bfab84728516797f5b",
     "nw-buddy-project-reading": "63fccdf0187159a10205b3d85ce2729c",
     "nw-buddy-ssot-knowledge": "7a801cc1b1ab7379a258f621a08a71f5",
     # Hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation —
@@ -228,7 +231,10 @@ BULK_HASHES = {
     # `workflow.mode == atdd_pure` mention now carries a trailing
     # `<!-- mode-ref-ok -->` annotation (it is a legitimate referential mention,
     # not a hand-restatement), per the mode_registry_single_locus bulk sweep.
-    "nw-buddy-wave-knowledge": "ed37ff323e81dcf90cf4642e7ffb4697",
+    # Hash updated 2026-07-08: WS-17-A slice-03 mode-ref-ok marker on the
+    # atdd_pure dispatch row (da2848759) — the captured baseline was not
+    # re-pinned at the time; reconciled here (ZERO DEFECTS).
+    "nw-buddy-wave-knowledge": "11e874217f9284a9aa204a303129b0e0",
     "nw-cialdini-outreach": "90aea943d1a2eb313561ecbd0f2c5915",
     "nw-cicd-and-deployment": "2195ace1646b4c0ced64070d57bb542a",
     "nw-cognitive-load-management": "3e06303c46182b62288a7bffeb342909",
