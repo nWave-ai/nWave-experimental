@@ -1,0 +1,49 @@
+# Gate-contract: verify-catalog-coherence (verify-catalog-coherence slice-01,
+# GDP-1/3/6)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-catalog-coherence.
+
+gate_id: verify-catalog-coherence
+responsibility: |
+  Compares three sets under --repo-root: the CLI registry subcommand names
+  (src/des/cli/__main__.py _REGISTRY, parsed as text -- never imported), the
+  gate catalog gate_ids (nWave/gates/_catalog.yaml gates[].gate_id), and the
+  per-gate .yaml files (nWave/gates/*.yaml minus _catalog.yaml/_schema.yaml).
+  On any mismatch, reports each drifting id and the concrete HOW to fix it
+  (add the missing catalog row / per-gate file / registry row) as a
+  self-explaining JSON verdict. Exits 0 when the three sets are coherent.
+  Reuses the SAME comparison the build-tier catalog suite
+  (tests/build/d4_phase_1_catalog_files/) also asserts -- one coherence-logic
+  locus, so the fast CLI and the full-run test never drift from each other.
+  Degrades LOUD (non-zero exit + named diagnostic, never a traceback) on a
+  missing or malformed _catalog.yaml.
+module: des.cli.verify_catalog_coherence
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --repo-root
+    required: false
+    type: path
+    default: "."
+    help: "Repo root holding src/des/cli/__main__.py and nWave/gates/ (default: cwd)."
+
+log_events: []
+
+failure_modes:
+  - error_class: DriftDetected
+    exit_code: 1
+    remediation: "The JSON verdict's 'how' list names each drifting id and the exact fix: add the nWave/gates/_catalog.yaml row, create the nWave/gates/<id>.yaml per-gate file, or add the _SubcommandRow(...) registry row in src/des/cli/__main__.py."
+  - error_class: CatalogMalformed
+    exit_code: 1
+    remediation: "Fix or restore nWave/gates/_catalog.yaml so it parses as valid YAML with a top-level 'gates' list; the verdict names the unreadable/malformed path."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

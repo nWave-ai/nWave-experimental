@@ -102,13 +102,16 @@ def then_no_errors(composition) -> None:
 # feature-delta-doctor was added to _REGISTRY without its catalog row; reconciled 1:1.
 # Count 53 -> 54 (2026-07-08, fix-flavor-scaffold-catalog-reconciliation): flavor-scaffold was in _REGISTRY without its catalog row + per-gate file; reconciled 1:1. Prior 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2): dispatch was
 # added to _REGISTRY without its catalog row; reconciled 1:1.
-@then("both contain exactly 54 entries")
+# Count 54 -> 55 (2026-07-08, verify-catalog-coherence slice-01): adds the fast
+# registry<->catalog<->per-gate-file drift check verify-catalog-coherence,
+# wired across all three surfaces (dogfoods its own reconciliation rule).
+@then("both contain exactly 55 entries")
 def then_both_counts_match(composition) -> None:
-    assert len(composition.catalog_gate_ids) == 54, (
-        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 54"
+    assert len(composition.catalog_gate_ids) == 55, (
+        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 55"
     )
-    assert len(composition.registry_names) == 54, (
-        f"_REGISTRY has {len(composition.registry_names)} entries, expected 54"
+    assert len(composition.registry_names) == 55, (
+        f"_REGISTRY has {len(composition.registry_names)} entries, expected 55"
     )
 
 

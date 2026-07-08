@@ -154,10 +154,12 @@ def when_enumerate_bound(per_gate_comp) -> None:
 # per-gate file for feature-delta-doctor, 1:1 with its catalog entry.
 # Count 53 -> 54 (2026-07-08, fix-flavor-scaffold-catalog-reconciliation): flavor-scaffold was in _REGISTRY without its catalog row + per-gate file; reconciled 1:1. Prior 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2):
 # per-gate file for dispatch, 1:1 with its catalog entry.
-@then("exactly 54 per-gate files exist (one per catalog entry)")
+# Count 54 -> 55 (2026-07-08, verify-catalog-coherence slice-01): per-gate file
+# for verify-catalog-coherence, 1:1 with its catalog entry.
+@then("exactly 55 per-gate files exist (one per catalog entry)")
 def then_per_gate_file_count(per_gate_comp) -> None:
-    assert per_gate_comp.file_count == 54, (
-        f"Found {per_gate_comp.file_count} per-gate files, expected 54"
+    assert per_gate_comp.file_count == 55, (
+        f"Found {per_gate_comp.file_count} per-gate files, expected 55"
     )
 
 

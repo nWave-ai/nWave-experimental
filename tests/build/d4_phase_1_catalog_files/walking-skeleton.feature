@@ -50,11 +50,14 @@ Feature: Gate-contract catalog YAML mirrors _REGISTRY (D4 Phase 1 slice-01)
   # feature-delta-doctor landed in _REGISTRY without its catalog row; reconciled 1:1.
   # Count 53 -> 54 (2026-07-08, fix-flavor-scaffold-catalog-reconciliation): flavor-scaffold was in _REGISTRY without its catalog row + per-gate file; reconciled 1:1. Prior 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2): dispatch
   # landed in _REGISTRY without its catalog row; reconciled 1:1.
-  Scenario: Catalog row count equals registry count (54 total, adds flavor-scaffold)
+  # Count 54 -> 55 (2026-07-08, verify-catalog-coherence slice-01): adds the
+  # fast registry<->catalog<->per-gate-file drift check verify-catalog-coherence,
+  # 1:1 across registry/catalog/files (dogfoods its own rule).
+  Scenario: Catalog row count equals registry count (55 total, adds verify-catalog-coherence)
     Given the gate catalog loaded from "nWave/gates/_catalog.yaml"
     And the production _REGISTRY loaded from `src.des.cli.__main__`
     When the row counts are compared
-    Then both contain exactly 54 entries
+    Then both contain exactly 55 entries
     And every gate_id in the catalog is also a SubcommandRow.name in _REGISTRY
     And every SubcommandRow.name in _REGISTRY is also a gate_id in the catalog
 

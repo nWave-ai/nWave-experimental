@@ -378,3 +378,13 @@ gates:
     module: des.cli.flavor_scaffold
     entry_function: main
     language_neutral_contract: true
+
+  # verify-catalog-coherence slice-01 (GDP-1/3/6): the FAST (<1s) explicit/CI/
+  # feature-end check for the registry<->catalog<->per-gate-file drift class
+  # the build-tier catalog suite catches only in a full run. 1:1 mirror of the
+  # new _REGISTRY row; matching per-gate file verify-catalog-coherence.yaml.
+  - gate_id: verify-catalog-coherence
+    responsibility: "Compares CLI registry subcommand names, catalog gate_ids, and per-gate .yaml files under --repo-root and reports every drifting id + the HOW to reconcile it (add the missing catalog row / per-gate file / registry row); exits 0 when the three sets are coherent. Filesystem + regex only (no import, no git); degrades LOUD (non-zero + diagnostic, never a traceback) on a missing/malformed _catalog.yaml."
+    module: des.cli.verify_catalog_coherence
+    entry_function: main
+    language_neutral_contract: true

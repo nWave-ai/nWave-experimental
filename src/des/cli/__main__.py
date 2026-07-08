@@ -322,6 +322,15 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # + LANE_PROFILES, so the generator and AtddPurePromptValidator share ONE
     # source and cannot silently diverge.
     _SubcommandRow("dispatch", "des.cli.dispatch", "main"),
+    # verify-catalog-coherence slice-01 (GDP-1/3/6): the FAST (<1s) explicit/
+    # CI/feature-end check that this registry, nWave/gates/_catalog.yaml, and
+    # the per-gate .yaml files stay 1:1 -- the same drift the build-tier
+    # catalog suite catches only in a full run.
+    _SubcommandRow(
+        "verify-catalog-coherence",
+        "des.cli.verify_catalog_coherence",
+        "main",
+    ),
 )
 
 
