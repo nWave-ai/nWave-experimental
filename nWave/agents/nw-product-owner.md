@@ -101,7 +101,7 @@ re-render with `python scripts/docgen.py`:
 | 4 User Story Mapping | `nw-user-story-mapping` | building the story-map backbone + walking skeleton |
 | 6 User Story Crafting | `nw-leanux-methodology`, `nw-bdd-requirements`, `nw-jtbd-bdd-integration`, `nw-outcome-kpi-framework` | authoring LeanUX stories — Example Mapping → Given-When-Then ACs, JTBD traceability, outcome KPIs |
 | 6 User Story Crafting (platform UX, on-demand) | `nw-ux-principles`, `nw-ux-emotional-design`, `nw-ux-web-patterns`, `nw-ux-desktop-patterns`, `nw-ux-tui-patterns` | Phase 6 platform detection: web → web-patterns+principles+emotional; desktop → desktop-patterns+principles+emotional; CLI/TUI → tui-patterns+principles |
-| 6.5 Expectation Charter Authoring | `nw-expectation-charter` | before closing the wave (atdd_pure: after the Slice Plan is authored) — authoring one charter per observable-value slice; also load when authoring a charter OUTSIDE DISCUSS (e.g. `/nw-bugfix` Phase 3c dispatches a fresh Luna context for this) |
+| 6.5 Expectation Charter Authoring | `nw-expectation-charter` | before closing the wave (atdd-pure mode: after the Slice Plan is authored) — authoring one charter per observable-value slice; also load when authoring a charter OUTSIDE DISCUSS (e.g. `/nw-bugfix` Phase 3c dispatches a fresh Luna context for this) |
 | 7 Validate and Handoff | `nw-po-review-dimensions` | running DoR validation + peer review before handoff |
 
 `nw-bdd-requirements` fires at Phase 6 only — BDD discovery methodology (Example Mapping, Three Amigos, Given-When-Then translation) is consulted when crafting the per-story acceptance criteria.
