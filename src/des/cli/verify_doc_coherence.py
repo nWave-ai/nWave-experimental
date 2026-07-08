@@ -39,7 +39,7 @@ import argparse
 import json
 import re
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
@@ -346,6 +346,7 @@ class _ScanResult:
     path_claims: int = 0
     python_module_claims: int = 0
     docs_skipped: int = 0
+    docs_unreadable: list[str] = field(default_factory=list)
 
 
 def _doc_declares_itself_not_current(text: str) -> bool:
@@ -371,7 +372,24 @@ def _scan_doc(
     doc_rel = str(doc.relative_to(repo)) if doc.is_relative_to(repo) else str(doc)
     try:
         text = doc.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    except OSError as exc:
+        result.docs_unreadable.append(doc_rel)
+        _emit(
+            {
+                "event": "DocCoherenceDocUnreadable",
+                "doc_file": doc_rel,
+                "what": f"doc '{doc_rel}' could not be read ({exc})",
+                "why": (
+                    "an OSError (permission-denied, broken symlink, ...) "
+                    "prevented reading the doc -- its claims could not be "
+                    "checked, so coherence cannot be confirmed."
+                ),
+                "how": (
+                    "fix the file permissions/symlink so the doc is readable, "
+                    "or remove it from the scanned doc set."
+                ),
+            }
+        )
         return
     if _doc_declares_itself_not_current(text):
         result.docs_skipped += 1
@@ -478,6 +496,22 @@ def main(argv: list[str] | None = None) -> int:
     result = _ScanResult(violations=[])
     for doc in docs:
         _scan_doc(doc, repo, scripts, result)
+
+    if result.docs_unreadable:
+        return _indeterminate(
+            what=(
+                f"{len(result.docs_unreadable)} doc(s) could not be read: "
+                f"{', '.join(result.docs_unreadable)}"
+            ),
+            why=(
+                "an unreadable doc's claims cannot be checked -- coherence "
+                "cannot be confirmed while a doc went unread."
+            ),
+            how=(
+                "fix the file permissions/symlink for the doc(s) above so "
+                "they are readable, or remove them from the scanned set."
+            ),
+        )
 
     if result.violations:
         _emit(
