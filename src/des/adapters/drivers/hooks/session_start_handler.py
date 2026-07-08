@@ -311,7 +311,9 @@ def _build_visible_message(local: str, latest: str) -> str:
     return f"nWave update available: {local} \u2192 {latest}. Run /nw-update to update."
 
 
-def _build_update_output(local: str, latest: str, changelog: str | None) -> dict:
+def _build_update_output(
+    local: str, latest: str, changelog: str | None
+) -> dict[str, object]:
     """Build the SessionStart hook JSON payload for an available update.
 
     Emits BOTH:
@@ -329,6 +331,55 @@ def _build_update_output(local: str, latest: str, changelog: str | None) -> dict
             "hookEventName": "SessionStart",
             "additionalContext": _build_update_message(local, latest, changelog),
         },
+    }
+
+
+_GATE_AFFORDANCE_NUDGE_TEXT = (
+    "nWave gate-affordance: an active feature-delta is present in this repo. "
+    "Satisfy each gate's expectation BEFORE it fires -- see the nw-buddy "
+    "gate-affordance knowledge for the gate -> expectation -> producing-tool "
+    "map, or run `des feature-delta-doctor` / `des dispatch` directly."
+)
+
+
+def build_gate_affordance_nudge(cwd: str | None) -> str | None:
+    """Return the proactive gate-affordance nudge, or ``None`` (WS-17-A / GDP-2).
+
+    An active feature-delta is any readable ``docs/feature/<id>/feature-delta.md``
+    directly under ``cwd``. Fail-open: any error -- ``cwd`` is ``None``, ``cwd``
+    is not a directory, no ``docs/feature`` tree, or a malformed/unreadable
+    ``feature-delta.md`` (directory-where-file-expected, permission denied) --
+    degrades to ``None``, never raises.
+
+    The nudge text POINTS at the nw-buddy gate-affordance SSOT and names a
+    concrete producing tool (``des feature-delta-doctor`` / ``des dispatch``)
+    rather than duplicating the gate table inline (M1 single content locus).
+    """
+    try:
+        if not cwd:
+            return None
+        feature_root = Path(cwd) / "docs" / "feature"
+        if not feature_root.is_dir():
+            return None
+        for entry in sorted(feature_root.iterdir()):
+            delta_path = entry / "feature-delta.md"
+            try:
+                delta_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            return _GATE_AFFORDANCE_NUDGE_TEXT
+        return None
+    except Exception:
+        return None
+
+
+def _build_gate_affordance_output(nudge: str) -> dict[str, object]:
+    """Build the SessionStart hookSpecificOutput payload for the gate-affordance nudge."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": nudge,
+        }
     }
 
 
@@ -395,6 +446,16 @@ def handle_session_start() -> int:
         advisory = run_probe()
         if advisory:
             print(advisory, end="")
+    except Exception:
+        pass
+
+    # WS-17-A / GDP-2: proactive gate-affordance nudge -- surfaces the
+    # gate -> expectation -> producing-tool pointer BEFORE any gate fires,
+    # when an active feature-delta exists under the session cwd. Fail-open.
+    try:
+        nudge = build_gate_affordance_nudge(session_cwd)
+        if nudge:
+            print(json.dumps(_build_gate_affordance_output(nudge)))
     except Exception:
         pass
 
