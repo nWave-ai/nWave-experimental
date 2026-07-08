@@ -1,0 +1,47 @@
+# Gate-contract: check-contract-shape (check-contract-shape-declarations
+# slice-01, GDP-4/6)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=check-contract-shape.
+
+gate_id: check-contract-shape
+responsibility: |
+  Runs the 3 Principle-11 mechanical Contract-Shape checks over an explicit,
+  caller-provided --files list (git-free): (a) every `def test_*` docstring
+  contains `CONTRACT_SHAPE:`; (b) every acceptance test (path contains
+  `/acceptance/`) docstring contains `Outcome anchor: DISCUSS Elevator
+  Pitch`; (c) no test-function name matches the banned regex
+  `^test_.*(returns_\d+|exit_code|calls_.*_once|status_code|http_\d+)`.
+  Parses each file's test functions + docstrings via stdlib `ast` (no
+  third-party parser, no git dependency). Emits a self-explaining JSON
+  verdict naming each violation as `file::test` + check-id + an actionable
+  `how`. Degrades LOUD (exit 2 + diagnostic naming the file, never a
+  traceback) on a missing, unreadable, or unparseable file.
+module: des.cli.check_contract_shape_declarations
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --files
+    required: true
+    type: string
+    help: "Explicit list of test file paths to scan (nargs=+, git-free)."
+
+log_events: []
+
+failure_modes:
+  - error_class: ViolationsFound
+    exit_code: 1
+    remediation: "The JSON verdict's 'violations' list names each file::test + check id + a HOW: add a CONTRACT_SHAPE: line (check a), add the Outcome anchor (check b), or rename the test off the banned pattern (check c)."
+  - error_class: MalformedInput
+    exit_code: 2
+    remediation: "The JSON verdict's 'diagnostic' field names the missing, unreadable, or unparseable file; fix or remove that path from --files."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

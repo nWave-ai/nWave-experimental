@@ -331,6 +331,15 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.verify_catalog_coherence",
         "main",
     ),
+    # check-contract-shape-declarations slice-01 (GDP-4/6): the PRODUCING tool
+    # for Principle 11's three mechanical Contract-Shape checks (CONTRACT_SHAPE
+    # docstring / acceptance Outcome-anchor / banned-regex name) over an
+    # explicit caller-scoped --files list, git-free, stdlib-only.
+    _SubcommandRow(
+        "check-contract-shape",
+        "des.cli.check_contract_shape_declarations",
+        "main",
+    ),
 )
 
 

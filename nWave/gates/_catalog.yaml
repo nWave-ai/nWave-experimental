@@ -388,3 +388,13 @@ gates:
     module: des.cli.verify_catalog_coherence
     entry_function: main
     language_neutral_contract: true
+
+  # check-contract-shape-declarations slice-01 (GDP-4/6): the PRODUCING tool
+  # for Principle 11's three mechanical Contract-Shape checks over an explicit
+  # caller-scoped --files list. 1:1 mirror of the new _REGISTRY row; matching
+  # per-gate file check-contract-shape.yaml.
+  - gate_id: check-contract-shape
+    responsibility: "Runs the 3 Principle-11 mechanical Contract-Shape checks (every test docstring carries CONTRACT_SHAPE:, every acceptance test carries the Outcome anchor, no banned-regex test name) over an explicit --files list, parsed via stdlib ast; reports each violation as file::test + check-id + how. Git-free, stdlib-only; exits 0 clean / 1 violations / 2 malformed (missing/unreadable/unparseable file, degrade-LOUD diagnostic, never a traceback)."
+    module: des.cli.check_contract_shape_declarations
+    entry_function: main
+    language_neutral_contract: true

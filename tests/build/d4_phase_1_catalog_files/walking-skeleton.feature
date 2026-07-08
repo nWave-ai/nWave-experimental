@@ -53,11 +53,14 @@ Feature: Gate-contract catalog YAML mirrors _REGISTRY (D4 Phase 1 slice-01)
   # Count 54 -> 55 (2026-07-08, verify-catalog-coherence slice-01): adds the
   # fast registry<->catalog<->per-gate-file drift check verify-catalog-coherence,
   # 1:1 across registry/catalog/files (dogfoods its own rule).
-  Scenario: Catalog row count equals registry count (55 total, adds verify-catalog-coherence)
+  # Count 55 -> 56 (2026-07-08, check-contract-shape-declarations slice-01):
+  # adds check-contract-shape, the producing tool for Principle-11's 3
+  # mechanical Contract-Shape checks, 1:1 across registry/catalog/files.
+  Scenario: Catalog row count equals registry count (56 total, adds check-contract-shape)
     Given the gate catalog loaded from "nWave/gates/_catalog.yaml"
     And the production _REGISTRY loaded from `src.des.cli.__main__`
     When the row counts are compared
-    Then both contain exactly 55 entries
+    Then both contain exactly 56 entries
     And every gate_id in the catalog is also a SubcommandRow.name in _REGISTRY
     And every SubcommandRow.name in _REGISTRY is also a gate_id in the catalog
 

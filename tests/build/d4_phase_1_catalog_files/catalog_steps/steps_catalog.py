@@ -105,13 +105,16 @@ def then_no_errors(composition) -> None:
 # Count 54 -> 55 (2026-07-08, verify-catalog-coherence slice-01): adds the fast
 # registry<->catalog<->per-gate-file drift check verify-catalog-coherence,
 # wired across all three surfaces (dogfoods its own reconciliation rule).
-@then("both contain exactly 55 entries")
+# Count 55 -> 56 (2026-07-08, check-contract-shape-declarations slice-01):
+# adds check-contract-shape, the producing tool for Principle-11's 3
+# mechanical Contract-Shape checks, wired across all three surfaces.
+@then("both contain exactly 56 entries")
 def then_both_counts_match(composition) -> None:
-    assert len(composition.catalog_gate_ids) == 55, (
-        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 55"
+    assert len(composition.catalog_gate_ids) == 56, (
+        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 56"
     )
-    assert len(composition.registry_names) == 55, (
-        f"_REGISTRY has {len(composition.registry_names)} entries, expected 55"
+    assert len(composition.registry_names) == 56, (
+        f"_REGISTRY has {len(composition.registry_names)} entries, expected 56"
     )
 
 
