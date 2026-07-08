@@ -751,6 +751,31 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
 
+    # Step 6 (GDP-1 fold-in): guarantee the SliceCommitVerified record itself,
+    # so a folded lean-cycle commit -- where the SubagentStop hook never fires
+    # -- does not orphan its successor's carpaccio-order check. Invokes the
+    # SAME canonical verify-then-record `des verify-slice-commit --feature-id`
+    # runs (E1 completeness + E2 feature-scoped contract + E3 examine),
+    # writing `SliceCommitVerified` IFF all three clear -- byte-identical
+    # record shape, no reimplementation (Ale-authorized canonical form).
+    # Honesty invariant: a genuine E1/E2/E3 failure writes NO record; the
+    # failure is surfaced via the fold-in's own JSON event (emitted before the
+    # `SliceCommitted` line below), never silently swallowed. The commit
+    # already landed and verified at step 5, so this fold-in never flips
+    # commit-slice's own exit code -- its exit semantics stay unchanged.
+    # Idempotent by construction: `AtCompletionLedger.verified_slices()` is
+    # set-valued, so a later re-run (e.g. the hook, or a stale
+    # `des verify-slice-commit`) for an already-verified slice changes nothing
+    # observable -- no double-counted verification.
+    if args.feature_id is not None:
+        from des.cli.verify_slice_commit_completeness import (
+            main as _verify_then_record_main,
+        )
+
+        _verify_then_record_main(
+            ["--repo", str(repo), "--feature-id", args.feature_id, "--commit", "HEAD"]
+        )
+
     _emit(
         {
             "event": "SliceCommitted",
