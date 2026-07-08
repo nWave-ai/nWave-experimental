@@ -146,6 +146,25 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
     # install_nwave.py sets framework_source = site-packages/nWave/, so files
     # must land at site-packages/nWave/lib/python/des/ — which only happens if
     # the force-include destination is prefixed with "nWave/".
+    #
+    # RUNTIME-ASSET note (fix-wheel-ships-nwave-runtime-assets, 2026-07-08):
+    # `DESPlugin._install_nwave_runtime_assets` reads a DIFFERENT, deeper root
+    # under a pipx install: when `using_prebuilt`, it resolves
+    # `context.framework_source / "nWave" / <asset>` i.e.
+    # site-packages/nWave/nWave/<asset> — one level below the flat entries
+    # above, because `framework_source` already equals site-packages/nWave/.
+    # So `flavors`/`data`/`schemas`/`framework-catalog.yaml` need a SECOND,
+    # nested destination in addition to (or instead of) their flat one.
+    # `templates` is consumed at BOTH the flat destination (TemplatesPlugin
+    # reads `context.templates_dir` = framework_source/"templates") and the
+    # nested one (the runtime-asset resolver) — TOML forbids reusing the same
+    # key twice, so the second `nWave/templates` mapping is keyed with a
+    # trailing slash ("nWave/templates/"); pathlib normalises the trailing
+    # slash away, so it resolves to the identical source directory as a
+    # distinct TOML key.  `framework-catalog.yaml` has no other consumer of
+    # its flat destination (verified: only the runtime-asset resolver reads
+    # it), so its existing entry is repointed to the nested destination
+    # in place rather than duplicated.
     replacement = (
         "[tool.hatch.build.targets.wheel]\n"
         f'packages = ["{pkg_name}"]\n'
@@ -156,7 +175,11 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         '"nWave/skills" = "nWave/skills"\n'
         '"nWave/tasks/nw" = "nWave/tasks/nw"\n'
         '"nWave/templates" = "nWave/templates"\n'
-        '"nWave/framework-catalog.yaml" = "nWave/framework-catalog.yaml"\n'
+        '"nWave/templates/" = "nWave/nWave/templates"\n'
+        '"nWave/flavors" = "nWave/nWave/flavors"\n'
+        '"nWave/data" = "nWave/nWave/data"\n'
+        '"nWave/schemas" = "nWave/nWave/schemas"\n'
+        '"nWave/framework-catalog.yaml" = "nWave/nWave/framework-catalog.yaml"\n'
         '"nWave/VERSION" = "nWave/VERSION"\n'
         '"nWave/README.md" = "nWave/README.md"\n'
         '"scripts/install" = "scripts/install"\n'
