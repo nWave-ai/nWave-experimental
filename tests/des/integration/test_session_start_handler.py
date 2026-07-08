@@ -24,6 +24,25 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _silence_orchestrator_affordance(monkeypatch):
+    """Neutralize the orchestrator-affordance injection (slice-01) so the
+    UP_TO_DATE / timeout / frequency=never scenarios keep asserting their OWN
+    empty / single-JSON-line stdout, not the new always-on affordance
+    additionalContext.
+
+    handle_session_start now unconditionally injects the affordance loaded
+    from the shipped nWave/data/orchestrator-affordance/*.md (which exist on
+    disk), a by-design change ("fires every session" per the charter).
+    """
+    monkeypatch.setattr(
+        "des.adapters.drivers.hooks.session_start_handler.load_orchestrator_affordance",
+        lambda assets_dir: None,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -32,6 +32,23 @@ def _silence_probe(request):
         yield
 
 
+@pytest.fixture(autouse=True)
+def _silence_orchestrator_affordance(monkeypatch):
+    """Neutralize the orchestrator-affordance injection (slice-01) so tests
+    that assert an empty/single-line stdout keep asserting their OWN
+    scenario's output, not the new always-on affordance additionalContext.
+
+    handle_session_start now unconditionally injects the affordance loaded
+    from the shipped nWave/data/orchestrator-affordance/*.md (which exist on
+    disk), a by-design zero-empty-stdout change ("fires every session" per
+    the charter). This mirrors `_silence_probe` for run_probe.
+    """
+    monkeypatch.setattr(
+        "des.adapters.drivers.hooks.session_start_handler.load_orchestrator_affordance",
+        lambda assets_dir: None,
+    )
+
+
 class TestSessionStartHandlerUpdateAvailable:
     """B1: UPDATE_AVAILABLE writes additionalContext JSON to stdout."""
 

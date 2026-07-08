@@ -383,6 +383,55 @@ def _build_gate_affordance_output(nudge: str) -> dict[str, object]:
     }
 
 
+# ---------------------------------------------------------------------------
+# orchestrator-affordance-injection (slice-01): load the orchestrator's
+# spine-discipline + producing-tool affordance from shipped text assets,
+# never hardcoded in code.
+# ---------------------------------------------------------------------------
+
+_ORCHESTRATOR_AFFORDANCE_SEPARATOR = "\n\n"
+
+# Resolved the same way `carpaccio_intercept.py` resolves `nWave/flavors/`
+# (`Path(__file__).resolve().parents[N]/nWave/...`): this module lives at
+# src/des/adapters/drivers/hooks/, so parents[5] is the repo / install root.
+_ORCHESTRATOR_AFFORDANCE_ASSETS_DIR = (
+    Path(__file__).resolve().parents[5] / "nWave" / "data" / "orchestrator-affordance"
+)
+
+
+def load_orchestrator_affordance(assets_dir: Path) -> str | None:
+    """Load and concatenate every `*.md` file under `assets_dir`.
+
+    Reads every `*.md` file directly under `assets_dir`, sorted by name, and
+    concatenates their text with a separator. Content is read fresh on every
+    call -- never cached or hardcoded -- so editing a shipped asset surfaces
+    on the next call with zero code change.
+
+    Fail-open: returns `None` when `assets_dir` does not exist, contains no
+    `.md` file, or is unreadable for any reason. Never raises.
+    """
+    try:
+        if not assets_dir.is_dir():
+            return None
+        md_paths = sorted(assets_dir.glob("*.md"))
+        if not md_paths:
+            return None
+        contents = [path.read_text(encoding="utf-8") for path in md_paths]
+        return _ORCHESTRATOR_AFFORDANCE_SEPARATOR.join(contents)
+    except Exception:
+        return None
+
+
+def _build_orchestrator_affordance_output(affordance: str) -> dict[str, object]:
+    """Build the SessionStart hookSpecificOutput payload for the affordance text."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": affordance,
+        }
+    }
+
+
 def handle_session_start() -> int:
     """Handle session-start hook: run housekeeping then check for nWave updates.
 
@@ -464,5 +513,16 @@ def handle_session_start() -> int:
     # prose-invoked /nw-deliver phase-entry diagnostic. Scoped to atdd_pure
     # projects (ADR-030 D6); fail-open.
     _emit_hook_version_skew_finding(session_cwd)
+
+    # orchestrator-affordance-injection (slice-01): load the shipped
+    # spine-discipline + producing-tool affordance from text assets and
+    # inject it as additionalContext. Additive to the update-notice and the
+    # gate-affordance nudge above; fail-open.
+    try:
+        affordance = load_orchestrator_affordance(_ORCHESTRATOR_AFFORDANCE_ASSETS_DIR)
+        if affordance:
+            print(json.dumps(_build_orchestrator_affordance_output(affordance)))
+    except Exception:
+        pass
 
     return 0
