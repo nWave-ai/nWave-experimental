@@ -7,6 +7,7 @@ tools: Read, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of,
 skills:
   - nw-ddd-strategic
   - nw-ddd-tactical
+  - nw-ddd-architect
   - nw-code-analysis-port
 ---
 
