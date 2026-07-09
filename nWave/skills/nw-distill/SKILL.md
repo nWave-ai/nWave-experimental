@@ -140,10 +140,18 @@ for DELIVER-entry to reject.
    is INDEPENDENT of, and parallel to, the acceptance-designer authoring the ATs in this same wave
    — both derive from the SAME Value statement, neither reads the other's output (two-independent-
    derivations rule); the acceptance-designer never authors the charter.
-3. **Arming + skip.** A filled scaffold arms the DELIVER EXAMINE step + the commit-slice
-   examine-verdict gate for that slice. `@infrastructure`/`@prefactoring` rows are correctly
-   skipped by the tool (no scaffold → no charter → EXAMINE unarmed → reviewer audit) — by design,
-   not a gap.
+3. **Backstop verification gate.** `des verify-charter-filled --charter <path>` verifies a
+   scaffold was actually FILLED — oracle with ≥1 negative observation + non-empty start-recipe,
+   no residual placeholders — before it can gate a DELIVER EXAMINE. A hollow scaffold can never
+   masquerade as a real one.
+4. **Arming + skip (gated on verification).** Once `des verify-charter-filled` confirms it is
+   FILLED, the scaffold arms the DELIVER EXAMINE step + the commit-slice examine-verdict gate for
+   that slice. `@infrastructure`/`@prefactoring` rows are correctly skipped by the tool (no
+   scaffold → no charter → EXAMINE unarmed → reviewer audit) — by design, not a gap.
+5. **Other seed-modes for non-slice-plan sources.** `--seed-mode bug-observable --observable
+   "<bug behaviour>"` seeds a `/nw-bugfix` charter; `--seed-mode brownfield-discovery --area
+   "<existing system area>"` retrofits a discovery charter onto legacy code — both bypass the
+   Slice Plan precondition in step 1.
 
 ## Induce, do not reinvent — the 3-source induction map (JOB-025)
 
