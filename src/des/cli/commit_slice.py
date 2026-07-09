@@ -78,6 +78,10 @@ from des.cli.run_contract_gate import (
     build_tier_exit_verdict,
     extract_gate_scope,
 )
+from des.cli.verify_deliver_integrity import (
+    _declared_slice_plan_slice_ids,
+    _slice_commit_verified_slices,
+)
 from des.cli.verify_slice_commit_completeness import _append_slice_commit_indeterminate
 from des.domain.examine_verdict_signing import charter_seal as _charter_seal
 from des.domain.slice_id_trailer import extract_slice_ids
@@ -111,6 +115,75 @@ _REVIEWED_BY_LINE_RE = re.compile(r"^Reviewed-by:.*$", re.MULTILINE)
 # ``des record-at-review-verdict`` records the acceptance-designer's approval.
 _AT_REVIEW_VERDICT_EVENT = "ATReviewVerdict"
 _VERDICT_APPROVED = "APPROVED"
+
+
+# ---------------------------------------------------------------------------
+# Feature-end finalize unmissable (deliver-finalize-unmissable slice-01,
+# FIX-A, GDP-1/4/5/6): "done" is a CLAIM decoupled from the mechanical
+# `FeatureEnd` attestation -- a per-slice commit-slice succeeds individually
+# and creates a done-illusion. PURELY ADDITIVE: after a successful slice
+# commit, if every declared Slice-Plan row for the feature is now shipped
+# (this was the LAST slice), append a durable `FeatureEndPending` ledger
+# marker + emit a LOUD self-explaining stdout notice naming
+# `des feature-end run` as the HOW. Idempotent (at most once per feature);
+# degrades LOUD without ever crashing or blocking the commit.
+# ---------------------------------------------------------------------------
+_FEATURE_END_PENDING_EVENT = "FeatureEndPending"
+_FEATURE_END_RUN_HOW = "des feature-end run"
+
+
+def _last_declared_slice_shipped(repo: Path, feature_id: str) -> bool:
+    """True iff every declared Slice-Plan row for ``feature_id`` has shipped.
+
+    Reuses the declared-slices / shipped-slices readers from
+    ``verify_deliver_integrity.py`` (the Reuse Analysis) -- never re-parses
+    the feature-delta. An absent/unreadable Slice Plan yields an empty
+    declared list, so this returns False (the finalize notice never fires on
+    an unreadable plan).
+    """
+    declared = _declared_slice_plan_slice_ids(repo, feature_id)
+    if not declared:
+        return False
+    shipped = _slice_commit_verified_slices(repo, feature_id)
+    return all(slice_id in shipped for slice_id in declared)
+
+
+def _feature_end_pending_exists(repo: Path, feature_id: str) -> bool:
+    """True iff a `FeatureEndPending` ledger record already exists (idempotent)."""
+    ledger = AtCompletionLedger(feature_id=feature_id, project_root=repo)
+    records = ledger.read_records(event_type=_FEATURE_END_PENDING_EVENT)
+    return any(record.get("event") == _FEATURE_END_PENDING_EVENT for record in records)
+
+
+def _notify_feature_end_unmissable(repo: Path, feature_id: str) -> None:
+    """Append the `FeatureEndPending` marker + LOUD notice when the last slice ships.
+
+    Best-effort-loud (GDP-6): NEVER raises. Any failure (unreadable Slice
+    Plan, ledger append error) is caught and printed as a diagnostic -- the
+    commit already succeeded and must never be blocked or crashed by this
+    step.
+    """
+    try:
+        if not _last_declared_slice_shipped(repo, feature_id):
+            return
+        if _feature_end_pending_exists(repo, feature_id):
+            return
+        ledger = AtCompletionLedger(feature_id=feature_id, project_root=repo)
+        ledger.append_gate_event(_FEATURE_END_PENDING_EVENT, "", feature_id=feature_id)
+        print(
+            f"WHAT: every declared Slice-Plan slice for feature {feature_id!r} "
+            "has shipped -- the feature is NOT done yet.\n"
+            "WHY: a feature is done only when a FeatureEnd record attests it "
+            "(full-suite + gates + deep-review).\n"
+            f"HOW: run: {_FEATURE_END_RUN_HOW} --repo . --feature-id "
+            f"{feature_id} --feature-dir docs/feature/{feature_id} "
+            "--reviewer-agent-id <id> --verdict APPROVED"
+        )
+    except Exception as exc:
+        print(
+            "WARNING: des commit-slice could not evaluate/append the "
+            f"feature-end-unmissable marker for feature {feature_id!r}: {exc}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -922,6 +995,12 @@ def main(argv: list[str] | None = None) -> int:
                 ]
             )
         _verify_then_record_main(fold_in_argv)
+
+    # Step 7 (deliver-finalize-unmissable slice-01, FIX-A): PURELY ADDITIVE,
+    # best-effort-loud last-slice notice. Runs strictly AFTER the commit has
+    # already succeeded and verified -- never affects the exit code above.
+    if args.feature_id is not None:
+        _notify_feature_end_unmissable(repo, args.feature_id)
 
     _emit(
         {
