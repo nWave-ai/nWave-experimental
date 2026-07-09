@@ -19,10 +19,25 @@ Negative-AT convention (the mechanical discriminator):
   pytest   -- a test is a NEGATIVE AT when it is marked
               ``@pytest.mark.negative_at`` OR its function name contains
               ``_not_`` / ``_never_`` / ``_rejects_`` / ``_refuses_`` /
-              ``_fails_``.
+              ``_fails_`` / ``_still_errors`` / ``_still_requires`` /
+              ``_still_flags`` / ``still_flags_`` / ``_negative_control``.
   Gherkin  -- a Scenario is a NEGATIVE AT when it is tagged ``@negative``
               OR its name contains "not " / "never " / "reject"
               (case-insensitive).
+  Other languages (.rs/.go/.ts/...) -- no AST, no language-specific parser;
+              a language-neutral regex finds test-declaration names
+              (``fn``/``func``/``function``/``def`` <name>) and applies the
+              SAME pytest name-token discriminator above -- the negative verb
+              lives in the identifier regardless of host language. Go-style
+              camelCase/PascalCase identifiers (``TestRejectsBadInput``) are
+              split into words on case transitions by the same word-based
+              vocabulary the underscore-joined path uses, so ``rejects`` is
+              seen as its own word regardless of the joining convention.
+              JS/TS also get a second scan for the ``test``/``it``/
+              ``describe`` string-call idiom (the name is a string literal,
+              not an identifier); negativity there is decided by the same
+              word-based vocabulary since the name is space-separated, not
+              underscore-joined.
 
 Criticality (what arms the mandate):
 
@@ -58,6 +73,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,7 +81,25 @@ from pathlib import Path
 
 _PYTEST_NEGATIVE_MARK = "negative_at"
 _PYTEST_CRITICAL_MARK = "critical"
-_PYTEST_NEGATIVE_NAME_TOKENS = ("_not_", "_never_", "_rejects_", "_refuses_", "_fails_")
+_PYTEST_NEGATIVE_NAME_TOKENS = (
+    "_not_",
+    "_never_",
+    "_rejects_",
+    "_refuses_",
+    "_fails_",
+    "_still_errors",
+    "_still_requires",
+    "_still_flags",
+    "still_flags_",
+    "_negative_control",
+)
+_GENERIC_TEST_DECL_PATTERN = re.compile(r"\b(?:fn|func|function|def)\s+([A-Za-z_]\w*)")
+_JS_TEST_CALL_PATTERN = re.compile(r"\b(?:test|it|describe)\s*\(\s*(['\"`])(.*?)\1")
+_WORD_SPLIT_PATTERN = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
+_NEGATIVE_INTENT_WORDS = frozenset(
+    {"rejects", "reject", "refuses", "refuse", "never", "fails", "fail", "errors"}
+)
+_NEGATIVE_INTENT_PHRASES = ("does not", "doesn't", "cannot", "can't", "not allow")
 _GHERKIN_NEGATIVE_TAG = "negative"
 _GHERKIN_CRITICAL_TAG = "critical"
 _GHERKIN_NEGATIVE_NAME_TOKENS = ("not ", "never ", "reject")
@@ -139,8 +173,48 @@ def _mark_names(decorators: list[ast.expr]) -> set[str]:
     return names
 
 
+def _split_words(name: str) -> list[str]:
+    """Split an identifier/phrase into lowercase words -- snake_case,
+    camelCase, PascalCase, space-separated, and acronym-aware, uniformly.
+    A lower->upper case transition (``rejectsInvalid`` -> ``rejects`` /
+    ``Invalid``) and an acronym-then-word transition (``HTTPServer`` ->
+    ``HTTP`` / ``Server``) are both split, exactly like an existing
+    underscore/space/hyphen separator already is -- so
+    ``TestRejectsBadInput`` and ``test_rejects_bad_input`` yield the same
+    word set. Never raises: a name with no letter/digit runs yields ``[]``.
+    """
+    return [w.lower() for w in _WORD_SPLIT_PATTERN.findall(name)]
+
+
+def _name_signals_negative(name: str) -> bool:
+    """Word-based negative-intent SSOT, shared by the underscore-joined
+    identifier path, the camelCase/PascalCase identifier path (Go's
+    ``TestRejectsBadInput`` / ``TestDoesNotAcceptNil`` idiom), and the JS/TS
+    ``test``/``it``/``describe`` string-call path -- one vocabulary, one
+    split, all name-casing conventions. Lowercase, split into words via
+    ``_split_words`` (snake_case, camelCase, PascalCase, and space-separated
+    all yield the same words), flag a negative verb (``rejects``/``never``/
+    ``fails``/``errors``/...) or a negative bigram (``does not``/
+    ``cannot``/...). The bigram check runs against BOTH the raw lowered name
+    (catches phrases already joined by a real separator, e.g. the
+    space-separated JS/TS string-call idiom) and the space-joined split
+    words (catches the same bigram spanning a camelCase word boundary with
+    no separator at all, e.g. ``DoesNotAcceptNil``). Conservative by
+    construction -- a bare ``still``/``ok``/``not`` alone never matches, so
+    ``still_works``/``still works``/``TestStillWorks``/``returns ok`` stay
+    unclassified.
+    """
+    words = _split_words(name)
+    candidates = (name.lower(), " ".join(words))
+    if any(phrase in c for c in candidates for phrase in _NEGATIVE_INTENT_PHRASES):
+        return True
+    return any(word in _NEGATIVE_INTENT_WORDS for word in words)
+
+
 def _is_negative_pytest_name(name: str) -> bool:
-    return any(token in name for token in _PYTEST_NEGATIVE_NAME_TOKENS)
+    return any(
+        token in name for token in _PYTEST_NEGATIVE_NAME_TOKENS
+    ) or _name_signals_negative(name)
 
 
 def _scan_pytest_file(path: Path) -> _FileScan | int:
@@ -224,10 +298,65 @@ def _scan_feature_file(path: Path) -> _FileScan | int:
     return _FileScan(path=path, cases=tuple(cases))
 
 
+def _scan_generic_name_file(path: Path) -> _FileScan | int:
+    """Language-neutral scan for non-.py/.feature test files (e.g. .rs, .go,
+    .ts): no AST, no language-specific parser. Two independent scans, run
+    together so a file's negative AT is found via EITHER idiom:
+
+    1. Identifier scan -- test-declaration names via a keyword-prefixed
+       regex (``fn``/``func``/``function``/``def`` <name>), classified with
+       the SAME name-token discriminator the pytest scanner uses; a Rust
+       ``fn ..._still_errors()`` is detected exactly like a Python
+       ``def ..._still_errors()`` would be.
+    2. JS/TS string-call scan -- idiomatic ``test('name', ...)`` /
+       ``it('name', ...)`` / ``describe('name', ...)`` calls, where the test
+       name is a string literal rather than an identifier. The name is
+       classified by the shared word-based vocabulary (``_name_signals_negative``)
+       since it is space-separated, not underscore-joined.
+
+    Neither scan raises on malformed/binary/empty content -- a non-matching
+    regex simply yields zero cases from that arm, never a traceback.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return _indeterminate(
+            what=f"cannot read {path}",
+            why=str(exc),
+            how="fix the file encoding/permissions and re-run.",
+        )
+    cases: list[_Case] = []
+    for match in _GENERIC_TEST_DECL_PATTERN.finditer(text):
+        name = match.group(1)
+        line = text.count("\n", 0, match.start()) + 1
+        cases.append(
+            _Case(
+                name=name,
+                line=line,
+                critical=False,
+                negative=_is_negative_pytest_name(name),
+            )
+        )
+    for js_match in _JS_TEST_CALL_PATTERN.finditer(text):
+        name = js_match.group(2)
+        line = text.count("\n", 0, js_match.start()) + 1
+        cases.append(
+            _Case(
+                name=name,
+                line=line,
+                critical=False,
+                negative=_name_signals_negative(name),
+            )
+        )
+    return _FileScan(path=path, cases=tuple(cases))
+
+
 def _scan_file(path: Path) -> _FileScan | int:
     if path.suffix == ".feature":
         return _scan_feature_file(path)
-    return _scan_pytest_file(path)
+    if path.suffix == ".py":
+        return _scan_pytest_file(path)
+    return _scan_generic_name_file(path)
 
 
 def _discover(test_dir: Path) -> list[Path]:
@@ -306,11 +435,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
         epilog=(
             "Negative-AT convention: pytest -- @pytest.mark.negative_at OR "
-            "name contains _not_/_never_/_rejects_/_refuses_/_fails_; "
-            "Gherkin -- @negative tag OR scenario name contains "
-            "'not '/'never '/'reject'. Critical: @pytest.mark.critical / "
-            "@critical tag, or --all-critical (whole file). A critical file "
-            "needs >=1 negative AT anywhere within it."
+            "name contains _not_/_never_/_rejects_/_refuses_/_fails_/"
+            "_still_errors/_still_requires/_still_flags/still_flags_/"
+            "_negative_control; Gherkin -- @negative tag OR scenario name "
+            "contains 'not '/'never '/'reject'. Other languages (.rs/.go/"
+            ".ts/...) -- name-scanned with the same pytest tokens, no "
+            "AST. Critical: @pytest.mark.critical / @critical tag, or "
+            "--all-critical (whole file). A critical file needs >=1 "
+            "negative AT anywhere within it."
         ),
     )
     parser.add_argument(
