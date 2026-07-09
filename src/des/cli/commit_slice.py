@@ -487,6 +487,30 @@ def _build_parser() -> argparse.ArgumentParser:
         "The committed-scope verify still runs unless --skip-verify is given.",
     )
     parser.add_argument(
+        "--at-kind",
+        dest="at_kind",
+        default="gherkin",
+        choices=("gherkin", "pytest-regression"),
+        help=(
+            "The acceptance-test kind the slice's E2 leg attests (default: "
+            "gherkin, byte-identical for every existing caller). Forwarded "
+            "into the Step-6 verify_slice_commit_completeness fold-in so a "
+            "real pytest-regression commit runs the BEHAVIORAL (not gherkin/ "
+            "feature-scoped-contract) E2 path -- see "
+            "verify_slice_commit_completeness.py for the attestation itself."
+        ),
+    )
+    parser.add_argument(
+        "--regression-test-file",
+        dest="regression_test_file",
+        default=None,
+        help=(
+            "Repo-relative path to the pytest regression file E2 runs "
+            "behaviorally (paired with --at-kind pytest-regression); "
+            "forwarded into the Step-6 fold-in."
+        ),
+    )
+    parser.add_argument(
         "--skip-verify",
         action="store_true",
         help="Skip the post-amend run_contract_gate --verify-gate-scope check "
@@ -880,9 +904,24 @@ def main(argv: list[str] | None = None) -> int:
             main as _verify_then_record_main,
         )
 
-        _verify_then_record_main(
-            ["--repo", str(repo), "--feature-id", args.feature_id, "--commit", "HEAD"]
-        )
+        fold_in_argv = [
+            "--repo",
+            str(repo),
+            "--feature-id",
+            args.feature_id,
+            "--commit",
+            "HEAD",
+        ]
+        if args.at_kind == "pytest-regression":
+            fold_in_argv.extend(
+                [
+                    "--at-kind",
+                    "pytest-regression",
+                    "--regression-test-file",
+                    args.regression_test_file,
+                ]
+            )
+        _verify_then_record_main(fold_in_argv)
 
     _emit(
         {
