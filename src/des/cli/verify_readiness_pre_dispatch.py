@@ -613,21 +613,29 @@ def _check_axis_b_levers(
 
 
 def _lane_justification_names_defect_and_test(justification: str) -> bool:
-    """True iff a bugfix-lane justification is non-vacuous AND names a regression
-    test (the ``test_<name>`` token).
+    """True iff a bugfix-lane justification is non-vacuous AND names a
+    regression test, in ANY language's naming convention.
 
     The strict shape is the anti-abuse SAFETY mechanism for the one skipped
-    quality gate (``at_review_verdict``, Tsunami Q-10): a real bugfix references
-    its regression test -- a NEW test it pins RED->GREEN, OR an EXISTING test
-    that covers the behavior -- so it carries a ``test_<name>`` token (the
-    predicate does not distinguish new-vs-existing, it only requires that ONE
-    ``test_`` name appears). An empty or vague justification ("just fixing a
-    thing") names none and is refused fail-closed -- the lane cannot become the
-    shortcut that skips AT review on a real feature mislabeled as a bugfix.
+    quality gate (``at_review_verdict``, Tsunami Q-10): a real bugfix
+    references its regression test -- a NEW test it pins RED->GREEN, OR an
+    EXISTING test that covers the behavior. Accepted EITHER as (a) the
+    pytest-style ``test_<name>`` token, OR (b) the language-neutral
+    ``regression test: <name>`` phrase emitted by ``des dispatch`` itself --
+    Rust/Go/etc. regression-test names carry no ``test_`` prefix, so (a) alone
+    wrongly refuses a well-formed non-Python justification (backlog #41,
+    genericità/agnosticismo mandate). (b) is additive, not a replacement --
+    (a) keeps working byte-identical. An empty or vague justification ("just
+    fixing a thing") names neither and is refused fail-closed -- the lane
+    cannot become the shortcut that skips AT review on a real feature
+    mislabeled as a bugfix.
     """
+    if not justification.strip():
+        return False
     return (
-        bool(justification.strip())
-        and re.search(r"\btest_\w+", justification) is not None
+        re.search(r"\btest_\w+", justification) is not None
+        or re.search(r"regression test:\s*\S+", justification, re.IGNORECASE)
+        is not None
     )
 
 
@@ -694,8 +702,9 @@ def _run_bugfix_lane(
                 satisfied=False,
                 remediation=(
                     "DES-LANE: bugfix requires a justification naming the defect + "
-                    "a regression test test_<name> (a NEW test, or an EXISTING "
-                    "test that covers the behavior)"
+                    "a regression test (a NEW test, or an EXISTING test that covers "
+                    "the behavior) in any naming convention -- test_<name>, or "
+                    "-- regression test: <name>"
                 ),
             )
         )
@@ -806,9 +815,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default="",
         help=(
             "Justification for a `--lane bugfix` dispatch. Must NAME the defect "
-            "+ a regression test `test_<name>` (a NEW test, OR an EXISTING test "
-            "that covers the behavior) — the safety mechanism for the skipped "
-            "at_review_verdict gate. Vacuous justifications are REFUSED fail-closed."
+            "+ a regression test (a NEW test, OR an EXISTING test that covers "
+            "the behavior) in any naming convention -- `test_<name>` OR "
+            "`-- regression test: <name>` -- the safety mechanism for the "
+            "skipped at_review_verdict gate. Vacuous justifications are REFUSED "
+            "fail-closed."
         ),
     )
     parser.add_argument(

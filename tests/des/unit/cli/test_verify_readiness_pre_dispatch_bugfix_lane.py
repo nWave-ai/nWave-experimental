@@ -27,6 +27,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from des.cli import verify_readiness_pre_dispatch as gate
 
 
@@ -149,6 +151,61 @@ def test_bugfix_lane_vacuous_justification_refused(tmp_path: Path) -> None:
         "FAIL CLOSED (refused) — Tsunami Q-10 anti-abuse: the strict justification is "
         "the safety mechanism for the one skipped quality gate (at_review_verdict). "
         f"observed code={code}, verdict={report.get('verdict')}"
+    )
+
+
+# --- language-agnosticism regression (backlog #41, sister Tsunami Rust dogfood) ---
+#
+# `_lane_justification_names_defect_and_test` hard-requires a `\btest_\w+`
+# token -- pytest's naming convention. Rust (`#[test] fn foo()`), Go, Swift,
+# etc. name regression tests WITHOUT a `test_` prefix, so a real, well-formed
+# bugfix justification on a non-Python repo is wrongly refused. This violates
+# the nWave genericità/agnosticismo mandate (gates must not assume a target
+# language). The fix (crafter's job) must accept a language-neutral
+# `regression test: <name>` reference in ANY naming convention, while still
+# rejecting a justification that names no test reference at all.
+
+_RUST_STYLE_JUSTIFICATIONS = [
+    "cargo scope matching no binary is red not indeterminate -- regression "
+    "test: cargo_scope_nomatch_is_indeterminate_not_red",
+    "adr id derivation drops the wrong id -- regression test: "
+    "adr_section_negative_no_derivable_id_still_errors",
+]
+
+
+@pytest.mark.parametrize("justification", _RUST_STYLE_JUSTIFICATIONS)
+def test_lane_justification_accepts_rust_style_regression_test_name(
+    justification: str,
+) -> None:
+    """RED (agnosticism bug, backlog #41): a Rust-idiom regression-test
+    reference (no `test_` prefix -- e.g. `#[test] fn
+    cargo_scope_nomatch_is_indeterminate_not_red()`) named via the dispatch's
+    own `regression test: <name>` structure must be ACCEPTED. Today the
+    predicate hard-requires the pytest-only `\\btest_\\w+` token, so this
+    well-formed, language-agnostic justification is wrongly refused.
+    """
+    assert gate._lane_justification_names_defect_and_test(justification), (
+        "a justification naming a defect + a Rust-style regression-test "
+        "reference (`regression test: <name>`, no `test_` prefix) must be "
+        f"accepted language-agnostically. justification={justification!r}"
+    )
+
+
+def test_lane_justification_accepts_pytest_style_test_prefixed_name() -> None:
+    """Control (backward-compat): the existing pytest-style `test_<name>`
+    token must keep passing once the fix broadens acceptance to other
+    languages -- the agnosticism fix must be additive, not a replacement."""
+    assert gate._lane_justification_names_defect_and_test(_VALID_JUSTIFICATION)
+
+
+def test_lane_justification_rejects_vague_justification_naming_no_test() -> None:
+    """NEGATIVE-AT: a justification that references no regression-test in ANY
+    naming convention must still be REFUSED -- the language-agnostic fix must
+    not turn the predicate into a rubber stamp for the skipped
+    `at_review_verdict` gate."""
+    assert not gate._lane_justification_names_defect_and_test(_VACUOUS_JUSTIFICATION), (
+        "a vague justification referencing no regression-test in any naming "
+        f"convention must still be rejected. justification={_VACUOUS_JUSTIFICATION!r}"
     )
 
 
