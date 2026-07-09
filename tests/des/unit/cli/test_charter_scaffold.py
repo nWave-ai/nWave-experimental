@@ -115,6 +115,21 @@ LONG_VALUE_FEATURE_DELTA = f"""# Feature-delta -- seat-booking
 | slice-01 | {LONG_VALUE_STATEMENT} | pending |  | single observable slice |
 """
 
+#: Regression fixture (Vera-found defect, GDP-6 silent-wrong): slice-01 is a
+#: well-formed observable row; slice-02's Value statement cell is BLANK. The
+#: current implementation's `_kebab_slug("")` returns `""`, so `_scaffold_slice`
+#: writes a literal `.md` file (empty kebab-slug stem) and counts it in
+#: `created` -- a broken scaffold silently reported as a success.
+BLANK_VALUE_STATEMENT_FEATURE_DELTA = f"""# Feature-delta -- seat-booking
+
+## Wave: DISCUSS / [REF] Slice Plan
+
+| Slice | Value statement | Status | Annotation | Justification |
+|---|---|---|---|---|
+| slice-01 | {VALUE_STATEMENT_1} | pending |  | well-formed observable slice |
+| slice-02 |  | pending |  | blank Value statement -- malformed row |
+"""
+
 
 def _seed_repo(repo_root: Path) -> None:
     """Seed the one repo-root-relative asset the tool reads regardless of
@@ -362,3 +377,85 @@ def test_generated_scaffold_filename_is_length_bounded_for_a_long_value_statemen
     assert second_exit == 0
     assert second_payload["created"] == []
     assert second_payload["skipped"] == [filename]
+
+
+def test_blank_value_statement_row_is_skipped_not_scaffolded_as_garbage_file(
+    tmp_path: Path, capsys
+) -> None:
+    """Regression (Vera-found defect, GDP-6 silent-wrong):
+    `docs/product/expectations/<feature-id>/.md` (empty kebab-slug stem) must
+    never be produced for a blank Value statement row, and that row must
+    never be silently counted in `created`. It is either reported in
+    `skipped` (with a reason) OR the whole run is a LOUD non-zero reject
+    naming the offending slice ('slice-02'). The well-formed row alongside
+    it (slice-01) must still scaffold correctly -- the tool still works for
+    good input.
+    """
+    _seed_repo(tmp_path)
+    _write_feature_delta(tmp_path, FEATURE_ID, BLANK_VALUE_STATEMENT_FEATURE_DELTA)
+
+    exit_code, payload = _invoke(tmp_path, capsys)
+
+    expectations_dir = _expectations_dir(tmp_path, FEATURE_ID)
+    all_files = (
+        sorted(p.name for p in expectations_dir.glob("*.md"))
+        if expectations_dir.is_dir()
+        else []
+    )
+
+    # (a) never a `.md` garbage file (empty kebab-slug stem) on disk, no
+    # matter which remediation path (skip-and-report vs loud-reject) is taken.
+    assert ".md" not in all_files, (
+        "blank Value statement row produced a garbage '.md' scaffold "
+        f"(empty kebab-slug stem); files on disk: {all_files}"
+    )
+
+    well_formed_slug = "a-visitor-books-two-seats-and-sees-a-countdown.md"
+
+    if exit_code == 0:
+        # (b) the blank row is never silently counted as `created`.
+        assert ".md" not in payload["created"], (
+            "blank Value statement row's garbage '.md' scaffold was counted "
+            f"in 'created': {payload['created']}"
+        )
+        assert ".md" in payload.get("skipped", []) or any(
+            "slice-02" in entry for entry in payload.get("skipped", [])
+        ), (
+            "blank Value statement row was accepted (exit 0) but neither "
+            f"rejected nor reported in 'skipped'; payload: {payload}"
+        )
+        # the tool still works for good input alongside the blank row.
+        assert well_formed_slug in all_files
+        assert well_formed_slug in payload["created"]
+    else:
+        # (b, alternative) a LOUD non-zero reject naming the offending slice.
+        assert "slice-02" in payload["detail"], (
+            "run rejected but detail does not name the offending slice "
+            f"'slice-02': {payload['detail']!r}"
+        )
+
+
+def test_blank_value_statement_never_creates_a_dotmd_garbage_file(
+    tmp_path: Path, capsys
+) -> None:
+    """Negative regression (Vera-found defect): a blank Value statement must
+    NEVER emit a scaffold literally named `.md` (empty kebab-slug stem), and
+    it must NEVER appear in the `created` list -- the exact GDP-6
+    silent-wrong defect: a broken file counted as a successful scaffold.
+    """
+    _seed_repo(tmp_path)
+    _write_feature_delta(tmp_path, FEATURE_ID, BLANK_VALUE_STATEMENT_FEATURE_DELTA)
+
+    exit_code, payload = _invoke(tmp_path, capsys)
+
+    expectations_dir = _expectations_dir(tmp_path, FEATURE_ID)
+    garbage_path = expectations_dir / ".md"
+
+    assert not garbage_path.exists(), (
+        "des charter-scaffold created a literal '.md' garbage scaffold "
+        "(empty kebab-slug stem) for a blank Value statement row"
+    )
+    assert ".md" not in payload.get("created", []), (
+        "blank Value statement row's garbage '.md' scaffold was silently "
+        f"counted as created: {payload['created']}"
+    )

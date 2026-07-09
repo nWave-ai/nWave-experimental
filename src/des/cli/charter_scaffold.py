@@ -301,6 +301,10 @@ def main(argv: list[str] | None = None) -> int:
     created: list[str] = []
     skipped: list[str] = []
     for row in observable_rows:
+        if not row.get("Value statement", "").strip():
+            slice_name = row.get("Slice", "<unknown slice>")
+            skipped.append(f"{slice_name}: blank Value statement, skipped")
+            continue
         filename, was_created = _scaffold_slice(
             repo_root, feature_id, row, template_skeleton
         )
