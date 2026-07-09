@@ -1,5 +1,6 @@
 """DES (Deterministic Execution System) installation plugin."""
 
+import errno
 import hashlib
 import json
 import os
@@ -145,6 +146,38 @@ def _discover_shims(source_dir: Path) -> frozenset[str]:
     return frozenset(
         path.stem for path in source_dir.glob("*.py") if not path.stem.startswith("_")
     )
+
+
+# --- Issue #43: reinstall-over-an-active-runtime __pycache__ race ---
+#
+# `shutil.rmtree` raises `ENOTEMPTY` when a live process (e.g. an import
+# mid-flight against the module being replaced) writes a fresh `__pycache__`
+# entry into the tree WHILE the removal walk is in progress. `_robust_rmtree`
+# is the single SSOT tolerance wrapper used at both racing loci
+# (`_install_des_module`'s module replace, `_clear_bytecode_cache`'s cache
+# clear) — a genuine non-race `OSError` (permission denied, etc.) still
+# propagates; only `ENOTEMPTY` / `ENOENT` are treated as a settle-and-retry
+# race.
+def _robust_rmtree(path: Path) -> None:
+    """Remove ``path`` recursively, tolerating a concurrent-writer race.
+
+    Retries ``shutil.rmtree`` a few times on ``ENOTEMPTY`` (a racing writer
+    settles between attempts) and treats ``ENOENT`` (already gone) as
+    success. If the race outlives the retries, falls back to a best-effort
+    removal — a leftover racing ``__pycache__`` is harmless: it is either
+    overwritten by the fresh copy or recompiled from source on next import.
+    Any other ``OSError`` (permission denied, etc.) propagates immediately.
+    """
+    for _ in range(3):
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError as exc:
+            if exc.errno == errno.ENOENT:
+                return
+            if exc.errno != errno.ENOTEMPTY:
+                raise
+    shutil.rmtree(path, ignore_errors=True)
 
 
 class DESPlugin(InstallationPlugin):
@@ -493,7 +526,19 @@ class DESPlugin(InstallationPlugin):
                 )
             else:
                 if target_dir.exists():
-                    shutil.rmtree(target_dir)
+                    # Rename-aside atomically frees target_dir even while a
+                    # racing importer still holds the old tree's inode open
+                    # (issue #43) -- copytree below never contends with a
+                    # concurrent __pycache__ write. Fall back to an in-place
+                    # resilient removal if the rename itself cannot proceed
+                    # (e.g. cross-device target_dir).
+                    aside = target_dir.with_name(f"{target_dir.name}.old-{os.getpid()}")
+                    try:
+                        target_dir.replace(aside)
+                    except OSError:
+                        _robust_rmtree(target_dir)
+                    else:
+                        _robust_rmtree(aside)
                 # Skip bytecode caches: source __pycache__ is build artefact,
                 # not module surface. Without ignore we hit Errno 17 when
                 # backup_manager raced on the same nested path.
@@ -708,11 +753,16 @@ class DESPlugin(InstallationPlugin):
         After copying and rewriting imports, stale .pyc files from previous
         installs can cause import errors or use outdated code. Removing all
         __pycache__ directories forces Python to recompile from source.
+
+        Resilient to a concurrent writer racing one of the cache dirs (issue
+        #43): a leftover racing directory is harmless -- its stale .pyc is
+        recompiled from source on next import -- so aborting the whole clear
+        would be worse than tolerating it.
         """
         cleared = 0
         for cache_dir in target_dir.rglob("__pycache__"):
             if cache_dir.is_dir():
-                shutil.rmtree(cache_dir)
+                _robust_rmtree(cache_dir)
                 cleared += 1
         if cleared > 0:
             context.logger.info(
