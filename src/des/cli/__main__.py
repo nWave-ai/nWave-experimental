@@ -365,6 +365,18 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.verify_charter_filled",
         "main",
     ),
+    # codefact-similar-responsibility slice-01 (WS-9b, the reuse-first keystone):
+    # the observable CLI over the ADDITIVE query.similar-responsibility CodeFactPort
+    # capability -- shows the ranked EXISTING module-level symbols whose structural
+    # fingerprint (name-token Jaccard + arity) overlaps a proposed new symbol, so an
+    # operator sees the duplicate candidate {file:line} before writing a parallel
+    # implementation. Advisory (always exits 0); degrades LOUD (absent) on an
+    # unparseable/empty scope, never a fabricated empty candidate list.
+    _SubcommandRow(
+        "find-similar-responsibility",
+        "des.cli.find_similar_responsibility",
+        "main",
+    ),
 )
 
 

@@ -98,6 +98,20 @@ STABLE_CORE_CAPABILITY_IDS: frozenset[str] = frozenset(
 #: an absent/unparseable corpus degrades LOUD to "no step-shape fact" (never a fabricated 0).
 CAPABILITY_STEP_SHAPE_CORPUS = "query.step-shape-corpus"
 
+#: ADDITIVE capability beyond the LOCKED 5-capability stable core (WS-9b,
+#: codefact-similar-responsibility slice-01). NOT a member of
+#: ``STABLE_CORE_CAPABILITY_IDS`` (that set is byte-locked — adding to it
+#: would be the drift the byte-lock guard catches RED). Mirrors
+#: ``CAPABILITY_STEP_SHAPE_CORPUS``'s additive-capability seam: given a
+#: proposed NEW symbol name (+ optional arity), it returns EXISTING
+#: module-level ``def``/``class`` symbols under a scope whose structural
+#: fingerprint (name-token Jaccard + parameter arity) overlaps it — RANKED
+#: candidates, advisory only (never blocking). The textual floor does NOT
+#: cover it (no structural fingerprint from a text scan), so an
+#: unparseable/empty scope degrades LOUD to "no similar-responsibility fact"
+#: (``absent``), never a fabricated empty candidate list.
+CAPABILITY_SIMILAR_RESPONSIBILITY = "query.similar-responsibility"
+
 
 # ---------------------------------------------------------------------------
 # Capability descriptor + verdict envelope (ADR-LA-001 §1 / §5a)

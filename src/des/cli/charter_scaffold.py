@@ -46,6 +46,7 @@ import sys
 from pathlib import Path
 
 from des.cli.validate_feature_delta import (
+    _NON_OBSERVABLE_ANNOTATIONS,
     _SLICE_PLAN_HEADING_RE,
     VERDICT_ACCEPTED,
     _is_separator_row,
@@ -82,9 +83,10 @@ _TEMPLATE_HEADING = "## Template"
 
 #: Annotation tokens (normalised: stripped, lower-cased, leading `@` dropped)
 #: that mark a Slice Plan row as NOT observable -- infra/prefactoring rows
-#: carry no user-visible value and never get a charter scaffold (mirrors the
-#: normalisation `validate_feature_delta._classify_slice_cohesion` applies).
-_NON_OBSERVABLE_ANNOTATIONS = frozenset({"infrastructure", "prefactoring"})
+#: carry no user-visible value and never get a charter scaffold. Imported
+#: (not redefined) from `validate_feature_delta` -- SAME set
+#: `_classify_slice_cohesion`'s cohesion-MECC floor vetoes on, so the two
+#: modules can never drift apart on what counts as "observable".
 
 #: Filesystem-safe cap on the generated `<intent-name>.md` basename,
 #: INCLUDING the `.md` suffix -- dogfood finding: a real Value statement is a
@@ -94,6 +96,11 @@ _NON_OBSERVABLE_ANNOTATIONS = frozenset({"infrastructure", "prefactoring"})
 _MAX_SCAFFOLD_FILENAME_LENGTH = 100
 _SCAFFOLD_SUFFIX = ".md"
 _MAX_SLUG_LENGTH = _MAX_SCAFFOLD_FILENAME_LENGTH - len(_SCAFFOLD_SUFFIX)
+
+#: How much of a hostile (empty-slug) input to echo into its self-explaining
+#: `skipped` label -- enough for an operator to recognise WHICH input was
+#: skipped, capped so a long sentence does not bloat the JSON payload.
+_SKIP_LABEL_SNIPPET_LENGTH = 40
 
 
 def _kebab_slug(value_statement: str) -> str:
@@ -209,6 +216,24 @@ def _fill_intent_section(skeleton: str, value_statement: str) -> str:
     return "\n".join(output) + "\n"
 
 
+def _empty_slug_skip_label(identifier: str, raw_input: str) -> str:
+    """Self-explaining (GDP-3) `skipped`-list entry for an input that
+    normalised to an EMPTY kebab-slug (symbol-only / purely non-Latin). Pure.
+
+    Names WHICH input was skipped -- the slice-id (slice-plan mode) or a short
+    snippet of the raw `--observable` / `--area` text -- and WHY, so an
+    operator reading the `skipped` list never sees a bare, meaningless `.md`
+    (the un-self-explaining label the feature-end review flagged, GDP-3). The
+    raw input is whitespace-collapsed and truncated to
+    `_SKIP_LABEL_SNIPPET_LENGTH` chars.
+    """
+    snippet = " ".join(raw_input.split())[:_SKIP_LABEL_SNIPPET_LENGTH]
+    return (
+        f"{identifier}: input {snippet!r} normalized to an empty slug "
+        "(symbol-only/non-Latin); skipped, no charter written"
+    )
+
+
 def _scaffold_slice(
     repo_root: Path,
     feature_id: str,
@@ -218,12 +243,28 @@ def _scaffold_slice(
     """Write one charter scaffold if it does not already exist. Not pure
     (filesystem write).
 
+    D1 guard (feature-end deep review, GDP-6 silent-wrong): a symbol-only or
+    purely non-Latin Value statement/`--observable`/`--area` is NON-blank
+    BEFORE `_kebab_slug` normalisation (so it sails past every
+    `not text.strip()` guard upstream) but normalises to an EMPTY slug. This
+    is the SINGLE LOCUS all three `--seed-mode` values funnel through, so the
+    guard lives here, once: an empty post-normalisation slug is NEVER
+    scaffolded -- no `.md` file is written for it, and `created` is never
+    True for it -- mirroring the existing idempotent-skip contract (the
+    caller's `created`-vs-`skipped` bucketing already handles `created=False`
+    correctly without change).
+
     Returns:
         (filename, created) -- `created` is False when the charter already
-        existed (idempotent skip, never overwritten).
+        existed (idempotent skip, never overwritten) OR the Value
+        statement/observable/area normalised to an empty kebab-slug (never
+        written in the first place).
     """
     value_statement = slice_row.get("Value statement", "").strip()
-    filename = f"{_kebab_slug(value_statement)}.md"
+    slug = _kebab_slug(value_statement)
+    filename = f"{slug}.md"
+    if not slug:
+        return filename, False
     expectations_dir = repo_root / "docs" / "product" / "expectations" / feature_id
     path = expectations_dir / filename
     if path.exists():
@@ -309,6 +350,97 @@ def _degrade(feature_id: str, verdict: str, detail: str) -> int:
     return 1
 
 
+def _load_template_skeleton_or_degrade(
+    repo_root: Path, feature_id: str
+) -> tuple[str | None, int | None]:
+    """Read + extract the charter template skeleton, or emit the shared
+    degrade-LOUD payload when it is unreadable. Not pure (filesystem read +
+    the degrade path prints to stdout).
+
+    D4 refactor (feature-end deep review): the ONE template-read locus every
+    seed-mode shares -- `_run_bug_observable`, `_run_brownfield_discovery`,
+    and `_run_slice_plan` all previously duplicated this exact
+    read-try/except/extract block byte-for-byte. Extracted verbatim
+    (behavior byte-identical); no parallel template-read path remains.
+
+    Returns:
+        `(template_skeleton, None)` on success -- the caller proceeds.
+        `(None, exit_code)` when the template is unreadable -- the caller
+        MUST `return exit_code` immediately (the degrade-LOUD payload has
+        already been printed).
+    """
+    template_path = repo_root / _TEMPLATE_RELATIVE_PATH
+    try:
+        template_content = template_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        exit_code = _degrade(
+            feature_id,
+            VERDICT_MISSING_CHARTER_TEMPLATE,
+            f"cannot read charter template at {template_path}: {exc}",
+        )
+        return None, exit_code
+    return _extract_template_skeleton(template_content), None
+
+
+def _emit_single_scaffold_result(
+    repo_root: Path,
+    feature_id: str,
+    *,
+    identifier: str,
+    raw_input: str,
+    value_statement: str,
+    template_skeleton: str,
+) -> int:
+    """Scaffold ONE row and emit the shared single-scaffold JSON payload.
+    Not pure (filesystem write + stdout print).
+
+    D4 refactor: the ONE single-scaffold JSON-emission locus shared by
+    `_run_bug_observable` and `_run_brownfield_discovery` -- both scaffold
+    exactly one row (`observable_slices: 1`, fixed) and emitted the same
+    `created`/`skipped` bucketing + payload shape, previously duplicated
+    byte-for-byte. `_run_slice_plan` is NOT routed through this helper: it
+    loops over N rows with its own blank-Value-statement skip and an
+    `observable_slices` count that varies with the plan, so its emission
+    shape genuinely differs (not a false-DRY collapse).
+
+    `raw_input` is the caller's USER-SUPPLIED text (`--observable` / `--area`);
+    `value_statement` is what actually fills Intent (the observable verbatim
+    for bug-observable; the discovery-framed sentence for brownfield). The
+    hostility decision reads `raw_input`, NOT `value_statement` (GDP-3):
+    brownfield WRAPS the area in fixed English prose, so the composed
+    `value_statement` never slugs empty -- only the raw `--area` reveals a
+    symbol-only/non-Latin input. When `raw_input` normalises to an empty slug
+    the row is skipped with a SELF-EXPLAINING label naming the input, never a
+    bare `.md`.
+    """
+    if not _kebab_slug(raw_input):
+        created: list[str] = []
+        skipped = [_empty_slug_skip_label(identifier, raw_input)]
+    else:
+        row = {"Slice": identifier, "Value statement": value_statement}
+        filename, was_created = _scaffold_slice(
+            repo_root, feature_id, row, template_skeleton
+        )
+        created = [filename] if was_created else []
+        # An idempotent-existing skip reports the real filename (already
+        # self-explaining); the empty-slug case is handled above.
+        skipped = [] if was_created else [filename]
+
+    print(
+        json.dumps(
+            {
+                "feature_id": feature_id,
+                "created": created,
+                "skipped": skipped,
+                "observable_slices": 1,
+                "verdict": VERDICT_ACCEPTED,
+                "detail": f"{len(created)} scaffold(s) created, {len(skipped)} skipped",
+            }
+        )
+    )
+    return 0
+
+
 def _run_bug_observable(
     repo_root: Path, feature_id: str, observable: str | None
 ) -> int:
@@ -325,37 +457,21 @@ def _run_bug_observable(
             "--seed-mode bug-observable",
         )
 
-    template_path = repo_root / _TEMPLATE_RELATIVE_PATH
-    try:
-        template_content = template_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return _degrade(
-            feature_id,
-            VERDICT_MISSING_CHARTER_TEMPLATE,
-            f"cannot read charter template at {template_path}: {exc}",
-        )
-    template_skeleton = _extract_template_skeleton(template_content)
-
-    row = {"Slice": "bug-observable", "Value statement": observable}
-    filename, was_created = _scaffold_slice(
-        repo_root, feature_id, row, template_skeleton
+    template_skeleton, degraded_exit = _load_template_skeleton_or_degrade(
+        repo_root, feature_id
     )
-    created = [filename] if was_created else []
-    skipped = [] if was_created else [filename]
+    if degraded_exit is not None:
+        return degraded_exit
+    assert template_skeleton is not None  # narrows for mypy: degraded_exit is None
 
-    print(
-        json.dumps(
-            {
-                "feature_id": feature_id,
-                "created": created,
-                "skipped": skipped,
-                "observable_slices": 1,
-                "verdict": VERDICT_ACCEPTED,
-                "detail": f"{len(created)} scaffold(s) created, {len(skipped)} skipped",
-            }
-        )
+    return _emit_single_scaffold_result(
+        repo_root,
+        feature_id,
+        identifier="bug-observable",
+        raw_input=observable,
+        value_statement=observable,
+        template_skeleton=template_skeleton,
     )
-    return 0
 
 
 def _discovery_intent(area: str) -> str:
@@ -390,40 +506,26 @@ def _run_brownfield_discovery(
             "--seed-mode brownfield-discovery",
         )
 
-    template_path = repo_root / _TEMPLATE_RELATIVE_PATH
-    try:
-        template_content = template_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return _degrade(
-            feature_id,
-            VERDICT_MISSING_CHARTER_TEMPLATE,
-            f"cannot read charter template at {template_path}: {exc}",
-        )
-    template_skeleton = _extract_template_skeleton(template_content)
-
-    row = {
-        "Slice": "brownfield-discovery",
-        "Value statement": _discovery_intent(area),
-    }
-    filename, was_created = _scaffold_slice(
-        repo_root, feature_id, row, template_skeleton
+    template_skeleton, degraded_exit = _load_template_skeleton_or_degrade(
+        repo_root, feature_id
     )
-    created = [filename] if was_created else []
-    skipped = [] if was_created else [filename]
+    if degraded_exit is not None:
+        return degraded_exit
+    assert template_skeleton is not None  # narrows for mypy: degraded_exit is None
 
-    print(
-        json.dumps(
-            {
-                "feature_id": feature_id,
-                "created": created,
-                "skipped": skipped,
-                "observable_slices": 1,
-                "verdict": VERDICT_ACCEPTED,
-                "detail": f"{len(created)} scaffold(s) created, {len(skipped)} skipped",
-            }
-        )
+    # D1 (feature-end deep review): `_discovery_intent` WRAPS `area` inside a
+    # fixed-prose sentence, so a hostile (symbol-only/non-Latin) `area` never
+    # makes the composed Value statement slug empty. `_emit_single_scaffold_result`
+    # therefore decides hostility on the RAW `raw_input=area` (not the composed
+    # value_statement), and reports a self-explaining skip naming the area.
+    return _emit_single_scaffold_result(
+        repo_root,
+        feature_id,
+        identifier="brownfield-discovery",
+        raw_input=area,
+        value_statement=_discovery_intent(area),
+        template_skeleton=template_skeleton,
     )
-    return 0
 
 
 def _run_slice_plan(repo_root: Path, feature_id: str) -> int:
@@ -443,24 +545,27 @@ def _run_slice_plan(repo_root: Path, feature_id: str) -> int:
     if plan_result.verdict != VERDICT_ACCEPTED:
         return _degrade(feature_id, plan_result.verdict, plan_result.detail)
 
-    template_path = repo_root / _TEMPLATE_RELATIVE_PATH
-    try:
-        template_content = template_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return _degrade(
-            feature_id,
-            VERDICT_MISSING_CHARTER_TEMPLATE,
-            f"cannot read charter template at {template_path}: {exc}",
-        )
-    template_skeleton = _extract_template_skeleton(template_content)
+    template_skeleton, degraded_exit = _load_template_skeleton_or_degrade(
+        repo_root, feature_id
+    )
+    if degraded_exit is not None:
+        return degraded_exit
+    assert template_skeleton is not None  # narrows for mypy: degraded_exit is None
 
     observable_rows = _observable_slice_rows(content)
     created: list[str] = []
     skipped: list[str] = []
     for row in observable_rows:
-        if not row.get("Value statement", "").strip():
-            slice_name = row.get("Slice", "<unknown slice>")
+        slice_name = row.get("Slice", "<unknown slice>")
+        value_statement = row.get("Value statement", "").strip()
+        if not value_statement:
             skipped.append(f"{slice_name}: blank Value statement, skipped")
+            continue
+        if not _kebab_slug(value_statement):
+            # Hostile (symbol-only/non-Latin) Value statement: non-blank
+            # pre-slug but normalises to an empty slug -- skip with a
+            # self-explaining label (GDP-3), never a bare `.md`.
+            skipped.append(_empty_slug_skip_label(slice_name, value_statement))
             continue
         filename, was_created = _scaffold_slice(
             repo_root, feature_id, row, template_skeleton

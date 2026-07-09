@@ -172,6 +172,27 @@ class StepShapeCorpus:
 
 
 @dataclass(frozen=True)
+class SymbolInfo:
+    """A plain-data description of a MODULE-LEVEL ``def``/``class`` symbol
+    (WS-9b, ``codefact-similar-responsibility`` slice-01).
+
+    ``name`` is the symbol's bare identifier; ``lineno`` its 1-based
+    definition line; ``kind`` is ``"function"`` or ``"class"``; ``arity`` is
+    the symbol's parameter count (a function's positional+keyword-only
+    parameter count; a class reports 0 — module-level symbols only, nested
+    defs/methods are NOT reported). The ``AstAdapter``'s
+    similar-responsibility fingerprint reads ``name`` (token-split) +
+    ``arity`` (tie-break) from this plain-data shape — no live ``ast`` node
+    is exposed.
+    """
+
+    name: str
+    lineno: int
+    kind: str
+    arity: int
+
+
+@dataclass(frozen=True)
 class FunctionInfo:
     """A plain-data description of a function definition in a parsed tree.
 
@@ -312,5 +333,19 @@ class TestSuiteAstAdapter(Protocol):
         yields nothing. The P3 composition-root rule reads these to spot a step that
         hand-wires a SUT collaborator inline where a composition-root entry call
         belongs.
+        """
+        ...
+
+    def module_level_symbols_in_module(self, tree: object) -> list[SymbolInfo]:
+        """Return every MODULE-LEVEL ``def``/``class`` symbol in ``tree``
+        (WS-9b, ``codefact-similar-responsibility`` slice-01).
+
+        Reads only ``tree``'s top-level body — a nested ``def``/``class``
+        (a method, a closure) is NOT reported, distinguishing this from the
+        unfiltered ``functions_in_module`` walk. Each symbol reports its
+        ``name`` / 1-based ``lineno`` / ``kind`` (``"function"`` or
+        ``"class"``) / ``arity`` (a function's parameter count; 0 for a
+        class) as plain data — the ``AstAdapter``'s similar-responsibility
+        fingerprint consumes this directly, no live ``ast`` node exposed.
         """
         ...

@@ -64,11 +64,13 @@ Feature: Gate-contract catalog YAML mirrors _REGISTRY (D4 Phase 1 slice-01)
   # _REGISTRY row gets a catalog row + per-gate file, no tooling exclusion).
   # Count 58 -> 59 (2026-07-09, charter-scaffold slice-02): adds
   # verify-charter-filled, the backstop FILLED-verification gate.
-  Scenario: Catalog row count equals registry count (59 total, adds verify-charter-filled)
+  # Count 59 -> 60 (2026-07-09, codefact-similar-responsibility slice-01, WS-9b):
+  # adds find-similar-responsibility, the observable similar-responsibility CLI.
+  Scenario: Catalog row count equals registry count (60 total, adds find-similar-responsibility)
     Given the gate catalog loaded from "nWave/gates/_catalog.yaml"
     And the production _REGISTRY loaded from `src.des.cli.__main__`
     When the row counts are compared
-    Then both contain exactly 59 entries
+    Then both contain exactly 60 entries
     And every gate_id in the catalog is also a SubcommandRow.name in _REGISTRY
     And every SubcommandRow.name in _REGISTRY is also a gate_id in the catalog
 

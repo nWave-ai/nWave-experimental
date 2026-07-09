@@ -164,10 +164,12 @@ def when_enumerate_bound(per_gate_comp) -> None:
 # charter-scaffold, 1:1 with its catalog entry.
 # Count 58 -> 59 (2026-07-09, charter-scaffold slice-02): per-gate file for
 # verify-charter-filled, 1:1 with its catalog entry.
-@then("exactly 59 per-gate files exist (one per catalog entry)")
+# Count 59 -> 60 (2026-07-09, codefact-similar-responsibility slice-01, WS-9b):
+# per-gate file for find-similar-responsibility, 1:1 with its catalog entry.
+@then("exactly 60 per-gate files exist (one per catalog entry)")
 def then_per_gate_file_count(per_gate_comp) -> None:
-    assert per_gate_comp.file_count == 59, (
-        f"Found {per_gate_comp.file_count} per-gate files, expected 59"
+    assert per_gate_comp.file_count == 60, (
+        f"Found {per_gate_comp.file_count} per-gate files, expected 60"
     )
 
 

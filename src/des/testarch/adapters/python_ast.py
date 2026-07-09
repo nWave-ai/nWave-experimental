@@ -48,6 +48,7 @@ from des.testarch.ports import (
     Layer,
     SpawnShape,
     StepShapeCorpus,
+    SymbolInfo,
 )
 
 
@@ -345,6 +346,45 @@ class PythonAstAdapter:
         """
         collapsed = _WHITESPACE_RUN_RE.sub(" ", text.strip().lower())
         return _TRAILING_INDEX_RE.sub("", collapsed)
+
+    def module_level_symbols_in_module(self, tree: object) -> list[SymbolInfo]:
+        """Return every module-level ``def``/``class`` symbol (WS-9b, similar-
+        responsibility slice-01).
+
+        Reads only ``tree``'s TOP-LEVEL body (``ast.Module.body``) — a nested
+        ``def``/``class`` (a method, a closure) is skipped, distinguishing this
+        from the unfiltered ``functions_in_module`` walk (which reports every
+        function at any nesting depth). ``arity`` is a function's positional +
+        keyword-only parameter count (``*args``/``**kwargs`` excluded — those are
+        variadic, not a fixed arity); a class always reports arity 0.
+        """
+        module = self._as_module(tree)
+        symbols: list[SymbolInfo] = []
+        for node in module.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                symbols.append(
+                    SymbolInfo(
+                        name=node.name,
+                        lineno=node.lineno,
+                        kind="function",
+                        arity=self._arity_of(node.args),
+                    )
+                )
+            elif isinstance(node, ast.ClassDef):
+                symbols.append(
+                    SymbolInfo(
+                        name=node.name, lineno=node.lineno, kind="class", arity=0
+                    )
+                )
+        return symbols
+
+    @staticmethod
+    def _arity_of(args: ast.arguments) -> int:
+        """A function's fixed parameter count: positional + keyword-only.
+
+        ``*args``/``**kwargs`` are variadic (no fixed count) and excluded.
+        """
+        return len(args.posonlyargs) + len(args.args) + len(args.kwonlyargs)
 
     def assignments_constructing_type(
         self, tree: object, fn: FunctionInfo, type_names: frozenset[str]

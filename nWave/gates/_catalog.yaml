@@ -422,3 +422,13 @@ gates:
     module: des.cli.verify_charter_filled
     entry_function: main
     language_neutral_contract: true
+
+  # codefact-similar-responsibility slice-01 (WS-9b, the reuse-first keystone):
+  # the observable CLI over the ADDITIVE query.similar-responsibility CodeFactPort
+  # capability. 1:1 mirror of the new _REGISTRY row; matching per-gate file
+  # find-similar-responsibility.yaml.
+  - gate_id: find-similar-responsibility
+    responsibility: "Shows the ranked EXISTING module-level def/class symbols under --scope whose structural fingerprint (name-token Jaccard + parameter arity) overlaps a proposed new --name -- so an operator sees the duplicate candidate {file,line,overlap} before writing a parallel implementation. Invokes the ADDITIVE query.similar-responsibility CodeFactPort capability (AST tier). Advisory (GDP-6): ALWAYS exits 0, never blocks; degrades LOUD (reason_code 'absent') on a nonexistent/empty/unparseable scope, never a fabricated empty candidate list. Emits JSON {candidates:[{symbol,file,line,overlap}], reason_code:'live-non-callable'|'absent', detail}. Pure Python + AST, no git, no Tsunami hard-dep."
+    module: des.cli.find_similar_responsibility
+    entry_function: main
+    language_neutral_contract: true

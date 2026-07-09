@@ -115,13 +115,17 @@ def then_no_errors(composition) -> None:
 # Count 58 -> 59 (2026-07-09, charter-scaffold slice-02): adds
 # verify-charter-filled, the backstop FILLED-verification gate, wired across
 # all three surfaces.
-@then("both contain exactly 59 entries")
+# Count 59 -> 60 (2026-07-09, codefact-similar-responsibility slice-01, WS-9b):
+# adds find-similar-responsibility, the observable CLI over the ADDITIVE
+# query.similar-responsibility CodeFactPort capability, wired across all three
+# surfaces.
+@then("both contain exactly 60 entries")
 def then_both_counts_match(composition) -> None:
-    assert len(composition.catalog_gate_ids) == 59, (
-        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 59"
+    assert len(composition.catalog_gate_ids) == 60, (
+        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 60"
     )
-    assert len(composition.registry_names) == 59, (
-        f"_REGISTRY has {len(composition.registry_names)} entries, expected 59"
+    assert len(composition.registry_names) == 60, (
+        f"_REGISTRY has {len(composition.registry_names)} entries, expected 60"
     )
 
 

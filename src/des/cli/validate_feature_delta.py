@@ -493,49 +493,64 @@ def _plan_table_rows(content: str, heading_re: re.Pattern[str]) -> list[str] | N
     return rows
 
 
+#: Annotation tokens (normalised: stripped, lower-cased, leading `@` dropped)
+#: that mark a plan row as carrying NO user-visible value. Originally only
+#: `@infrastructure` was vetoed (slice-06); `@prefactoring` joined the set
+#: (feature-end deep-review D2) once a MIXED `@infrastructure` +
+#: `@prefactoring` — or entirely `@prefactoring` — plan was found to slip past
+#: the narrow literal-`"infrastructure"` check and reach `accepted` with ZERO
+#: observable rows (a silent-wrong empty "success"). Mirrors
+#: `charter_scaffold._NON_OBSERVABLE_ANNOTATIONS`.
+_NON_OBSERVABLE_ANNOTATIONS: frozenset[str] = frozenset(
+    {"infrastructure", "prefactoring"}
+)
+
+
 def _classify_slice_cohesion(
     slice_rows: list[str], row_noun: str = "slice"
 ) -> PlanValidationResult | None:
     """Cohesion-MECC floor (slice-06; reused at feature granularity slice-03).
     Pure; result-not-raise.
 
-    Vetoes the structurally-certain all-`@infrastructure` case: when EVERY data
-    row's Annotation cell (column 4) normalises to `@infrastructure`, the plan
-    carries no user-visible value and is rejected. Returns `None` (no objection)
-    as soon as one row is value-bearing.
+    Vetoes the structurally-certain zero-observable case: when EVERY data
+    row's Annotation cell (column 4) normalises to a token in
+    `_NON_OBSERVABLE_ANNOTATIONS` (`@infrastructure` and/or `@prefactoring`,
+    in any mix), the plan carries no user-visible value and is rejected.
+    Returns `None` (no objection) as soon as one row is value-bearing.
 
     The Annotation cell normalises via strip -> lowercase -> tolerate a leading
     `@`, so ` @Infrastructure ` and `@infrastructure` both match. An empty cell,
     `@walking-skeleton` / `@walking_skeleton`, or any unknown token counts as
-    value-bearing (NOT infra).
+    value-bearing (NOT infra/prefactoring).
 
     `row_noun` defaults to `"slice"` so the slice-mode detail stays
-    byte-identical (C1 T5); the feature mode passes `"feature"`. The token
-    `rejected-infra-only` is SHARED across both modes — it names the failure
-    CLASS (no user-visible value), not the plan kind; the detail field's
-    `{row_noun} rows` is the plan-kind disambiguator.
+    byte-identical (C1 T5) for the all-`@infrastructure` case; the feature mode
+    passes `"feature"`. The token `rejected-infra-only` is SHARED across both
+    modes — it names the failure CLASS (no user-visible value), not the plan
+    kind; the detail field's `{row_noun} rows` is the plan-kind disambiguator.
 
     Per §22.0, the MECC vetoes ONLY this structurally-certain case; it makes no
     semantic "is this really valueless" judgement (that stays reviewer-advisory).
     """
-    infra_count = 0
+    non_observable_count = 0
     for row in slice_rows:
         cells = _parse_table_cells(row)
         annotation = cells[3] if len(cells) > 3 else ""
         normalised = annotation.strip().lower().lstrip("@")
-        if normalised != "infrastructure":
+        if normalised not in _NON_OBSERVABLE_ANNOTATIONS:
             return None
-        infra_count += 1
+        non_observable_count += 1
     # Defensive: zero rows ⇒ no-veto (an empty plan is NOT "all-infra"). The
     # current caller guards len(rows) >= 1, but this keeps the pure
     # function correct in isolation — without it, empty input would wrongly veto.
-    if infra_count == 0:
+    if non_observable_count == 0:
         return None
     return PlanValidationResult(
         verdict=VERDICT_REJECTED_INFRA_ONLY,
         detail=(
-            f"all {infra_count} {row_noun} rows are annotated @infrastructure; "
-            f"an infrastructure-only plan carries no user-visible value (MECC)"
+            f"all {non_observable_count} {row_noun} rows are annotated "
+            f"@infrastructure/@prefactoring; a plan with zero observable "
+            f"{row_noun}s carries no user-visible value (MECC)"
         ),
     )
 

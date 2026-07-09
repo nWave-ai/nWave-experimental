@@ -20,6 +20,7 @@ the paid Tsunami tier is absent (the NORMAL case, ADR-LA-001 C7).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,6 +30,7 @@ from des.ports.code_fact_port import (
     CAPABILITY_CALLERS_OF,
     CAPABILITY_NEVER_WIRED,
     CAPABILITY_READS_OF,
+    CAPABILITY_SIMILAR_RESPONSIBILITY,
     CAPABILITY_STEP_SHAPE_CORPUS,
     CodeFactResult,
     Confidence,
@@ -47,6 +49,15 @@ if TYPE_CHECKING:
 # adapter is ``PythonAstAdapter``); a target in another language wires its own
 # per-language ``TestSuiteAstAdapter`` behind this same seam (genericità).
 _PYTHON_SOURCE_GLOB = "*.py"
+
+# A candidate's minimum name-token Jaccard overlap to be ranked at all (WS-9b
+# similar-responsibility slice-01). Zero-overlap candidates (no shared
+# name-token) are noise, never surfaced.
+_SIMILAR_RESPONSIBILITY_OVERLAP_THRESHOLD = 0.0
+
+# Matches a lowercase/digit-to-uppercase camelCase boundary, so
+# ``parseFeatureDelta`` tokenizes the same as ``parse_feature_delta``.
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
 class AstAdapter:
@@ -93,6 +104,8 @@ class AstAdapter:
             return self._adr_section(symbol)
         if descriptor.id == CAPABILITY_STEP_SHAPE_CORPUS:
             return self._step_shape_corpus()
+        if descriptor.id == CAPABILITY_SIMILAR_RESPONSIBILITY:
+            return self._similar_responsibility(request)
         return self._answer(payload={"sites": []}, reason_code=None)
 
     def probe(self) -> list[dict[str, object]]:
@@ -124,6 +137,11 @@ class AstAdapter:
                     # core — it parses a real AST step-shape corpus into a near-duplicate-
                     # step census. NOT in STABLE_CORE_CAPABILITY_IDS (the byte-locked core).
                     CAPABILITY_STEP_SHAPE_CORPUS,
+                    # ADDITIVE (WS-9b, codefact-similar-responsibility slice-01): the
+                    # structural tier honors the similar-responsibility capability beyond
+                    # the LOCKED 5-capability stable core — ranked module-level-symbol
+                    # fingerprint overlap. NOT in STABLE_CORE_CAPABILITY_IDS.
+                    CAPABILITY_SIMILAR_RESPONSIBILITY,
                 }
             )
         ]
@@ -218,6 +236,88 @@ class AstAdapter:
             },
             reason_code=reason,
         )
+
+    def _similar_responsibility(self, request: dict[str, object]) -> CodeFactResult:
+        """Ranked EXISTING module-level ``def``/``class`` symbols whose structural
+        fingerprint overlaps a proposed NEW symbol (WS-9b similar-responsibility
+        slice-01).
+
+        Parses every Python file under the root, collects each MODULE-LEVEL
+        ``def``/``class`` symbol (delegated to
+        ``module_level_symbols_in_module`` — no second parser), fingerprints
+        each by its name-token set (identifier split on ``_``/camelCase,
+        lowercased) plus its parameter arity, and ranks candidates whose
+        Jaccard token overlap against the queried name exceeds the threshold
+        (arity distance breaks ties; closer arity ranks first). A scope with
+        ZERO parseable module-level symbols (nonexistent/empty/unparseable)
+        degrades LOUD to ``absent`` — never a fabricated empty candidate list
+        that would look identical to a genuine "looked and found nothing"
+        answer (the same absent-vs-live split ``_step_shape_corpus`` makes).
+        """
+        query_name = self._symbol_of(request)
+        query_tokens = self._name_tokens(query_name)
+        query_arity = request.get("arity")
+        total_symbols = 0
+        ranked: list[tuple[float, int, dict[str, object]]] = []
+        for source_file in self._iter_files():
+            tree = self._parse(source_file)
+            if tree is None:
+                continue
+            for symbol in self._parser.module_level_symbols_in_module(tree):
+                total_symbols += 1
+                if symbol.name == query_name:
+                    continue
+                overlap = self._token_overlap(query_tokens, symbol.name)
+                if overlap <= _SIMILAR_RESPONSIBILITY_OVERLAP_THRESHOLD:
+                    continue
+                arity_distance = (
+                    abs(symbol.arity - query_arity)
+                    if isinstance(query_arity, int)
+                    else 0
+                )
+                ranked.append(
+                    (
+                        overlap,
+                        arity_distance,
+                        {
+                            "symbol": symbol.name,
+                            "file": str(source_file),
+                            "line": symbol.lineno,
+                            "overlap": overlap,
+                        },
+                    )
+                )
+        if total_symbols == 0:
+            return self._answer(
+                payload={"candidates": []}, reason_code=ReasonCode.ABSENT.value
+            )
+        ranked.sort(key=lambda entry: (-entry[0], entry[1]))
+        return self._answer(
+            payload={"candidates": [entry[2] for entry in ranked]},
+            reason_code=ReasonCode.LIVE_NON_CALLABLE.value,
+        )
+
+    @staticmethod
+    def _name_tokens(identifier: str) -> frozenset[str]:
+        """The lowercase name-token set of ``identifier`` (split on ``_`` and
+        camelCase boundaries) — the similar-responsibility fingerprint's name
+        axis. ``""`` yields the empty set."""
+        if not identifier:
+            return frozenset()
+        spaced = _CAMEL_BOUNDARY_RE.sub("_", identifier)
+        return frozenset(token.lower() for token in spaced.split("_") if token)
+
+    @classmethod
+    def _token_overlap(cls, query_tokens: frozenset[str], candidate_name: str) -> float:
+        """Jaccard overlap of ``query_tokens`` against ``candidate_name``'s own
+        name-token set. Either side empty (e.g. an unnamed query) yields 0.0 —
+        never a division by zero."""
+        candidate_tokens = cls._name_tokens(candidate_name)
+        if not query_tokens or not candidate_tokens:
+            return 0.0
+        intersection = query_tokens & candidate_tokens
+        union = query_tokens | candidate_tokens
+        return len(intersection) / len(union)
 
     # -- structural primitives (delegate-only, NO ``import ast`` here) ------
 
