@@ -124,7 +124,9 @@ The first captures the `RedObserved` seal, bound to the file's current content �
 if the test file changes afterward, a stale seal is void. The second verifies the file
 carries at least one negative AT (the wrong output is NOT produced). The carpaccio slice
 gate accepts this pair as the slice's AT attestation (`SliceCleared at_evidence:
-mechanical-seal`) — no AT-review LLM dispatch on this pytest-regression path.
+mechanical-seal`) — no AT-review LLM dispatch on this pytest-regression path. If the
+dispatched acceptance-designer dies before this seal lands, apply the recovery fallback in
+`nw-execute` §Recovery Fallback — recover from its final message's verbatim RED confirmation.
 
 **Optional double attestation (rigor-profile opt-in)**: dispatch an independent reviewer of
 the regression test and record the verdict via `des record-at-review-verdict --verdict
@@ -240,7 +242,9 @@ Phase 3c runs after Phase 3b's GREEN and BEFORE the commit:
 3. **Record the verdict** via `des record-examine-verdict --feature-id fix-{...}
    --slice slice-01 --charter <path> --verdict PASS --examiner nw-user-examiner`
    BEFORE the commit. The examine gate arms on charter presence: `des commit-slice`
-   refuses the commit without a fresh Vera PASS.
+   refuses the commit without a fresh Vera PASS. If Vera dies before self-recording,
+   apply the recovery fallback in `nw-execute` §Recovery Fallback — recover from her
+   final message's verbatim `VERDICT:` line, never re-guess it.
 
 **Verdict strictness (never gamed, never a silent ship):**
 - Vera flags EVERYTHING — there is no "out-of-charter" category. A defect, a

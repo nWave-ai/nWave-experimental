@@ -44,6 +44,17 @@ Under `workflow.mode: atdd_pure`, `/nw-execute` runs one carpaccio slice through
 
 `E_BATCH_REFACTOR` and the deep review are explicitly NOT part of `/nw-execute` under `atdd_pure` — they belong to `/nw-deliver`'s feature-end cycle. <!-- mode-ref-ok -->
 
+## Recovery Fallback — Subagent Died Before Its Final Mechanical Record
+
+Empirically recurring failure mode (gap-3, cross-instance): a dispatched subagent — the examiner (Vera), the acceptance-designer sealing RED, a reviewer recording an AT-review verdict — completes its investigation and DECIDES its verdict, then the process dies exactly before its LAST mechanical step: the `des record-examine-verdict` / `des verify-red-green --record-red` / `des record-at-review-verdict` call that persists it. The ledger then lacks the record even though the subagent knew the verdict. This is additive, not a replacement: the subagent still self-records on the happy path — self-recording is tamper-evident (the examiner signs HER OWN verdict, the reviewer signs HER OWN AT-review) and that property is preserved.
+
+Two-part contract:
+
+1. **Dispatch contract (produces recovery data)** — every dispatch whose final step is a `des record-*` / `des verify-red-green --record-red` call MUST instruct the subagent to end its final message with the verdict/seal + observations stated VERBATIM (e.g. `VERDICT: PASS` plus the observation text, or `RED CONFIRMED: <reason>`). Without this line, recovery has nothing to record from.
+2. **Orchestrator contract (recovers when the record is missing)** — after a dispatched subagent (examiner / acceptance-designer / reviewer) returns or goes idle, the orchestrator VERIFIES the record actually landed in the relevant ledger (e.g. grep `.nwave/telemetry/examine/{feature-id}.jsonl` for `ExamineVerdictRecorded`, or the AT-completion ledger for `RedObserved` / `ATReviewVerdict`). If the record is ABSENT — the subagent died before its last step — the orchestrator runs the SAME `des record-*` command the subagent would have run, using the subagent's verbatim reported verdict from its final message. This is a fallback: the orchestrator only records when the ledger shows the subagent died before doing so; it never overrides a self-recorded verdict.
+
+The long-lived orchestrator always survives to persist a decided verdict — a subagent's death can never silently lose it. This discipline is the canonical locus for the recovery fallback (the per-slice cycle owner); `/nw-deliver` and `/nw-bugfix` point here rather than restating it.
+
 ## Syntax
 
 ```
