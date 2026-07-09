@@ -67,6 +67,11 @@ VERDICT_MISSING_FEATURE_DELTA = "missing-feature-delta"
 #: local asset this tool reads besides the feature-delta.
 VERDICT_MISSING_CHARTER_TEMPLATE = "missing-charter-template"
 
+#: Degrade-LOUD token (slice-03) for `--seed-mode bug-observable` invoked
+#: with a missing or blank `--observable` -- mirrors the naming convention of
+#: the two verdicts above.
+VERDICT_MISSING_OBSERVABLE = "missing-observable"
+
 _TEMPLATE_RELATIVE_PATH = Path("nWave/templates/expectation-charter.md")
 _TEMPLATE_HEADING = "## Template"
 
@@ -245,6 +250,26 @@ def _build_parser() -> argparse.ArgumentParser:
         default="json",
         help="Output format (only 'json' is supported).",
     )
+    parser.add_argument(
+        "--seed-mode",
+        choices=("slice-plan", "bug-observable"),
+        default="slice-plan",
+        help=(
+            "'slice-plan' (default) scaffolds every observable Slice Plan row "
+            "from the feature-delta -- byte-identical to the pre-slice-03 "
+            "behaviour. 'bug-observable' scaffolds ONE charter straight from "
+            "--observable text, no Slice Plan read."
+        ),
+    )
+    parser.add_argument(
+        "--observable",
+        default=None,
+        help=(
+            "Required (and must be non-blank) for --seed-mode bug-observable: "
+            "the bug's observable behaviour, user-side, pre-filled into the "
+            "scaffold's Intent section verbatim."
+        ),
+    )
     return parser
 
 
@@ -266,13 +291,59 @@ def _degrade(feature_id: str, verdict: str, detail: str) -> int:
     return 1
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Generate charter scaffolds; return 0 on `accepted`, non-zero on any
-    degrade-LOUD verdict."""
-    args = _build_parser().parse_args(argv)
-    repo_root = Path(args.repo_root)
-    feature_id = args.feature_id
+def _run_bug_observable(
+    repo_root: Path, feature_id: str, observable: str | None
+) -> int:
+    """`--seed-mode bug-observable`: no Slice Plan read -- ONE charter
+    scaffold straight from `--observable` text (Intent pre-filled verbatim,
+    same skeleton/idempotency contract as the slice-plan path). Degrades LOUD
+    on a missing/blank `--observable` (the slice-01 blank-Value lesson
+    applies here too: never a `.md` garbage file)."""
+    if observable is None or not observable.strip():
+        return _degrade(
+            feature_id,
+            VERDICT_MISSING_OBSERVABLE,
+            "--observable is required (and must be non-blank) for "
+            "--seed-mode bug-observable",
+        )
 
+    template_path = repo_root / _TEMPLATE_RELATIVE_PATH
+    try:
+        template_content = template_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return _degrade(
+            feature_id,
+            VERDICT_MISSING_CHARTER_TEMPLATE,
+            f"cannot read charter template at {template_path}: {exc}",
+        )
+    template_skeleton = _extract_template_skeleton(template_content)
+
+    row = {"Slice": "bug-observable", "Value statement": observable}
+    filename, was_created = _scaffold_slice(
+        repo_root, feature_id, row, template_skeleton
+    )
+    created = [filename] if was_created else []
+    skipped = [] if was_created else [filename]
+
+    print(
+        json.dumps(
+            {
+                "feature_id": feature_id,
+                "created": created,
+                "skipped": skipped,
+                "observable_slices": 1,
+                "verdict": VERDICT_ACCEPTED,
+                "detail": f"{len(created)} scaffold(s) created, {len(skipped)} skipped",
+            }
+        )
+    )
+    return 0
+
+
+def _run_slice_plan(repo_root: Path, feature_id: str) -> int:
+    """`--seed-mode slice-plan` (default): the slice-01 behaviour, unchanged
+    byte-for-byte -- scaffold every observable Slice Plan row from the
+    feature's feature-delta."""
     delta_path = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
     if not delta_path.is_file():
         return _degrade(
@@ -323,6 +394,20 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Generate charter scaffolds; return 0 on `accepted`, non-zero on any
+    degrade-LOUD verdict. Dispatches on `--seed-mode` (default 'slice-plan',
+    byte-identical to the pre-slice-03 behaviour)."""
+    args = _build_parser().parse_args(argv)
+    repo_root = Path(args.repo_root)
+    feature_id = args.feature_id
+
+    if args.seed_mode == "bug-observable":
+        return _run_bug_observable(repo_root, feature_id, args.observable)
+
+    return _run_slice_plan(repo_root, feature_id)
 
 
 if __name__ == "__main__":  # pragma: no cover
