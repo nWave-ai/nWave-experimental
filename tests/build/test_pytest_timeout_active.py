@@ -10,15 +10,18 @@ Three properties pinned here:
    ([tool.pytest.ini_options] in pyproject.toml) sets a `timeout`.
 2. The mechanism actually interrupts a hanging test (proven by running a
    tiny inner pytest, in a subprocess, against a test marked
-   `@pytest.mark.timeout(1)` that sleeps 2s -- it must report a Timeout
-   failure, not a pass).
+   `@pytest.mark.timeout(2)` that sleeps 60s -- it must report a Timeout
+   failure, not a pass). The 2s-cap-vs-60s-sleep gap is deliberately huge
+   (not 1s-vs-2s) so the "interrupted early" assertion has a wide,
+   load-tolerant margin instead of racing subprocess startup overhead.
 3. The configured global cap is generous (>= 300s) -- a hang-catcher, not a
    speed-limiter. The slowest known test today is ~130s (BuildTier), so a
    600s cap leaves 4.6x margin. This guards against a future edit quietly
    tightening the cap and false-failing legitimate slow tests.
 
-All assertions here are fast (<~2s) -- this file never sleeps for the global
-cap itself.
+All assertions here are fast (test 2 costs ~2-4s, interrupted well before
+its 60s inner sleep; the others are near-instant) -- this file never sleeps
+for the global cap itself.
 """
 
 import importlib.util
@@ -39,13 +42,26 @@ PYPROJECT_PATH = Path(__file__).parent.parent.parent / "pyproject.toml"
 # Slowest known test today is ~130s (BuildTier); require >= 4x margin.
 MINIMUM_GENEROUS_CAP_SECONDS = 300
 
-# Inner-probe timeout: tiny, so the RED-vs-GREEN mechanism proof stays fast.
-INNER_PROBE_TIMEOUT_SECONDS = 1
-INNER_PROBE_SLEEP_SECONDS = 2
+# Inner-probe timeout/sleep: deliberately a HUGE gap (2s cap vs 60s sleep),
+# not a tight 1s-vs-2s race. A tight gap flakes under build-tier load because
+# inner-pytest startup overhead alone can eat the whole margin (#49). With a
+# 60s sleep, "interrupted early" vs "ran to completion" is unmistakable even
+# under heavy parallel load.
+INNER_PROBE_TIMEOUT_SECONDS = 2
+INNER_PROBE_SLEEP_SECONDS = 60
 
 # Subprocess-level safety net: the inner probe must never be allowed to hang
 # this AT itself, regardless of whether pytest-timeout is wired correctly.
-SUBPROCESS_SAFETY_NET_SECONDS = 15
+# Comfortably above the "interrupted early" threshold (below) and well
+# below the 60s natural-completion sleep, so a broken mechanism still fails
+# fast via TimeoutExpired instead of blocking the outer test for 60s.
+SUBPROCESS_SAFETY_NET_SECONDS = 20
+
+# "Interrupted early" threshold for the elapsed-time assertion: a real
+# interrupt lands around INNER_PROBE_TIMEOUT_SECONDS (+ startup/scheduling
+# overhead, even under heavy load); natural completion is 60s. 15s cleanly
+# separates the two without racing subprocess startup cost.
+INTERRUPTED_EARLY_THRESHOLD_SECONDS = 15
 
 
 def _load_pytest_ini_options() -> dict:
@@ -73,11 +89,15 @@ def test_pytest_timeout_plugin_is_declared_and_configured() -> None:
 
 
 def test_pytest_timeout_kills_hanging_test_as_failure() -> None:
-    """Mechanism proof: a test marked `@pytest.mark.timeout(1)` that sleeps
-    2s must be interrupted and reported as a Timeout FAILURE, not a pass and
+    """Mechanism proof: a test marked `@pytest.mark.timeout(2)` that sleeps
+    60s must be interrupted and reported as a Timeout FAILURE, not a pass and
     not an indefinite hang. Run in an isolated inner pytest (subprocess,
     tmp_path rootdir with no inherited pyproject.toml) so this proves the
-    plugin's own interrupt mechanism, not the project's global config."""
+    plugin's own interrupt mechanism, not the project's global config.
+
+    Margins are deliberately wide (2s cap vs 60s sleep, <15s "interrupted
+    early" threshold) so this stays robust under build-tier parallel load
+    instead of racing subprocess startup overhead (#49)."""
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -103,10 +123,11 @@ def test_pytest_timeout_kills_hanging_test_as_failure() -> None:
         elapsed_seconds = time.monotonic() - started_at
 
     assert result.returncode != 0, (
-        "Inner probe test (@pytest.mark.timeout(1), sleeps 2s) did not "
-        "fail. Without pytest-timeout wired, the marker is unrecognized "
-        "and the test just sleeps to completion and passes -- proving the "
-        "hang-interrupt mechanism is not active.\n"
+        f"Inner probe test (@pytest.mark.timeout({INNER_PROBE_TIMEOUT_SECONDS}), "
+        f"sleeps {INNER_PROBE_SLEEP_SECONDS}s) did not fail. Without "
+        "pytest-timeout wired, the marker is unrecognized and the test just "
+        "sleeps to completion and passes -- proving the hang-interrupt "
+        "mechanism is not active.\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert "1 failed" in result.stdout, (
@@ -115,10 +136,15 @@ def test_pytest_timeout_kills_hanging_test_as_failure() -> None:
         f"{result.stdout}"
     )
     # If the plugin actually interrupted the sleep, the subprocess returns
-    # well before the full 2s sleep completes naturally.
-    assert elapsed_seconds < (INNER_PROBE_SLEEP_SECONDS - 0.1), (
+    # well before the full 60s sleep completes naturally. The threshold is
+    # a huge margin above the real interrupt point (~2-4s even under heavy
+    # load) and far below natural completion (60s), so it cleanly separates
+    # "interrupted" from "ran to completion" without flaking on startup
+    # overhead (#49).
+    assert elapsed_seconds < INTERRUPTED_EARLY_THRESHOLD_SECONDS, (
         f"Inner probe took {elapsed_seconds:.2f}s -- expected it to be "
-        f"interrupted around {INNER_PROBE_TIMEOUT_SECONDS}s, well before "
+        f"interrupted around {INNER_PROBE_TIMEOUT_SECONDS}s (well under the "
+        f"{INTERRUPTED_EARLY_THRESHOLD_SECONDS}s threshold), long before "
         f"the full {INNER_PROBE_SLEEP_SECONDS}s sleep naturally completes. "
         "This suggests the test ran to completion instead of being "
         "interrupted by pytest-timeout."

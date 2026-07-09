@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from scripts.shared import hook_definitions as shared_hooks
 from scripts.shared.skill_distribution import (
@@ -282,11 +283,13 @@ class DESPlugin(InstallationPlugin):
     # Hook event types that DES registers (from shared definitions)
     HOOK_EVENTS = tuple(shared_hooks.HOOK_EVENT_TYPES)
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize DES plugin with name, priority, and dependencies."""
         super().__init__(name="des", priority=50)
         self.dependencies = ["templates", "utilities"]
-        self._original_settings: dict | None = None  # For uninstall restoration
+        self._original_settings: dict[str, Any] | None = (
+            None  # For uninstall restoration
+        )
 
     def validate_prerequisites(self, context: InstallContext) -> PluginResult:
         """Validate that DES prerequisites exist before installation.
@@ -1223,7 +1226,9 @@ class DESPlugin(InstallationPlugin):
             # Both command AND matcher must match on the SAME entry to count
             # as up-to-date (previously checked independently, which could
             # yield false positives when entries were shuffled).
-            def _entry_matches(existing_entry, desired_entry):
+            def _entry_matches(
+                existing_entry: dict[str, Any], desired_entry: dict[str, Any]
+            ) -> bool:
                 """Check if an existing entry matches a desired entry exactly."""
                 # Compare matcher (None == absent)
                 if existing_entry.get("matcher") != desired_entry.get("matcher"):
@@ -1328,17 +1333,18 @@ class DESPlugin(InstallationPlugin):
         "audit_log_dir": ".nwave/des/logs",
     }
 
-    def _write_json_config(self, path: Path, data: dict) -> None:
+    def _write_json_config(self, path: Path, data: dict[str, Any]) -> None:
         """Write dict as pretty-printed JSON with trailing newline."""
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
 
-    def _read_json_config(self, path: Path) -> dict:
+    def _read_json_config(self, path: Path) -> dict[str, Any]:
         """Read JSON config file, returning empty dict on parse or IO error."""
         try:
             with open(path, encoding="utf-8") as f:
-                return json.load(f)
+                data: dict[str, Any] = json.load(f)
+                return data
         except (json.JSONDecodeError, OSError):
             return {}
 
@@ -1472,19 +1478,20 @@ class DESPlugin(InstallationPlugin):
                 message=f"DES config bootstrap failed: {e}",
             )
 
-    def _load_settings(self, settings_file: Path) -> dict:
+    def _load_settings(self, settings_file: Path) -> dict[str, Any]:
         """Load settings from JSON file, return empty dict if not exists."""
         if not settings_file.exists():
             return {}
 
         try:
             with open(settings_file, encoding="utf-8") as f:
-                return json.load(f)
+                data: dict[str, Any] = json.load(f)
+                return data
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in {settings_file}: {e}")
 
     def _save_settings(
-        self, settings_file: Path, config: dict, context: InstallContext
+        self, settings_file: Path, config: dict[str, Any], context: InstallContext
     ) -> None:
         """Save settings to JSON file with proper formatting and file locking.
 
@@ -1682,7 +1689,7 @@ class DESPlugin(InstallationPlugin):
         if not context.dry_run:
             self._save_settings(settings_file, config, context)
 
-    def _hooks_already_installed(self, config: dict) -> bool:
+    def _hooks_already_installed(self, config: dict[str, Any]) -> bool:
         """Check if DES hooks are already installed.
 
         Returns True if ANY hook event type has a DES hook.
@@ -1700,7 +1707,7 @@ class DESPlugin(InstallationPlugin):
             for event in self.HOOK_EVENTS
         )
 
-    def _is_des_hook_entry(self, hook_entry: dict) -> bool:
+    def _is_des_hook_entry(self, hook_entry: dict[str, Any]) -> bool:
         """Check if a hook entry is a DES hook.
 
         Delegates to shared hook_definitions module for consistent detection

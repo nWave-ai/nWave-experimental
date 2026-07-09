@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -81,7 +82,7 @@ class Logger:
         """Whether Rich console is available for markup."""
         return self._rich_console is not None
 
-    def _write_to_file(self, level: str, message: str):
+    def _write_to_file(self, level: str, message: str) -> None:
         """Write structured log entry to file."""
         if not self.log_file:
             return
@@ -93,7 +94,7 @@ class Logger:
         except Exception:
             pass
 
-    def _log(self, level: str, message: str, color: str = ""):
+    def _log(self, level: str, message: str, color: str = "") -> None:
         """Internal logging method for info/warn/error/step."""
         # Console: pretty-print with Rich or ANSI fallback
         if not self.silent:
@@ -113,28 +114,30 @@ class Logger:
 
         self._write_to_file(level, message)
 
-    def info(self, message: str):
+    def info(self, message: str) -> None:
         """Log info message."""
         self._log("INFO", message)
 
-    def warn(self, message: str):
+    def warn(self, message: str) -> None:
         """Log warning message."""
         self._log("WARN", message, self._YELLOW)
 
-    def warning(self, message: str):
+    def warning(self, message: str) -> None:
         """Log warning message (stdlib logging.Logger-compatible name)."""
         self.warn(message)
 
-    def error(self, message: str):
+    def error(self, message: str) -> None:
         """Log error message."""
         self._log("ERROR", message, self._RED)
 
-    def step(self, message: str):
+    def step(self, message: str) -> None:
         """Log step message."""
         self._log("STEP", message, self._BLUE)
 
     @contextmanager
-    def progress_spinner(self, message: str, spinner_style: str = "dots12"):
+    def progress_spinner(
+        self, message: str, spinner_style: str = "dots12"
+    ) -> Iterator[None]:
         """Animated spinner during long operations. Falls back to plain step."""
         self._write_to_file("STEP", message)
 
@@ -155,7 +158,7 @@ class Logger:
 
     def table(
         self, headers: list[str], rows: list[list[str]], title: str | None = None
-    ):
+    ) -> None:
         """Print a table. Rich table on screen, plain text in log file."""
         # File: plain text representation
         if title:
@@ -191,7 +194,9 @@ class Logger:
             print(" | ".join(str(c) for c in row))
         print()
 
-    def panel(self, content: str, title: str | None = None, style: str = "blue"):
+    def panel(
+        self, content: str, title: str | None = None, style: str = "blue"
+    ) -> None:
         """Print a bordered panel. Rich panel on screen, plain text in log file."""
         # File: plain text representation
         if title:
@@ -225,7 +230,7 @@ class Logger:
             print(f"| {line.ljust(width - 4)} |")
         print("+" + "-" * (width - 2) + "+")
 
-    def print_styled(self, text: str, style: str = ""):
+    def print_styled(self, text: str, style: str = "") -> None:
         """Print with Rich markup/styling. Falls back to plain text."""
         # File: strip markup
         clean = self._MARKUP_RE.sub("", text)
@@ -323,7 +328,7 @@ class PathUtils:
         """Find newest file in directory matching patterns."""
         patterns = patterns or ["*.md", "*.py", "*.json"]
         newest = None
-        newest_time = 0
+        newest_time: float = 0
 
         for pattern in patterns:
             for file in directory.rglob(pattern):
@@ -418,7 +423,7 @@ class BackupManager:
         self.logger.info(f"  ✅ Backup complete → {self.backup_dir}")
         return self.backup_dir
 
-    def _create_manifest(self):
+    def _create_manifest(self) -> None:
         """Create backup manifest file."""
         manifest_path = self.backup_dir / "backup-manifest.txt"
 
@@ -651,7 +656,7 @@ class ManifestWriter:
     @staticmethod
     def write_install_manifest(
         claude_config_dir: Path, backup_dir: Path | None, script_dir: Path
-    ):
+    ) -> None:
         """Write installation manifest."""
         manifest_path = claude_config_dir / "nwave-manifest.txt"
 
@@ -693,7 +698,9 @@ For help: https://github.com/nWave-ai/nWave
         manifest_path.write_text(content, encoding="utf-8")
 
     @staticmethod
-    def write_uninstall_report(claude_config_dir: Path, backup_dir: Path | None):
+    def write_uninstall_report(
+        claude_config_dir: Path, backup_dir: Path | None
+    ) -> None:
         """Write uninstallation report."""
         report_path = claude_config_dir / "framework-uninstall-report.txt"
 
@@ -728,7 +735,7 @@ Uninstall Summary:
     @staticmethod
     def write_update_report(
         claude_config_dir: Path, backup_dir: Path | None, backup_created: bool
-    ):
+    ) -> None:
         """Write update report."""
         report_path = claude_config_dir / "nwave-update-report.txt"
 
