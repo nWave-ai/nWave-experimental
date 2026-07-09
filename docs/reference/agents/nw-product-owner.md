@@ -9,6 +9,7 @@ Conducts UX journey design and requirements gathering with BDD acceptance criter
 
 ## Commands
 
+- [`/nw-bugfix`](../commands/index.md)
 - [`/nw-discover`](../commands/index.md)
 - [`/nw-discuss`](../commands/index.md)
 - [`/nw-diverge`](../commands/index.md)
@@ -20,6 +21,7 @@ Conducts UX journey design and requirements gathering with BDD acceptance criter
 - [nw-bdd-requirements](../skills/nw-bdd-requirements.md) — BDD requirements discovery methodology - Example Mapping, Three Amigos, conversational patterns, Given-When-Then translation, and collaborative specification
 - [nw-design-methodology](../skills/nw-design-methodology.md) — Apple LeanUX++ design workflow, journey schema, emotional arc patterns, and CLI UX patterns. Load when transitioning from discovery to visualization or when designing journey artifacts.
 - [nw-discovery-methodology](../skills/nw-discovery-methodology.md) — Question-first approach to understanding user journeys. Load when starting a new journey design or when the discovery phase needs deepening.
+- [nw-expectation-charter](../skills/nw-expectation-charter.md) — Charter-authoring competence for ANY flow (DISCUSS wave, /nw-bugfix, technical fixes that skip DISCUSS) — how to write a user-side, discovery-preserving expectation charter that arms the DELIVER EXAMINE gate. Consult whenever an agent must author or judge a docs/product/expectations/ charter.
 - [nw-jtbd-bdd-integration](../skills/nw-jtbd-bdd-integration.md) — Translating JTBD analysis to BDD scenarios - job story to Given-When-Then patterns, forces-based test discovery, job-map-based test discovery, and property-shaped criteria
 - [nw-leanux-methodology](../skills/nw-leanux-methodology.md) — LeanUX backlog management methodology - user story template, story sizing, story states, task types, Definition of Ready/Done, anti-pattern detection and remediation
 - [nw-outcome-kpi-framework](../skills/nw-outcome-kpi-framework.md) — Outcome KPI definition methodology - synthesizes Who Does What By How Much (Gothelf/Seiden), Running Lean (Maurya), and Measure What Matters (Doerr) into a practical framework for measurable outcome KPIs

@@ -380,6 +380,10 @@
 
 - [nw-execute](nw-execute.md) — Dispatches one unit of DELIVER work to a specialized agent for TDD execution. Use to run a step (classic workflow mode, a roadmap.json plan) or one carpaccio slice (ATDD-pure workflow mode).
 
+## nw-expectation-charter
+
+- [nw-expectation-charter](nw-expectation-charter.md) — Charter-authoring competence for ANY flow (DISCUSS wave, /nw-bugfix, technical fixes that skip DISCUSS) — how to write a user-side, discovery-preserving expectation charter that arms the DELIVER EXAMINE gate. Consult whenever an agent must author or judge a docs/product/expectations/ charter.
+
 ## nw-fast-forward
 
 - [nw-fast-forward](nw-fast-forward.md) — Fast-forwards through remaining waves end-to-end without stopping for review between waves.
