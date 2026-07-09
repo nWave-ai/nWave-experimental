@@ -356,6 +356,15 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.record_review_verdict",
         "main",
     ),
+    # charter-scaffold slice-02 (the ENFORCEMENT half): the backstop gate that
+    # verifies a scaffolded charter is genuinely FILLED (oracle with >=1
+    # negative observation, real start recipe, no residual placeholders)
+    # before an operator trusts it or lets it arm a downstream EXAMINE.
+    _SubcommandRow(
+        "verify-charter-filled",
+        "des.cli.verify_charter_filled",
+        "main",
+    ),
 )
 
 

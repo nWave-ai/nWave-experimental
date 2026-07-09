@@ -112,13 +112,16 @@ def then_no_errors(composition) -> None:
 # record-review-verdict recorder (ad-hoc reviewer verdict ledger).
 # Count 56 -> 57 (2026-07-09, charter-scaffold slice-01): adds
 # charter-scaffold, wired across all three surfaces.
-@then("both contain exactly 58 entries")
+# Count 58 -> 59 (2026-07-09, charter-scaffold slice-02): adds
+# verify-charter-filled, the backstop FILLED-verification gate, wired across
+# all three surfaces.
+@then("both contain exactly 59 entries")
 def then_both_counts_match(composition) -> None:
-    assert len(composition.catalog_gate_ids) == 58, (
-        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 58"
+    assert len(composition.catalog_gate_ids) == 59, (
+        f"Catalog has {len(composition.catalog_gate_ids)} entries, expected 59"
     )
-    assert len(composition.registry_names) == 58, (
-        f"_REGISTRY has {len(composition.registry_names)} entries, expected 58"
+    assert len(composition.registry_names) == 59, (
+        f"_REGISTRY has {len(composition.registry_names)} entries, expected 59"
     )
 
 

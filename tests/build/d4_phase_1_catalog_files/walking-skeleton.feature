@@ -62,11 +62,13 @@ Feature: Gate-contract catalog YAML mirrors _REGISTRY (D4 Phase 1 slice-01)
   # 1:1 across registry/catalog/files (same producing-tool precedent as
   # roadmap/doctor/dispatch/feature-delta-doctor/flavor-scaffold -- every
   # _REGISTRY row gets a catalog row + per-gate file, no tooling exclusion).
-  Scenario: Catalog row count equals registry count (58 total, adds record-review-verdict)
+  # Count 58 -> 59 (2026-07-09, charter-scaffold slice-02): adds
+  # verify-charter-filled, the backstop FILLED-verification gate.
+  Scenario: Catalog row count equals registry count (59 total, adds verify-charter-filled)
     Given the gate catalog loaded from "nWave/gates/_catalog.yaml"
     And the production _REGISTRY loaded from `src.des.cli.__main__`
     When the row counts are compared
-    Then both contain exactly 58 entries
+    Then both contain exactly 59 entries
     And every gate_id in the catalog is also a SubcommandRow.name in _REGISTRY
     And every SubcommandRow.name in _REGISTRY is also a gate_id in the catalog
 

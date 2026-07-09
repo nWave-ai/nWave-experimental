@@ -46,10 +46,12 @@ Feature: Per-gate YAML files validate against GateContractFull schema (slice-02)
   # Count 57 -> 58 (2026-07-09, record-review-verdict slice-01, #45): per-gate file.
   # Count 56 -> 57 (2026-07-09, charter-scaffold slice-01): per-gate file for
   # charter-scaffold, 1:1 with its catalog entry.
-  Scenario: All 58 per-gate files exist and validate against GateContractFull schema
+  # Count 58 -> 59 (2026-07-09, charter-scaffold slice-02): per-gate file for
+  # verify-charter-filled, 1:1 with its catalog entry.
+  Scenario: All 59 per-gate files exist and validate against GateContractFull schema
     Given the per-gate file directory at "nWave/gates/"
     When each per-gate file is loaded and validated
-    Then exactly 58 per-gate files exist (one per catalog entry)
+    Then exactly 59 per-gate files exist (one per catalog entry)
     And every per-gate file validates against the GateContractFull schema
 
   @driving_port @in-process @real-io @slice-02 @contract-shape:pure-function

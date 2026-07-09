@@ -413,3 +413,12 @@ gates:
     module: des.cli.charter_scaffold
     entry_function: main
     language_neutral_contract: true
+
+  # charter-scaffold slice-02 (the ENFORCEMENT half): the backstop gate that
+  # verifies a scaffolded charter is genuinely FILLED. 1:1 mirror of the new
+  # _REGISTRY row; matching per-gate file verify-charter-filled.yaml.
+  - gate_id: verify-charter-filled
+    responsibility: "Verifies a charter is genuinely FILLED (not just scaffolded): the oracle section is non-empty AND carries >=1 negative observation line, the start-recipe (Preconditions) section is non-empty, and no residual scaffold `<...>` placeholder markers remain in either judgment section. Emits PASS (filled), FAIL (present-but-hollow -- names EACH still-TODO section + HOW), INDETERMINATE (unreadable/malformed path -- missing file, empty file, directory -- LOUD what/why/how, never a false PASS). Filesystem-only, no git."
+    module: des.cli.verify_charter_filled
+    entry_function: main
+    language_neutral_contract: true
