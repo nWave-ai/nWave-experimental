@@ -27,7 +27,8 @@ INPUT: "{bug-description}"
   │   └─ /nw-root-why "{bug-description}"
   │   └─ Output: RCA document with root cause chain + fix proposal
   │
-  ├─ Phase 2: User Review (INTERACTIVE — STOP here)
+  ├─ Phase 2: User Review (INTERACTIVE — STOP here; non-blocking under an
+  │   │        autonomous loop with standing authorization — see Phase 2)
   │   └─ Present RCA findings to user
   │   └─ User confirms root cause + approves fix direction
   │   └─ If user rejects → refine RCA or stop
@@ -86,7 +87,8 @@ After the troubleshooter returns, present findings to the user. Include:
 - Files to modify
 - Risk level
 
-**STOP and wait for user confirmation before proceeding to Phase 3a.**
+**STOP and wait for user confirmation before proceeding to Phase 3a** (unless the
+autonomous-loop exception below applies).
 
 ### Phase 2: User Review
 
@@ -100,6 +102,13 @@ If user rejects:
 - Or stop the workflow entirely
 
 If user approves → proceed to Phase 3a.
+
+**Autonomous-loop exception (Ale-ratified 2026-07-09).** When the bugfix runs under an
+autonomous loop with the human's standing authorization, Phase 2's interactive STOP is
+NON-BLOCKING — the standing authorization satisfies the human-approval intent, and Phase 3c
+EXAMINE (Vera PASS, mandatory pre-commit) is the quality gate. Proceed from RCA (Phase 1)
+directly to Phase 3a. This does NOT weaken quality: Vera EXAMINE still gates the commit.
+Outside an autonomous loop, Phase 2 stays a hard interactive STOP.
 
 ### Phase 3a: Regression Test (@nw-acceptance-designer)
 
