@@ -44,10 +44,11 @@ Exit codes:
         INDETERMINATE -- e.g. not a git work-tree) OR the post-amend verify
         refused the commit OR the slice was EXAMINED and FAILED
         (``ExamineVerdictRefused``).
-    2 = malformed input (nothing staged, empty message, repo unreadable) OR
-        the entering slice fails the examine-verdict gate (missing / stale /
-        INDETERMINATE -- ``ExamineVerdictMissing`` / ``ExamineVerdictStale`` /
-        ``ExamineVerdictIndeterminate``).
+    2 = malformed input (nothing staged, empty message, repo unreadable, or a
+        subject violating gitlint's title rules -- ``SubjectViolatesGitlint``
+        T1/T7) OR the entering slice fails the examine-verdict gate (missing /
+        stale / INDETERMINATE -- ``ExamineVerdictMissing`` /
+        ``ExamineVerdictStale`` / ``ExamineVerdictIndeterminate``).
 
 Reference: docs/feature/des-spine-control-plane-ssot (committed-scope trailer),
            #67 facet-4 / MEMORY control-plane SSOT (digest-timing facet).
@@ -56,6 +57,7 @@ Reference: docs/feature/des-spine-control-plane-ssot (committed-scope trailer),
 from __future__ import annotations
 
 import argparse
+import configparser
 import json
 import os
 import re
@@ -109,6 +111,102 @@ _REVIEWED_BY_LINE_RE = re.compile(r"^Reviewed-by:.*$", re.MULTILINE)
 # ``des record-at-review-verdict`` records the acceptance-designer's approval.
 _AT_REVIEW_VERDICT_EVENT = "ATReviewVerdict"
 _VERDICT_APPROVED = "APPROVED"
+
+
+# ---------------------------------------------------------------------------
+# Subject-line gitlint self-validation (task #37 -- GDP-6 producing-tool
+# self-validation gap): ``des commit-slice`` builds the commit subject but
+# never checked it against the repo's own commit linter before committing,
+# so a bad subject landed a commit CI's commitlint job then rejected. Read
+# the SAME two title rules from ``.gitlint`` (T1 title-max-length, T7
+# title-match-regex) and refuse EARLY -- before staging, before the
+# (potentially slow) build-tier verify -- never emit a subject CI will
+# reject.
+# ---------------------------------------------------------------------------
+_DEFAULT_TITLE_MAX_LENGTH = 100
+_DEFAULT_TITLE_REGEX = re.compile(
+    r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)"
+    r"(\(.+\))?: [a-zA-Z].*$"
+)
+
+
+def _load_gitlint_title_rules(repo: Path) -> tuple[int, re.Pattern[str]]:
+    """The subject-line max-length + regex, read from ``.gitlint`` if present.
+
+    Falls back to nWave's own defaults (100 chars, the conventional-commit
+    regex -- the SAME values the repo's ``.gitlint`` currently pins) when the
+    file is absent or a section/key/regex is malformed, so this degrades
+    LOUD-but-usable on a target machine that carries no ``.gitlint`` -- never
+    a hard crash, and never silently permissive (the default IS the rule).
+    """
+    max_length = _DEFAULT_TITLE_MAX_LENGTH
+    pattern = _DEFAULT_TITLE_REGEX
+    gitlint_path = repo / ".gitlint"
+    if not gitlint_path.is_file():
+        return max_length, pattern
+
+    config = configparser.ConfigParser()
+    try:
+        config.read(gitlint_path, encoding="utf-8")
+    except configparser.Error:
+        return max_length, pattern
+
+    if config.has_option("title-max-length", "line-length"):
+        try:
+            max_length = config.getint("title-max-length", "line-length")
+        except ValueError:
+            pass
+
+    if config.has_option("title-match-regex", "regex"):
+        try:
+            pattern = re.compile(config.get("title-match-regex", "regex"))
+        except re.error:
+            pass
+
+    return max_length, pattern
+
+
+def _gitlint_subject_violation(repo: Path, message: str) -> dict[str, object] | None:
+    """The gitlint subject-line violation for ``message``'s first line, or None.
+
+    Mirrors the SAME two rules CI's commitlint job enforces via ``.gitlint``
+    (T1 title-max-length, T7 title-match-regex), reading the LIVE limits/
+    regex from the repo's own ``.gitlint`` so the check never drifts from
+    what CI actually runs. Checked BEFORE staging and BEFORE the build-tier
+    verify -- the refusal is fast, never waits on the slow tier.
+    """
+    stripped = message.strip()
+    subject = stripped.splitlines()[0] if stripped else ""
+    max_length, pattern = _load_gitlint_title_rules(repo)
+
+    if len(subject) > max_length:
+        return {
+            "event": "SubjectViolatesGitlint",
+            "exit_code": 2,
+            "rule": "T1",
+            "what": f"the commit subject is {len(subject)} chars, exceeding "
+            f"the gitlint title-max-length of {max_length}",
+            "why": "CI's commitlint job runs the SAME .gitlint rule (T1) and "
+            "would reject this subject after the commit lands.",
+            "how": f"shorten the subject to <= {max_length} chars (gitlint T1).",
+        }
+
+    if not pattern.match(subject):
+        return {
+            "event": "SubjectViolatesGitlint",
+            "exit_code": 2,
+            "rule": "T7",
+            "what": f"the commit subject {subject!r} does not match the "
+            "conventional-commit title format",
+            "why": "CI's commitlint job runs the SAME .gitlint rule (T7 "
+            "title-match-regex), which requires the character right after "
+            "'type(scope): ' to be a letter.",
+            "how": "start the description with a letter, e.g. "
+            "'fix(scope): four configuration values were wrong' instead of "
+            "'fix(scope): 4 configuration values were wrong' (gitlint T7).",
+        }
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -614,6 +712,16 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         return 2
+
+    # Self-validate the subject against gitlint (task #37, GDP-6): refuse a
+    # subject CI's commitlint would reject BEFORE staging/committing anything
+    # -- the earliest possible guard, fast (no git mutation yet).
+    subject_violation = _gitlint_subject_violation(repo, args.message)
+    if subject_violation is not None:
+        exit_code = subject_violation.pop("exit_code")
+        _emit(subject_violation)
+        assert isinstance(exit_code, int)
+        return exit_code
 
     # Resolve the Slice-Id trailer mechanically (the SAME discipline the
     # Gate-Scope amend already closes). The message must end carrying a Slice-Id:
