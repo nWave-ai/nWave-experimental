@@ -17,7 +17,24 @@ import argparse
 import sys
 from pathlib import Path
 
-import yaml
+
+def _load_yaml():
+    """Lazily import PyYAML.
+
+    This script runs as a pre-commit `language: system` hook under a bare
+    python3 with no venv — PyYAML is a venv-only dependency and must not be
+    imported at module scope, or the hook crashes before it does any work.
+    """
+    try:
+        import yaml
+    except ModuleNotFoundError as exc:
+        print(
+            "ERROR: PyYAML unavailable under this interpreter; "
+            "run via `uv run` or install pyyaml.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
+    return yaml
 
 
 class YAMLValidator:
@@ -59,6 +76,7 @@ class YAMLValidator:
         Returns:
             (is_valid, error_message)
         """
+        yaml = _load_yaml()
         try:
             with open(file_path, encoding="utf-8") as f:
                 content = f.read()

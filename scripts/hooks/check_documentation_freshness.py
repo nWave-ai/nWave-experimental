@@ -23,29 +23,48 @@ from pathlib import Path
 
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
-_spec = importlib.util.spec_from_file_location(
-    "docgen", _ROOT / "scripts" / "docgen.py"
-)
-_docgen = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
-# Register BEFORE exec_module (canonical importlib recipe): @dataclass under
-# `from __future__ import annotations` resolves string annotations via
-# sys.modules[cls.__module__] — unregistered, dataclasses raises AttributeError.
-sys.modules["docgen"] = _docgen
-_spec.loader.exec_module(_docgen)  # type: ignore[union-attr]
-check_pages = _docgen.check_pages
-run_pipeline = _docgen.run_pipeline
+
+
+def _load_docgen():
+    """Load ``scripts/docgen.py`` by path, deferred until actually needed.
+
+    Importing THIS module must stay side-effect-free of docgen: docgen
+    imports PyYAML (a venv-only dependency) at module level, and this
+    script runs as a pre-commit `language: system` hook under a bare
+    python3 with no venv guaranteed. Loading docgen eagerly at module scope
+    would crash the load of this file before ``main()`` ever runs.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "docgen", _ROOT / "scripts" / "docgen.py"
+    )
+    docgen = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    # Register BEFORE exec_module (canonical importlib recipe): @dataclass under
+    # `from __future__ import annotations` resolves string annotations via
+    # sys.modules[cls.__module__] — unregistered, dataclasses raises AttributeError.
+    sys.modules["docgen"] = docgen
+    try:
+        spec.loader.exec_module(docgen)  # type: ignore[union-attr]
+    except ModuleNotFoundError as exc:
+        print(
+            f"ERROR: docgen dependency unavailable under this interpreter ({exc}); "
+            "run via `uv run` or install pyyaml.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc
+    return docgen
 
 
 def main() -> int:
     output_dir = _ROOT / "docs" / "reference"
+    docgen = _load_docgen()
 
     try:
-        pages = run_pipeline(_ROOT, output_dir)
+        pages = docgen.run_pipeline(_ROOT, output_dir)
     except Exception as e:
         print(f"ERROR: docgen pipeline failed: {e}", file=sys.stderr)
         return 1
 
-    stale = check_pages(pages, output_dir)
+    stale = docgen.check_pages(pages, output_dir)
     if not stale:
         print("✓ docs/reference/ is up to date")
         return 0

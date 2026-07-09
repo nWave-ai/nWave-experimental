@@ -27,8 +27,6 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
-
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -64,8 +62,28 @@ class ValidationResult:
 # ---------------------------------------------------------------------------
 
 
+def _load_yaml():
+    """Lazily import PyYAML.
+
+    This script runs as a pre-commit `language: system` hook under a bare
+    python3 with no venv — PyYAML is a venv-only dependency and must not be
+    imported at module scope, or the hook crashes before it does any work.
+    """
+    try:
+        import yaml
+    except ModuleNotFoundError as exc:
+        print(
+            "ERROR: PyYAML unavailable under this interpreter; "
+            "run via `uv run` or install pyyaml.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
+    return yaml
+
+
 def parse_frontmatter(filepath: Path) -> tuple[dict | None, str]:
     """Extract YAML frontmatter and body from a markdown file."""
+    yaml = _load_yaml()
     content = filepath.read_text(encoding="utf-8")
     if not content.startswith("---\n"):
         return None, content

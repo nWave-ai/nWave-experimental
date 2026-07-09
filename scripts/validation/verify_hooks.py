@@ -56,11 +56,29 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
-import yaml
-
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+
+def _load_yaml():
+    """Lazily import PyYAML.
+
+    This script runs as a pre-commit `language: system` hook under a bare
+    python3 with no venv — PyYAML is a venv-only dependency and must not be
+    imported at module scope, or the hook crashes before it does any work.
+    """
+    try:
+        import yaml
+    except ModuleNotFoundError as exc:
+        print(
+            "ERROR: PyYAML unavailable under this interpreter; "
+            "run via `uv run` or install pyyaml.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
+    return yaml
+
 
 #: Marker pre-commit writes into every generated hook file. Its presence is
 #: how we distinguish a pre-commit-managed hook from a foreign script.
@@ -217,6 +235,7 @@ def read_required_hook_types(config_path: Path) -> list[str]:
             string or int). Both are environment/config errors, not "no
             problems found".
     """
+    yaml = _load_yaml()
     try:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
