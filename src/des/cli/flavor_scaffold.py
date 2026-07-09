@@ -16,11 +16,13 @@ fields (``nWave/flavors/_schema.yaml`` ``required:``) -- a superset of the
 gate's six-field ``_REQUIRED_FIELDS`` -- so the scaffold passes BOTH the
 mode-registry-completeness gate AND the schema. Each field is declared
 EXACTLY ONCE. ``default`` is always ``false`` -- the scaffold never mints a
-second registry default (the exactly-one-default invariant). Placeholder
-values for the operator-specific parts (``selection``, ``skill_load_set``,
-``descriptor``, ``deliver_phase_shape``, ``lifecycle_events``) are
-minimal-but-structurally-valid so only the operator's own resolution of the
-TODO markers remains.
+second registry default (the exactly-one-default invariant). Values for the
+operator-specific parts (``selection``, ``skill_load_set``, ``descriptor``,
+``deliver_phase_shape``, ``lifecycle_events``) are valid-by-default (a real
+phase shape, a generic descriptor/description) with "Customize:" comments
+guiding the operator to refine them -- no unresolved placeholder token is
+ever emitted (GDP-5: the tool produces a valid artifact, not one requiring
+hand-repair).
 
 Stdlib-only: the YAML is emitted as hand-formatted TEXT matching the shape
 ``des._internal.subset_parser`` reads back (the DES bundle hygiene contract
@@ -74,26 +76,29 @@ def _render_flavor_yaml(flavor_id: str, display_name: str) -> str:
         f"flavor_id: {flavor_id}\n"
         f"display_name: {display_name}\n"
         "description: |\n"
-        f"  TODO: describe the {flavor_id} flavor's intent and trade-offs\n"
-        "  (what it composes, how it differs from existing flavors).\n"
+        f"  A custom workflow flavor scaffolded by des flavor-scaffold.\n"
+        f"  Customize this description for the {flavor_id} flavor's intent\n"
+        "  and trade-offs (what it composes, how it differs from existing\n"
+        "  flavors).\n"
         "default: false\n"
         "selection: deterministic-config\n"
         "skill_load_set:\n"
         f"  {_PLACEHOLDER_AGENT}:\n"
         "    conditional: []\n"
-        "    # TODO: list skills conditionally loaded when this flavor is\n"
-        "    # active, or leave declared-empty if none.\n"
+        "    # Customize: list skills conditionally loaded when this flavor\n"
+        "    # is active, or leave declared-empty if none.\n"
         "descriptor: >\n"
-        f"  TODO: one-line human-readable descriptor for the {flavor_id}\n"
-        "  flavor (projected into GENERATED:mode-descriptor regions).\n"
-        'deliver_phase_shape: "TODO_PHASE -> TODO_PHASE"\n'
+        f"  A custom workflow flavor. Customize this descriptor for the\n"
+        f"  {flavor_id} flavor (projected into GENERATED:mode-descriptor\n"
+        "  regions).\n"
+        'deliver_phase_shape: "RED -> GREEN -> COMMIT"\n'
         "lifecycle_events:\n"
         "  session.init:\n"
         f"    - gate_id: {_PLACEHOLDER_GATE_ID}\n"
         "      on_failure: log\n"
-        "  # TODO: add dispatch.pre / subagent.stop / commit.pre rows as\n"
-        "  # this flavor's gate composition requires (see atdd_pure.yaml /\n"
-        "  # classic.yaml for worked examples).\n"
+        "  # Customize: add dispatch.pre / subagent.stop / commit.pre rows\n"
+        "  # as this flavor's gate composition requires (see atdd_pure.yaml\n"
+        "  # / classic.yaml for worked examples).\n"
     )
 
 

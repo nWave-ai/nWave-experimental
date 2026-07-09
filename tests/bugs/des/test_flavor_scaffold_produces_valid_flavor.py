@@ -167,3 +167,72 @@ def test_flavor_scaffold_never_mints_a_second_default_true(
         "the flavor-scaffold output must never mint a second `default: true` "
         f"(exactly-one-default invariant): {combined!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression (FLAG-1, Vera examine 2026-07-09): the scaffold's PLACEHOLDER
+# fields (`descriptor`, `deliver_phase_shape`, `lifecycle_events` comments)
+# are unresolved TODO markers, not structurally-valid values. GDP-5 requires
+# the SYSTEM to produce a valid artifact, not one requiring hand-repair --
+# `deliver_phase_shape: "TODO_PHASE -> TODO_PHASE"` is not a real phase
+# shape (compare `nWave/flavors/classic.yaml`'s `"RED -> GREEN -> COMMIT"`),
+# so a maintainer cannot use the produced flavor as-is. Charter:
+# `docs/product/expectations/fix-flavor-scaffold-producing-tool/
+# des-flavor-scaffold-produces-a-valid-flavor.md`.
+# ---------------------------------------------------------------------------
+
+_PHASE_SHAPE_PATTERN = re.compile(r"^\w+(?: -> \w+)+$")
+
+
+@pytest.mark.negative_at
+def test_flavor_scaffold_output_does_not_contain_unresolved_placeholder(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """NEGATIVE AT (the FLAG-1 defect): the emitted YAML must carry NO
+    unresolved `TODO` placeholder text anywhere -- not in a field value, not
+    in a comment. Today the scaffold emits four: the `description` block
+    scalar, the `skill_load_set` comment, the `descriptor` folded scalar, and
+    the `lifecycle_events` comment (`src/des/cli/flavor_scaffold.py`
+    `_render_flavor_yaml`) -- so this fails with a genuine `AssertionError`
+    naming the leaked placeholder text, not a collection/import error.
+    """
+    argv = ["flavor-scaffold", "--flavor-id", "demo_flavor", "--stdout"]
+    _exit_code, stdout, stderr = _invoke_dispatcher(argv, capsys)
+
+    assert "todo" not in stdout.lower(), (
+        "expected the flavor-scaffold output to carry no unresolved `TODO` "
+        "placeholder (GDP-5: the system must produce a valid artifact, not "
+        f"one requiring hand-repair), found: {stdout!r}; stderr={stderr!r}"
+    )
+
+
+def test_flavor_scaffold_emits_a_real_deliver_phase_shape(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """POSITIVE AT (active-RED today): the emitted `deliver_phase_shape`
+    must be a REAL phase shape -- `<PHASE> -> <PHASE>[ -> <PHASE>]` with
+    every token a real phase name, never the literal placeholder
+    `TODO_PHASE` (`nWave/flavors/classic.yaml`'s `"RED -> GREEN -> COMMIT"`
+    and `atdd_pure.yaml`'s `"A_GREEN -> EXAMINE -> COMMIT"` are the real
+    shapes this mirrors). Today the scaffold hardcodes
+    `"TODO_PHASE -> TODO_PHASE"` (`_render_flavor_yaml`), so this fails with
+    a genuine `AssertionError`, not a parse error.
+    """
+    argv = ["flavor-scaffold", "--flavor-id", "demo_flavor", "--stdout"]
+    exit_code, stdout, stderr = _invoke_dispatcher(argv, capsys)
+    assert exit_code == 0, (
+        f"expected flavor-scaffold to succeed, got exit_code={exit_code} "
+        f"stdout={stdout!r} stderr={stderr!r}"
+    )
+
+    parsed = subset_parser.load(stdout)
+    phase_shape = parsed.get("deliver_phase_shape")
+    assert isinstance(phase_shape, str) and "TODO_PHASE" not in phase_shape, (
+        "expected `deliver_phase_shape` to never contain the literal "
+        f"placeholder `TODO_PHASE`, got {phase_shape!r}"
+    )
+    assert phase_shape is not None and _PHASE_SHAPE_PATTERN.fullmatch(phase_shape), (
+        "expected `deliver_phase_shape` to match the real phase-shape "
+        r"pattern `\w+( -> \w+)+` (e.g. `RED -> GREEN -> COMMIT`), got "
+        f"{phase_shape!r}"
+    )
