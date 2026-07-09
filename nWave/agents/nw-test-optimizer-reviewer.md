@@ -2,7 +2,7 @@
 name: nw-test-optimizer-reviewer
 description: Use to validate test-optimizer outputs - hard-blocks if coverage dropped, production code touched, or anti-patterns went unmarked. Runs on Haiku for cost efficiency. Read-only.
 model: haiku
-tools: Read, Glob, Grep, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Glob, Grep, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 maxTurns: 25
 skills:
   - nw-test-optimization
@@ -136,5 +136,6 @@ Optimizer report shows commits applied before any "approval received" marker. AP
 
 - Reviews only. Does not write code, tests, or fix optimizations.
 - Tools restricted to read-only plus Bash for `git diff` and coverage commands.
+- Bash is otherwise READ-ONLY for code-fact resolution -- grep/rg/find/cat/git show/git log/git diff only, never mutating (no git add/commit/checkout/push, no installs). Powers the `nw-code-analysis-port` grep fallback tier when Tsunami is unavailable.
 - Max 2 review iterations per scope.
 - Returns structured YAML, not prose paragraphs.

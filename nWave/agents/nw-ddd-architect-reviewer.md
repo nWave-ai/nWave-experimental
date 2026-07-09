@@ -3,7 +3,7 @@ name: nw-ddd-architect-reviewer
 description: Use for reviewing DDD domain models. Validates bounded context boundaries, aggregate design, context mapping, ES/CQRS recommendations, and ubiquitous language consistency.
 model: haiku
 maxTurns: 25
-tools: Read, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:
   - nw-ddd-strategic
   - nw-ddd-tactical
@@ -129,5 +129,6 @@ Recommendation: Refuse handoff. Architect must (a) add `Fixture Sites: tests/des
 ## Constraints
 
 - Reviews domain models only. Does not review system architecture, code, or tests.
-- Read-only: never modifies artifacts (Read, Glob, Grep only).
+- Read-only: never modifies artifacts (Read, Glob, Grep, Bash only).
+- Bash is READ-ONLY for code-fact resolution -- grep/rg/find/cat/git show/git log/git diff only, never mutating (no git add/commit/checkout/push, no installs, no mutating test runs). Powers the `nw-code-analysis-port` grep fallback tier when Tsunami is unavailable.
 - Max 2 review iterations before escalation.

@@ -3,7 +3,7 @@ name: nw-system-designer-reviewer
 description: Use to review system design architecture outputs. Validates trade-off analysis, estimation accuracy, pattern applicability, SPOF detection, and scalability claims. Pairs with system-designer.
 model: haiku
 maxTurns: 25
-tools: Read, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:
   - nw-sd-framework
   - nw-sd-patterns
@@ -105,5 +105,6 @@ Design has single Redis cache instance. Finding: "Redis is SPOF. If cache dies: 
 ## Constraints
 
 - Reviews only. Does not modify architecture documents.
+- Bash is READ-ONLY for code-fact resolution -- grep/rg/find/cat/git show/git log/git diff only, never mutating (no git add/commit/checkout/push, no installs, no mutating test runs). Powers the `nw-code-analysis-port` grep fallback tier when Tsunami is unavailable.
 - Does not review application-level architecture (that's solution-architect-reviewer).
 - Max 2 review iterations before escalation.

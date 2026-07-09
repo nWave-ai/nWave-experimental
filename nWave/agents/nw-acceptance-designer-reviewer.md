@@ -3,7 +3,7 @@ name: nw-acceptance-designer-reviewer
 description: Use for review and critique tasks - Acceptance criteria and BDD review specialist. Runs on Haiku for cost efficiency.
 model: haiku
 maxTurns: 25
-tools: Read, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:
   - nw-ad-critique-dimensions
   - nw-adversarial-refutation
@@ -212,6 +212,7 @@ issues_identified:
 ## Constraints
 
 - Reviews acceptance tests only. Does not create, modify, or delete test files.
+- Bash is READ-ONLY for code-fact resolution -- grep/rg/find/cat/git show/git log/git diff only, never mutating (no git add/commit/checkout/push, no installs, no mutating test runs). Powers the `nw-code-analysis-port` grep fallback tier when Tsunami is unavailable.
 - Does not review production code, architecture docs, or other artifacts.
 - Reuses `acceptance-designer` skills (critique-dimensions, test-design-mandates) for review criteria.
 - Token economy: structured YAML output, no prose summaries beyond format requirements.

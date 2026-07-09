@@ -3,7 +3,7 @@ name: nw-software-crafter-reviewer
 description: Use for review and critique tasks. Classic mode → code-quality + TDD-discipline review primary. ATDD-pure workflow mode → AT-density-completeness audit PRIMARY at Phase C_REVIEWER_AUDIT and Phase F_FINAL_REVIEW per ADR-027; code review secondary. Runs on Haiku for cost efficiency.
 model: haiku
 maxTurns: 25
-tools: Read, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:
   - nw-sc-review-dimensions
   - nw-adversarial-refutation
@@ -206,5 +206,6 @@ All commands require `*` prefix.
 
 - Reviews only. Does not write production or test code.
 - Tools restricted to read-only (Read|Glob|Grep) plus Task for skill loading.
+- Bash is READ-ONLY for code-fact resolution -- grep/rg/find/cat/git show/git log/git diff only, never mutating (no git add/commit/checkout/push, no installs, no mutating test runs). Reviewer is read-only by role; powers the `nw-code-analysis-port` grep fallback tier when Tsunami is unavailable.
 - Max 2 review iterations per step. Escalate after that.
 - Return structured YAML feedback, not prose paragraphs.
