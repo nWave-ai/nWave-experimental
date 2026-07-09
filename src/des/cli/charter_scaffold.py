@@ -72,6 +72,11 @@ VERDICT_MISSING_CHARTER_TEMPLATE = "missing-charter-template"
 #: the two verdicts above.
 VERDICT_MISSING_OBSERVABLE = "missing-observable"
 
+#: Degrade-LOUD token (slice-04) for `--seed-mode brownfield-discovery`
+#: invoked with a missing or blank `--area` -- mirrors the naming convention
+#: of the verdicts above.
+VERDICT_MISSING_AREA = "missing-area"
+
 _TEMPLATE_RELATIVE_PATH = Path("nWave/templates/expectation-charter.md")
 _TEMPLATE_HEADING = "## Template"
 
@@ -252,13 +257,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--seed-mode",
-        choices=("slice-plan", "bug-observable"),
+        choices=("slice-plan", "bug-observable", "brownfield-discovery"),
         default="slice-plan",
         help=(
             "'slice-plan' (default) scaffolds every observable Slice Plan row "
             "from the feature-delta -- byte-identical to the pre-slice-03 "
             "behaviour. 'bug-observable' scaffolds ONE charter straight from "
-            "--observable text, no Slice Plan read."
+            "--observable text, no Slice Plan read. 'brownfield-discovery' "
+            "scaffolds ONE discovery-framed charter for an existing, "
+            "undocumented --area, no Slice Plan read."
         ),
     )
     parser.add_argument(
@@ -268,6 +275,17 @@ def _build_parser() -> argparse.ArgumentParser:
             "Required (and must be non-blank) for --seed-mode bug-observable: "
             "the bug's observable behaviour, user-side, pre-filled into the "
             "scaffold's Intent section verbatim."
+        ),
+    )
+    parser.add_argument(
+        "--area",
+        default=None,
+        help=(
+            "Required (and must be non-blank) for --seed-mode "
+            "brownfield-discovery: the existing, undocumented system area to "
+            "retrofit a charter onto -- named in a discovery-framed Intent "
+            "that invites exploring the running system, not a finished "
+            "description of the area's behaviour."
         ),
     )
     return parser
@@ -319,6 +337,74 @@ def _run_bug_observable(
     template_skeleton = _extract_template_skeleton(template_content)
 
     row = {"Slice": "bug-observable", "Value statement": observable}
+    filename, was_created = _scaffold_slice(
+        repo_root, feature_id, row, template_skeleton
+    )
+    created = [filename] if was_created else []
+    skipped = [] if was_created else [filename]
+
+    print(
+        json.dumps(
+            {
+                "feature_id": feature_id,
+                "created": created,
+                "skipped": skipped,
+                "observable_slices": 1,
+                "verdict": VERDICT_ACCEPTED,
+                "detail": f"{len(created)} scaffold(s) created, {len(skipped)} skipped",
+            }
+        )
+    )
+    return 0
+
+
+def _discovery_intent(area: str) -> str:
+    """The discovery-framed Intent text for `--seed-mode
+    brownfield-discovery`. Pure.
+
+    INVERTS the normal derivation: instead of lifting a Value statement
+    verbatim, it invites the examiner to DISCOVER and document what `area`
+    is supposed to do for the user by exploring the running system -- an
+    invitation, never a finished description of the area's behaviour.
+    """
+    return (
+        f"Discover and document what {area} is supposed to do for the "
+        "user, by exploring the running system."
+    )
+
+
+def _run_brownfield_discovery(
+    repo_root: Path, feature_id: str, area: str | None
+) -> int:
+    """`--seed-mode brownfield-discovery`: no Slice Plan read -- ONE charter
+    scaffold with a discovery-framed Intent naming `--area` (Intent inverts
+    the normal derivation: it invites exploring the running system rather
+    than lifting a Value statement verbatim). Degrades LOUD on a
+    missing/blank `--area` (the slice-01/03 blank-input lesson applies here
+    too: never a `.md` garbage file)."""
+    if area is None or not area.strip():
+        return _degrade(
+            feature_id,
+            VERDICT_MISSING_AREA,
+            "--area is required (and must be non-blank) for "
+            "--seed-mode brownfield-discovery",
+        )
+
+    template_path = repo_root / _TEMPLATE_RELATIVE_PATH
+    try:
+        template_content = template_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return _degrade(
+            feature_id,
+            VERDICT_MISSING_CHARTER_TEMPLATE,
+            f"cannot read charter template at {template_path}: {exc}",
+        )
+    template_skeleton = _extract_template_skeleton(template_content)
+
+    row = {
+        "Slice": "brownfield-discovery",
+        "Value statement": _discovery_intent(area),
+    }
     filename, was_created = _scaffold_slice(
         repo_root, feature_id, row, template_skeleton
     )
@@ -406,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.seed_mode == "bug-observable":
         return _run_bug_observable(repo_root, feature_id, args.observable)
+    if args.seed_mode == "brownfield-discovery":
+        return _run_brownfield_discovery(repo_root, feature_id, args.area)
 
     return _run_slice_plan(repo_root, feature_id)
 
