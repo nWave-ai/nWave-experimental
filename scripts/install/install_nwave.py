@@ -898,10 +898,12 @@ def show_title_panel(logger: Logger, dry_run: bool = False) -> None:
     logger.print_styled("")
 
 
-def show_installation_summary(logger: Logger) -> None:
+def show_installation_summary(logger: Logger, target_dir: Path | None = None) -> None:
     """Display installation summary panel at end of successful install."""
     logger.info("")
     logger.info(f"  🎉 nWave v{__version__} installed and healthy!")
+    if target_dir is not None:
+        logger.info(f"  📂 Installed to: {target_dir}")
     logger.info("")
     logger.info("  📖 Quick start")
     commands = [
@@ -1122,7 +1124,7 @@ def main():
             )
 
         installer.logger.info("")
-        show_installation_summary(installer.logger)
+        show_installation_summary(installer.logger, installer.claude_config_dir)
 
         return 0
     else:

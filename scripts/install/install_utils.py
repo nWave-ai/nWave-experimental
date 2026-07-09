@@ -104,6 +104,7 @@ class Logger:
                     style=style,
                     markup=False,
                     highlight=not style,
+                    soft_wrap=True,
                 )
             elif color and self._use_colors:
                 print(f"{color}{message}{self._NC}")
