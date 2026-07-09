@@ -161,6 +161,30 @@ def _build_parser() -> argparse.ArgumentParser:
             "author of the verified record (E1 runs once, one record)."
         ),
     )
+    parser.add_argument(
+        "--at-kind",
+        dest="at_kind",
+        default="gherkin",
+        choices=("gherkin", "pytest-regression"),
+        help=(
+            "The acceptance-test kind the slice's E2 leg attests (default: "
+            "gherkin, byte-identical for every existing caller). "
+            "'pytest-regression' (#13) replaces the feature-scoped contract "
+            "gate -- which cannot resolve a pytest-regression bugfix's "
+            "structure -- with a BEHAVIORAL attestation: it actually runs "
+            "--regression-test-file on the committed tree and uses its exit "
+            "code as the E2 verdict."
+        ),
+    )
+    parser.add_argument(
+        "--regression-test-file",
+        dest="regression_test_file",
+        default=None,
+        help=(
+            "Repo-relative path to the pytest regression file E2 runs "
+            "behaviorally (paired with --at-kind pytest-regression)."
+        ),
+    )
     return parser
 
 
@@ -305,6 +329,49 @@ def _run_contract_gate(repo: Path, feature_id: str, slice_id: str) -> int:
             feature_id,
             "--entering-slice",
             slice_id,
+            capture_output=True,
+            text=True,
+        )
+    except InterpreterUnavailable:
+        return _GATE_INDETERMINATE_EXIT_CODE
+    return completed.returncode
+
+
+def _run_regression_gate(repo: Path, regression_test_file: str) -> int:
+    """Run E2 BEHAVIORALLY for a pytest-regression slice (#13, Ale-ratified).
+
+    The feature-scoped contract gate cannot resolve a pytest-regression
+    bugfix's structure, so this path replaces it with an execution-observing
+    attestation: it actually RUNS the declared ``regression_test_file`` on
+    the committed tree (``-m pytest <file> -q`` via ``des_spawn`` -- the SAME
+    interpreter-resolution boundary ``_run_contract_gate`` uses, mirroring
+    ``verify_red_green.py``'s subprocess pattern) and uses ITS exit code as
+    the E2 verdict. Only an OBSERVED pass (exit 0) ever earns E2-clear.
+
+    Every interpreter spawn in ``src/des`` MUST route through
+    ``des.runtime.interpreter.python_for`` (the build-tier arch-test
+    ``test_no_inline_interpreter_spawn.py`` bans a raw ``sys.executable``) --
+    ``des_spawn("pytest", ...)`` composes that resolution BY CONSTRUCTION, so
+    this never trusts the running interpreter's name.
+
+    A declared file that is missing, or whose interpreter ``des_spawn``
+    itself cannot resolve (``InterpreterUnavailable``), is NEVER trusted by
+    presence alone -- it returns the SAME ``_GATE_INDETERMINATE_EXIT_CODE``
+    sentinel ``_run_contract_gate`` uses for its own degrade-LOUD path, so
+    the caller routes it through the existing ``SliceCommitIndeterminate``
+    machinery (never a fabricated ``SliceCommitVerified``, never a silent
+    pass).
+    """
+    test_path = repo / regression_test_file
+    if not test_path.is_file():
+        return _GATE_INDETERMINATE_EXIT_CODE
+    try:
+        completed = des_spawn(
+            "pytest",
+            "pytest",
+            str(test_path),
+            "-q",
+            cwd=repo,
             capture_output=True,
             text=True,
         )
@@ -533,7 +600,12 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
         )
         return 1
 
-    # E2 -- the feature-scoped contract gate, one run per listed slice.
+    # E2 -- one run per listed slice. Default (`gherkin`): the feature-scoped
+    # contract gate, unchanged. `--at-kind pytest-regression` (#13): a
+    # BEHAVIORAL attestation -- actually runs `--regression-test-file` on the
+    # committed tree in place of the contract gate, which cannot resolve a
+    # pytest-regression bugfix's structure.
+    is_pytest_regression = args.at_kind == "pytest-regression"
     for slice_id in slice_ids:
         if _is_at_exempt_lane(repo, feature_id, slice_id):
             # Mirrors the entry gate's `LaneAtExemptionAccepted` early-return
@@ -544,16 +616,78 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
             # short-circuit E2 to an honest clear instead of spawning the
             # vacuous feature-scoped contract-gate subprocess.
             continue
-        contract_code = _run_contract_gate(repo, feature_id, slice_id)
+        if is_pytest_regression:
+            if not args.regression_test_file:
+                _emit_with_human_surface(
+                    {
+                        "event": "SliceCommitRefused",
+                        "refused_half": "E2",
+                        "slice_ids": slice_ids,
+                        "commit": args.commit,
+                        "failed_slice": slice_id,
+                        "error": (
+                            "--at-kind pytest-regression requires "
+                            "--regression-test-file"
+                        ),
+                        "how": (
+                            "pass --regression-test-file <repo-relative-path> "
+                            "alongside --at-kind pytest-regression"
+                        ),
+                    }
+                )
+                return 1
+            contract_code = _run_regression_gate(repo, args.regression_test_file)
+        else:
+            contract_code = _run_contract_gate(repo, feature_id, slice_id)
         # DDD-2 degrade-LOUD: an INDETERMINATE gate (no usable interpreter on
-        # this machine) is NOT a refusal -- record the honest
+        # this machine, or -- pytest-regression -- a regression-test-file that
+        # could not be run) is NOT a refusal -- record the honest
         # SliceCommitIndeterminate (never a fabricated SliceCommitVerified) and
         # let the slice chain progress, distinct from both the verified mint and
-        # a genuine refusal. Reachable only on interpreter-absence; a
-        # runnable-but-failing gate returns its own non-zero code and refuses.
+        # a genuine refusal. A runnable-but-failing gate returns its own
+        # non-zero code and refuses.
         if contract_code == _GATE_INDETERMINATE_EXIT_CODE:
+            if is_pytest_regression:
+                return _record_indeterminate_outcome(
+                    repo,
+                    args,
+                    feature_id,
+                    slice_ids,
+                    reason="pytest_regression_file_unrunnable",
+                    diagnostic=(
+                        f"the declared --regression-test-file "
+                        f"{args.regression_test_file!r} could not be run on "
+                        "the committed tree (missing or uncollectible) -- "
+                        "recorded an honest SliceCommitIndeterminate "
+                        "(unverified here), never a fabricated pass"
+                    ),
+                )
             return _record_indeterminate_outcome(repo, args, feature_id, slice_ids)
         if contract_code != 0:
+            if is_pytest_regression:
+                _emit_with_human_surface(
+                    {
+                        "event": "SliceCommitRefused",
+                        "refused_half": "E2",
+                        "slice_ids": slice_ids,
+                        "commit": args.commit,
+                        "failed_slice": slice_id,
+                        "regression_test_file": args.regression_test_file,
+                        "contract_gate_exit_code": contract_code,
+                        "error": (
+                            f"slice {slice_id} failed the E2 behavioral "
+                            f"attestation -- {args.regression_test_file} did "
+                            f"not pass on the committed tree (exit "
+                            f"{contract_code})"
+                        ),
+                        "how": (
+                            f"run `pytest {args.regression_test_file} -q` "
+                            "locally, fix the regression, then re-commit via "
+                            "`des commit-slice`"
+                        ),
+                    }
+                )
+                return 1
             _emit_with_human_surface(
                 {
                     "event": "SliceCommitRefused",
@@ -625,28 +759,35 @@ def _record_indeterminate_outcome(
     args: argparse.Namespace,
     feature_id: str,
     slice_ids: list[str],
+    *,
+    reason: str = "contract_gate_interpreter_unavailable",
+    diagnostic: str = (
+        "the feature-scoped contract gate could not resolve a usable "
+        "interpreter on this machine -- recorded an honest "
+        "SliceCommitIndeterminate (unverified here), never a fabricated pass"
+    ),
 ) -> int:
     """Mint the honest INDETERMINATE outcome for the listed slices (DDD-2).
 
-    The E2 contract gate degraded LOUD INDETERMINATE (no usable interpreter on
-    this machine). The exit gate records one `SliceCommitIndeterminate` per slice
-    -- never a fabricated `SliceCommitVerified` (no-silent-pass) and never a bare
-    refusal that wedges the chain -- and emits the honest event so the operator
-    sees the gate could not verify here. Returns the dedicated INDETERMINATE exit
-    code (distinct from 0 verified, 1 refused, 2 malformed).
+    The E2 gate degraded LOUD INDETERMINATE -- either the feature-scoped
+    contract gate found no usable interpreter (the default `reason` /
+    `diagnostic`), or (#13) a `--at-kind pytest-regression` slice declared a
+    `--regression-test-file` that could not be run on the committed tree
+    (missing / uncollectible -- the caller passes an accurate `reason` /
+    `diagnostic` for that case). Either way the exit gate records one
+    `SliceCommitIndeterminate` per slice -- never a fabricated
+    `SliceCommitVerified` (no-silent-pass) and never a bare refusal that
+    wedges the chain -- and emits the honest event so the operator sees the
+    gate could not verify here. Returns the dedicated INDETERMINATE exit code
+    (distinct from 0 verified, 1 refused, 2 malformed).
     """
-    _append_slice_commit_indeterminate(repo, feature_id, slice_ids)
+    _append_slice_commit_indeterminate(repo, feature_id, slice_ids, reason)
     _emit_with_human_surface(
         {
             "event": "SliceCommitIndeterminate",
             "slice_ids": slice_ids,
             "commit": args.commit,
-            "error": (
-                "the feature-scoped contract gate could not resolve a usable "
-                "interpreter on this machine -- recorded an honest "
-                "SliceCommitIndeterminate (unverified here), never a fabricated "
-                "pass"
-            ),
+            "error": diagnostic,
         }
     )
     return _GATE_INDETERMINATE_EXIT_CODE
