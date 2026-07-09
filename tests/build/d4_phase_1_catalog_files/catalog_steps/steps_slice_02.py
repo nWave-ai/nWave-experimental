@@ -158,12 +158,14 @@ def when_enumerate_bound(per_gate_comp) -> None:
 # for verify-catalog-coherence, 1:1 with its catalog entry.
 # Count 55 -> 56 (2026-07-08, check-contract-shape-declarations slice-01):
 # per-gate file for check-contract-shape, 1:1 with its catalog entry.
+# Count 57 -> 58 (2026-07-09, record-review-verdict slice-01, #45): per-gate
+# file for the record-review-verdict recorder.
 # Count 56 -> 57 (2026-07-09, charter-scaffold slice-01): per-gate file for
 # charter-scaffold, 1:1 with its catalog entry.
-@then("exactly 57 per-gate files exist (one per catalog entry)")
+@then("exactly 58 per-gate files exist (one per catalog entry)")
 def then_per_gate_file_count(per_gate_comp) -> None:
-    assert per_gate_comp.file_count == 57, (
-        f"Found {per_gate_comp.file_count} per-gate files, expected 57"
+    assert per_gate_comp.file_count == 58, (
+        f"Found {per_gate_comp.file_count} per-gate files, expected 58"
     )
 
 

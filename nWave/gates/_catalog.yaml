@@ -363,6 +363,12 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
+  - gate_id: record-review-verdict
+    responsibility: "Ad-hoc reviewer verdict PRODUCER (#45): appends a ReviewVerdictRecorded line to the per-feature review ledger (.nwave/telemetry/review/{feature-id}.jsonl) carrying reviewer/slice/verdict/artifact. Sibling of record-examine-verdict for non-wave reviewers (nw-agent-builder-reviewer et al.) whose verdict otherwise lived only in the final message; the WS-6 recovery-fallback reads it to recover a decided verdict after a reviewer crash. Unknown verdict rejected (nothing written); unwritable ledger degrades LOUD."
+    module: des.cli.record_review_verdict
+    entry_function: main
+    language_neutral_contract: true
+
   # des-dispatch-ssot-renderer Fase-2 (the GENERATOR, system-pays principle
   # 2026-07-06): renders a gate-valid atdd_pure dispatch prompt from
   # nWave/dispatch/atdd_pure.yaml + vendors.yaml + LANE_PROFILES, so the

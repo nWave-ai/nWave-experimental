@@ -1,0 +1,66 @@
+# Gate-contract: record-review-verdict (#45 — ad-hoc reviewer verdict PRODUCER)
+#
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=record-review-verdict.
+
+gate_id: record-review-verdict
+responsibility: |
+  Record an ad-hoc reviewer verdict (ReviewVerdictRecorded) for a delivered
+  slice so a decided verdict survives a mid-flight reviewer death. Appends one
+  record to the per-feature review ledger
+  (.nwave/telemetry/review/{feature-id}.jsonl) carrying the reviewer identity,
+  the slice binding, the verdict (APPROVED|NEEDS_REVISION|REJECTED) and the
+  reviewed artifact. Sibling of record-examine-verdict for the reviewer path:
+  wave reviewers use record-at/discuss/design/devops-review, but ad-hoc
+  reviewers (nw-agent-builder-reviewer and other non-wave reviewers) had no
+  ledger — their verdict lived only in the final message, lost on a crash. The
+  WS-6 recovery-fallback (nw-execute §Recovery Fallback) reads this ledger to
+  recover a reviewer verdict the same way it recovers an examiner verdict. An
+  unknown verdict value is rejected (nothing written); an unwritable ledger
+  degrades LOUD (ReviewLedgerWriteFailed), never silent.
+module: des.cli.record_review_verdict
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "Feature identifier; resolves the per-feature review ledger."
+  - name: --slice-id
+    required: true
+    type: string
+    help: "The slice whose review outcome is being recorded (slice-NN)."
+  - name: --reviewer-agent-id
+    required: true
+    type: string
+    help: "Identity of the reviewer recording the verdict (e.g. nw-agent-builder-reviewer)."
+  - name: --verdict
+    required: true
+    type: choice
+    choices: [APPROVED, NEEDS_REVISION, REJECTED]
+    help: "The reviewer outcome. An unknown value is rejected and nothing is written."
+  - name: --artifact
+    required: true
+    type: string
+    help: "What was reviewed (free text)."
+  - name: --repo-root
+    required: false
+    type: path
+    help: "Repository root; defaults to the current working directory."
+
+log_events:
+  - ReviewVerdictRecorded
+
+failure_modes:
+  - error_class: ReviewLedgerWriteFailed
+    exit_code: 2
+    remediation: "The review ledger could not be written (unwritable path / permission): ensure .nwave/telemetry/review/ is writable under the repo root, or pass a valid --repo-root."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

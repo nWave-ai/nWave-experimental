@@ -345,6 +345,17 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # (Intent pre-filled from the Value statement verbatim), idempotent,
     # degrade-LOUD on a missing/malformed feature-delta or absent Slice Plan.
     _SubcommandRow("charter-scaffold", "des.cli.charter_scaffold", "main"),
+    # fix-record-review-verdict-ledger slice-01 (#45, WS-6): the general
+    # reviewer-verdict PRODUCER -- ad-hoc reviewers (nw-agent-builder-reviewer
+    # and other non-wave reviewers) had NO ledger, so a reviewer dying before
+    # its final message lost the verdict with no recovery path. Mirrors
+    # record-examine-verdict's ledger shape + at-review-verdict's reviewer/
+    # slice/verdict fields.
+    _SubcommandRow(
+        "record-review-verdict",
+        "des.cli.record_review_verdict",
+        "main",
+    ),
 )
 
 
