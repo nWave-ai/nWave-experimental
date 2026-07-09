@@ -28,7 +28,9 @@ forbids PyYAML in the bundled ``des`` module) -- never built via a YAML
 emitter library.
 
 Exit codes: 0 = scaffold emitted (stdout or file) | 1 = unwritable target
-path | 2 = invalid/empty ``--flavor-id`` (usage-shaped diagnostic).
+path | 2 = invalid/empty ``--flavor-id`` (usage-shaped diagnostic) | 3 =
+target flavor already exists and ``--force`` was not passed (refusal, the
+existing file is left byte-unchanged).
 """
 
 from __future__ import annotations
@@ -126,6 +128,15 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the scaffold to stdout instead of writing a file.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Overwrite an existing nWave/flavors/<id>.yaml. Without this "
+            "flag, scaffolding an existing --flavor-id refuses and leaves "
+            "the existing file byte-unchanged."
+        ),
+    )
     return parser
 
 
@@ -155,6 +166,18 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = args.repo if args.repo is not None else Path.cwd()
     target_dir = repo_root / "nWave" / "flavors"
     target_path = target_dir / f"{flavor_id}.yaml"
+
+    if target_path.exists() and not args.force:
+        sys.stderr.write(
+            f"flavor-scaffold: flavor {flavor_id!r} already exists at "
+            f"{target_path}.\n"
+            "Why: scaffolding would silently overwrite the existing flavor "
+            "and destroy its content.\n"
+            f"Fix: pass --force to overwrite {target_path}, or remove it "
+            "first if you intend to replace it.\n"
+        )
+        return 3
+
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
         target_path.write_text(yaml_text, encoding="utf-8")
