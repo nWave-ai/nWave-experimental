@@ -100,7 +100,7 @@ Default model: Haiku (overridden by `rigor.reviewer_model` when set).
 2. **Read rigor config** — Read `.nwave/des-config.json` key `rigor`. If absent, use standard defaults. Gate: rigor profile loaded or defaults applied.
 3. **Validate inputs** — Run all four validation checks below. Gate: zero validation failures.
 4. **Apply rigor overrides** — Check `review_enabled` (skip if false), determine model from `reviewer_model` (default: haiku, skip if "skip"). Gate: execution decision made.
-5. **Invoke reviewer** — Call Task tool with `subagent_type="{agent-name}-reviewer"`, resolved model, and prompt `"Review {artifact-type}: {absolute-artifact-path} [step_id={id}]"`. Reviewer handles reading artifact, applying domain expertise, generating structured critique, updating original artifact with review metadata. Gate: Task tool invoked.
+5. **Invoke reviewer** — Call Task tool with `subagent_type="{agent-name}-reviewer"`, resolved model, and prompt `"Review {artifact-type}: {absolute-artifact-path} [step_id={id}]"`. Reviewer handles reading artifact, applying domain expertise, generating structured critique, updating original artifact with review metadata. **Persist the verdict FIRST (penultimate step)**: the reviewer writes the verdict + metadata into the artifact file BEFORE composing any final human-facing prose/summary — the file-write is the durable record, so it must land before the reviewer's last narrative step, never after. Dying after the write still leaves the verdict recovered; making the write penultimate shrinks that loss-window to nearly nothing (mirrors the WS-6 recovery principle below, #45). Gate: Task tool invoked.
 
 ## Verdict Recording (WS-6 recovery, #45)
 
