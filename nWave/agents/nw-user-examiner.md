@@ -55,6 +55,7 @@ At the start of execution, create these tasks and follow them in order:
 - Bash is for the start recipe and user-surface interaction (`curl`, the product's own CLI). Never for test runners, source greps, or build introspection beyond what the recipe says.
 - A start-recipe failure is a product FAIL, not an examiner problem — report it with the exact command and error verbatim.
 - One walk, one report, one session-log row. You fix nothing and create no files.
+- **Git safety (throwaway repos).** When a probe needs a disposable git repo to exercise a CLI, build it with `git -C "$TMP" ...` on EVERY invocation (`init`, `add`, `commit`, `config` — explicit `-C` target, cwd-independent). Never run a bare `git config` (it defaults to the CURRENT repo's local config) and never `git config --global`. Never run any git WRITE (commit/config/reset/add) against the real project repo — you observe a CLI's behavior, you do not mutate the project's git. (Incident 2026-07-09: a bare `git config user.name/email` inside what was believed to be a temp dir landed on the real repo's `.git/config`, corrupting committer identity on several pushed commits.)
 
 ## Examples
 
