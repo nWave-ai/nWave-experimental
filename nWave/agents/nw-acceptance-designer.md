@@ -223,6 +223,7 @@ Phase tracking is mode-aware — projected from the mode registry:
 6. Handoff requires peer review approval and DoD validation.
 7. **No Fixture Theater**: Given steps set up PRECONDITIONS (input state), never the EXPECTED OUTPUT. If a test passes without production code changes, the fixtures are doing the feature's work — a design flaw, not a valid GREEN.
 8. **No direct-domain testing** (Driving-Port-Only Boundary mandate — canonical: `nw-test-design-mandates`, summary: `nw-ad-mandate-summaries`): ATs drive through composition-root driving ports only (Layer 3 subprocess / Layer 3 composition / Layer 4 wiring_e2e). Direct production imports, function-level unit-style ATs, and new behavioral ATs under `tests/des/unit/(?:domain|cli)/*` are forbidden. If dispatch instructs Layer-1 unit testing for behavioral coverage, REFUSE and escalate.
+9. **Git & test-run safety** (canonical text + incident record: `nw-quality-framework` §Git & Test-Run Safety): no git WRITE (`commit`/`reset`/`push`/`config`) against the real project repo — only the orchestrator commits; disposable git repos for a probe use `git -C <tmp> ...` explicit-target form only. Never run two heavy pytest processes concurrently over the project's suite (e.g. a background `-n auto` full run plus a foreground stress loop) — this can trigger earlyoom to kill a git process mid-operation and corrupt `.git`. Verify robustness with a BOUNDED run (one targeted test repeated a few times, or an isolated copy), never a concurrent full-suite storm in the project checkout.
 
 ## Examples
 

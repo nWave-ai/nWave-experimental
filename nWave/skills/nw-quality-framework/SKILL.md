@@ -107,6 +107,16 @@ git reset --hard HEAD^  # Maintain 100% green discipline
 
 For commit message formats, load the collaboration-and-handoffs skill.
 
+## Git & Test-Run Safety (real project repo)
+
+A work agent (crafter, acceptance-designer, reviewer, examiner, troubleshooter) verifies and implements — it MUST NOT mutate or destabilize the project's real git repo.
+
+1. **No git WRITE on the real repo.** No agent runs `git commit` / `git reset` / `git push` / `git branch -f` / `git checkout <branch>` / bare `git config` against the project repo. A disposable repo for a test/probe uses `git -C <tmp> ...` explicit-target form only on every invocation — never a bare `git config` (defaults to the CURRENT repo's local config) and never `git config --global`. Only the orchestrator commits.
+2. **No heavy CONCURRENT full-suite pytest in the real repo.** Do not run two parallel pytest processes over the project's suite (e.g. a background `-n auto` full run plus a foreground stress loop) — heavy parallel load can trigger earlyoom to kill a git process mid-operation and corrupt `.git` / reset the branch ref (`feedback_earlyoom_git_corruption_heavy_pytest_2026_06_02`). Verify robustness with BOUNDED runs — a single targeted test repeated a few times, or an isolated copy — never a concurrent full-suite storm in the project checkout.
+3. Verification runs needing many/parallel tests scope to a directory or a bounded set (`-p no:cacheprovider` on a narrow selection), not the whole suite twice at once.
+
+**Incidents (2026-07-09)**: (a) a bare `git config user.name/email` inside what was believed to be a temp dir landed on the real repo's `.git/config`, corrupting committer identity on several pushed commits (see `nw-user-examiner.md` Critical Rules). (b) an acceptance-designer's verification ran a background `-n auto` full-suite pytest concurrently with a foreground stress loop in the real repo; earlyoom killed a git process mid-operation, resetting the branch ref within ~1s of the orchestrator's commits (recovered from reflog + atomic push).
+
 ## Validation Checkpoints
 - **Pre-work**: all tests passing | code smell detection complete | execution plan created
 - **During work**: atomic transformation safety | 100% test pass rate | commit after each step | level sequence adherence

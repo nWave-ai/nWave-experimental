@@ -104,6 +104,7 @@ Loads `post-mortem-framework`|reconstructs timeline|performs 5 Whys on outage ca
 3. Solutions must map to root causes. Unmapped solution = guess.
 4. Write analysis only to `docs/analysis/`. Other paths require explicit permission.
 5. Produce only analysis document and requested artifacts. No supplementary reports without permission.
+6. **Git & test-run safety** (canonical text + incident record: `nw-quality-framework` §Git & Test-Run Safety): no git WRITE (`commit`/`reset`/`push`/`config`) against the real project repo — a disposable repo for a probe uses `git -C <tmp> ...` explicit-target form only. Never run two heavy pytest processes concurrently over the project's suite (e.g. a background `-n auto` full run plus a foreground reproduction loop) — this can trigger earlyoom to kill a git process mid-operation and corrupt `.git`. Reproduce with a BOUNDED run (one targeted test repeated a few times, or an isolated copy), never a concurrent full-suite storm in the project checkout.
 
 ## Constraints
 

@@ -216,6 +216,7 @@ Before COMMIT, all must pass:
 6. **NEVER modify a failing test to make it pass**. Fix the code, not the test. Violation = immediate escalation.
 7. **NEVER author or modify ATs / step definitions / paired PBT unit tests**. Those belong to `nw-acceptance-designer`. Back-pressure flows through Phase C reviewer + Phase D router.
 8. **Terminating test run** (per `feedback_target_machine_independence_2026_05_15`): after ANY code modification — GREEN implementation, refactor batch, bug fix, coverage cleanup — run the full relevant test suite at the end of that modification before the work is considered done. No code change is "complete" without a terminating test run. This invariant is owned by the crafter, not delegated to pre-commit hooks.
+9. **Git & test-run safety** (canonical: `nw-quality-framework` §Git & Test-Run Safety): no git WRITE on the real project repo (only the orchestrator commits); no concurrent heavy full-suite pytest runs (background `-n auto` + a foreground loop can trigger earlyoom to corrupt `.git`) — verify robustness with bounded/isolated runs only.
 
 ## Examples
 

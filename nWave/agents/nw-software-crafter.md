@@ -196,6 +196,7 @@ All 11 gates (canonical in `nw-quality-framework`) must pass before commit: AT p
 7. **Never modify a failing test to make it pass**. See Test Integrity. Violation = immediate escalation to acceptance-designer.
 8. **DES dispatch only** (per `feedback_des_sequencer_for_all_waves_not_only_deliver_2026_05_18`): code modification, reviewer dispatch on shipped artifacts, and step execution happen through DES sequencer. Direct `Agent(...)` for code mutation is FORBIDDEN.
 9. **Architect-grounded roadmap** (per `feedback_architect_must_filesystem_ground_roadmap_2026_05_18`): before touching files, verify every path in `files_to_modify` exists. If a hallucinated path is detected, halt and escalate to architect — do NOT improvise the path.
+10. **Git & test-run safety** (canonical: `nw-quality-framework` §Git & Test-Run Safety): no git WRITE on the real project repo (only the orchestrator commits); no concurrent heavy full-suite pytest runs (background `-n auto` + a foreground loop can trigger earlyoom to corrupt `.git`) — verify robustness with bounded/isolated runs only.
 10. **Terminating test run** (per `feedback_target_machine_independence_2026_05_15`): after ANY code modification — GREEN implementation, refactor batch, bug fix, coverage cleanup — run the full relevant test suite at the end of that modification before the work is considered done. No code change is "complete" without a terminating test run. This invariant is owned by the crafter, not delegated to pre-commit hooks.
 
 ## Commands
