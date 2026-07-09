@@ -309,6 +309,7 @@ def _undelivered_slice_plan_slices(project_dir: Path, feature_id: str) -> list[s
         return []
     slice_index = SLICE_PLAN_COLUMNS.index("Slice")
     prose_delivered = _prose_delivered_slices(project_dir, feature_id)
+    commit_verified_delivered = _slice_commit_verified_slices(project_dir, feature_id)
     undelivered: list[str] = []
     for row in rows[1:]:
         if _is_separator_row(row):
@@ -329,6 +330,16 @@ def _undelivered_slice_plan_slices(project_dir: Path, feature_id: str) -> list[s
         # adversarial swarm 2026-06-29 exposed (a prose slice was wrongly flagged
         # TRUNCATED, theater-rejecting an honestly-delivered prose slice).
         if slice_id in prose_delivered:
+            continue
+        # THIRD delivery-recognition form (feature-end-attests-pytest-regression):
+        # a slice carrying a `SliceCommitVerified` ledger record is DELIVERED,
+        # regardless of `at_kind` -- the spine emits it ONLY after the slice's
+        # E1+E2 commit gate passed (the regression test existed AND passed on the
+        # committed tree). Additive: gherkin + prose recognition above are
+        # unchanged. Recognizes a pytest-regression feature (no .feature file, no
+        # SliceProseDelivered) so it can reach FeatureEnd instead of being
+        # permanently TRUNCATED.
+        if slice_id in commit_verified_delivered:
             continue
         if not feature_files_for_slice(project_dir, slice_id, feature_id):
             undelivered.append(slice_id)
@@ -359,6 +370,40 @@ def _prose_delivered_slices(project_dir: Path, feature_id: str) -> frozenset[str
                 rec.get("event") == "SliceProseDelivered"
                 and rec.get("attested") is True
                 and isinstance(rec.get("slice_id"), str)
+            ):
+                delivered.add(rec["slice_id"])
+    except OSError:
+        return frozenset()
+    return frozenset(delivered)
+
+
+def _slice_commit_verified_slices(project_dir: Path, feature_id: str) -> frozenset[str]:
+    """Slice-ids carrying a `SliceCommitVerified` ledger record (ANY at_kind).
+
+    THIRD delivery-recognition form (feature-end-attests-pytest-regression):
+    `SliceCommitVerified` IS the un-gameable delivery attestation -- the spine
+    emits it ONLY after the slice's E1+E2 commit gate passed (the regression
+    test existed AND passed on the committed tree). Recognized regardless of
+    `at_kind` -- today's records carry no `at_kind` field at all (`args.at_kind`
+    is read for gate-selection but never persisted), so an at_kind-specific
+    filter would fail to recognize every already-committed record. Modelled on
+    `_prose_delivered_slices`'s raw-JSONL ledger scan. Returns the empty set
+    when no ledger exists.
+    """
+    ledger = project_dir / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
+    if not ledger.is_file():
+        return frozenset()
+    delivered: set[str] = set()
+    try:
+        for line in ledger.read_text(encoding="utf-8").splitlines():
+            if '"SliceCommitVerified"' not in line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if rec.get("event") == "SliceCommitVerified" and isinstance(
+                rec.get("slice_id"), str
             ):
                 delivered.add(rec["slice_id"])
     except OSError:
