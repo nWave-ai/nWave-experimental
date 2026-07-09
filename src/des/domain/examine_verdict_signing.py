@@ -59,14 +59,29 @@ def canonical_examine_json(record: dict[str, object]) -> bytes:
     return canonical_signed_json(record, EXAMINE_SIGNED_FIELDS)
 
 
+# The append-only Session-log heading nw-user-examiner writes to the SAME
+# charter after a verdict is recorded (its normal LOG + REPORT step). The seal
+# must exclude everything from this heading onward -- see ``charter_seal``.
+_SESSION_LOG_HEADING = "## Session log (append-only)"
+
+
 def charter_seal(charter_bytes: bytes) -> str:
-    """SHA-256 content-seal over a charter file's raw bytes.
+    """SHA-256 content-seal over a charter file's SUBSTANCE bytes.
 
     The tamper-evidence primitive: recomputing this over the charter's CURRENT
     bytes and comparing against a recorded seal is how the commit-time gate
     detects a charter that changed after examination (stale-seal, void).
+
+    Excludes the append-only ``## Session log`` section: nw-user-examiner
+    appends one row there per exam as its normal LOG + REPORT step, and that
+    append must not itself void the verdict it just recorded. Everything
+    BEFORE the first Session-log heading is substance (Intent/Preconditions/
+    Charter/Expected observations) and still seals -- a genuine edit there
+    must still change the seal.
     """
-    return hashlib.sha256(charter_bytes).hexdigest()
+    text = charter_bytes.decode("utf-8")
+    substance, _, _ = text.partition(_SESSION_LOG_HEADING)
+    return hashlib.sha256(substance.encode("utf-8")).hexdigest()
 
 
 def charter_seal_matches(charter_bytes: bytes, recorded_seal: str) -> bool:
