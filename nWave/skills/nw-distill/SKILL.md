@@ -120,6 +120,31 @@ Provenance: evolution-plan P3.1/P3.2 (the external eval's largest lost pool — 
 - **Coverage marker**: an AT covers `Rn` iff it carries `@pytest.mark.covers("Rn")`, a `# covers: Rn` body comment, `Rn` in the docstring, or a Gherkin `@covers-Rn` tag. Tag each scaffolded AT with the requirement row(s) it covers.
 - **At DISTILL gate-OUT**, the spec-coverage gate (`des verify-spec-coverage`) fires ADVISORY (`on_failure: warn` in `nWave/waves/distill.yaml`): every uncovered row is surfaced LOUD — the six mandatory categories (ui, e2e, nfr, security, validation, build) are called out explicitly when uncovered — but it does NOT veto a DISTILL that legitimately has no checklist yet (armed only when the checklist file exists; no checklist → advisory-skip). A requirement without an AT is a visible row, never a silent absence.
 
+## Charter Scaffold (DISTILL-open — arms the DELIVER EXAMINE gate, GDP-1/5/2)
+
+Provenance: WS-CHARTER fase-3 (`des charter-scaffold`, shipped) wired into DISTILL-open — GDP-2
+proactive-inline: the charter obligation is produced the moment the Slice Plan is known, not left
+for DELIVER-entry to reject.
+
+1. **Run the producing tool.** At DISTILL-open, once the Slice Plan is confirmed present
+   (Prior-Wave Reading), run `des charter-scaffold --feature-id {feature-id}`. It generates one
+   charter SCAFFOLD per OBSERVABLE Slice Plan row (Annotation not `@infrastructure`/`@prefactoring`)
+   at `docs/product/expectations/{feature-id}/{intent-name}.md`, Intent pre-filled from that row's
+   Value statement VERBATIM, template skeleton from `nWave/templates/expectation-charter.md`,
+   idempotent (never overwrites an existing charter). System-paid (GDP-5), fires early (GDP-1).
+2. **Fill each freshly-scaffolded charter from a FRESH PO.** For every filename in the tool's
+   `created` list, dispatch a FRESH `nw-product-owner` context — loading
+   `~/.claude/skills/nw-expectation-charter/SKILL.md` (SSOT: Disqualification Rule + how-to) — to
+   fill the scaffold's TODO sections (start-recipe, expected observations incl. ≥1 negative
+   observation, session-log) from the VALUE-side seed only (the pre-filled Intent). This dispatch
+   is INDEPENDENT of, and parallel to, the acceptance-designer authoring the ATs in this same wave
+   — both derive from the SAME Value statement, neither reads the other's output (two-independent-
+   derivations rule); the acceptance-designer never authors the charter.
+3. **Arming + skip.** A filled scaffold arms the DELIVER EXAMINE step + the commit-slice
+   examine-verdict gate for that slice. `@infrastructure`/`@prefactoring` rows are correctly
+   skipped by the tool (no scaffold → no charter → EXAMINE unarmed → reviewer audit) — by design,
+   not a gap.
+
 ## Induce, do not reinvent — the 3-source induction map (JOB-025)
 
 Once `nw-distill-prior-wave-reading` has consumed the design's code-design contract (the
