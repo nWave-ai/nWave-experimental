@@ -102,6 +102,10 @@ Default model: Haiku (overridden by `rigor.reviewer_model` when set).
 4. **Apply rigor overrides** — Check `review_enabled` (skip if false), determine model from `reviewer_model` (default: haiku, skip if "skip"). Gate: execution decision made.
 5. **Invoke reviewer** — Call Task tool with `subagent_type="{agent-name}-reviewer"`, resolved model, and prompt `"Review {artifact-type}: {absolute-artifact-path} [step_id={id}]"`. Reviewer handles reading artifact, applying domain expertise, generating structured critique, updating original artifact with review metadata. Gate: Task tool invoked.
 
+## Verdict Recording (WS-6 recovery, #45)
+
+The wave reviewers (PO/architect/platform/acceptance-designer) already self-record via their own recorder (`record-at/discuss/design/devops-review`) — unchanged. A dispatched reviewer that LACKS a wave-specific recorder (e.g. `nw-agent-builder-reviewer` and other ad-hoc reviewers) self-records its verdict via `des record-review-verdict --feature-id <id> --slice-id <s> --reviewer-agent-id <name> --verdict <APPROVED|NEEDS_REVISION|REJECTED> --artifact "<what was reviewed>"` before/with delivering its final message — tamper-evident self-attestation, mirroring the User-Examiner's `des record-examine-verdict`. If the reviewer dies before that call lands, the orchestrator recovers the verdict from `.nwave/telemetry/review/{feature-id}.jsonl` (`ReviewVerdictRecorded`) using the reviewer's verbatim `VERDICT:` line — see `nw-execute` §Recovery Fallback, the canonical locus for this discipline.
+
 ## Validation (before invoking)
 
 1. **Agent exists** — Strip `@`, check agent name against agent registry. Gate: agent found or return "Unknown agent: {name}. Check available agents with /nw-agents."
