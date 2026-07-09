@@ -29,6 +29,10 @@ import pytest
 FOO_ORIGINAL = "# nw-foo\n\nOriginal skill content for the repin walking skeleton.\n"
 FOO_EDITED = "# nw-foo\n\nIntentionally edited skill content -- triggers hash drift.\n"
 BAR_CONTENT = "# nw-bar\n\nStable skill content that never drifts in these scenarios.\n"
+BAR_ACCIDENTAL_DRIFT = (
+    "# nw-bar\n\nAccidental drift on nw-bar -- a bad merge, not an intentional "
+    "edit the maintainer meant to bless.\n"
+)
 
 
 def _load_module():
@@ -197,3 +201,115 @@ def test_default_check_never_rewrites_the_baseline(tmp_path, monkeypatch):
     assert after == before, (
         "the default (non --repin) check path must never rewrite the baseline"
     )
+
+
+@pytest.mark.negative_at
+def test_repin_without_apply_never_writes_the_baseline(tmp_path, monkeypatch, capsys):
+    """
+    CONTRACT_SHAPE: pure-function
+    Outcome anchor: docs/product/expectations/skill-hash-repin/
+                     repin-accepts-intentional-skill-edits.md (negative oracle:
+                     "re-pinning must never bless a different skill the
+                     maintainer didn't touch")
+
+    REGRESSION AT (Vera FAIL, 2026-07-08; backlog F-39/WS-CHARTER; Ale-ratified
+    fix direction 2026-07-09: preview-first + --apply). The maintainer
+    intentionally edits nw-foo but ALSO carries an accidental drift on nw-bar
+    (e.g. a bad merge, a parallel worktree) that they never meant to touch.
+    Driving the real CLI entry point (`main()`) through the module's own
+    `sys.argv`, bare `--repin` (no `--apply`) must be a DRY-RUN PREVIEW: it
+    names every drifted monitored skill so the maintainer can see nw-bar in
+    the blast radius and abort, and it makes ZERO writes to the baseline --
+    neither nw-foo's intended entry nor nw-bar's accidental one.
+
+    RED today: `main()` dispatches bare `--repin` straight to
+    `repin(compute_drift())` with no --apply gate, so it writes BOTH drifted
+    entries immediately -- silently blessing nw-bar's accidental drift.
+    """
+    module = _load_module()
+    _require_repin_functionality(module)
+
+    skills_dir, baseline_file, _foo_hash, _bar_hash = _seed_throwaway_tree(tmp_path)
+    monkeypatch.setattr(module, "SKILLS_DIR", skills_dir)
+    monkeypatch.setattr(module, "HASH_TEST_FILE", baseline_file)
+    before = baseline_file.read_text(encoding="utf-8")
+
+    _edit_skill(skills_dir / "nw-foo" / "SKILL.md", FOO_EDITED)
+    _edit_skill(skills_dir / "nw-bar" / "SKILL.md", BAR_ACCIDENTAL_DRIFT)
+
+    monkeypatch.setattr(module.sys, "argv", ["validate_skill_hashes.py", "--repin"])
+    exit_code = module.main()
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert baseline_file.read_text(encoding="utf-8") == before, (
+        "--repin without --apply must be a preview only -- it must NOT write "
+        "the baseline, even for a skill the maintainer genuinely meant to bless"
+    )
+    assert "nw-foo" in captured.out, (
+        "the preview must name nw-foo so the maintainer sees it would be blessed"
+    )
+    assert "nw-bar" in captured.out, (
+        "the preview must name nw-bar so the maintainer sees the accidental "
+        "drift BEFORE it gets silently blessed alongside nw-foo"
+    )
+
+
+def test_repin_with_apply_writes_the_baseline_for_every_drifted_skill(
+    tmp_path, monkeypatch
+):
+    """
+    CONTRACT_SHAPE: bounded-change
+    Outcome anchor: docs/product/expectations/skill-hash-repin/
+                     repin-accepts-intentional-skill-edits.md
+
+    Regression AT companion (positive control): the pre-existing blanket-repin
+    CAPABILITY must survive the preview-first fix -- `--repin --apply` still
+    writes the baseline for every drifted monitored skill in one command,
+    exactly as before, just explicitly gated behind an operator decision.
+    """
+    module = _load_module()
+    _require_repin_functionality(module)
+
+    skills_dir, baseline_file, foo_hash, _bar_hash = _seed_throwaway_tree(tmp_path)
+    monkeypatch.setattr(module, "SKILLS_DIR", skills_dir)
+    monkeypatch.setattr(module, "HASH_TEST_FILE", baseline_file)
+
+    new_foo_hash = _edit_skill(skills_dir / "nw-foo" / "SKILL.md", FOO_EDITED)
+
+    monkeypatch.setattr(
+        module.sys, "argv", ["validate_skill_hashes.py", "--repin", "--apply"]
+    )
+    exit_code = module.main()
+
+    assert exit_code == 0
+    rewritten = baseline_file.read_text(encoding="utf-8")
+    assert f'"nw-foo": "{new_foo_hash}"' in rewritten
+    assert foo_hash not in rewritten
+    assert module.compute_drift() == []
+
+
+def test_repin_preview_on_clean_tree_is_a_no_op(tmp_path, monkeypatch):
+    """
+    CONTRACT_SHAPE: pure-function
+    Outcome anchor: docs/product/expectations/skill-hash-repin/
+                     repin-accepts-intentional-skill-edits.md
+
+    Regression AT companion (control): with no drift at all, the preview-first
+    default behaves exactly like the pre-fix no-op case -- exit 0, baseline
+    byte-unchanged. Preview-first must not introduce spurious noise or writes
+    on a clean tree.
+    """
+    module = _load_module()
+    _require_repin_functionality(module)
+
+    skills_dir, baseline_file, _foo_hash, _bar_hash = _seed_throwaway_tree(tmp_path)
+    monkeypatch.setattr(module, "SKILLS_DIR", skills_dir)
+    monkeypatch.setattr(module, "HASH_TEST_FILE", baseline_file)
+    before = baseline_file.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(module.sys, "argv", ["validate_skill_hashes.py", "--repin"])
+    exit_code = module.main()
+
+    assert exit_code == 0
+    assert baseline_file.read_text(encoding="utf-8") == before

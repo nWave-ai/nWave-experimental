@@ -120,9 +120,32 @@ def repin(drift: list[tuple[str, str, str]]) -> int:
     return 0
 
 
+def preview_repin(drift: list[tuple[str, str, str]]) -> int:
+    """Dry-run preview for `--repin` without `--apply`: never writes the baseline.
+
+    Names every drifted monitored skill (old -> new hash) so the maintainer
+    can see the full blast radius -- including a skill they never meant to
+    touch -- before choosing to bless it.
+    """
+    if not drift:
+        print(f"{GREEN}No hash drift detected -- nothing to re-pin.{NC}")
+        return 0
+
+    print(f"{YELLOW}Preview: {len(drift)} skill(s) would be re-pinned:{NC}")
+    for name, old, new in drift:
+        print(f"  {name}: {old} -> {new}")
+    print()
+    print("This is a preview. Re-run with --repin --apply to write the baseline.")
+    return 0
+
+
 def main() -> int:
-    if "--repin" in sys.argv[1:]:
-        return repin(compute_drift())
+    args = sys.argv[1:]
+    if "--repin" in args:
+        drift = compute_drift()
+        if "--apply" in args or "--yes" in args:
+            return repin(drift)
+        return preview_repin(drift)
 
     staged = get_staged_skill_files()
     if not staged:
