@@ -86,6 +86,13 @@ now reads from the wired config", gets the charter (the observable behavior fina
    fresh venv install...). Names the surface only. Gate: never pre-computes an observation,
    never hands over a purpose-built harness with verdict lines — the examiner derives her own
    probes from the recipe.
+   Pins the TARGET PROJECT's language-specific execution surface explicitly (e.g. "run `cargo
+   test` / the Rust binary in <dir>", "run `des <subcommand>` via the Python CLI", "run `npm
+   test` / the vitest runner") — never leaves the runtime/language for the examiner to assume.
+   Gate: the examiner has zero latitude on which language/runtime to use, all latitude on what
+   to observe; a language-agnostic recipe lets her default-guess (bias toward Python/pytest) and
+   examine the WRONG runtime — a false-FAIL on a correct product (observed cross-instance on a
+   Rust repo: pytest-style checks run against a cargo project).
 4. **Charter body = what to EXPLORE, not a click-script** — an outcome to observe, never a
    keystroke/command sequence. Gate: independence survives re-execution; a different examiner
    (or a swarm) walking the same charter produces comparable but not identical logs —
@@ -136,12 +143,14 @@ generator turning the expectations corpus into a manual — not built yet.)
 3. - [ ] Path + intent name are from the user's side, kebab-case, no implementation terms.
 4. - [ ] Preconditions name a real surface, contain zero pre-computed observations or verdict
    lines.
-5. - [ ] Charter body describes outcomes to explore, contains zero keystroke/command scripts.
-6. - [ ] Oracle has ≥1 positive AND ≥1 negative observation.
-7. - [ ] Session log is append-only.
-8. - [ ] `@infrastructure`/`@prefactoring` slices carry NO charter; the first observable-value
+5. - [ ] Preconditions pin the target project's language-specific execution surface
+   (cargo/pytest/npm/...), never leaving the runtime for the examiner to assume.
+6. - [ ] Charter body describes outcomes to explore, contains zero keystroke/command scripts.
+7. - [ ] Oracle has ≥1 positive AND ≥1 negative observation.
+8. - [ ] Session log is append-only.
+9. - [ ] `@infrastructure`/`@prefactoring` slices carry NO charter; the first observable-value
    slice does.
-9. - [ ] Charter path's `{feature-id}` matches what the DELIVER EXAMINE gate / commit-slice
+10. - [ ] Charter path's `{feature-id}` matches what the DELIVER EXAMINE gate / commit-slice
    gate expects (arming confirmed).
 
 ## Reasoning Mandate (Caveman)
