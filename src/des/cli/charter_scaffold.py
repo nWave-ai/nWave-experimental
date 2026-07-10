@@ -278,6 +278,29 @@ def _scaffold_slice(
     return filename, True
 
 
+#: Example-invocations epilog (slice-01 of charter-scaffold-help-example,
+#: #54) -- spells out the 1-vs-N charter cardinality per `--seed-mode` that
+#: the prose-only help text left implicit. `RawDescriptionHelpFormatter`
+#: keeps this block unwrapped; the pre-existing description/--seed-mode help
+#: text is untouched (additive only).
+_EXAMPLES_EPILOG = """\
+Examples:
+  # --seed-mode slice-plan (default): scaffolds one-per-row -- N charters,
+  # one per OBSERVABLE Slice Plan row in the feature-delta.
+  des charter-scaffold --feature-id my-feature --seed-mode slice-plan
+
+  # --seed-mode bug-observable: scaffolds exactly one charter, straight
+  # from --observable text.
+  des charter-scaffold --feature-id my-feature --seed-mode bug-observable \\
+      --observable "the button does not respond to clicks"
+
+  # --seed-mode brownfield-discovery: scaffolds exactly one discovery-framed
+  # charter for an existing, undocumented --area.
+  des charter-scaffold --feature-id my-feature --seed-mode brownfield-discovery \\
+      --area "the legacy export pipeline"
+"""
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="charter-scaffold",
@@ -287,6 +310,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "statement verbatim, idempotent, degrade-LOUD on a missing or "
             "malformed feature-delta."
         ),
+        epilog=_EXAMPLES_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--feature-id", required=True, help="The feature id.")
     parser.add_argument(
