@@ -65,6 +65,8 @@ from pathlib import Path
 
 from des.adapters.driven.git.git_subprocess import git_text as _git
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.adapters.driven.runner.runner_json import read_runner_json
+from des.adapters.driven.runner.runner_registry import seed_runner_registry
 from des.application.slice_at_completeness import (
     feature_files_for_slice,
     files_in_commit,
@@ -79,6 +81,12 @@ from des.domain.slice_id_trailer import (
     extract_slice_id,
     extract_slice_ids,
 )
+from des.ports.test_runner_port import (
+    RunnerAdapter,
+    RunnerAdapterUnavailable,
+    RunnerResolutionContext,
+)
+from des.ports.test_runner_port import resolve as resolve_runner
 from des.runtime.interpreter import InterpreterUnavailable, des_spawn
 
 
@@ -90,6 +98,107 @@ from des.runtime.interpreter import InterpreterUnavailable, des_spawn
 # exit gate mints an honest ``SliceCommitIndeterminate``, never a fabricated
 # ``SliceCommitVerified`` and never a bare refusal.
 _GATE_INDETERMINATE_EXIT_CODE = 3
+
+
+# The regression-collection leg's runner-aware whole-tree run convention, keyed
+# by the resolved runner name (verify-slice-commit-runner-aware-collection,
+# slice-01, sister of Bug B pt.2). A committed feature-dir ``runner.json``
+# ``test_command`` OVERRIDES this (the SAME override
+# ``run_contract_gate._cargo_scope_command`` consults for the Gherkin/
+# feature-scoped path); with none, a KNOWN runner falls back to its whole-tree
+# convention -- ``cargo nextest run`` auto-discovers every ``tests/*.rs``
+# integration target, so the declared ``--regression-test-file`` is exercised
+# without needing a feature-scoped selector. A runner absent from this table
+# has no established regression-run convention in this feature -- the caller
+# degrades LOUD INDETERMINATE rather than guessing a command shape.
+_REGRESSION_RUNNER_WHOLE_TREE_COMMAND: dict[str, tuple[str, ...]] = {
+    "cargo-test": ("cargo", "nextest", "run"),
+}
+
+
+def _routes_through_runner_port(
+    repo: Path, feature_id: str, regression_test_file: str
+) -> bool:
+    """Whether the E2 regression collection leg routes through the runner-port.
+
+    PINNED CONTRACT: the declared ``--regression-test-file`` is NON-Python
+    (extension not ``.py``), OR the feature-dir declares a committed
+    ``runner.json`` ``test_command`` override -- either signal alone is
+    sufficient. A ``.py`` file with no override keeps the EXISTING
+    pytest-native collection path byte-identical (the regression guard).
+    """
+    if Path(regression_test_file).suffix != ".py":
+        return True
+    override = read_runner_json(feature_id, repo)
+    return override is not None and bool(override.get("test_command"))
+
+
+def _regression_runner_command(
+    repo: Path, feature_id: str, runner_name: str
+) -> tuple[str, ...] | None:
+    """The runner command to RUN the declared regression-test-file, or ``None``.
+
+    A committed ``runner.json`` ``test_command`` OVERRIDES; with none, a KNOWN
+    runner (``_REGRESSION_RUNNER_WHOLE_TREE_COMMAND``) falls back to its
+    whole-tree convention. ``None`` means this runner has no established
+    regression-run convention in this feature -- the caller degrades LOUD
+    INDETERMINATE.
+    """
+    override = read_runner_json(feature_id, repo)
+    if override is not None and override.get("test_command"):
+        return tuple(str(override["test_command"]).split())
+    return _REGRESSION_RUNNER_WHOLE_TREE_COMMAND.get(runner_name)
+
+
+def _run_regression_gate_via_runner(
+    repo: Path, feature_id: str
+) -> tuple[int, str | None, str | None]:
+    """Run E2 for a regression-test-file through the runner-port (non-Python).
+
+    Mirrors ``run_contract_gate._maybe_route_through_cargo`` (the PROVEN
+    Gherkin/feature-scoped precedent composing the SAME seam): seed the
+    runner registry, RESOLVE the target's runner, derive/read its run
+    command, and map the verdict. Returns ``(exit_code, reason, diagnostic)``
+    -- ``reason``/``diagnostic`` are non-``None`` ONLY on an INDETERMINATE
+    exit, naming the RUNNER as the cause (never the pytest-native
+    uncollectible literal -- that diagnostic means the pytest collector ran,
+    which never happens on this leg).
+    """
+    seed_runner_registry()
+    resolution = resolve_runner(
+        repo, RunnerResolutionContext(feature_id=feature_id, repo=repo)
+    )
+    if not isinstance(resolution, RunnerAdapter):
+        reason = getattr(resolution, "reason", "no recognized test-runner resolved")
+        return (
+            _GATE_INDETERMINATE_EXIT_CODE,
+            "regression_runner_unresolvable",
+            "no test-runner resolved for the declared --regression-test-file's "
+            f"target -- {reason} -- recorded an honest SliceCommitIndeterminate "
+            "(unverified here), never coerced through the pytest-native "
+            "collector on a non-Python target",
+        )
+    command = _regression_runner_command(repo, feature_id, resolution.name)
+    if command is None:
+        return (
+            _GATE_INDETERMINATE_EXIT_CODE,
+            "regression_runner_unresolvable",
+            f"the resolved runner {resolution.name!r} has no known regression-run "
+            "convention in this feature -- recorded an honest "
+            "SliceCommitIndeterminate (unverified here), never a fabricated pass",
+        )
+    try:
+        verdict = resolution.run(repo, command)
+    except RunnerAdapterUnavailable as exc:
+        return (
+            _GATE_INDETERMINATE_EXIT_CODE,
+            "regression_runner_unavailable",
+            f"the {resolution.name!r} runner could not produce a trustworthy "
+            f"verdict for the declared --regression-test-file: {exc} -- recorded "
+            "an honest SliceCommitIndeterminate (unverified here), never a "
+            "fabricated pass",
+        )
+    return (0 if verdict.passed else 1, None, None)
 
 
 # DDD-3 identity guarantee: re-export the pure-function SSOT symbols so the
@@ -354,16 +463,27 @@ def _run_contract_gate(repo: Path, feature_id: str, slice_id: str) -> int:
     return completed.returncode
 
 
-def _run_regression_gate(repo: Path, regression_test_file: str) -> int:
+def _run_regression_gate(
+    repo: Path, feature_id: str, regression_test_file: str
+) -> tuple[int, str | None, str | None]:
     """Run E2 BEHAVIORALLY for a pytest-regression slice (#13, Ale-ratified).
 
-    The feature-scoped contract gate cannot resolve a pytest-regression
-    bugfix's structure, so this path replaces it with an execution-observing
-    attestation: it actually RUNS the declared ``regression_test_file`` on
-    the committed tree (``-m pytest <file> -q`` via ``des_spawn`` -- the SAME
-    interpreter-resolution boundary ``_run_contract_gate`` uses, mirroring
-    ``verify_red_green.py``'s subprocess pattern) and uses ITS exit code as
-    the E2 verdict. Only an OBSERVED pass (exit 0) ever earns E2-clear.
+    RUNNER-AWARE (verify-slice-commit-runner-aware-collection, slice-01): a
+    NON-Python ``regression_test_file`` (extension not ``.py``), OR one whose
+    feature-dir declares a committed ``runner.json`` ``test_command``, routes
+    through the runner-port (``_run_regression_gate_via_runner``) instead of
+    the pytest-native spawn below -- pytest cannot collect a non-Python file.
+    The ``.py``-with-no-override path stays BYTE-IDENTICAL to the original
+    pytest-native attestation.
+
+    The pytest-native path: the feature-scoped contract gate cannot resolve a
+    pytest-regression bugfix's structure, so this replaces it with an
+    execution-observing attestation: it actually RUNS the declared
+    ``regression_test_file`` on the committed tree (``-m pytest <file> -q``
+    via ``des_spawn`` -- the SAME interpreter-resolution boundary
+    ``_run_contract_gate`` uses, mirroring ``verify_red_green.py``'s
+    subprocess pattern) and uses ITS exit code as the E2 verdict. Only an
+    OBSERVED pass (exit 0) ever earns E2-clear.
 
     Every interpreter spawn in ``src/des`` MUST route through
     ``des.runtime.interpreter.python_for`` (the build-tier arch-test
@@ -371,17 +491,23 @@ def _run_regression_gate(repo: Path, regression_test_file: str) -> int:
     ``des_spawn("pytest", ...)`` composes that resolution BY CONSTRUCTION, so
     this never trusts the running interpreter's name.
 
-    A declared file that is missing, or whose interpreter ``des_spawn``
-    itself cannot resolve (``InterpreterUnavailable``), is NEVER trusted by
-    presence alone -- it returns the SAME ``_GATE_INDETERMINATE_EXIT_CODE``
-    sentinel ``_run_contract_gate`` uses for its own degrade-LOUD path, so
-    the caller routes it through the existing ``SliceCommitIndeterminate``
-    machinery (never a fabricated ``SliceCommitVerified``, never a silent
-    pass).
+    Returns ``(exit_code, reason, diagnostic)``. A declared file that is
+    missing, or whose interpreter ``des_spawn`` itself cannot resolve
+    (``InterpreterUnavailable``), is NEVER trusted by presence alone -- it
+    returns the SAME ``_GATE_INDETERMINATE_EXIT_CODE`` sentinel
+    ``_run_contract_gate`` uses for its own degrade-LOUD path (with
+    ``reason``/``diagnostic`` both ``None``, instructing the caller to keep
+    the existing pytest-native uncollectible diagnostic), so the caller
+    routes it through the existing ``SliceCommitIndeterminate`` machinery
+    (never a fabricated ``SliceCommitVerified``, never a silent pass). The
+    runner-routed path names the RUNNER as the cause instead (never that
+    literal -- see ``_run_regression_gate_via_runner``).
     """
     test_path = repo / regression_test_file
     if not test_path.is_file():
-        return _GATE_INDETERMINATE_EXIT_CODE
+        return _GATE_INDETERMINATE_EXIT_CODE, None, None
+    if _routes_through_runner_port(repo, feature_id, regression_test_file):
+        return _run_regression_gate_via_runner(repo, feature_id)
     try:
         completed = des_spawn(
             "pytest",
@@ -393,8 +519,8 @@ def _run_regression_gate(repo: Path, regression_test_file: str) -> int:
             text=True,
         )
     except InterpreterUnavailable:
-        return _GATE_INDETERMINATE_EXIT_CODE
-    return completed.returncode
+        return _GATE_INDETERMINATE_EXIT_CODE, None, None
+    return completed.returncode, None, None
 
 
 def _append_slice_commit_verified(
@@ -720,9 +846,13 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                     }
                 )
                 return 1
-            contract_code = _run_regression_gate(repo, args.regression_test_file)
+            contract_code, indeterminate_reason, indeterminate_diagnostic = (
+                _run_regression_gate(repo, feature_id, args.regression_test_file)
+            )
         else:
             contract_code = _run_contract_gate(repo, feature_id, slice_id)
+            indeterminate_reason = None
+            indeterminate_diagnostic = None
         # DDD-2 degrade-LOUD: an INDETERMINATE gate (no usable interpreter on
         # this machine, or -- pytest-regression -- a regression-test-file that
         # could not be run) is NOT a refusal -- record the honest
@@ -737,8 +867,11 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                     args,
                     feature_id,
                     slice_ids,
-                    reason="pytest_regression_file_unrunnable",
-                    diagnostic=(
+                    reason=(
+                        indeterminate_reason or "pytest_regression_file_unrunnable"
+                    ),
+                    diagnostic=indeterminate_diagnostic
+                    or (
                         f"the declared --regression-test-file "
                         f"{args.regression_test_file!r} could not be run on "
                         "the committed tree (missing or uncollectible) -- "
