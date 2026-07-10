@@ -116,6 +116,8 @@ def _kebab_slug(value_statement: str) -> str:
     """
     normalised = re.sub(r"[^A-Za-z0-9\s-]", "", value_statement).strip().lower()
     slug = re.sub(r"\s+", "-", normalised)
+    if not any(char.isalnum() for char in slug):
+        return ""
     if len(slug) <= _MAX_SLUG_LENGTH:
         return slug
     truncated = slug[:_MAX_SLUG_LENGTH]
