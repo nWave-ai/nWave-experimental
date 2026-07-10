@@ -929,7 +929,10 @@ def main(argv: list[str] | None = None) -> int:
     # BuildTierNotApplicable + proceed (target projects may carry no build
     # tier); interpreter absence -> LOUD indeterminate + proceed (the digest
     # step downstream mints the honest SliceCommitIndeterminate).
-    if build_tier_exit_verdict(repo) != 0:
+    regression_test_file = (
+        repo / args.regression_test_file if args.regression_test_file else None
+    )
+    if build_tier_exit_verdict(repo, regression_test_file=regression_test_file) != 0:
         return 1
 
     # Examine-verdict exit check (evolution-plan P1.2 -- User-Examiner wiring):
