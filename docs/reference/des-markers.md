@@ -98,8 +98,8 @@ INJECTION`.
 
 ## Empirical anchor
 
-`docs/feature/fix-des-worktree-project-root-marker/discuss/wave-decisions.md`
-(Rex RCA 2026-05-19) — audit-2026-05-19.log:270,365 showed
+Rex RCA 2026-05-19 (feature `fix-des-worktree-project-root-marker`,
+wave-decisions record) — audit-2026-05-19.log:270,365 showed
 false-positive validation halts where the orchestrator running on master
 dispatched a crafter on a worktree; the stop hook read `execution-log`
 from master's `docs/feature/...` rather than the worktree's, then

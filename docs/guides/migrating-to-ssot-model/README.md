@@ -124,7 +124,7 @@ Read architecture files from your features (`docs/feature/{id}/design/architectu
 - Adapters are replaceable — all external deps in adapters/
 ```
 
-Add decision references: if your features have ADRs, copy them to `docs/product/architecture/adr-001.md`, `adr-002.md`, etc.
+Add decision references: if your features have ADRs, copy them to `docs/product/architecture/<ADR-NNN>-<title>.md`, `<ADR-NNN+1>-<title>.md`, etc.
 
 ### Step 5: Extract KPI contracts
 

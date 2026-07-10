@@ -161,7 +161,7 @@ lefthook install
 
 **Prerequisites**: `nwave-ai` installable via pip in the runner environment.
 
-Create `.github/workflows/feature-delta.yml`:
+Create `.github/workflows/<your-workflow>.yml` (e.g. `feature-delta.yml`):
 
 ```yaml
 name: Feature Delta Validation
@@ -426,7 +426,7 @@ Install the [Run on Save](https://marketplace.visualstudio.com/items?itemName=em
 
 ### Option B: VS Code Tasks (no extension required)
 
-Add to `.vscode/tasks.json`:
+Add to `.vscode/<your-tasks>.json`:
 
 ```json
 {

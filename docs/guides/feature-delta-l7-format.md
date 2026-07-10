@@ -246,7 +246,7 @@ mkdir -p docs/feature/my-new-feature
 
 ### Step 2: Create the file
 
-Create `docs/feature/my-new-feature/feature-delta.md` with the L7 heading pattern.
+Create `docs/feature/<feature-id>/feature-delta.md` with the L7 heading pattern.
 
 Or use the template (if available):
 

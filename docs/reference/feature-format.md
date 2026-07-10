@@ -107,7 +107,7 @@ The lean contract is **not** "one file ever". It is "one narrative file plus dec
 
 **Machine companion rule**: only files whose downstream consumer is a parser (validator, agent, runtime) qualify. Loose human-readable markdown does NOT qualify and MUST live inside `feature-delta.md` as a `## Wave: <NAME> / [REF|WHY|HOW] <Section>` block.
 
-**Validator**: `scripts/validation/validate_feature_layout.py` enforces the whitelist. See `docs/analysis/investigation-overtesting-hypothesis-2026-04-28.md` for audit findings that motivated this rule.
+**Validator**: `scripts/validation/validate_feature_layout.py` enforces the whitelist. This rule was motivated by an internal audit of over-testing patterns in generated feature layouts (2026-04-28).
 
 **SSOT integration** (separate concern): each wave back-propagates to `docs/product/` (jobs.yaml, journeys/, personas/, architecture/, kpi-contracts.yaml). See each wave skill's "SSOT updates" subsection for paths.
 
@@ -234,7 +234,7 @@ python scripts/migrate_to_l7.py docs/feature/my-feature
 The script:
 1. Reads files from `docs/feature/my-feature/{discover,discuss,design,devops,distill,deliver}/`
 2. Classifies each artifact (user story, decision, scenario, etc.) by heuristic rules.
-3. Writes `docs/feature/my-feature/feature-delta.md` with proper `## Wave: ... / [TYPE]` headings.
+3. Writes `docs/feature/<feature-id>/feature-delta.md` with proper `## Wave: ... / [TYPE]` headings.
 4. Demotes optional expansions (JTBD narrative, persona narrative, migration playbooks) to `[WHY]/[HOW]` sections (not auto-included in lean mode).
 5. Creates a `FORMAT` file or adds frontmatter to `feature-delta.md` marking the feature as `lean`.
 6. Leaves legacy subdirectories in place for git diff inspection (not deleted automatically).
