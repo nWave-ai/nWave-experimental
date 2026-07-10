@@ -111,6 +111,21 @@ now reads from the wired config", gets the charter (the observable behavior fina
 Template + full worked examples (a browser-UI charter, and a CLI/gate-outcome charter — the
 format is medium-agnostic): `nWave/templates/expectation-charter.md`.
 
+## Gate-promise charters
+
+When a gate's rejection MESSAGE names an escape, override, or designed path (e.g. `@coupled`, a
+`--flag`, a lane exemption), that promise is an untested user surface — the gate says the path
+exists, but nothing proves the code honors it. Author a charter with two legs: a POSITIVE
+observation proving the promised path, followed literally, actually works; and a NEGATIVE
+observation proving the gate still bites when the path is NOT followed. A gate message that
+promises a path must have a Vera charter proving the path — one leg alone is not enough (positive
+without negative can't tell "the escape works" from "the gate never fired"; negative without
+positive can't tell "the escape doesn't work" from "nobody tried it").
+
+Empirical anchor: the `@coupled`-for-pytest override was promised in the carpaccio-ceiling gate's
+own rejection message, but the gate's code ignored it — the escape silently didn't work, for two
+days, unexamined (2026-07-10).
+
 ## Invocation per flow
 
 | Flow | Who authors | Input given to the fresh context | Charter path |
