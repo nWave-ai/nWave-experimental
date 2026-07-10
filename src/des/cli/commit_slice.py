@@ -177,7 +177,10 @@ def _notify_feature_end_unmissable(repo: Path, feature_id: str) -> None:
             "(full-suite + gates + deep-review).\n"
             f"HOW: run: {_FEATURE_END_RUN_HOW} --repo . --feature-id "
             f"{feature_id} --feature-dir docs/feature/{feature_id} "
-            "--reviewer-agent-id <id> --verdict APPROVED"
+            "--reviewer-agent-id <id> --verdict APPROVED "
+            "(substitute <id> with the agent id of the reviewer that "
+            "performed or will perform the feature-end review; any "
+            "stable, non-empty reviewer id identifies who reviewed it)"
         )
     except Exception as exc:
         print(
@@ -772,6 +775,17 @@ def _ensure_reviewed_by(
     for slice_id in slice_ids:
         record_hash = _review_verdict_hash(repo, slice_id, feature_id)
         if record_hash is None:
+            # feature_id is known at print time on the normal path (it is the
+            # caller-supplied argument) -- fill it verbatim, mirroring
+            # `_notify_feature_end_unmissable`'s `--feature-id {feature_id}`
+            # (line 179). Only the genuinely-unknown-at-print-time case (no
+            # feature_id resolved at all) falls back to an explained
+            # placeholder -- never the bare literal "None".
+            feature_id_display = (
+                feature_id
+                if feature_id is not None
+                else "<feature-id> (substitute the feature id you are committing)"
+            )
             sys.stderr.write(
                 f"WARNING: des commit-slice found NO APPROVED ATReviewVerdict "
                 f"record for {slice_id} -- the Reviewed-by: trailer is OMITTED "
@@ -781,8 +795,11 @@ def _ensure_reviewed_by(
                 f".nwave/telemetry/atdd-pure/ (the AT-review was never recorded, "
                 f"or the ledger is unreadable). HOW: after the acceptance-designer "
                 f"reviewer APPROVES, run `des record-at-review-verdict "
-                f"--feature-id <feature> --slice-id {slice_id} --verdict APPROVED "
-                f"--reviewer-agent-id <id>`, then re-run des commit-slice.\n"
+                f"--feature-id {feature_id_display} --slice-id {slice_id} "
+                f"--verdict APPROVED --reviewer-agent-id <id>` (substitute <id> "
+                f"with the agent id of the reviewer that performed the review; "
+                f"any stable, non-empty reviewer id identifies who reviewed "
+                f"it), then re-run des commit-slice.\n"
             )
             continue
         trailers.append(f"Reviewed-by: {record_hash} ({_VERDICT_APPROVED})")

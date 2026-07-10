@@ -21,57 +21,12 @@ Feature: Gate-contract catalog YAML mirrors _REGISTRY (D4 Phase 1 slice-01)
     When the catalog is validated against the schema
     Then validation succeeds with zero errors
 
-  # Count re-baseline 28 -> 30 (2026-06-15, f-declarative-gate-composition slice-01
-  # + retroactive wave-clear catalog reconcile): adds verify-discuss-review (OB-2)
-  # and wave-clear (the latter reconciled -- registry-present since c89be75d1 but
-  # catalog + per-gate file were omitted). Both 1:1 across registry/catalog/files.
-  # Count re-baseline 30 -> 33 (2026-06-16, f-coherence-and-attestation slice-06):
-  # adds gate-g + self-attest + verify-test-runner (the three wired feature modules,
-  # thin CLI drivers over slice-03/04/05 logic). All 1:1 across registry/catalog/files.
-  # Count 33 -> 34 (2026-06-16, f-nonbypassable-attestation slice-05): adds
-  # verify-wave-dispatch (the dispatch.pre guard). 1:1 across registry/catalog/files.
-  # Count 34 -> 35 (2026-06-16, f-spine-runs-tests-not-git-hooks slice-01): adds
-  # Count 35 -> 36 (2026-06-17, f-wave-contract-coherence slice-02): adds verify-wave-contract-coherence
-  # run-slice-ats (the slice-scoped EXECUTOR -- the acceleration). 1:1 across
-  # registry/catalog/files.
-  # Count 36 -> 38 (2026-06-18, f-design-devops-review-gate slice-01): adds the DESIGN
-  # review-verdict pair record-design-review + verify-design-review (DISCUSS parity).
-  # Count 38 -> 40 (2026-06-19, f-design-devops-review-gate slice-02): adds the DEVOPS
-  # review-verdict pair record-devops-review + verify-devops-review (SSOT-reuse proof).
-  # Count 40 -> 41 (2026-06-19, f-deliver-entry-contract-freeze slice-01): adds the
-  # DELIVER-entry contract-freeze gate verify-deliver-entry-contract.
-  # Count 41 -> 42 (2026-06-20, f-attest-bundled-slice slice-01): adds the
-  # bundled-slice attestation command attest-bundled-slice (on reverify's shared core).
   @driving_port @in-process @real-io @slice-01 @contract-shape:pure-function
-  # Count 43 -> 48 -> 51 (2026-07-03, P0.1-P0.5 reconcile + P1.3 verify-refactor-trigger): the six
-  # evidence-by-execution gates (verify-fresh-clone/red-green/negative-at/doc-coherence/
-  # execution-reach) landed in _REGISTRY without catalog rows; reconciled 1:1.
-  # Count 51 -> 52 (2026-07-06, feature-delta-doctor-and-ssot slice-01, WS-2 / M2):
-  # feature-delta-doctor landed in _REGISTRY without its catalog row; reconciled 1:1.
-  # Count 53 -> 54 (2026-07-08, fix-flavor-scaffold-catalog-reconciliation): flavor-scaffold was in _REGISTRY without its catalog row + per-gate file; reconciled 1:1. Prior 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2): dispatch
-  # landed in _REGISTRY without its catalog row; reconciled 1:1.
-  # Count 54 -> 55 (2026-07-08, verify-catalog-coherence slice-01): adds the
-  # fast registry<->catalog<->per-gate-file drift check verify-catalog-coherence,
-  # 1:1 across registry/catalog/files (dogfoods its own rule).
-  # Count 55 -> 56 (2026-07-08, check-contract-shape-declarations slice-01):
-  # adds check-contract-shape, the producing tool for Principle-11's 3
-  # mechanical Contract-Shape checks, 1:1 across registry/catalog/files.
-  # Count 57 -> 58 (2026-07-09, record-review-verdict slice-01, #45): adds record-review-verdict.
-  # Count 56 -> 57 (2026-07-09, charter-scaffold slice-01): adds
-  # charter-scaffold, the producing tool for expectation-charter scaffolds,
-  # 1:1 across registry/catalog/files (same producing-tool precedent as
-  # roadmap/doctor/dispatch/feature-delta-doctor/flavor-scaffold -- every
-  # _REGISTRY row gets a catalog row + per-gate file, no tooling exclusion).
-  # Count 58 -> 59 (2026-07-09, charter-scaffold slice-02): adds
-  # verify-charter-filled, the backstop FILLED-verification gate.
-  # Count 59 -> 60 (2026-07-09, codefact-similar-responsibility slice-01, WS-9b):
-  # adds find-similar-responsibility, the observable similar-responsibility CLI.
-  Scenario: Catalog row count equals registry count (60 total, adds find-similar-responsibility)
+  Scenario: Catalog gate_id set matches registry name set exactly
     Given the gate catalog loaded from "nWave/gates/_catalog.yaml"
     And the production _REGISTRY loaded from `src.des.cli.__main__`
     When the row counts are compared
-    Then both contain exactly 60 entries
-    And every gate_id in the catalog is also a SubcommandRow.name in _REGISTRY
+    Then every gate_id in the catalog is also a SubcommandRow.name in _REGISTRY
     And every SubcommandRow.name in _REGISTRY is also a gate_id in the catalog
 
   @driving_port @in-process @real-io @slice-01 @contract-shape:pure-function @regression-pin

@@ -11,7 +11,9 @@ from pathlib import Path
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from ..conftest import GATES_DIR
+from des.cli.verify_catalog_coherence import CoherenceResult, compute_catalog_coherence
+
+from ..conftest import GATES_DIR, REPO_ROOT
 
 
 # Excluded "underscore-prefixed" meta files from per-gate enumeration.
@@ -25,6 +27,7 @@ class PerGateComposition:
         self._schema: dict | None = None
         self._validation_errors: list[str] = []
         self._language_bound: list[str] = []
+        self._coherence_result: CoherenceResult | None = None
 
     def load_files(self) -> None:
         self._per_gate_files = sorted(
@@ -65,6 +68,14 @@ class PerGateComposition:
             entry = yaml.safe_load(f.read_text())
             if entry["language_neutral_contract"] is False:
                 self._language_bound.append(entry["gate_id"])
+
+    def check_catalog_coherence(self) -> None:
+        self._coherence_result = compute_catalog_coherence(REPO_ROOT)
+
+    @property
+    def coherence_result(self) -> CoherenceResult:
+        assert self._coherence_result is not None
+        return self._coherence_result
 
     @property
     def file_count(self) -> int:
@@ -130,46 +141,15 @@ def when_enumerate_bound(per_gate_comp) -> None:
     per_gate_comp.enumerate_language_bound()
 
 
-# Count re-baseline 28 -> 30 (2026-06-15, f-declarative-gate-composition slice-01
-# + retroactive wave-clear catalog reconcile): per-gate files for the two new
-# subcommands verify-discuss-review + wave-clear (each 1:1 with its catalog entry).
-# Count re-baseline 30 -> 33 (2026-06-16, f-coherence-and-attestation slice-06):
-# per-gate files for gate-g + self-attest + verify-test-runner (each 1:1 catalog).
-# Count 33 -> 34 (2026-06-16, f-nonbypassable-attestation slice-05): per-gate file
-# for verify-wave-dispatch (1:1 with its catalog entry).
-# Count 34 -> 35 (2026-06-16, f-spine-runs-tests-not-git-hooks slice-01): per-gate
-# Count 35 -> 36 (2026-06-17, f-wave-contract-coherence slice-02): adds verify-wave-contract-coherence
-# file for run-slice-ats (the slice-scoped EXECUTOR), 1:1 with its catalog entry.
-# Count 36 -> 38 (2026-06-18, f-design-devops-review-gate slice-01): per-gate files
-# for the DESIGN review-verdict pair (record/verify-design-review), 1:1 with catalog.
-# Count 38 -> 40 (2026-06-19, f-design-devops-review-gate slice-02): per-gate files
-# for the DEVOPS review-verdict pair (record/verify-devops-review), 1:1 with catalog.
-# Count 40 -> 41 (2026-06-19, f-deliver-entry-contract-freeze slice-01): per-gate file
-# for the DELIVER-entry contract-freeze gate (verify-deliver-entry-contract).
-# Count 41 -> 42 (2026-06-20, f-attest-bundled-slice slice-01): per-gate file for the
-# bundled-slice attestation command (attest-bundled-slice), 1:1 with its catalog entry.
-# Count 43 -> 51 (2026-07-03, evolution-plan P0.1-P0.5): five per-gate files for
-# the evidence-by-execution gate family, 1:1 with catalog + _REGISTRY.
-# Count 51 -> 52 (2026-07-06, feature-delta-doctor-and-ssot slice-01, WS-2 / M2):
-# per-gate file for feature-delta-doctor, 1:1 with its catalog entry.
-# Count 53 -> 54 (2026-07-08, fix-flavor-scaffold-catalog-reconciliation): flavor-scaffold was in _REGISTRY without its catalog row + per-gate file; reconciled 1:1. Prior 52 -> 53 (2026-07-07, des-dispatch-ssot-renderer Fase-2):
-# per-gate file for dispatch, 1:1 with its catalog entry.
-# Count 54 -> 55 (2026-07-08, verify-catalog-coherence slice-01): per-gate file
-# for verify-catalog-coherence, 1:1 with its catalog entry.
-# Count 55 -> 56 (2026-07-08, check-contract-shape-declarations slice-01):
-# per-gate file for check-contract-shape, 1:1 with its catalog entry.
-# Count 57 -> 58 (2026-07-09, record-review-verdict slice-01, #45): per-gate
-# file for the record-review-verdict recorder.
-# Count 56 -> 57 (2026-07-09, charter-scaffold slice-01): per-gate file for
-# charter-scaffold, 1:1 with its catalog entry.
-# Count 58 -> 59 (2026-07-09, charter-scaffold slice-02): per-gate file for
-# verify-charter-filled, 1:1 with its catalog entry.
-# Count 59 -> 60 (2026-07-09, codefact-similar-responsibility slice-01, WS-9b):
-# per-gate file for find-similar-responsibility, 1:1 with its catalog entry.
-@then("exactly 60 per-gate files exist (one per catalog entry)")
-def then_per_gate_file_count(per_gate_comp) -> None:
-    assert per_gate_comp.file_count == 60, (
-        f"Found {per_gate_comp.file_count} per-gate files, expected 60"
+@then("catalog and per-gate files are coherent (no orphans either direction)")
+def then_catalog_and_per_gate_coherent(per_gate_comp) -> None:
+    per_gate_comp.check_catalog_coherence()
+    result = per_gate_comp.coherence_result
+    assert result.catalog_without_per_gate_file == (), (
+        f"Catalog entries missing per-gate files: {result.catalog_without_per_gate_file}"
+    )
+    assert result.per_gate_without_catalog_entry == (), (
+        f"Per-gate files missing catalog entries: {result.per_gate_without_catalog_entry}"
     )
 
 
