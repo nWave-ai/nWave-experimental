@@ -363,6 +363,82 @@ class CoverageDriftVerdict:
         return bool(self.violations)
 
 
+PORT_NOT_REALIZED_BY_PLUGIN_BREACH = "port_not_realized_by_plugin"
+"""``kind`` for a plugin declaring ``port_coverage[port]=True`` while that port's
+backing adapter method is stub-backed -- a registered-but-stubbed lie."""
+
+
+@dataclass(frozen=True)
+class PortRealizationViolation:
+    """A flagged declared-but-stub-backed port breach (port-exposed observable).
+
+    ``plugin_id`` -- the registered plugin id whose declared ``port_coverage``
+                    claims a port that is, in truth, stub-backed.
+    ``port``      -- the ``LanguageAdapterPlugin.port_coverage`` key the plugin
+                    declares ``True`` for (e.g. ``"verify_environmental_e2e"``).
+    ``kind``      -- ``"port_not_realized_by_plugin"``.
+    """
+
+    plugin_id: str
+    port: str
+    kind: str
+
+
+@dataclass(frozen=True)
+class PortRealizationVerdict:
+    """The port-realization-conformance rule's port-exposed result.
+
+    ``violations`` -- every ``(plugin, port)`` pair the plugin declares
+                     ``True`` for but whose backing adapter method is
+                     stub-backed (empty == conformant).
+    ``flagged``    -- True iff at least one breach was found (the recall
+                     signal).
+    """
+
+    violations: tuple[PortRealizationViolation, ...]
+
+    @property
+    def flagged(self) -> bool:
+        return bool(self.violations)
+
+
+def detect_port_realization_conformance(
+    plugin_ports: Mapping[str, Mapping[str, bool]],
+    is_stub_by_plugin: Mapping[str, Mapping[str, bool]],
+) -> PortRealizationVerdict:
+    """Flag every ``(plugin, port)`` pair declared ``True`` but stub-backed.
+
+    ``plugin_ports`` maps each plugin id to its self-declared ``port_coverage``
+    map (``{port: declared_covered}``). ``is_stub_by_plugin`` maps each plugin
+    id to whether that port's backing adapter method is stub-backed (AST
+    stub-detection result, injected -- never probed by this pure rule). A
+    ``(plugin, port)`` pair is flagged iff ``plugin_ports[plugin][port] is
+    True`` AND ``is_stub_by_plugin[plugin][port] is True`` -- the AND-gate is
+    exact: declaring ``False`` for a stub port is an honest admission, never
+    flagged.
+
+    PURE over its arguments -- no live registry read, no AST probing. The
+    live-registry resolve-and-probe composition root is a separate concern
+    (``port_realization_discovery.py``, out of this pure detector's scope).
+
+    Emits a ``PortRealizationViolation`` per ``(plugin_id, port)`` whose
+    declared coverage is ``True`` and whose backing method is stub-backed, in
+    a stable order (plugins in insertion order, ports in the order they appear
+    in each plugin's declared map).
+    """
+    violations = tuple(
+        PortRealizationViolation(
+            plugin_id=plugin_id,
+            port=port,
+            kind=PORT_NOT_REALIZED_BY_PLUGIN_BREACH,
+        )
+        for plugin_id, declared_ports in plugin_ports.items()
+        for port, declared in declared_ports.items()
+        if declared and is_stub_by_plugin.get(plugin_id, {}).get(port, False)
+    )
+    return PortRealizationVerdict(violations=violations)
+
+
 def detect_catalog_coverage_drift(
     declared_languages: Iterable[str],
     discovered_languages: Iterable[str],

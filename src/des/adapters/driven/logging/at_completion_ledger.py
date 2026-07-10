@@ -433,6 +433,7 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         feature_id: str | None = None,
         gate: str | None = None,
         justification: str | None = None,
+        attested_via: str | None = None,
     ) -> dict[str, Any]:
         """Append one slice gate-boundary audit record under the M7 write contract.
 
@@ -456,6 +457,13 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         each is threaded into the record `fields` and thereby hashed into
         `record_hash` like every other field (tamper-evident audit).
 
+        #51 signature delta: the optional ``attested_via`` kwarg carries the
+        transparent provenance marker for a `SliceCommitVerified` record
+        written via the `--slice-id` legacy-commit override (value
+        `"slice-id-override"`). Defaults to None (every existing call site
+        stays byte-identical); when present, threaded into `fields` and hashed
+        into `record_hash` like every other field.
+
         Returns the appended record.
         """
         fields: dict[str, Any] = {"event": event, "slice_id": slice_id}
@@ -463,6 +471,8 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             fields["gate"] = gate
         if justification is not None:
             fields["justification"] = justification
+        if attested_via is not None:
+            fields["attested_via"] = attested_via
         return self._append_record(fields, feature_id=feature_id)
 
     def append_contract_frozen(

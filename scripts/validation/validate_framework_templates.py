@@ -224,10 +224,11 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
             f"Reviewer model must be 'haiku', got '{fm.get('model')}'",
         )
 
-    # A12: reviewer must not have write tools
+    # A12: reviewer must not have write tools (Bash is allowed, read-only
+    # per WS-12 -- the code-fact grep tier reachable from reviewers)
     if is_reviewer:
         tools = fm.get("tools", "")
-        for forbidden in ("Write", "Edit", "Bash"):
+        for forbidden in ("Write", "Edit"):
             if forbidden in tools:
                 result.add(
                     "A12", "error", name, f"Reviewer has forbidden tool: {forbidden}"

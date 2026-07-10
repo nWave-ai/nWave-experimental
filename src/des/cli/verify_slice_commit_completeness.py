@@ -185,6 +185,23 @@ def _build_parser() -> argparse.ArgumentParser:
             "behaviorally (paired with --at-kind pytest-regression)."
         ),
     )
+    parser.add_argument(
+        "--slice-id",
+        dest="slice_id",
+        default=None,
+        help=(
+            "Override slice id for a bare legacy commit carrying NO "
+            "Slice-Id: trailer (#51). When the commit has no resolvable "
+            "trailer, this supplies the slice id instead of failing -- "
+            "attesting on the BEHAVIORAL proof (the E2 pytest-regression "
+            "leg passing on the committed tree) rather than the trailer. "
+            "REQUIRES --at-kind pytest-regression + --regression-test-file "
+            "(behavioral proof is mandatory without a trailer). REFUSES if "
+            "it conflicts with a real Slice-Id: trailer already on the "
+            "commit. The written SliceCommitVerified record carries a "
+            "transparent attested_via: 'slice-id-override' field."
+        ),
+    )
     return parser
 
 
@@ -384,6 +401,8 @@ def _append_slice_commit_verified(
     repo: Path,
     feature_id: str,
     slice_ids: list[str],
+    *,
+    attested_via: str | None = None,
 ) -> None:
     """Record one `SliceCommitVerified` event per verified slice (DDD-3).
 
@@ -399,10 +418,17 @@ def _append_slice_commit_verified(
     so a re-run on an already-verified commit appends a further record yet the
     carpaccio chain still sees the slice exactly once -- the predecessor
     ordering it depends on is uncorrupted.
+
+    ``attested_via`` (#51): when supplied (the ``--slice-id`` override path),
+    threaded through to the ledger record as a transparent field so the audit
+    shows the trailer was bypassed. Absent/None on the normal trailer path --
+    that record stays byte-unchanged.
     """
     ledger = AtCompletionLedger(feature_id, repo)
     for slice_id in slice_ids:
-        ledger.append_gate_event("SliceCommitVerified", slice_id)
+        ledger.append_gate_event(
+            "SliceCommitVerified", slice_id, attested_via=attested_via
+        )
 
 
 def _append_slice_commit_indeterminate(
@@ -431,12 +457,19 @@ def _append_slice_commit_indeterminate(
         ledger.append_slice_commit_indeterminate(slice_id, reason)
 
 
-def _resolve_slice_ids(repo: Path, commit: str) -> tuple[list[str], str, int | None]:
+def _resolve_slice_ids(
+    repo: Path, commit: str, slice_id_override: str | None = None
+) -> tuple[list[str], str, int | None, bool]:
     """Read a commit's `Slice-Id:` trailer(s) + its SHA.
 
-    Returns ``(slice_ids, commit_sha, error_code)``. ``error_code`` is None on
-    success, or the exit code (2) when the commit is unreadable / has no
-    trailer -- in which case the malformed verdict has already been emitted.
+    Returns ``(slice_ids, commit_sha, error_code, used_override)``.
+    ``error_code`` is None on success, or the exit code (2) when the commit is
+    unreadable / has no trailer and no override / the override conflicts with
+    a real trailer -- in which case the malformed/refusal verdict has already
+    been emitted. ``used_override`` is True iff the commit carried NO
+    resolvable trailer AND ``slice_id_override`` supplied the slice id instead
+    (#51, the ``--slice-id`` legacy-commit-attestation path) -- False on every
+    other outcome, including a matching (idempotent) override.
     """
     try:
         commit_message = _git(repo, "log", "-1", "--format=%B", commit)
@@ -448,18 +481,39 @@ def _resolve_slice_ids(repo: Path, commit: str) -> tuple[list[str], str, int | N
                 "error": f"cannot read commit {commit!r}: {exc}",
             }
         )
-        return [], "", 2
+        return [], "", 2, False
 
     slice_ids = extract_slice_ids(commit_message)
     if not slice_ids:
+        if slice_id_override is not None:
+            return [slice_id_override], commit_sha, None, True
         _emit_with_human_surface(
             {
                 "event": "MalformedInput",
                 "error": "commit carries no Slice-Id:/Step-Id: trailer",
             }
         )
-        return [], "", 2
-    return slice_ids, commit_sha, None
+        return [], "", 2, False
+
+    if slice_id_override is not None and slice_id_override not in slice_ids:
+        _emit_with_human_surface(
+            {
+                "event": "SliceCommitRefused",
+                "commit": commit,
+                "error": (
+                    f"--slice-id {slice_id_override!r} conflicts with the "
+                    f"commit's real Slice-Id: trailer(s) {slice_ids!r} -- an "
+                    "override must never silently contradict a real trailer"
+                ),
+                "how": (
+                    "drop --slice-id (the commit already carries a real "
+                    "Slice-Id: trailer) or correct the mismatched slice id"
+                ),
+            }
+        )
+        return [], "", 2, False
+
+    return slice_ids, commit_sha, None, False
 
 
 def _missing_by_slice(
@@ -527,7 +581,9 @@ def _run_legacy_completeness(repo: Path, args: argparse.Namespace) -> int:
     ledger record is written -- the verify-then-record seam (`--feature-id`) is
     not entered.
     """
-    slice_ids, _commit_sha, error_code = _resolve_slice_ids(repo, args.commit)
+    slice_ids, _commit_sha, error_code, _used_override = _resolve_slice_ids(
+        repo, args.commit
+    )
     if error_code is not None:
         return error_code
 
@@ -571,7 +627,35 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
     half) and appends nothing.
     """
     feature_id = args.feature_id
-    slice_ids, commit_sha, error_code = _resolve_slice_ids(repo, args.commit)
+    slice_id_override = getattr(args, "slice_id", None)
+
+    # Honesty guard #1 (#51, GDP-6, fail-closed): --slice-id overrides a
+    # trailer only on the strength of a behavioral proof -- a bare structural
+    # attestation cannot be trusted without a trailer. Checked BEFORE any
+    # repo access so the refusal is deterministic and self-explaining.
+    if slice_id_override is not None and (
+        args.at_kind != "pytest-regression" or not args.regression_test_file
+    ):
+        _emit_with_human_surface(
+            {
+                "event": "SliceCommitRefused",
+                "commit": args.commit,
+                "error": (
+                    "--slice-id requires --at-kind pytest-regression and "
+                    "--regression-test-file -- behavioral proof is "
+                    "mandatory when overriding a missing Slice-Id: trailer"
+                ),
+                "how": (
+                    "pass --at-kind pytest-regression --regression-test-file "
+                    "<repo-relative-path> alongside --slice-id"
+                ),
+            }
+        )
+        return 2
+
+    slice_ids, commit_sha, error_code, used_override = _resolve_slice_ids(
+        repo, args.commit, slice_id_override
+    )
     if error_code is not None:
         return error_code
 
@@ -742,15 +826,22 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
             return exit_code
 
     # E1, E2 and E3 all cleared -- record one SliceCommitVerified per slice.
-    _append_slice_commit_verified(repo, feature_id, slice_ids)
-    _emit_with_human_surface(
-        {
-            "event": "SliceCommitVerified",
-            "slice_ids": slice_ids,
-            "commit": args.commit,
-            "commit_sha": commit_sha,
-        }
+    # (#51) the --slice-id override path carries the transparent
+    # attested_via marker so the audit shows the trailer was bypassed;
+    # the normal trailer path carries no such field (byte-unchanged).
+    attested_via = "slice-id-override" if used_override else None
+    _append_slice_commit_verified(
+        repo, feature_id, slice_ids, attested_via=attested_via
     )
+    verified_payload: dict[str, object] = {
+        "event": "SliceCommitVerified",
+        "slice_ids": slice_ids,
+        "commit": args.commit,
+        "commit_sha": commit_sha,
+    }
+    if attested_via is not None:
+        verified_payload["attested_via"] = attested_via
+    _emit_with_human_surface(verified_payload)
     return 0
 
 
