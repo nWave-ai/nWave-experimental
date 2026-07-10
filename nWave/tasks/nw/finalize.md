@@ -26,11 +26,15 @@ Finalize a completed feature: verify all steps done|create evolution document|mi
 - docs/feature/{feature-id}/deliver/roadmap.json - Original project plan
 - docs/feature/{feature-id}/deliver/execution-log.json - Step execution history
 
+**Mode note**: the two files above are classic-mode only (ADR-024 era artifacts). Under `workflow.mode = atdd_pure` neither exists — read the AT-completion ledger (`.nwave/telemetry/atdd-pure/{feature-id}.jsonl`) and the feature-delta `## Wave: DISCUSS / [REF] Slice Plan` table instead.
+
 ## Pre-Dispatch Gate: All Steps Complete
 
 Before dispatching, verify all steps are done — prevents archiving incomplete features.
 
 Parse execution-log.json, verify every step has status DONE. If any step is not DONE, block finalization and list incomplete steps with current status. Do not dispatch until all steps complete.
+
+**Mode note**: the execution-log.json gate above applies under `workflow.mode = classic` (or absent). Under `workflow.mode = atdd_pure` there is no execution-log.json — the equivalent DONE signal is every `[REF] Slice Plan` row `shipped` in the feature-delta AND a `FeatureEnd` ledger record attesting the feature (`des feature-end run` has signed, recorded in `.nwave/telemetry/atdd-pure/{feature-id}.jsonl`). If any slice row is not `shipped`, or no `FeatureEnd` record exists, block finalization and report the gap; do not dispatch until both conditions hold.
 
 ## Phases
 
