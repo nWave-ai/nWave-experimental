@@ -82,7 +82,7 @@ from des.runtime.interpreter import (
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from des.ports.driven_ports.output_port import OutputPort
 
@@ -796,12 +796,91 @@ def _await_resource_window(
     )
 
 
+def _light_invariant_paths(repo: Path) -> list[Path]:
+    """Resolve the internal default light always-on invariant set.
+
+    Used only when a caller opts into the SCOPED per-slice tier
+    (``regression_test_file`` and/or ``light_invariant_paths`` given, ``full``
+    not True) but does not inject an explicit ``light_invariant_paths`` list.
+    Every AT in the scoped-per-slice-build-tier feature-delta injects the
+    light set explicitly (never coupling the AT to a guessed filesystem
+    convention), so this resolver has no AT-pinned content yet -- it defaults
+    to an empty list (AT-driven minimalism: no invented filesystem
+    convention beyond what a caller/future-AT requires).
+    """
+    return []
+
+
+def _resolve_build_tier_run_paths(
+    repo: Path,
+    whole_tree_paths: list[Path],
+    *,
+    regression_test_file: Path | None,
+    light_invariant_paths: Sequence[Path] | None,
+    full: bool,
+    output: OutputPort | None,
+) -> list[Path]:
+    """Resolve the paths handed to ``_run_arch_invariant_set`` for THIS run.
+
+    ``full=True`` OR neither scope kwarg given -> the whole-tree
+    ``whole_tree_paths`` (``_arch_invariant_paths(repo)``, unchanged).
+    Otherwise -> SCOPED: ``[regression_test_file, *light_invariant_paths]``
+    (``light_invariant_paths=None`` resolves via ``_light_invariant_paths``),
+    with a LOUD ``BuildTierWholeTreeDeferred`` event -- naming feature-end --
+    emitted BEFORE the run.
+    """
+    scope_requested = (
+        regression_test_file is not None or light_invariant_paths is not None
+    )
+    if full or not scope_requested:
+        return whole_tree_paths
+
+    resolved_light = (
+        list(light_invariant_paths)
+        if light_invariant_paths is not None
+        else _light_invariant_paths(repo)
+    )
+    scoped_paths = (
+        [regression_test_file, *resolved_light]
+        if regression_test_file is not None
+        else resolved_light
+    )
+    _emit(
+        {
+            "event": "BuildTierWholeTreeDeferred",
+            "scope": "per-slice",
+            "regression_test_file": (
+                str(regression_test_file) if regression_test_file is not None else None
+            ),
+            "light_invariant_paths": [str(p) for p in resolved_light],
+            "deferred_to": "feature-end",
+            "what": "whole-tree tests/build/** architecture tier",
+            "why": (
+                "the per-slice seal scopes to the entering slice's regression "
+                "test + the light always-on invariants -- the whole-tree "
+                "tests/build/** tier is deferred to feature-end, never "
+                "silently narrowed"
+            ),
+            "how": (
+                "the whole-tree floor still runs at feature-end: "
+                "`run_contract_gate --repo . --full` (or the existing "
+                "feature-end integrity leg)"
+            ),
+        },
+        output,
+    )
+    return scoped_paths
+
+
 def build_tier_exit_verdict(
     repo: Path,
     *,
     output: OutputPort | None = None,
     resource_readings: Iterable[tuple[int, float]] | None = None,
     sleep_fn: Callable[[float], None] | None = None,
+    regression_test_file: Path | None = None,
+    light_invariant_paths: Sequence[Path] | None = None,
+    full: bool = False,
 ) -> int:
     """RUN the build-tier architectural set as a per-slice exit check.
 
@@ -824,6 +903,26 @@ def build_tier_exit_verdict(
     keeps writing to ``sys.stdout``, ``resource_readings=None`` reads real
     ``/proc/meminfo`` + ``/proc/loadavg``, ``sleep_fn=None`` uses real
     ``time.sleep``.
+
+    Per-slice SCOPING (feature-delta scoped-per-slice-build-tier/slice-01,
+    ADD-not-mutate, keyword-only): ``regression_test_file`` /
+    ``light_invariant_paths`` / ``full`` narrow which paths are handed to
+    ``_run_arch_invariant_set``, WITHOUT changing the ``tests/build``
+    presence check above (that N/A check stays keyed off the whole-tree
+    ``_arch_invariant_paths(repo)`` resolver, independent of what actually
+    RUNS). Scope resolution:
+
+    * ``full=True`` OR neither ``regression_test_file`` nor
+      ``light_invariant_paths`` given -> whole tree (``_arch_invariant_paths``,
+      unchanged -- today's zero-new-kwarg ``commit_slice.py`` call site keeps
+      this behaviour byte-for-byte).
+    * otherwise -> SCOPED: the run targets ``[regression_test_file,
+      *light_invariant_paths]`` (``light_invariant_paths=None`` resolves via
+      the internal ``_light_invariant_paths(repo)`` default), and a LOUD
+      ``BuildTierWholeTreeDeferred`` event naming ``feature-end`` is emitted
+      BEFORE the run -- the whole-tree tier is deferred, never silently
+      narrowed. The pre-launch resource window (above) still gates the
+      SCOPED run identically to the whole-tree run.
 
     Verdicts (all LOUD, single-line JSON events):
 
@@ -867,6 +966,15 @@ def build_tier_exit_verdict(
         )
         return 0
 
+    run_paths = _resolve_build_tier_run_paths(
+        repo,
+        arch_paths,
+        regression_test_file=regression_test_file,
+        light_invariant_paths=light_invariant_paths,
+        full=full,
+        output=output,
+    )
+
     window = _await_resource_window(
         resource_readings=resource_readings, sleep_fn=sleep_fn, output=output
     )
@@ -899,7 +1007,7 @@ def build_tier_exit_verdict(
 
     started = time.monotonic()
     try:
-        arch = _run_arch_invariant_set(repo, arch_paths)
+        arch = _run_arch_invariant_set(repo, run_paths)
     except InterpreterUnavailable as exc:
         _emit(
             {

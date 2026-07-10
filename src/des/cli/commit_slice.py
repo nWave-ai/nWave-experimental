@@ -75,6 +75,9 @@ from des.cli.record_examine_verdict import examine_ledger_path as _examine_ledge
 from des.cli.run_contract_gate import (
     _committed_scope_digest_value,
     _CommittedScopeDigest,
+    _DigestRouteDegrade,
+    _DigestRouteResult,
+    _maybe_route_digest_through_runner,
     build_tier_exit_verdict,
     extract_gate_scope,
 )
@@ -91,6 +94,13 @@ from des.domain.slice_id_trailer import extract_slice_ids
 # when no pytest interpreter resolves on this machine (a non-Python target). The
 # first value the carpaccio-honest AT pins; degrade-LOUD keeps the taxonomy open.
 _DEGRADE_REASON_INTERPRETER_UNAVAILABLE = "gate_scope_interpreter_unavailable"
+
+# The honest free-text degrade reason recorded when the resolved NON-pytest
+# runner (e.g. cargo-test) cannot produce a trustworthy enumerate -- the
+# runner-agnostic sibling of `_DEGRADE_REASON_INTERPRETER_UNAVAILABLE` (F-gate-
+# scope-digest-runner-agnostic slice-01). Distinguishes "no runner resolved a
+# scope at all" from "a runner resolved but its own enumerate degraded LOUD".
+_DEGRADE_REASON_RUNNER_UNAVAILABLE = "gate_scope_runner_unavailable"
 
 
 # The placeholder digest stamped on the FIRST (pre-amend) commit. 64 zero-hex
@@ -683,6 +693,39 @@ def _amend_trailer(repo: Path, digest: str) -> None:
     )
 
 
+def _committed_scope_digest_or_degrade_reason(
+    repo: Path,
+) -> tuple[str, None] | tuple[None, str]:
+    """Step 3's committed-scope digest, routed through the runner seam FIRST.
+
+    Mirrors the SAME runner-resolution seam the digest CLI modes already use
+    (``_maybe_route_digest_through_runner`` -> ``--committed-scope-digest`` /
+    ``--print-digest`` / ``--verify-gate-scope``), so a cargo-test (or any
+    future non-pytest) target earns a runner-derived digest instead of the
+    pytest-native one -- never a vacuous pytest digest over a Rust tree
+    (F-gate-scope-digest-runner-agnostic slice-01).
+
+    * pytest / lockfile-less target -- the runner seam returns ``None`` (its
+      OWN unchanged fall-through contract): falls through to the EXISTING
+      ``_committed_scope_digest_value`` pytest path, byte-identical to before.
+    * a resolved non-pytest runner (e.g. cargo-test) -- its OWN enumerate
+      facet already produced the digest (``_DigestRouteResult``); used as-is.
+    * either leg degrading (``RunnerAdapterUnavailable`` / no interpreter) --
+      returns ``(None, reason)``; the reason names WHICH leg degraded so the
+      caller mints the honest ``SliceCommitIndeterminate`` record, never a
+      fabricated digest.
+    """
+    route = _maybe_route_digest_through_runner(repo)
+    if isinstance(route, _DigestRouteResult):
+        return route.digest, None
+    if isinstance(route, _DigestRouteDegrade):
+        return None, _DEGRADE_REASON_RUNNER_UNAVAILABLE
+    digest_result = _committed_scope_digest_value(repo, "HEAD")
+    if isinstance(digest_result, _CommittedScopeDigest):
+        return digest_result.digest, None
+    return None, _DEGRADE_REASON_INTERPRETER_UNAVAILABLE
+
+
 def _verify(repo: Path) -> int:
     """Run ``run_contract_gate --verify-gate-scope --commit HEAD``; return exit.
 
@@ -912,18 +955,24 @@ def main(argv: list[str] | None = None) -> int:
 
     # Step 3: the committed-scope digest of the RESULTING HEAD. This now
     # includes the slice's previously-untracked AT files -- the whole point.
-    # git absent / not a work-tree emits the LOUD INDETERMINATE event (exit 2
-    # propagated as 1 -- the commit landed but is un-verifiable).
-    digest_result = _committed_scope_digest_value(repo, "HEAD")
-    if not isinstance(digest_result, _CommittedScopeDigest):
-        # The committed-scope machinery already emitted its LOUD event. The
-        # commit LANDED at step 2 carrying its Slice-Id trailer, but the digest
-        # could not be pinned (a non-Python target with no resolvable pytest
-        # interpreter). DDD-6: instead of returning record-less -- which wedges
-        # the successor slice ("predecessor has no honest record") -- route the
-        # degrade to MINT the honest SliceCommitIndeterminate record (the SAME
-        # SSOT mint `des verify-slice-commit`'s E2 degrade uses). The in-order
-        # gate accepts an INDETERMINATE predecessor, so the chain progresses; a
+    # Routed through the SAME runner-resolution seam the digest CLI modes use
+    # (cargo-test target -> a runner-derived digest, never a vacuous pytest
+    # one); git absent / not a work-tree / an un-enumerable runner scope emits
+    # the LOUD INDETERMINATE event (exit 2 propagated as 1 -- the commit
+    # landed but is un-verifiable).
+    digest, degrade_reason = _committed_scope_digest_or_degrade_reason(repo)
+    if digest is None:
+        assert degrade_reason is not None  # the tuple contract: exactly one is set
+        # The committed-scope machinery (pytest OR runner leg) already emitted
+        # its LOUD event. The commit LANDED at step 2 carrying its Slice-Id
+        # trailer, but the digest could not be pinned (a non-Python target
+        # with no resolvable pytest interpreter, OR a resolved non-pytest
+        # runner whose enumerate facet degraded). DDD-6: instead of returning
+        # record-less -- which wedges the successor slice ("predecessor has no
+        # honest record") -- route the degrade to MINT the honest
+        # SliceCommitIndeterminate record (the SAME SSOT mint
+        # `des verify-slice-commit`'s E2 degrade uses). The in-order gate
+        # accepts an INDETERMINATE predecessor, so the chain progresses; a
         # fabricated SliceCommitVerified is NEVER written (the honesty invariant).
         if args.feature_id is not None:
             slice_ids = extract_slice_ids(message)
@@ -931,7 +980,7 @@ def main(argv: list[str] | None = None) -> int:
                 repo,
                 args.feature_id,
                 slice_ids,
-                reason=_DEGRADE_REASON_INTERPRETER_UNAVAILABLE,
+                reason=degrade_reason,
             )
             _emit(
                 {
@@ -939,15 +988,15 @@ def main(argv: list[str] | None = None) -> int:
                     "commit": _git(repo, "rev-parse", "HEAD").strip(),
                     "feature_id": args.feature_id,
                     "slice_ids": slice_ids,
-                    "reason": _DEGRADE_REASON_INTERPRETER_UNAVAILABLE,
+                    "reason": degrade_reason,
                     "error": "the committed-scope digest could not be established "
-                    "on this machine (no resolvable interpreter) -- recorded an "
-                    "honest SliceCommitIndeterminate (unverified here), never a "
+                    "(no resolvable interpreter, or the resolved runner's "
+                    "enumerate facet was untrustworthy) -- recorded an honest "
+                    "SliceCommitIndeterminate (unverified here), never a "
                     "fabricated pass",
                 }
             )
         return 1
-    digest = digest_result.digest
 
     # Step 4: amend the message-only trailer to the committed-scope digest.
     try:

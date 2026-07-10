@@ -157,19 +157,39 @@ def list_cargo_scope(
     * any other non-zero (the enumeration itself failed) -> raise
       ``RunnerAdapterUnavailable`` -- a digest over an untrustworthy enumeration is
       worse than a LOUD refusal.
-    * exit 0 -> the parsed node-id set.
+    * exit 0 but stdout decodes to ZERO test identities (a well-formed,
+      successful invocation over a crate with no matched tests -- distinct from
+      nextest's own exit-4 refusal) -> raise ``RunnerAdapterUnavailable``
+      (empty-scope INDETERMINATE -- never mint ``compute_gate_scope_digest(())``
+      == ``sha256("")`` as a "verified" fingerprint).
+    * exit 0 but stdout is not valid UTF-8 (a genuinely unparseable listing,
+      e.g. a binary/doctest identity carrying raw bytes) -> raise
+      ``RunnerAdapterUnavailable`` -- refusing to fingerprint an unparseable
+      enumeration, never an uncaught ``UnicodeDecodeError`` propagating past
+      this seam.
+    * exit 0, valid UTF-8, non-empty -> the parsed node-id set.
     """
     resolution = resolve_tool(_CARGO_NAME, CARGO_KNOWN_LOCATIONS)
     if resolution.path is None:
         raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
 
-    completed = subprocess.run(
-        [resolution.path, "nextest", "list"],
-        capture_output=True,
-        text=True,
-        cwd=target_root,
-        env=_env_with_cargo_dir(resolution.path),
-    )
+    try:
+        completed = subprocess.run(
+            [resolution.path, "nextest", "list"],
+            capture_output=True,
+            text=True,
+            cwd=target_root,
+            env=_env_with_cargo_dir(resolution.path),
+        )
+    except UnicodeDecodeError as exc:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                "`cargo nextest list` emitted output that could not be decoded "
+                f"as UTF-8 ({exc}) -- refusing to fingerprint an unparseable "
+                "enumeration"
+            ),
+        ) from exc
 
     if completed.returncode == _NO_MATCH_EXIT:
         raise RunnerAdapterUnavailable(
@@ -198,9 +218,18 @@ def list_cargo_scope(
             ),
         )
 
-    return ListScope(
-        node_ids=_parse_nextest_list(completed.stdout), runner=adapter.name
-    )
+    node_ids = _parse_nextest_list(completed.stdout)
+    if not node_ids:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                "`cargo nextest list` exited 0 but enumerated ZERO test "
+                "identities (empty-scope) -- refusing to mint a vacuous "
+                "sha256(\"\") digest as a 'verified' fingerprint"
+            ),
+        )
+
+    return ListScope(node_ids=node_ids, runner=adapter.name)
 
 
 def _parse_nextest_list(stdout: str) -> tuple[str, ...]:
