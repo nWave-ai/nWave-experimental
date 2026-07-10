@@ -63,6 +63,40 @@ _EXIT_REFUSED = 1
 _EXIT_INDETERMINATE = 2
 
 
+def _has_tool_uv_table(pyproject: Path) -> bool:
+    """Filesystem-only, no shelling out (GDP-7): scan pyproject.toml text for
+    a ``[tool.uv]`` table header."""
+    if not pyproject.is_file():
+        return False
+    try:
+        text = pyproject.read_text()
+    except OSError:
+        return False
+    return any(line.strip() == "[tool.uv]" for line in text.splitlines())
+
+
+def _default_run_cmd(repo: Path) -> tuple[str, ...]:
+    """Derive the DEFAULT runner command from the TARGET ``repo``'s Python
+    packaging manifest (filesystem-only, no shelling out -- GDP-7).
+
+    ``sys.executable`` binds to the interpreter that LAUNCHED verify-red-green,
+    not the target repo's environment -- on a uv/poetry/pipenv target repo
+    that runs pytest in the WRONG env. Derive from the manifest instead so the
+    default always runs in the target's own environment; fall back to the
+    unchanged ``_DEFAULT_RUN_CMD`` (current sys.executable -m pytest form)
+    when no recognized manifest is present. An explicit ``--run-cmd`` always
+    wins over this derivation (see ``main``).
+    """
+    tail = ("{test_file}", "--junitxml={junit_out}", "-q", "--tb=no")
+    if (repo / "uv.lock").is_file() or _has_tool_uv_table(repo / "pyproject.toml"):
+        return ("uv", "run", "pytest", *tail)
+    if (repo / "poetry.lock").is_file():
+        return ("poetry", "run", "pytest", *tail)
+    if (repo / "Pipfile.lock").is_file() or (repo / "Pipfile").is_file():
+        return ("pipenv", "run", "pytest", *tail)
+    return _DEFAULT_RUN_CMD
+
+
 def _emit(payload: dict[str, object]) -> None:
     print(json.dumps(payload))
 
@@ -318,7 +352,9 @@ def main(argv: list[str] | None = None) -> int:
             why="nothing to observe.",
             how="check the path.",
         )
-    run_cmd = tuple(shlex.split(args.run_cmd)) if args.run_cmd else _DEFAULT_RUN_CMD
+    run_cmd = (
+        tuple(shlex.split(args.run_cmd)) if args.run_cmd else _default_run_cmd(repo)
+    )
     if args.record_red:
         return _record_red(repo, test_file, run_cmd)
     return _verify_green(repo, test_file, run_cmd)
