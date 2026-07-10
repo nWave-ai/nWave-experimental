@@ -603,7 +603,8 @@ def check_carpaccio(
                 ),
             },
         )
-    if plan.row_for(entering_slice) is None:
+    entering_row = plan.row_for(entering_slice)
+    if entering_row is None:
         raise GateError(
             44,
             {
@@ -621,8 +622,9 @@ def check_carpaccio(
         at_count = count_pytest_regression_ats(regression_test_file)
         _check_walking_skeleton_first(plan)
         _check_value_annotation(plan)
+        all_coupled = bool(_COUPLED_TAG_RE.search(entering_row.annotation))
         return _check_slice_size_count(
-            plan, entering_slice, slice_max, at_count, all_coupled=False
+            plan, entering_slice, slice_max, at_count, all_coupled=all_coupled
         )
     _check_total_coverage(plan, scenarios)
     _check_walking_skeleton_first(plan)
@@ -777,11 +779,14 @@ def _check_slice_size_count(
     """Assertion 1 core: slice size <= N unless a coupled-AT-group escape applies.
 
     Shared by both ``at_kind`` modes (ADR-001, fix-pre-push-hook-dual-
-    installer-collision): gherkin mode (``_check_slice_size``) computes
-    ``at_count`` / ``all_coupled`` from ``.feature`` scenarios;
-    pytest-regression mode (``check_carpaccio``) passes the AST-counted AT
-    count and ``all_coupled=False`` -- no ``@coupled``-tag vocabulary exists
-    for a plain pytest regression file in this ADR's scope.
+    installer-collision; ``all_coupled`` derivation fixed under
+    fix-carpaccio-pytest-coupled-escape): gherkin mode (``_check_slice_size``)
+    computes ``at_count`` / ``all_coupled`` from ``.feature`` scenarios'
+    ``@coupled`` tags; pytest-regression mode (``check_carpaccio``) passes the
+    AST-counted AT count and derives ``all_coupled`` from the entering slice's
+    own Slice-Plan row Annotation cell (``_COUPLED_TAG_RE.search(row.annotation)``)
+    -- the same ``@coupled``-tag vocabulary, read from the row instead of from
+    scenario tags, since a plain pytest regression file carries no per-test tags.
     """
     if at_count <= slice_max:
         return None
