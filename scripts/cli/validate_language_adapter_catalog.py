@@ -52,6 +52,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import yaml
 from jsonschema import Draft202012Validator
@@ -61,9 +62,21 @@ from des.testarch.discovery import (
     DiscoveryResolutionError,
     resolve_and_probe_realized_surface,
 )
+from des.testarch.port_realization_discovery import (
+    PortRealizationProbeError,
+    resolve_and_probe_port_realization_with_detail,
+)
 from des.testarch.rules.registry_conformance import (
     detect_per_plugin_capability_conformance,
 )
+
+
+if TYPE_CHECKING:
+    from des.ports.language_adapter_plugin import LanguageAdapterPlugin
+    from des.testarch.port_realization_discovery import (
+        PortRealizationGapDetail,
+        PortRealizationUnknownPortNote,
+    )
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -221,18 +234,239 @@ def _resolve_discovery(
     return resolve_and_probe_realized_surface(required, entry_points_source)
 
 
+# --- slice-03: port-realization gate mode (declared-True-but-stub-backed) --
+#
+# language-port-realization-gate, slice-03 (DELIVER, A_GREEN). The
+# ``--check-port-realization`` mode composes slice-02's composition root
+# (``des.testarch.port_realization_discovery``) over one of 3 discovery-source
+# shapes (DDD-D6, mirrors ``run_conformance_gate``'s parameter shape). Exit
+# lanes reuse the existing 0/1/3 contract, discriminated from
+# ``--check-conformance`` by the stderr message prefix.
+
+PORT_REALIZATION_GATE_CONFORMANT = 0
+"""Exit lane: no declared-covered port is stub-backed."""
+
+PORT_REALIZATION_GATE_GAP = 1
+"""Exit lane: >=1 declared-True-but-stub-backed port (the gap lane)."""
+
+PORT_REALIZATION_GATE_INDETERMINATE = 3
+"""Exit lane: discovery target unresolvable -- DISTINCT loud signal (GDP-6)."""
+
+_PORT_REALIZATION_GAP_PREFIX = (
+    "language-adapter port-realization gate: registered-but-stub-backed"
+)
+_PORT_REALIZATION_LOUD_PREFIX = (
+    "language-adapter port-realization gate is indeterminate"
+)
+
+_CHECK_PORT_REALIZATION_FLAG = "--check-port-realization"
+
+# HOW -- the Protocol each stub-backed port must implement (GDP-3/4: the
+# FAIL-LOUD block names the exact interface to implement).
+_PORT_REALIZATION_PROTOCOL_BY_PORT = {
+    "run_contract_gate": "ContractGatePort",
+    "verify_environmental_e2e": "EnvironmentalE2EPort",
+    "check_robustness_density": "RobustnessDensityPort",
+}
+
+
+def _load_entry_point_plugin(entry_point: EntryPoint) -> LanguageAdapterPlugin:
+    """Resolve one ``EntryPoint`` target, naming it in any resolution failure.
+
+    The raw stdlib exception (e.g. ``ModuleNotFoundError: No module named
+    'not'`` for target ``not.a.module:Nope``) does not repeat the full
+    dotted target the caller named -- re-raise as ``PortRealizationProbeError``
+    with ``entry_point.value`` embedded so a degrade-LOUD diagnostic can
+    always name the unresolvable target (GDP-3/6, T8), not just the
+    top-level package fragment stdlib reports.
+    """
+    try:
+        return cast("LanguageAdapterPlugin", entry_point.load()())
+    except (ImportError, AttributeError, TypeError) as exc:
+        raise PortRealizationProbeError(
+            f"cannot resolve target {entry_point.value!r}: {exc}"
+        ) from exc
+
+
+def _resolve_port_realization_plugins(
+    discovery_source: Iterable[LanguageAdapterPlugin] | Iterable[EntryPoint] | None,
+) -> list[LanguageAdapterPlugin] | None:
+    """Coerce the 3 discovery-source shapes into resolved plugin instances.
+
+    ``None`` is passed straight through -- the composition root reads the live
+    registry itself. An iterable of already-resolved ``LanguageAdapterPlugin``
+    instances is used directly (mirrors
+    ``resolve_and_probe_port_realization_with_detail``'s own ``plugins``
+    parameter, T2-T4). An iterable of raw ``EntryPoint`` is resolved here
+    (``.load()`` + instantiate, T5, T7/T8's ``--plugin`` flag) -- a genuine
+    resolution failure propagates to the caller, which maps it onto the
+    INDETERMINATE lane.
+    """
+    if discovery_source is None:
+        return None
+    materialized = list(discovery_source)
+    if materialized and isinstance(materialized[0], EntryPoint):
+        return [
+            _load_entry_point_plugin(entry_point)
+            for entry_point in cast("list[EntryPoint]", materialized)
+        ]
+    return cast("list[LanguageAdapterPlugin]", materialized)
+
+
+def _parse_plugin_flags(args: list[str]) -> tuple[EntryPoint, ...] | None:
+    """Parse repeatable ``--plugin <module>:<Class>`` flags (T7/T8).
+
+    Returns ``None`` when no ``--plugin`` flag is present -- the caller falls
+    back to reading the live registry (``discovery_source=None``, unchanged
+    T1/T1b behaviour). Each present ``--plugin <target>`` becomes an
+    ``EntryPoint`` whose ``value`` IS the ``module:Class`` target string,
+    resolved via the SAME ``.load()`` mechanism the raw-``EntryPoint``
+    discovery-source shape already uses (T5) -- an unresolvable target
+    degrades to the same INDETERMINATE lane, never a raw traceback.
+    """
+    targets = [
+        args[index + 1]
+        for index in range(len(args))
+        if args[index] == "--plugin" and index + 1 < len(args)
+    ]
+    if not targets:
+        return None
+    return tuple(
+        EntryPoint(name=target, value=target, group="nwave.lang.adapter")
+        for target in targets
+    )
+
+
+def _display_path(file_path: str) -> str:
+    """Repo-relative display form of an ``inspect``-sourced absolute path."""
+    try:
+        return str(Path(file_path).resolve().relative_to(_REPO_ROOT))
+    except ValueError:
+        return file_path
+
+
+def _print_port_realization_gap(
+    violation: object, detail: PortRealizationGapDetail | None
+) -> None:
+    """FAIL-LOUD one block per gap (GDP-3/4): WHAT/WHY/HOW, never bare."""
+    header = (
+        f"{_PORT_REALIZATION_GAP_PREFIX} port {violation.port!r} on plugin "
+        f"{violation.plugin_id!r}"
+    )
+    if detail is None:
+        print(header, file=sys.stderr)
+        return
+    protocol_name = _PORT_REALIZATION_PROTOCOL_BY_PORT.get(violation.port, "<unknown>")
+    file_display = _display_path(detail.file_path)
+    print(
+        f"{header}: method `{detail.method_name}` is a stub "
+        f"({file_display}:{detail.line_number}). Implement `{protocol_name}` in "
+        f"{file_display}. Re-check with: python -m "
+        f"scripts.cli.validate_language_adapter_catalog {_CHECK_PORT_REALIZATION_FLAG}",
+        file=sys.stderr,
+    )
+
+
+_PORT_REALIZATION_NOTE_PREFIX = (
+    "language-adapter port-realization gate: note (out-of-catalog, not-probed)"
+)
+
+
+def _print_unknown_port_note(note: PortRealizationUnknownPortNote) -> None:
+    """Visibly note a declared-covered port outside the 3-port probe catalog.
+
+    Not a gap (the port is genuinely out of this gate's scope, e.g.
+    ``nwave-lang-rust``'s legacy ``"test-runner"`` port) -- but silence is
+    also wrong (Vera examine finding #2, GDP-6): a maintainer must be able
+    to tell "verified nothing to report" from "silently ignored a declared
+    port".
+    """
+    print(
+        f"{_PORT_REALIZATION_NOTE_PREFIX}: plugin {note.plugin_id!r} declares "
+        f"port {note.port!r}, outside this gate's known port catalog.",
+        file=sys.stderr,
+    )
+
+
+def run_port_realization_gate(
+    discovery_source: Iterable[LanguageAdapterPlugin]
+    | Iterable[EntryPoint]
+    | None = None,
+) -> int:
+    """Run the ``--check-port-realization`` gate; return the process exit code.
+
+    Composes slice-02's composition root
+    (``resolve_and_probe_port_realization_with_detail`` /
+    ``PortRealizationProbeError``) over one of 3 discovery-source shapes
+    (DDD-D6, mirrors ``run_conformance_gate``):
+
+    * ``None`` -- read the live ``nwave.lang.adapter`` registry.
+    * an iterable of ``LanguageAdapterPlugin`` instances -- AST-stub-probed
+      directly.
+    * an iterable of ``EntryPoint`` -- resolved (``.load()`` + instantiate)
+      then AST-stub-probed.
+
+    Exit lanes: ``0`` CONFORMANT (no declared-covered port is stub-backed --
+    a truthful, non-silent summary is printed naming the outcome and the
+    count of plugins probed, Vera examine finding #1) / ``1`` GAP (>=1
+    declared-True-but-stub-backed port -- one FAIL-LOUD block per offender
+    naming WHAT the port+stub method @file:line, the Protocol to implement,
+    the adapter file, and the re-check command) / ``3`` INDETERMINATE (an
+    unresolvable discovery target -- a resolution failure or
+    ``PortRealizationProbeError``). Never a raw traceback, never a silent
+    CONFORMANT on a resolution failure (GDP-6). Any declared-covered port
+    outside the known 3-port catalog is visibly noted, never silently
+    skipped (Vera examine finding #2).
+    """
+    try:
+        plugins = _resolve_port_realization_plugins(discovery_source)
+        verdict, details, unknown_port_notes, plugin_count = (
+            resolve_and_probe_port_realization_with_detail(plugins)
+        )
+    except (
+        PortRealizationProbeError,
+        ImportError,
+        AttributeError,
+        TypeError,
+    ) as failure:
+        print(f"{_PORT_REALIZATION_LOUD_PREFIX}: {failure}", file=sys.stderr)
+        return PORT_REALIZATION_GATE_INDETERMINATE
+
+    for note in unknown_port_notes:
+        _print_unknown_port_note(note)
+
+    if not verdict.flagged:
+        print(
+            f"language-adapter port-realization gate: conformant -- "
+            f"{plugin_count} plugin(s) probed, 0 gap(s) found."
+        )
+        return PORT_REALIZATION_GATE_CONFORMANT
+
+    details_by_offender = {(d.plugin_id, d.port): d for d in details}
+    for violation in verdict.violations:
+        detail = details_by_offender.get((violation.plugin_id, violation.port))
+        _print_port_realization_gap(violation, detail)
+    return PORT_REALIZATION_GATE_GAP
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point -- validate the catalog at argv[0], or run a gate mode."""
     args = sys.argv[1:] if argv is None else argv
     if not args:
         print(
             "usage: python -m scripts.cli.validate_language_adapter_catalog "
-            "[--check-conformance] <catalog.yaml>",
+            "[--check-conformance] "
+            "[--check-port-realization [--plugin <module>:<Class> ...]] "
+            "<catalog.yaml>\n"
+            "exit lanes: 0 conformant / 1 gap / 3 indeterminate (loud, never silent)",
             file=sys.stderr,
         )
         return 2
     if args[0] == "--check-conformance":
         return run_conformance_gate()
+    if args[0] == _CHECK_PORT_REALIZATION_FLAG:
+        discovery_source = _parse_plugin_flags(args[1:])
+        return run_port_realization_gate(discovery_source)
     return validate_catalog(Path(args[0]))
 
 
