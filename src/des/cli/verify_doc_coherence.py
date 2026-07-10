@@ -142,6 +142,48 @@ _DOC_STALE_STATUS_RE = re.compile(
     r"\b(Proposed|Draft|Superseded|Deprecated|Rejected|DESIGNED-NOT-BUILT)\b"
 )
 
+# Doc classes that are structurally NOT claims about the current tree
+# (forward-looking feature deltas, internal analysis, archived/research
+# material, proposals, ADRs, ...). The DEFAULT scan (``--docs`` omitted)
+# drops any doc under these repo-relative prefixes; an EXPLICIT ``--docs``
+# stays byte-unchanged (operator override).
+_NOT_CURRENT_CLAIM_DOC_PREFIXES = frozenset(
+    {
+        "docs/feature/",
+        "docs/analysis/",
+        "docs/internal/",
+        "docs/archive/",
+        "docs/research/",
+        "docs/evolution/",
+        "docs/scenarios/",
+        "docs/reports/",
+        "docs/proposals/",
+        "docs/adrs/",
+        "docs/architecture/",
+        "docs/product/architecture/",
+        "docs/product/expectations/",
+        "docs/feedback/",
+        "docs/epic/",
+        "docs/operations/",
+    }
+)
+
+
+def _is_not_current_claim_doc(rel_posix: str) -> bool:
+    """True when a doc's repo-relative path is a structurally-not-current-
+    tree-claim class (dropped by the DEFAULT scan only)."""
+    if any(rel_posix.startswith(prefix) for prefix in _NOT_CURRENT_CLAIM_DOC_PREFIXES):
+        return True
+    # Tutorial rule: any docs/guides/tutorial-*/ subdir names reader-example
+    # paths the reader will create, never a claim about this repo's tree.
+    parts = rel_posix.split("/")
+    return (
+        len(parts) > 2
+        and parts[0] == "docs"
+        and parts[1] == "guides"
+        and parts[2].startswith("tutorial-")
+    )
+
 
 @dataclass(frozen=True)
 class _Violation:
@@ -183,7 +225,12 @@ def _find_doc_files(repo: Path, docs: str | None) -> list[Path] | None:
     files = [p for p in sorted(repo.glob("README*")) if p.is_file()]
     docs_dir = repo / "docs"
     if docs_dir.is_dir():
-        files.extend(sorted(p for p in docs_dir.rglob("*.md") if p.is_file()))
+        files.extend(
+            p
+            for p in sorted(docs_dir.rglob("*.md"))
+            if p.is_file()
+            and not _is_not_current_claim_doc(p.relative_to(repo).as_posix())
+        )
     return files
 
 
