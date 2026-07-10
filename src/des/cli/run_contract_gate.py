@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -81,6 +82,8 @@ from des.runtime.interpreter import (
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Iterator
+
     from des.ports.driven_ports.output_port import OutputPort
 
 
@@ -448,6 +451,67 @@ def _arch_invariant_paths(repo: Path) -> list[Path]:
     return []
 
 
+def _resolve_arch_run_interpreter() -> str:
+    """Resolve the arch-invariant RUN worker's interpreter (F-21-safe).
+
+    Short-circuits the subprocess-probed ``pytest_interpreter()`` boundary
+    (which spawns a throwaway process per candidate rung -- ``_uv_python()``
+    unconditionally, then ``_has_capability`` per rung) when THIS process has
+    already imported pytest: ``import pytest`` succeeded HERE, in
+    ``sys.executable`` -- a child spawned with the SAME interpreter binary
+    inherits the identical site-packages, so this is a zero-subprocess-call
+    proof of capability, not a name-trust shortcut (F-21 stays satisfied: a
+    candidate is never trusted by NAME alone, only by a verified fact about
+    the exact binary being resolved). Falls back to the full probed boundary
+    when this process is not itself running under pytest (e.g. a real ``des
+    commit-slice`` CLI invocation) -- unchanged production behaviour.
+    """
+    if "pytest" in sys.modules:
+        return sys.executable
+    return pytest_interpreter()
+
+
+def _can_import_xdist_in_process() -> bool:
+    """In-process ``xdist`` importability probe -- zero subprocess calls."""
+    try:
+        return importlib.util.find_spec("xdist") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _resolve_arch_run_parallel_args(repo: Path, interpreter: str) -> list[str]:
+    """The arch-invariant RUN's parallel argv fragment (mirrors ``_parallel_pytest_args``).
+
+    Short-circuits the subprocess-probed ``can_import(interpreter, "xdist")``
+    when ``interpreter`` IS this process's own ``sys.executable``: an
+    in-process ``import xdist`` answers the identical question with zero
+    subprocess calls. Falls back to the probed boundary for any OTHER
+    interpreter (unchanged behaviour). This is a LOCAL mirror scoped to the
+    arch-invariant RUN only -- ``_parallel_pytest_args`` (the full-suite leg's
+    resolution) is untouched.
+    """
+    requested = _resolve_gate_jobs(repo)
+    if requested.lower() in _SERIAL_TOKENS:
+        return []
+
+    xdist_available = (
+        _can_import_xdist_in_process()
+        if interpreter == sys.executable
+        else can_import(interpreter, "xdist")
+    )
+    if not xdist_available:
+        print(
+            "[contract-gate] pytest-xdist not importable in "
+            f"{interpreter!r}; running the arch-invariant RUN SERIALLY "
+            "(install pytest-xdist for parallel speedup, or set "
+            f"{_GATE_JOBS_ENV}=serial to silence this).",
+            file=sys.stderr,
+        )
+        return []
+
+    return ["-n", requested, "--dist", "loadgroup"]
+
+
 def _run_arch_invariant_set(repo: Path, arch_paths: list[Path]) -> _ArchVerdict:
     """RUN the architecture-invariant set over ``arch_paths`` and map the verdict.
 
@@ -471,10 +535,20 @@ def _run_arch_invariant_set(repo: Path, arch_paths: list[Path]) -> _ArchVerdict:
     tier, so its wall-clock matters at every slice commit. Serial when the
     operator asked for serial or xdist is absent (the LOUD degrade lives in
     ``_parallel_pytest_args``).
+
+    Interpreter/xdist resolution uses ``_resolve_arch_run_interpreter`` /
+    ``_resolve_arch_run_parallel_args`` -- in-process short-circuits of the
+    subprocess-probed boundaries (``pytest_interpreter`` / ``can_import``)
+    that answer the identical question with ZERO subprocess calls whenever
+    this process is itself running under pytest as ``sys.executable`` (see
+    their docstrings). This keeps the ONE spawn this function makes (the
+    worker RUN below) the ONLY subprocess call on the fast in-process path --
+    the resource-aware caller (``build_tier_exit_verdict``) fakes exactly
+    that one spawn in its acceptance tests.
     """
-    interpreter = pytest_interpreter()
+    interpreter = _resolve_arch_run_interpreter()
     worker = Path(__file__).with_name("_collect_scope_worker.py")
-    parallel = _parallel_pytest_args(repo, interpreter)
+    parallel = _resolve_arch_run_parallel_args(repo, interpreter)
     jobs_args = ["--jobs", parallel[1]] if parallel else []
     try:
         completed = subprocess.run(
@@ -499,10 +573,16 @@ def _run_arch_invariant_set(repo: Path, arch_paths: list[Path]) -> _ArchVerdict:
         ) from exc
     payload = _parse_worker_line(completed.stdout, _RUN_RESULT_PREFIX)
     if payload is None:
-        raise _CollectionError(
-            "the arch-invariant run worker emitted no result line "
-            f"(exit {completed.returncode}): {completed.stderr.strip()[:500]}"
-        )
+        # The aborted-run signature (feature-delta gate-runner-resource-aware,
+        # slice-01): a worker killed by signal/OOM mid-run never reaches its
+        # own result-emitting code, so the missing NWAVE_RUN_SCOPE line IS the
+        # starvation signature -- distinct from a genuine collection/run
+        # failure. ``_WorkerStarvedError`` subclasses ``_CollectionError`` so
+        # every OTHER caller (``_mode_feature_scoped``) keeps its existing
+        # generic handling unchanged; ``build_tier_exit_verdict`` catches the
+        # subclass FIRST to reclassify it as INDETERMINATE-resource-starvation
+        # rather than the red ``BuildTierRefused`` lane (GDP-6).
+        raise _WorkerStarvedError(completed.returncode, completed.stderr)
     raw_exit = payload.get("pytest_exit_code", 1)
     pytest_exit = int(raw_exit) if isinstance(raw_exit, int) else 1
     raw_collected = payload.get("collected_count", 0)
@@ -532,7 +612,197 @@ _BUILD_TIER_NOT_APPLICABLE_EVENT = "BuildTierNotApplicable"
 _BUILD_TIER_INDETERMINATE_EVENT = "health.gate.build-tier.indeterminate"
 
 
-def build_tier_exit_verdict(repo: Path) -> int:
+# Pre-launch resource-window thresholds/bounds (feature-delta
+# gate-runner-resource-aware, slice-01) -- env-overridable, GDP-7 stdlib-only
+# (Python file reads over ``/proc``, zero external tool dependency).
+_MIN_MEM_AVAILABLE_MIB_ENV = "NWAVE_BUILD_TIER_MIN_MEM_AVAILABLE_MIB"
+_MAX_LOAD1_ENV = "NWAVE_BUILD_TIER_MAX_LOAD1"
+_WINDOW_TIMEOUT_SECONDS_ENV = "NWAVE_BUILD_TIER_WINDOW_TIMEOUT_SECONDS"
+_WINDOW_POLL_INTERVAL_SECONDS_ENV = "NWAVE_BUILD_TIER_POLL_INTERVAL_SECONDS"
+
+_DEFAULT_MIN_MEM_AVAILABLE_MIB = 700
+_DEFAULT_MAX_LOAD1 = 8.0
+_DEFAULT_WINDOW_TIMEOUT_SECONDS = 20 * 60.0
+_DEFAULT_POLL_INTERVAL_SECONDS = 30.0
+
+
+def _resolve_float_env(env_name: str, default: float) -> float:
+    """Return the float value of ``env_name``, or ``default`` when absent/bad."""
+    raw = os.environ.get(env_name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _resolve_int_env(env_name: str, default: int) -> int:
+    """Return the int value of ``env_name``, or ``default`` when absent/bad."""
+    return int(_resolve_float_env(env_name, float(default)))
+
+
+def _read_mem_available_mib() -> int | None:
+    """Read ``MemAvailable`` from ``/proc/meminfo`` in MiB; ``None`` off-Linux."""
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[1].isdigit():
+                        return int(parts[1]) // 1024
+    except OSError:
+        return None
+    return None
+
+
+def _read_load1() -> float | None:
+    """Read the 1-minute load average from ``/proc/loadavg``; ``None`` off-Linux."""
+    try:
+        with open("/proc/loadavg", encoding="utf-8") as handle:
+            first_line = handle.readline()
+    except OSError:
+        return None
+    parts = first_line.split()
+    if not parts:
+        return None
+    try:
+        return float(parts[0])
+    except ValueError:
+        return None
+
+
+def _read_real_resource_reading() -> tuple[int, float] | None:
+    """Read one real ``(mem_available_mib, load1)`` reading; ``None`` off-Linux.
+
+    Both ``/proc`` reads must succeed -- a partial read is treated the same as
+    an absent ``/proc`` (degrade-open on the CHECK, GDP-7).
+    """
+    mem_available_mib = _read_mem_available_mib()
+    load1 = _read_load1()
+    if mem_available_mib is None or load1 is None:
+        return None
+    return (mem_available_mib, load1)
+
+
+def _real_resource_reading_iter(
+    timeout_seconds: float, poll_interval_seconds: float
+) -> Iterator[tuple[int, float] | None]:
+    """Bound the production reading source by the wall-clock window timeout.
+
+    Exhaustion of this generator IS the bound (mirrors the injectable
+    ``resource_readings`` contract) -- no separate wall-clock check needed by
+    the caller.
+    """
+    poll_interval = max(poll_interval_seconds, 1.0)
+    max_polls = max(1, int(timeout_seconds / poll_interval) + 1)
+    for _ in range(max_polls):
+        yield _read_real_resource_reading()
+
+
+@dataclass(frozen=True)
+class _ResourceWindowResult:
+    """The outcome of the pre-launch resource-window wait-and-poll."""
+
+    opened: bool
+    attempts: int
+    last_reading: tuple[int, float] | None
+    mem_threshold_mib: int
+    load1_threshold: float
+
+
+def _await_resource_window(
+    *,
+    resource_readings: Iterable[tuple[int, float]] | None,
+    sleep_fn: Callable[[float], None] | None,
+    output: OutputPort | None,
+) -> _ResourceWindowResult:
+    """Wait-and-poll for a resource window BEFORE the heavy tier launches.
+
+    Consumes one ``(mem_available_mib, load1)`` reading per poll attempt until
+    a reading clears the threshold (``mem_available_mib`` above the
+    configured floor AND ``load1`` below the configured ceiling) or the
+    reading source is exhausted -- the bounded-wait budget: for the
+    injectable ``resource_readings`` path exhaustion of the iterable IS the
+    bound (no wall-clock needed); for the production path (``None``) the
+    source itself is bounded by the wall-clock window timeout. A ``None``
+    reading (``/proc`` absent, non-Linux) degrades open SILENTLY on the
+    CHECK -- the window opens immediately, no wait event emitted.
+    """
+    mem_threshold = _resolve_int_env(
+        _MIN_MEM_AVAILABLE_MIB_ENV, _DEFAULT_MIN_MEM_AVAILABLE_MIB
+    )
+    load_threshold = _resolve_float_env(_MAX_LOAD1_ENV, _DEFAULT_MAX_LOAD1)
+    timeout_seconds = _resolve_float_env(
+        _WINDOW_TIMEOUT_SECONDS_ENV, _DEFAULT_WINDOW_TIMEOUT_SECONDS
+    )
+    poll_interval = _resolve_float_env(
+        _WINDOW_POLL_INTERVAL_SECONDS_ENV, _DEFAULT_POLL_INTERVAL_SECONDS
+    )
+    sleep = sleep_fn if sleep_fn is not None else time.sleep
+
+    readings: Iterable[tuple[int, float] | None]
+    if resource_readings is not None:
+        readings = resource_readings
+    else:
+        readings = _real_resource_reading_iter(timeout_seconds, poll_interval)
+
+    attempts = 0
+    last_reading: tuple[int, float] | None = None
+    for reading in readings:
+        attempts += 1
+        if reading is None:
+            return _ResourceWindowResult(
+                opened=True,
+                attempts=attempts,
+                last_reading=None,
+                mem_threshold_mib=mem_threshold,
+                load1_threshold=load_threshold,
+            )
+        last_reading = reading
+        mem_available_mib, load1 = reading
+        if mem_available_mib > mem_threshold and load1 < load_threshold:
+            return _ResourceWindowResult(
+                opened=True,
+                attempts=attempts,
+                last_reading=last_reading,
+                mem_threshold_mib=mem_threshold,
+                load1_threshold=load_threshold,
+            )
+        _emit(
+            {
+                "event": "BuildTierResourceWait",
+                "attempt": attempts,
+                "mem_available_mib": mem_available_mib,
+                "load1": load1,
+                "mem_threshold_mib": mem_threshold,
+                "load1_threshold": load_threshold,
+                "what": "pre-launch resource window",
+                "why": (
+                    "observed resources are below the build-tier launch "
+                    "threshold -- waiting for a calmer window before "
+                    "spawning the heavy subprocess"
+                ),
+            },
+            output,
+        )
+        sleep(poll_interval)
+    return _ResourceWindowResult(
+        opened=False,
+        attempts=attempts,
+        last_reading=last_reading,
+        mem_threshold_mib=mem_threshold,
+        load1_threshold=load_threshold,
+    )
+
+
+def build_tier_exit_verdict(
+    repo: Path,
+    *,
+    output: OutputPort | None = None,
+    resource_readings: Iterable[tuple[int, float]] | None = None,
+    sleep_fn: Callable[[float], None] | None = None,
+) -> int:
     """RUN the build-tier architectural set as a per-slice exit check.
 
     Closes F-CONTRACT-GATE-EXCLUDES-BUILD-TIER-ARCH-TESTS for the slice exit
@@ -543,25 +813,41 @@ def build_tier_exit_verdict(repo: Path) -> int:
     coherence break) is CAUGHT at the slice exit instead of shipping unseen
     until a full-suite run.
 
-    ADD-not-mutate (design option i): this is an ADDITIONAL executed check.
-    The committed-scope digest machinery (``_collect_scope`` /
-    ``compute_gate_scope_digest`` / ``_FULL_SUITE_MARKER``) is untouched, so
-    every historic ``Gate-Scope:`` trailer re-verifies byte-identically.
+    ADD-not-mutate (design option i, keyword-only ADD-not-mutate extension
+    per feature-delta gate-runner-resource-aware/slice-01): this is an
+    ADDITIONAL executed check. The committed-scope digest machinery
+    (``_collect_scope`` / ``compute_gate_scope_digest`` / ``_FULL_SUITE_MARKER``)
+    is untouched, so every historic ``Gate-Scope:`` trailer re-verifies
+    byte-identically. ``output``/``resource_readings``/``sleep_fn`` default
+    to ``None`` -- zero behaviour change for the existing positional caller
+    (``commit_slice.py``'s ``build_tier_exit_verdict(repo)``): ``output=None``
+    keeps writing to ``sys.stdout``, ``resource_readings=None`` reads real
+    ``/proc/meminfo`` + ``/proc/loadavg``, ``sleep_fn=None`` uses real
+    ``time.sleep``.
 
     Verdicts (all LOUD, single-line JSON events):
 
     * ``tests/build`` absent -> ``BuildTierNotApplicable`` + return 0 (an
       external target legitimately carries no nWave arch tier; the N/A is
       emitted distinctly, never a silent pass claim).
+    * resource window never opens (pre-launch) -> LOUD
+      INDETERMINATE-resource-starvation naming the observed resources, the
+      threshold, and the retry command + return 0 -- the heavy subprocess is
+      NEVER spawned.
     * interpreter unresolvable -> ``health.gate.build-tier.indeterminate`` +
       return 0 (proceed; the downstream committed-scope digest step degrades
       on the same absence and mints the honest ``SliceCommitIndeterminate``).
-    * worker failure -> ``BuildTierRefused`` reason ``worker-failed`` +
-      return 1 (fail-closed: an unrunnable arch tier is never certified).
+    * worker killed by signal/OOM mid-run (post-run, no result line) ->
+      LOUD INDETERMINATE-resource-starvation naming the signal and the retry
+      command + return 0 -- NEVER the red ``BuildTierRefused`` lane (GDP-6).
+    * worker failure (any OTHER untrusted collection/run) -> ``BuildTierRefused``
+      reason ``worker-failed`` + return 1 (fail-closed: an unrunnable arch
+      tier is never certified).
     * present-but-vacuous (zero collected under the contract marker) ->
       ``BuildTierRefused`` reason ``arch-scope-zero-collected`` + return 1.
-    * a failing arch test -> ``BuildTierRefused`` reason
-      ``arch-invariant-failed`` NAMING the failing node-id(s) + return 1.
+    * a genuinely failing arch test -> ``BuildTierRefused`` reason
+      ``arch-invariant-failed`` NAMING the failing node-id(s) + return 1
+      (unchanged -- a real assertion failure under low load stays a real FAIL).
     * GREEN -> ``BuildTierVerified`` carrying the executed count and the
       measured wall-clock + return 0.
     """
@@ -576,9 +862,41 @@ def build_tier_exit_verdict(repo: Path) -> int:
                     "there is no build-tier architecture invariant to run -- "
                     "recorded as an honest N/A, not a pass claim"
                 ),
-            }
+            },
+            output,
         )
         return 0
+
+    window = _await_resource_window(
+        resource_readings=resource_readings, sleep_fn=sleep_fn, output=output
+    )
+    if not window.opened:
+        last = window.last_reading
+        _emit(
+            {
+                "event": "BuildTierResourceWindowNeverOpened",
+                "outcome": "indeterminate-resource-starvation",
+                "attempts": window.attempts,
+                "last_observed_mem_available_mib": last[0] if last else None,
+                "last_observed_load1": last[1] if last else None,
+                "mem_threshold_mib": window.mem_threshold_mib,
+                "load1_threshold": window.load1_threshold,
+                "what": "pre-launch resource window",
+                "why": (
+                    "resources never cleared the launch threshold within the "
+                    "bounded wait -- refusing to spawn the heavy build-tier "
+                    "subprocess into contention"
+                ),
+                "how": (
+                    "retry once memory/load recover: `des commit-slice` (or "
+                    "`pytest tests/build -m 'unit or integration or "
+                    "acceptance'` directly)"
+                ),
+            },
+            output,
+        )
+        return 0
+
     started = time.monotonic()
     try:
         arch = _run_arch_invariant_set(repo, arch_paths)
@@ -593,7 +911,32 @@ def build_tier_exit_verdict(repo: Path) -> int:
                     "the committed-scope digest step degrades on the same "
                     f"absence and records the honest INDETERMINATE: {exc}"
                 ),
-            }
+            },
+            output,
+        )
+        return 0
+    except _WorkerStarvedError as exc:
+        signal_desc = _describe_worker_kill(exc.returncode)
+        _emit(
+            {
+                "event": "BuildTierResourceStarvation",
+                "outcome": "indeterminate-resource-starvation",
+                "signal": signal_desc,
+                "returncode": exc.returncode,
+                "what": "build-tier architecture run subprocess",
+                "why": (
+                    "the worker subprocess produced no NWAVE_RUN_SCOPE result "
+                    f"line -- killed by {signal_desc}, not a genuine test "
+                    "failure (GDP-6: a resource-induced kill is never "
+                    "reported as a red refusal)"
+                ),
+                "how": (
+                    "retry once memory/load recover: `des commit-slice` (or "
+                    "`pytest tests/build -m 'unit or integration or "
+                    "acceptance'` directly)"
+                ),
+            },
+            output,
         )
         return 0
     except _CollectionError as exc:
@@ -607,7 +950,8 @@ def build_tier_exit_verdict(repo: Path) -> int:
                     "run `pytest tests/build -m 'unit or integration or "
                     "acceptance'` directly and fix the collection/run failure"
                 ),
-            }
+            },
+            output,
         )
         return 1
     elapsed = round(time.monotonic() - started, 2)
@@ -627,7 +971,8 @@ def build_tier_exit_verdict(repo: Path) -> int:
                     "unit/integration/acceptance marker, or remove the empty "
                     "tests/build directory"
                 ),
-            }
+            },
+            output,
         )
         return 1
     if not arch.passed:
@@ -651,7 +996,8 @@ def build_tier_exit_verdict(repo: Path) -> int:
                     "artifact) the named arch test guards, then re-run "
                     "des commit-slice"
                 ),
-            }
+            },
+            output,
         )
         return 1
     _emit(
@@ -659,7 +1005,8 @@ def build_tier_exit_verdict(repo: Path) -> int:
             "event": "BuildTierVerified",
             "collected": arch.collected,
             "elapsed_seconds": elapsed,
-        }
+        },
+        output,
     )
     return 0
 
@@ -691,6 +1038,39 @@ class _CollectionError(Exception):
     def __init__(self, message: str, *, crashing_module: str | None = None) -> None:
         super().__init__(message)
         self.crashing_module = crashing_module
+
+
+class _WorkerStarvedError(_CollectionError):
+    """The arch-run worker emitted no ``NWAVE_RUN_SCOPE`` result line.
+
+    Subclasses ``_CollectionError`` so a caller that only knows the generic
+    contract (``_mode_feature_scoped``) keeps treating this as a collection
+    failure unchanged; ``build_tier_exit_verdict`` catches THIS subclass
+    first and reclassifies it as INDETERMINATE-resource-starvation (GDP-6:
+    a signal/OOM kill is never a red refusal).
+    """
+
+    def __init__(self, returncode: int, stderr: str) -> None:
+        super().__init__(
+            "the arch-invariant run worker emitted no result line "
+            f"(exit {returncode}): {stderr.strip()[:500]}"
+        )
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def _describe_worker_kill(returncode: int) -> str:
+    """Name the observed signal/exit-code of a starved worker (GDP-3)."""
+    if returncode < 0:
+        signal_num = -returncode
+        return (
+            f"signal {signal_num} (SIGKILL/OOM-kill)"
+            if signal_num == 9
+            else (f"signal {signal_num}")
+        )
+    if returncode in (137, 143):
+        return f"exit code {returncode} (OOM-kill / SIGTERM shell convention)"
+    return f"exit code {returncode}"
 
 
 def _emit_interpreter_unavailable(exc: InterpreterUnavailable) -> int:

@@ -114,6 +114,12 @@ Provenance: evolution-plan P2.0/P2.1 (evidence-by-execution). For each Slice Pla
 - For a backend-only slice the charter's surface is the API (the examiner acts as an API consumer); for an infra/observability outcome the charter names a concrete observable surface (see evolution-plan P2.3 — open design).
 - **Template**: `nWave/templates/expectation-charter.md` (worked examples: browser-UI + CLI/gate-outcome charters).
 
+## Slice Plan annotation vocabulary (reference)
+
+`[REF] Slice Plan` — five fixed columns `Slice | Value statement | Status | Annotation | Justification` (`src/des/cli/validate_feature_delta.py:SLICE_PLAN_COLUMNS`). Annotation tokens:
+- `@walking_skeleton` / `@infrastructure` — govern ordering and slice composition (keystone-first, no infra-only slice), not size.
+- `@coupled` — the carpaccio ceiling-escape. Over-ceiling cohesive slice → put `@coupled` in the Annotation column + a non-empty Justification on that Slice Plan row. For a pytest-regression feature (no `.feature` scenario tags), this row annotation is the ONLY place the escape is read (not the test file).
+
 ## Agent Invocation
 
 @nw-product-owner
@@ -156,7 +162,7 @@ Oversized signals (closed list — ESC-1, NO new heuristics): >10 user stories �
 - **Decline** (ESC-5): the user declines → standard feature-level DISCUSS continues, zero epic artifacts.
 - **Right-sized** (ESC-6): fewer than 2 signals fire → zero escalation, zero new prompts. Note `## Scope Assessment: PASS` in `wave-decisions.md`.
 
-On confirmation the run switches to epic-mode (§Epic Mode below). Deeper Elephant Carpaccio slicing of a right-sized feature happens later in Phase 2.5 (User Story Mapping). Gate: scope assessed; right-sized (zero prompts) OR escalation raised (named signals + `--epic` proposal + confirmation ask) and the user's decision honored.
+On confirmation the run switches to epic-mode (§Epic Mode below). Deeper Elephant Carpaccio slicing of a right-sized feature happens later in Phase 2.5 (User Story Mapping). Gate: scope assessed; right-sized (zero prompts) OR escalation raised (named signals + `--epic` proposal + confirmation ask) and the user's decision honored. If an over-ceiling-but-cohesive slice surfaces during assessment, see the Slice Plan annotation vocabulary reference below (§Slice Plan annotation vocabulary).
 
 ## Epic Mode (`--epic`)
 

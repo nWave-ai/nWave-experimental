@@ -122,6 +122,7 @@ Every DESIGN wave that introduces ≥1 NEW component MUST author a
 >   reduce to a canonical token (e.g. `MAYBE_REWRITE`) is still
 >   `malformed-reuse-analysis`.
 > - **Justification**: non-empty on every `CREATE_NEW` row (empty → `unjustified-create-new`).
+> - **Read-only consumed dependency**: a Protocol/interface the code merely calls, or a property it cross-checks, is NOT a Reuse-Analysis row — describe it in prose beneath the table instead. Any Decision cell besides `EXTEND`/`CREATE_NEW` (e.g. `REUSE`, `READ-ONLY`) is `malformed-reuse-analysis`.
 
 For each NEW class declared under the feature's scoped-path
 (default `src/`), the table MUST contain ≥1 row where:

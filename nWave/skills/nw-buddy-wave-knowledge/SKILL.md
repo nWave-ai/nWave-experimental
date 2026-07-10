@@ -100,6 +100,14 @@ property, by error class). Reach for `@coupled` only when the AT group is truly
 inseparable. A slice that is over-ceiling and not cleanly re-sliceable warrants a
 deep-review + refactor conversation at FEATURE scope, not a per-slice patch.
 
+**Where the escape is READ for a pytest-regression feature (no `.feature` scenario
+tags)**: the `@coupled` escape lives ONLY in the Annotation column of that slice's
+`[REF] Slice Plan` row, plus a non-empty Justification cell on the same row —
+never in the test file. A marker/decorator on the pytest file itself is not read
+by the gate. `@walking_skeleton`/`@infrastructure` govern ordering and slice
+composition, not size — only `@coupled`+justification on the Slice Plan row
+lifts the ceiling (currently 7 ATs).
+
 ## Gate expectations + the producing tool for each (ask before you hit the wall)
 
 Every gate fires the earliest it can, but the point is to satisfy it BEFORE it fires — so

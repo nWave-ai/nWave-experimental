@@ -49,6 +49,10 @@ Column semantics:
 - **DDD**: Design Decision Document ref authorizing any change (e.g., `DDD-3`) or `n/a` / `(none)`
 - **Impact**: substantive description (>=10 words or a consequence verb from the verb list) of effect on system
 
+## Reuse Analysis table (separate contract — cross-reference)
+
+The `## Reuse Analysis` section (DESIGN wave) is a DIFFERENT table with its own contract — canonical heading, 5 columns (`Existing Component | File | Overlap | Decision | Justification`). Full contract + gate SSOT: `nw-design` skill §Reuse Analysis. Reminder for authors/validators: the Decision cell is exactly `EXTEND` or `CREATE_NEW` — a read-only consumed dependency (a Protocol/interface merely called, a property cross-checked) is NOT a table row; note it in prose beneath the table instead.
+
 ## Validator rules (E1+E2)
 
 - **E1 (SectionPresent)**: every `## Wave: <NAME>` heading matches the canonical pattern. Known wave names: DISCOVER, DISCUSS, DESIGN, DEVOPS, DISTILL, DELIVER. Near-misses get a did-you-mean suggestion.

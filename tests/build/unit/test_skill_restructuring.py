@@ -237,7 +237,7 @@ BULK_HASHES = {
     # Hash updated 2026-07-08: WS-17-A slice-03 mode-ref-ok marker on the
     # atdd_pure dispatch row (da2848759) — the captured baseline was not
     # re-pinned at the time; reconciled here (ZERO DEFECTS).
-    "nw-buddy-wave-knowledge": "11e874217f9284a9aa204a303129b0e0",
+    "nw-buddy-wave-knowledge": "3dbc21f4c1b46683da9691cbe3070075",
     "nw-cialdini-outreach": "90aea943d1a2eb313561ecbd0f2c5915",
     "nw-cicd-and-deployment": "2195ace1646b4c0ced64070d57bb542a",
     "nw-cognitive-load-management": "3e06303c46182b62288a7bffeb342909",
