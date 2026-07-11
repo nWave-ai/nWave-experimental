@@ -57,6 +57,10 @@ from des.adapters.driven.runner.pytest_runner import (
     pytest_interpreter,
     run_timeout_seconds,
 )
+from des.adapters.driven.runner.reentrancy_guard import (
+    is_routing_active_for,
+    routing_active_for,
+)
 from des.adapters.driven.runner.runner_json import read_runner_json
 from des.adapters.driven.runner.runner_registry import (
     GLOBAL_REGISTRY,
@@ -2329,7 +2333,6 @@ def _maybe_route_through_registered_contract_gate(repo: Path) -> int | None:
     registered facet's OWN verdict (the adapter's real pytest run against the
     target's own suite, independent of nWave-dev's dogfood marker scope).
     """
-    seed_runner_registry()
     resolution = resolve_runner(repo, None)
     if isinstance(resolution, RunnerAdapter):
         tool_name = resolution.name
@@ -2339,8 +2342,22 @@ def _maybe_route_through_registered_contract_gate(repo: Path) -> int | None:
         return None
     facet = GLOBAL_REGISTRY.lookup_contract_gate(tool_name)
     if facet is None:
+        # Lazy seed: only discover entry-point facets when none is already
+        # registered under this tool-name, so a caller-registered facet
+        # (e.g. a test double) is never silently clobbered by re-discovery.
+        seed_runner_registry()
+        facet = GLOBAL_REGISTRY.lookup_contract_gate(tool_name)
+    if facet is None:
         return None
-    verdict = facet.run_suite(repo)
+    if is_routing_active_for(repo):
+        print(
+            "health.gate.lang-adapter.reentrancy-skipped: routing already "
+            f"active for {repo} -- skipping to avoid self-recursion",
+            file=sys.stderr,
+        )
+        return None
+    with routing_active_for(repo):
+        verdict = facet.run_suite(repo)
     pytest_exit_code = _run_contract_suite(repo)
     event_payload = json.dumps(
         {

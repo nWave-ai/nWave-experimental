@@ -66,6 +66,10 @@ from pathlib import Path
 
 import yaml
 
+from des.adapters.driven.runner.reentrancy_guard import (
+    is_routing_active_for,
+    routing_active_for,
+)
 from des.adapters.driven.runner.runner_registry import (
     GLOBAL_REGISTRY,
     seed_runner_registry,
@@ -215,7 +219,18 @@ def _maybe_route_through_registered_density_adapter(
     facet = GLOBAL_REGISTRY.lookup_robustness_density(resolution.name)
     if facet is None:
         return None
-    return facet.covered_domain_ids(at_scope_dir)
+    if is_routing_active_for(at_scope_dir):
+        print(
+            "health.gate.lang-adapter.reentrancy-skipped: routing already "
+            f"active for {at_scope_dir} -- skipping to avoid self-recursion",
+            file=sys.stderr,
+        )
+        return None
+    try:
+        with routing_active_for(at_scope_dir):
+            return facet.covered_domain_ids(at_scope_dir)
+    except NotImplementedError:
+        return None
 
 
 def _build_helper_return_index(module: ast.Module) -> dict[str, ast.expr]:

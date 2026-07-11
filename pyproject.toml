@@ -27,7 +27,7 @@ packages = ["src/des", "nwave_ai"]
 
 [project]
 name = "nwave"
-version = "3.21.0+atddpure.68f4fead2"
+version = "3.21.0+atddpure.030abf5e2"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -167,9 +167,12 @@ verify-environmental-e2e = "des.cli.verify_environmental_e2e:main"
 # both `des.ports.language_adapter_plugin` (pure ABC) AND
 # `scripts.install.plugins.base.InstallationPlugin`. The pure ABC under
 # `src/des/ports/` MUST NOT import from `scripts.*` (friction #38 + F-D-09).
+# Re-check with: python -m scripts.cli.validate_language_adapter_catalog --check-port-realization
 [project.entry-points."nwave.lang.adapter"]
 _conformance_fixture = "scripts.install.plugins._conformance_fixture_language_adapter:ConformanceFixtureLanguageAdapter"
 nwave-lang-rust = "scripts.install.plugins.nwave_lang_rust:NwaveLangRust"
+nwave-lang-python = "scripts.install.plugins.nwave_lang_python:NwaveLangPython"
+nwave-lang-typescript = "scripts.install.plugins.nwave_lang_typescript:NwaveLangTypescript"
 
 [tool.nwave]
 # Override floor for nwave-ai public version (PyPI + GitHub).

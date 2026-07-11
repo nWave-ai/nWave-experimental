@@ -44,6 +44,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from xml.etree import ElementTree
 
+from des.adapters.driven.runner.reentrancy_guard import (
+    is_routing_active_for,
+    routing_active_for,
+)
 from des.adapters.driven.runner.runner_registry import (
     GLOBAL_REGISTRY,
     seed_runner_registry,
@@ -96,14 +100,27 @@ def _maybe_route_through_registered_e2e_adapter(
     facet = GLOBAL_REGISTRY.lookup_environmental_e2e(resolution.name)
     if facet is None:
         return None
-    with tempfile.TemporaryDirectory(prefix="env-e2e-registered-") as work_dir_str:
-        work_dir = Path(work_dir_str)
-        artifact = facet.build(repo)
-        prefix = _resolve_clean_prefix(None)
-        facet.install(artifact, prefix)
-        junit_path = work_dir / "junit.xml"
-        facet.run_against_installed(e2e_abs, prefix, junit_path, work_dir)
-        verdict, _collected = _verdict_from_junit(junit_path, [])
+    if is_routing_active_for(repo):
+        print(
+            "health.gate.lang-adapter.reentrancy-skipped: routing already "
+            f"active for {repo} -- skipping to avoid self-recursion",
+            file=sys.stderr,
+        )
+        return None
+    try:
+        with routing_active_for(repo):
+            with tempfile.TemporaryDirectory(
+                prefix="env-e2e-registered-"
+            ) as work_dir_str:
+                work_dir = Path(work_dir_str)
+                artifact = facet.build(repo)
+                prefix = _resolve_clean_prefix(None)
+                facet.install(artifact, prefix)
+                junit_path = work_dir / "junit.xml"
+                facet.run_against_installed(e2e_abs, prefix, junit_path, work_dir)
+                verdict, _collected = _verdict_from_junit(junit_path, [])
+    except NotImplementedError:
+        return None
     return 0 if verdict is GateVerdict.PASS else 1
 
 
