@@ -2361,7 +2361,12 @@ def _maybe_route_through_registered_contract_gate(repo: Path) -> int | None:
         )
         return None
     with routing_active_for(repo):
-        verdict = facet.run_suite(repo)
+        try:
+            verdict = facet.run_suite(repo)
+        except InterpreterUnavailable as exc:
+            return _emit_interpreter_unavailable(
+                InterpreterUnavailable("pytest", exc.probed)
+            )
     pytest_exit_code = _run_contract_suite(repo)
     event_payload = json.dumps(
         {
