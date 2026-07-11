@@ -122,9 +122,29 @@ def _emit_summary(document: object) -> None:
         print(f"{port_id} [{classification}]")
 
 
+CATALOG_GATE_INDETERMINATE = 3
+"""Exit lane: catalog path unreadable/unparseable -- DISTINCT loud signal (GDP-6).
+
+Reuses the same lane number `run_conformance_gate` / `run_port_realization_gate`
+already use for "the input is unresolvable" -- never colliding with the 0
+conformant / 1 witness-gap / 2 malformed-schema lanes above.
+"""
+
+_CATALOG_GATE_INDETERMINATE_PREFIX = "language-adapter-catalog is indeterminate"
+
+
 def validate_catalog(catalog_path: Path) -> int:
     """Validate one language-adapter-ports.yaml; return the process exit code."""
-    document = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+    try:
+        raw_text = catalog_path.read_text(encoding="utf-8")
+        document = yaml.safe_load(raw_text)
+    except (OSError, yaml.YAMLError) as failure:
+        print(
+            f"{_CATALOG_GATE_INDETERMINATE_PREFIX}: cannot read catalog "
+            f"{catalog_path!s}: {failure}",
+            file=sys.stderr,
+        )
+        return CATALOG_GATE_INDETERMINATE
     schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema)
     errors = sorted(validator.iter_errors(document), key=lambda error: list(error.path))
