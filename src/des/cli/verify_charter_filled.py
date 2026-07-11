@@ -39,7 +39,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,7 +56,20 @@ VERDICT_INDETERMINATE = "INDETERMINATE"
 _PRECONDITIONS_HEADING = "## Preconditions"
 _ORACLE_HEADING_PREFIX = "## Expected observations"
 
-_PLACEHOLDER_RE = re.compile(r"<[^>]+>")
+#: The exact scaffold placeholder tokens the `charter-scaffold` template
+#: leaves behind inside the two sections this gate inspects (SSOT:
+#: `nWave/templates/expectation-charter.md`, the fenced block under
+#: `## Template`, as read by `charter_scaffold._extract_template_skeleton`
+#: and left untouched by `_fill_intent_section`). Matching ONLY these
+#: literal tokens -- never a blanket `<...>` sweep -- keeps legitimate
+#: angle-bracket prose (e.g. "log in as the `<developer>`") from being
+#: mistaken for surviving scaffold residue (GDP-6 false positive, sister
+#: friction #90).
+_SCAFFOLD_PLACEHOLDER_TOKENS = (
+    "<start recipe: how to run the system from a clean state, seed state>",
+    "<observable outcome, user language>",
+    "<negative: what must NOT happen>",
+)
 
 
 def _section_body(content: str, is_heading: Callable[[str], bool]) -> str | None:
@@ -80,8 +92,8 @@ def _section_body(content: str, is_heading: Callable[[str], bool]) -> str | None
 
 
 def _has_placeholder(section_body: str) -> bool:
-    """True when `section_body` still carries a scaffold `<...>` token."""
-    return bool(_PLACEHOLDER_RE.search(section_body))
+    """True when `section_body` still carries a scaffold token verbatim."""
+    return any(token in section_body for token in _SCAFFOLD_PLACEHOLDER_TOKENS)
 
 
 def _has_negative_observation(oracle_body: str) -> bool:
