@@ -1298,6 +1298,13 @@ def _handle_g_commit_exit_gate(
 # column (M12 fail-closed parse contract).
 _SLICE_PLAN_STATUS_VOCABULARY = frozenset({"pending", "shipped"})
 
+# G-DISTILL-EXIT mechanical-seal route (bug #94): the `[REF] Slice Plan`
+# Annotation-cell token that names the regression-test file backing a
+# pytest-regression bugfix slice, so `_mechanical_seal_cleared_slices` can
+# discover which file to check without any table-parser change (the
+# Annotation column is free text already).
+_REGRESSION_TEST_FILE_ANNOTATION_RE = re.compile(r"@regression-test-file:(\S+)")
+
 
 class _SlicePlanParseUnresolved(Exception):
     """Raised when the markdown slice-plan `Status` column fails M12 parsing."""
@@ -1334,6 +1341,52 @@ def _slice_plan_slice_ids(repo: Path, feature_id: str) -> frozenset[str]:
     return frozenset(
         slice_id for slice_id, _status in _parse_slice_plan_rows(repo, feature_id)
     )
+
+
+def _mechanical_seal_cleared_slices(
+    repo: Path, feature_id: str, missing: frozenset[str]
+) -> frozenset[str]:
+    """Slices in ``missing`` that clear G-DISTILL-EXIT via the mechanical-seal
+    route (bug #94), mirroring the DELIVER-entry `check_at_review` mechanical-
+    seal route (`carpaccio_slice_gate.py`) for a `pytest-regression` bugfix
+    slice that carries valid mechanical evidence instead of a signed
+    `ATReviewVerdict`.
+
+    Only rows already in ``missing`` are considered (a verdict-signed slice
+    needs no further evidence). A slice clears here when its `[REF] Slice
+    Plan` Annotation cell carries a `@regression-test-file:<path>` token AND
+    `carpaccio_slice_gate._mechanical_seal_satisfied` -- the EXACT predicate
+    the DELIVER-entry gate already trusts (SSOT, reused not duplicated) --
+    is ``True`` for that file: a fresh, content-bound `RedObserved` seal PLUS
+    a satisfied negative-AT mandate.
+
+    Fail-closed on every degraded input: no annotation token, an unparseable
+    slice-plan (the caller already parsed it once via `_slice_plan_slice_ids`
+    so this only re-degrades to an empty clear-set, never a crash), or a
+    stale/absent seal all resolve to "not cleared" -- never a blanket bypass.
+    """
+    if not missing:
+        return frozenset()
+    from des.cli import carpaccio_format
+    from des.cli.carpaccio_slice_gate import _mechanical_seal_satisfied
+
+    try:
+        text = _feature_delta_path(repo, feature_id).read_text(encoding="utf-8")
+        rows = carpaccio_format.parse_slice_plan_rows(text)
+    except (FileNotFoundError, carpaccio_format.GateError):
+        return frozenset()
+
+    cleared: set[str] = set()
+    for row in rows:
+        if row.slice_id not in missing:
+            continue
+        match = _REGRESSION_TEST_FILE_ANNOTATION_RE.search(row.annotation)
+        if match is None:
+            continue
+        regression_test_file = repo / match.group(1)
+        if _mechanical_seal_satisfied(repo, regression_test_file):
+            cleared.add(row.slice_id)
+    return frozenset(cleared)
 
 
 def _markdown_shipped_slices(repo: Path, feature_id: str) -> frozenset[str]:
@@ -1756,7 +1809,8 @@ def _handle_distill_exit_gate(
     """Run the G-DISTILL-EXIT gate for a returning acceptance-designer (D_DISTILL).
 
     The gate refuses the DISTILL->DELIVER transition until every planned slice
-    carries a signed `ATReviewVerdict`, and on success leaves a durable
+    carries EITHER a signed `ATReviewVerdict` OR valid mechanical-seal
+    evidence (bug #94), and on success leaves a durable
     `WorkflowPhaseCompletedDistill` ledger record (the symmetric SUCCESS
     terminal, SF ADR-016).
 
@@ -1765,9 +1819,17 @@ def _handle_distill_exit_gate(
 
     Decision table (C5):
       denominator = `_slice_plan_slice_ids` (the SAME U4 resolves)
-      numerator   = `ledger.review_verdict_slices()`
-      - planned ⊆ verdict-signed  -> emit `WorkflowPhaseCompletedDistill` + allow
-      - a planned slice unsigned   -> block `DistillExitVerdictIncomplete`
+      numerator   = `ledger.review_verdict_slices()` UNION
+                    `_mechanical_seal_cleared_slices(missing)` (bug #94: the
+                    mechanical-seal route -- a fresh `RedObserved` seal +
+                    satisfied negative-AT mandate for the slice's declared
+                    `@regression-test-file`, reusing
+                    `carpaccio_slice_gate._mechanical_seal_satisfied`, the
+                    SAME predicate the DELIVER-entry gate already trusts)
+      - planned subset-of (verdict-signed UNION mechanical-seal-cleared) -> emit
+        `WorkflowPhaseCompletedDistill` + allow
+      - a planned slice neither signed nor mechanically sealed -> block
+        `DistillExitVerdictIncomplete`
       - unparseable slice-plan     -> fail-closed block `SlicePlanParseUnresolved`
         (never a vacuous "zero planned slices" pass, mirror of U4)
 
@@ -1811,9 +1873,16 @@ def _handle_distill_exit_gate(
 
         missing = planned - verdict_signed
         if missing:
+            missing = missing - _mechanical_seal_cleared_slices(
+                repo, feature_id, missing
+            )
+        if missing:
             return _emit_atdd_pure_block(
                 f"DISTILL exit refused for {feature_id}: the {sorted(missing)} "
-                "planned slice(s) have no signed acceptance-test review verdict",
+                "planned slice(s) have no signed acceptance-test review "
+                "verdict and no valid mechanical-seal evidence (fresh "
+                "RedObserved seal + satisfied negative-AT mandate for a "
+                "declared @regression-test-file)",
                 "DistillExitVerdictIncomplete",
                 feature_id=feature_id,
                 missing=sorted(missing),
