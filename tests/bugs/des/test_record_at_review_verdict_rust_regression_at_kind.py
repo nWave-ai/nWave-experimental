@@ -26,8 +26,8 @@ functions is refused LOUD, never silently recorded), never the mechanism.
 Driving surface (Mandate 13 driving-port-only, Layer 3 in-process default):
 the REAL `des.cli.at_review_verdict.main(argv)` CLI EDGE, driven in-process
 via `tests.common.in_process_cli.run_cli_in_process` (the in-process analogue
-of `python -m des.cli.at_review_verdict ...`) under an isolated `tmp_path`
-repo -- never the real `.nwave/telemetry/`.
+of the `des at-review-verdict ...` dispatcher invocation) under an isolated
+`tmp_path` repo -- never the real `.nwave/telemetry/`.
 
 RED-for-right-reason (this docstring documents WHY, per the red-scaffolding
 discipline): `--at-kind rust-regression` is not a recognized choice today, so

@@ -15,7 +15,7 @@ from __future__ import annotations
 import subprocess
 from typing import TYPE_CHECKING
 
-from des.runtime.interpreter import python_for
+from des.adapters.driven.runner.pytest_runner import pytest_interpreter
 
 
 if TYPE_CHECKING:
@@ -25,7 +25,17 @@ if TYPE_CHECKING:
 def run_pytest_against_installed(
     e2e_path: Path, prefix: Path, junit_path: Path, work_dir: Path
 ) -> None:
-    """Run pytest on `e2e_path` with `PYTHONPATH=prefix`, writing JUnit XML."""
+    """Run pytest on `e2e_path` with `PYTHONPATH=prefix`, writing JUnit XML.
+
+    The interpreter is resolved through ``pytest_interpreter()`` -- the
+    allowlisted pytest run-facet boundary (gate-layer-test-runner-genericity
+    slice-01: the python-hardcode lives behind the runner-adapter boundary,
+    never an inline ``python_for`` in gate/adapter logic). The child runs
+    ``-m pytest`` against the staged install prefix, so a pytest-capable
+    interpreter is the genuine requirement -- an interpreter that cannot
+    import pytest is refused at the boundary (F-21) rather than spawned and
+    failing one frame later.
+    """
     env = {
         "PATH": "/usr/bin:/bin",
         "PYTHONPATH": str(prefix),
@@ -33,7 +43,7 @@ def run_pytest_against_installed(
     }
     subprocess.run(
         [
-            python_for(None),
+            pytest_interpreter(),
             "-m",
             "pytest",
             "-p",

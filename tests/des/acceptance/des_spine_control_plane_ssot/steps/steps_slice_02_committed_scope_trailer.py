@@ -162,6 +162,19 @@ def then_no_unverifiable_trailer(state) -> None:
     )
 
 
+@then("the operator's console shows a warning that no portable digest could be stamped")
+def then_console_shows_human_warning(state) -> None:
+    run = state["producer_run"]
+    assert _human_readable_warning_present(run.stderr), (
+        "GDP-3 (self-explaining, EXAMINE finding): the operator-facing stderr "
+        "surface must carry a prominent human-readable warning (⚠️ / WARN) "
+        "naming the missing digest/trailer — the JSON `committed-scope."
+        "indeterminate` marker alone is not enough, since today stderr carries "
+        "only the unqualified '✅ PASS — contract gate succeeded' line and the "
+        f"operator reads plain success with no warning; stderr={run.stderr!r}"
+    )
+
+
 @then("the contract gate confirms the trailer verifies with exit code 0")
 def then_trailer_verifies(state) -> None:
     run = state["verify_run"]
@@ -171,6 +184,27 @@ def then_trailer_verifies(state) -> None:
         f"digest), proving portability; got outcome={run.outcome!r} "
         f"exit={run.exit_code} stdout={run.stdout!r} stderr={run.stderr!r}"
     )
+
+
+# --- human-readable warning predicate (GDP-3 self-explaining, EXAMINE finding) ---
+
+_WARNING_MARKERS = ("⚠️", "WARN")
+_DIGEST_MENTIONS = ("digest", "trailer")
+
+
+def _human_readable_warning_present(stderr: str) -> bool:
+    """True iff ``stderr`` carries a prominent human-readable digest warning.
+
+    Pure predicate — SSOT for what counts as "the operator cannot read plain
+    success" on the operator-facing stderr surface: a warning marker glyph/word
+    (⚠️ / WARN) co-occurring with a mention of the missing digest/trailer. An
+    unqualified '✅ PASS' line alone never satisfies this — the marker AND the
+    digest/trailer mention must both be present.
+    """
+    lowered = stderr.lower()
+    has_marker = any(marker.lower() in lowered for marker in _WARNING_MARKERS)
+    mentions_digest = any(term in lowered for term in _DIGEST_MENTIONS)
+    return has_marker and mentions_digest
 
 
 # --- universe predicate (Mandate 8): trailer present without pinning a value ---

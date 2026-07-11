@@ -1678,8 +1678,22 @@ def _warn_committed_scope_indeterminate(reason: str) -> None:
     producer refuses to STAMP one while still doing its other job (running the
     suite). The verb is "stamp no trailer + proceed", distinct from the
     verifier's "refuse + exit 2".
+
+    GDP-3 self-explaining, BOTH surfaces (EXAMINE finding, slice-02 oracle):
+
+    * the single-line JSON marker is emitted on BOTH stdout AND stderr (the
+      stdout-only ``_emit`` left the routed leg's degrade invisible on the
+      operator's stderr channel);
+    * a HUMAN-readable ``⚠️`` warning line goes to stderr through the
+      ``print_human_summary`` SSOT (TTY-aware color, plain on pipes), so the
+      operator can never read an unqualified green PASS while the portable
+      Gate-Scope digest silently degraded to null. Emitted ONLY on this
+      degrade path -- a pinnable git tree keeps its unqualified PASS line.
+      Shared machinery: BOTH suite-run legs (the legacy ``_mode_run_suite``
+      path and the routed ``_maybe_route_through_registered_contract_gate``
+      leg) call THIS helper -- no fork.
     """
-    _emit(
+    line = json.dumps(
         {
             "event": _COMMITTED_SCOPE_INDETERMINATE_EVENT,
             "scope": "committed",
@@ -1690,6 +1704,13 @@ def _warn_committed_scope_indeterminate(reason: str) -> None:
                 f"un-verifiable on any checkout: {reason}"
             ),
         }
+    )
+    print(line)
+    print(line, file=sys.stderr)
+    print_human_summary(
+        Verdict.DEGRADED,
+        "WARN: no portable Gate-Scope digest stamped (gate_scope_digest=null) "
+        f"-- the tree cannot be pinned to a committed revision: {reason}",
     )
 
 
@@ -2336,6 +2357,21 @@ def _maybe_route_through_registered_contract_gate(repo: Path) -> int | None:
     parity with the unregistered leg on the SAME target); ``passed`` is the
     registered facet's OWN verdict (the adapter's real pytest run against the
     target's own suite, independent of nWave-dev's dogfood marker scope).
+
+    PARITY fix (fix-adapter-route-preserves-gate-contracts): a routed call now
+    carries the SAME surrounding duties the unregistered fallback leg performs
+    -- it is a WRAP of the facet verdict, never a fork of the legacy gate
+    contract surface:
+
+    * ``gate_scope_digest`` -- the COMMITTED-scope digest of HEAD (the SAME
+      ``_committed_scope_digest_quiet`` seam ``_mode_run_suite`` calls), not a
+      hardcoded ``None``. git-absent degrades LOUD (the existing
+      ``_warn_committed_scope_indeterminate`` marker) and stamps no digest,
+      exactly mirroring the fallback leg -- never silently fingerprinting a
+      working tree.
+    * the human-readable ``print_human_summary`` PASS/FAIL line -- the routed
+      leg is reached from the SAME CLI entry point a human operator/CI hook
+      invokes, so it owes the same operator-facing surface as the fallback leg.
     """
     resolution = resolve_runner(repo, None)
     if isinstance(resolution, RunnerAdapter):
@@ -2360,6 +2396,17 @@ def _maybe_route_through_registered_contract_gate(repo: Path) -> int | None:
             file=sys.stderr,
         )
         return None
+    # PARITY: the routed leg owes the SAME whole-tree resolution preamble the
+    # fall-through legs emit (`_maybe_route_through_runner_whole_tree` /
+    # `_maybe_route_digest_through_runner`) -- the resolution fact must stay
+    # observable regardless of which leg handles the run. `routed` keeps its
+    # documented meaning ("routed to a NON-pytest runner"): the pytest facet
+    # runs the target's pytest contract, so routed=False on a pytest target.
+    _emit_whole_tree_resolved(
+        tool_name,
+        routed=tool_name != _PYTEST_RUNNER,
+        digest_degraded=False,
+    )
     with routing_active_for(repo):
         try:
             verdict = facet.run_suite(repo)
@@ -2368,17 +2415,33 @@ def _maybe_route_through_registered_contract_gate(repo: Path) -> int | None:
                 InterpreterUnavailable("pytest", exc.probed)
             )
     pytest_exit_code = _run_contract_suite(repo)
+    committed = _committed_scope_digest_quiet(repo, "HEAD")
+    if isinstance(committed, _CommittedScopeRefusal):
+        return committed.exit_code
+    digest: str | None
+    if isinstance(committed, _CommittedScopeDigest):
+        digest = committed.digest
+    else:
+        _warn_committed_scope_indeterminate(committed.reason)
+        digest = None
     event_payload = json.dumps(
         {
             "event": "ContractGateResult",
             "passed": verdict.passed,
             "pytest_exit_code": pytest_exit_code,
-            "gate_scope_digest": None,
+            "gate_scope_digest": digest,
             "routed_via_registered_adapter": True,
         }
     )
     print(event_payload)
     print(event_payload, file=sys.stderr)
+    human_verdict = Verdict.PASS if verdict.passed else Verdict.FAIL
+    summary = (
+        "contract gate succeeded"
+        if verdict.passed
+        else f"contract gate FAILED (pytest exit {pytest_exit_code})"
+    )
+    print_human_summary(human_verdict, summary)
     return 0 if verdict.passed else 1
 
 

@@ -100,6 +100,14 @@ Feature: The contract gate stamps a portable commit-scope trailer or degrades lo
   # while the suite still RUNS (exit 0). This is the target-machine-independence
   # assertion: the gate degrades LOUD rather than silently stamp a working-tree
   # digest no checkout can verify (today it silently stamps one — the RED).
+  #
+  # Oracle-strengthening (EXAMINE finding, Vera): the JSON `committed-scope.
+  # indeterminate` marker alone is a WEAK oracle -- it is buried on stdout while
+  # the operator-facing stderr surface (`print_human_summary`) carries an
+  # unqualified `✅ PASS` line with no warning annotation. The final `And` below
+  # asserts the OBSERVABLE the operator actually reads: a human-readable warning
+  # (⚠️ / WARN) naming the missing digest/trailer must be present on stderr, so
+  # plain success is never read without it.
   # ─────────────────────────────────────────────────────────────────────────
   @driving_port @real-io @slice-02 @git-absent @degrade-loud @contract-shape:unbounded-preservation
   Scenario: The operator is told loudly that no portable trailer exists on a tree with no revision control
@@ -108,6 +116,7 @@ Feature: The contract gate stamps a portable commit-scope trailer or degrades lo
     Then the contract gate runs the suite and stamps no trailer and proceeds with exit code 0
     And the operator sees a LOUD `committed-scope.indeterminate` marker naming the missing revision control
     And no un-verifiable trailer is stamped
+    And the operator's console shows a warning that no portable digest could be stamped
 
   # ─────────────────────────────────────────────────────────────────────────
   # AT-03 — THE PRODUCER==VERIFIER ROUND-TRIP (the portability discriminator).
