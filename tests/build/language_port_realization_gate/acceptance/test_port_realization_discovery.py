@@ -51,32 +51,30 @@ no prior slice fixed them):
     that duck-types against that surface (a private capturing double, or a
     real ``LanguageAdapterRegistry``) will resolve them.
 
-Verified smoking gun (feature-delta Summary + this slice's justification,
-confirmed by reading the shipped sources before authoring this AT):
-  * ``NwaveLangPython.port_coverage`` and ``NwaveLangTypescript.port_coverage``
-    both declare ``True`` for all 3 ports.
-  * ``Python|TypeScript}EnvironmentalE2EAdapter.{build,install,
-    run_against_installed}`` are ALL ``raise NotImplementedError`` stubs
-    (``src/des/adapters/driven/e2e/{python,typescript}_environmental_e2e_adapter.py``).
-  * ``{Python|TypeScript}RobustnessDensityAdapter.covered_domain_ids`` is a
-    ``raise NotImplementedError`` stub
-    (``src/des/adapters/driven/robustness/{python,typescript}_robustness_density_adapter.py``).
-  * ``{Python|TypeScript}ContractGateAdapter.{collect_scope,run_suite}`` are
-    GENUINELY implemented (``subprocess.run(...)`` bodies, no
-    ``NotImplementedError`` anywhere) --
-    ``src/des/adapters/driven/contract_gate/{pytest,vitest}_contract_gate_adapter.py``.
-  So both shipped plugins commit the EXACT registered-but-stubbed lie on 2 of
-  their 3 declared ports (``verify_environmental_e2e`` +
-  ``check_robustness_density``), while ``run_contract_gate`` is honest.
+Synthetic smoking gun (test-brittleness fix #92 -- SUPERSEDES the original
+"read the shipped sources" verified smoking gun): scenarios 1-3 originally
+drove the REAL shipped ``NwaveLangPython`` / ``NwaveLangTypescript`` plugins
+directly, pinning the registered-but-lying shape to nWave-dev's OWN, mutable
+adapter implementation state. Once ``implement-language-adapter-facets``
+genuinely implemented ``{Python,TypeScript}EnvironmentalE2EAdapter`` /
+``{Python,TypeScript}RobustnessDensityAdapter`` (no ``NotImplementedError``
+remains in either), that premise silently went false and those scenarios
+started failing for a STALE reason, not a regression. Scenarios 1-3 now
+construct ``SyntheticLiarLanguageAdapterPlugin{CSharp,Kotlin}``
+(``synthetic_language_adapter_fixtures.py``, this directory) -- a CONTROLLED
+fixture reproducing the identical shape (all 3 ports declared ``True``;
+``run_contract_gate`` genuinely implemented; ``verify_environmental_e2e`` +
+``check_robustness_density`` pure ``raise NotImplementedError`` stubs) that
+never depends on which language plugins nWave-dev itself ships or how
+genuinely they are implemented.
 
-Entry-point registration NOT required (Slice Plan justification): the two
-shipped plugins are neither wired into ``pyproject.toml``'s
-``nwave.lang.adapter`` group today NOR does this AT require that -- it
-constructs ``NwaveLangPython()`` / ``NwaveLangTypescript()`` directly and
-feeds them to the composition root's ``plugins`` argument, bypassing
-``importlib.metadata.entry_points`` entirely (real entry-point discovery, if
-the crafter wires a default resolver behind ``plugins=None``, is untested by
-this slice's AT -- out of scope per the justification above).
+Entry-point registration NOT required (Slice Plan justification): the
+synthetic fixture plugins are never wired into ``pyproject.toml``'s
+``nwave.lang.adapter`` group NOR does this AT require that -- it constructs
+them directly and feeds them to the composition root's ``plugins`` argument,
+bypassing ``importlib.metadata.entry_points`` entirely (real entry-point
+discovery, if the crafter wires a default resolver behind ``plugins=None``,
+is untested by this slice's AT -- out of scope per the justification above).
 
 Active-RED scaffolding (hidden-import P1-P4, `nw-distill-red-scaffolding`):
 the ENTIRE module ``des.testarch.port_realization_discovery`` is CREATE_NEW
@@ -116,8 +114,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from des.ports.language_adapter_plugin import LanguageAdapterPlugin, ProbeResult
-from scripts.install.plugins.nwave_lang_python import NwaveLangPython
-from scripts.install.plugins.nwave_lang_typescript import NwaveLangTypescript
+from tests.build.language_port_realization_gate.acceptance.synthetic_language_adapter_fixtures import (
+    SyntheticLiarLanguageAdapterPluginCSharp,
+    SyntheticLiarLanguageAdapterPluginKotlin,
+)
 
 
 if TYPE_CHECKING:
@@ -287,10 +287,13 @@ class _FixtureRobustnessPlugin(LanguageAdapterPlugin):
 
 @pytest.mark.parametrize(
     ("plugin_factory", "plugin_id"),
-    [(NwaveLangPython, "python"), (NwaveLangTypescript, "typescript")],
-    ids=["python-shipped-plugin", "typescript-shipped-plugin"],
+    [
+        (SyntheticLiarLanguageAdapterPluginCSharp, "csharp"),
+        (SyntheticLiarLanguageAdapterPluginKotlin, "kotlin"),
+    ],
+    ids=["csharp-synthetic-liar-plugin", "kotlin-synthetic-liar-plugin"],
 )
-def test_discovery_flags_the_real_shipped_plugins_declared_stub_backed_ports(
+def test_discovery_flags_a_synthetic_liar_plugins_declared_stub_backed_ports(
     plugin_factory: type[LanguageAdapterPlugin], plugin_id: str
 ) -> None:
     """CONTRACT_SHAPE: pure-function
@@ -298,17 +301,20 @@ def test_discovery_flags_the_real_shipped_plugins_declared_stub_backed_ports(
     Outcome anchor: feature-delta Summary (Ale: "I add csharp to the toml
     and the failures tell me what to implement").
 
-    The REAL, already-shipped plugin declares `port_coverage[X]=True` for
+    A CONTROLLED synthetic liar plugin declares `port_coverage[X]=True` for
     `verify_environmental_e2e` and `check_robustness_density` while both
-    backing adapters are 100% `raise NotImplementedError` -- discovery flags
-    exactly those 2 ports for the plugin, naming it by `target_language`.
+    backing facets are pure `raise NotImplementedError` stubs -- discovery
+    flags exactly those 2 ports, naming the plugin by `target_language`. The
+    fixture is the SSOT for the stub-state (test-brittleness fix #92): the
+    assertion is STABLE regardless of whether nWave-dev's own shipped
+    Python/TypeScript facets are stubs or genuinely implemented.
     """
     plugin = plugin_factory()
 
     verdict = _load().resolve_and_probe_port_realization([plugin])
 
     assert verdict.flagged is True, (
-        f"expected the shipped {plugin_id} lie to be flagged: {verdict!r}"
+        f"expected the synthetic {plugin_id} liar to be flagged: {verdict!r}"
     )
     assert _offenders(verdict) == {
         (plugin_id, VERIFY_ENVIRONMENTAL_E2E),
@@ -317,66 +323,71 @@ def test_discovery_flags_the_real_shipped_plugins_declared_stub_backed_ports(
 
 
 # ---------------------------------------------------------------------------
-# Scenario 2 -- both shipped plugins resolved together are flagged
+# Scenario 2 -- both synthetic liar plugins resolved together are flagged
 # INDEPENDENTLY (mirrors slice-01's multi-plugin independence rule, now
-# proven through the REAL composition root over REAL plugins).
+# proven through the REAL composition root over two CONTROLLED fixtures).
 # CONTRACT_SHAPE: pure-function
 # ---------------------------------------------------------------------------
 
 
-def test_discovery_flags_both_shipped_plugins_independently_when_resolved_together() -> (
+def test_discovery_flags_both_synthetic_liar_plugins_independently_when_resolved_together() -> (
     None
 ):
     """CONTRACT_SHAPE: pure-function
 
     Outcome anchor: feature-delta Summary.
 
-    Resolving BOTH shipped plugins in one call flags 4 violations total (2
-    per plugin) -- neither plugin's lie leaks onto, nor is masked by, the
-    other.
+    Resolving BOTH synthetic liar plugins in one call flags 4 violations
+    total (2 per plugin) -- neither plugin's lie leaks onto, nor is masked
+    by, the other.
     """
     verdict = _load().resolve_and_probe_port_realization(
-        [NwaveLangPython(), NwaveLangTypescript()]
+        [
+            SyntheticLiarLanguageAdapterPluginCSharp(),
+            SyntheticLiarLanguageAdapterPluginKotlin(),
+        ]
     )
 
     assert _offenders(verdict) == {
-        ("python", VERIFY_ENVIRONMENTAL_E2E),
-        ("python", CHECK_ROBUSTNESS_DENSITY),
-        ("typescript", VERIFY_ENVIRONMENTAL_E2E),
-        ("typescript", CHECK_ROBUSTNESS_DENSITY),
+        ("csharp", VERIFY_ENVIRONMENTAL_E2E),
+        ("csharp", CHECK_ROBUSTNESS_DENSITY),
+        ("kotlin", VERIFY_ENVIRONMENTAL_E2E),
+        ("kotlin", CHECK_ROBUSTNESS_DENSITY),
     }, verdict.violations
     assert len(verdict.violations) == 4, verdict.violations
 
 
 # ---------------------------------------------------------------------------
 # Scenario 3 -- NEGATIVE AT: the genuinely-implemented `run_contract_gate`
-# port must NOT be flagged for either shipped plugin, even though it is also
-# declared True (guards against over-flagging every declared port blindly).
+# port must NOT be flagged for either synthetic liar plugin, even though it
+# is also declared True (guards against over-flagging every declared port).
 # CONTRACT_SHAPE: pure-function
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.negative_at
-def test_discovery_does_not_flag_the_genuinely_implemented_contract_gate_port_for_either_shipped_plugin() -> (
+def test_discovery_does_not_flag_the_genuinely_implemented_contract_gate_port_for_either_synthetic_liar_plugin() -> (
     None
 ):
     """CONTRACT_SHAPE: pure-function
 
     Outcome anchor: feature-delta Summary.
 
-    `{Python,TypeScript}ContractGateAdapter` bodies are genuine
-    `subprocess.run(...)` implementations, not stubs -- `run_contract_gate`
-    must never appear among the violations for either plugin (WRONG outcome
-    asserted absent).
+    The synthetic liar plugin backs `run_contract_gate` with a genuine
+    (non-stub) facet -- `run_contract_gate` must never appear among the
+    violations for either plugin (WRONG outcome asserted absent).
     """
     verdict = _load().resolve_and_probe_port_realization(
-        [NwaveLangPython(), NwaveLangTypescript()]
+        [
+            SyntheticLiarLanguageAdapterPluginCSharp(),
+            SyntheticLiarLanguageAdapterPluginKotlin(),
+        ]
     )
 
     flagged_ports = {port for _plugin_id, port in _offenders(verdict)}
     assert RUN_CONTRACT_GATE not in flagged_ports, (
-        f"run_contract_gate is genuinely implemented for both shipped plugins "
-        f"-- must not be flagged: {verdict.violations!r}"
+        f"run_contract_gate is genuinely implemented for both synthetic liar "
+        f"plugins -- must not be flagged: {verdict.violations!r}"
     )
 
 

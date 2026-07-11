@@ -115,6 +115,35 @@ def _drive_gate_snippet(repo: Path) -> str:
     )
 
 
+def _no_plugin_entry_points_snippet() -> str:
+    """Child-program fragment: patch the gate's entry-point discovery to empty.
+
+    Test-brittleness fix (#92): `nwave-lang-python` is now permanently
+    registered in `pyproject.toml`'s `nwave.lang.adapter` entry-points group.
+    The gate's `_maybe_route_through_registered_contract_gate` lazily calls
+    `seed_runner_registry()`, which enumerates that group and registers the
+    live python contract-gate facet under `"pytest"` -- so a bare python
+    target would route through it. To reproduce the genuine "no plugin
+    installed" baseline the parity scenario asserts, patch the registry
+    module's `metadata.entry_points` to advertise NO plugins. The built-in
+    run-facets (`run_pytest_scope`, registered directly, NOT via the
+    entry-point loop) are unaffected -- exactly the pre-registration registry
+    state this AT was authored against.
+    """
+    return textwrap.dedent(
+        f"""\
+        _registry_mod = importlib.import_module({_REGISTRY_MODULE!r})
+
+
+        def _no_lang_adapter_entry_points(*, group=None):
+            return ()
+
+
+        _registry_mod.metadata.entry_points = _no_lang_adapter_entry_points
+        """
+    )
+
+
 @dataclass
 class Slice02Composition:
     """Drives the REAL slice-02 SUT (plugin + registry + gate) via child interpreters."""
@@ -176,6 +205,19 @@ class Slice02Composition:
         Two independent child processes -- each starts with its OWN empty
         `GLOBAL_REGISTRY` (module-level, process-scoped), so isolation is
         structural, not fixture-managed.
+
+        Test-brittleness fix (#92): the "unregistered" leg reproduces the
+        genuine "no plugin installed" baseline as a CONTROLLED state -- it
+        patches the gate's entry-point discovery (`seed_runner_registry`'s
+        `metadata.entry_points`) to advertise NO `nwave.lang.adapter` plugins
+        before driving `main`. This is required because `nwave-lang-python`
+        is now permanently wired into `pyproject.toml`'s entry-points group
+        (a LATER feature registered it), so a bare python-target run would
+        have the gate's lazy seed discover the live python plugin and route
+        through it -- making the "no adapter registered" premise impossible to
+        reach via the accident of the live registry. Patching entry-points to
+        empty faithfully drives the fallback (hardcoded) path the scenario
+        asserts, independent of what plugins nWave-dev itself ships.
         """
         assert self._failing_repo is not None, (
             "the failing codebase must be armed (Given) before driving the gate."
@@ -187,8 +229,10 @@ class Slice02Composition:
         )
         self._registered_run = self._run_and_parse(registered_program)
 
-        unregistered_program = "import importlib\n" + _drive_gate_snippet(
-            self._failing_repo
+        unregistered_program = (
+            "import importlib\n"
+            + _no_plugin_entry_points_snippet()
+            + _drive_gate_snippet(self._failing_repo)
         )
         self._unregistered_run = self._run_and_parse(unregistered_program)
 

@@ -113,11 +113,40 @@ from pathlib import Path
 
 import pytest
 
-from scripts.install.plugins.nwave_lang_python import NwaveLangPython
-from scripts.install.plugins.nwave_lang_typescript import NwaveLangTypescript
+from tests.build.language_port_realization_gate.acceptance.synthetic_language_adapter_fixtures import (
+    SyntheticLiarLanguageAdapterPluginCSharp,
+    SyntheticLiarLanguageAdapterPluginKotlin,
+)
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
+
+# Test-brittleness fix (#92): the gap-lane scenarios (T2/T3/T4/T7) originally
+# drove the REAL shipped `NwaveLangPython`/`NwaveLangTypescript` plugins,
+# pinning the "registered-but-stub-backed" premise to nWave-dev's OWN,
+# mutable adapter state. Once `implement-language-adapter-facets` genuinely
+# implemented those facets, the premise silently went false and the gate no
+# longer flagged them -- the ATs failed for a STALE reason, not a regression.
+# The gap-lane scenarios now drive two CONTROLLED synthetic liar plugins
+# (`SyntheticLiarLanguageAdapterPlugin{CSharp,Kotlin}`), whose stub-state is
+# fixed by the fixture, never by the live repo. T1/T1b keep asserting the
+# REAL live registry is CONFORMANT -- that is a genuine, desirable guard
+# ("nWave-dev's own registry never lies"), stable precisely because the
+# shipped facets are real.
+_SYNTHETIC_FIXTURES_MODULE = (
+    "tests.build.language_port_realization_gate.acceptance."
+    "synthetic_language_adapter_fixtures"
+)
+_SYNTHETIC_FIXTURES_FILE = (
+    "tests/build/language_port_realization_gate/acceptance/"
+    "synthetic_language_adapter_fixtures.py"
+)
+_CSHARP_PLUGIN_TARGET = (
+    f"{_SYNTHETIC_FIXTURES_MODULE}:SyntheticLiarLanguageAdapterPluginCSharp"
+)
+_KOTLIN_PLUGIN_TARGET = (
+    f"{_SYNTHETIC_FIXTURES_MODULE}:SyntheticLiarLanguageAdapterPluginKotlin"
+)
 
 # --- the 3 ports in scope (LanguageAdapterPlugin.port_coverage) ------------
 
@@ -127,24 +156,16 @@ CHECK_ROBUSTNESS_DENSITY = "check_robustness_density"
 
 _CHECK_PORT_REALIZATION_FLAG = "--check-port-realization"
 
-# WHY -- the adapter files whose bodies are 100% `raise NotImplementedError`
-# stubs for the two declared-but-lying ports (verified by reading the
-# sources before authoring, per feature-delta Summary "Verified smoking
-# gun"). Paths are repo-relative, matching how the existing catalog CLI
-# reports `witnesses:` paths.
+# WHY -- the file whose bodies are pure `raise NotImplementedError` stubs for
+# the two declared-but-lying ports. With the brittleness fix, BOTH the
+# environmental-e2e and robustness-density stubs live in the ONE synthetic
+# fixtures module (repo-relative, matching how the catalog CLI reports
+# `witnesses:` paths). Every synthetic liar plugin's gaps resolve to it.
 _ADAPTER_FILE_BY_PLUGIN_PORT = {
-    ("python", VERIFY_ENVIRONMENTAL_E2E): (
-        "src/des/adapters/driven/e2e/python_environmental_e2e_adapter.py"
-    ),
-    ("python", CHECK_ROBUSTNESS_DENSITY): (
-        "src/des/adapters/driven/robustness/python_robustness_density_adapter.py"
-    ),
-    ("typescript", VERIFY_ENVIRONMENTAL_E2E): (
-        "src/des/adapters/driven/e2e/typescript_environmental_e2e_adapter.py"
-    ),
-    ("typescript", CHECK_ROBUSTNESS_DENSITY): (
-        "src/des/adapters/driven/robustness/typescript_robustness_density_adapter.py"
-    ),
+    ("csharp", VERIFY_ENVIRONMENTAL_E2E): _SYNTHETIC_FIXTURES_FILE,
+    ("csharp", CHECK_ROBUSTNESS_DENSITY): _SYNTHETIC_FIXTURES_FILE,
+    ("kotlin", VERIFY_ENVIRONMENTAL_E2E): _SYNTHETIC_FIXTURES_FILE,
+    ("kotlin", CHECK_ROBUSTNESS_DENSITY): _SYNTHETIC_FIXTURES_FILE,
 }
 
 # HOW -- the Protocol each stub-backed port must implement (feature-delta:
@@ -224,7 +245,7 @@ def _gap_offenders(combined_output: str) -> set[tuple[str, str]]:
     """Which (plugin_id, port) pairs does the combined stdout+stderr name?"""
     return {
         (plugin_id, port)
-        for plugin_id in ("python", "typescript")
+        for plugin_id in ("csharp", "kotlin")
         for port in (VERIFY_ENVIRONMENTAL_E2E, CHECK_ROBUSTNESS_DENSITY)
         if plugin_id in combined_output and port in combined_output
     }
@@ -332,43 +353,49 @@ def test_check_port_realization_over_the_real_live_registry_notes_unregistered_p
 
 
 # ---------------------------------------------------------------------------
-# T2 -- the real shipped python+typescript plugins, injected directly: GAP
-# (exit 1), naming all 4 (plugin, port) offenders.
+# T2 -- two synthetic liar plugins, injected directly: GAP (exit 1), naming
+# all 4 (plugin, port) offenders. Fixture-sourced stub-state (#92), STABLE
+# regardless of nWave-dev's own shipped-facet implementation status.
 # @in-memory
 # CONTRACT_SHAPE: unbounded-preservation
 # ---------------------------------------------------------------------------
 
 
-def test_check_port_realization_flags_both_shipped_liar_plugins_with_four_gaps_total(
+def test_check_port_realization_flags_both_synthetic_liar_plugins_with_four_gaps_total(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """CONTRACT_SHAPE: unbounded-preservation
 
-    Outcome anchor: feature-delta Summary ("Verified smoking gun" -- both
-    shipped plugins commit the registered-but-stubbed lie on exactly 2 of
-    their 3 declared ports).
+    Outcome anchor: feature-delta Summary ("Verified smoking gun" -- a
+    registered-but-stub-backed plugin lies on exactly 2 of its 3 declared
+    ports).
 
-    Injecting the REAL `NwaveLangPython()` + `NwaveLangTypescript()`
-    instances (the exact objects slice-02's own AT drives) into the gate
-    -- bypassing the not-yet-wired live registry, mirroring slice-02's
-    "entry-point registration NOT required" seam -- must exit 1 GAP and
-    name exactly the 4 real offenders: neither plugin's lie leaks onto, nor
-    is masked by, the other.
+    Injecting two CONTROLLED `SyntheticLiarLanguageAdapterPlugin{CSharp,
+    Kotlin}()` instances (each declares all 3 ports True; backs
+    `run_contract_gate` genuinely, `verify_environmental_e2e` +
+    `check_robustness_density` with pure stubs) into the gate -- bypassing
+    the live registry, mirroring slice-02's "entry-point registration NOT
+    required" seam -- must exit 1 GAP and name exactly the 4 offenders:
+    neither plugin's lie leaks onto, nor is masked by, the other.
     """
     run_port_realization_gate = _load_gate_runner()
 
-    exit_code = run_port_realization_gate([NwaveLangPython(), NwaveLangTypescript()])
+    exit_code = run_port_realization_gate(
+        [
+            SyntheticLiarLanguageAdapterPluginCSharp(),
+            SyntheticLiarLanguageAdapterPluginKotlin(),
+        ]
+    )
 
     captured = capsys.readouterr()
     combined_output = captured.out + captured.err
     assert exit_code == 1, (
-        f"expected the GAP lane (both shipped plugins declare "
+        f"expected the GAP lane (both synthetic liar plugins declare "
         f"port_coverage=True for 2 stub-backed ports each) -- got exit "
         f"{exit_code}. output={combined_output!r}"
     )
     assert _gap_offenders(combined_output) == set(_ALL_GAP_PAIRS), (
-        f"expected exactly the 4 real (plugin, port) offenders named: "
-        f"{combined_output!r}"
+        f"expected exactly the 4 (plugin, port) offenders named: {combined_output!r}"
     )
 
 
@@ -397,11 +424,16 @@ def test_check_port_realization_gap_carries_fail_loud_anatomy(
 
     A gap that only names the port, with no method/file/line/Protocol/
     re-check, forces the maintainer to go spelunking -- exactly the ceremony
-    GDP-3/4 forbid. Every one of the 4 real gaps must self-explain.
+    GDP-3/4 forbid. Every one of the 4 gaps must self-explain.
     """
     run_port_realization_gate = _load_gate_runner()
 
-    run_port_realization_gate([NwaveLangPython(), NwaveLangTypescript()])
+    run_port_realization_gate(
+        [
+            SyntheticLiarLanguageAdapterPluginCSharp(),
+            SyntheticLiarLanguageAdapterPluginKotlin(),
+        ]
+    )
 
     captured = capsys.readouterr()
     combined_output = captured.out + captured.err
@@ -433,7 +465,9 @@ def test_check_port_realization_gap_carries_fail_loud_anatomy(
 
 # ---------------------------------------------------------------------------
 # T4 -- NEGATIVE AT: the genuinely-implemented `run_contract_gate` port must
-# NOT appear among the gaps for either shipped plugin.
+# NOT appear among the gaps for either synthetic liar plugin, even though the
+# other two declared ports ARE flagged (guards against over-flagging every
+# declared port blindly).
 # @in-memory
 # CONTRACT_SHAPE: unbounded-preservation
 # ---------------------------------------------------------------------------
@@ -447,21 +481,26 @@ def test_check_port_realization_does_not_flag_the_genuinely_implemented_contract
 
     Outcome anchor: feature-delta Summary.
 
-    `{Python,TypeScript}ContractGateAdapter` bodies are genuine
-    `subprocess.run(...)` implementations, not stubs -- `run_contract_gate`
-    must never appear among the gaps for either shipped plugin, even though
-    both declare it `True` (guards against over-flagging every declared
-    port blindly; WRONG outcome asserted absent).
+    The synthetic liar plugin backs `run_contract_gate` with a genuine
+    (non-stub) facet -- `run_contract_gate` must never appear among the gaps
+    for either plugin, even though both declare it `True` and their other
+    two ports ARE flagged (guards against over-flagging every declared port
+    blindly; WRONG outcome asserted absent).
     """
     run_port_realization_gate = _load_gate_runner()
 
-    run_port_realization_gate([NwaveLangPython(), NwaveLangTypescript()])
+    run_port_realization_gate(
+        [
+            SyntheticLiarLanguageAdapterPluginCSharp(),
+            SyntheticLiarLanguageAdapterPluginKotlin(),
+        ]
+    )
 
     captured = capsys.readouterr()
     combined_output = captured.out + captured.err
     assert RUN_CONTRACT_GATE not in combined_output, (
-        f"run_contract_gate is genuinely implemented for both shipped plugins -- "
-        f"must not be flagged: {combined_output!r}"
+        f"run_contract_gate is genuinely implemented for both synthetic liar "
+        f"plugins -- must not be flagged: {combined_output!r}"
     )
 
 
@@ -556,7 +595,7 @@ def test_cli_usage_documents_the_check_port_realization_mode() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_check_port_realization_plugin_flag_flags_both_shipped_liar_plugins_with_four_gaps_total() -> (
+def test_check_port_realization_plugin_flag_flags_both_synthetic_liar_plugins_with_four_gaps_total() -> (
     None
 ):
     """CONTRACT_SHAPE: unbounded-preservation
@@ -572,18 +611,20 @@ def test_check_port_realization_plugin_flag_flags_both_shipped_liar_plugins_with
     the real CLI subprocess entry point, the surface an operator actually
     invokes).
 
-    Smoking gun: the real shipped `NwaveLangPython`/`NwaveLangTypescript`
+    Smoking gun (fixture-sourced, #92): two CONTROLLED synthetic liar plugin
     classes, loaded via `--plugin`, must exit 1 GAP naming both plugins (by
-    `target_language`) and exactly the 4 real (plugin, port) offenders, each
-    carrying the full FAIL-LOUD anatomy (port, stub method @file:line,
-    Protocol, re-check command) -- GDP-3/4.
+    `target_language`: `csharp`/`kotlin`) and exactly the 4 (plugin, port)
+    offenders, each carrying the full FAIL-LOUD anatomy (port, stub method
+    @file:line, Protocol, re-check command) -- GDP-3/4. Driving the
+    synthetic fixtures (not nWave-dev's own shipped plugins) keeps this
+    end-to-end CLI assertion STABLE regardless of the repo's own facet state.
     """
     completed = _run_cli(
         _CHECK_PORT_REALIZATION_FLAG,
         "--plugin",
-        "scripts.install.plugins.nwave_lang_python:NwaveLangPython",
+        _CSHARP_PLUGIN_TARGET,
         "--plugin",
-        "scripts.install.plugins.nwave_lang_typescript:NwaveLangTypescript",
+        _KOTLIN_PLUGIN_TARGET,
     )
     combined_output = completed.stdout + completed.stderr
 
@@ -592,13 +633,12 @@ def test_check_port_realization_plugin_flag_flags_both_shipped_liar_plugins_with
         f"port_coverage=True for 2 stub-backed ports each) -- got exit "
         f"{completed.returncode}. output={combined_output!r}"
     )
-    assert "python" in combined_output and "typescript" in combined_output, (
+    assert "csharp" in combined_output and "kotlin" in combined_output, (
         f"expected both --plugin-named plugins named by target_language: "
         f"{combined_output!r}"
     )
     assert _gap_offenders(combined_output) == set(_ALL_GAP_PAIRS), (
-        f"expected exactly the 4 real (plugin, port) offenders named: "
-        f"{combined_output!r}"
+        f"expected exactly the 4 (plugin, port) offenders named: {combined_output!r}"
     )
     for plugin_id, port in _ALL_GAP_PAIRS:
         adapter_file = _ADAPTER_FILE_BY_PLUGIN_PORT[(plugin_id, port)]

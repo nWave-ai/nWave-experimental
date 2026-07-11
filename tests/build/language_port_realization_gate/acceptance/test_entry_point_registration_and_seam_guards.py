@@ -138,11 +138,25 @@ _TYPESCRIPT_ENTRY_ROW = (
     "nwave-lang-typescript = "
     '"scripts.install.plugins.nwave_lang_typescript:NwaveLangTypescript"'
 )
-_PYTHON_ENTRY_VALUE = "scripts.install.plugins.nwave_lang_python:NwaveLangPython"
-_TYPESCRIPT_ENTRY_VALUE = (
-    "scripts.install.plugins.nwave_lang_typescript:NwaveLangTypescript"
-)
 _CHECK_PORT_REALIZATION_FLAG = "--check-port-realization"
+
+# Test-brittleness fix (#92): the CONTROLLED synthetic liar plugin targets
+# Part B's default-discovery path resolves under the monkeypatched group --
+# stub-state fixed by the fixture, never by nWave-dev's own (now-real)
+# shipped python/typescript facets.
+_SYNTHETIC_FIXTURES_MODULE = (
+    "tests.build.language_port_realization_gate.acceptance."
+    "synthetic_language_adapter_fixtures"
+)
+_CSHARP_PLUGIN_VALUE = (
+    f"{_SYNTHETIC_FIXTURES_MODULE}:SyntheticLiarLanguageAdapterPluginCSharp"
+)
+_KOTLIN_PLUGIN_VALUE = (
+    f"{_SYNTHETIC_FIXTURES_MODULE}:SyntheticLiarLanguageAdapterPluginKotlin"
+)
+_STUB_PYTEST_PLUGIN_VALUE = (
+    f"{_SYNTHETIC_FIXTURES_MODULE}:SyntheticStubPytestFacetPlugin"
+)
 
 VERIFY_ENVIRONMENTAL_E2E = "verify_environmental_e2e"
 CHECK_ROBUSTNESS_DENSITY = "check_robustness_density"
@@ -219,13 +233,18 @@ def test_pyproject_registers_python_and_typescript_entry_points_and_default_disc
 
     Part B (closes the exact gap slice-03's own AT left out of scope):
     monkeypatching ``des.testarch.port_realization_discovery``'s
-    ``metadata.entry_points`` to reflect what Part A just confirmed
-    ``pyproject.toml`` declares, the DEFAULT (``discovery_source=None``)
-    ``--check-port-realization`` gate-runner must discover BOTH plugins and
-    FAIL LOUD (exit 1) naming both plugins and all 4 stub-backed offenders --
-    the contrast to today's live-registry T1 in
-    ``test_check_port_realization_cli.py`` (exit 0, only the fixture +
-    honest rust plugin registered).
+    ``metadata.entry_points`` to advertise two CONTROLLED synthetic liar
+    plugins under the ``nwave.lang.adapter`` group, the DEFAULT
+    (``discovery_source=None``) ``--check-port-realization`` gate-runner must
+    discover BOTH plugins and FAIL LOUD (exit 1) naming both plugins and all
+    4 stub-backed offenders -- proving the default-discovery path reads the
+    group, resolves each entry point, and probes it. Test-brittleness fix
+    (#92): Part B's stub-state is sourced from the synthetic fixtures
+    (``synthetic_language_adapter_fixtures.py``), NOT from the shipped
+    ``NwaveLangPython``/``NwaveLangTypescript`` classes (now genuinely
+    implemented -- discovering THEM would conform, never exercising the GAP
+    lane). Part A above still asserts the genuine pyproject registration of
+    the two real rows -- that source-of-truth check is stable on its own.
     """
     block = _entry_points_block_text()
     assert _PYTHON_ENTRY_ROW in block, (
@@ -253,13 +272,13 @@ def test_pyproject_registers_python_and_typescript_entry_points_and_default_disc
 
     fake_entry_points = (
         EntryPoint(
-            name="nwave-lang-python",
-            value=_PYTHON_ENTRY_VALUE,
+            name="synthetic-liar-csharp",
+            value=_CSHARP_PLUGIN_VALUE,
             group="nwave.lang.adapter",
         ),
         EntryPoint(
-            name="nwave-lang-typescript",
-            value=_TYPESCRIPT_ENTRY_VALUE,
+            name="synthetic-liar-kotlin",
+            value=_KOTLIN_PLUGIN_VALUE,
             group="nwave.lang.adapter",
         ),
     )
@@ -278,11 +297,11 @@ def test_pyproject_registers_python_and_typescript_entry_points_and_default_disc
     captured = capsys.readouterr()
     combined_output = captured.out + captured.err
     assert exit_code == 1, (
-        f"expected the GAP lane -- both plugins are visible under the "
-        f"(monkeypatched) group and both declare 2 stub-backed ports -- got "
-        f"exit {exit_code}. output={combined_output!r}"
+        f"expected the GAP lane -- both synthetic liar plugins are visible "
+        f"under the (monkeypatched) group and both declare 2 stub-backed "
+        f"ports -- got exit {exit_code}. output={combined_output!r}"
     )
-    for plugin_id in ("python", "typescript"):
+    for plugin_id in ("csharp", "kotlin"):
         for port in (VERIFY_ENVIRONMENTAL_E2E, CHECK_ROBUSTNESS_DENSITY):
             assert plugin_id in combined_output and port in combined_output, (
                 f"expected offender ({plugin_id}, {port}) named in the "
@@ -308,20 +327,45 @@ def test_environmental_e2e_seam_falls_through_without_crashing_on_a_registered_s
     ``_maybe_route_through_registered_e2e_adapter``, unguarded calls at
     lines 101/103/105).
 
-    Registering the REAL shipped ``NwaveLangPython`` plugin's facets (whose
-    ``PythonEnvironmentalE2EAdapter.build`` is a pure
-    ``raise NotImplementedError`` stub, the feature-delta's verified smoking
-    gun) and invoking the seam on a Python-resolving target must return
-    ``None`` -- TODAY it crashes with an uncaught ``NotImplementedError``.
+    Registering a CONTROLLED stub ``EnvironmentalE2EPort`` facet
+    (``StubFixtureEnvironmentalE2EAdapter``, whose ``build`` is a pure
+    ``raise NotImplementedError``) under the resolved ``"pytest"`` tool-token
+    and invoking the seam on a Python-resolving target must return ``None``
+    -- the ADR-ULAR-005 seam-catch swallows the registered stub facet's
+    ``NotImplementedError``. Test-brittleness fix (#92): the stub-state is
+    sourced from a synthetic fixture, NOT from the live shipped
+    ``NwaveLangPython`` plugin (whose ``PythonEnvironmentalE2EAdapter`` is now
+    genuinely implemented, so registering it would run the real build and
+    never exercise the seam-catch). The behavioral guarantee is unchanged;
+    only the stub source is now controlled.
     """
     repo = _python_target_repo(tmp_path)
     program = f"""
 import importlib
+from importlib.metadata import EntryPoint
 from pathlib import Path
 
-plugin_mod = importlib.import_module("scripts.install.plugins.nwave_lang_python")
 registry_mod = importlib.import_module("des.adapters.driven.runner.runner_registry")
-plugin_mod.NwaveLangPython().register_adapters(registry_mod.GLOBAL_REGISTRY)
+
+# Test-brittleness fix (#92): the seam calls seed_runner_registry(), which
+# re-runs entry-point discovery. Patch it to advertise ONLY the CONTROLLED
+# synthetic stub plugin (registers pure-NotImplementedError e2e facets under
+# "pytest") instead of the live registry -- so the shipped, now-genuinely-
+# implemented NwaveLangPython facets never register and clobber the stub.
+_stub_ep = (
+    EntryPoint(
+        name="synthetic-stub-pytest",
+        value={_STUB_PYTEST_PLUGIN_VALUE!r},
+        group="nwave.lang.adapter",
+    ),
+)
+
+
+def _only_stub_entry_points(*, group=None):
+    return _stub_ep if group == "nwave.lang.adapter" else ()
+
+
+registry_mod.metadata.entry_points = _only_stub_entry_points
 
 seam_mod = importlib.import_module("des.cli.verify_environmental_e2e")
 repo = Path({str(repo)!r})
@@ -364,20 +408,42 @@ def test_robustness_density_seam_falls_through_without_crashing_on_a_registered_
     ``_maybe_route_through_registered_density_adapter``, unguarded call at
     line 218).
 
-    Registering the REAL shipped ``NwaveLangPython`` plugin's facets (whose
-    ``PythonRobustnessDensityAdapter.covered_domain_ids`` is a pure
-    ``raise NotImplementedError`` stub) and invoking the seam on a
-    Python-resolving target must return ``None`` -- TODAY it crashes with an
-    uncaught ``NotImplementedError``.
+    Registering a CONTROLLED stub ``RobustnessDensityPort`` facet
+    (``StubFixtureRobustnessDensityAdapter``, whose ``covered_domain_ids`` is
+    a pure ``raise NotImplementedError``) under the resolved ``"pytest"``
+    tool-token and invoking the seam on a Python-resolving target must return
+    ``None`` -- the ADR-ULAR-005 seam-catch swallows the registered stub
+    facet's ``NotImplementedError``. Test-brittleness fix (#92): the
+    stub-state is sourced from a synthetic fixture, NOT from the live shipped
+    ``NwaveLangPython`` plugin (now genuinely implemented). Behavioral
+    guarantee unchanged; only the stub source is now controlled.
     """
     repo = _python_target_repo(tmp_path)
     program = f"""
 import importlib
+from importlib.metadata import EntryPoint
 from pathlib import Path
 
-plugin_mod = importlib.import_module("scripts.install.plugins.nwave_lang_python")
 registry_mod = importlib.import_module("des.adapters.driven.runner.runner_registry")
-plugin_mod.NwaveLangPython().register_adapters(registry_mod.GLOBAL_REGISTRY)
+
+# Test-brittleness fix (#92): patch seed_runner_registry's entry-point
+# discovery to advertise ONLY the CONTROLLED synthetic stub plugin (registers
+# a pure-NotImplementedError density facet under "pytest"), so the shipped,
+# now-genuinely-implemented NwaveLangPython facet never clobbers the stub.
+_stub_ep = (
+    EntryPoint(
+        name="synthetic-stub-pytest",
+        value={_STUB_PYTEST_PLUGIN_VALUE!r},
+        group="nwave.lang.adapter",
+    ),
+)
+
+
+def _only_stub_entry_points(*, group=None):
+    return _stub_ep if group == "nwave.lang.adapter" else ()
+
+
+registry_mod.metadata.entry_points = _only_stub_entry_points
 
 seam_mod = importlib.import_module("scripts.cli.check_robustness_density")
 repo = Path({str(repo)!r})
