@@ -116,9 +116,20 @@ def _maybe_refresh_orchestrator_affordance(project_root: Path) -> None:
 
 
 def handle_user_prompt_submit() -> int:
-    """Read the submission from stdin, arm the wave-active floor, exit 0."""
+    """Read the submission from stdin, arm the wave-active floor, exit 0.
+
+    Reached ONLY when ``activation_gate.apply_gate`` has already dispatched
+    (SessionStart-exempt or the project resolves active) -- the gate itself
+    is what keeps the anchor's ``arm()`` write off an inactive, never-adopted
+    project (deep-review finding, DDD-9): on an inactive project the gate
+    fires ONLY the hourly-affordance refresh directly and never reaches this
+    function at all, so no activation check is duplicated here.
+    """
     raw = sys.stdin.read()
-    payload = json.loads(raw) if raw.strip() else {}
+    try:
+        payload = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        payload = {}
     prompt = payload.get("prompt", "")
     project_root = Path(payload.get("cwd") or Path.cwd())
 

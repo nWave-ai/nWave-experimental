@@ -232,5 +232,308 @@ class TestOrchestratorAffordanceHourlyRefreshRouterAcceptance:
         )
 
 
+def _dispatch_via_router_raw_stdin(
+    project_root: Path, stdin_text: str
+) -> tuple[int, str, str]:
+    """Drive the REAL router entry with an EXACT stdin payload (no JSON
+    ``{"cwd": ...}`` wrapping) -- used for the malformed/empty-stdin
+    fail-open regression (Vera's feature-end hostile probe:
+    ``echo 'garbage' | python -m des.adapters.drivers.hooks.hook_router
+    user-prompt-submit`` crashed with exit 1 + a raw Python traceback).
+    """
+    from des.adapters.drivers.hooks import hook_router
+
+    return run_hook_in_process(
+        hook_router.main,
+        stdin_text=stdin_text,
+        cwd=str(project_root),
+        argv=_ROUTER_ARGV,
+    )
+
+
+_MALFORMED_STDIN_PAYLOADS = [
+    pytest.param("garbage", id="bare-word"),
+    pytest.param("{not valid json", id="truncated-object"),
+    pytest.param("{'single': 'quotes'}", id="python-repr-not-json"),
+    pytest.param("null,null", id="trailing-comma-scalars"),
+]
+
+
+class TestUserPromptSubmitMalformedStdinFailsOpen:
+    """AC (Vera's feature-end hostile probe -- `des feature-end` reloop):
+    ``echo 'garbage' | python -m des.adapters.drivers.hooks.hook_router
+    user-prompt-submit`` crashed with **exit 1 + a raw Python traceback**.
+
+    A session-lifecycle hook must NEVER crash: malformed stdin must be
+    dropped gracefully (fail-open, exit 0, no traceback) -- mirroring the
+    fail-open discipline ``handle_session_start()`` already applies to the
+    IDENTICAL parse (``session_start_handler.py`` lines 450-456: the
+    ``json.loads`` call is wrapped in ``try/except json.JSONDecodeError``).
+
+    DIAGNOSED ROOT CAUSE (tsunami + Read grounding, no assumption):
+    ``handle_user_prompt_submit()``
+    (``src/des/adapters/drivers/hooks/user_prompt_submit_handler.py``
+    lines 120-121)::
+
+        raw = sys.stdin.read()
+        payload = json.loads(raw) if raw.strip() else {}
+
+    has NO try/except around ``json.loads`` -- unlike its session-start
+    sibling. A non-empty, non-JSON stdin raises ``json.JSONDecodeError`` (a
+    ``ValueError`` subclass) that propagates UNCAUGHT through
+    ``hook_router.main()`` (``hook_router.py`` line 76 calls
+    ``handle_user_prompt_submit()`` with no try/except around the dispatch),
+    crashing the interpreter: exit code 1, raw traceback on stderr -- exactly
+    Vera's observation. ``callers_of(handle_user_prompt_submit)`` confirms
+    the ONLY production caller is ``hook_router.main`` -- there is no other
+    path to patch around.
+
+    ACTIVE-RED: imports only symbols that already exist in production code
+    (``hook_router``, ``run_hook_in_process``) -- zero new production
+    modules, zero scaffolding needed. Fails today via ``pytest.fail`` (the
+    uncaught ``json.JSONDecodeError`` converted to a proper semantic RED
+    assertion, never a raw pytest ERROR/collection failure).
+
+    TEST ONLY -- no production code authored in this pass.
+    """
+
+    @pytest.mark.parametrize("malformed_stdin", _MALFORMED_STDIN_PAYLOADS)
+    def test_malformed_stdin_fails_open_via_router(
+        self, sandbox: Path, malformed_stdin: str
+    ) -> None:
+        """AC (Vera's repro): non-JSON stdin on user-prompt-submit -- driven
+        through the REAL router -- must exit 0 with no traceback, exactly
+        mirroring session-start's own fail-open contract.
+
+        RED TODAY: `json.loads(raw)` in `handle_user_prompt_submit()` has no
+        try/except, so a `json.JSONDecodeError` propagates uncaught through
+        `hook_router.main()` -- the interpreter crashes with exit code 1 and
+        a raw traceback on stderr instead of failing open.
+        """
+        project_root = sandbox
+        try:
+            exit_code, _stdout, stderr = _dispatch_via_router_raw_stdin(
+                project_root, malformed_stdin
+            )
+        except Exception as exc:
+            pytest.fail(
+                "user-prompt-submit crashed on malformed (non-JSON) stdin "
+                f"{malformed_stdin!r} instead of failing open: "
+                f"{type(exc).__name__}: {exc}. Root cause: "
+                "handle_user_prompt_submit() "
+                "(user_prompt_submit_handler.py:120-121) calls "
+                "json.loads(raw) with NO try/except -- unlike "
+                "handle_session_start() (session_start_handler.py:450-456), "
+                "which wraps the IDENTICAL parse in "
+                "try/except json.JSONDecodeError. Fix: apply the same "
+                "fail-open idiom (default to an empty/None payload on "
+                "json.JSONDecodeError) in handle_user_prompt_submit()."
+            )
+        assert exit_code == 0, (
+            "a session-lifecycle hook must NEVER crash on malformed stdin "
+            f"(fail-open contract); got exit code {exit_code} for "
+            f"{malformed_stdin!r}, stderr: {stderr!r}"
+        )
+        assert "Traceback" not in stderr, (
+            "malformed stdin must be dropped gracefully -- no raw Python "
+            f"traceback on stderr for {malformed_stdin!r}; got: {stderr!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "boundary_stdin",
+        [pytest.param("", id="empty"), pytest.param("   \n", id="whitespace-only")],
+    )
+    def test_empty_or_whitespace_stdin_fails_open_via_router(
+        self, sandbox: Path, boundary_stdin: str
+    ) -> None:
+        """Boundary: empty / whitespace-only stdin on user-prompt-submit is
+        ALREADY handled by the `if raw.strip() else {}` guard -- pinned here
+        (chained off the same router-dispatch narrative as the malformed
+        case above) so a future fail-open fix cannot regress this bar."""
+        project_root = sandbox
+        exit_code, _stdout, stderr = _dispatch_via_router_raw_stdin(
+            project_root, boundary_stdin
+        )
+        assert exit_code == 0, (
+            f"empty/whitespace stdin must fail open too; got exit code "
+            f"{exit_code} for {boundary_stdin!r}, stderr: {stderr!r}"
+        )
+        assert "Traceback" not in stderr, (
+            f"got an unexpected traceback for {boundary_stdin!r}: {stderr!r}"
+        )
+
+    @pytest.mark.negative_at
+    def test_malformed_stdin_does_not_raise_uncaught_exception_via_router(
+        self, sandbox: Path
+    ) -> None:
+        """Negative AT (GS-8 guard, detected by the `_not_` stem + the
+        `negative_at` marker): the WRONG outcome -- an uncaught exception
+        escaping the router on malformed stdin -- must NOT be produced.
+        This is the exact crash class Vera's feature-end hostile probe
+        exhibited; a presence-only positive assertion would not catch a
+        regression that merely narrows the exception type still escaping.
+        """
+        project_root = sandbox
+        try:
+            _dispatch_via_router_raw_stdin(project_root, "garbage")
+        except Exception as exc:
+            pytest.fail(
+                "the WRONG outcome was produced: an uncaught "
+                f"{type(exc).__name__} ({exc}) escaped hook_router.main() "
+                "on malformed stdin, instead of the router failing open "
+                "(exit 0, no exception, no traceback)."
+            )
+
+
+# ---------------------------------------------------------------------------
+# Deep-review blocking finding (scope-creep, adversarial-refutation reloop):
+#
+# Widening `_ACTIVATION_EXEMPT_COMMANDS` to `user-prompt-submit`
+# (activation_gate.py:47) makes the ENTIRE `handle_user_prompt_submit`
+# dispatch unconditionally -- including
+# `CommandLiteralWaveActiveAnchor.on_prompt_submitted`
+# (wave_active_anchor.py), which on a literal `/nw-<wave>` prompt calls
+# `WaveActiveFilesystemStore.arm()` and WRITES
+# `{project_root}/.nwave/wave-active/active.json`. On an INACTIVE
+# (never-adopted) project this bypasses the controlled adoption path
+# (DDD-9): before the exemption, `apply_gate`'s `sys.exit(0)` made such
+# prompts inert.
+#
+# `_write_active_marker` mirrors the activation-gating fixture convention
+# established in `tests/des/acceptance/activation_gating/test_gap_fixes_real_
+# entry_points.py::_write_marker` -- `.nwave/local-config.json` with
+# `enabled_for_repo: true` resolves the project ACTIVE via
+# `resolve_activation` (a marker value dominates the global mode,
+# `activation_policy.py:26-27`), independent of the `sandbox` fixture's
+# isolated-HOME/no-global-config-opt-in shape.
+# ---------------------------------------------------------------------------
+
+_WAVE_ACTIVE_FLOOR_RELATIVE = Path(".nwave") / "wave-active" / "active.json"
+_NW_WAVE_PROMPT = "/nw-deliver something"
+
+
+def _wave_active_floor_path(project_root: Path) -> Path:
+    return project_root / _WAVE_ACTIVE_FLOOR_RELATIVE
+
+
+def _write_active_marker(project_root: Path) -> None:
+    nwave = project_root / ".nwave"
+    nwave.mkdir(parents=True, exist_ok=True)
+    (nwave / "local-config.json").write_text(
+        json.dumps({"enabled_for_repo": True}) + "\n", encoding="utf-8"
+    )
+
+
+def _dispatch_prompt_via_router(
+    project_root: Path, prompt: str
+) -> tuple[int, str, str]:
+    """Drive the REAL router entry with a literal `/nw-<wave>` prompt (the
+    exact stdin shape `handle_user_prompt_submit` -> `CommandLiteralWaveActive
+    Anchor` reads: `{"prompt": ..., "cwd": ...}`)."""
+    from des.adapters.drivers.hooks import hook_router
+
+    stdin_payload = json.dumps({"prompt": prompt, "cwd": str(project_root)})
+    return run_hook_in_process(
+        hook_router.main,
+        stdin_text=stdin_payload,
+        cwd=str(project_root),
+        argv=_ROUTER_ARGV,
+    )
+
+
+class TestUserPromptSubmitExemptionDoesNotBypassControlledAdoption:
+    """AC (deep-review blocking finding, scope-creep): the `user-prompt-submit`
+    activation exemption must free ONLY the hourly-affordance refresh, never
+    the wave-active anchor's arm() write -- that write stays gated on the
+    project's OWN activation resolution, exactly as it was before the
+    exemption widened."""
+
+    @pytest.mark.negative_at
+    def test_inactive_project_nw_wave_prompt_via_router_does_not_arm_wave_active_floor(
+        self, sandbox: Path
+    ) -> None:
+        """AC (the finding's repro): an INACTIVE project (no local-config.json
+        marker, no global opt-in -- the same shape `sandbox` builds for the
+        hourly-refresh scenarios above) submitting a literal `/nw-deliver ...`
+        prompt through the REAL router must still exit 0, and the hourly
+        affordance refresh MAY fire (unrelated to this finding, not asserted
+        here), but must NOT write `.nwave/wave-active/active.json` -- the
+        WRONG outcome the finding names. Detected by name (`_not_`) +
+        `@pytest.mark.negative_at` per the GS-8 negative-AT convention.
+
+        RED TODAY: `apply_gate` (activation_gate.py:78-79) exempts
+        `user-prompt-submit` UNCONDITIONALLY -- before any activation check
+        -- so `handle_user_prompt_submit` always reaches
+        `CommandLiteralWaveActiveAnchor.on_prompt_submitted`, which calls
+        `WaveActiveFilesystemStore.arm()` and writes the floor file even on
+        an INACTIVE, never-adopted project.
+        """
+        project_root = sandbox
+        floor = _wave_active_floor_path(project_root)
+        assert not floor.exists()
+
+        exit_code, _stdout, _stderr = _dispatch_prompt_via_router(
+            project_root, _NW_WAVE_PROMPT
+        )
+
+        assert exit_code == 0, (
+            "user-prompt-submit must exit 0 regardless of activation state "
+            f"(fail-open contract); got {exit_code}"
+        )
+        assert not floor.exists(), (
+            "the WRONG outcome was produced: .nwave/wave-active/active.json "
+            "was written for a literal /nw-<wave> prompt on an INACTIVE "
+            "(never-adopted) project. Widening _ACTIVATION_EXEMPT_COMMANDS to "
+            "user-prompt-submit (activation_gate.py:47, applied at "
+            "activation_gate.py:78-79) makes the ENTIRE "
+            "handle_user_prompt_submit dispatch unconditionally -- including "
+            "CommandLiteralWaveActiveAnchor.on_prompt_submitted "
+            "(wave_active_anchor.py), which arms the wave-active floor via "
+            "WaveActiveFilesystemStore.arm() with no activation check of its "
+            "own. Before the exemption widened, apply_gate's sys.exit(0) "
+            "made such prompts inert on an inactive project -- this bypasses "
+            "the controlled adoption path (DDD-9). Fix: gate the anchor's "
+            "arm (or the anchor dispatch itself) on the project's own "
+            "activation resolution, independent of the "
+            "user-prompt-submit activation-gate exemption that now exists "
+            "only for the hourly-affordance refresh."
+        )
+
+    def test_active_project_nw_wave_prompt_via_router_still_arms_wave_active_floor(
+        self, sandbox: Path
+    ) -> None:
+        """GUARD (must stay true post-fix): an ACTIVE project (adopted via the
+        `.nwave/local-config.json` `enabled_for_repo: true` marker) submitting
+        the SAME literal `/nw-<wave>` prompt must still arm the wave-active
+        floor exactly as before -- the fix for the finding above must not
+        regress adoption on an already-active project.
+        """
+        project_root = sandbox
+        _write_active_marker(project_root)
+        floor = _wave_active_floor_path(project_root)
+        assert not floor.exists()
+
+        exit_code, _stdout, _stderr = _dispatch_prompt_via_router(
+            project_root, _NW_WAVE_PROMPT
+        )
+
+        assert exit_code == 0
+        assert floor.exists(), (
+            "an ACTIVE project must still have the wave-active floor armed "
+            "by a literal /nw-<wave> prompt through the router -- adoption "
+            "on active projects must not regress while fixing the "
+            "inactive-project scope-creep above"
+        )
+        payload = json.loads(floor.read_text(encoding="utf-8"))
+        assert payload.get("wave") == "deliver", (
+            f"expected the /nw-deliver literal to arm wave='deliver'; got "
+            f"floor payload {payload!r}"
+        )
+        assert payload.get("provenance") == "command", (
+            f"expected COMMAND provenance (the deterministic literal-match "
+            f"anchor); got floor payload {payload!r}"
+        )
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__, "-v"])
