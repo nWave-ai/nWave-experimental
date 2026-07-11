@@ -22,3 +22,18 @@ present at every authoring decision — recalled discipline fades in a long sess
 Under pressure the failure mode is hand-editing because it FEELS faster. Satisfy the pressure
 THROUGH the spine: shipping = a spine-attested change. If no lane fits the work, the missing
 lane / producing-tool IS the finding — surface it, don't DIY around it.
+
+## Throughput — exploit dead time (N LLM lanes, ONE box lane)
+
+Waiting on a dispatched agent is NOT idle time. While a crafter greens slice N:
+- dispatch the acceptance-designer for slice N+1's AT — and, for an observable slice, a
+  fresh product-owner for its charter — in PARALLEL cloud lanes (zero box cost; empirically
+  hides ~4-5 min/slice);
+- run read-only lanes that touch DIFFERENT files (deep-review prep, friction relays,
+  feature-delta reconciliation, backlog/plan updates);
+- keep the BOX lane strictly serialized: ONE heavy gate at a time (BuildTier seal,
+  whole-tree run, reinstall), resource-aware — never two concurrently, never in a
+  memory-starved window.
+
+Rule: LLM lanes are cloud (parallel is ~free); the box is the constraint. Pipeline the
+cloud, serialize the box. Canonical prose + anchor: `nw-deliver` §Per-slice pipelining.
