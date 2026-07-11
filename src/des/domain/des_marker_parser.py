@@ -69,9 +69,12 @@ _NORMALISED_PHASE_BY_TOKEN.update(
     }
 )
 
-# Anchored carpaccio slice shape: `slice-` followed by one or more digits, and
-# NOTHING else. `slice1` (no dash) and `slice-3-->` (garbled tail) fail.
-_SLICE_SHAPE = re.compile(r"slice-\d+")
+# Anchored carpaccio slice shape: `slice-<digits>` with an OPTIONAL single
+# trailing lowercase letter (the @coupled-split sub-slice convention, e.g.
+# `slice-04a`), mirroring carpaccio's `_SLICE_ID_RE` (src/des/cli/carpaccio_format.py).
+# `slice1` (no dash), `slice-3-->` (garbled tail), `slice-04ab` (two letters),
+# and `slice-04A` (uppercase) fail.
+_SLICE_SHAPE = re.compile(r"slice-\d+[a-z]?")
 
 # Any DES marker KEY in either spelling -- the HTML-comment form
 # (``<!-- DES-VALIDATION : required -->``) the orchestrator emits, OR the plain
@@ -355,10 +358,12 @@ class DesMarkerParser:
         """DES-SLICE value when it is a well-formed dispatch scope, else None.
 
         The scope is a closed two-member union (ADR-028 D6, Option A): an
-        anchored `slice-\\d+` per-slice value, OR the exact `feature-end`
-        literal. Anything outside the closed set -- `slice1`, a garbled
-        `slice-3-->` tail -- yields None, keeping the unbounded-scope bug class
-        non-representable.
+        anchored `slice-<digits>` per-slice value (with an optional single
+        trailing lowercase letter for the @coupled-split sub-slice convention,
+        e.g. `slice-04a`), OR the exact `feature-end` literal. Anything
+        outside the closed set -- `slice1`, a garbled `slice-3-->` tail,
+        `slice-04ab`, `slice-04A` -- yields None, keeping the unbounded-scope
+        bug class non-representable.
         """
         match = self._SLICE_PATTERN.search(prompt)
         if match is None:
