@@ -44,6 +44,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from xml.etree import ElementTree
 
+from des.adapters.driven.e2e.pytest_e2e_runner import run_pytest_against_installed
 from des.adapters.driven.runner.reentrancy_guard import (
     is_routing_active_for,
     routing_active_for,
@@ -67,7 +68,7 @@ from des.domain.environmental_e2e import (
 )
 from des.ports.test_runner_port import RunnerAdapter
 from des.ports.test_runner_port import resolve as resolve_runner
-from des.runtime.interpreter import des_spawn, python_for
+from des.runtime.interpreter import des_spawn
 
 
 _CLI_VERSION = "1.0.0"
@@ -282,30 +283,14 @@ def _install_into_prefix(wheel: Path, prefix: Path) -> None:
 def _run_e2e_against_installed(
     e2e_path: Path, prefix: Path, junit_path: Path, work_dir: Path
 ) -> None:
-    """Run pytest on the e2e test with PYTHONPATH=prefix, write JUnit XML."""
-    env = {
-        "PATH": "/usr/bin:/bin",
-        "PYTHONPATH": str(prefix),
-        "HOME": str(work_dir),
-    }
-    subprocess.run(
-        [
-            python_for(None),
-            "-m",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "--override-ini=addopts=",
-            "--rootdir",
-            str(work_dir),
-            str(e2e_path),
-            f"--junit-xml={junit_path}",
-        ],
-        capture_output=True,
-        text=True,
-        env=env,
-        cwd=str(work_dir),
-    )
+    """Run pytest on the e2e test with PYTHONPATH=prefix, write JUnit XML.
+
+    Delegates to the shared `pytest_e2e_runner.run_pytest_against_installed`
+    (DDD-02) -- the same implementation
+    `PythonEnvironmentalE2EAdapter.run_against_installed` uses via the
+    registered-facet routing path (D4: one implementation, no duplication).
+    """
+    run_pytest_against_installed(e2e_path, prefix, junit_path, work_dir)
 
 
 def _verdict_from_junit(
