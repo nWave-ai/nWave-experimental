@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -623,18 +624,65 @@ def _compute_git_state_snapshot(project_root: Path) -> dict[str, object]:
         "HEAD_resolved": head_resolved,
         "refs": sorted(refs),
         "packed_refs": _read_packed_refs(common_dir),
+        "project_root": project_root,
     }
+
+
+def _is_descendant_ref_advance(
+    project_root: object, before_sha: str, after_sha: str
+) -> bool:
+    """True iff ``after_sha`` is a git-descendant of ``before_sha``.
+
+    Bugfix ``fix-git-pollution-guard-clobbers-concurrent-writer``: a loose
+    ref that moved to a descendant commit is a LEGITIMATE external advance
+    (e.g. the orchestrator committing on the branch while a guarded test
+    session runs) — not corruption. Uses read-only
+    ``git merge-base --is-ancestor``, scoped to ``project_root`` via
+    ``GIT_CEILING_DIRECTORIES`` so it can never walk outside the target
+    repo. Never invokes a mutating git command — this is a detection-only
+    helper, unlike the restore path which is deliberately subprocess-free.
+
+    Fail-closed on any undeterminable ancestry: identical SHAs count as
+    "descendant" (no-op move); a non-zero/non-one exit code (unknown SHA,
+    unborn ancestry, missing ``git`` binary, non-``Path`` project_root)
+    returns ``False`` so the caller keeps flagging it as pollution.
+    """
+    if before_sha == after_sha:
+        return True
+    if not isinstance(project_root, Path):
+        return False
+    env = {**os.environ, "GIT_CEILING_DIRECTORIES": str(project_root.parent)}
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(project_root),
+                "merge-base",
+                "--is-ancestor",
+                before_sha,
+                after_sha,
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0
 
 
 def _refs_diff_is_pollution(
     before_refs: list[tuple[str, bytes]],
     after_refs: list[tuple[str, bytes]],
     before_packed: dict[str, str],
+    project_root: object = None,
 ) -> bool:
     """Return True iff the loose-refs change is real pollution.
 
-    Pure function. Decomposes the previous all-or-nothing list-compare
-    into three independent questions:
+    Pure except for case 3's ancestry check. Decomposes the previous
+    all-or-nothing list-compare into three independent questions:
 
     1. New loose ref in ``after`` that was not in ``before``: is its SHA
        already in ``before``'s ``packed-refs``? If yes -> housekeeping
@@ -644,7 +692,12 @@ def _refs_diff_is_pollution(
        back into pack (housekeeping; ignore). If no -> deletion
        (pollution).
     3. SHA changed for a ref that exists in both ``before`` and ``after``:
-       always pollution (the ref moved to a different commit).
+       pollution UNLESS the new SHA is a git-descendant of the old one
+       (``_is_descendant_ref_advance``) — a legitimate concurrent writer's
+       advance, per the fix-git-pollution-guard-clobbers-concurrent-writer
+       feature-delta. Non-descendant moves and undeterminable ancestry
+       (``project_root`` absent/not a ``Path``, unknown SHA) stay
+       fail-closed as pollution — unchanged from today's behavior.
     """
     before_map = dict(before_refs)
     after_map = dict(after_refs)
@@ -669,8 +722,13 @@ def _refs_diff_is_pollution(
 
     # 3. SHA changed on existing loose ref.
     for name, sha_bytes in after_map.items():
-        if name in before_map and before_map[name] != sha_bytes:
-            return True
+        if name not in before_map or before_map[name] == sha_bytes:
+            continue
+        before_sha = before_map[name].decode("ascii", errors="replace").strip()
+        after_sha = sha_bytes.decode("ascii", errors="replace").strip()
+        if _is_descendant_ref_advance(project_root, before_sha, after_sha):
+            continue  # legitimate concurrent writer advance — ignore.
+        return True
 
     return False
 
@@ -700,19 +758,37 @@ def _diff_git_state(before: dict[str, object], after: dict[str, object]) -> list
     # Compare HEAD_resolved (the SHA target) so `git commit` — which only
     # advances refs/heads/<branch> while leaving HEAD's literal bytes
     # unchanged — is still flagged. Adversarial review D1: HEAD_raw is the
-    # restore field; HEAD_resolved is the diff field.
-    if before.get("HEAD_resolved") != after.get("HEAD_resolved"):
+    # restore field; HEAD_resolved is the diff field. Same ancestry
+    # exemption as the refs seam (fix-git-pollution-guard-clobbers-
+    # concurrent-writer): a descendant advance — a legitimate concurrent
+    # writer's commit on the checked-out branch — is not corruption.
+    # Non-descendant moves, undeterminable ancestry, and non-bytes values
+    # stay fail-closed exactly as before.
+    before_head = before.get("HEAD_resolved")
+    after_head = after.get("HEAD_resolved")
+    if before_head != after_head and not (
+        isinstance(before_head, bytes)
+        and isinstance(after_head, bytes)
+        and _is_descendant_ref_advance(
+            before.get("project_root"),
+            before_head.decode("ascii", errors="replace").strip(),
+            after_head.decode("ascii", errors="replace").strip(),
+        )
+    ):
         diff.append("HEAD")
 
     before_refs_obj = before.get("refs")
     after_refs_obj = after.get("refs")
     before_packed_obj = before.get("packed_refs")
+    before_project_root = before.get("project_root")
     if (
         isinstance(before_refs_obj, list)
         and isinstance(after_refs_obj, list)
         and isinstance(before_packed_obj, dict)
     ):
-        if _refs_diff_is_pollution(before_refs_obj, after_refs_obj, before_packed_obj):
+        if _refs_diff_is_pollution(
+            before_refs_obj, after_refs_obj, before_packed_obj, before_project_root
+        ):
             diff.append("refs")
     elif before_refs_obj != after_refs_obj:
         # Fallback for snapshots produced before packed_refs was added —

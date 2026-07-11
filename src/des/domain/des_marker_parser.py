@@ -203,6 +203,13 @@ class DesMarkers:
     # prompt-parse output -- validated at the USE site via `classify_bootstrap`.
     bootstrap_gate: str | None = None
     bootstrap_justification: str | None = None
+    # --- DES-AT-KIND (fix-distill-exit-mechanical-seal-route slice-01) --------
+    # Raw DES-AT-KIND marker value (e.g. "pytest-regression", "gherkin"), or
+    # None when the marker is absent. Mirrors the grammar
+    # `carpaccio_intercept.py::_parse_at_kind_from_prompt` already parses from
+    # a dispatch prompt -- this field parses it from a RETURNING agent's own
+    # transcript instead (a different call site, same marker vocabulary).
+    at_kind: str | None = None
 
     @property
     def is_feature_end(self) -> bool:
@@ -280,6 +287,13 @@ class DesMarkerParser:
     _BOOTSTRAP_JUSTIFICATION_PATTERN = re.compile(
         r"<!--\s*DES-BOOTSTRAP-JUSTIFICATION\s*:\s*(.+?)\s*-->"
     )
+    # fix-distill-exit-mechanical-seal-route slice-01: the SAME grammar
+    # `carpaccio_intercept.py::_DES_AT_KIND_PATTERN` already parses from a
+    # dispatch PROMPT (emitted by `dispatch.py:180`) -- mirrored here (one
+    # grammar, two independent parse sites) so a RETURNING agent's own
+    # transcript can carry the marker back. Raw value, no normalisation
+    # (mirrors `_parse_at_kind_from_prompt`'s un-normalised `group(1)`).
+    _AT_KIND_PATTERN = re.compile(r"<!--\s*DES-AT-KIND\s*:\s*(\S+)\s*-->")
 
     def parse(self, prompt: str) -> DesMarkers:
         """Parse DES markers from a Task prompt string.
@@ -323,6 +337,9 @@ class DesMarkerParser:
             else None
         )
 
+        at_kind_match = self._AT_KIND_PATTERN.search(prompt)
+        at_kind = at_kind_match.group(1) if at_kind_match else None
+
         return DesMarkers(
             is_des_task=is_des_task,
             is_orchestrator_mode=mode == "orchestrator",
@@ -338,6 +355,7 @@ class DesMarkerParser:
             declared_wave=declared_wave,
             bootstrap_gate=bootstrap_gate,
             bootstrap_justification=bootstrap_justification,
+            at_kind=at_kind,
         )
 
     def _parse_mode(self, prompt: str) -> str | None:

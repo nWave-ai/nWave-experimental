@@ -67,6 +67,8 @@ collection).
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,6 +105,10 @@ class _HookOutcome:
     decision_event: str | None
     exit_code: int
     phase_completed_emitted: bool
+    # E1 (deep-review 2026-07-11): the block payload's `missing` list, so a
+    # multi-slice test can pin WHICH slice(s) the gate names, not merely
+    # whether it blocked. Empty on an allow.
+    missing: tuple[str, ...] = ()
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -193,12 +199,39 @@ def _marker_block(*, repo: Path) -> str:
     )
 
 
-def _write_distill_return_transcript(repo: Path) -> Path:
+def _marker_block_with_at_kind(*, repo: Path, at_kind: str) -> str:
+    """`_marker_block` plus an explicit `DES-AT-KIND` marker (D1 finding).
+
+    `DES-AT-KIND` is NOT an invented token: it is an EXISTING marker
+    vocabulary member in THIS codebase --
+    `carpaccio_intercept.py::_DES_AT_KIND_PATTERN` / `_parse_at_kind_from_
+    prompt`, emitted into the dispatch prompt by `dispatch.py:180`
+    (`marker_lines.append(marker("DES-AT-KIND", at_kind))`). Today it is
+    parsed ONLY at the DELIVER-entry PreToolUse intercept, from the Task
+    dispatch PROMPT -- never from the RETURNING acceptance-designer's own
+    transcript this SubagentStop hook reads (grep-confirmed: `_AtddPure
+    ResolvedContext` carries project_id/slice_id/atdd_pure_phase/
+    project_root_marker/effective_cwd -- no `at_kind` field; the transcript
+    extractor feeding it parses only DES-MODE/DES-PHASE/DES-SLICE/
+    DES-PROJECT-ID/DES-PROJECT-ROOT). This places the SAME marker where a
+    correct fix would need to consume it, to prove the gate ignores it.
+    """
+    return _marker_block(repo=repo) + f"<!-- DES-AT-KIND : {at_kind} -->\n"
+
+
+def _write_distill_return_transcript(
+    repo: Path, *, marker_text: str | None = None
+) -> Path:
     transcript_path = repo / "agent.jsonl"
     line = json.dumps(
         {
             "type": "user",
-            "message": {"role": "user", "content": _marker_block(repo=repo)},
+            "message": {
+                "role": "user",
+                "content": marker_text
+                if marker_text is not None
+                else _marker_block(repo=repo),
+            },
             "uuid": "distill-return",
             "timestamp": "2026-07-11T10:30:00Z",
         }
@@ -229,6 +262,7 @@ def _run_gate(repo: Path, transcript_path: Path) -> _HookOutcome:
     )
     decision_event: str | None = None
     allowed = True
+    missing: tuple[str, ...] = ()
     for raw_line in stdout.splitlines():
         raw_line = raw_line.strip()
         if not raw_line.startswith("{"):
@@ -240,11 +274,15 @@ def _run_gate(repo: Path, transcript_path: Path) -> _HookOutcome:
         if payload.get("decision") == "block":
             allowed = False
             decision_event = payload.get("event")
+            raw_missing = payload.get("missing")
+            if isinstance(raw_missing, list):
+                missing = tuple(raw_missing)
     return _HookOutcome(
         allowed=allowed,
         decision_event=decision_event,
         exit_code=exit_code,
         phase_completed_emitted=_phase_completed_emitted(repo),
+        missing=missing,
     )
 
 
@@ -366,3 +404,201 @@ def test_stale_red_seal_does_not_clear_distill_exit_not_bypassed_by_edit(
         "partial pass."
     )
     assert not outcome.phase_completed_emitted
+
+
+def test_gherkin_at_kind_marker_never_bypasses_seal_route(tmp_path: Path) -> None:
+    """D1 NEGATIVE (`_never_`, active-RED today -- deep-review finding
+    2026-07-11, HIGH/blocking): `_mechanical_seal_cleared_slices`
+    (subagent_stop_handler.py:1346-1389) applies the mechanical-seal route
+    to ANY planned-but-unverdicted slice whose Annotation cell carries
+    `@regression-test-file:<path>` + a fresh, valid seal -- with NO check of
+    `at_kind` anywhere in the function. The sibling DELIVER-entry gate
+    (`carpaccio_slice_gate.check_at_review`, carpaccio_slice_gate.py:490)
+    restricts the mechanical-seal alternative to `at_kind == "pytest-
+    regression"` explicitly (`if at_kind != "pytest-regression":
+    _check_verdict_record(...); return None` -- the mechanical branch is
+    unreachable for any other kind). This DISTILL-exit route has no
+    analogous restriction: a Gherkin-kind feature slice that happens to
+    carry a `@regression-test-file` annotation (e.g. copy-pasted from a
+    bugfix template, or a slice-plan author's error) with a valid seal would
+    clear DISTILL-exit WITHOUT a reviewer verdict -- exactly the gap D1
+    flags.
+
+    Grounding for the oracle (per dispatch instructions: ground in the
+    code, do not invent a field): `at_kind` is NOT derivable at DISTILL-exit
+    today in ANY existing form --
+      * NOT in the SubagentStop `hook_input` JSON protocol (session_id /
+        hook_event_name / agent_id / agent_type / agent_transcript_path /
+        stop_hook_active / cwd / transcript_path / permission_mode -- no
+        at_kind key);
+      * NOT in `_AtddPureResolvedContext` (project_id / slice_id /
+        atdd_pure_phase / project_root_marker / effective_cwd -- no
+        at_kind field);
+      * NOT in the `[REF] Slice Plan` table schema (`SlicePlanRow` is
+        slice_id/value/status/annotation/justification -- no at_kind
+        column; `check_at_review`'s `at_kind` is a caller-supplied CLI
+        argument, never read from the plan).
+    The ONE place `at_kind` already has an established marker token in
+    THIS codebase is `DES-AT-KIND` (`carpaccio_intercept.
+    py::_DES_AT_KIND_PATTERN` / `_parse_at_kind_from_prompt`, emitted by
+    `dispatch.py:180` into the dispatch PROMPT) -- but it is parsed ONLY
+    by the DELIVER-entry PreToolUse intercept, from a DIFFERENT hook
+    reading a DIFFERENT payload (the Task tool's `prompt`), never from the
+    RETURNING acceptance-designer's own transcript this SubagentStop hook
+    reads. This test places that SAME marker where a correct fix would
+    need to consume it -- proving the gate ignores it completely today.
+
+    A correct fix must gate `_mechanical_seal_cleared_slices` on the
+    slice's `at_kind` being `pytest-regression` (via this marker, extending
+    `extract_des_context_from_transcript` + `_AtddPureResolvedContext` to
+    carry it, or an equivalent signal) -- never apply the mechanical-seal
+    route to a Gherkin-kind slice regardless of annotation/seal content.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    _write_slice_plan(repo, annotate_regression_file=True)
+    _write_regression_file(repo)
+    _write_red_seal(repo)
+    transcript = _write_distill_return_transcript(
+        repo,
+        marker_text=_marker_block_with_at_kind(repo=repo, at_kind="gherkin"),
+    )
+
+    outcome = _run_gate(repo, transcript)
+
+    assert not outcome.allowed, (
+        "D1: expected the G-DISTILL-EXIT gate to BLOCK a slice explicitly "
+        "marked `DES-AT-KIND: gherkin` even though its annotation carries a "
+        "valid, fresh mechanical seal -- the mechanical-seal route is "
+        "pytest-regression-ONLY per the DELIVER-entry sibling gate "
+        '(carpaccio_slice_gate.py:490 `if at_kind != "pytest-regression"`) '
+        "but `_mechanical_seal_cleared_slices` "
+        "(subagent_stop_handler.py:1346-1389) applies it unconditionally to "
+        f"ANY annotated+sealed slice, ignoring at_kind entirely -- got "
+        f"allowed (exit_code={outcome.exit_code}). Fix: gate the mechanical-"
+        "seal route on at_kind == 'pytest-regression'."
+    )
+    assert outcome.decision_event == "DistillExitVerdictIncomplete", (
+        "expected the same DistillExitVerdictIncomplete block a slice with "
+        f"NO evidence at all gets -- got {outcome.decision_event!r}. A "
+        "Gherkin-kind slice with no signed ATReviewVerdict must still "
+        "require the verdict; the seal route is not a universal bypass."
+    )
+    assert not outcome.phase_completed_emitted, (
+        "no WorkflowPhaseCompletedDistill record should be written when the "
+        "gate blocks a Gherkin-kind slice lacking a reviewer verdict"
+    )
+    assert outcome.exit_code == 0
+
+
+# --- E1: multi-slice mixed evidence-state coverage --------------------------
+
+_E1_VERDICT_SLICE = "slice-01"
+_E1_SEAL_SLICE = "slice-02"
+_E1_UNEVIDENCED_SLICE = "slice-03"
+
+_E1_VERDICT_SIGNED_FIELDS: tuple[str, ...] = (
+    "schema_version",
+    "slice_id",
+    "verdict",
+    "reviewer_agent_id",
+    "at_ids",
+    "at_content_hash",
+    "timestamp",
+)
+
+
+def _write_e1_slice_plan(repo: Path) -> None:
+    """Three planned slices in three DISTINCT evidence states, so the gate's
+    `missing = planned - verdict_signed - mechanical_seal_cleared` formula
+    (the module docstring's decision table) can be pinned to name ONLY the
+    genuinely unevidenced slice, never the whole planned set.
+    """
+    feature_dir = repo / "docs" / "feature" / _FEATURE_ID
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    text = (
+        f"# Feature Delta: {_FEATURE_ID}\n\n"
+        "## Wave: DISCUSS / [REF] Slice Plan\n\n"
+        "| Slice | Value statement | Status | Annotation | Justification |\n"
+        "|-------|-----------------|--------|------------|---------------|\n"
+        f"| {_E1_VERDICT_SLICE} | verdict-signed slice | pending | | |\n"
+        f"| {_E1_SEAL_SLICE} | seal-cleared slice | pending | "
+        f"@regression-test-file:{_REGRESSION_REL} | |\n"
+        f"| {_E1_UNEVIDENCED_SLICE} | unevidenced slice | pending | | |\n"
+    )
+    (feature_dir / "feature-delta.md").write_text(text, encoding="utf-8")
+
+
+def _seed_review_verdict(repo: Path, slice_id: str) -> None:
+    """Seed one signed `ATReviewVerdict` record via the production writer.
+
+    Mirrors `DistillExitGateComposition._signed_verdict_fields`
+    (`tests/des/acceptance/oss-hook-side-phase-injection/steps/
+    composition.py`) -- routed through the SAME `append_review_verdict`
+    producer the gate's `ledger.review_verdict_slices()` read trusts, under
+    the M7 fail-closed integrity contract (seq + record_hash).
+    """
+    record: dict[str, object] = {
+        "schema_version": "1.0.0",
+        "slice_id": slice_id,
+        "verdict": "APPROVED",
+        "reviewer_agent_id": "nw-acceptance-designer-reviewer",
+        "at_ids": [f"{slice_id}-AT-1"],
+        "at_content_hash": hashlib.sha256(slice_id.encode()).hexdigest(),
+        "timestamp": "2026-05-29T10:00:00Z",
+    }
+    signed = {field: record[field] for field in _E1_VERDICT_SIGNED_FIELDS}
+    canonical = json.dumps(signed, sort_keys=True, separators=(",", ":")).encode()
+    record["hmac_sha256"] = hmac.new(
+        b"e1-seed-key", canonical, hashlib.sha256
+    ).hexdigest()
+    record["findings_summary"] = "clean"
+    ledger = AtCompletionLedger(_FEATURE_ID, repo)
+    ledger.append_review_verdict(slice_id=slice_id, verdict_fields=record)
+
+
+def test_mixed_slice_states_block_names_only_the_unevidenced_slice(
+    tmp_path: Path,
+) -> None:
+    """E1 (deep-review finding, MEDIUM): three planned slices in three
+    DISTINCT evidence states -- verdict-signed (slice-01), seal-cleared
+    (slice-02), and neither (slice-03) -- pin that the block names ONLY the
+    genuinely unevidenced slice. Reported honestly: this is expected to PASS
+    today -- the existing `missing = planned - verdict_signed -
+    _mechanical_seal_cleared_slices(missing)` formula already correctly
+    excludes both the verdict-signed and the (at_kind-blind, but legitimately
+    annotated+sealed) seal-cleared slice; D1's gap is orthogonal (a MISSING
+    at_kind guard on the seal route, not a miscomputed `missing` set for a
+    slice that legitimately qualifies for it either way).
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    _write_e1_slice_plan(repo)
+    _write_regression_file(repo)
+    _write_red_seal(repo)
+    _seed_review_verdict(repo, _E1_VERDICT_SLICE)
+    transcript = _write_distill_return_transcript(repo)
+
+    outcome = _run_gate(repo, transcript)
+
+    assert not outcome.allowed, (
+        "expected the gate to BLOCK: slice-03 carries neither a signed "
+        f"ATReviewVerdict nor mechanical-seal evidence -- got allowed "
+        f"(exit_code={outcome.exit_code})"
+    )
+    assert outcome.decision_event == "DistillExitVerdictIncomplete", (
+        f"expected DistillExitVerdictIncomplete -- got {outcome.decision_event!r}"
+    )
+    assert outcome.missing == (_E1_UNEVIDENCED_SLICE,), (
+        "expected the block to name ONLY the genuinely unevidenced slice "
+        f"{_E1_UNEVIDENCED_SLICE!r} -- got {outcome.missing!r}. Neither the "
+        f"verdict-signed slice {_E1_VERDICT_SLICE!r} nor the seal-cleared "
+        f"slice {_E1_SEAL_SLICE!r} may appear in `missing`."
+    )
+    assert not outcome.phase_completed_emitted, (
+        "no WorkflowPhaseCompletedDistill record should be written while "
+        "one planned slice remains unevidenced"
+    )
+    assert outcome.exit_code == 0

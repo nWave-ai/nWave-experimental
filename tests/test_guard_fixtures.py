@@ -154,33 +154,71 @@ def test_guard_detects_config_corruption(tmp_path: Path) -> None:
 
 
 def test_guard_detects_head_corruption(tmp_path: Path) -> None:
-    """Real `git commit` advances HEAD; the guard must report `"HEAD"`.
+    """HEAD reset to a NON-descendant synthetic commit; guard reports `"HEAD"`.
 
-    Reproduces the Branch A failure mode from the RCA: a test commit
-    landed in the host worktree's HEAD because subprocess git escaped
-    `tmp_path`. Here we contain the commit inside `tmp_path/victim_repo`
-    so the test is safe, but the diff predicate must still flag HEAD
+    Reproduces the Branch A failure mode from the RCA faithfully: the
+    2026-04-27 incident "reset the worktree HEAD to a synthetic
+    test-fixture commit" -- an UNRELATED commit with no ancestry relation
+    to the host's history, landed because subprocess git escaped
+    `tmp_path`. Here we contain the reset inside `tmp_path/victim_repo`
+    so the test is safe, but the diff predicate must still flag the HEAD
     movement as corruption.
+
+    Trigger-shape note (feature `fix-git-pollution-guard-clobbers-
+    concurrent-writer`): the original trigger here was a normal `git
+    commit` -- a DESCENDANT advance. That feature adjudicates the
+    descendant-advance observable in favor of a legitimate concurrent
+    writer (see `tests/bugs/des/
+    test_git_pollution_guard_respects_concurrent_writer.py` T4, the
+    sealed oracle), so this pin's trigger is now a corruption-
+    REPRESENTATIVE move: HEAD's branch reset to a synthetic root commit
+    with no ancestry to the snapshot -- which is also what the RCA
+    incident actually did. The detection intent is unchanged: a leaked
+    test mutation of HEAD must still be detected, restored, and failed
+    LOUD.
     """
     repo_root = tmp_path / "victim_repo"
     repo_root.mkdir()
     _init_isolated_repo(repo_root)
     _create_initial_commit(repo_root)
 
-    before = _compute_git_state_snapshot(repo_root)
-
-    # Real failure-mode reproduction: subprocess `git commit` with NO
-    # GIT_CEILING_DIRECTORIES. Containment is structural (tmp_path has its
-    # own .git), faithfulness to the bug is preserved (no env guard).
-    (repo_root / "polluting.txt").write_text("would have hit host\n")
-    subprocess.run(
-        ["git", "add", "polluting.txt"],
-        cwd=str(repo_root),
+    # Build the synthetic test-fixture commit (an unrelated ROOT commit,
+    # no parent, its own tree) via plumbing -- ceiling-scoped, this is
+    # setup, not the pollution under test.
+    env = {**os.environ, "GIT_CEILING_DIRECTORIES": str(repo_root.parent)}
+    blob = subprocess.run(
+        ["git", "-C", str(repo_root), "hash-object", "-w", "--stdin"],
+        input="synthetic fixture\n",
         check=True,
         capture_output=True,
-    )
+        text=True,
+        env=env,
+    ).stdout.strip()
+    tree = subprocess.run(
+        ["git", "-C", str(repo_root), "mktree"],
+        input=f"100644 blob {blob}\tfixture.txt\n",
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    ).stdout.strip()
+    synthetic = subprocess.run(
+        ["git", "-C", str(repo_root), "commit-tree", tree, "-m", "synthetic fixture"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    ).stdout.strip()
+
+    before = _compute_git_state_snapshot(repo_root)
+
+    # Real failure-mode reproduction: subprocess `git update-ref` with NO
+    # GIT_CEILING_DIRECTORIES resets the checked-out branch (HEAD's
+    # target) to the synthetic non-descendant commit -- the exact shape
+    # of the 2026-04-27 incident. Containment is structural (tmp_path has
+    # its own .git), faithfulness to the bug is preserved (no env guard).
     subprocess.run(
-        ["git", "commit", "-m", "feat: something"],
+        ["git", "update-ref", "refs/heads/main", synthetic],
         cwd=str(repo_root),
         check=True,
         capture_output=True,
@@ -193,7 +231,8 @@ def test_guard_detects_head_corruption(tmp_path: Path) -> None:
         f"Detective guard predicate failed to detect HEAD corruption; "
         f"diff returned {diff!r}. Expected 'HEAD' so the autouse fixture "
         f"can name the corruption type when a test escapes its tmp_path "
-        f"and lands a commit on the host worktree."
+        f"and resets the host worktree's HEAD to a synthetic fixture "
+        f"commit (a non-descendant of the snapshot)."
     )
 
 

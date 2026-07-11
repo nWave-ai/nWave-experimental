@@ -138,8 +138,10 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
     Returns:
         For a classic dispatch: dict with "project_id", "step_id",
         "project_root". For an atdd_pure dispatch: dict with "mode",
-        "project_id", "slice_id", "atdd_pure_phase", "project_root" and
-        "step_id" set to None. None when no DES markers are found.
+        "project_id", "slice_id", "atdd_pure_phase", "project_root",
+        "at_kind" (the raw DES-AT-KIND marker value, or None when absent --
+        fix-distill-exit-mechanical-seal-route slice-01) and "step_id" set
+        to None. None when no DES markers are found.
     """
     if not Path(transcript_path).exists():
         return None
@@ -187,6 +189,7 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
                             "slice_id": markers.slice_id,
                             "atdd_pure_phase": markers.atdd_pure_phase,
                             "project_root": markers.project_root,
+                            "at_kind": markers.at_kind,
                         }
                     continue
 
@@ -232,6 +235,14 @@ class _AtddPureResolvedContext:
     atdd_pure_phase: str | None
     project_root_marker: str | None
     effective_cwd: str
+    # fix-distill-exit-mechanical-seal-route slice-01: the raw DES-AT-KIND
+    # marker value echoed on the RETURNING agent's own transcript (mirrors the
+    # grammar `carpaccio_intercept.py::_parse_at_kind_from_prompt` already
+    # parses from the dispatch prompt). None when the marker is absent -- the
+    # G-DISTILL-EXIT mechanical-seal route treats absence as compatible
+    # (byte-identical to pre-fix behavior); an EXPLICIT non-"pytest-regression"
+    # value blocks the route fail-closed (see `_mechanical_seal_cleared_slices`).
+    at_kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -393,6 +404,7 @@ def _resolve_des_context(
             atdd_pure_phase=des_context.get("atdd_pure_phase"),
             project_root_marker=raw_marker,
             effective_cwd=effective_cwd,
+            at_kind=des_context.get("at_kind"),
         )
 
     project_id = des_context["project_id"]
@@ -1344,7 +1356,7 @@ def _slice_plan_slice_ids(repo: Path, feature_id: str) -> frozenset[str]:
 
 
 def _mechanical_seal_cleared_slices(
-    repo: Path, feature_id: str, missing: frozenset[str]
+    repo: Path, feature_id: str, missing: frozenset[str], at_kind: str | None = None
 ) -> frozenset[str]:
     """Slices in ``missing`` that clear G-DISTILL-EXIT via the mechanical-seal
     route (bug #94), mirroring the DELIVER-entry `check_at_review` mechanical-
@@ -1364,8 +1376,23 @@ def _mechanical_seal_cleared_slices(
     slice-plan (the caller already parsed it once via `_slice_plan_slice_ids`
     so this only re-degrades to an empty clear-set, never a crash), or a
     stale/absent seal all resolve to "not cleared" -- never a blanket bypass.
+
+    D1 (deep-review finding, HIGH/blocking): ``at_kind`` gates the WHOLE route
+    identically to the sibling DELIVER-entry check
+    (`carpaccio_slice_gate.py:490`, ``if at_kind != "pytest-regression":
+    ... return None`` -- the mechanical branch is unreachable for any other
+    kind). Here, an EXPLICIT non-``"pytest-regression"`` value (a returning
+    acceptance-designer positively declaring a Gherkin-kind dispatch via the
+    echoed DES-AT-KIND marker) blocks the mechanical-seal route entirely --
+    it never applies to a Gherkin-kind slice regardless of annotation/seal
+    content. ``at_kind is None`` (the marker absent from the transcript --
+    the pre-D1, byte-identical default for a dispatch that never carried this
+    marker) proceeds with the existing per-slice annotation+seal check
+    unchanged.
     """
     if not missing:
+        return frozenset()
+    if at_kind is not None and at_kind != "pytest-regression":
         return frozenset()
     from des.cli import carpaccio_format
     from des.cli.carpaccio_slice_gate import _mechanical_seal_satisfied
@@ -1820,12 +1847,18 @@ def _handle_distill_exit_gate(
     Decision table (C5):
       denominator = `_slice_plan_slice_ids` (the SAME U4 resolves)
       numerator   = `ledger.review_verdict_slices()` UNION
-                    `_mechanical_seal_cleared_slices(missing)` (bug #94: the
-                    mechanical-seal route -- a fresh `RedObserved` seal +
-                    satisfied negative-AT mandate for the slice's declared
-                    `@regression-test-file`, reusing
+                    `_mechanical_seal_cleared_slices(missing, resolved.at_kind)`
+                    (bug #94: the mechanical-seal route -- a fresh
+                    `RedObserved` seal + satisfied negative-AT mandate for
+                    the slice's declared `@regression-test-file`, reusing
                     `carpaccio_slice_gate._mechanical_seal_satisfied`, the
-                    SAME predicate the DELIVER-entry gate already trusts)
+                    SAME predicate the DELIVER-entry gate already trusts).
+                    D1: the route is gated on `resolved.at_kind` -- an
+                    EXPLICIT non-`"pytest-regression"` DES-AT-KIND marker on
+                    the returning transcript (e.g. `"gherkin"`) blocks the
+                    WHOLE route fail-closed, mirroring the DELIVER-entry
+                    sibling (`carpaccio_slice_gate.py:490`); an absent marker
+                    proceeds unchanged (byte-identical pre-D1 behavior).
       - planned subset-of (verdict-signed UNION mechanical-seal-cleared) -> emit
         `WorkflowPhaseCompletedDistill` + allow
       - a planned slice neither signed nor mechanically sealed -> block
@@ -1874,7 +1907,7 @@ def _handle_distill_exit_gate(
         missing = planned - verdict_signed
         if missing:
             missing = missing - _mechanical_seal_cleared_slices(
-                repo, feature_id, missing
+                repo, feature_id, missing, resolved.at_kind
             )
         if missing:
             return _emit_atdd_pure_block(
