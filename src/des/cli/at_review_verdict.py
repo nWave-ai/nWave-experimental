@@ -212,6 +212,18 @@ _RUST_TEST_FN_RE = re.compile(
 )
 
 
+def _strip_rust_line_comments(source: str) -> str:
+    """Strip ``//``-to-EOL line comments before attribute matching.
+
+    Minimal robust line-scan (no Rust parser, no block-comment / string-
+    literal awareness -- deliberately out of scope): a ``#[test]`` occurring
+    only inside a ``//`` line comment is text, never a real Rust attribute,
+    and must never satisfy ``_RUST_TEST_FN_RE``. Newlines are preserved so
+    multi-line attribute-then-``fn`` matching is unaffected.
+    """
+    return "\n".join(line.split("//", 1)[0] for line in source.splitlines())
+
+
 def _malformed_rust_regression_file(detail: str) -> GateError:
     return GateError(
         2,
@@ -236,11 +248,11 @@ def _count_rust_regression_ats(regression_test_file: Path) -> list[str]:
     """
     try:
         source = regression_test_file.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise _malformed_rust_regression_file(
-            f"cannot read {regression_test_file}: {exc}"
+            f"cannot read/decode {regression_test_file}: {exc}"
         ) from exc
-    at_ids = _RUST_TEST_FN_RE.findall(source)
+    at_ids = _RUST_TEST_FN_RE.findall(_strip_rust_line_comments(source))
     if not at_ids:
         raise _malformed_rust_regression_file(
             f"zero #[test] functions found in {regression_test_file}"
