@@ -606,6 +606,21 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _charter_dir_to_stage(repo: Path, feature_id: str | None) -> list[str]:
+    """Repo-relative ``docs/product/expectations/{feature_id}/`` if present.
+
+    Feature-scoped only -- never the whole expectations tree. Absent (no
+    ``feature_id``, or the dir does not exist on disk) yields ``[]``, no error
+    (backward-compat: an @infrastructure slice with no charter never blocks).
+    """
+    if feature_id is None:
+        return []
+    charter_dir = repo / "docs" / "product" / "expectations" / feature_id
+    if not charter_dir.is_dir():
+        return []
+    return [str(charter_dir.relative_to(repo))]
+
+
 def _stage(repo: Path, paths: list[str], stage_all: bool) -> dict[str, object] | None:
     """Stage the requested paths; return a MalformedInput payload or None.
 
@@ -910,6 +925,15 @@ def main(argv: list[str] | None = None) -> int:
     message = _ensure_reviewed_by(
         repo, message, extract_slice_ids(message), args.feature_id
     )
+
+    # Auto-stage the feature's expectation charter (GDP-5: the cost of
+    # remembering --path docs/product/expectations/{feature_id}/ sits on the
+    # operator today; this makes the charter first-class, never left behind).
+    # Feature-scoped only, and skipped under --all (git add -A already covers
+    # it); git add is idempotent so an explicit --path to the same dir stays
+    # a no-op double-add.
+    if not args.all:
+        args.paths = [*args.paths, *_charter_dir_to_stage(repo, args.feature_id)]
 
     try:
         malformed = _stage(repo, args.paths, args.all)
