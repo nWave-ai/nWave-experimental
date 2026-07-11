@@ -296,6 +296,123 @@ def _gitlint_subject_violation(repo: Path, message: str) -> dict[str, object] | 
 
 
 # ---------------------------------------------------------------------------
+# Remote-ancestry guard (fix-commit-slice-never-amends-pushed, GDP-6): before
+# staging/committing anything, ensure local HEAD has never REGRESSED behind an
+# already-PUSHED remote-tracking ref. Incident (2026-07-11 ~16:00): an external
+# git surface (`git reset --soft HEAD^`, folding in a forgotten charter file)
+# regressed local HEAD one commit behind the pushed tip; `commit-slice`'s own
+# stage->commit->amend flow then committed blindly on top of the regressed
+# HEAD, producing a SIBLING of the pushed commit (same parent) instead of a
+# descendant -- orphaning it. Local diverged from origin; the next push was
+# rejected non-fast-forward, resolved only via --force-with-lease.
+#
+# Fix: resolve the upstream tracking ref (or the first `refs/remotes/*` ref
+# when no upstream is configured, degrade-honest to "no remote" when neither
+# exists -- the byte-identical no-remote guard's precondition). If that ref is
+# already an ancestor of local HEAD, nothing changed -- no-op. If local HEAD is
+# a strict ancestor of the remote ref (a pure regression, fast-forwardable, no
+# unique local commits), re-anchor the branch pointer to the remote tip via
+# `git reset --soft` -- soft reset never touches the index/working tree, so
+# whatever content is staged/kept from the regression becomes a diff against
+# the PUSHED tip, and the next commit lands as its genuine CHILD instead of a
+# diverging sibling. Only a GENUINE divergence (neither side is an ancestor of
+# the other -- both carry unique commits) cannot be auto-healed without
+# silently discarding history; that case refuses LOUD instead.
+# ---------------------------------------------------------------------------
+
+
+def _remote_tracking_ref(repo: Path) -> str | None:
+    """The current branch's remote-tracking ref, or None if no remote exists.
+
+    Tries the configured upstream (``@{u}``, set by ``git push -u`` or
+    ``git branch --set-upstream-to``) first. Falls back to the first
+    ``refs/remotes/*`` ref (excluding a bare ``.../HEAD`` symref) when no
+    upstream is configured but at least one remote is -- the design doc's
+    "or fall back to scanning refs/remotes/*" degrade-honest path. Returns
+    None when no remote is configured at all, the precondition every
+    pre-existing (no-remote) commit-slice caller relies on to stay unaffected.
+    """
+    try:
+        ref = _git(
+            repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"
+        ).strip()
+        if ref:
+            return ref
+    except subprocess.CalledProcessError:
+        pass
+    try:
+        refs = _git(repo, "for-each-ref", "--format=%(refname)", "refs/remotes/")
+    except subprocess.CalledProcessError:
+        return None
+    for line in refs.splitlines():
+        candidate = line.strip()
+        if candidate and not candidate.endswith("/HEAD"):
+            return candidate
+    return None
+
+
+def _is_ancestor(repo: Path, ancestor_sha: str, descendant_sha: str) -> bool:
+    """True iff ``ancestor_sha`` is reachable from ``descendant_sha``."""
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor_sha, descendant_sha],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def _guard_head_not_behind_remote(repo: Path) -> dict[str, object] | None:
+    """Refuse (or auto-heal) local HEAD having regressed behind a pushed remote.
+
+    Returns None (no-op / auto-healed) in every case that must stay
+    byte-identical to pre-fix behavior: no remote configured, an unborn/no-
+    commit repo, or the remote ref already an ancestor of local HEAD (the
+    common, up-to-date case). A pure regression (local HEAD is a strict
+    ancestor of the remote ref -- fast-forwardable, no unique local commits)
+    is auto-healed via ``git reset --soft`` to the remote tip and returns
+    None. Returns a refusal payload (popped ``exit_code`` by the caller) only
+    on GENUINE divergence, where auto-healing would silently discard one
+    side's unique history.
+    """
+    remote_ref = _remote_tracking_ref(repo)
+    if remote_ref is None:
+        return None
+
+    try:
+        remote_sha = _git(repo, "rev-parse", remote_ref).strip()
+        head_sha = _git(repo, "rev-parse", "HEAD").strip()
+    except subprocess.CalledProcessError:
+        # Unborn HEAD or an unresolved remote ref -- degrade-honest no-op;
+        # the pre-existing downstream flow already handles those cases.
+        return None
+
+    if remote_sha == head_sha or _is_ancestor(repo, remote_sha, head_sha):
+        return None  # local already contains everything pushed -- unaffected
+
+    if _is_ancestor(repo, head_sha, remote_sha):
+        # Pure regression: re-anchor the branch pointer to the pushed tip.
+        # `--soft` never touches the index/working tree, so any content
+        # staged/kept across the regression becomes a diff against the
+        # PUSHED tip instead of the regressed base.
+        git_run(repo, "reset", "--soft", remote_sha)
+        return None
+
+    return {
+        "event": "HeadDivergedFromRemoteRefused",
+        "exit_code": 1,
+        "what": f"local HEAD ({head_sha}) and {remote_ref} ({remote_sha}) have "
+        "diverged -- neither is an ancestor of the other",
+        "why": "committing here would build a NEW commit that is a sibling of "
+        f"content already pushed to {remote_ref}, permanently orphaning it "
+        "unless a force-push later rewrites the remote history (the "
+        "2026-07-11 incident class).",
+        "how": f"reconcile manually first (e.g. `git merge {remote_ref}` or "
+        f"`git rebase {remote_ref}`), then re-run des commit-slice.",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Examine-verdict commit-time gate (evolution-plan P1.2 -- User-Examiner wiring)
 # ---------------------------------------------------------------------------
 #
@@ -925,6 +1042,17 @@ def main(argv: list[str] | None = None) -> int:
     message = _ensure_reviewed_by(
         repo, message, extract_slice_ids(message), args.feature_id
     )
+
+    # Remote-ancestry guard (fix-commit-slice-never-amends-pushed): refuse or
+    # auto-heal a local HEAD regressed behind an already-pushed remote-
+    # tracking ref BEFORE any staging/commit happens -- see the guard's
+    # docstring for the full incident + fix rationale.
+    remote_regression = _guard_head_not_behind_remote(repo)
+    if remote_regression is not None:
+        exit_code = remote_regression.pop("exit_code")
+        _emit(remote_regression)
+        assert isinstance(exit_code, int)
+        return exit_code
 
     # Auto-stage the feature's expectation charter (GDP-5: the cost of
     # remembering --path docs/product/expectations/{feature_id}/ sits on the
