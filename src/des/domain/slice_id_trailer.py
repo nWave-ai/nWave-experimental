@@ -25,6 +25,17 @@ _SLICE_ID_TRAILER_RE = re.compile(
     r"^(?:Slice-Id|Step-Id):\s*(slice-\d+(?:[a-z])?)(?:-[A-Z][A-Z_]*)?\s*$"
 )
 
+#: A Gherkin ``@slice-NN`` (or letter-suffixed ``@slice-NNa``) scenario tag --
+#: the canonical `slice-NN` TAG grammar SSOT. Byte-identical to the pattern
+#: `carpaccio_format.py` fixed locally (friction #10, 2026-06-26); every other
+#: site that extracts a `@slice-NN` tag imports this instead of re-deriving
+#: its own copy (fix-slice-id-grammar-drift-ssot, closes the drift).
+SLICE_TAG_RE = re.compile(r"@(slice-\d+(?:[a-z])?)\b")
+
+#: A ``| slice-NN |`` (or letter-suffixed ``| slice-NNa |``) first cell of a
+#: Slice-Plan table row -- the canonical `slice-NN` ROW-ID grammar SSOT.
+SLICE_ROW_ID_RE = re.compile(r"^\|\s*(slice-\d+(?:[a-z])?)\s*\|")
+
 
 def extract_slice_ids(commit_message: str) -> list[str]:
     """Return every `slice-NN` carried by a `Slice-Id:`/`Step-Id:` trailer.

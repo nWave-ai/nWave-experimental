@@ -49,7 +49,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -67,15 +66,19 @@ from des.cli.validate_feature_delta import (
     validate_slice_plan_content,
 )
 from des.domain.gate_outcome import GateVerdict
+from des.domain.slice_id_trailer import SLICE_ROW_ID_RE, SLICE_TAG_RE
 from des.runtime.interpreter import InterpreterUnavailable, python_for
 
 
 #: A ``| slice-NN |`` first cell in the Slice Plan table — the planned slice ids
-#: whose authored AT module the gate must resolve (DDD-1 step 2).
-_SLICE_ROW_ID = re.compile(r"^\|\s*(slice-\d+)\s*\|")
+#: whose authored AT module the gate must resolve (DDD-1 step 2). Imported
+#: from the domain SSOT (fix-slice-id-grammar-drift-ssot) so a letter-suffixed
+#: `| slice-04a |` row is matched identically to a plain `| slice-NN |` row.
+_SLICE_ROW_ID = SLICE_ROW_ID_RE
 
-#: A ``@slice-NN`` scenario tag in a resolved ``.feature`` AT module.
-_SLICE_TAG = re.compile(r"@(slice-\d+)\b")
+#: A ``@slice-NN`` scenario tag in a resolved ``.feature`` AT module. Imported
+#: from the domain SSOT (fix-slice-id-grammar-drift-ssot).
+_SLICE_TAG = SLICE_TAG_RE
 
 #: The code-design manifest filename the freeze gate folds when present (slice-03 /
 #: ADR-FLOW-004 DDD-5; mirrors gate_g.py:80 ``_MANIFEST_FILENAME``). DESIGN is

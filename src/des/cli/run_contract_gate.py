@@ -68,6 +68,7 @@ from des.adapters.driven.runner.runner_registry import (
 )
 from des.cli.carpaccio_slice_gate import _feature_tag_files
 from des.cli.human_surface import Verdict, print_human_summary
+from des.domain.slice_id_trailer import SLICE_TAG_RE
 from des.ports.driven_ports.committed_scope_port import (
     CommittedFileSet,
     Indeterminate,
@@ -130,7 +131,10 @@ _FULL_SUITE_MARKER = "unit or integration or acceptance"
 _GATE_SCOPE_TRAILER_RE = re.compile(r"^Gate-Scope:\s*([0-9a-f]{64})\s*$")
 
 # A Gherkin `@slice-NN` tag -- the carpaccio slice scoping anchor (DDD-5).
-_SLICE_TAG_RE = re.compile(r"@(slice-\d+)\b")
+# Imported from the domain SSOT (fix-slice-id-grammar-drift-ssot) so a
+# letter-suffixed `@slice-04a` (an `@coupled` split) is matched identically
+# to a plain `@slice-NN`, not silently dropped.
+_SLICE_TAG_RE = SLICE_TAG_RE
 
 # The child-worker marker-line protocol (see des.cli._collect_scope_worker).
 # The worker runs pytest's in-process collection API in a FRESH interpreter so

@@ -28,7 +28,6 @@ head-comment-tagged pytest AT file was invisible to this oracle.
 from __future__ import annotations
 
 import fnmatch
-import re
 import subprocess
 from typing import TYPE_CHECKING
 
@@ -38,13 +37,16 @@ from des.application.feature_at_files import (
     feature_tagged_test_files,
     resolve_test_file_attribution,
 )
+from des.domain.slice_id_trailer import SLICE_TAG_RE
 
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-_SLICE_TAG_RE = re.compile(r"@(slice-\d+)\b")
+#: Imported from the domain SSOT (fix-slice-id-grammar-drift-ssot) so a
+#: letter-suffixed `@slice-04a` tag resolves identically to `@slice-NN`.
+_SLICE_TAG_RE = SLICE_TAG_RE
 
 _PYTEST_COLLECTIBLE_PATTERNS = ("test_*.py", "*_test.py")
 

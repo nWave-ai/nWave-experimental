@@ -37,6 +37,7 @@ from des.application.feature_at_files import (
     feature_tag_files as _feature_tag_files,
 )
 from des.domain.lane_profile import LANE_PROFILES, AtRequirement, LaneProfile
+from des.domain.slice_id_trailer import SLICE_TAG_RE
 
 
 if TYPE_CHECKING:
@@ -74,7 +75,11 @@ _SLICE_ID_RE = re.compile(
 # letter is no boundary -> the whole match fails) -> the gate emitted a SILENT
 # `no-scenarios-for-slice` on a valid id. The `(?:[a-z])?` mirrors the validator so
 # the two grammars agree; `@slice-01` (digit-only) is unaffected.
-_SLICE_TAG_RE = re.compile(r"@(slice-\d+(?:[a-z])?)\b")
+#
+# Imported from the domain SSOT (fix-slice-id-grammar-drift-ssot) -- this WAS
+# the reference fix (friction #10); it is now folded back onto the one grammar
+# home so no second copy can drift again.
+_SLICE_TAG_RE = SLICE_TAG_RE
 _COUPLED_TAG_RE = re.compile(r"@coupled\b")
 _WALKING_SKELETON_RE = re.compile(r"@walking-skeleton|@walking_skeleton")
 _ANNOTATION_ESCAPE_RE = re.compile(

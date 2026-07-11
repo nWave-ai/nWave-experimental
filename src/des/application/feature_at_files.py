@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from des.domain.slice_id_trailer import SLICE_TAG_RE
+
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -189,7 +191,10 @@ def _file_feature_tags(path: Path) -> tuple[str, ...]:
 # resolution ``slice_at_completeness.feature_files_for_slice`` /
 # ``carpaccio_format`` already give a Gherkin ``.feature`` file.
 
-_SLICE_SUBTAG_RE = re.compile(r"@(slice-\d+)\b")
+#: Imported from the domain SSOT (fix-slice-id-grammar-drift-ssot) so a
+#: letter-suffixed `@slice-04a` head-comment sub-tag resolves identically to
+#: `@slice-NN`.
+_SLICE_SUBTAG_RE = SLICE_TAG_RE
 _COVERS_SUBTAG_RE = re.compile(r"@covers-(R\d+)\b", re.IGNORECASE)
 
 
