@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -420,6 +421,96 @@ def count_pytest_regression_ats(regression_test_file: Path) -> int:
     return count
 
 
+def _predecessor_attested_at_total(
+    repo: Path, feature_id: str, entering_slice: str
+) -> int:
+    """Sum of ``at_ids`` counts already attested to OTHER slices of this
+    feature in the AT-completion ledger (fix-carpaccio-shared-file-overcount).
+
+    Reads ``.nwave/telemetry/atdd-pure/{feature_id}.jsonl`` -- the SAME ledger
+    ``carpaccio_slice_gate._latest_verdict_record`` reads for the entering
+    slice's OWN record -- but here scans for every OTHER ``slice_id`` (a
+    predecessor that already shares this ``regression_test_file``), keeping
+    only the LATEST ``ATReviewVerdict`` record per predecessor slice (a
+    re-review supersedes an earlier one) and summing each one's ``at_ids``
+    length. A predecessor slice's ``at_ids`` are generic ``AT-N`` labels
+    local to that slice's own review, not globally-unique test names, so
+    COUNTS are summed per distinct ``slice_id`` -- never a cross-slice set
+    union, which would silently collide identical labels from different
+    slices.
+
+    Degrades honestly: an absent/unreadable ledger, or any malformed line,
+    contributes 0 for that line -- never raises. The caller's own fallback
+    (whole-file count when the ledger is entirely absent) is what keeps this
+    honest, per GDP-7 (filesystem-only, no git).
+    """
+    ledger_path = repo / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
+    if not ledger_path.is_file():
+        return 0
+    latest_by_slice: dict[str, object] = {}
+    try:
+        lines = ledger_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return 0
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        if record.get("event") != "ATReviewVerdict":
+            continue
+        slice_id = record.get("slice_id")
+        if not isinstance(slice_id, str) or slice_id == entering_slice:
+            continue
+        latest_by_slice[slice_id] = record.get("at_ids")
+    total = 0
+    for at_ids in latest_by_slice.values():
+        if isinstance(at_ids, list):
+            total += len(at_ids)
+    return total
+
+
+def count_net_new_pytest_regression_ats(
+    regression_test_file: Path,
+    *,
+    repo: Path | None = None,
+    feature_id: str | None = None,
+    entering_slice: str | None = None,
+) -> int:
+    """Net-new AT count for the ENTERING slice (fix-carpaccio-shared-file-
+    overcount, recurring friction #53).
+
+    The single locus BOTH carpaccio call sites use for a ``regression_test_
+    file`` that is SHARED across slices: ``check_carpaccio``'s assertion-1
+    size gate (this module) and ``carpaccio_slice_gate._check_verdict_record``'s
+    assertion-5 AT-set check. Both previously called
+    :func:`count_pytest_regression_ats` directly and consumed the file's
+    WHOLE total unconditionally -- a slice adding 1 AT to a file already
+    carrying a predecessor's 10 attested ATs was over-counted to 11.
+
+    Net-new = the file's whole-file AST count MINUS the total ``at_ids``
+    already attested to OTHER slices of this feature in the AT-completion
+    ledger (:func:`_predecessor_attested_at_total`). Clamped at 0 (never
+    negative) -- a net-new AT count cannot be negative even if ledger data
+    is unexpectedly stale.
+
+    Degrades honestly to the WHOLE-FILE count (today's behavior, never
+    silently permissive) when ``repo``, ``feature_id``, or ``entering_slice``
+    is omitted, or when the ledger is absent/unreadable -- see
+    :func:`_predecessor_attested_at_total`.
+    """
+    total = count_pytest_regression_ats(regression_test_file)
+    if repo is None or feature_id is None or entering_slice is None:
+        return total
+    predecessor_total = _predecessor_attested_at_total(repo, feature_id, entering_slice)
+    return max(total - predecessor_total, 0)
+
+
 def pytest_regression_content_hash(regression_test_file: Path) -> str:
     """Content-seal for ``at_kind="pytest-regression"`` (ADR-001, this feature).
 
@@ -619,7 +710,12 @@ def check_carpaccio(
         )
     if at_kind == "pytest-regression":
         assert regression_test_file is not None  # guarded above
-        at_count = count_pytest_regression_ats(regression_test_file)
+        at_count = count_net_new_pytest_regression_ats(
+            regression_test_file,
+            repo=repo,
+            feature_id=feature_id,
+            entering_slice=entering_slice,
+        )
         _check_walking_skeleton_first(plan)
         _check_value_annotation(plan)
         all_coupled = bool(_COUPLED_TAG_RE.search(entering_row.annotation))

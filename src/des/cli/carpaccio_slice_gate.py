@@ -69,6 +69,7 @@ from des.cli.carpaccio_format import (
     _read_feature_files,
     _slice_scenarios,
     check_carpaccio,
+    count_net_new_pytest_regression_ats,
     count_pytest_regression_ats,
     parse_scenarios,
     parse_slice_plan,
@@ -609,7 +610,12 @@ def _check_verdict_record(
 
     if at_kind == "pytest-regression":
         assert regression_test_file is not None  # guarded by check_at_review
-        at_count = count_pytest_regression_ats(regression_test_file)
+        at_count = count_net_new_pytest_regression_ats(
+            regression_test_file,
+            repo=repo,
+            feature_id=feature_id,
+            entering_slice=entering_slice,
+        )
         expected_hash = pytest_regression_content_hash(regression_test_file)
     else:
         slice_scenarios = _slice_scenarios(scenarios, entering_slice)
