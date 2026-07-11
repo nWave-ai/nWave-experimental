@@ -32,7 +32,7 @@ from pathlib import Path
 
 from des._internal import subset_parser
 from des.application.dispatch_lane_ssot import _read_full_sections
-from des.domain.atdd_pure_phases import ATDDPurePhase
+from des.domain.atdd_pure_phases import FEATURE_END_PHASES, ATDDPurePhase
 from des.domain.lane_profile import LANE_PROFILES
 
 
@@ -56,6 +56,11 @@ _FALLBACK_MARKER_SYNTAX = "<!-- {key} : {value} -->"
 #: existing readiness gate special-cases the SAME lane by name in
 #: ``verify_readiness_pre_dispatch._run_bugfix_lane``).
 _LANES_REQUIRING_JUSTIFICATION = frozenset({"bugfix"})
+
+#: The feature-end-cycle dispatch scope literal (ADR-028 D6, Option A) -- the
+#: ONLY coherent ``--slice`` value for a ``FEATURE_END_PHASES`` member (e.g.
+#: ``D_DISTILL``). Mirrors ``des.domain.des_marker_parser._FEATURE_END_SCOPE``.
+_FEATURE_END_SCOPE = "feature-end"
 
 
 def _canonical_phase_values() -> tuple[str, ...]:
@@ -282,6 +287,16 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = _build_parser().parse_args(argv)
 
+    slice_id: str = args.slice_id
+    if args.phase in FEATURE_END_PHASES and slice_id != _FEATURE_END_SCOPE:
+        print(
+            f"note: --phase {args.phase} is a feature-end-cycle phase -- its "
+            "ONLY coherent scope is 'feature-end' (ADR-028 D6, Option A). "
+            f"auto-correcting --slice {slice_id!r} to 'feature-end'.",
+            file=sys.stderr,
+        )
+        slice_id = _FEATURE_END_SCOPE
+
     repo_root: Path = args.repo_root if args.repo_root is not None else Path.cwd()
     dispatch_yaml_path = repo_root.joinpath(*_DISPATCH_YAML_PARTS)
 
@@ -326,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
         marker_syntax=_read_marker_syntax(repo_root),
         feature_id=args.project_id,
         phase=args.phase,
-        slice_id=args.slice_id,
+        slice_id=slice_id,
         lane=args.lane,
         intent=args.intent,
         defect=args.defect,
