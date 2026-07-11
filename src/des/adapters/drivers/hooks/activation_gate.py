@@ -1,11 +1,13 @@
 """Activation gate for hook_router.main() (ADR-AG-001).
 
 The gate sits at the single hook dispatch point: buffer stdin, parse ``cwd``,
-re-inject via ``io.StringIO`` (DDD-6), exempt SessionStart (DDD-5),
-adopt-and-proceed on pre-task ``nw-*`` dispatch (DDD-9), else allow/exit-0 when
-inactive — NEVER exit-2 from the gate. Fail-open: empty / invalid-JSON /
-missing-``cwd`` stdin resolves normally (defaults to inactive under opt-in) and
-exits 0; the gate never raises.
+re-inject via ``io.StringIO`` (DDD-6), exempt SessionStart (DDD-5) and
+UserPromptSubmit (session-hygiene refresh, mirrors SessionStart — see
+``orchestrator-affordance-hourly-refresh``), adopt-and-proceed on pre-task
+``nw-*`` dispatch (DDD-9), else allow/exit-0 when inactive — NEVER exit-2 from
+the gate. Fail-open: empty / invalid-JSON / missing-``cwd`` stdin resolves
+normally (defaults to inactive under opt-in) and exits 0; the gate never
+raises.
 
 ``run_gate`` is the testable seam the acceptance composition drives. It returns
 a ``GateRun`` recording the observable outcome, the bytes the handler saw (the
@@ -33,6 +35,16 @@ class GateOutcome(Enum):
 
 
 _SESSION_START = "session-start"
+_USER_PROMPT_SUBMIT = "user-prompt-submit"
+# Commands exempt from activation gating entirely — dispatched unconditionally,
+# regardless of the project's active/inactive resolution. SessionStart adopts
+# existing projects silently (DDD-5); UserPromptSubmit carries the hourly
+# orchestrator-affordance session-hygiene refresh, which must fire the same
+# way SessionStart's own injection does (orchestrator-affordance-hourly-refresh,
+# round-2 EXAMINE fix) — the wave-active arm inside the handler stays
+# self-gated on its own command-literal match, so widening this exemption
+# does not weaken activation gating for any other command.
+_ACTIVATION_EXEMPT_COMMANDS = (_SESSION_START, _USER_PROMPT_SUBMIT)
 _PRE_TASK_COMMANDS = ("pre-task", "pre-tool-use")
 _NW_AGENT_PREFIX = "nw-"
 
@@ -63,7 +75,7 @@ def run_gate(*, envelope: Any, project_root: Path, global_config_path: Path) -> 
     handler_stdin = envelope.raw  # buffered stdin, re-injected verbatim (DDD-6)
     command = _command_token(envelope)
 
-    if command == _SESSION_START:
+    if command in _ACTIVATION_EXEMPT_COMMANDS:
         return GateRun(GateOutcome.DISPATCHED, handler_stdin, 0)
 
     if _is_active(project_root, global_config_path):
@@ -82,10 +94,12 @@ def apply_gate(command: str, stdin_text: str) -> str | None:
     Returns the re-injectable stdin text when the command should dispatch (the
     caller re-injects it as ``sys.stdin`` and runs the handler), or calls
     ``sys.exit(0)`` when the project is inactive (allow without blocking).
-    SessionStart is always dispatched. Fail-open: any read/parse problem
-    resolves to inactive under the default and exits 0.
+    SessionStart and UserPromptSubmit are always dispatched (the latter for its
+    session-hygiene hourly affordance refresh, gated internally on its own
+    sentinel — not on activation). Fail-open: any read/parse problem resolves
+    to inactive under the default and exits 0.
     """
-    if command == _SESSION_START:
+    if command in _ACTIVATION_EXEMPT_COMMANDS:
         return stdin_text
 
     # Missing/invalid cwd in the envelope falls back to the process cwd (Claude
