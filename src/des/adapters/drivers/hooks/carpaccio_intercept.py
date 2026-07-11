@@ -487,8 +487,28 @@ def _real_wave_dispatch_runner(project_root: Path) -> WaveDispatchRunner:
 
 
 def _slice_number(slice_id: str) -> int:
-    """The integer N from a `slice-NN` id."""
-    return int(slice_id.split("-", 1)[1])
+    """The integer N from a numeric `slice-NN` id.
+
+    Slice ids are INTEGER-ONLY (`slice-NN`, digits only). Non-integer shapes
+    -- a letter suffix (`slice-04a`) or a decimal (`slice-04.1`) -- are NOT
+    supported: the slice-ordering machinery (this order check + the
+    predecessor computation) is defined only over integers. To insert an
+    intermediate slice, RENUMBER the plan (shift the later slices up by one)
+    rather than minting a fractional/letter sub-slice -- simple, and the
+    ordering stays guaranteed by construction. Raises a self-explaining
+    ValueError instead of a cryptic ``invalid literal for int()`` so this
+    constraint is documented at the point of use and never rediscovered.
+    """
+    suffix = slice_id.split("-", 1)[1]
+    if not suffix.isdigit():
+        raise ValueError(
+            f"slice id {slice_id!r} is not an integer 'slice-NN' (digits only). "
+            f"Non-integer slices (letter-suffix 'slice-04a', decimal "
+            f"'slice-04.1') are not supported -- the slice-ordering machinery is "
+            f"integer-only. To insert an intermediate slice, RENUMBER the plan "
+            f"(shift the later slices up by one), do not mint a sub-slice."
+        )
+    return int(suffix)
 
 
 def _predecessor_slice(slice_id: str) -> str:
@@ -510,6 +530,24 @@ def _carpaccio_order_block(
     """
     slice_id = markers.slice_id
     assert slice_id is not None  # guaranteed by the M3 valid-marker classification
+    # Integer-only slice ids: a non-integer shape (letter-suffix `slice-04a`,
+    # decimal `slice-04.1`) is refused HERE with a self-explaining gate message
+    # carrying the fix, rather than crashing the downstream integer-only
+    # ordering machinery with a cryptic `int()` error.
+    if not slice_id.split("-", 1)[1].isdigit():
+        return InterceptDecision.block(
+            event="CarpaccioSliceNonInteger",
+            reason=(
+                f"slice id {slice_id} is not an integer 'slice-NN' (digits "
+                "only). Non-integer slices (letter-suffix 'slice-04a', decimal "
+                "'slice-04.1') are not supported -- the slice-ordering machinery "
+                "is integer-only. FIX: to insert an intermediate slice, RENUMBER "
+                "the plan -- shift the later slices up by one (e.g. old slice-05 "
+                "becomes slice-06, the new slice takes slice-05) -- do not mint a "
+                "sub-slice. Renumbering keeps the ordering guaranteed by "
+                "construction."
+            ),
+        )
     if _slice_number(slice_id) <= 1:
         return None
 
