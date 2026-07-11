@@ -117,6 +117,7 @@ from des.ports.language_adapter_plugin import LanguageAdapterPlugin, ProbeResult
 from tests.build.language_port_realization_gate.acceptance.synthetic_language_adapter_fixtures import (
     SyntheticLiarLanguageAdapterPluginCSharp,
     SyntheticLiarLanguageAdapterPluginKotlin,
+    SyntheticPartialStubLanguageAdapterPlugin,
 )
 
 
@@ -590,3 +591,58 @@ def test_discovery_reports_an_empty_plugin_list_as_conformant() -> None:
 
     assert verdict.flagged is False
     assert verdict.violations == ()
+
+
+# ---------------------------------------------------------------------------
+# Scenario 11 -- REGRESSION (D1 false-negative, feature-end deep review):
+# `_probe_port_is_stub` aggregates a multi-method port's per-method stub
+# state with `all(is_stub_per_method)` -- a facet backing ONE method
+# genuinely + the REST as pure stubs is classified NOT stub-backed, so a
+# partially-registered port is never flagged. This DIRECTLY contradicts the
+# feature's mission ("make partial-language-support IMPOSSIBLE"): a plugin
+# author who implements `build()` alone, stubs `install()` +
+# `run_against_installed()`, and declares
+# `port_coverage[verify_environmental_e2e]=True` would PASS the gate today.
+# CONTRACT_SHAPE: pure-function
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.negative_at
+def test_discovery_rejects_conformance_for_a_declared_port_with_one_real_and_two_stub_methods() -> (
+    None
+):
+    """CONTRACT_SHAPE: pure-function
+
+    Outcome anchor: feature-delta Summary ("make partial-language-support
+    IMPOSSIBLE").
+
+    A CONTROLLED synthetic plugin declares `verify_environmental_e2e=True`
+    and backs it with a facet whose `build()` is genuinely implemented while
+    `install()` / `run_against_installed()` remain pure
+    `raise NotImplementedError` stubs -- 1 real method, 2 stub methods on a
+    3-method port. The port MUST still be flagged (a partial registration is
+    NOT conformant): declaring full coverage for a mostly-stubbed port is the
+    same lie as declaring it for a fully-stubbed one, and the gate's `all()`
+    aggregation must not let ONE genuine method launder the other two
+    (WRONG outcome -- silent conformance on a partially-stubbed port --
+    asserted absent).
+
+    RED today: `_probe_port_is_stub` returns `all([False, True, True])` ==
+    `False` for this facet, so `verify_environmental_e2e` is classified
+    NOT stub-backed and `verdict.flagged` is `False` -- the gate wrongly
+    reports this plugin CONFORMANT. Fix: `all` -> `any` in
+    `src/des/testarch/port_realization_discovery.py::_probe_port_is_stub`
+    (crafter's A_GREEN, not this AT).
+    """
+    plugin = SyntheticPartialStubLanguageAdapterPlugin()
+
+    verdict = _load().resolve_and_probe_port_realization([plugin])
+
+    assert verdict.flagged is True, (
+        "a port backed by a facet with ONE real method and TWO stub methods "
+        f"must be flagged as non-conformant (partial registration is not "
+        f"conformant): {verdict!r}"
+    )
+    assert _offenders(verdict) == {("partial-stub-lang", VERIFY_ENVIRONMENTAL_E2E)}, (
+        verdict.violations
+    )

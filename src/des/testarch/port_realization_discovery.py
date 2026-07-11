@@ -210,7 +210,7 @@ def _probe_port_is_stub(plugin_id: str, port: str, facet: object | None) -> bool
                 method, plugin_id=plugin_id, port=port, method_name=method_name
             )
         )
-    return all(is_stub_per_method)
+    return any(is_stub_per_method)
 
 
 def _discover_registered_plugins() -> list[LanguageAdapterPlugin]:

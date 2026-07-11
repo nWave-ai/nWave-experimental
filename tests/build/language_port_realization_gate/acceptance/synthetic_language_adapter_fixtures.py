@@ -88,6 +88,70 @@ class StubFixtureRobustnessDensityAdapter:
         raise NotImplementedError("fixture stub -- deliberately unimplemented")
 
 
+class MixedRealAndStubEnvironmentalE2EAdapter:
+    """A 3-method ``EnvironmentalE2EPort`` facet with ONE real method + TWO stubs.
+
+    Regression fixture for the D1 false-negative (feature-end deep review,
+    ``language-port-realization-gate``): ``_probe_port_is_stub``
+    (``src/des/testarch/port_realization_discovery.py:184-213``) aggregates a
+    multi-method port's per-method stub-state with
+    ``return all(is_stub_per_method)`` -- a port is classified stub-backed
+    ONLY when EVERY one of its backing methods is a pure stub. This facet
+    backs ``build()`` with a genuine implementation while ``install()`` and
+    ``run_against_installed()`` remain pure ``raise NotImplementedError``
+    stubs -- 1 real / 2 stub. ``all([False, True, True])`` is ``False``, so
+    today's probe classifies this facet as NOT stub-backed and the gate
+    reports the declaring plugin CONFORMANT, even though 2 of the port's 3
+    methods are fake. A future plugin author could implement `build()` alone,
+    stub the remaining two methods, declare
+    `port_coverage[verify_environmental_e2e]=True`, and PASS the gate --
+    exactly the partial-language-support hole this feature exists to close.
+    """
+
+    def build(self, feature_root: Path) -> Path:
+        return feature_root / "fixture-artifact"
+
+    def install(self, artifact: Path, prefix: Path) -> object:
+        raise NotImplementedError("fixture stub -- deliberately unimplemented")
+
+    def run_against_installed(
+        self, e2e_path: Path, prefix: Path, junit_path: Path, work_dir: Path
+    ) -> None:
+        raise NotImplementedError("fixture stub -- deliberately unimplemented")
+
+
+class SyntheticPartialStubLanguageAdapterPlugin(LanguageAdapterPlugin):
+    """Declares ``verify_environmental_e2e=True``, backed by a MIXED real+stub facet.
+
+    Reproduces the D1 false-negative regression shape (see
+    ``MixedRealAndStubEnvironmentalE2EAdapter``): a single declared-covered,
+    MULTI-method port where only SOME of its backing methods are stubs. The
+    other two ports are honestly declared ``False`` so the scenario isolates
+    the mixed-stub aggregation bug from the all-or-nothing per-port shape
+    ``SyntheticLiarLanguageAdapterPlugin`` already exercises.
+    """
+
+    @property
+    def target_language(self) -> str:
+        return "partial-stub-lang"
+
+    @property
+    def port_coverage(self) -> dict[str, bool]:
+        return {
+            RUN_CONTRACT_GATE: False,
+            VERIFY_ENVIRONMENTAL_E2E: True,
+            CHECK_ROBUSTNESS_DENSITY: False,
+        }
+
+    def register_adapters(self, registry: Any) -> None:
+        registry.register_environmental_e2e(
+            _FIXTURE_TOOL_TOKEN, MixedRealAndStubEnvironmentalE2EAdapter()
+        )
+
+    def probe(self) -> ProbeResult:
+        return ProbeResult(ok=True, missing_ports=[], probed_at=datetime.now(UTC))
+
+
 class SyntheticLiarLanguageAdapterPlugin(LanguageAdapterPlugin):
     """Reproduces the feature's original registered-but-lying smoking gun.
 
@@ -182,11 +246,13 @@ __all__ = [
     "CHECK_ROBUSTNESS_DENSITY",
     "RUN_CONTRACT_GATE",
     "VERIFY_ENVIRONMENTAL_E2E",
+    "MixedRealAndStubEnvironmentalE2EAdapter",
     "RealFixtureContractGateAdapter",
     "StubFixtureEnvironmentalE2EAdapter",
     "StubFixtureRobustnessDensityAdapter",
     "SyntheticLiarLanguageAdapterPlugin",
     "SyntheticLiarLanguageAdapterPluginCSharp",
     "SyntheticLiarLanguageAdapterPluginKotlin",
+    "SyntheticPartialStubLanguageAdapterPlugin",
     "SyntheticStubPytestFacetPlugin",
 ]
