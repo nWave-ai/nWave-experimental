@@ -168,6 +168,33 @@ def test_distill_phase_dispatch_never_carries_a_guard_rejected_combination() -> 
         f"rendered DES-SLICE={markers.slice_id!r} prompt=\n{prompt}"
     )
 
+    # Mechanism-level assertion (deep-review gap #3): the outcome-level
+    # "not defective" check above is necessary but not sufficient -- a
+    # classifier that happened to tolerate a *different* incoherent value
+    # would still pass it. Pin the actual auto-corrected mechanism: the
+    # rendered DES-SLICE marker is the 'feature-end' literal (ADR-028 D6,
+    # Option A), never a per-slice scope and never merely "something
+    # non-defective".
+    assert markers.slice_id == "feature-end", (
+        "des dispatch auto-corrected --phase D_DISTILL --slice slice-01 to "
+        "exit 0, but the rendered DES-SLICE marker is not the "
+        "'feature-end' literal -- the auto-correct mechanism "
+        "(src/des/cli/dispatch.py lines 291-298) must rewrite the scope to "
+        f"exactly 'feature-end'. rendered DES-SLICE={markers.slice_id!r} "
+        f"prompt=\n{prompt}"
+    )
+
+    # And witness the operator-facing evidence that a correction actually
+    # happened (not merely that feature-end was already asked for): the
+    # auto-correct path prints a self-explaining stderr note naming the
+    # original --slice value and the corrected scope.
+    assert "auto-correcting" in result.stderr and "feature-end" in result.stderr, (
+        "des dispatch auto-corrected the DES-SLICE scope but printed no "
+        "self-explaining stderr note -- the operator must SEE that a "
+        "correction happened (what/why/how), not just receive a silently "
+        f"rewritten prompt. stderr={result.stderr!r}"
+    )
+
 
 # ---------------------------------------------------------------------------
 # AT-2 -- INVARIANT (regression pin): a generated DESIGN_CONTEXT body always
@@ -273,3 +300,104 @@ def test_feature_end_phase_dispatch_never_renders_a_per_slice_des_slice_marker()
                 "guaranteed to be classified 'defective' by "
                 f"classify_atdd_pure_dispatch. prompt=\n{result.stdout}"
             )
+
+
+# ---------------------------------------------------------------------------
+# AT-4 -- IDEMPOTENCY (deep-review gap #1): a dispatch that ALREADY specifies
+# the correct feature-end scope is unchanged by the auto-correct mechanism --
+# no correction is applied and no correction note is printed.
+# ---------------------------------------------------------------------------
+
+
+def test_already_correct_feature_end_scope_unchanged_no_note() -> None:
+    """`des dispatch --phase D_DISTILL --slice feature-end` is ALREADY
+    coherent -- the auto-correct guard (`slice_id != _FEATURE_END_SCOPE`,
+    `src/des/cli/dispatch.py` lines 291-298) must be a no-op on this input:
+    exit 0, NO auto-correction note on stderr, and the rendered DES-SLICE
+    marker stays exactly 'feature-end' (not rewritten to some other value,
+    not duplicated, not dropped).
+
+    Passes today -- pins the idempotency half of the auto-correct mechanism
+    the sibling AT-1 pins the correction half of.
+    """
+    result = _run_dispatch(
+        "--mode",
+        "atdd_pure",
+        "--project-id",
+        "demo",
+        "--slice",
+        "feature-end",
+        "--phase",
+        "D_DISTILL",
+    )
+
+    assert result.returncode == 0, (
+        f"expected exit 0 for an already-correct feature-end scope; got "
+        f"{result.returncode}. stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "auto-correcting" not in result.stderr, (
+        "des dispatch printed an auto-correction note for a --slice value "
+        "that was ALREADY 'feature-end' -- the guard "
+        "(slice_id != _FEATURE_END_SCOPE) must be false here, so no "
+        f"correction should fire. stderr={result.stderr!r}"
+    )
+
+    markers = DesMarkerParser().parse(result.stdout)
+    assert markers.slice_id == "feature-end", (
+        "des dispatch --phase D_DISTILL --slice feature-end must render "
+        "DES-SLICE unchanged as the 'feature-end' literal -- an "
+        "already-correct scope must survive the auto-correct guard "
+        f"untouched. rendered DES-SLICE={markers.slice_id!r} "
+        f"prompt=\n{result.stdout}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AT-5 -- CONVERSE GUARD (deep-review gap #2): a per-slice (non-FEATURE_END_
+# PHASES) phase dispatch must NOT be touched by the auto-correct mechanism --
+# its --slice value is preserved verbatim, never coerced to 'feature-end'.
+# ---------------------------------------------------------------------------
+
+
+def test_per_slice_phases_preserve_their_slice_value() -> None:
+    """`des dispatch --phase A_GREEN --slice slice-01` -- `A_GREEN` is NOT a
+    `FEATURE_END_PHASES` member (it is the per-slice carpaccio entry phase),
+    so the auto-correct guard (`args.phase in FEATURE_END_PHASES`,
+    `src/des/cli/dispatch.py` line 291) must NOT fire: the rendered
+    DES-SLICE marker stays exactly 'slice-01', never coerced to
+    'feature-end'.
+
+    This is the explicit converse of AT-1/AT-4: it proves the auto-correct
+    mechanism is phase-scoped (`FEATURE_END_PHASES` membership), not a blind
+    global rewrite that would silently break every ordinary per-slice
+    dispatch. Passes today.
+    """
+    result = _run_dispatch(
+        "--mode",
+        "atdd_pure",
+        "--project-id",
+        "demo",
+        "--slice",
+        "slice-01",
+        "--phase",
+        "A_GREEN",
+    )
+
+    assert result.returncode == 0, (
+        f"expected exit 0 for an ordinary per-slice A_GREEN dispatch; got "
+        f"{result.returncode}. stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "auto-correcting" not in result.stderr, (
+        "des dispatch printed an auto-correction note for --phase A_GREEN "
+        "-- A_GREEN is NOT a FEATURE_END_PHASES member, so the auto-correct "
+        f"guard must not fire for it. stderr={result.stderr!r}"
+    )
+
+    markers = DesMarkerParser().parse(result.stdout)
+    assert markers.slice_id == "slice-01", (
+        "des dispatch --phase A_GREEN --slice slice-01 must preserve "
+        "DES-SLICE verbatim as 'slice-01' -- the FEATURE_END_PHASES-scoped "
+        "auto-correct guard must NOT coerce a per-slice phase's slice value "
+        f"to 'feature-end'. rendered DES-SLICE={markers.slice_id!r} "
+        f"prompt=\n{result.stdout}"
+    )
