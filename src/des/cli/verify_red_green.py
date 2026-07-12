@@ -158,7 +158,13 @@ def _run_and_collect(
                 why=f"{exc} — without per-test outcomes there is nothing to seal.",
                 how=(
                     f"ensure the run command emits JUnit XML at {junit_out} "
-                    "(pytest --junitxml / cargo-nextest / vitest all can)."
+                    "(pytest --junitxml / cargo-nextest / vitest all can) "
+                    "-- OR, if this is a pre-implementation RED on a "
+                    "compiled language (the acceptance test is a compile "
+                    "error because the production code does not exist "
+                    "yet), it produces no per-test XML: seal it via "
+                    "`des record-at-review-verdict` (two-part attestation) "
+                    "instead."
                 ),
             )
         outcomes: dict[str, str] = {}
