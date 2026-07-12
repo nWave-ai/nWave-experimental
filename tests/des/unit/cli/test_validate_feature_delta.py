@@ -21,6 +21,7 @@ import pytest
 
 from des.cli.validate_feature_delta import (
     ALLOWED_TYPE_TOKENS,
+    VERDICT_INDETERMINATE,
     Offender,
     ValidationResult,
     validate_feature_delta,
@@ -773,14 +774,15 @@ class TestReuseAnalysisContentGrounding:
 
         `pyproject.toml` is a REAL file at the repo root (guaranteed present in
         every dev/CI checkout) that is NOT valid Python syntax. The gate must
-        REFUSE with `ungrounded-reuse-analysis` (non-zero exit) and MUST NOT
-        print an uncaught Python traceback -- the crash this AT pins as the
-        regression.
+        REFUSE (non-zero exit) and MUST NOT print an uncaught Python traceback
+        -- the crash this AT originally pinned as the regression.
 
-        ACTIVE-RED: today the gate raises an unhandled `SyntaxError` from
-        `ast.parse` deep inside `AstAdapter._atoms()` (no filetype/parse-
-        failure guard) -- this assertion fails on the traceback check before
-        it can even reach the verdict-token check.
+        RECONCILED (F-fix-delta-grounding-incapacity-is-indeterminate, Sister
+        G-8): a non-Python file is a grounding INCAPACITY (no CodeFactPort tier
+        can structurally analyze it), not a genuine absence -- the verdict is
+        `VERDICT_INDETERMINATE`, never the phantom `ungrounded-reuse-analysis`
+        token this AT pinned before the fix. The crash-free / non-zero-exit
+        contract this AT exists to protect is unchanged.
         """
         project_root = Path(__file__).resolve().parents[4]
         non_python_file = project_root / "pyproject.toml"
@@ -818,14 +820,17 @@ class TestReuseAnalysisContentGrounding:
         )
 
         payload = json.loads(result.stdout) if result.stdout.strip() else {}
-        assert payload.get("verdict") == VERDICT_UNGROUNDED_REUSE_ANALYSIS, (
-            f"Expected the {VERDICT_UNGROUNDED_REUSE_ANALYSIS!r} verdict for "
+        assert payload.get("verdict") == VERDICT_INDETERMINATE, (
             f"a citation naming a real-but-non-Python file (pyproject.toml is "
-            f"not valid Python syntax); got verdict={payload.get('verdict')!r} "
+            f"not valid Python syntax) is a grounding INCAPACITY -- no "
+            f"CodeFactPort tier can analyze it -- so it must degrade to "
+            f"{VERDICT_INDETERMINATE!r}, never the phantom "
+            f"{VERDICT_UNGROUNDED_REUSE_ANALYSIS!r} verdict; got "
+            f"verdict={payload.get('verdict')!r} "
             f"(exit_code={result.returncode}, stdout={result.stdout!r})."
         )
         assert result.returncode != 0, (
-            "an unresolvable (because unparseable) citation must REFUSE the "
+            "an INDETERMINATE grounding outcome must still REFUSE the "
             f"feature-delta with a non-zero exit; got "
             f"exit_code={result.returncode}"
         )

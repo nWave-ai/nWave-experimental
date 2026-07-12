@@ -738,6 +738,70 @@ def _charter_dir_to_stage(repo: Path, feature_id: str | None) -> list[str]:
     return [str(charter_dir.relative_to(repo))]
 
 
+# ---------------------------------------------------------------------------
+# Extraneous-staged-content guard (fix-commit-slice-index-isolation, GDP-3/6):
+# `commit-slice` stages the DECLARED scope (`_stage` below) but
+# `_commit_with_placeholder` then commits the ENTIRE index -- any content
+# staged BEFOREHAND by another actor (a concurrent agent, a stray `git add`,
+# a test writing to the live repo) travels silently inside the slice commit.
+# Incident (2026-07-11, CRITICAL): commit `140da7ceb` shipped a poisoned
+# test-fixture `pyproject.toml` + `tests/test_fail.py` this way; the poisoned
+# commit was PUSHED and required a dedicated bonifica commit (`b3c5f4784`).
+#
+# Fix: snapshot `git diff --cached --name-only` BEFORE staging the declared
+# paths; after staging, any snapshot entry NOT covered by the declared scope
+# (prefix-match on directories, exact match on files -- the same
+# normalization git pathspecs use) is EXTRANEOUS -> refuse LOUD (what/why/
+# how, naming both cures) and exit before any commit lands. `--all` is
+# exempt by construction (the operator explicitly asked for everything).
+# ---------------------------------------------------------------------------
+
+
+def _staged_paths(repo: Path) -> list[str]:
+    """The repo-relative paths currently staged (``git diff --cached --name-only``)."""
+    output = _git(repo, "diff", "--cached", "--name-only")
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def _covered_by_declared_scope(staged_path: str, declared_paths: list[str]) -> bool:
+    """True iff ``staged_path`` is exactly, or nested under, a declared path."""
+    for declared in declared_paths:
+        normalized = declared.rstrip("/")
+        if staged_path == normalized or staged_path.startswith(f"{normalized}/"):
+            return True
+    return False
+
+
+def _extraneous_staged_paths(
+    pre_stage_snapshot: list[str], declared_paths: list[str]
+) -> list[str]:
+    """Snapshot entries NOT covered by the declared ``--path`` scope."""
+    return [
+        path
+        for path in pre_stage_snapshot
+        if not _covered_by_declared_scope(path, declared_paths)
+    ]
+
+
+def _extraneous_staged_content_refusal(extraneous: list[str]) -> dict[str, object]:
+    """The ``CommitRefusedExtraneousStagedContent`` payload naming both cures."""
+    listed = ", ".join(extraneous)
+    return {
+        "event": "CommitRefusedExtraneousStagedContent",
+        "exit_code": 1,
+        "extraneous": extraneous,
+        "what": f"{len(extraneous)} file(s) were already staged outside the "
+        f"declared --path scope: {listed}",
+        "why": "commit-slice commits the ENTIRE index, not just the declared "
+        "paths -- pre-staged content from another actor would travel "
+        "silently into this slice commit (the 140da7ceb poisoned-pyproject "
+        "incident).",
+        "how": "unstage the extraneous file(s) with `git restore --staged "
+        "<file>`, or include them intentionally via --path (or --all if "
+        "everything currently staged genuinely belongs to this commit).",
+    }
+
+
 def _stage(repo: Path, paths: list[str], stage_all: bool) -> dict[str, object] | None:
     """Stage the requested paths; return a MalformedInput payload or None.
 
@@ -1064,6 +1128,10 @@ def main(argv: list[str] | None = None) -> int:
         args.paths = [*args.paths, *_charter_dir_to_stage(repo, args.feature_id)]
 
     try:
+        # Snapshot BEFORE staging the declared paths (extraneous-staged-content
+        # guard, fix-commit-slice-index-isolation) -- `--all` is exempt by
+        # construction, since the operator explicitly asked for everything.
+        pre_stage_snapshot = None if args.all else _staged_paths(repo)
         malformed = _stage(repo, args.paths, args.all)
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
         _emit({"event": "MalformedInput", "error": f"git staging failed: {exc}"})
@@ -1071,6 +1139,15 @@ def main(argv: list[str] | None = None) -> int:
     if malformed is not None:
         _emit(malformed)
         return 2
+
+    if pre_stage_snapshot is not None:
+        extraneous = _extraneous_staged_paths(pre_stage_snapshot, args.paths)
+        if extraneous:
+            refusal = _extraneous_staged_content_refusal(extraneous)
+            exit_code = refusal.pop("exit_code")
+            _emit(refusal)
+            assert isinstance(exit_code, int)
+            return exit_code
 
     # Build-tier exit check (F-CONTRACT-GATE-EXCLUDES-BUILD-TIER-ARCH-TESTS,
     # evolution P1 deletion-safety precondition): EXECUTE tests/build/** BEFORE

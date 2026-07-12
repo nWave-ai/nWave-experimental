@@ -62,9 +62,18 @@ def _files_content_equal(source: Path, target: Path) -> bool:
 # package shadowing it on sys.path. Resolving first yields the absolute repo
 # root; inserting it at index 0 makes the repo's `scripts` win namespace-package
 # resolution (F-05 dogfood friction regression).
+#
+# Move-to-FRONT unconditionally (not `if not in sys.path`): an editable-install
+# `.pth` appends the repo root AFTER site-packages, so a presence-only guard
+# leaves site-packages' stale wheel snapshot of `scripts/` FIRST in the PEP 420
+# namespace-portion order — the running plugin code silently rots to the last
+# `uv sync` (fix-dispatch-ssot slice-01: `dispatch` never shipped because the
+# stale site-packages `des_plugin.py` predated the constant change).
 _project_root = Path(__file__).resolve().parent.parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
+_project_root_entry = str(_project_root)
+if _project_root_entry in sys.path:
+    sys.path.remove(_project_root_entry)
+sys.path.insert(0, _project_root_entry)
 
 
 # Support both standalone execution and package import
@@ -105,8 +114,9 @@ except ImportError:
     # an explicit re-bootstrap of the repo root for the `scripts.shared`
     # package (which lives one level up from `scripts/install`, so a bare
     # `from shared...` would fail — F-05 latent fallback bug).
-    if str(_project_root) not in sys.path:
-        sys.path.insert(0, str(_project_root))
+    if _project_root_entry in sys.path:
+        sys.path.remove(_project_root_entry)
+    sys.path.insert(0, _project_root_entry)
     from context_detector import detect_target_platforms
     from install_utils import (
         BackupManager,

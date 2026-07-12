@@ -349,3 +349,17 @@ class TestSuiteAstAdapter(Protocol):
         fingerprint consumes this directly, no live ``ast`` node exposed.
         """
         ...
+
+    def module_level_assignment_targets_in_module(self, tree: object) -> list[str]:
+        """Return every module-level simple-assignment target name (CodeFact
+        atoms, F-fix-delta-grounding-incapacity-is-indeterminate slice-02).
+
+        Reads only ``tree``'s TOP-LEVEL body for ``Assign`` statements with a
+        SINGLE name target — ``LIMIT = 5`` reports ``"LIMIT"``; a tuple/
+        attribute/subscript target or a nested (function-body) assignment is
+        skipped. Companion to ``module_level_symbols_in_module`` (functions/
+        classes) — the ``AstAdapter``'s atoms surface reads this so a
+        citation of a module-level constant grounds too, not only defs/
+        classes.
+        """
+        ...

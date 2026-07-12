@@ -5,6 +5,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".claude" / "lib" / "python"))
 
-from des.cli.__main__ import main
+try:
+    from des.cli.__main__ import main
+except ImportError as exc:
+    _missing = getattr(exc, "name", None) or "des"
+    _RUNTIME_DIR = Path.home() / ".claude" / "lib" / "python"
+    sys.stderr.write(
+        "error: the installed nWave runtime is broken or incomplete -- "
+        f"cannot import '{_missing}' from {_RUNTIME_DIR} ({exc}).\n"
+        "why: the nWave installation is corrupted or partial (for example "
+        "an interrupted, failed, or outdated install).\n"
+        "fix: reinstall the runtime with `python -m nwave_ai.cli install` "
+        "or `pipx install nwave-ai`; or run des from a nWave source "
+        "checkout instead of this installed shim.\n"
+    )
+    sys.exit(1)
 
 sys.exit(main())

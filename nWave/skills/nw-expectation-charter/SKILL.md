@@ -82,8 +82,10 @@ now reads from the wired config", gets the charter (the observable behavior fina
    filename reads as a value-outcome, not a mechanism.
 2. **Intent** — from the user's side, domain language. Quote the human directive verbatim when
    one exists. Gate: a non-technical reader understands what's accomplished and why it matters.
-3. **Preconditions / start-recipe** — how to launch + WHICH REAL SURFACE (CLI, HTTP, browser, a
-   fresh venv install...). Names the surface only. Gate: never pre-computes an observation,
+3. **Preconditions** — heading text is exactly `## Preconditions` (no suffix — see Parser
+   dialect below). Content: the start recipe — how to launch + WHICH REAL SURFACE (CLI, HTTP,
+   browser, a fresh venv install...). Names the surface only. Gate: never pre-computes an
+   observation,
    never hands over a purpose-built harness with verdict lines — the examiner derives her own
    probes from the recipe.
    Pins the TARGET PROJECT's language-specific execution surface explicitly (e.g. "run `cargo
@@ -111,6 +113,28 @@ now reads from the wired config", gets the charter (the observable behavior fina
 Template + full worked examples (a browser-UI charter, and a CLI/gate-outcome charter — the
 format is medium-agnostic): `nWave/templates/expectation-charter.md`.
 
+## Parser dialect (verify-charter-filled) — the exact form the gate greps
+
+`des verify-charter-filled` (`src/des/cli/verify_charter_filled.py`) is a mechanical grepper,
+not a semantic reader. Content-perfect prose still bounces if the literal form is off. Three
+rules:
+
+1. **Preconditions heading is an EXACT line match** — the line must be exactly `## Preconditions`.
+   No suffix, no rename (`## Preconditions / start-recipe` is invisible to the parser).
+2. **Oracle heading is a PREFIX match** — must START WITH `## Expected observations` (a suffix
+   is tolerated, e.g. `## Expected observations (oracle)`; the prefix is not negotiable).
+3. **Negative observations are LINES starting with `Negative:`** (case-insensitive) inside the
+   oracle section, e.g. `- Negative: ...`. A `### NEGATIVE` sub-heading or a bold bullet
+   (`**N-1**: ...`) is NOT recognized — the gate finds zero negative observations and fails.
+
+Start from `nWave/templates/expectation-charter.md` — it already embodies this exact dialect
+when available; copy its heading/bullet shape rather than reinventing one.
+
+Empirical anchor: a content-perfect charter (one positive + two negative observations) was
+REJECTED by `verify-charter-filled` on 2026-07-12 for dialect, not content — it used
+`## Preconditions / start-recipe` and a `### NEGATIVE` subsection with `**N-1**` bullets, both
+invisible to the parser.
+
 ## Gate-promise charters
 
 When a gate's rejection MESSAGE names an escape, override, or designed path (e.g. `@coupled`, a
@@ -125,6 +149,39 @@ positive can't tell "the escape doesn't work" from "nobody tried it").
 Empirical anchor: the `@coupled`-for-pytest override was promised in the carpaccio-ceiling gate's
 own rejection message, but the gate's code ignored it — the escape silently didn't work, for two
 days, unexamined (2026-07-10).
+
+## Absence vs. incapacity (Ale-ratified, 2026-07-12)
+
+When the examined surface CAN be incapable of looking (analysis tools, grounding gates,
+aggregators with optional legs), the oracle MUST include the honest-incapacity observation: the
+surface DECLARES it could not look (naming what/why), and never asserts absence/cleanliness in
+that case.
+
+> "non basta dare una ragione — la ragione deve distinguere l'assenza dall'incapacità. Una
+> ragione troppo grossolana è un falso negativo con l'alibi di essere degradato."
+
+Litmus for the PO: does "I looked and it's clean" produce the same output as "I never looked"?
+If the charter doesn't force that distinction, the oracle is incomplete.
+
+Empirical anchors: a code-analysis tool answered `unknown_symbol` for an enum that EXISTS (it
+cannot index types — incapacity reported as absence); an analysis envelope reported zero
+findings at confidence 1.0 over a tree it had never read; a certification aggregate emitted
+Complete with zero legs observed.
+
+**Partial capability, not just total incapacity (fifth-floor refinement, Ale-ratified, 2026-07-12).**
+`capable(tier)` is an ill-posed question; the right one is `capable(tier, CATEGORY)`. A
+PARTIALLY-capable surface is MORE dangerous than an incapable one — its partial competence buys
+it credibility across the whole domain, so it says "I know, and it's not there" instead of the
+honest "I don't know". When the examined surface may be capable in SOME categories but not
+others (analyzers, detectors, grounding tiers), the oracle must force the per-category
+differential: not "does it detect X" but "does it detect X of every kind X can take". Concrete
+pattern: a single fixture holding one instance of each category the surface claims to cover
+(e.g. a function, a class, a constant, in one file), each cited/probed individually, so that
+passing on one category cannot mask a blind spot in another.
+
+Empirical anchor: our own Python-AST tier PARSES a `.py` file (so it registers as capable, it
+DID look) but is BLIND to the class category — a real `class RealThing:` was branded
+"phantom/invented" identically to a genuinely-absent symbol.
 
 ## Invocation per flow
 
@@ -167,6 +224,9 @@ generator turning the expectations corpus into a manual — not built yet.)
    slice does.
 10. - [ ] Charter path's `{feature-id}` matches what the DELIVER EXAMINE gate / commit-slice
    gate expects (arming confirmed).
+11. - [ ] For any surface with an incapable/optional leg (analysis tool, grounding gate,
+   aggregator), oracle includes a distinct "declares its own incapacity" observation — "I
+   looked and it's clean" is not the same claim as "I never looked".
 
 ## Reasoning Mandate (Caveman)
 

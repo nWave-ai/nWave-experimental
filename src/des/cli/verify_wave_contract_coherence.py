@@ -97,9 +97,16 @@ class CoherenceOutcome:
 
 
 def evaluate_coherence(
-    wave: str, prose_path: Path, waves_dir: Path
+    wave: str,
+    prose_path: Path,
+    waves_dir: Path,
+    catalog_path: Path = _CATALOG_PATH,
 ) -> CoherenceOutcome:
     """Evaluate the coherence-check for ``wave`` over its prose + registry.
+
+    ``catalog_path`` isolates the catalog gate_id read (default: the live repo
+    catalog, today's behavior) -- mirrors the ``waves_dir`` isolation already in
+    place for the registry read.
 
     The check order is load-bearing: the registry-readable probe runs FIRST so an
     unreadable registry degrades LOUD to INDETERMINATE before any prose verdict;
@@ -117,7 +124,7 @@ def evaluate_coherence(
     if pointer_failure is not None:
         return _failed(pointer_failure)
 
-    catalog_gate_ids = _catalog_gate_ids()
+    catalog_gate_ids = _catalog_gate_ids(catalog_path)
 
     restatement = _inline_restatement(prose_text, catalog_gate_ids)
     if restatement is not None:
@@ -287,9 +294,14 @@ def _orphan_gate_id(registry_text: str, catalog_gate_ids: frozenset[str]) -> str
     return None
 
 
-def _catalog_gate_ids() -> frozenset[str]:
-    """The catalog gate_id set, read by the narrow stdlib line scan (no import yaml)."""
-    text = _read(_CATALOG_PATH) or ""
+def _catalog_gate_ids(catalog_path: Path = _CATALOG_PATH) -> frozenset[str]:
+    """The catalog gate_id set, read by the narrow stdlib line scan (no import yaml).
+
+    ``catalog_path`` defaults to the live repo catalog (today's behavior) --
+    override to isolate the read from the live repo file (mirrors the
+    ``waves_dir`` override on the registry read).
+    """
+    text = _read(catalog_path) or ""
     return frozenset(
         match.group(1)
         for line in text.splitlines()
@@ -321,10 +333,12 @@ def _indeterminate(wave: str, registry_path: Path) -> CoherenceOutcome:
 
 def _read(path: Path) -> str | None:
     """Read a file's text, or None when it is absent / undecodable (the unreadable
-    case the INDETERMINATE degrade keys on)."""
+    case the INDETERMINATE degrade keys on). Any other OSError (resource-class:
+    EMFILE, ENOMEM, EAGAIN...) propagates loudly with its real errno -- it must
+    never be swallowed into a fabricated content-drift verdict (GDP-6)."""
     try:
         return path.read_text(encoding="utf-8")
-    except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError, OSError):
+    except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError):
         return None
 
 
@@ -340,7 +354,9 @@ def main(argv: list[str] | None = None) -> int:
     observable contract.
     """
     args = _build_parser().parse_args(argv)
-    outcome = evaluate_coherence(args.wave, args.prose, args.waves_dir)
+    outcome = evaluate_coherence(
+        args.wave, args.prose, args.waves_dir, args.catalog_path
+    )
     print(
         json.dumps({"verdict": outcome.verdict.value, "diagnostic": outcome.diagnostic})
     )
@@ -379,6 +395,16 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         type=Path,
         help="The directory holding the wave-contract registry files (<wave>.yaml).",
+    )
+    parser.add_argument(
+        "--catalog-path",
+        required=False,
+        type=Path,
+        default=_CATALOG_PATH,
+        help=(
+            "The gate catalog file to read the gate_id set from "
+            "(default: the live repo catalog, nWave/gates/_catalog.yaml)."
+        ),
     )
     return parser
 

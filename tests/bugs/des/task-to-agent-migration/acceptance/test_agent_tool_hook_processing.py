@@ -17,15 +17,29 @@ After migration:
 - Valid DES prompts are ALLOWED without max_turns in tool_input
 - Invalid DES prompts are still BLOCKED by template/completeness validation
 - Non-DES invocations pass through as before
+- Validation steps fire in correct order: enforcement -> completeness ->
+  template validation -> allow
 
 BUSINESS IMPACT:
 Without this fix, ALL DES task invocations are silently blocked, preventing
 any nWave workflow from executing.
+
+Track WS-15 P2 collapse (2026-07-12): migration stable since 2026-06-20
+(22 days, no follow-up bug citing this migration). Per skill 3.5 this file
+merges the former test_agent_tool_hook_processing.py (4 tests) and
+test_enforcement_ordering_without_max_turns.py (3 tests) -- one case
+(valid DES prompt, no max_turns -> allowed) was byte-identical between the
+two files -- into 1 single-iteration test (skill 3.2 dict-iteration)
+reporting every violation at once via the case table below.
 """
 
 import json
 
 import pytest
+
+
+DES_MARKERS_MISSING = "DES_MARKERS_MISSING"
+_MAX_TURNS_TOKENS = ("MAX_TURNS", "max_turns")
 
 
 def _make_valid_des_prompt() -> str:
@@ -93,169 +107,156 @@ def _make_incomplete_des_prompt() -> str:
     )
 
 
-class TestAgentToolHookProcessing:
-    """Regression tests for Agent tool invocations after Task-to-Agent migration.
+# Each case: (id, tool_input, expected_exit_code, expected_decision,
+#             reason_contains, reason_excludes)
+# expected_decision is None for the allow path (silent exit 0, no stdout).
+HOOK_BEHAVIOR_CASES = [
+    (
+        "des_valid_no_max_turns_allowed",
+        {
+            "subagent_type": "Explore",
+            "prompt": _make_valid_des_prompt(),
+            "description": "Execute step 01-01",
+        },
+        0,
+        None,
+        None,
+        _MAX_TURNS_TOKENS,
+    ),
+    (
+        "non_des_invocation_passes_through",
+        {
+            "subagent_type": "Explore",
+            "prompt": "Search for all Python files in the project",
+            "description": "Quick exploration",
+        },
+        0,
+        None,
+        None,
+        _MAX_TURNS_TOKENS,
+    ),
+    (
+        "invalid_des_prompt_still_blocked",
+        {
+            "subagent_type": "Explore",
+            "prompt": _make_incomplete_des_prompt(),
+            "description": "Execute step 01-01",
+        },
+        2,
+        "block",
+        None,
+        _MAX_TURNS_TOKENS,
+    ),
+    (
+        "legacy_max_turns_ignored_still_allowed",
+        {
+            "subagent_type": "Explore",
+            "prompt": _make_valid_des_prompt(),
+            "description": "Execute step 01-01",
+            "max_turns": 30,  # Legacy field, should be ignored
+        },
+        0,
+        None,
+        None,
+        _MAX_TURNS_TOKENS,
+    ),
+    (
+        "enforcement_fires_before_completeness",
+        {
+            "subagent_type": "Explore",
+            "prompt": "Execute step 02-03 for the authentication feature",
+        },
+        2,
+        "block",
+        DES_MARKERS_MISSING,
+        _MAX_TURNS_TOKENS,
+    ),
+    (
+        "completeness_check_runs_for_des_tasks",
+        {
+            "subagent_type": "Explore",
+            "prompt": (
+                "<!-- DES-VALIDATION : required -->\n"
+                "<!-- DES-PROJECT-ID : test-project -->\n"
+                "<!-- DES-STEP-ID : 01-01 -->\n"
+                "Do something without proper template sections"
+            ),
+        },
+        2,
+        "block",
+        None,
+        _MAX_TURNS_TOKENS,
+    ),
+]
 
-    The key regression: DES hooks must process Agent tool invocations without
-    requiring max_turns in tool_input, since Claude Code v2.1.63 moved this
-    parameter to agent definition YAML frontmatter.
 
-    All tests invoke through the driving port (handle_pre_tool_use) which is
-    the actual entry point called by Claude Code hooks.
+def test_agent_tool_hook_pipeline_matches_task_to_agent_baseline(
+    claude_code_hook_stdin,
+) -> None:
+    """Every case in HOOK_BEHAVIOR_CASES must match its expected allow/block
+    decision after the Task-to-Agent migration (matcher rename + max_turns
+    removal from PreToolUseService).
+
+    Iterates the table once; failure message lists every case that
+    regressed (id + expected vs actual), so a single failure is as
+    diagnosable as the pre-collapse 6-test version (one case --
+    "valid DES prompt, no max_turns -> allowed" -- was duplicated
+    byte-for-byte across the two pre-collapse files and is represented
+    once here, per behavior-counting, not test-counting).
     """
+    violations: list[str] = []
 
-    def test_agent_tool_des_invocation_allowed_without_max_turns(
-        self, claude_code_hook_stdin
-    ):
-        """
-        GIVEN a valid DES prompt with NO max_turns in tool_input (new Agent schema)
-        WHEN PreToolUse hook processes the invocation
-        THEN hook ALLOWS invocation with exit code 0
-        AND no error mentions max_turns
-
-        This is THE key regression test. Before the fix, every Agent tool
-        invocation was blocked with MISSING_MAX_TURNS because max_turns was
-        always absent from the new Agent schema.
-        """
-        # GIVEN: Valid DES prompt, no max_turns in tool_input (Agent schema)
-        hook_input = {
-            "tool_input": {
-                "subagent_type": "Explore",
-                "prompt": _make_valid_des_prompt(),
-                "description": "Execute step 01-01",
-                # No max_turns -- Agent tool schema does not include it
-            }
-        }
-
-        # WHEN: Hook processes the invocation
+    for (
+        case_id,
+        tool_input,
+        expected_exit_code,
+        expected_decision,
+        reason_contains,
+        reason_excludes,
+    ) in HOOK_BEHAVIOR_CASES:
+        hook_input = {"tool_input": tool_input}
         exit_code, stdout, _stderr = claude_code_hook_stdin(
             "pre-task", json.dumps(hook_input)
         )
 
-        # THEN: Invocation is ALLOWED
-        assert exit_code == 0, (
-            f"Valid DES invocation without max_turns should be allowed. "
-            f"Got exit code: {exit_code}, stdout: {stdout}"
-        )
+        if exit_code != expected_exit_code:
+            violations.append(
+                f"{case_id}: expected exit_code {expected_exit_code}, "
+                f"got {exit_code} (stdout={stdout!r})"
+            )
+            continue
 
-        # Allow path: silent exit 0, no stdout (Claude Code protocol)
-        assert stdout.strip() == "", (
-            f"Allow path should produce no stdout. Got: {stdout!r}"
-        )
-
-    def test_agent_tool_non_des_invocation_passes_through(self, claude_code_hook_stdin):
-        """
-        GIVEN an Agent tool invocation with no DES markers and no max_turns
-        WHEN PreToolUse hook processes the invocation
-        THEN hook ALLOWS invocation with exit code 0
-
-        Non-DES tasks always pass through regardless of max_turns presence.
-        This behavior must be preserved after the migration.
-        """
-        # GIVEN: Non-DES prompt, no max_turns
-        hook_input = {
-            "tool_input": {
-                "subagent_type": "Explore",
-                "prompt": "Search for all Python files in the project",
-                "description": "Quick exploration",
-                # No DES markers, no max_turns
-            }
-        }
-
-        # WHEN: Hook processes
-        exit_code, stdout, _stderr = claude_code_hook_stdin(
-            "pre-task", json.dumps(hook_input)
-        )
-
-        # THEN: ALLOWED
-        assert exit_code == 0, (
-            f"Non-DES invocation should be allowed. "
-            f"Got exit code: {exit_code}, stdout: {stdout}"
-        )
-
-        # Allow path: silent exit 0, no stdout (Claude Code protocol)
-        assert stdout.strip() == "", (
-            f"Allow path should produce no stdout. Got: {stdout!r}"
-        )
-
-    def test_agent_tool_invalid_des_prompt_still_blocked(self, claude_code_hook_stdin):
-        """
-        GIVEN a DES prompt with markers but missing mandatory sections, no max_turns
-        WHEN PreToolUse hook processes the invocation
-        THEN hook BLOCKS invocation with exit code 2
-        AND block reason does NOT mention max_turns
-
-        The removal of max_turns validation must not weaken other validations.
-        Template completeness checks must still catch malformed DES prompts.
-        """
-        # GIVEN: Incomplete DES prompt, no max_turns
-        hook_input = {
-            "tool_input": {
-                "subagent_type": "Explore",
-                "prompt": _make_incomplete_des_prompt(),
-                "description": "Execute step 01-01",
-                # No max_turns
-            }
-        }
-
-        # WHEN: Hook processes
-        exit_code, stdout, _stderr = claude_code_hook_stdin(
-            "pre-task", json.dumps(hook_input)
-        )
-
-        # THEN: Invocation is BLOCKED
-        assert exit_code == 2, (
-            f"Incomplete DES prompt should be blocked. "
-            f"Got exit code: {exit_code}, stdout: {stdout}"
-        )
+        if expected_decision is None:
+            if stdout.strip() != "":
+                violations.append(
+                    f"{case_id}: allow path should produce no stdout, got {stdout!r}"
+                )
+            continue
 
         output = json.loads(stdout)
-        assert output.get("decision") == "block", (
-            f"Decision should be 'block'. Got: {output}"
-        )
+        actual_decision = output.get("decision")
+        if actual_decision != expected_decision:
+            violations.append(
+                f"{case_id}: expected decision {expected_decision!r}, "
+                f"got {actual_decision!r}"
+            )
 
-        # THEN: Block reason does NOT mention max_turns
         reason = output.get("reason", "")
-        assert "MAX_TURNS" not in reason and "max_turns" not in reason, (
-            f"Block reason should not mention max_turns after removal. "
-            f"Got reason: {reason}"
-        )
+        if reason_contains and reason_contains not in reason:
+            violations.append(
+                f"{case_id}: reason should contain {reason_contains!r}, got {reason!r}"
+            )
+        for token in reason_excludes:
+            if token in reason:
+                violations.append(
+                    f"{case_id}: reason should not mention {token!r} "
+                    f"(max_turns was removed), got {reason!r}"
+                )
 
-    def test_agent_tool_with_legacy_max_turns_still_works(self, claude_code_hook_stdin):
-        """
-        GIVEN an Agent tool invocation WITH max_turns=30 in tool_input (legacy field)
-        WHEN PreToolUse hook processes the invocation
-        THEN hook ALLOWS invocation with exit code 0 if prompt is valid
-
-        Backward compatibility: if a caller still includes max_turns in
-        tool_input, it should be silently ignored (not extracted, not validated).
-        The field is simply unused extra data in the JSON.
-        """
-        # GIVEN: Valid DES prompt WITH legacy max_turns
-        hook_input = {
-            "tool_input": {
-                "subagent_type": "Explore",
-                "prompt": _make_valid_des_prompt(),
-                "description": "Execute step 01-01",
-                "max_turns": 30,  # Legacy field, should be ignored
-            }
-        }
-
-        # WHEN: Hook processes
-        exit_code, stdout, _stderr = claude_code_hook_stdin(
-            "pre-task", json.dumps(hook_input)
-        )
-
-        # THEN: ALLOWED (max_turns ignored, valid prompt passes)
-        assert exit_code == 0, (
-            f"Valid DES invocation with legacy max_turns should be allowed. "
-            f"Got exit code: {exit_code}, stdout: {stdout}"
-        )
-
-        # Allow path: silent exit 0, no stdout (Claude Code protocol)
-        assert stdout.strip() == "", (
-            f"Allow path should produce no stdout. Got: {stdout!r}"
-        )
+    assert not violations, (
+        "Agent-tool hook pipeline drifted from the Task->Agent migration "
+        "baseline:\n  " + "\n  ".join(violations)
+    )
 
 
 # =========================================================================

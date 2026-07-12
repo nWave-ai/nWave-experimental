@@ -44,6 +44,17 @@ _DISPATCH_YAML_PARTS = ("nWave", "dispatch", "atdd_pure.yaml")
 _VENDORS_YAML_PARTS = ("nWave", "dispatch", "vendors.yaml")
 _VENDOR_ID = "claude_code"
 
+# nWave/dispatch/ ships as a sibling of the code root in BOTH layouts this
+# module runs from: a dev checkout (src/des/cli/dispatch.py -> parents[3] ==
+# checkout root) and an installed tree (lib/python/des/cli/dispatch.py ->
+# parents[3] == <claude_dir>/lib). Mirrors the sibling-of-lib/python formula
+# `session_start_handler.py`'s `_ORCHESTRATOR_AFFORDANCE_ASSETS_DIR` uses for
+# its own asset dir (same pattern, different parents[N] for this module's
+# shallower path). Resolved fresh at import time -- never cached beyond that.
+_INSTALLED_DISPATCH_ASSETS_DIR = (
+    Path(__file__).resolve().parents[3] / "nWave" / "dispatch"
+)
+
 #: Fallback marker syntax -- used only if the vendors.yaml SSOT cannot be
 #: read/parsed (degrade-loud path); mirrors the claude_code vendor row so a
 #: transient read failure never blocks a dispatch outright.
@@ -297,7 +308,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         slice_id = _FEATURE_END_SCOPE
 
-    repo_root: Path = args.repo_root if args.repo_root is not None else Path.cwd()
+    # SSOT resolution order: explicit --repo-root wins > cwd IF
+    # cwd/nWave/dispatch/atdd_pure.yaml exists > the installed-runtime
+    # assets dir > the LOUD refusal below (naming both cures).
+    if args.repo_root is not None:
+        repo_root: Path = args.repo_root
+    elif Path.cwd().joinpath(*_DISPATCH_YAML_PARTS).is_file():
+        repo_root = Path.cwd()
+    else:
+        repo_root = _INSTALLED_DISPATCH_ASSETS_DIR.parent.parent
+
     dispatch_yaml_path = repo_root.joinpath(*_DISPATCH_YAML_PARTS)
 
     try:
@@ -306,7 +326,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"error: cannot read dispatch SSOT at {dispatch_yaml_path}: {exc}\n"
             "fix: pass --repo-root pointing at a checkout containing "
-            "nWave/dispatch/atdd_pure.yaml",
+            "nWave/dispatch/atdd_pure.yaml, or reinstall nWave so the "
+            "installed runtime ships nWave/dispatch/atdd_pure.yaml",
             file=sys.stderr,
         )
         return _EXIT_USAGE_ERROR

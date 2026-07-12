@@ -184,12 +184,53 @@ class AstAdapter:
         )
 
     def _atoms(self) -> CodeFactResult:
-        """The defined atoms (functions/methods) across the tree, parsed structurally."""
+        """The defined atoms (functions/classes/module-level constants) across
+        the tree, parsed structurally.
+
+        Combines three structural surfaces so a Reuse-Analysis citation of ANY
+        of these kinds grounds, not only functions (F-fix-delta-grounding-
+        incapacity-is-indeterminate slice-02, sister G-8): every function/
+        method at any nesting depth (``functions_in_module`` -- UNCHANGED,
+        byte-identical to before this slice), every MODULE-LEVEL class
+        (``module_level_symbols_in_module`` filtered to ``kind == "class"`` --
+        the same read-only sibling query WS-9b similar-responsibility already
+        consumes, untouched here), and every MODULE-LEVEL simple assignment
+        target (``module_level_assignment_targets_in_module``, e.g.
+        ``LIMIT = 5`` -> ``"LIMIT"``).
+
+        ``unparseable`` in the payload is the reason surface a content-grounding
+        consumer (F-fix-delta-grounding-incapacity-is-indeterminate) reads to tell
+        a genuine "no capable tier for this file's kind" INCAPACITY (every
+        candidate file failed structural parse -- e.g. a non-Python source under
+        this Python-AST tier) apart from a successful parse that simply defines
+        zero atoms (ABSENT). ``False`` when there were no candidate files at all
+        (nothing to be incapable of). This flag's semantics are UNCHANGED by the
+        widened atom surface -- it signals parse capability, never symbol kind.
+        """
         atoms: list[str] = []
-        for source_file in self._iter_files():
-            for function in self._functions_in(source_file):
-                atoms.append(function.name)
-        return self._answer(payload={"atoms": sorted(set(atoms))}, reason_code=None)
+        files = self._iter_files()
+        parsed_any = False
+        for source_file in files:
+            tree = self._parse(source_file)
+            if tree is None:
+                continue
+            parsed_any = True
+            atoms.extend(
+                function.name for function in self._parser.functions_in_module(tree)
+            )
+            atoms.extend(
+                symbol.name
+                for symbol in self._parser.module_level_symbols_in_module(tree)
+                if symbol.kind == "class"
+            )
+            atoms.extend(self._parser.module_level_assignment_targets_in_module(tree))
+        return self._answer(
+            payload={
+                "atoms": sorted(set(atoms)),
+                "unparseable": bool(files) and not parsed_any,
+            },
+            reason_code=None,
+        )
 
     def _adr_section(self, anchor: str) -> CodeFactResult:
         """Prose-shaped: files whose text contains ``anchor`` (parser has no ADR notion).
@@ -253,15 +294,24 @@ class AstAdapter:
         degrades LOUD to ``absent`` — never a fabricated empty candidate list
         that would look identical to a genuine "looked and found nothing"
         answer (the same absent-vs-live split ``_step_shape_corpus`` makes).
+
+        ``unparsed_count`` in the payload (F-fix-find-similar-declares-
+        unparseable-coverage) is the count of candidate files whose
+        ``_parse`` returned ``None`` during THIS same ranking pass -- no
+        second parse. A genuinely-empty-but-parseable file (zero
+        module-level symbols) never contributes to this count -- only a
+        real parse failure does.
         """
         query_name = self._symbol_of(request)
         query_tokens = self._name_tokens(query_name)
         query_arity = request.get("arity")
         total_symbols = 0
+        unparsed_count = 0
         ranked: list[tuple[float, int, dict[str, object]]] = []
         for source_file in self._iter_files():
             tree = self._parse(source_file)
             if tree is None:
+                unparsed_count += 1
                 continue
             for symbol in self._parser.module_level_symbols_in_module(tree):
                 total_symbols += 1
@@ -289,11 +339,15 @@ class AstAdapter:
                 )
         if total_symbols == 0:
             return self._answer(
-                payload={"candidates": []}, reason_code=ReasonCode.ABSENT.value
+                payload={"candidates": [], "unparsed_count": unparsed_count},
+                reason_code=ReasonCode.ABSENT.value,
             )
         ranked.sort(key=lambda entry: (-entry[0], entry[1]))
         return self._answer(
-            payload={"candidates": [entry[2] for entry in ranked]},
+            payload={
+                "candidates": [entry[2] for entry in ranked],
+                "unparsed_count": unparsed_count,
+            },
             reason_code=ReasonCode.LIVE_NON_CALLABLE.value,
         )
 
@@ -363,18 +417,6 @@ class AstAdapter:
             if self._callee_matches(call.callee, callable_name):
                 return True
         return False
-
-    def _functions_in(self, source_file: Path) -> list[FunctionInfo]:
-        """Every function/method defined in ``source_file`` (structural).
-
-        An unparseable ``source_file`` (``_parse`` returns ``None``, e.g. a
-        real-but-non-Python file) contributes no functions -- degrade-LOUD via
-        the empty list, never a crash.
-        """
-        tree = self._parse(source_file)
-        if tree is None:
-            return []
-        return self._parser.functions_in_module(tree)
 
     def _parse(self, source_file: Path) -> object | None:
         """Parse ``source_file`` into the opaque tree handle (delegated parser).

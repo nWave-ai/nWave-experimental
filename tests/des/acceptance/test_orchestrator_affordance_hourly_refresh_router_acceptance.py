@@ -1,4 +1,4 @@
-"""Acceptance tests: hourly affordance refresh at the ROUTER surface
+"""Acceptance tests: 30-minute affordance refresh at the ROUTER surface
 (EXAMINE-FAIL reloop, `orchestrator-affordance-hourly-refresh`).
 
 Vera drove the REAL edge exactly as Claude Code does:
@@ -43,8 +43,8 @@ DIAGNOSED ROOT CAUSE (tsunami/Read grounding, no assumption):
   ``~/.nwave/global-config.json`` opting the machine into ``"all"`` mode) is
   precisely the INACTIVE case this gate silences.
 
-  The bug is a SCOPE mismatch, not a missing feature: the hourly refresh is
-  documented (user_prompt_submit_handler.py module docstring) as a
+  The bug is a SCOPE mismatch, not a missing feature: the 30-minute refresh
+  is documented (user_prompt_submit_handler.py module docstring) as a
   session-HYGIENE refresh mirroring SessionStart's unconditional injection --
   but SessionStart is activation-EXEMPT (gate line 88-89) while
   ``user-prompt-submit`` is not, so the refresh that piggybacks on
@@ -79,7 +79,7 @@ from tests.common.in_process_cli import run_hook_in_process
 
 
 _SENTINEL_RELATIVE = Path(".nwave") / "orchestrator-affordance-last-injected"
-_ONE_HOUR_SECONDS = 3600
+_REFRESH_THRESHOLD_SECONDS = 1800
 _ROUTER_ARGV = ["hook_router", "user-prompt-submit"]
 
 
@@ -159,7 +159,7 @@ def _dispatch_via_router(project_root: Path) -> tuple[int, str, str]:
 
 
 class TestOrchestratorAffordanceHourlyRefreshRouterAcceptance:
-    """AC: the hourly refresh fires through the REAL router entry point,
+    """AC: the 30-minute refresh fires through the REAL router entry point,
     independent of wave-active/DES-activation state -- mirroring
     SessionStart's own activation exemption (gate line 88-89)."""
 
@@ -186,7 +186,7 @@ class TestOrchestratorAffordanceHourlyRefreshRouterAcceptance:
             f"inactive project (fail-open contract); got {exit_code}"
         )
         assert stdout.strip(), (
-            "the hourly refresh must fire through the REAL router entry "
+            "the 30-minute refresh must fire through the REAL router entry "
             "regardless of wave-active/DES-activation state (mirroring "
             "SessionStart's activation exemption) -- got ZERO stdout bytes, "
             "reproducing Vera's exact router-level observation. Root cause: "
@@ -208,12 +208,12 @@ class TestOrchestratorAffordanceHourlyRefreshRouterAcceptance:
         )
 
     def test_fresh_sentinel_does_not_reinject_via_router(self, sandbox: Path) -> None:
-        """Negative AT: sentinel written 60s ago (<< 1h elapsed), driven through
-        the REAL router -- must NOT emit additionalContext (no spam).
+        """Negative AT: sentinel written 60s ago (<< 30min elapsed), driven
+        through the REAL router -- must NOT emit additionalContext (no spam).
 
         Guards the fix: once the router correctly reaches the refresh arm for
-        an inactive project, it must still honour the hourly cadence -- not
-        re-inject on every submitted prompt.
+        an inactive project, it must still honour the 30-minute cadence --
+        not re-inject on every submitted prompt.
         """
         project_root = sandbox
         sentinel = _sentinel_path(project_root)
@@ -226,9 +226,68 @@ class TestOrchestratorAffordanceHourlyRefreshRouterAcceptance:
 
         assert exit_code == 0
         assert stdout.strip() == "", (
-            "no re-injection expected within the hour, via the router, on a "
-            "fresh sentinel -- the hourly cadence must hold regardless of "
-            "which entry point (router vs direct handler) is driven"
+            "no re-injection expected within the 30-minute threshold, via "
+            "the router, on a fresh sentinel -- the cadence must hold "
+            "regardless of which entry point (router vs direct handler) is "
+            "driven"
+        )
+
+    def test_elapsed_sentinel_reinjects_affordance_via_router(
+        self, sandbox: Path
+    ) -> None:
+        """AC: sentinel older than 30 minutes, driven through the REAL
+        router -- the next submitted prompt re-injects the SAME
+        spine-discipline content, exactly mirroring the direct-handler
+        sibling suite's threshold
+        (test_orchestrator_affordance_hourly_refresh_acceptance.py).
+
+        RED TODAY: the production threshold is still 3600s
+        (user_prompt_submit_handler.py:48) -- a 1801s-old sentinel does not
+        yet elapse, so the router observes no re-injection.
+        """
+        project_root = sandbox
+        sentinel = _sentinel_path(project_root)
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.touch()
+        backdated_ts = time.time() - (_REFRESH_THRESHOLD_SECONDS + 1)
+        os.utime(sentinel, (backdated_ts, backdated_ts))
+        expected_text = _expected_affordance_text()
+
+        exit_code, stdout, _stderr = _dispatch_via_router(project_root)
+
+        assert exit_code == 0
+        assert stdout.strip(), (
+            "expected 30-minute re-injection additionalContext via the "
+            "router on a stale (1801s) sentinel, got no stdout output"
+        )
+        output = json.loads(stdout.strip())
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+        assert expected_text in ctx, (
+            "router-injected content must be the SAME spine-discipline/"
+            "throughput text as the SessionStart affordance"
+        )
+
+    def test_sentinel_just_under_the_threshold_boundary_not_reinjected_via_router(
+        self, sandbox: Path
+    ) -> None:
+        """Negative AT (boundary): sentinel backdated to 1799s (just under
+        the 1800s/30-minute threshold), driven through the REAL router --
+        still no re-injection. Mirrors the direct-handler sibling suite's
+        boundary pin."""
+        project_root = sandbox
+        sentinel = _sentinel_path(project_root)
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.touch()
+        backdated_ts = time.time() - (_REFRESH_THRESHOLD_SECONDS - 1)
+        os.utime(sentinel, (backdated_ts, backdated_ts))
+
+        exit_code, stdout, _stderr = _dispatch_via_router(project_root)
+
+        assert exit_code == 0
+        assert stdout.strip() == "", (
+            "1799s elapsed is still under the 1800s threshold -- must not "
+            "re-inject yet, via the router"
         )
 
 

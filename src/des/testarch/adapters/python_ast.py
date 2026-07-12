@@ -378,6 +378,27 @@ class PythonAstAdapter:
                 )
         return symbols
 
+    def module_level_assignment_targets_in_module(self, tree: object) -> list[str]:
+        """Return every module-level simple-assignment target name (CodeFact
+        atoms, F-fix-delta-grounding-incapacity-is-indeterminate slice-02).
+
+        Reads only ``tree``'s TOP-LEVEL body (``ast.Module.body``) for
+        ``ast.Assign`` statements with a SINGLE ``ast.Name`` target --
+        ``LIMIT = 5`` reports ``"LIMIT"``; a tuple/attribute/subscript
+        target, an augmented/annotated assignment, or a nested (function-
+        body) assignment is skipped. Companion to
+        ``module_level_symbols_in_module`` (functions/classes) -- the
+        ``AstAdapter``'s atoms surface reads this so a Reuse-Analysis
+        citation of a module-level constant grounds too.
+        """
+        module = self._as_module(tree)
+        return [
+            target
+            for node in module.body
+            if isinstance(node, ast.Assign)
+            and (target := self._single_name_target(node.targets)) is not None
+        ]
+
     @staticmethod
     def _arity_of(args: ast.arguments) -> int:
         """A function's fixed parameter count: positional + keyword-only.

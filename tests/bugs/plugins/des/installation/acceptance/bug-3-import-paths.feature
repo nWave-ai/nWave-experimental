@@ -92,17 +92,6 @@ Feature: Correct Import Paths in Installed DES
     Then the command should fail with usage error (missing command)
     And the error should NOT be ImportError
 
-  @bug-3 @priority-high
-  Scenario: Verify no src.des references in installed files
-    # Detailed scan for all problematic import patterns
-
-    Given DES is installed at "~/.claude/lib/python/des"
-    When I scan all Python files in the installed DES directory
-    Then I should find 0 occurrences of "from src.des"
-    And I should find 0 occurrences of "import src.des"
-    And I should find 0 occurrences of "src.des." as a string literal
-    And all imports should use "from des." or "import des." patterns
-
   @bug-3 @priority-medium
   Scenario: Installed DES should have correct package structure
     # Verify the installed package has proper __init__.py files

@@ -845,17 +845,44 @@ def _strip_inline_code(cell: str) -> str:
     return stripped
 
 
+#: The three-state grounding outcome (F-fix-delta-grounding-incapacity-is-
+#: indeterminate). `"grounded"` -- a capable tier resolved the symbol as an atom
+#: of the cited file. `"absent"` -- the citation is resolvable in principle (the
+#: file exists and a capable tier searched it) but the symbol genuinely is not
+#: there, OR the cited file does not exist at all (nothing to be incapable of).
+#: `"incapacity"` -- the cited file exists but NO tier could analyze its kind
+#: (e.g. a non-Python source under the Python-AST tier): the gate never looked,
+#: so it must never brand the citation invented.
+_CitationGroundingOutcome = Literal["grounded", "absent", "incapacity"]
+
+
 def _component_citation_is_grounded(
     existing_component: str, file_cell: str, project_root: Path
-) -> bool:
+) -> _CitationGroundingOutcome:
     """Resolve one `Existing Component | File` citation THROUGH the CodeFactPort.
 
     Re-derives the fact via `CodeFactChain` (Tsunami-first, AST fallback,
     textsearch floor -- ADR-LA-001), never a bespoke grep. `file_cell` is
     resolved relative to `project_root` (the same base `_ground_sut` uses for
     `sut:` citations, `scripts/cli/validate_component_manifest.py:34
-    _REPO_ROOT`). Returns True iff the cited file exists AND the named symbol
-    resolves as one of its atoms.
+    _REPO_ROOT`).
+
+    Widened (F-fix-delta-grounding-incapacity-is-indeterminate) from a bare
+    bool to the three-state `_CitationGroundingOutcome`: a missing symbol/file
+    is `"absent"` unchanged (nothing to be incapable of -- checked directly,
+    never routed through the chain's reason). A cited file NO tier could
+    structurally analyze (Sister G-8, ADR-LA-001's degrade-LOUD discipline) is
+    `"incapacity"`, never collapsed into `"absent"`.
+
+    ALLOWLIST rule (sister G-8 addendum): `"absent"` is returned ONLY for the
+    one explicitly-recognized "a capable tier searched and found nothing"
+    chain shape (`unparseable is False` AND a usable `atoms` list -- the
+    `AstAdapter._atoms` contract). ANY other/unrecognized chain answer -- no
+    result, a non-dict payload, a missing/non-bool `unparseable` key, a
+    malformed `atoms` field, or `unparseable=True` -- degrades to
+    `"incapacity"`. This is deliberately an allowlist, not a denylist: a
+    future tier-reason extension the consumer does not yet recognize must
+    never silently re-collapse into the phantom verdict.
     """
     from des.adapters.driven.codefact.code_fact_chain import CodeFactChain
     from des.ports.code_fact_port import (
@@ -866,7 +893,7 @@ def _component_citation_is_grounded(
     symbol = _strip_inline_code(existing_component)
     file_path = project_root / _strip_inline_code(file_cell)
     if not symbol or not file_path.is_file():
-        return False
+        return "absent"
 
     descriptor = CapabilityDescriptor(
         id=CAPABILITY_ATOMS_IN_FILE,
@@ -876,10 +903,17 @@ def _component_citation_is_grounded(
         providing_adapter="ast",
     )
     result = CodeFactChain(root=file_path).query(descriptor, {})
-    if result is None or not isinstance(result.payload, dict):
-        return False
-    atoms = result.payload.get("atoms", [])
-    return isinstance(atoms, list) and symbol in atoms
+    payload = result.payload if result is not None else None
+    if not isinstance(payload, dict):
+        return "incapacity"
+
+    atoms = payload.get("atoms")
+    if payload.get("unparseable") is False and isinstance(atoms, list):
+        # The ONE allowlisted "a capable tier searched" shape.
+        return "grounded" if symbol in atoms else "absent"
+    # Every other shape (unparseable=True, missing/non-bool unparseable,
+    # malformed atoms, ...) is NOT the recognized searched-and-absent case.
+    return "incapacity"
 
 
 def _classify_exemption_marker(content: str) -> ReuseAnalysisResult | None:
@@ -989,7 +1023,25 @@ def validate_reuse_analysis_content(
     if project_root is not None:
         for row_no, row in enumerate(component_rows, start=1):
             cells = _parse_table_cells(row)
-            if not _component_citation_is_grounded(cells[0], cells[1], project_root):
+            grounding = _component_citation_is_grounded(
+                cells[0], cells[1], project_root
+            )
+            if grounding == "incapacity":
+                return ReuseAnalysisResult(
+                    verdict=VERDICT_INDETERMINATE,
+                    detail=(
+                        f"row {row_no} cites {cells[0]!r} in {cells[1]!r}, but "
+                        f"no CodeFactPort tier can analyze that file's kind "
+                        f"(the Python-AST tier could not structurally parse "
+                        f"it, and no other tier covers it) -- this is a "
+                        f"grounding INCAPACITY, not an invented citation; the "
+                        f"gate refuses to fabricate a verdict. To get a "
+                        f"grounded verdict, cite a file a capable tier can "
+                        f"analyze (e.g. a `.py` source), or wire a capable "
+                        f"adapter/tsunami index for this file kind"
+                    ),
+                )
+            if grounding == "absent":
                 return ReuseAnalysisResult(
                     verdict=VERDICT_UNGROUNDED_REUSE_ANALYSIS,
                     detail=(
@@ -1377,11 +1429,13 @@ def read_wave_output_contract(wave: str, waves_dir: Path) -> WaveOutputContract 
 
     A stdlib narrow line-scan (no PyYAML, WD-4) returning the parsed contract, or
     None when the registry is absent / undecodable (the degrade-LOUD boundary
-    keyed by slice-05's INDETERMINATE).
+    keyed by slice-05's INDETERMINATE). Any other OSError (resource-class:
+    EMFILE, ENOMEM, EAGAIN...) propagates loudly with its real errno -- it must
+    never collapse into a fabricated "registry unreadable" verdict (GDP-6).
     """
     try:
         text = (waves_dir / f"{wave}.yaml").read_text(encoding="utf-8")
-    except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError, OSError):
+    except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError):
         return None
     return WaveOutputContract(wave=wave, ref_sections=_scan_ref_sections(text))
 

@@ -1,11 +1,14 @@
-"""Acceptance tests: HOURLY re-injection of the orchestrator spine-discipline
+"""Acceptance tests: 30-MINUTE re-injection of the orchestrator spine-discipline
 affordance via the UserPromptSubmit hook.
 
 Ale-ratified problem: `handle_session_start` (session_start_handler.py) injects
 the spine-discipline / throughput affordance ONLY at SessionStart/clear/compact.
 With a 1M context window, a session can run for hours without ever hitting one
-of those anchors, so the discipline silently goes stale. Ale requires >=1
-refresh per hour.
+of those anchors, so the discipline silently goes stale. Ale-directed retune
+(2026-07-12 verbatim: "aumenta la frequenza del reminder a 30 minuti"): a full
+night of hourly re-injection held authorship discipline at 100% but did NOT
+prevent driver-level drift -- a long session decays faster than the hourly
+cadence refreshes it. Ale now requires >=1 refresh per 30 minutes.
 
 Driving port: `handle_user_prompt_submit()` -- the REAL, already-wired entry
 point (`des.adapters.drivers.hooks.user_prompt_submit_handler`, routed by
@@ -69,7 +72,7 @@ import pytest
 
 
 _SENTINEL_RELATIVE = Path(".nwave") / "orchestrator-affordance-last-injected"
-_ONE_HOUR_SECONDS = 3600
+_REFRESH_THRESHOLD_SECONDS = 1800
 
 
 def _sentinel_path(project_root: Path) -> Path:
@@ -128,16 +131,18 @@ def _submit_prompt(project_root: Path, prompt: str = "what should I do next?"):
 
 
 class TestOrchestratorAffordanceHourlyRefreshAcceptance:
-    """AC: the orchestrator spine-discipline affordance re-injects hourly via
-    the UserPromptSubmit hook, not just at SessionStart/clear/compact."""
+    """AC: the orchestrator spine-discipline affordance re-injects every 30
+    minutes via the UserPromptSubmit hook, not just at SessionStart/clear/compact."""
 
     def test_elapsed_sentinel_reinjects_affordance_on_next_prompt(
         self, tmp_path, capsys
     ):
-        """AC: sentinel older than 1h -> the next submitted prompt re-injects
-        the SAME spine-discipline content as additionalContext."""
+        """AC: sentinel older than 30 minutes -> the next submitted prompt
+        re-injects the SAME spine-discipline content as additionalContext."""
         project_root = tmp_path
-        _write_sentinel_with_age(project_root, seconds_ago=_ONE_HOUR_SECONDS + 1)
+        _write_sentinel_with_age(
+            project_root, seconds_ago=_REFRESH_THRESHOLD_SECONDS + 1
+        )
         expected_text = _expected_affordance_text()
 
         exit_code = _submit_prompt(project_root)
@@ -145,7 +150,7 @@ class TestOrchestratorAffordanceHourlyRefreshAcceptance:
         assert exit_code == 0
         captured = capsys.readouterr()
         assert captured.out.strip(), (
-            "expected hourly re-injection additionalContext on a stale "
+            "expected 30-minute re-injection additionalContext on a stale "
             "sentinel, got no stdout output"
         )
         output = json.loads(captured.out.strip())
@@ -162,7 +167,7 @@ class TestOrchestratorAffordanceHourlyRefreshAcceptance:
         immediate prompt does not re-fire."""
         project_root = tmp_path
         sentinel = _write_sentinel_with_age(
-            project_root, seconds_ago=_ONE_HOUR_SECONDS + 1
+            project_root, seconds_ago=_REFRESH_THRESHOLD_SECONDS + 1
         )
         before_call_ts = time.time()
 
@@ -175,9 +180,9 @@ class TestOrchestratorAffordanceHourlyRefreshAcceptance:
             "now, not leave the stale backdated timestamp in place"
         )
 
-    def test_fresh_sentinel_not_reinjected_within_the_hour(self, tmp_path, capsys):
-        """Negative AT: sentinel written 60s ago (<< 1h elapsed) -> the next
-        prompt must NOT re-inject the affordance."""
+    def test_fresh_sentinel_not_reinjected_within_the_threshold(self, tmp_path, capsys):
+        """Negative AT: sentinel written 60s ago (<< 30min elapsed) -> the
+        next prompt must NOT re-inject the affordance."""
         project_root = tmp_path
         _write_sentinel_with_age(project_root, seconds_ago=60)
 
@@ -186,24 +191,26 @@ class TestOrchestratorAffordanceHourlyRefreshAcceptance:
         assert exit_code == 0
         captured = capsys.readouterr()
         assert captured.out.strip() == "", (
-            "no re-injection expected within the hour -- refresh must not "
-            "fire on every UserPromptSubmit event"
+            "no re-injection expected within the 30-minute threshold -- "
+            "refresh must not fire on every UserPromptSubmit event"
         )
 
-    def test_sentinel_just_under_one_hour_boundary_not_reinjected(
+    def test_sentinel_just_under_the_threshold_boundary_not_reinjected(
         self, tmp_path, capsys
     ):
-        """Negative AT (boundary): sentinel backdated to 3599s (just under the
-        1h threshold) -> still no re-injection."""
+        """Negative AT (boundary): sentinel backdated to 1799s (just under the
+        1800s/30-minute threshold) -> still no re-injection."""
         project_root = tmp_path
-        _write_sentinel_with_age(project_root, seconds_ago=_ONE_HOUR_SECONDS - 1)
+        _write_sentinel_with_age(
+            project_root, seconds_ago=_REFRESH_THRESHOLD_SECONDS - 1
+        )
 
         exit_code = _submit_prompt(project_root)
 
         assert exit_code == 0
         captured = capsys.readouterr()
         assert captured.out.strip() == "", (
-            "3599s elapsed is still under the 3600s threshold -- must not re-inject yet"
+            "1799s elapsed is still under the 1800s threshold -- must not re-inject yet"
         )
 
     def test_missing_sentinel_degrades_to_elapsed_and_injects(self, tmp_path, capsys):

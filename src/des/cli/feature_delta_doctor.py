@@ -39,6 +39,10 @@ import sys
 from pathlib import Path
 from typing import TypedDict
 
+from des.cli.carpaccio_format import (
+    SLICE_PLAN_CANONICAL_COLUMNS,
+    slice_plan_header_deviation,
+)
 from des.cli.validate_feature_delta import (
     _SUSTAINABILITY_ACCEPTED_VERDICTS,
     LOCKED_REF_SECTIONS,
@@ -205,6 +209,51 @@ def _sustainability_gaps(content: str) -> list[Gap]:
     ]
 
 
+#: Gap id for a Slice Plan header deviating from `SLICE_PLAN_CANONICAL_COLUMNS`
+#: (fix-delta-doctor-validates-slice-plan-columns) -- an extra/missing/
+#: reordered column shifts every downstream cell SILENTLY (the shared parser
+#: `carpaccio_format._build_slice_rows` reads value/status/annotation/
+#: justification POSITIONALLY, regardless of header text).
+_MALFORMED_SLICE_PLAN_HEADER_ID = "malformed-slice-plan-header"
+
+#: The canonical header row text, built FROM `SLICE_PLAN_CANONICAL_COLUMNS`
+#: (M1: never a copied literal) -- the exact copy-paste fix an operator
+#: applies to a malformed header.
+_CANONICAL_SLICE_PLAN_HEADER = "| " + " | ".join(SLICE_PLAN_CANONICAL_COLUMNS) + " |"
+
+
+def _slice_plan_header_gaps(content: str) -> list[Gap]:
+    """`malformed-slice-plan-header` gap when the Slice Plan table header
+    deviates from `SLICE_PLAN_CANONICAL_COLUMNS` -- reusing
+    `carpaccio_format.slice_plan_header_deviation`, the SAME parser module
+    that reads the Slice Plan table downstream (M1: one locus, no copy).
+
+    Empirical anchor (2026-07-12): seven hand-authored feature-deltas
+    carried `| Slice | Value statement | Class | Status | Annotation |`
+    instead of the canonical header -- the shared parser shifted every cell
+    SILENTLY and the DISTILL-exit mechanical seal refused opaquely while the
+    doctor reported nothing (GDP-6 silent-wrong)."""
+    malformed_header = slice_plan_header_deviation(content)
+    if malformed_header is None:
+        return []
+    return [
+        Gap(
+            id=_MALFORMED_SLICE_PLAN_HEADER_ID,
+            what=f"malformed Slice Plan header: '{malformed_header}'",
+            why=(
+                "the header deviates from the canonical Slice Plan columns; "
+                "the shared parser (`carpaccio_format._build_slice_rows`) "
+                "reads value/status/annotation/justification POSITIONALLY "
+                "from the cells after the slice-id, regardless of what the "
+                "header text says, so every downstream cell shifts SILENTLY "
+                "-- the DISTILL-exit mechanical seal then reads the wrong "
+                "cell as the annotation and refuses opaquely."
+            ),
+            how=f"Rewrite the Slice Plan header to: {_CANONICAL_SLICE_PLAN_HEADER}",
+        )
+    ]
+
+
 def diagnose(content: str) -> list[Gap]:
     """Aggregate every structural gap for one feature-delta body in ONE pass.
 
@@ -219,6 +268,7 @@ def diagnose(content: str) -> list[Gap]:
         *_missing_section_gaps(content),
         *_reuse_analysis_gaps(content),
         *_sustainability_gaps(content),
+        *_slice_plan_header_gaps(content),
     ]
 
 

@@ -22,7 +22,14 @@ CLI contract:
     des find-similar-responsibility --name <symbol> --scope <path> [--format json]
 
 stdout token (JSON):
-    {candidates:[{symbol, file, line, overlap}], reason_code, detail}
+    {candidates:[{symbol, file, line, overlap}], reason_code, detail,
+     unparsed_count}
+
+``unparsed_count`` (F-fix-find-similar-declares-unparseable-coverage) is the
+coverage-gap signal: the count of candidate files under ``--scope`` the AST
+adapter could not parse during the SAME ranking pass -- so an operator can
+tell "searched everything and found nothing" apart from "searched what
+parsed". A fully-parseable corpus reports zero and is otherwise unchanged.
 
 Exit code is ALWAYS 0 (advisory, GDP-6 -- never blocks).
 
@@ -104,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     result = adapter.query(descriptor, {"name": args.name})
     payload = result.payload if isinstance(result.payload, dict) else {}
     candidates = payload.get("candidates", [])
+    unparsed_count = payload.get("unparsed_count", 0)
 
     print(
         json.dumps(
@@ -111,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
                 "candidates": candidates,
                 "reason_code": result.reason_code,
                 "detail": _detail_for(result.reason_code, len(candidates)),
+                "unparsed_count": unparsed_count,
             }
         )
     )

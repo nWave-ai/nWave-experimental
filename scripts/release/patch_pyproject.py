@@ -179,6 +179,7 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         '"nWave/flavors" = "nWave/nWave/flavors"\n'
         '"nWave/data" = "nWave/nWave/data"\n'
         '"nWave/schemas" = "nWave/nWave/schemas"\n'
+        '"nWave/dispatch" = "nWave/nWave/dispatch"\n'
         '"nWave/framework-catalog.yaml" = "nWave/nWave/framework-catalog.yaml"\n'
         '"nWave/VERSION" = "nWave/VERSION"\n'
         '"nWave/README.md" = "nWave/README.md"\n'

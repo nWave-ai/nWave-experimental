@@ -66,6 +66,7 @@ _SLICE_PLAN_HEADING_RE = re.compile(
     r"^#{2,4}\s+Wave:\s+DISCUSS\s+/\s+\[REF\]\s+Slice Plan\s*$"
 )
 _TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
+_MARKDOWN_HEADING_RE = re.compile(r"^#{1,6}\s")
 _SLICE_ID_RE = re.compile(
     r"^slice-\d+(?:[a-z])?$"
 )  # canonical + letter-suffix (friction #10)
@@ -99,6 +100,24 @@ class GateError(Exception):
         super().__init__(payload.get("error", payload.get("event", "gate error")))
         self.exit_code = exit_code
         self.payload = payload
+
+
+#: The canonical Slice Plan table columns, in order -- the ONE locus every
+#: caller needing the canonical header MUST derive from (M1: never a copied
+#: literal). This is the parser's own header expectation: :func:`_build_slice_rows`
+#: stays column-count-tolerant (unchanged, for backward compatibility with
+#: already-shipped 3-column plans), while :func:`slice_plan_header_deviation`
+#: compares the header ROW TEXT against this constant to catch a drift that
+#: count-tolerance alone cannot (extra/missing/reordered columns) -- see
+#: `feature_delta_doctor._slice_plan_header_gaps`, the `malformed-slice-plan-
+#: header` gap emitter that consumes both.
+SLICE_PLAN_CANONICAL_COLUMNS: tuple[str, ...] = (
+    "Slice",
+    "Value statement",
+    "Status",
+    "Annotation",
+    "Justification",
+)
 
 
 @dataclass(frozen=True)
@@ -281,17 +300,56 @@ def parse_slice_plan(feature_delta_text: str) -> SlicePlan:
 
 
 def _collect_table_rows(lines: list[str], start: int) -> list[str]:
-    """Collect the contiguous GFM table block after the section heading."""
+    """Collect the contiguous GFM table block after the section heading.
+
+    Truncation-aware (fix-carpaccio-names-malformed-table-line, GDP-3): a
+    non-pipe line that interrupts the table body is the table's natural end
+    ONLY when nothing but prose/a new section follows it. When a further
+    pipe-delimited row exists below the interruption -- before the next
+    markdown heading closes the section -- the interruption truncated the
+    table body instead of ending it, and every row below was about to be
+    silently dropped. That case raises :func:`_malformed_table` naming the
+    stop line and cause, instead of letting the downstream entering-slice
+    lookup mis-report the dropped row as genuinely absent. A well-formed
+    table (no interruption, or an interruption with no further row before
+    the next heading) parses byte-identically to before this fix.
+    """
     rows: list[str] = []
     started = False
-    for line in lines[start:]:
+    for offset, line in enumerate(lines[start:]):
         if _TABLE_ROW_RE.match(line):
             started = True
             rows.append(line)
             continue
         if started:
+            interruption_index = start + offset
+            if _further_table_row_before_next_heading(lines, interruption_index):
+                raise _malformed_table(
+                    "the slice-plan table body was truncated at line "
+                    f"{interruption_index + 1} -- that line is not a "
+                    "pipe-delimited table row, so the row-per-line scan "
+                    "stopped there and every declared slice row below it "
+                    "was never read"
+                )
             break
     return rows
+
+
+def _further_table_row_before_next_heading(lines: list[str], from_index: int) -> bool:
+    """True when a pipe-delimited table row appears at/after ``from_index``
+    before the next markdown heading (or before the lines run out).
+
+    Bounds the truncation check to the CURRENT section: a later, unrelated
+    table under a later heading (e.g. a "Reuse Analysis" table further down
+    the same feature-delta) must never be mistaken for a truncated slice-plan
+    table -- the scan gives up the moment a new heading closes the section.
+    """
+    for line in lines[from_index:]:
+        if _MARKDOWN_HEADING_RE.match(line):
+            return False
+        if _TABLE_ROW_RE.match(line):
+            return True
+    return False
 
 
 def _build_slice_rows(data_rows: list[str]) -> list[SlicePlanRow]:
@@ -336,6 +394,40 @@ def _build_slice_rows(data_rows: list[str]) -> list[SlicePlanRow]:
 def _cell_at(cells: list[str], index: int) -> str:
     """Return ``cells[index]`` or the empty string when the column is absent."""
     return cells[index] if index < len(cells) else ""
+
+
+def slice_plan_header_deviation(feature_delta_text: str) -> str | None:
+    """Return the raw Slice Plan header row (stripped, verbatim) when it
+    deviates from :data:`SLICE_PLAN_CANONICAL_COLUMNS`; ``None`` when the
+    section/header row is absent, or when the header IS canonical.
+
+    Compares header-row TEXT CELLS against the canonical schema (not merely
+    column count): catches an extra column, a missing column, and reordered
+    columns alike -- three deviation classes ``_build_slice_rows``'s
+    count-tolerant positional read cannot distinguish (fix-delta-doctor-
+    validates-slice-plan-columns). ``_build_slice_rows`` itself is
+    unchanged -- still column-count-tolerant, for backward compatibility
+    with already-shipped 3-column plans; this function only DETECTS the
+    drift, it never rejects the parse.
+
+    Consumed by ``feature_delta_doctor._slice_plan_header_gaps`` (M1: one
+    locus, :data:`SLICE_PLAN_CANONICAL_COLUMNS` is the only place the
+    canonical column names live).
+    """
+    lines = feature_delta_text.splitlines()
+    heading_index = next(
+        (i for i, line in enumerate(lines) if _SLICE_PLAN_HEADING_RE.match(line)),
+        None,
+    )
+    if heading_index is None:
+        return None
+    table_rows = _collect_table_rows(lines, heading_index + 1)
+    if not table_rows:
+        return None
+    header_line = table_rows[0]
+    if tuple(_split_table_cells(header_line)) == SLICE_PLAN_CANONICAL_COLUMNS:
+        return None
+    return header_line.strip()
 
 
 def _malformed_table(detail: str) -> GateError:

@@ -607,7 +607,7 @@ class DESPlugin(InstallationPlugin):
     # nWave runtime assets the installed des package resolves as siblings of
     # lib/python (Path(__file__).parents[N] / "nWave" / ...). Code-only shipping
     # leaves these absent and breaks every atdd_pure dispatch.
-    _NWAVE_RUNTIME_ASSET_DIRS = ("flavors", "data", "templates", "schemas")
+    _NWAVE_RUNTIME_ASSET_DIRS = ("flavors", "data", "templates", "schemas", "dispatch")
     _NWAVE_RUNTIME_ASSET_FILES = ("framework-catalog.yaml",)
 
     def _install_nwave_runtime_assets(

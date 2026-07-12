@@ -4,7 +4,8 @@ Charter: docs/product/expectations/orchestrator-affordance-injection/
          affordance-loaded-from-text-not-hardcoded.md
 Feature-delta: docs/feature/orchestrator-affordance-injection/feature-delta.md
 
-Contract under test (DOES NOT EXIST YET -- active-RED by design):
+Contract under test (SHIPPED -- this suite is GREEN against the real
+implementation, retained as a regression pin):
 `src/des/adapters/drivers/hooks/session_start_handler.py:
 load_orchestrator_affordance(assets_dir: Path) -> str | None` reads every
 `*.md` file under `assets_dir` (sorted by name), concatenates their text
@@ -14,11 +15,13 @@ CONTENT is loaded from text on every call, never hardcoded or cached, so
 iterating the affordance needs only a text edit under
 `nWave/data/orchestrator-affordance/`, zero code change.
 
-Active-RED scaffolding (P1-P4, `nw-distill-red-scaffolding`): the function is
-absent today, so the import happens INSIDE a helper called from each test
-body (hidden-import), never at module top -- collection stays green
-(COLLECT >= 4) and the absence surfaces as a semantic AssertionError
-(MISSING_FUNCTIONALITY) at runtime, never a collection ImportError (BROKEN).
+Historical note (P1-P4, `nw-distill-red-scaffolding`): this suite was
+originally authored active-RED, with the import happening INSIDE a helper
+called from each test body (hidden-import) so the (then-)absent function
+surfaced as a semantic AssertionError (MISSING_FUNCTIONALITY) at runtime,
+never a collection ImportError (BROKEN). The hidden-import helper is kept
+as-is now that the function is shipped -- it is a harmless indirection, not
+a regression.
 
 Driving surface (Mandate-13 driving-port-only, Layer 3 composition,
 IN-PROCESS default): the pure `load_orchestrator_affordance` function driven
@@ -73,11 +76,19 @@ def _write_md(path: Path, content: str) -> Path:
 
 
 def _discipline_asset_text() -> str:
-    """Mirrors the shipped `spine-discipline.md` discipline wording."""
+    """Mirrors the shipped `spine-discipline.md` STRUCTURAL anchors -- the
+    heading, the ORCHESTRATOR identity line, and the DIRECT/DISPATCH section
+    tokens -- not the surrounding persuasive prose, which gets Cialdini-
+    retuned periodically (rewritten 2026-07-12) and would make a full-sentence
+    mirror stale on every prose iteration.
+    """
     return (
-        "# Orchestrator discipline -- dispatch domain work, don't hand-edit\n\n"
-        "You are the ORCHESTRATOR of the nWave spine, not the implementor. "
-        "Dispatch domain work through the spine.\n"
+        "## Orchestrator discipline -- dispatch domain work, don't hand-edit\n\n"
+        "You are the ORCHESTRATOR of the nWave spine.\n\n"
+        "- DIRECT (legitimate, no dispatch): feature-delta authoring, "
+        "staging/commit/push, running gates.\n"
+        "- DISPATCH (never hand-edit): ANY new function, ANY new test, ANY "
+        "change to production code.\n"
     )
 
 
@@ -129,6 +140,10 @@ def test_loader_returns_content_containing_both_shipped_asset_substrings(
     assert affordance is not None, "expected loaded affordance text, got None"
     assert "ORCHESTRATOR" in affordance, (
         f"expected the discipline asset's substring in the affordance: {affordance!r}"
+    )
+    assert "DISPATCH" in affordance, (
+        f"expected the discipline asset's DISPATCH section token in the "
+        f"affordance: {affordance!r}"
     )
     assert "des dispatch" in affordance, (
         "expected the des-command-catalog asset's substring in the "

@@ -18,6 +18,13 @@ EXPECTED BEHAVIOR:
 BUSINESS IMPACT:
 With "Task" matchers, ALL DES hooks silently stop firing, disabling the
 entire Deterministic Execution System without any error message.
+
+Track WS-15 P2 collapse (2026-07-12): migration stable since 2026-06-20
+(22 days, no follow-up bug citing this migration). Per skill 3.5 the
+3-scenario net collapses to 1 single-iteration test reporting all
+violations at once (skill 3.2 dict-iteration) -- the per-hook expected
+matcher table remains a module-level constant so a failure still
+identifies WHICH hook regressed.
 """
 
 import json
@@ -30,9 +37,12 @@ from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.des_plugin import DESPlugin
 
 
-# =========================================================================
-# Fixtures
-# =========================================================================
+# hook name -> expected matcher value (None means "no matcher key at all")
+EXPECTED_MATCHERS = {
+    "PreToolUse": "Agent",
+    "PostToolUse": "Agent",
+    "SubagentStop": None,
+}
 
 
 @pytest.fixture
@@ -81,11 +91,6 @@ def _read_settings(context: InstallContext) -> dict:
         return json.load(f)
 
 
-def _find_des_hooks(hooks_list: list[dict], matcher_value: str) -> list[dict]:
-    """Find hook entries matching a given matcher value."""
-    return [h for h in hooks_list if h.get("matcher") == matcher_value]
-
-
 def _find_des_agent_hooks(hooks_list: list[dict]) -> list[dict]:
     """Find DES hooks that use 'claude_code_hook_adapter' in their command."""
     results = []
@@ -97,148 +102,37 @@ def _find_des_agent_hooks(hooks_list: list[dict]) -> list[dict]:
     return results
 
 
-class TestPluginMatcherMigration:
-    """Tests that DES plugin generates correct hook matchers after migration.
+def test_des_plugin_hook_matchers_match_agent_tool_baseline(
+    install_context: InstallContext,
+) -> None:
+    """Every DES hook's matcher must match the post-migration baseline.
 
-    The DES plugin must generate "Agent" matchers (not "Task") for PreToolUse
-    and PostToolUse hooks. SubagentStop has no matcher (unchanged).
-
-    These tests invoke through the DES plugin's hook installation method,
-    which is the driving port for hook configuration generation.
+    Iterates EXPECTED_MATCHERS once; failure message lists every hook whose
+    matcher drifted (expected vs actual side by side), so a single failure
+    is as diagnosable as the pre-collapse 3-test version. This is THE key
+    regression: with "Task" matchers, ALL DES hooks silently stop firing
+    because Claude Code v2.1.63 sends tool_name="Agent", not "Task".
     """
+    plugin = DESPlugin()
+    result = plugin._install_des_hooks(install_context)
+    assert result.success, f"Hook installation failed: {result.message}"
 
-    def test_des_plugin_generates_agent_matcher_for_pre_tool_use(
-        self, install_context: InstallContext
-    ):
-        """
-        GIVEN the DES installation plugin
-        WHEN it generates PreToolUse hook configuration
-        THEN the DES hook matcher is "Agent" (not "Task")
-
-        This ensures hooks fire when Claude Code sends tool_name="Agent"
-        for agent invocations.
-        """
-        # GIVEN: DES plugin
-        plugin = DESPlugin()
-
-        # WHEN: Install hooks
-        result = plugin._install_des_hooks(install_context)
-
-        # THEN: Installation succeeded
-        assert result.success, f"Hook installation failed: {result.message}"
-
-        # THEN: PreToolUse has an "Agent" matcher for the DES hook
-        settings = _read_settings(install_context)
-        pre_tool_use_hooks = settings.get("hooks", {}).get("PreToolUse", [])
-
-        # Find DES-specific hooks (containing claude_code_hook_adapter)
-        des_hooks = _find_des_agent_hooks(pre_tool_use_hooks)
-        assert len(des_hooks) > 0, (
-            "Should have at least one DES hook in PreToolUse. "
-            f"Found hooks: {pre_tool_use_hooks}"
-        )
-
-        # The DES pre-task hook should have matcher "Agent"
-        des_pretask_hook = des_hooks[0]
-        assert des_pretask_hook.get("matcher") == "Agent", (
-            f"DES PreToolUse hook matcher should be 'Agent'. "
-            f"Got: {des_pretask_hook.get('matcher')}"
-        )
-
-        # Verify no "Task" matcher exists for DES hooks
-        task_matchers = _find_des_hooks(pre_tool_use_hooks, "Task")
-        des_task_hooks = [
-            h
-            for h in task_matchers
-            if any(
-                "claude_code_hook_adapter" in inner.get("command", "")
-                for inner in h.get("hooks", [])
+    settings = _read_settings(install_context)
+    drifted: list[str] = []
+    for hook_name, expected_matcher in EXPECTED_MATCHERS.items():
+        hooks_for_name = settings.get("hooks", {}).get(hook_name, [])
+        des_hooks = _find_des_agent_hooks(hooks_for_name)
+        if not des_hooks:
+            drifted.append(f"{hook_name}: no DES hook found (expected >= 1)")
+            continue
+        actual_matcher = des_hooks[0].get("matcher")
+        if actual_matcher != expected_matcher:
+            drifted.append(
+                f"{hook_name}: expected matcher {expected_matcher!r}, "
+                f"got {actual_matcher!r}"
             )
-        ]
-        assert len(des_task_hooks) == 0, (
-            f"No DES hooks should use 'Task' matcher. Found: {des_task_hooks}"
-        )
 
-    def test_des_plugin_generates_agent_matcher_for_post_tool_use(
-        self, install_context: InstallContext
-    ):
-        """
-        GIVEN the DES installation plugin
-        WHEN it generates PostToolUse hook configuration
-        THEN the DES hook matcher is "Agent" (not "Task")
-
-        PostToolUse hooks clean up DES task signals after agent completion.
-        They must also fire for the renamed Agent tool.
-        """
-        # GIVEN: DES plugin
-        plugin = DESPlugin()
-
-        # WHEN: Install hooks
-        result = plugin._install_des_hooks(install_context)
-
-        # THEN: Installation succeeded
-        assert result.success, f"Hook installation failed: {result.message}"
-
-        # THEN: PostToolUse has an "Agent" matcher for the DES hook
-        settings = _read_settings(install_context)
-        post_tool_use_hooks = settings.get("hooks", {}).get("PostToolUse", [])
-
-        des_hooks = _find_des_agent_hooks(post_tool_use_hooks)
-        assert len(des_hooks) > 0, (
-            "Should have at least one DES hook in PostToolUse. "
-            f"Found hooks: {post_tool_use_hooks}"
-        )
-
-        des_post_hook = des_hooks[0]
-        assert des_post_hook.get("matcher") == "Agent", (
-            f"DES PostToolUse hook matcher should be 'Agent'. "
-            f"Got: {des_post_hook.get('matcher')}"
-        )
-
-        # Verify no "Task" matcher exists for DES hooks
-        task_matchers = _find_des_hooks(post_tool_use_hooks, "Task")
-        des_task_hooks = [
-            h
-            for h in task_matchers
-            if any(
-                "claude_code_hook_adapter" in inner.get("command", "")
-                for inner in h.get("hooks", [])
-            )
-        ]
-        assert len(des_task_hooks) == 0, (
-            f"No DES hooks should use 'Task' matcher. Found: {des_task_hooks}"
-        )
-
-    def test_subagent_stop_hook_has_no_matcher(self, install_context: InstallContext):
-        """
-        GIVEN the DES installation plugin
-        WHEN it generates SubagentStop hook configuration
-        THEN the hook has no matcher (fires for all subagent stops)
-
-        SubagentStop hooks are unaffected by the Task-to-Agent migration
-        because they never had a tool matcher -- they fire on subagent
-        completion regardless of tool name.
-        """
-        # GIVEN: DES plugin
-        plugin = DESPlugin()
-
-        # WHEN: Install hooks
-        result = plugin._install_des_hooks(install_context)
-
-        # THEN: Installation succeeded
-        assert result.success, f"Hook installation failed: {result.message}"
-
-        # THEN: SubagentStop hook has no matcher
-        settings = _read_settings(install_context)
-        subagent_stop_hooks = settings.get("hooks", {}).get("SubagentStop", [])
-
-        des_hooks = _find_des_agent_hooks(subagent_stop_hooks)
-        assert len(des_hooks) > 0, (
-            "Should have at least one DES hook in SubagentStop. "
-            f"Found hooks: {subagent_stop_hooks}"
-        )
-
-        des_stop_hook = des_hooks[0]
-        assert "matcher" not in des_stop_hook, (
-            f"SubagentStop hook should have no matcher. Got: {des_stop_hook}"
-        )
+    assert not drifted, (
+        "DES hook matchers drifted from the Task->Agent migration baseline:\n  "
+        + "\n  ".join(drifted)
+    )
