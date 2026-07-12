@@ -32,6 +32,12 @@ from pathlib import Path
 
 from des._internal import subset_parser
 from des.application.dispatch_lane_ssot import _read_full_sections
+from des.cli.validate_feature_delta import (
+    VERDICT_METHODOLOGY_EXEMPT,
+    VERDICT_NO_OVERLAP_DECLARED,
+    VERDICT_STRUCTURALLY_ACCEPTED,
+    validate_reuse_analysis_content,
+)
 from des.domain.atdd_pure_phases import FEATURE_END_PHASES, ATDDPurePhase
 from des.domain.lane_profile import LANE_PROFILES
 
@@ -39,6 +45,20 @@ from des.domain.lane_profile import LANE_PROFILES
 #: Deliberate, distinguishable exit for "bad input" (missing/invalid CLI
 #: argument, unreadable/malformed SSOT file) -- never a Python traceback.
 _EXIT_USAGE_ERROR = 2
+
+#: Reuse Analysis verdicts that mean the feature-delta IS readiness-ready
+#: (GDP-1/2: proactive readiness ADVISORY, see `_feature_delta_readiness_
+#: advisory` below) -- mirrors `verify_readiness_pre_dispatch._check_reuse_
+#: first_or_design_skip`'s reuse leg, minus the design-skip-witness fallback
+#: (no AT requires that leg at generation time; the readiness gate remains
+#: the authority that still ALSO accepts a design-skip witness).
+_REUSE_READY_VERDICTS = frozenset(
+    {
+        VERDICT_STRUCTURALLY_ACCEPTED,
+        VERDICT_METHODOLOGY_EXEMPT,
+        VERDICT_NO_OVERLAP_DECLARED,
+    }
+)
 
 _DISPATCH_YAML_PARTS = ("nWave", "dispatch", "atdd_pure.yaml")
 _VENDORS_YAML_PARTS = ("nWave", "dispatch", "vendors.yaml")
@@ -95,6 +115,44 @@ def _canonical_phase_values() -> tuple[str, ...]:
     """The live ``ATDDPurePhase`` canonical member values (aliases excluded --
     enum iteration already skips value-aliases like ``EXAMINE``)."""
     return tuple(member.value for member in ATDDPurePhase)
+
+
+def _feature_delta_readiness_advisory(repo_root: Path, feature_id: str) -> str | None:
+    """Return a proactive readiness ADVISORY string, or ``None`` when the
+    feature-delta is readiness-ready (GDP-1/2: catch it at generation time,
+    before the crafter is dispatched and the separate readiness gate
+    ``verify-readiness-pre-dispatch`` rejects it after the fact).
+
+    ADVISORY-ONLY -- the caller prints this to stderr and generation
+    continues unconditionally; this function never raises and never causes
+    ``main`` to change its exit code.
+
+    Degrade-loud-but-safe: a missing feature-delta file for a feature-phase
+    dispatch IS itself advisory-worthy (the file will be required later); an
+    unexpected error while validating its content is swallowed (``None`` --
+    skip the advisory) rather than crashing prompt generation.
+    """
+    delta_path = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    try:
+        content = delta_path.read_text(encoding="utf-8")
+    except OSError:
+        return (
+            f"advisory: the feature-delta for '{feature_id}' is not "
+            f"readiness-ready -- no feature-delta.md found at {delta_path}; "
+            "fix it before dispatching the crafter (the readiness gate will "
+            "otherwise reject it)"
+        )
+    try:
+        result = validate_reuse_analysis_content(content)
+    except Exception:
+        return None
+    if result.verdict in _REUSE_READY_VERDICTS:
+        return None
+    return (
+        f"advisory: the feature-delta for '{feature_id}' is not "
+        f"readiness-ready -- {result.detail}; fix it before dispatching the "
+        "crafter (the readiness gate will otherwise reject it)"
+    )
 
 
 def _read_marker_syntax(repo_root: Path) -> str:
@@ -374,6 +432,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.lane is not None
         else full_sections
     )
+
+    if args.lane not in _LANES_REQUIRING_JUSTIFICATION:
+        advisory = _feature_delta_readiness_advisory(repo_root, args.project_id)
+        if advisory is not None:
+            print(advisory, file=sys.stderr)
 
     prompt = _build_prompt(
         marker_syntax=_read_marker_syntax(repo_root),
