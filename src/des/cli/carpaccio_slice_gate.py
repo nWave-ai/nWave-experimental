@@ -63,10 +63,10 @@ from des.cli.carpaccio_format import (
     Scenario,
     SlicePlan,
     _at_review_rejection,
-    _config_slice_max,
     _feature_tag_files,
     _lane_profile_for_slice,
     _read_feature_files,
+    _resolve_slice_max,
     _slice_scenarios,
     check_carpaccio,
     count_net_new_pytest_regression_ats,
@@ -906,7 +906,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         plan = parse_slice_plan(delta_path.read_text(encoding="utf-8"))
         scenarios = parse_scenarios(_read_feature_files(repo, feature_id))
-        slice_max = _config_slice_max(repo)
+        slice_max, slice_max_source = _resolve_slice_max(repo)
         coupled_event = check_carpaccio(
             plan,
             scenarios,
@@ -916,6 +916,7 @@ def main(argv: list[str] | None = None) -> int:
             regression_test_file=regression_test_file,
             repo=repo,
             feature_id=feature_id,
+            slice_max_source=slice_max_source,
         )
         at_evidence = check_at_review(
             repo,

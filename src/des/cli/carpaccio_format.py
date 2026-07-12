@@ -162,6 +162,14 @@ class SlicePlan:
 # ---------------------------------------------------------------------------
 
 
+# Provenance labels `_resolve_slice_max` returns alongside the ceiling value
+# (GDP-3/GDP-6, fix-carpaccio-ceiling-provenance): a bare integer in a
+# rejection message hides WHICH source produced it -- a gitignored repo
+# override silently lowering the framework default is invisible without this.
+_SLICE_MAX_SOURCE_REPO_CONFIG: Literal["repo-config"] = "repo-config"
+_SLICE_MAX_SOURCE_FRAMEWORK_DEFAULT: Literal["framework-default"] = "framework-default"
+
+
 def _config_slice_max(repo: Path) -> int:
     """Read ``atdd_pure.carpaccio_slice_max`` from ``.nwave/config.yaml``.
 
@@ -171,18 +179,56 @@ def _config_slice_max(repo: Path) -> int:
     the single ``atdd_pure.carpaccio_slice_max`` integer under a two-level
     block-mapping; a stdlib line-scan reads it without a YAML dependency,
     preserving the prior semantics (default + positive-int guard) exactly.
+
+    Thin wrapper over :func:`_resolve_slice_max` -- kept for existing callers
+    (``carpaccio_precheck``, unit tests) that only need the value, not its
+    provenance.
+    """
+    return _resolve_slice_max(repo)[0]
+
+
+def _resolve_slice_max(
+    repo: Path,
+) -> tuple[int, Literal["repo-config", "framework-default"]]:
+    """Resolve the effective carpaccio ceiling AND its provenance.
+
+    Same read semantics as :func:`_config_slice_max` (default + positive-int
+    guard), but also reports WHICH source produced the value: ``"repo-config"``
+    when ``.nwave/config.yaml`` exists and parses to a positive int, else
+    ``"framework-default"`` (:data:`_DEFAULT_SLICE_MAX`). Callers that need to
+    declare provenance in a user-facing message (the ``CARPACCIO_SLICE_TOO_LARGE``
+    rejection) use this instead of the bare-int :func:`_config_slice_max`.
     """
     config_path = repo / ".nwave" / "config.yaml"
     if not config_path.is_file():
-        return _DEFAULT_SLICE_MAX
+        return _DEFAULT_SLICE_MAX, _SLICE_MAX_SOURCE_FRAMEWORK_DEFAULT
     try:
         text = config_path.read_text(encoding="utf-8")
     except OSError:
-        return _DEFAULT_SLICE_MAX
+        return _DEFAULT_SLICE_MAX, _SLICE_MAX_SOURCE_FRAMEWORK_DEFAULT
     value = _scan_atdd_pure_int(text, "carpaccio_slice_max")
     if isinstance(value, int) and value > 0:
-        return value
-    return _DEFAULT_SLICE_MAX
+        return value, _SLICE_MAX_SOURCE_REPO_CONFIG
+    return _DEFAULT_SLICE_MAX, _SLICE_MAX_SOURCE_FRAMEWORK_DEFAULT
+
+
+def _slice_max_provenance_clause(
+    slice_max: int, source: Literal["repo-config", "framework-default"]
+) -> str:
+    """Render the ceiling's provenance for a user-facing rejection message.
+
+    ``"repo-config"`` names BOTH the literal ``.nwave/config.yaml`` (the
+    override's source) AND the framework default, so the operator sees the
+    override lowered/raised it. ``"framework-default"`` positively labels the
+    ceiling as the framework default and never mentions ``.nwave/config.yaml``
+    (the negative AT guards against mislabeling the default as a repo
+    override).
+    """
+    if source == _SLICE_MAX_SOURCE_REPO_CONFIG:
+        return (
+            f"from repo .nwave/config.yaml; framework default is {_DEFAULT_SLICE_MAX}"
+        )
+    return "framework default"
 
 
 def _scan_atdd_pure_int(text: str, key: str) -> int | None:
@@ -742,6 +788,9 @@ def check_carpaccio(
     *,
     repo: Path | None = None,
     feature_id: str | None = None,
+    slice_max_source: Literal["repo-config", "framework-default"] = (
+        "framework-default"
+    ),
 ) -> dict[str, object] | None:
     """Run carpaccio assertions 1-4 (+ mixed-mode guard). Raises ``GateError``.
 
@@ -751,6 +800,14 @@ def check_carpaccio(
     tag), WHERE (the roots walked), and HOW to fix it -- see
     :func:`_no_scenarios_rejection`. When either is omitted, the plain
     :func:`_at_review_rejection` fires unchanged (byte-identical legacy path).
+
+    ``slice_max_source`` (keyword-only, fix-carpaccio-ceiling-provenance):
+    declares WHERE ``slice_max`` came from (``"repo-config"`` |
+    ``"framework-default"``, see :func:`_resolve_slice_max`) so the
+    ``CARPACCIO_SLICE_TOO_LARGE`` rejection can name its provenance. Defaults
+    to ``"framework-default"`` for callers that pass a bare ``slice_max``
+    without resolving provenance (byte-identical message for those callers'
+    intended default-ceiling case).
 
     ``at_kind="gherkin"`` (default) preserves byte-identical behavior for
     every existing caller. ``at_kind="pytest-regression"`` (ADR-001,
@@ -817,7 +874,12 @@ def check_carpaccio(
         _check_value_annotation(plan)
         all_coupled = bool(_COUPLED_TAG_RE.search(entering_row.annotation))
         return _check_slice_size_count(
-            plan, entering_slice, slice_max, at_count, all_coupled=all_coupled
+            plan,
+            entering_slice,
+            slice_max,
+            at_count,
+            all_coupled=all_coupled,
+            slice_max_source=slice_max_source,
         )
     _check_total_coverage(plan, scenarios)
     _check_walking_skeleton_first(plan)
@@ -833,7 +895,9 @@ def check_carpaccio(
         if repo is not None and feature_id is not None:
             raise _no_scenarios_rejection(repo, feature_id, entering_slice)
         raise _at_review_rejection("no-scenarios-for-slice", entering_slice)
-    return _check_slice_size(plan, scenarios, entering_slice, slice_max)
+    return _check_slice_size(
+        plan, scenarios, entering_slice, slice_max, slice_max_source=slice_max_source
+    )
 
 
 def _lane_profile_for_slice(plan: SlicePlan, slice_id: str) -> LaneProfile | None:
@@ -942,6 +1006,10 @@ def _check_slice_size(
     scenarios: list[Scenario],
     entering_slice: str,
     slice_max: int,
+    *,
+    slice_max_source: Literal["repo-config", "framework-default"] = (
+        "framework-default"
+    ),
 ) -> dict[str, object] | None:
     """Assertion 1 (gherkin mode): slice size <= N unless a coupled-AT-group
     escape applies.
@@ -958,7 +1026,12 @@ def _check_slice_size(
         s.has_coupled_tag for s in slice_scenarios
     )
     return _check_slice_size_count(
-        plan, entering_slice, slice_max, at_count, all_coupled
+        plan,
+        entering_slice,
+        slice_max,
+        at_count,
+        all_coupled,
+        slice_max_source=slice_max_source,
     )
 
 
@@ -968,6 +1041,10 @@ def _check_slice_size_count(
     slice_max: int,
     at_count: int,
     all_coupled: bool,
+    *,
+    slice_max_source: Literal["repo-config", "framework-default"] = (
+        "framework-default"
+    ),
 ) -> dict[str, object] | None:
     """Assertion 1 core: slice size <= N unless a coupled-AT-group escape applies.
 
@@ -980,6 +1057,10 @@ def _check_slice_size_count(
     own Slice-Plan row Annotation cell (``_COUPLED_TAG_RE.search(row.annotation)``)
     -- the same ``@coupled``-tag vocabulary, read from the row instead of from
     scenario tags, since a plain pytest regression file carries no per-test tags.
+
+    ``slice_max_source`` (fix-carpaccio-ceiling-provenance, GDP-3/GDP-6):
+    declares WHERE ``slice_max`` came from so the ``CARPACCIO_SLICE_TOO_LARGE``
+    rejection names its provenance instead of a bare, source-less integer.
     """
     if at_count <= slice_max:
         return None
@@ -991,6 +1072,7 @@ def _check_slice_size_count(
             "slice_id": entering_slice,
             "at_count": at_count,
         }
+    provenance_clause = _slice_max_provenance_clause(slice_max, slice_max_source)
     raise GateError(
         44,
         {
@@ -998,9 +1080,10 @@ def _check_slice_size_count(
             "slice_id": entering_slice,
             "at_count": at_count,
             "slice_max": slice_max,
+            "slice_max_source": slice_max_source,
             "error": (
                 f"slice {entering_slice} has {at_count} ATs, exceeding the "
-                f"carpaccio ceiling of {slice_max}"
+                f"carpaccio ceiling of {slice_max} ({provenance_clause})"
             ),
             "instruction": (
                 "a cohesive over-ceiling slice is LEGITIMATE, not a violation: "
@@ -1009,11 +1092,12 @@ def _check_slice_size_count(
                 "row @coupled with a recorded justification (ADR-028 D2) -- "
                 "this is the DESIGNED escape path, not a workaround. Otherwise "
                 f"re-slice into thinner end-to-end verticals each within the "
-                f"ceiling of {slice_max}. A slice that is over-ceiling AND not "
-                "cleanly re-sliceable warrants deep-review + refactor at "
-                "FEATURE scope, not a per-slice patch. @walking-skeleton / "
-                "@infrastructure annotations govern ordering, not this size "
-                "escape -- only @coupled + justification lifts the ceiling"
+                f"ceiling of {slice_max} ({provenance_clause}). A slice that is "
+                "over-ceiling AND not cleanly re-sliceable warrants deep-review "
+                "+ refactor at FEATURE scope, not a per-slice patch. "
+                "@walking-skeleton / @infrastructure annotations govern "
+                "ordering, not this size escape -- only @coupled + "
+                "justification lifts the ceiling"
             ),
         },
     )
