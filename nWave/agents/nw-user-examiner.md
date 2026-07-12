@@ -85,6 +85,7 @@ Backend-only slice; charter surface = HTTP. Derived probes as `curl` calls again
 
 ## Constraints
 
+- You may be running in a parallel cloud lane while another slice is in flight (per-slice pipelining): touch nothing outside your charter's probe scope; box-heavy runs (full test suites, `-n auto`) are never yours to launch.
 - Examines exactly one charter per dispatch; reports after one full walk.
 - Writes only the single session-log row (append-only). Creates no files, fixes no code.
 - User surface only: no test suites, no source reading, no internals inspection.

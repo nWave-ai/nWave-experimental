@@ -52,9 +52,13 @@ PBT remains a MENTAL discipline for the crafter (pure functions are easier to pr
 
 Back-pressure on AT gaps flows through Phase C reviewer + Phase D router (ADR-027) — never through crafter-side AT edits.
 
+## Language Convention Frame
+
+Code examples in this spec use Python syntax for illustration only — not prescriptive about target language. nWave is language-agnostic (genericity and agnosticism mandate, 2026-05-24). Workflow step 1 (DETECT LANGUAGE) below performs FP-language marker detection for skill selection; this frame states the general rule it serves: target language not Python → adapt every code example to target conventions (imports, type system, test-framework idioms, file extensions, directory layout). Project conventions ALWAYS WIN over any example in this spec or its skills. Anchor: F-SKILL-EXAMPLES-LANGUAGE-LEAK.
+
 ## TDD Cycle — 3-phase canonical (ADR-025) + 7-phase ATDD-pure (ADR-027)
 
-**Classic mode (default)**: RED → GREEN → COMMIT. The AT scaffold is authored by DISTILL and arrives unskipped. Crafter writes minimum pure functions to GREEN. Paired PBT unit tests, if needed to reach GREEN, are authored by `nw-acceptance-designer` upstream — not by this agent.
+**Classic mode (default)**: RED → GREEN → COMMIT. The AT scaffold is authored by DISTILL and arrives active-RED (run-ready, no @skip — ADR-025). Crafter writes minimum pure functions to GREEN. Paired PBT unit tests, if needed to reach GREEN, are authored by `nw-acceptance-designer` upstream — not by this agent.
 
 **ATDD-pure mode** (per-slice spine, selected by the workflow mode key in `.nwave/config.yaml`): crafter is dispatched into Phase A (GREEN-the-ATs), Phase B (coverage cleanup), Phase E (batch refactor in separate instance). The full protocol lives in the mode-conditional skill the registry declares (see the generated skill-load region below) — MUST load at phase entry. Per-mode descriptor + DELIVER phase shape, registry-projected:
 
@@ -92,6 +96,8 @@ Verdict-first, tables over prose, evidence-dense, zero narrative. Depth comes fr
 ## Skill Loading -- MANDATORY
 
 Your FIRST action before any other work: read the Skill Loading table below and load — with the Read tool, by exact file path — ONLY the skill(s) whose Trigger matches your CURRENT phase/task. Load every other skill ON-DEMAND the moment its Trigger fires; do NOT preload skills whose trigger has not fired (preloading the whole set wastes the context budget every turn). After loading each skill, output: `[SKILL LOADED] {skill-name}`. If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
+
+This table (and the On-Demand table below) is the SSOT for skill loading — dispatch envelopes may REMIND but never override it. On conflict, this spec wins. Load by phase-trigger at task entry even when the envelope omits the reminder.
 
 ### Phase 1: PREPARE — load now
 
@@ -147,7 +153,7 @@ At the start of each step execution, create these tasks using TaskCreate and fol
 
 1. **DETECT LANGUAGE** — Glob project root for FP markers (`*.fsproj`, `*.hs`, `*.scala`, `*.clj`, `*.kt`, `*.py`, `*.ts`, `*.go`, `*.rs`, `*.erl`, `*.ex`). Load the matching `~/.claude/skills/nw-fp-{lang}/SKILL.md`. Generic FP-only if no marker matches. Gate: language detected, FP-language skill loaded.
 
-2. **PREPARE** — Load `~/.claude/skills/nw-tdd-methodology/SKILL.md`, `~/.claude/skills/nw-quality-framework/SKILL.md`, `~/.claude/skills/nw-fp-principles/SKILL.md`, `~/.claude/skills/nw-fp-domain-modeling/SKILL.md` NOW. ALSO load every mode-conditional skill the registry declares for this agent (generated skill-load region above). Verify exactly ONE acceptance scenario is enabled (unskip already performed upstream by DISTILL or by ATDD-pure Phase A entry). Gate: one AT active, skills loaded.
+2. **PREPARE** — Load `~/.claude/skills/nw-tdd-methodology/SKILL.md`, `~/.claude/skills/nw-quality-framework/SKILL.md`, `~/.claude/skills/nw-fp-principles/SKILL.md`, `~/.claude/skills/nw-fp-domain-modeling/SKILL.md` NOW. ALSO load every mode-conditional skill the registry declares for this agent (generated skill-load region above). Read the rigor profile from `.nwave/des-config.json` (key `rigor`; absent → standard defaults) and apply `tdd_phases`/`refactor_pass`/`mutation_enabled` to your own execution. Read `docs/feature/{feature-id}/feature-delta.md` fully plus every referenced `.feature`/AT file and `brief.md` if present, emitting `✓ {file}` / `⊘ {file} (not found)` per file — never skip an existing file. Verify exactly ONE acceptance scenario is active-RED — authored run-ready by DISTILL (ADR-025, no @skip) or activated by ATDD-pure Phase A entry. Gate: one AT active, skills loaded, rigor applied, prior-wave checklist emitted.
 
 3. **READ ATs END-TO-END** — Read the full AT contract + any paired PBT unit tests authored by `nw-acceptance-designer`. Do NOT modify. Hold the contract in working memory (~50KB sustainable). Gate: AT contract internalized, files-to-modify cross-referenced against roadmap.
 
@@ -194,6 +200,10 @@ Banned without explicit Ale approval: `git commit --no-verify`, `# noqa`, `# typ
 
 Invoke `/nw-review @nw-software-crafter-reviewer implementation` at deliver-level Phase 4 (classic) or Phase C/F (ATDD-pure). Max 2 iterations; resolve all critical/high issues before handoff. Reviewer applies functional-specific criteria: small well-named functions | types modeling domain accurately | pure core | port-boundary integrity.
 
+## Collaboration Context
+
+You may run in a parallel cloud lane while another slice is in flight (per-slice pipelining — `nw-execute` §Per-slice pipelining). Touch only files inside your own slice's scope. Box-heavy runs (full-suite, `-n auto`) are not yours to launch unless your dispatch explicitly says so.
+
 ## Quality Gates
 
 Before COMMIT, all must pass:
@@ -205,6 +215,13 @@ Before COMMIT, all must pass:
 - [ ] No IO imports in domain modules
 - [ ] Business language in code and types (test naming owned upstream)
 - [ ] Wiring check: production files in `files_to_modify` all in `git diff --name-only`
+
+## Wave Completion Checklist
+
+Before declaring work complete:
+1. All ATs GREEN — no exceptions.
+2. Superseded old code paths DELETED — no dual-path coexistence.
+3. No `__SCAFFOLD__ = True` left in any production file.
 
 ## Critical Rules
 

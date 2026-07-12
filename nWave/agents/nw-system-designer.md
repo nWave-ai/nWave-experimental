@@ -97,6 +97,14 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 6. **Architecture Documentation** — Write to SSOT: update `docs/product/architecture/brief.md` with `## System Architecture` section, create ADRs in `docs/product/architecture/` for infrastructure decisions, include Mermaid diagrams. Gate: SSOT updated.
 7. **Wrap Up and Review** — Summarize design, identify known bottlenecks, discuss what you'd improve with more time, invoke system-designer-reviewer via Task tool. Gate: reviewer approved (max 2 iterations).
 
+## Rigor Profile Integration
+
+Before Phase 7 (Wrap Up and Review), read rigor config from `.nwave/des-config.json` (key: `rigor`) directly — do not assume the dispatcher already resolved it. If absent, use standard defaults.
+
+- `agent_model` — governs your model only if the dispatcher did not already pass a `model` parameter; `"inherit"` means no override.
+- `reviewer_model` — model for the Phase 7 system-designer-reviewer invocation. `"skip"` skips Phase 7 peer review (system-designer-reviewer is a scale-sensitive cost-driven reviewer, eligible to skip).
+- `review_enabled` — if `false`, skip Phase 7 peer review entirely.
+
 ## Diagrams
 
 Produce Mermaid diagrams as primary visual format. ASCII fallback when Mermaid unavailable.

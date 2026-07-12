@@ -162,6 +162,7 @@ def _run_and_collect(
                 ),
             )
         outcomes: dict[str, str] = {}
+        raw_ids: list[str] = []
         for case in tree.iter("testcase"):
             classname = case.get("classname", "") or ""
             test_id = f"{classname}::{case.get('name', '')}"
@@ -194,12 +195,45 @@ def _run_and_collect(
                 return _EXIT_REFUSED
             if skipped:
                 continue
-            outcomes[test_id] = "fail" if failed else "pass"
+            raw_ids.append(test_id)
+            # Fail-dominant fold: a duplicate classname::name (e.g. a
+            # pytest-bdd Scenario Outline with N Examples rows emitting
+            # byte-identical <testcase> ids) must never let a later PASS
+            # silently overwrite an earlier FAIL (GDP-6, backlog #105).
+            outcomes[test_id] = (
+                "fail" if (failed or outcomes.get(test_id) == "fail") else "pass"
+            )
         if not outcomes:
             return _indeterminate(
                 what="zero test cases collected",
                 why="an empty run seals nothing (and must never pass).",
                 how="check the test file path and the runner invocation.",
+            )
+        if len(raw_ids) != len(outcomes):
+            duplicate_ids = sorted({tid for tid in raw_ids if raw_ids.count(tid) > 1})
+            _emit(
+                {
+                    "event": "RedGreenDuplicateIdCollapse",
+                    "what": f"{len(raw_ids)} <testcase> element(s) folded "
+                    f"into {len(outcomes)} test id(s)",
+                    "why": (
+                        "duplicate classname::name pairs in the JUnit XML "
+                        "(e.g. a pytest-bdd Scenario Outline with multiple "
+                        "Examples rows) collapse to one outcome key; the "
+                        "fold is fail-dominant so any failing occurrence "
+                        "keeps the id failed."
+                    ),
+                    "how": (
+                        "disambiguate the ids at the source (unique "
+                        "scenario/example titles) if independent verdicts "
+                        "are required."
+                    ),
+                    "duplicate_ids": duplicate_ids,
+                }
+            )
+            print(
+                f"⚠ COLLAPSED — {len(raw_ids)} testcase(s) folded into "
+                f"{len(outcomes)} id(s); duplicate: {', '.join(duplicate_ids)}"
             )
         return outcomes
     finally:

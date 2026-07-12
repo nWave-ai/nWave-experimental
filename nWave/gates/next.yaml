@@ -1,0 +1,53 @@
+# Gate-contract: next (des-next-loop-projection feature, slice-01)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=next.
+
+gate_id: next
+responsibility: |
+  Read-only advisory projection of the next legal atdd_pure DELIVER-loop step
+  for a feature. Composes the feature-delta Slice Plan, the AT-completion
+  ledger, the per-slice phase order (`atdd_pure_phases.ATDDPurePhase`), and the
+  gate/wave registries into a single `NextStepProjected` value naming the next
+  pending slice and its `step_kind` (`wave-command` -> a `/nw-*` command
+  carrying the wave's own methodology; `producing-tool` -> a `des <gate-id>`
+  CLI invocation). Performs zero filesystem writes and adds no new mutable
+  state (M1, no sequencer/engine) -- like `git status`, it derives its answer
+  fresh from state the gates already produce.
+module: des.cli.next_step
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "The feature id to project the next legal loop step for."
+  - name: --repo
+    required: false
+    type: path
+    help: "Path to the project root (default: current directory)."
+    default: "."
+  - name: --format
+    required: false
+    type: choice
+    choices: ["json", "human"]
+    help: "Output format."
+    default: "json"
+
+log_events:
+  - NextStepProjected
+
+failure_modes:
+  - error_class: UsageError
+    exit_code: 2
+    remediation: "Provide a valid --feature-id; see `des next --help`."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

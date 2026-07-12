@@ -583,6 +583,25 @@ def _append_slice_commit_indeterminate(
         ledger.append_slice_commit_indeterminate(slice_id, reason)
 
 
+def _find_loose_slice_trailer_value(commit_message: str) -> str | None:
+    """Return the value of a loose `Slice-Id:`/`Step-Id:` trailer line, if any.
+
+    Unlike ``extract_slice_ids`` (which requires the value to already be in
+    strict `slice-NN` form), this finds ANY line that starts with the
+    trailer key -- git's own trailer parser is exactly this lenient. Used to
+    distinguish "a trailer line IS present but its value is malformed" from
+    "no trailer line at all", so the two meanings never collapse into the
+    same misleading error (GDP-3, RCA in
+    ``tests/bugs/des/test_verify_slice_commit_trailer_value_message.py``).
+    """
+    for line in commit_message.splitlines():
+        stripped = line.strip()
+        for key in ("Slice-Id:", "Step-Id:"):
+            if stripped.startswith(key):
+                return stripped[len(key) :].strip()
+    return None
+
+
 def _resolve_slice_ids(
     repo: Path, commit: str, slice_id_override: str | None = None
 ) -> tuple[list[str], str, int | None, bool]:
@@ -613,6 +632,19 @@ def _resolve_slice_ids(
     if not slice_ids:
         if slice_id_override is not None:
             return [slice_id_override], commit_sha, None, True
+        loose_value = _find_loose_slice_trailer_value(commit_message)
+        if loose_value is not None:
+            _emit_with_human_surface(
+                {
+                    "event": "MalformedInput",
+                    "error": (
+                        "commit carries a Slice-Id:/Step-Id: trailer, but "
+                        f"its value {loose_value!r} is not a slice-NN "
+                        "identity (expected e.g. slice-01)"
+                    ),
+                }
+            )
+            return [], "", 2, False
         _emit_with_human_surface(
             {
                 "event": "MalformedInput",
@@ -692,6 +724,22 @@ def _effective_scope(
     return scope_feature_id if has_scoped_candidate else None
 
 
+def _has_verifiable_at_candidates(
+    repo: Path, slice_ids: list[str], scope: str | None
+) -> bool:
+    """True iff at least one `.feature` AT candidate exists for any listed slice.
+
+    Bug #126 (false-green regression): ``missing_at_files`` reports "nothing
+    missing" both when every candidate `.feature` file is present AND when
+    ZERO candidates exist to check in the first place -- the two meanings
+    ("verified everything" vs "verified nothing") collapse into the same
+    empty ``deficient`` dict. This probe re-derives the candidate set (the
+    SAME resolver + scope ``_missing_by_slice`` used) so the caller can tell
+    the two apart before minting a verdict.
+    """
+    return any(feature_files_for_slice(repo, slice_id, scope) for slice_id in slice_ids)
+
+
 def _run_legacy_completeness(repo: Path, args: argparse.Namespace) -> int:
     """The legacy E1-only completeness check (no `--feature-id`).
 
@@ -706,6 +754,14 @@ def _run_legacy_completeness(repo: Path, args: argparse.Namespace) -> int:
     the legacy E1-only `SliceCommitComplete` / `SliceCommitIncomplete` and NO
     ledger record is written -- the verify-then-record seam (`--feature-id`) is
     not entered.
+
+    Bug #126 (false-green, verify-slice-commit-requires-feature-id):
+    ``missing_at_files`` vacuously reports "nothing missing" when it found
+    ZERO `.feature` AT candidates for the listed slice(s) anywhere on the
+    scanned tree -- "I verified everything" and "I had nothing to verify"
+    must not collapse into the same `SliceCommitComplete` PASS. When no
+    candidate exists, this emits an honest `SliceCommitIndeterminate` (exit
+    `_GATE_INDETERMINATE_EXIT_CODE`) instead -- unverified, not verified.
     """
     slice_ids, _commit_sha, error_code, _used_override = _resolve_slice_ids(
         repo, args.commit
@@ -733,6 +789,28 @@ def _run_legacy_completeness(repo: Path, args: argparse.Namespace) -> int:
             }
         )
         return 1
+
+    if not _has_verifiable_at_candidates(repo, slice_ids, scope):
+        _emit_with_human_surface(
+            {
+                "event": "SliceCommitIndeterminate",
+                "slice_ids": slice_ids,
+                "commit": args.commit,
+                "error": (
+                    "no --feature-id was given and no .feature AT file "
+                    "candidate matched any listed slice anywhere on the "
+                    "scanned tree -- nothing was verified, so this is not "
+                    "a pass"
+                ),
+                "how": (
+                    "pass --feature-id <feature-id> (or --scope-feature-id "
+                    "<feature-id> naming a feature that owns @slice-NN "
+                    ".feature files) to scope the completeness check to a "
+                    "resolvable feature"
+                ),
+            }
+        )
+        return _GATE_INDETERMINATE_EXIT_CODE
 
     _emit_with_human_surface(
         {

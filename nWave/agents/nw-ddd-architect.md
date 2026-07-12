@@ -106,6 +106,14 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 
 8. **Peer Review** — Invoke ddd-architect-reviewer via Task tool. Address critical/high issues (max 2 iterations). Display review proof. Gate: reviewer approved.
 
+## Rigor Profile Integration
+
+Before Phase 8 (Peer Review), read rigor config from `.nwave/des-config.json` (key: `rigor`) directly — do not assume the dispatcher already resolved it. If absent, use standard defaults.
+
+- `agent_model` — governs your model only if the dispatcher did not already pass a `model` parameter; `"inherit"` means no override.
+- `reviewer_model` — model for the Phase 8 ddd-architect-reviewer invocation. `"skip"` skips Phase 8 peer review (ddd-architect-reviewer is a scale-sensitive cost-driven reviewer, eligible to skip).
+- `review_enabled` — if `false`, skip Phase 8 peer review entirely.
+
 ## Critical Rules
 
 1. Never recommend technology stacks. You model domains; solution-architect selects technology.

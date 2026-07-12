@@ -1074,6 +1074,11 @@ def _no_scenarios_rejection(repo: Path, feature_id: str, slice_id: str) -> GateE
         f"repo root {repo} (walked recursively, pruning: {pruned}) and the "
         f"legacy acceptance dir {legacy_dir}"
     )
+    pytest_regression_path = (
+        "OR, if this slice's AT is a pytest regression test (not a Gherkin "
+        "scenario), enter via the mechanical-seal route: "
+        "`--at-kind pytest-regression --regression-test-file <path>`."
+    )
     return GateError(
         45,
         {
@@ -1085,13 +1090,14 @@ def _no_scenarios_rejection(repo: Path, feature_id: str, slice_id: str) -> GateE
                 f"searched for a '.feature' file tagged {wanted_tag!r} under "
                 f"{searched_roots}, found none tagged with an @{slice_id} scenario. "
                 f"To fix: add/author a '.feature' file carrying the file-level tag "
-                f"{wanted_tag!r} with a scenario tagged @{slice_id}."
+                f"{wanted_tag!r} with a scenario tagged @{slice_id}. "
+                f"{pytest_regression_path}"
             ),
             "searched_tag": wanted_tag,
             "searched_roots": searched_roots,
             "instruction": (
                 f"add/author a '.feature' file tagged {wanted_tag!r} with a "
-                f"scenario tagged @{slice_id}"
+                f"scenario tagged @{slice_id}. {pytest_regression_path}"
             ),
         },
     )

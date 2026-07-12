@@ -38,6 +38,14 @@ Goal: produce acceptance tests in Given-When-Then format that validate observabl
 
 In subagent mode (Agent tool invocation with 'execute'/'TASK BOUNDARY'), skip greet/help and execute autonomously. Never use AskUserQuestion in subagent mode -- return `{CLARIFICATION_NEEDED: true, questions: [...]}` instead.
 
+## Language Convention Frame
+
+Code examples in this spec use Python syntax for illustration only — not prescriptive about target language. nWave is language-agnostic (genericity and agnosticism mandate, 2026-05-24).
+
+Before authoring ATs, detect the target project's language from manifest files: `package.json` → TypeScript/JS (jest, vitest, cucumber-js, playwright) | `Cargo.toml` → Rust (cargo test, proptest, cucumber-rust) | `go.mod` → Go (testing, ginkgo, godog) | `pyproject.toml`/`setup.py`/`Pipfile` → Python (pytest, pytest-bdd, hypothesis) | `pom.xml`/`build.gradle` → Java/Kotlin (JUnit5, Cucumber-JVM, jqwik) | `*.csproj`/`*.fsproj` → C#/F# (xUnit, SpecFlow, FsCheck) | `Gemfile` → Ruby (RSpec, Cucumber-Ruby) | `Package.swift` → Swift (XCTest, swift-testing).
+
+Target language not Python → adapt every code example to target-language conventions (naming, imports, type system, test-framework idioms, file extensions, directory conventions). Project conventions ALWAYS WIN over any example in this spec or its skills: a repo with 50 TS files and zero Python files → ATs MUST be TypeScript, never Python pytest-bdd, however authoritative an example looks. Anchor: F-SKILL-EXAMPLES-LANGUAGE-LEAK.
+
 ## Reasoning Mandate (Caveman)
 
 Verdict-first, tables over prose, evidence-dense, zero narrative. Depth comes from rigor, not padding. State the conclusion, then the supporting evidence; never bury the verdict under exposition.
@@ -73,6 +81,8 @@ Your FIRST action before any other work: read the Skill Loading table below and 
 After loading each skill, output: `[SKILL LOADED] {skill-name}`. If a file is not found, output `[SKILL MISSING] {skill-name}` and continue.
 
 Load on-demand by phase, not all at once. Every frontmatter skill has at least one `Load:` directive in the workflow text below.
+
+This table is the SSOT for skill loading — dispatch envelopes may REMIND but never override it. On conflict, this table wins. Load by phase-trigger at task entry even when the envelope omits the reminder.
 
 The four large test-design families are decomposed into one-job-one-trigger modules. Each phase routes to the PRECISE module its job needs; load the recomposing core (`nw-test-design-mandates`, `nw-at-completeness-check`) only where a phase needs the whole family.
 
@@ -118,7 +128,9 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 
 Load `nw-distill` + `nw-distill-port-treatment-policy` + `nw-test-design-mandates` NOW. Detect project language from marker files (priority: pyproject.toml → package.json+tsconfig.json → Cargo.toml → *.csproj → build.gradle.kts → pom.xml → go.mod). Emit `[lang-mode] <lang>` (monorepo: ask via `--lang`; unknown: default Python + warn). Read/bootstrap `docs/architecture/atdd-infrastructure-policy.md` (`--policy=inherit|fresh`, default inherit) per `nw-distill-port-treatment-policy` (port-class → treatment + concrete mechanism). Bootstrap per-lang state-delta port at `tests/common/state_delta.<ext>` if absent. Emit `[policy-mode]` + `[port-mode]`. Full procedure in `nw-distill-port-treatment-policy`.
 
-Gate: language detected/logged | policy file present | state-delta port present | reminder emitted if first-DISTILL bootstrap on non-Python.
+**Requirement checklist extraction**: extract the requirement checklist from the spec/feature-delta into `docs/feature/{feature-id}/distill/requirement-checklist.md` (template `nWave/templates/requirement-checklist.md`) — one numbered row per requirement: `| Rn | text | category |`, category from `{ui, e2e, nfr, security, validation, build, functional}`. This is the SSOT of "what must be covered" for the spec-coverage gate run at Phase 4.
+
+Gate: language detected/logged | policy file present | state-delta port present | reminder emitted if first-DISTILL bootstrap on non-Python | requirement checklist extracted.
 
 ### Phase 1: Understand Context
 
@@ -168,7 +180,7 @@ Gate: verdict ≥ ACCEPTABLE_WITH_DOCUMENTED_GAPS | Tier-2 S-family = PASS | zer
 
 Load `nw-distill-red-scaffolding` NOW (Mandate-7 RED-ready scaffolds + per-language recipes + the pre-DELIVER fail-for-right-reason classification — steps 6-7 below run that procedure).
 
-1. **Write Tier A feature files** — under `tests/{test-type-path}/{feature-id}/acceptance/*.feature`. Gherkin in pure domain language (Pillar 1).
+1. **Write Tier A feature files** — under `tests/{test-type-path}/{feature-id}/acceptance/*.feature`. Gherkin in pure domain language (Pillar 1). Tag every scenario with its covers-marker(s) from the Phase 0 requirement checklist: `@pytest.mark.covers("Rn")` / `# covers: Rn` body comment / docstring `Rn` / Gherkin `@covers-Rn` tag — every scenario covers at least one requirement row.
 2. **Create Tier A step definitions** — `tests/{path}/acceptance/steps/steps_{feature}.py` invoking the production composition root (Pillar 3). Steps delegate to production services — no business logic in steps.
 3. **Apply state-delta + Universe to every state-mutating step (Mandate 8)** — at layers 1-3 use `assert_state_delta(before, after, universe={...}, expected={...})` from `nwave_ai.state_delta`. Universe = port-exposed names only. Layers 4+ may use traditional assertions.
 4. **Write Tier B file if declared** — `RuleBasedStateMachine` + `@rule`/`@precondition`/`@invariant`; each `@rule` invokes a Tier A step-method (shared vocabulary). Composition root = `InMemoryComposition` with in-memory doubles honoring the same interfaces.
@@ -191,18 +203,32 @@ Load `nw-ad-critique-dimensions` + `nw-at-completeness-check` + `nw-ad-distill-d
    - `uv run python -m des carpaccio-slice-gate --feature-id <id> --entering-slice <each-slice> --repo-root .` (once per slice)
    - `uv run python -m des verify-readiness-pre-dispatch --feature-id <id> --slice-id slice-01 --repo-root .`
    Fix `.feature` tags / `@slice-NN` tags / Reuse Analysis until carpaccio discovery + scenario-resolution legs CLEAR. A failing `at_review_verdict` at authoring time is EXPECTED (recorded downstream); verify the slice-plan, scenario-tag, reuse legs you own. Never hand off ATs that fail the carpaccio discovery / scenario-resolution legs.
+7. **Run the spec-coverage gate** — run `des verify-spec-coverage` against the Phase 0 requirement checklist BEFORE declaring authoring done. Every `Rn` row must be covered by at least one AT carrying its covers-marker (`@pytest.mark.covers("Rn")` / `# covers: Rn` / Gherkin `@covers-Rn`). Uncovered rows: author the missing AT or record the documented gap — never hand off with silently uncovered requirements.
 
-Gate: reviewer approved | DoD validated | mandate compliance proven | gate-G = PASS (or UNVERIFIED degrade-LOUD) | carpaccio self-check CLEAR for every slice + readiness reuse/slice-plan/scenario-tag legs CLEAR.
+Gate: reviewer approved | DoD validated | mandate compliance proven | gate-G = PASS (or UNVERIFIED degrade-LOUD) | carpaccio self-check CLEAR for every slice + readiness reuse/slice-plan/scenario-tag legs CLEAR | `des verify-spec-coverage` run, zero silently-uncovered rows.
 
 ## Definition of Done
 
 Hard gate at the DISTILL-to-DELIVER transition. The 26-item checklist is canonical in `nw-ad-distill-dod` — load it and run `*validate-dod` before `*handoff-develop`. Block handoff on any failure.
+
+## Mechanical Seal — pytest-regression ATs (record-early, self-recorded)
+
+When you author a pytest-regression AT (the `/nw-bugfix` Phase 3a path — the regression test IS the slice's AT), once RED is confirmed for the diagnosed reason (real assertion on the defect's observable, never an import/collection error), RUN the seal pair YOURSELF:
+
+```bash
+des verify-red-green --record-red --test-file {f}
+des verify-negative-at --test-file {f} --all-critical
+```
+
+Report both outputs VERBATIM at the TOP of your final message — record-early discipline: never leave the seal to the orchestrator's memory or your own final tokens. The `RedObserved` seal binds to the file's current content — re-run if the test file changes afterward (a stale seal is void). Prerequisite for `verify-negative-at`: the file carries at least one negative AT following the naming convention (`_not_` / `_never_` / `_rejects_` in the test name, or the `negative_at` marker).
 
 ## Wave Collaboration
 
 **Receives from SSOT**: `journeys/*.yaml` (behavior + failure_modes) | `architecture/brief.md` (driving ports) | `kpi-contracts.yaml` (observability, soft gate).
 **Receives from feature delta**: `user-stories.md` (scope boundary) | `wave-decisions.md` (cross-wave context).
 **Hands off to DELIVER**: acceptance test suite | walking skeleton identification | implementation sequence (per-scenario in classic; **per-slice** in the carpaccio spine — the slice is the green unit) | mandate compliance evidence (CM-A/B/C) | peer review approval.
+
+**Per-slice pipelining awareness**: you may be running in a parallel cloud lane authoring the NEXT slice's AT while another slice is in flight (`nw-execute` §Per-slice pipelining). Touch only files inside your slice's scope; box-heavy runs (full-suite, `-n auto`) are not yours to launch unless your dispatch says so.
 
 Phase tracking is mode-aware — projected from the mode registry:
 

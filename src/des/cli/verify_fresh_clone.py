@@ -82,20 +82,30 @@ def _indeterminate(what: str, why: str, how: str) -> int:
     return _EXIT_INDETERMINATE
 
 
-def _load_recipe(repo: Path) -> list[_RecipeStep] | int:
-    """Parse the recipe or return the LOUD indeterminate exit code."""
-    recipe_path = repo / RECIPE_RELPATH
+def _load_recipe(source: Path) -> list[_RecipeStep] | int:
+    """Parse the recipe from ``source`` (the committed-tree export) or return
+    the LOUD indeterminate exit code.
+
+    ``source`` MUST be the fresh export of the committed tree
+    (``_export_committed_tree``'s ``dest``), never the working tree -- an
+    untracked/gitignored recipe read from the working tree would false-green
+    the gate (it cannot possibly be present in a real fresh clone).
+    """
+    recipe_path = source / RECIPE_RELPATH
     if not recipe_path.is_file():
         return _indeterminate(
-            what=f"no demo recipe at {RECIPE_RELPATH}",
+            what=f"no demo recipe in the committed tree (export) at {RECIPE_RELPATH}",
             why=(
                 "the fresh-clone gate executes the project's own declared "
-                "install/build/run steps; without a recipe there is nothing "
-                "honest to execute (a silent pass here is the disease)."
+                "install/build/run steps against a fresh export of the "
+                "COMMITTED tree; an untracked/gitignored recipe cannot be "
+                "verified in a fresh clone -- a silent pass reading it from "
+                "the working tree is the disease."
             ),
             how=(
-                f'create {RECIPE_RELPATH} with {{"steps": [{{"name": "build", '
-                '"cmd": ["<your-build-cmd>", "..."]}]} and commit it.'
+                f"git add {RECIPE_RELPATH} && commit it. "
+                f'Recipe shape: {{"steps": [{{"name": "build", '
+                '"cmd": ["<your-build-cmd>", "..."]}]}'
             ),
         )
     try:
@@ -249,15 +259,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     repo = Path(args.repo).resolve()
 
-    steps_or_exit = _load_recipe(repo)
-    if isinstance(steps_or_exit, int):
-        return steps_or_exit
-
     with tempfile.TemporaryDirectory(prefix="nwave-fresh-clone-") as tmp:
         dest = Path(tmp)
         degrade = _export_committed_tree(repo, dest)
         if degrade is not None:
             return degrade
+
+        steps_or_exit = _load_recipe(dest)
+        if isinstance(steps_or_exit, int):
+            return steps_or_exit
+
         exit_code = _run_steps(steps_or_exit, dest)
 
     if exit_code == _EXIT_VERIFIED:

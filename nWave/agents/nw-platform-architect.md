@@ -88,10 +88,14 @@ This wording names the skip, states the reason, proposes the corrective command,
 
 **DESIGN-skip resolution (LOW-1).** DESIGN is optional. When no DESIGN-OUT pass is present because DESIGN was skipped, the absent DESIGN-OUT precondition is **vacuously not-blocking** — a deliberate DESIGN skip is a supported path, never a dead mechanism, never INDETERMINATE, and never a block here. The keystone already handles DESIGN-absent at the DISTILL gate-IN advisory soft-gate; the DEVOPS gate-IN does not re-litigate it. The applicability check on the infra/deploy/observability delta — not the DESIGN-OUT presence — is the decisive gate-IN filter.
 
+**KPI-Driven Observability (mandatory read).** Apex MUST read `outcome-kpis.md` (from DISCUSS) when present and design the three-way transformation for every KPI: Measured-By/Measurement-Plan → data collection (events/logs/analytics) → dashboard visualization → guardrail alerting rules. An outcome KPI with no corresponding data-collection/dashboard/alert design is incomplete DEVOPS work.
+
 At the start of DEVOPS wave execution, create these tasks using TaskCreate and follow them in order:
 
 6. **Completion Validation** — Load `~/.claude/skills/nw-production-readiness/SKILL.md`. Verify acceptance criteria met with passing tests. Validate code quality gates (coverage|static analysis|security scan). Confirm architecture compliance. Gate: all technical quality criteria pass with evidence.
 7. **Production Readiness** — `deployment-strategies` and `production-readiness` already loaded from Phases 3 and 6. Validate deployment scripts/procedures. Verify monitoring|logging|alerting config. Test rollback procedures and environment config. Gate: production readiness checklist complete.
+
+**Environment Inventory (mandatory, BEFORE DEVOPS completes).** Produce `docs/feature/{feature-id}/environments.yaml` — target environments (name/description/platform/preconditions), coexistence matrix (tools that must not break alongside the deployment), platform coverage, deployment assumptions. This is the declared, parseable machine artifact DISTILL consumes to parametrize acceptance scenarios over environments (Mandate 4 / Environmental Realism). Structure and population steps: `nw-devops-environment-inventory` skill. For features that do not install into systems (pure business logic), the inventory reduces to `target_environments: [{name: clean, platform: [linux, macos]}]`. If missing, DISTILL falls back to defaults (clean, with-pre-commit, with-stale-config) — but coverage gaps are Apex's responsibility. Gate: file present, at least one environment entry, coexistence matrix present.
 
 > **Governed flow-v2 scope boundary (f-devops-wave-migration, C7 G-3).** Steps 8–10 below (Stakeholder Demonstration · Deployment Execution · Outcome Measurement & sign-off) are a LIVE production rollout. They are **OUT OF SCOPE for the governed flow-v2 DEVOPS wave**, which DESIGNS the deployment pipeline + KPI→telemetry observability + the security-gate seam and **ends at FEATURE-END, not a live deploy** (see `[REF] Out-of-Scope`). Steps 8–10 apply ONLY to a non-governed / manual `/nw-devops` invocation where the operator explicitly intends a production rollout — the governed flow does not execute them. (The KPI→telemetry mapping that the governed wave DOES own is the design-time map built at the gate-IN/gate-OUT, not the after-the-fact step-10 measurement.)
 
@@ -143,7 +147,7 @@ After review, display:
 
 DESIGN wave artifacts in `docs/design/{feature}/`: `cicd-pipeline.md`|`infrastructure.md`|`deployment-strategy.md`|`observability.md`|`.github/workflows/{feature}.yml` (workflow skeleton)|Platform ADRs in `docs/design/{feature}/adrs/`|`kpi-instrumentation.md` (when outcome-kpis.md provided — data collection|dashboards|alerting design per KPI)
 
-DEVOPS wave artifacts in `docs/demo/` and `docs/evolution/`: production readiness reports|stakeholder demo scripts|outcome measurement dashboards|progress tracking files for resume capability.
+DEVOPS wave artifacts in `docs/demo/` and `docs/evolution/`: production readiness reports|stakeholder demo scripts|outcome measurement dashboards|progress tracking files for resume capability. Environment inventory (mandatory): `docs/feature/{feature-id}/environments.yaml` — the DISTILL Mandate-4 consumer.
 
 ## Examples
 

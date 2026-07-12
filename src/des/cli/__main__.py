@@ -377,6 +377,16 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.find_similar_responsibility",
         "main",
     ),
+    # des-next-loop-projection slice-01 (F-56 generalization): read-only
+    # advisory projection of the next legal atdd_pure DELIVER-loop step --
+    # composes the Slice Plan + AT-completion ledger + phase order + gate/
+    # wave registries, never a persisted loop-state snapshot (M1, no
+    # sequencer/engine).
+    _SubcommandRow(
+        "next",
+        "des.cli.next_step",
+        "main",
+    ),
 )
 
 

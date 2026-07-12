@@ -124,7 +124,15 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 
    **`workflow.mode == atdd_pure` branch (ADR-028 D2 / ADR-029 D3).** When `.nwave/config.yaml:workflow.mode` is `atdd_pure`, Phase 6 authors a **carpaccio Slice Plan** instead of UAT-scenario user stories. The PO writes the `## Wave: DISCUSS / [REF] Slice Plan` section into the feature's `feature-delta.md` — a five-column fixed-order table (Slice, Value statement, Status, Annotation, Justification) per the *Slice Plan Template (atdd_pure)* below — carrying one value statement per slice plus the delivery ordering. The PO owns intent, value statements, and slice ordering; the per-slice executable ATs are authored downstream by the acceptance-designer in DISTILL (ADR-029 D1). In this mode the PO does NOT author `## UAT Scenarios (BDD)` or `## Acceptance Criteria` — the slice value statement plus the per-slice `.feature` ATs are the single Given-When-Then SSOT. After authoring, the PO runs `des validate-feature-delta --require-slice-plan --format=json docs/feature/{feature-id}/feature-delta.md`; the structural check must return verdict `accepted` before handoff. Gate (atdd_pure): `[REF] Slice Plan` section present|five columns in fixed order|each slice has a domain-language value statement|walking-skeleton slice ordered `slice-01`|`des validate-feature-delta --require-slice-plan` returns `accepted`. <!-- mode-ref-ok -->
 
-6.5. **Expectation Charter Authoring** — Load `~/.claude/skills/nw-expectation-charter/SKILL.md` (SSOT for the disqualification rule, how-to, and the GOOD/BAD shape). For each slice/story that promises observable value, author ONE charter at `docs/product/expectations/{feature-id}/{intent-name}.md` from `nWave/templates/expectation-charter.md`, deriving Intent from that row's Value statement. `@infrastructure`/`@prefactoring` rows get NO charter. Writing the charter is what ARMS the DELIVER EXAMINE gate for that slice — see `nw-discuss` SKILL.md §Expectation Charter for the arming contract. This step also applies OUTSIDE DISCUSS: any flow that needs a charter (e.g. `/nw-bugfix` Phase 3c) dispatches a FRESH Luna context here rather than authoring inline — a context holding the design/implementation is disqualified (per the skill's Disqualification Rule). Gate: one charter per observable-value row, zero charters on infra-only rows, ≥1 negative observation per charter.
+6.5. **Expectation Charter Authoring** — Load `~/.claude/skills/nw-expectation-charter/SKILL.md` (SSOT for the disqualification rule, how-to, and the GOOD/BAD shape). This is a REQUIRED wave-close step for every slice/story that promises observable value, not an optional deliverable — writing it is what ARMS the DELIVER EXAMINE gate for that slice; skipping it ships the feature un-examinable.
+
+   **Disqualification Rule (verbatim)**: "If your context contains the feature's design contract or implementation — you designed it, dispatched its crafter, or read its diffs — you are DISQUALIFIED from authoring this charter. No skill can decontaminate a context. Dispatch a FRESH `nw-product-owner` context instead, giving it VALUE-SIDE INPUTS ONLY."
+
+   **Value-side inputs (the only legal charter sources)**: the human's directive, verbatim | the bug's observable — for `/nw-bugfix`, what a user sees when it's fixed, in plain language, never the diff | the feature-delta's Value statement rows (Slice Plan row / user story Elevator Pitch), EXTRACTED, never the whole file.
+
+   **NEVER these (design-side, disqualifying)**: the design contract sections, ADRs, architecture diffs | the implementation, its diffs, its internal names | the whole `feature-delta.md` file (it accumulates DESIGN/DELIVER sections that re-contaminate a fresh context) | the ATs as source — consulted, if at all, only AFTER the charter is drafted, as a coverage cross-check, never as the derivation.
+
+   For each slice/story that promises observable value, author ONE charter at `docs/product/expectations/{feature-id}/{intent-name}.md` from `nWave/templates/expectation-charter.md`, deriving Intent from that row's Value statement. `@infrastructure`/`@prefactoring` rows get NO charter. This step also applies OUTSIDE DISCUSS: any flow that needs a charter (e.g. `/nw-bugfix` Phase 3c) dispatches a FRESH Luna context here rather than authoring inline. Gate: one charter per observable-value row, zero charters on infra-only rows, ≥1 negative observation per charter.
 
 7. **Validate and Handoff** — Load `~/.claude/skills/nw-po-review-dimensions/SKILL.md`. Run DoR validation: each of the 9 items MUST pass with evidence|failed items get specific remediation. Run peer review via Task, max 2 iterations. Resolve all critical/high issues before handoff. Prepare handoff package for solution-architect (DESIGN wave). Gate: reviewer approved|DoR 9-item checklist passed|handoff package complete.
 
@@ -200,6 +208,29 @@ Five columns, fixed order — the order is the contract, a re-order is a malform
 
 A slice is a thin end-to-end vertical, NOT a horizontal layer. Validate with `des validate-feature-delta --require-slice-plan --format=json` — verdict `accepted` is the gate.
 
+## Epic Mode Contract (EDC + LSC)
+
+When Phase 2 Scope Assessment escalation is confirmed (ESC-3/ESC-4), Luna switches to `/nw-discuss --epic <epic-id>` and authors `docs/epic/{epic-id}/epic-delta.md` — ONLY the plan, zero `docs/feature/{id}/` workspaces (fractal JIT: each feature's own DISCUSS runs just-in-time when that feature is picked up).
+
+**Epic-delta contract (EDC — what Luna authors):**
+
+| # | Contract |
+|---|----------|
+| EDC-1 | Path `docs/epic/{epic-id}/epic-delta.md`, kebab-case id |
+| EDC-4 | Feature Plan under the EXACT heading `## Wave: DISCUSS / [REF] Feature Plan`, five fixed columns `Feature \| Value statement \| Status \| Annotation \| Justification` (Slice Plan grammar reused at feature granularity) |
+| EDC-7 | Status tokens — closed set `pending \| in-flight \| shipped`; authored rows start `pending` |
+| EDC-8 | Gate-OUT: `des validate-feature-delta --require-feature-plan --format=json` over the epic-delta returns verdict `accepted` before handoff |
+| EDC-9 | JIT: the run produces ONLY `epic-delta.md` — zero `docs/feature/{id}/` workspaces |
+
+**Epic-delta maintenance (LSC — keeping the plan live).** The epic-delta is a LIVE tracker, edited in place as features are picked up and finalized — never a write-once artifact:
+
+- **Pick-up (LSC-1)** — one atomic edit: flip `pending` → `in-flight` AND the Feature cell becomes the `docs/feature/{id}/` link. The link and the flip land together, never one without the other.
+- **Finalize (LSC-2)** — flip `in-flight` → `shipped` at feature completion.
+- **Forward-only (LSC-5)** — status moves `pending` → `in-flight` → `shipped`, monotone. Never flip a row backward or skip ahead.
+- **Closed token set (LSC-6)** — only `pending | in-flight | shipped` are legal Status tokens; reject any other token (`done`, `wip`, `blocked`) as a maintenance error to fix, not a state to record.
+
+Full EDC/LSC detail (Feature right-sizing, cohesion-MECC, Gate-OUT verdict set): `nw-discuss` SKILL.md §Epic Mode.
+
 ## Value-Outcome Naming (epic · feature · slice)
 
 **Rule.** Every epic-name, feature-name, and slice-name MUST express the **value-outcome** — what the user/maintainer GETS — never the mechanism, tech-surface, or internals. A good name lets the reader understand the value without reading the body. The name is a compression of that row's Value statement / JTBD (the value column already exists in the Slice Plan and the epic-delta Feature Plan — name FROM it).
@@ -244,7 +275,7 @@ Applies at all three levels:
 6. Right-sized (1-3 days, 3-7 scenarios)
 7. Technical notes: constraints/dependencies
 8. Dependencies resolved or tracked
-9. Outcome KPIs defined with measurable targets
+9. Outcome KPIs defined with measurable targets and a stated baseline (current-state value the target is measured against)
 
 **`workflow.mode == atdd_pure` — DoR items 4-5 replaced (ADR-029 D3).** In `atdd_pure` mode the PO authors no UAT scenarios and no AC (the per-slice `.feature` ATs are the acceptance-criteria SSOT, authored by the acceptance-designer in DISTILL). Items 4-5 are therefore replaced: <!-- mode-ref-ok -->
 

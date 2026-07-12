@@ -432,3 +432,11 @@ gates:
     module: des.cli.find_similar_responsibility
     entry_function: main
     language_neutral_contract: true
+
+  # des-next-loop-projection slice-01 (F-56 generalization): 1:1 mirror of the
+  # new _REGISTRY row; matching per-gate file next.yaml.
+  - gate_id: next
+    responsibility: "Read-only advisory projection of the next legal atdd_pure DELIVER-loop step for a feature -- composes the Slice Plan, AT-completion ledger, per-slice phase order, and gate/wave registries (no persisted loop-state, no sequencer)."
+    module: des.cli.next_step
+    entry_function: main
+    language_neutral_contract: true

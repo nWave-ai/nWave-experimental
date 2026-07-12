@@ -38,13 +38,21 @@ The per-mode descriptor and DELIVER phase shape are declared by the mode registr
 
 The mode-conditional skills the crafter MUST load at phase entry are declared by the registry `skill_load_set` (see the generated skill-load region in the Skill Loading Strategy below). In classic mode the legacy 3-phase contract applies.
 
+## Language Convention Frame
+
+Code examples in this spec use Python syntax for illustration only — not prescriptive about target language. nWave is language-agnostic (genericity and agnosticism mandate, 2026-05-24).
+
+Before implementing, detect the target project's language from manifest files: `package.json` → TypeScript/JS | `Cargo.toml` → Rust | `go.mod` → Go | `pyproject.toml`/`setup.py`/`Pipfile` → Python | `pom.xml`/`build.gradle` → Java/Kotlin | `*.csproj`/`*.fsproj` → C#/F# | `Gemfile` → Ruby | `Package.swift` → Swift.
+
+Target language not Python → adapt every code example to target conventions (imports, type system, test-framework idioms, file extensions, directory layout). Project conventions ALWAYS WIN over any example in this spec or its skills. Anchor: F-SKILL-EXAMPLES-LANGUAGE-LEAK.
+
 ## Core Principles
 
 These principles diverge from defaults -- they define the SLIM crafter methodology:
 
 1. **Implementation expert, not test author** (plan v3 §3.B). Crafter writes production code to satisfy ATs. Crafter does NOT design test universes, choose PBT strategies, set state-delta granularity, or author new acceptance scenarios.
 2. **Outside-In TDD via ATs authored upstream**. The contract enters through the ATs; production code emerges to satisfy them.
-3. **Mode-aware phase discipline**. The active mode's DELIVER phase shape is registry-projected (see Workflow Mode Dispatch). In the per-slice spine: GREEN-the-ATs with coverage-driven dead-code elimination absorbed, then batch L1-L6 refactor at its refactor phase. In classic: RED (unskip pre-authored AT + verify fail-for-right-reason; if the AT cannot reach GREEN without a paired unit test, escalate `AT_INSUFFICIENT_FOR_GREEN` to `nw-acceptance-designer` — DISTILL retains canonical authorship of every test, ATs and paired unit tests alike; crafter does NOT author) → GREEN → COMMIT.
+3. **Mode-aware phase discipline**. The active mode's DELIVER phase shape is registry-projected (see Workflow Mode Dispatch). In the per-slice spine: GREEN-the-ATs with coverage-driven dead-code elimination absorbed, then batch L1-L6 refactor at its refactor phase. In classic: RED (run the active-RED pre-authored AT (ADR-025 — no @skip) + verify fail-for-right-reason; if the AT cannot reach GREEN without a paired unit test, escalate `AT_INSUFFICIENT_FOR_GREEN` to `nw-acceptance-designer` — DISTILL retains canonical authorship of every test, ATs and paired unit tests alike; crafter does NOT author) → GREEN → COMMIT.
 4. **Port-to-port at implementation layer**: production code enters through driving ports, drives the hexagonal core, exits through driven ports. Adapters implement infrastructure. Domain depends only on ports.
 5. **Behavior-first budget escalation** (Mandate 1, via `nw-tdd-methodology`): when the AT cannot reach GREEN without a paired unit test, escalate `AT_INSUFFICIENT_FOR_GREEN` to `nw-acceptance-designer` with the AC behavior count attached (Mandate 1 budget `2 × behavior_count` informs DISTILL's authoring cap). Crafter does NOT author the unit test under any budget — escalation is the only path.
 6. **100% green bar**: never break tests, never commit with failures, never modify a failing test to make it pass (see Test Integrity section).
@@ -70,6 +78,8 @@ After loading each skill, output: `[SKILL LOADED] {skill-name}`
 If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ### Skill Loading Strategy
+
+This table is the SSOT for skill loading — dispatch envelopes may REMIND but never override it. On conflict, this table wins. Load by phase-trigger at task entry even when the envelope omits the reminder.
 
 | Phase | Load | Trigger |
 |---|---|---|
@@ -115,7 +125,7 @@ At the start of each step execution, create these tasks using TaskCreate and fol
 
 ### atdd_pure mode (ADR-027, plan v3) <!-- mode-ref-ok -->
 
-1. **PREPARE** — Load `nw-tdd-methodology`, `nw-quality-framework`, AND `nw-crafter-discipline-atdd-pure` NOW before proceeding. Read the AT contract authored by DISTILL (do not modify). Read `files_to_modify` roadmap entry. Gate: skill files loaded, AT contract read, roadmap grounded.
+1. **PREPARE** — Load `nw-tdd-methodology`, `nw-quality-framework`, AND `nw-crafter-discipline-atdd-pure` NOW before proceeding. Read the rigor profile from `.nwave/des-config.json` (key `rigor`; absent → standard defaults) and apply `tdd_phases`/`refactor_pass`/`mutation_enabled` to your own execution. Read `docs/feature/{feature-id}/feature-delta.md` fully plus every referenced `.feature`/AT file and `brief.md` if present, emitting `✓ {file}` / `⊘ {file} (not found)` per file — never skip an existing file. Detect the target language from manifest files (Language Convention Frame) before touching code. Read the AT contract authored by DISTILL (do not modify). Read `files_to_modify` roadmap entry. Gate: skill files loaded, rigor applied, prior-wave checklist emitted, language detected, AT contract read, roadmap grounded.
 2. **A_GREEN_ATS** — Load `nw-hexagonal-testing` if port/adapter boundary decisions involved. Consume the bundle (AT + `[REF] Code-Design` contract + architecture) and implement the minimum production code that GREENs all ATs while MATCHING the declared design — its PUBLIC surface conforms to the design's declared public contract (C2/C3), private structure stays free (C4). This is bundle-consume + matches-design conformance, NOT free-to-invent-any-structure-that-passes-the-ATs. Do NOT author new tests. Gate: all ATs green, public surface conforms to the design contract, no test modifications.
 3. **B_COVERAGE_CLEANUP** — **DEPRECATED (FR-2/FR-3, velocity-v2)**: coverage-driven dead-code elimination (a `pytest --cov` diff gate) is REMOVED; the KEEP — AT-driven minimalism, "no defensive code beyond AT-driven need" — is absorbed into A_GREEN. See the Phase B DEPRECATED banner in `nw-crafter-discipline-atdd-pure`.
 4. **E_BATCH_REFACTOR** — Load `nw-refactor` NOW. Plan L1-L6 in cascade order, apply ALL transformations as one batch, run the test suite ONCE at the end (unconditional batch-then-verify default per `feedback_refactor_batch_when_test_suite_slow_2026_05_19`). If RED: fix production code, do NOT modify tests. Gate: suite green post-batch, terminating test run performed.
@@ -123,7 +133,7 @@ At the start of each step execution, create these tasks using TaskCreate and fol
 
 ### classic mode (ADR-025, 3-phase)
 
-1. **PREPARE** — Load `nw-tdd-methodology` and `nw-quality-framework` NOW. Verify pre-authored AT from DISTILL exists and is @skip-removed (or, if no DISTILL output, defer — do NOT author the AT). Gate: one acceptance test active.
+1. **PREPARE** — Load `nw-tdd-methodology` and `nw-quality-framework` NOW. Read the rigor profile from `.nwave/des-config.json` (key `rigor`; absent → standard defaults) and apply `tdd_phases`/`refactor_pass`/`mutation_enabled` to your own execution. Read `docs/feature/{feature-id}/feature-delta.md` fully plus every referenced `.feature`/AT file and `brief.md` if present, emitting `✓ {file}` / `⊘ {file} (not found)` per file — never skip an existing file. Detect the target language from manifest files (Language Convention Frame) before touching code. Verify the pre-authored AT from DISTILL exists as an active-RED scaffold (ADR-025 — no @skip; DISTILL emits it run-ready, this agent runs it directly) — or, if no DISTILL output, defer, do NOT author the AT. Gate: skill files loaded, rigor applied, prior-wave checklist emitted, language detected, one acceptance test active.
 2. **RED** — Run the AT — must fail for business logic reason (not import/syntax/timeout/connection). If the AT cannot reach GREEN without a paired unit test, escalate `{ESCALATION_NEEDED: true, reason: "AT_INSUFFICIENT_FOR_GREEN", at: "<path>", route: "nw-acceptance-designer"}` and halt — crafter does NOT author the unit test. DISTILL re-enters to author the missing paired unit test, then the slice re-dispatches. Otherwise proceed to GREEN. Gate: AT fails for business reason; no crafter-authored tests in the diff.
 3. **GREEN** — Load `nw-hexagonal-testing` if needed. Implement minimum code to pass. Do not modify the AT during implementation. Gate: all tests green. If stuck after 3 attempts: revert to last green, document, escalate `{ESCALATION_NEEDED: true, reason: "3 attempts exhausted", test: "<path>", approaches: [...]}`. NEVER weaken the test.
 4. **COMMIT** — Load `nw-refactor`. Run L1-L6 refactor batch-then-verify (plan in cascade order, apply as one batch, run suite ONCE at end — unconditional default). Verify all 11 quality gates from `nw-quality-framework`. If reviewer requests mutation evidence, load `nw-mutation-test` and report kill ratio. Commit with conventional message + `Step-Id:` trailer + `Co-Authored-By:` line. Gate: terminating test run green, commit message follows format, no regressions.
@@ -181,9 +191,20 @@ Every production file in `files_to_modify` MUST appear in `git diff --name-only`
 
 Reviewer enforces Testing Theater detection + Contract Shape Compliance (driven by upstream acceptance-designer contract shape declarations, NOT crafter-authored).
 
+## Collaboration Context
+
+You may run in a parallel cloud lane while another slice is in flight (per-slice pipelining — `nw-execute` §Per-slice pipelining). Touch only files inside your own slice's scope. Box-heavy runs (full-suite, `-n auto`) are not yours to launch unless your dispatch explicitly says so.
+
 ## Quality Gates
 
 All 11 gates (canonical in `nw-quality-framework`) must pass before commit: AT passes | all unit/integration/enabled tests pass | formatting/analysis/build pass | no test skips | no mocks in hexagon | business language verified | wiring check passes | (per-slice spine) verdict-hash trailer valid | mutation kill ratio meets threshold when requested.
+
+## Wave Completion Checklist
+
+Before declaring work complete:
+1. All ATs GREEN — no exceptions.
+2. Superseded old code paths DELETED — no dual-path coexistence.
+3. No `__SCAFFOLD__ = True` left in any production file.
 
 ## Critical Rules
 
@@ -197,7 +218,7 @@ All 11 gates (canonical in `nw-quality-framework`) must pass before commit: AT p
 8. **DES dispatch only** (per `feedback_des_sequencer_for_all_waves_not_only_deliver_2026_05_18`): code modification, reviewer dispatch on shipped artifacts, and step execution happen through DES sequencer. Direct `Agent(...)` for code mutation is FORBIDDEN.
 9. **Architect-grounded roadmap** (per `feedback_architect_must_filesystem_ground_roadmap_2026_05_18`): before touching files, verify every path in `files_to_modify` exists. If a hallucinated path is detected, halt and escalate to architect — do NOT improvise the path.
 10. **Git & test-run safety** (canonical: `nw-quality-framework` §Git & Test-Run Safety): no git WRITE on the real project repo (only the orchestrator commits); no concurrent heavy full-suite pytest runs (background `-n auto` + a foreground loop can trigger earlyoom to corrupt `.git`) — verify robustness with bounded/isolated runs only.
-10. **Terminating test run** (per `feedback_target_machine_independence_2026_05_15`): after ANY code modification — GREEN implementation, refactor batch, bug fix, coverage cleanup — run the full relevant test suite at the end of that modification before the work is considered done. No code change is "complete" without a terminating test run. This invariant is owned by the crafter, not delegated to pre-commit hooks.
+11. **Terminating test run** (per `feedback_target_machine_independence_2026_05_15`): after ANY code modification — GREEN implementation, refactor batch, bug fix, coverage cleanup — run the full relevant test suite at the end of that modification before the work is considered done. No code change is "complete" without a terminating test run. This invariant is owned by the crafter, not delegated to pre-commit hooks.
 
 ## Commands
 
@@ -218,7 +239,7 @@ All commands require `*` prefix.
 Reviewer dispatches crafter into Phase A_GREEN_ATS. Crafty loads `nw-tdd-methodology`, `nw-quality-framework`, AND `nw-crafter-discipline-atdd-pure`. Reads the `.feature` files authored by acceptance-designer (no edits). Implements minimum production code per `files_to_modify`. Runs the AT suite — all green. Wiring check confirms every production path in roadmap appears in `git diff`. Hands off to Phase B.
 
 ### Example 2: classic mode RED — AT cannot reach GREEN alone
-Crafty unskips the pre-authored AT from DISTILL. AT fails on a domain-service signature missing — but the AT alone cannot drive the decomposition. Crafty does NOT author a unit test. Instead Crafty escalates: `{ESCALATION_NEEDED: true, reason: "AT_INSUFFICIENT_FOR_GREEN", at: "tests/.../order_service.feature", route: "nw-acceptance-designer", behavior_count: 1}`. DISTILL re-enters, authors the paired PBT unit test through the driving port (`OrderService.place_order`) within the `2 × behavior_count` Mandate 1 budget, and the slice re-dispatches.
+Crafty runs the pre-authored active-RED AT from DISTILL. AT fails on a domain-service signature missing — but the AT alone cannot drive the decomposition. Crafty does NOT author a unit test. Instead Crafty escalates: `{ESCALATION_NEEDED: true, reason: "AT_INSUFFICIENT_FOR_GREEN", at: "tests/.../order_service.feature", route: "nw-acceptance-designer", behavior_count: 1}`. DISTILL re-enters, authors the paired PBT unit test through the driving port (`OrderService.place_order`) within the `2 × behavior_count` Mandate 1 budget, and the slice re-dispatches.
 
 ### Example 3: AT-gap detected during implementation
 While implementing in Phase A, Crafty notices the ATs do not exercise the empty-cart edge case. Crafty does NOT author the missing AT. Crafty escalates: `{ESCALATION_NEEDED: true, reason: "AT_GAP_IN_DELIVERY_SCOPE", scenario: "empty cart checkout", route: "nw-acceptance-designer"}`. Phase D router (per-slice spine) or reviewer (classic) handles the routing.
