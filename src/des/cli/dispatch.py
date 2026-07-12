@@ -73,6 +73,23 @@ _LANES_REQUIRING_JUSTIFICATION = frozenset({"bugfix"})
 #: ``D_DISTILL``). Mirrors ``des.domain.des_marker_parser._FEATURE_END_SCOPE``.
 _FEATURE_END_SCOPE = "feature-end"
 
+#: Default AGENT_IDENTITY -- every phase not named in ``_PHASE_AGENTS`` below
+#: (all current implementation phases: ``A_GREEN``, ``D_REFACTOR_COMMIT``, the
+#: review phases, ...) keeps naming the crafter. Mirrors ADR-025's SLIM-crafter
+#: contract: the crafter implements, it never authors tests.
+_DEFAULT_AGENT = "nw-software-crafter"
+
+#: Phase -> agent override map (GDP-5, the producing tool derives the correct
+#: agent per phase instead of hardcoding one for every phase). ``D_DISTILL``
+#: is the AT-authoring phase -- ADR-025 reserves acceptance-test authorship to
+#: ``nw-acceptance-designer``; the SLIM crafter never authors tests. Only
+#: ``D_DISTILL`` is routed here today -- review phases (``C_REVIEWER_AUDIT``,
+#: ``F_FINAL_REVIEW``) are an explicit out-of-scope follow (see this fix's
+#: feature notes), left on ``_DEFAULT_AGENT``.
+_PHASE_AGENTS: dict[str, str] = {
+    ATDDPurePhase.D_DISTILL.value: "nw-acceptance-designer",
+}
+
 
 def _canonical_phase_values() -> tuple[str, ...]:
     """The live ``ATDDPurePhase`` canonical member values (aliases excluded --
@@ -123,7 +140,7 @@ def _section_body(
     """
     bodies: dict[str, str] = {
         "DES_METADATA": (f"Slice: {slice_id}\nFeature: {feature_id}\nPhase: {phase}\n"),
-        "AGENT_IDENTITY": "Agent: nw-software-crafter\n",
+        "AGENT_IDENTITY": f"Agent: {_PHASE_AGENTS.get(phase, _DEFAULT_AGENT)}\n",
         "SKILL_LOADING": (
             "Before starting, read your skill files for methodology guidance.\n"
             "Always load at phase entry: nw-tdd-methodology, nw-quality-framework.\n"
