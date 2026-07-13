@@ -875,6 +875,26 @@ class RobustnessGateComposition:
         project_root = self._scenario_workspace
         assert project_root is not None, "Given step must stage a workspace"
 
+        # des record-at-review-verdict now refuses an APPROVED verdict for
+        # an unresolvable feature/slice (feature-delta.md absent, or
+        # slice_id not a Slice Plan row) -- the silent-false-cert fix. Stage
+        # a minimal feature-delta.md with a genuine slice-05 Slice Plan row
+        # in this per-scenario workspace so the existence check passes and
+        # AT1 still exercises its OWN concern (the robustness-gate wiring
+        # effect), not the feature/slice-existence gate.
+        feature_delta_path = (
+            project_root / "docs" / "feature" / feature_id / "feature-delta.md"
+        )
+        feature_delta_path.parent.mkdir(parents=True, exist_ok=True)
+        feature_delta_path.write_text(
+            f"# Feature Delta: {feature_id}\n\n"
+            "## Wave: DISCUSS / [REF] Slice Plan\n\n"
+            "| Slice | Value statement | Status | Annotation | Justification |\n"
+            "|---|---|---|---|---|\n"
+            "| slice-05 | robustness gate wired into AT-review producer | done | | |\n",
+            encoding="utf-8",
+        )
+
         # Env-parity (F21/RCA-#68): the producer consults check_robustness_density
         # as a NESTED subprocess with cwd=--repo-root (= this workspace). Mark the
         # workspace as a developer checkout so that nested gate autoskips the

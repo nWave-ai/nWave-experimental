@@ -89,6 +89,31 @@ def _read_verdict_records(
     )
 
 
+def _stage_feature_delta_with_slice_01(repo_root: Path, feature_id: str) -> None:
+    """Minimal, realistic feature-delta.md staging a genuine `slice-01`
+    Slice Plan row for `feature_id` -- required since `des record-at-review-
+    verdict` now refuses an APPROVED verdict for an unresolvable feature/
+    slice (the silent-false-cert fix, class #185/#126). Mirrors the
+    canonical `[REF] Slice Plan` shape used by `carpaccio_format` and
+    `test_record_at_review_verdict_refuses_imaginary_slice.py`. Staging this
+    fixture does NOT touch what each test asserts -- it only satisfies the
+    now-required existence check so each test still exercises its OWN
+    concern (the rust-regression `--at-kind` parsing/refusal behaviour).
+    """
+    feature_delta_path = (
+        repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    )
+    feature_delta_path.parent.mkdir(parents=True, exist_ok=True)
+    feature_delta_path.write_text(
+        f"# Feature Delta: {feature_id}\n\n"
+        "## Wave: DISCUSS / [REF] Slice Plan\n\n"
+        "| Slice | Value statement | Status | Annotation | Justification |\n"
+        "|---|---|---|---|---|\n"
+        "| slice-01 | rust regression at-kind coverage | done | | |\n",
+        encoding="utf-8",
+    )
+
+
 def _write_rust_fixture_with_two_tests(path: Path) -> None:
     """A controlled, pytest-independent Rust `.rs` file: two `#[test]` fns,
     realistic idiom (descriptive names under `#[test]`, NOT `test_`-prefixed
@@ -136,6 +161,7 @@ def test_records_a_rust_regression_at_review_verdict_with_two_test_functions(
     empty string.
     """
     repo = tmp_path / "repo"
+    _stage_feature_delta_with_slice_01(repo, _FEATURE_ID)
     rust_file_rel = "tests/rust/regression/balance_invariants.rs"
     _write_rust_fixture_with_two_tests(repo / rust_file_rel)
 
@@ -198,6 +224,7 @@ def test_rust_regression_at_kind_rejects_a_rust_file_with_zero_test_functions(
     `ATReviewVerdict` record may ever reach the ledger.
     """
     repo = tmp_path / "repo"
+    _stage_feature_delta_with_slice_01(repo, _FEATURE_ID)
     rust_file_rel = "tests/rust/regression/no_tests_here.rs"
     _write_rust_fixture_with_zero_tests(repo / rust_file_rel)
 
@@ -300,6 +327,7 @@ def test_rust_regression_at_kind_refuses_undecodable_file_with_structured_diagno
     uncaught `UnicodeDecodeError` propagating as a raw traceback.
     """
     repo = tmp_path / "repo"
+    _stage_feature_delta_with_slice_01(repo, _FEATURE_ID)
     rust_file_rel = "tests/rust/regression/garbage_bytes.rs"
     _write_rust_fixture_with_garbage_bytes(repo / rust_file_rel)
 
@@ -356,6 +384,7 @@ def test_rust_regression_at_kind_never_lets_a_raw_traceback_escape_on_garbage_by
     absent, not merely "usually doesn't happen".
     """
     repo = tmp_path / "repo"
+    _stage_feature_delta_with_slice_01(repo, _FEATURE_ID)
     rust_file_rel = "tests/rust/regression/garbage_bytes_negative.rs"
     _write_rust_fixture_with_garbage_bytes(repo / rust_file_rel)
 
@@ -497,6 +526,7 @@ def test_rust_regression_at_kind_rejects_a_commented_out_test_marker_before_a_re
     it does not crash or error out.
     """
     repo = tmp_path / "repo"
+    _stage_feature_delta_with_slice_01(repo, _FEATURE_ID)
     rust_file_rel = "tests/rust/regression/commented_test_marker.rs"
     _write_rust_fixture_with_commented_test_marker_before_real_fn(repo / rust_file_rel)
 
@@ -551,6 +581,7 @@ def test_rust_regression_at_kind_never_records_a_fabricated_at_id_from_a_comment
     happen".
     """
     repo = tmp_path / "repo"
+    _stage_feature_delta_with_slice_01(repo, _FEATURE_ID)
     rust_file_rel = "tests/rust/regression/commented_test_marker_negative.rs"
     _write_rust_fixture_with_commented_test_marker_before_real_fn(repo / rust_file_rel)
 
@@ -611,6 +642,7 @@ def test_rust_regression_at_kind_hardening_cases_already_pass_today(
     `fn b()` must record `at_ids == ["a"]` only.
     """
     repo = tmp_path / "repo"
+    _stage_feature_delta_with_slice_01(repo, _FEATURE_ID)
     fixture_writer(repo / rust_file_rel)
 
     exit_code, stdout, stderr = _run_record_at_review_verdict(

@@ -336,6 +336,75 @@ def _slice_at_derivation(
     return at_ids, at_content_hash
 
 
+def _refuse_unresolvable_feature_slice(
+    feature_id: str, slice_id: str, error: str
+) -> GateError:
+    """Build the refusal GateError for an unresolvable feature/slice.
+
+    Exit 2, ``ATReviewVerdictRefused`` / ``unresolvable-feature-slice`` --
+    self-explaining what/why/how (routes the operator to the missing
+    feature-delta + Slice Plan row, never a bare non-zero exit).
+    """
+    return GateError(
+        2,
+        {
+            "event": "ATReviewVerdictRefused",
+            "reason": "unresolvable-feature-slice",
+            "error": error,
+            "how": (
+                f"author the feature-delta + Slice Plan row for "
+                f"{feature_id}/{slice_id} before recording an AT-review verdict"
+            ),
+        },
+    )
+
+
+def _verify_feature_slice_exists(
+    repo_root: Path, feature_id: str, slice_id: str
+) -> None:
+    """Refuse an APPROVED verdict for a feature/slice that does not exist.
+
+    Raises :class:`GateError` (exit 2) when
+    ``docs/feature/{feature_id}/feature-delta.md`` is absent, OR it exists but
+    ``slice_id`` is not a row in its ``[REF] Slice Plan`` table. Reuses
+    ``carpaccio_format.parse_slice_plan`` -- the same tolerant Slice Plan
+    parser the carpaccio entry/exit gates use -- rather than hand-rolling a
+    parallel parser (bugfix fix-review-verdict-existence-check, slice-01).
+    """
+    from des.cli import carpaccio_format
+
+    feature_delta_path = (
+        repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    )
+    if not feature_delta_path.is_file():
+        raise _refuse_unresolvable_feature_slice(
+            feature_id,
+            slice_id,
+            f"no feature-delta at docs/feature/{feature_id}/feature-delta.md "
+            "-- cannot certify a review for a feature/slice that does not "
+            "exist",
+        )
+
+    feature_delta_text = feature_delta_path.read_text(encoding="utf-8")
+    try:
+        slice_plan = carpaccio_format.parse_slice_plan(feature_delta_text)
+    except GateError as parse_error:
+        raise _refuse_unresolvable_feature_slice(
+            feature_id,
+            slice_id,
+            f"docs/feature/{feature_id}/feature-delta.md has no valid "
+            f"'[REF] Slice Plan' section: {parse_error.payload.get('error')}",
+        ) from parse_error
+
+    if slice_plan.row_for(slice_id) is None:
+        raise _refuse_unresolvable_feature_slice(
+            feature_id,
+            slice_id,
+            f"{slice_id!r} is not a row in docs/feature/{feature_id}/"
+            "feature-delta.md's '[REF] Slice Plan' table",
+        )
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="at_review_verdict",
@@ -414,6 +483,12 @@ def main(argv: list[str] | None = None) -> int:
         (repo_root / args.regression_test_file) if args.regression_test_file else None
     )
     try:
+        if args.verdict == _APPROVED:
+            # Existence pre-check (bugfix fix-review-verdict-existence-check,
+            # slice-01): refuse an APPROVED verdict for an imaginary
+            # feature/slice BEFORE any ledger write. NEEDS_REVISION already
+            # writes nothing, so this check applies to APPROVED only.
+            _verify_feature_slice_exists(repo_root, args.feature_id, args.slice_id)
         if (
             at_kind in ("pytest-regression", "rust-regression")
             and regression_test_file is None
