@@ -84,3 +84,30 @@ Waiting on a dispatched agent is NOT idle time. While a crafter greens slice N:
 
 Rule: LLM lanes are cloud (parallel is ~free); the box is the constraint. Pipeline the
 cloud, serialize the box. Canonical prose + anchor: `nw-deliver` §Per-slice pipelining.
+
+Self-test at every dispatch and every wait — answer it, don't skim it: **while this agent
+runs, what ELSE is running?** If the honest answer is "nothing", you are burning wall-clock
+on a lane that costs nothing to parallelise. Name the next INDEPENDENT unit — the AT for
+slice N+1, a fresh PO for its charter, a friction relay, a delta reconciliation — and fire
+it NOW, before you wait. The test fails on "I'll do it after": *after* IS the dead time.
+
+Two failure shapes, both drift, and they pull in opposite directions:
+- **Idling the cloud** — one agent in flight, zero others, while independent work sits queued.
+  LLM lanes are ~free; an empty cloud is pure wall-clock burned, and it never shows up as an
+  error, only as a slow day.
+- **Colliding on the box** — two heavy gates at once, or one launched into a memory-starved
+  window. Two heavy gates do not run faster together; they run slower, and under earlyoom one
+  of them dies mid-write and takes the ledger with it. The box is the CONSTRAINT: it does not
+  reward optimism.
+
+Before firing a lane, two checks: (1) does it touch a file a LIVE lane touches? Then it is not
+parallelism, it is a race — serialize it. (2) Is it box-heavy? Then read the box FIRST, and read
+it as a WINDOW, not an instant: an instantaneous number is not a state. Report and threshold on
+BOTH `load` AND free RAM — and the STOP threshold is the **RAM**, not the load. Load is
+contention (it absorbs); RAM is the wall (earlyoom does not negotiate). Under ~2 GB free:
+nobody launches anything heavy; whoever is running finishes; everyone else waits.
+
+Empirical anchors: 2026-07-13 — three cloud lanes (AT correction · AT authoring · two charters)
+ran green while the box sat free for the next seal; the alternative was three sequential waits.
+Same day, the opposite shape: a reinstall fired into a 322 MB-free window was reaped by earlyoom,
+and the retry at 2 GB free succeeded unchanged — the command was never the problem, the window was.

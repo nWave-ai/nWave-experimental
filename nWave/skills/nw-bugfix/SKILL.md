@@ -23,9 +23,21 @@ End-to-end bug fix pipeline: diagnose root cause, review findings with user, the
 ```
 INPUT: "{bug-description}"
   │
-  ├─ Phase 1: Root Cause Analysis (@nw-troubleshooter)
-  │   └─ /nw-root-why "{bug-description}"
-  │   └─ Output: RCA document with root cause chain + fix proposal
+  ├─ t=0 — TWO INDEPENDENT DERIVATIONS START IN PARALLEL (both from the raw bug, before any code is read):
+  │   │
+  │   ├─ Phase 1: Root Cause Analysis (@nw-troubleshooter)                 ☁️ cloud
+  │   │   └─ /nw-root-why "{bug-description}"   (derives from the CODE)
+  │   │   └─ Output: RCA document with root cause chain + fix proposal
+  │   │
+  │   └─ Phase 0-charter: Expectation Charter (FRESH @nw-product-owner)    ☁️ cloud
+  │       └─ Derives from the bug's OBSERVABLE ONLY (what a user sees) + the human's verbatim bug
+  │          description — NEVER the RCA chain or the fix diff (that context does not exist yet)
+  │       └─ Output: docs/product/expectations/fix-{bug-summary}/{intent}.md
+  │       └─ WHY t=0: the charter does NOT depend on the RCA. Authoring it here — before any
+  │          contaminated context exists — makes the disqualification rule STRUCTURALLY EASY to obey
+  │          instead of a virtue to remember: there is nothing yet to resist. GDP-1 (fire-early) +
+  │          GDP-5 (cost on the system, not the operator). Same two-independent-derivations rule DISTILL
+  │          already applies (code-side AT vs observable-side charter).
   │
   ├─ Phase 2: User Review (INTERACTIVE — STOP here; non-blocking under an
   │   │        autonomous loop with standing authorization — see Phase 2)
@@ -33,25 +45,59 @@ INPUT: "{bug-description}"
   │   └─ User confirms root cause + approves fix direction
   │   └─ If user rejects → refine RCA or stop
   │
-  ├─ Phase 3a: Regression Test (@nw-acceptance-designer, RED)
+  ├─ Phase 3a: Regression Test (@nw-acceptance-designer, RED)              🔒 box (RED seal)
   │   └─ Author the regression test from the RCA's root cause + proposed fix
   │   └─ Test MUST fail against current code for the diagnosed reason (not import/syntax error)
   │
-  ├─ Phase 3b: Fix (branches on workflow.mode, paradigm-selected crafter, GREEN) <!-- mode-ref-ok -->
+  ├─ Phase 3b: Fix (branches on workflow.mode, paradigm-selected crafter, GREEN)  🔒 box <!-- mode-ref-ok -->
   │   └─ classic   → /nw-deliver "fix-{bug-id}" — roadmap-based bugfix flow
   │   └─ atdd_pure → single carpaccio slice via the /nw-execute per-slice cycle, A_GREEN <!-- mode-ref-ok -->
   │   └─ Paradigm detection determines crafter (OOP or FP)
   │   └─ Crafter implements against the already-RED test only — never authors or edits the test
   │
-  └─ Phase 3c: EXAMINE (@nw-user-examiner "Vera") — BEFORE the commit
-      └─ Dispatch a FRESH @nw-product-owner to author a light expectation charter from
-         the bug's OBSERVABLE only (never the RCA/fix diff — disqualified context)
-      └─ Vera runs the FIXED product through its real surface (CLI/HTTP/browser) — not the unit test
+  └─ Phase 3c: EXAMINE (@nw-user-examiner "Vera") — BEFORE the commit      🔒 box
+      └─ Vera runs the FIXED product through its real surface (CLI/HTTP/browser) — not the unit test —
+         against the charter ALREADY authored at t=0 (NO charter authoring happens here anymore)
       └─ Record the verdict via `des record-examine-verdict` BEFORE COMMIT; PASS gates the commit
       └─ A_GREEN → EXAMINE → COMMIT — the same DoD as /nw-execute; examine is NEVER skipped
+
+LANE MAP — so the orchestrator parallelizes BY CONSTRUCTION, not by deduction:
+  ☁️ cloud  (fan-out over N defects, ~0 box cost): Phase 1 RCA · Phase 0-charter · Phase 3a AT authoring
+  🔒 box    (ONE box, serialized — one defect at a time): RED seal (verify-red-green) · Phase 3b crafter
+            GREEN · Vera EXAMINE · commit-slice
+  Across N defects it is a PIPELINE, not a swarm: fan the cloud lanes out, then feed defects through the
+  single box lane one at a time — almost all the speedup, zero disk, zero lock, zero merge conflicts.
+  NO worktree as a parallelism mechanism (cargo does not share target/: either N×20GB + N cold builds,
+  or serialize on the lock — exactly what a swarm was meant to avoid). A swarm does not multiply the box.
 ```
 
 ## Execution Steps
+
+> **Phase 1 (RCA) and Phase 0-charter both start at t=0, in parallel.** They are two
+> INDEPENDENT derivations of the same bug — Phase 1 from the CODE, Phase 0-charter from the
+> OBSERVABLE — and neither depends on the other. Dispatch them together; do NOT serialize the
+> charter after the RCA. Both are ☁️ cloud lanes (fan out over N defects at ~0 box cost).
+
+### Phase 0-charter: Expectation Charter (t=0, parallel with RCA)
+
+Authored at t=0 — NOT at Phase 3c — precisely so the authoring context is uncontaminated.
+The bugfix orchestrator that has read the RCA + the fix diff is a DISQUALIFIED author (an
+author holding the design/implementation cannot produce an uncontaminated charter); at t=0
+that context does not exist yet, so the disqualification rule is satisfied BY CONSTRUCTION
+rather than by remembering to resist the "I have it all in my head, I'll write it inline"
+temptation. GDP-1 (fire the guard early) + GDP-5 (cost on the system, not the operator).
+
+Dispatch a FRESH `@nw-product-owner` context (never inline by this orchestrator). Give it
+ONLY value-side inputs: the bug's OBSERVABLE (what a user sees/does that is currently wrong —
+the symptom) plus the human's original bug description verbatim. NEVER the RCA's causal chain
+or a fix diff — at t=0 neither exists. The PO loads
+`~/.claude/skills/nw-expectation-charter/SKILL.md` (Disqualification Rule + authoring steps
+are SSOT'd there) and writes one short file under
+`docs/product/expectations/fix-{bug-summary}/{intent-name}.md` naming how a demanding user
+checks the fix from the outside (CLI/HTTP/browser, no source reading). Cheap (a paragraph),
+high-value — it is the oracle Vera examines against at Phase 3c. Push hard for the NEGATIVE
+oracles (the ways this cure could itself become a disease); authored before the fix exists,
+they are exactly the failure modes a fix-focused mind omits.
 
 ### Phase 1: Root Cause Analysis
 
@@ -230,19 +276,16 @@ The fix is not done when the regression test is green — it is done when a dema
 user, running the FIXED product through its real surface, observes the bug gone.
 Phase 3c runs after Phase 3b's GREEN and BEFORE the commit:
 
-1. **Dispatch a FRESH `nw-product-owner` context to author the expectation charter**
-   — NOT inline by this orchestrator, which has just read the RCA and the fix diff
-   (Phase 1-3b) and is therefore a DISQUALIFIED context per the charter-governance
-   rule (an author holding the design/implementation cannot produce an
-   uncontaminated charter). Give the fresh PO ONLY value-side inputs: the bug's
-   OBSERVABLE (what a user sees/does that is now correct — the symptom gone) plus
-   the human's original bug description verbatim — NEVER the RCA's causal chain
-   or the fix diff. The PO loads `~/.claude/skills/nw-expectation-charter/SKILL.md`
-   (Disqualification Rule + authoring steps are SSOT'd there) and writes one short
-   file under `docs/product/expectations/fix-{bug-summary}/{intent-name}.md` naming
-   how a demanding user checks the fix from the outside (CLI/HTTP/browser, no
-   source reading). This is cheap (a paragraph) and high-value — it is the oracle
-   Vera examines against.
+1. **The charter ALREADY EXISTS — it was authored at t=0 (Phase 0-charter), in parallel
+   with the RCA, NOT here.** By Phase 3c this orchestrator has read the RCA + the fix diff
+   (Phase 1-3b) and is a DISQUALIFIED author (the charter-governance rule: an author holding
+   the design/implementation cannot produce an uncontaminated charter). That is exactly WHY
+   the charter is not authored at this point: it was written at t=0, before any contaminated
+   context existed, by a FRESH `@nw-product-owner` given ONLY the bug's OBSERVABLE + the
+   human's verbatim description (see §Phase 0-charter). Here, simply LOCATE the existing
+   charter under `docs/product/expectations/fix-{bug-summary}/{intent-name}.md`. If it is
+   somehow missing (the parallel t=0 dispatch failed), dispatch the FRESH PO to author it NOW
+   from the OBSERVABLE ONLY — never inline, never from the RCA/fix diff — then continue.
 2. **Dispatch @nw-user-examiner (Vera)** on the charter against the REAL fixed
    product (the installed `des` / the running surface), Haiku model. Build a
    concrete repro first and verify it yourself, then hand Vera the exact commands.
@@ -279,7 +322,8 @@ Only after a recorded Vera PASS does the bugfix proceed to COMMIT.
 - [ ] Regression test authored by @nw-acceptance-designer, fails with the bug
 - [ ] Fix implemented by the paradigm-selected crafter that makes the regression test pass, without the crafter touching the test itself
 - [ ] All existing tests still pass (no regressions)
-- [ ] **EXAMINE (Phase 3c): a light charter authored by a FRESH `nw-product-owner` dispatch (never inline by the bugfix orchestrator) + @nw-user-examiner (Vera) PASS recorded via `des record-examine-verdict` BEFORE the commit — examine is the DoD, never skipped**
+- [ ] **Charter (Phase 0-charter) authored at t=0, in PARALLEL with the RCA, by a FRESH `nw-product-owner` from the OBSERVABLE only (never inline by the bugfix orchestrator, never from the RCA/fix diff)**
+- [ ] **EXAMINE (Phase 3c): @nw-user-examiner (Vera) PASS recorded via `des record-examine-verdict` against the t=0 charter, BEFORE the commit — examine is the DoD, never skipped**
 - [ ] Commit with conventional message: `fix(scope): description`
 
 ## Examples
@@ -317,5 +361,6 @@ Phase 3b: `/nw-deliver "fix-compose-none-guard"` → paradigm detected as FP →
 - The regression test is the primary deliverable — it prevents the bug from recurring. It is authored by @nw-acceptance-designer (Phase 3a), never by the crafter — the SLIM-crafter no-test-authorship discipline applies to `/nw-bugfix` exactly as it does everywhere else in nWave.
 - Keep the fix minimal. Refactoring belongs in `/nw-refactor`, not here.
 - If the RCA reveals a design flaw (not just a code bug), escalate to `/nw-design` before fixing.
-- Phase 3a (@nw-acceptance-designer, regression test) always runs first, regardless of mode. Phase 3b branches on `workflow.mode`: `classic` delegates to `/nw-deliver` (one-step roadmap, GREEN only); `atdd_pure` runs a single carpaccio slice via the `/nw-execute` per-slice cycle starting at `A_GREEN`. <!-- mode-ref-ok --> Both modes handle paradigm detection, DES enforcement, and rigor profile automatically for the fix implementor; neither touches the test.
-- **Phase 3c (EXAMINE) always runs before the commit, in BOTH modes.** The `A_GREEN → EXAMINE → COMMIT` DoD is not waived for a bugfix: a light charter is authored by a FRESH `nw-product-owner` dispatch (the bugfix orchestrator, holding the RCA + fix diff, is disqualified from authoring it inline — see `nw-expectation-charter` skill) + @nw-user-examiner (Vera) records a PASS via `des record-examine-verdict` before `des commit-slice` will commit. Green regression tests prove the code; EXAMINE proves the running system through the real surface. Skipping examine on the "light" bugfix cycle is the spec-drift this closes — examine is high-value and low-cost, never skipped.
+- **Phase 0-charter and Phase 1 (RCA) both start at t=0, in parallel** — two independent derivations of the same bug (charter from the OBSERVABLE, RCA from the CODE). The charter does not depend on the RCA, so authoring it at t=0 keeps its context uncontaminated BY CONSTRUCTION. Phase 3a (@nw-acceptance-designer, regression test) runs next, regardless of mode. Phase 3b branches on `workflow.mode`: `classic` delegates to `/nw-deliver` (one-step roadmap, GREEN only); `atdd_pure` runs a single carpaccio slice via the `/nw-execute` per-slice cycle starting at `A_GREEN`. <!-- mode-ref-ok --> Both modes handle paradigm detection, DES enforcement, and rigor profile automatically for the fix implementor; neither touches the test.
+- **The charter is authored at t=0 (Phase 0-charter), NOT at Phase 3c.** By Phase 3c the bugfix orchestrator, holding the RCA + fix diff, is disqualified from authoring it — so the charter is authored earlier, at t=0, by a FRESH `nw-product-owner` from the OBSERVABLE only (before any contaminated context exists — see `nw-expectation-charter` skill + §Phase 0-charter). This makes the disqualification rule structurally easy to obey rather than a virtue to remember (GDP-1 fire-early + GDP-5 cost-on-system).
+- **Phase 3c (EXAMINE) always runs before the commit, in BOTH modes.** The `A_GREEN → EXAMINE → COMMIT` DoD is not waived for a bugfix: @nw-user-examiner (Vera) records a PASS via `des record-examine-verdict` against the t=0 charter before `des commit-slice` will commit. Green regression tests prove the code; EXAMINE proves the running system through the real surface. Skipping examine on the "light" bugfix cycle is the spec-drift this closes — examine is high-value and low-cost, never skipped.

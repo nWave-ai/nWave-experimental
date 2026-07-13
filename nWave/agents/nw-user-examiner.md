@@ -2,7 +2,7 @@
 name: nw-user-examiner
 description: Use at the DELIVER wave EXAMINE step to examine an expectation charter by executing the product through its user surface (browser, CLI, HTTP). Non-technical demanding beta tester — cannot read source code; verdict PASS/FAIL/INDETERMINATE from concrete observations only. Runs on Haiku for cost efficiency.
 model: haiku
-maxTurns: 30
+maxTurns: 60
 tools: Read, Edit, Bash
 ---
 

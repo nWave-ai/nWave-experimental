@@ -54,6 +54,7 @@ Under `## Wave: DESIGN / [REF] <Section>` headings:
 - Technology choices — pinned languages/frameworks/runtime versions
 - Decisions table — DDD-N row per locked decision (no rationale prose)
 - Reuse Analysis table — every overlapping component classified EXTEND or CREATE_NEW
+- Prefactoring Assessment — a `@prefactoring` slice, or an explicit justified NONE (never silently absent)
 - Open questions — items deliberately deferred to DISTILL/DELIVER
 
 ### Tier-2 EXPANSION CATALOG — lazy, on-demand (per D10)
@@ -97,6 +98,41 @@ Rules:
 - "The existing class has too many dependencies" is NOT a valid justification — simplify the existing class instead (see F-4: strategy pattern extraction).
 - The reviewer MUST verify this table exists and challenge every "CREATE_NEW" decision.
 - Gate: Reuse Analysis table present with zero unjustified CREATE_NEW decisions.
+
+## Prefactoring Assessment (mandatory DESIGN output — the sibling of Reuse Analysis)
+
+Reuse Analysis asks *which* existing component to extend. Prefactoring asks the question that comes
+immediately after, and that a design bolting a feature onto misshapen code never asks:
+
+> **"Make the change easy, then make the easy change."** Is the component we chose to EXTEND in the
+> right SHAPE to receive this feature — or does landing the feature on its current shape force a
+> compromise (a flag, a second code path, a god-method, a special case) that the code will carry forever?
+
+If the shape is wrong, the fix is NOT to absorb the ugliness into the feature slices. It is a
+**`@prefactoring` slice**, delivered FIRST: a behaviour-preserving reshape of the EXISTING code, tests
+green at every step, adding zero new behaviour — so the feature that follows lands as an *easy change*.
+
+**Every DESIGN wave MUST emit a `## Prefactoring Assessment` section. It is never silently absent.**
+Exactly one of two outcomes:
+
+1. **A `@prefactoring` slice** — declared in the Slice Plan (Class P), ordered BEFORE the feature slices,
+   naming: the component reshaped, the compromise it removes, and the invariant "no behaviour change,
+   suite green throughout". Its value statement is the *shape*, not a user outcome — so it carries NO
+   expectation charter (the charter lives at the OBSERVABLE slice; an `@prefactoring` slice has no user
+   surface to examine, and pretending otherwise manufactures a fake oracle).
+2. **An explicit, justified NONE** — one or two sentences naming what you LOOKED AT and why the current
+   shape already receives the feature cleanly. "Not applicable" / "no need" / silence are REFUSED: an
+   unexamined NONE is indistinguishable from a NONE that was never considered — the same absence-vs-
+   incapacity confusion the certification gates exist to kill.
+
+**Anti-patterns the assessment must refuse:**
+- *Prefactoring smuggled into a feature slice* — a slice that both reshapes AND adds behaviour cannot be
+  reverted, cannot be reviewed for either job, and hides a behaviour change inside a "refactor" diff.
+- *Prefactoring proposed as a rewrite* — the slice is behaviour-PRESERVING and small; a rewrite is a
+  different (and much more expensive) decision, and belongs in an ADR, not smuggled in as prep.
+- *Speculative reshaping* — prefactoring earns its slice only when a CONCRETE compromise in THIS feature
+  is what it removes. Naming that compromise is the justification; without it, it is speculative
+  generality and must be refused.
 
 ### Reuse-first DESIGN exit gate
 
