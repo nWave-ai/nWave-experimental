@@ -385,6 +385,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     repo = Path(args.repo).resolve()
+    if not repo.is_dir():
+        return _indeterminate(
+            what=f"--repo {repo} is not an existing directory",
+            why=(
+                "the tool cannot resolve the test file or write the "
+                "red/green seal without a real repo root."
+            ),
+            how="pass --repo pointing at an existing repository directory.",
+        )
     test_file = (repo / args.test_file).resolve()
     if not test_file.is_file():
         return _indeterminate(
