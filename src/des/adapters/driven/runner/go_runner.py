@@ -81,7 +81,7 @@ def run_go_scope(
     binary = scoped_node_ids[0] if scoped_node_ids else _GO_NAME
     subcommand = scoped_node_ids[1:]
 
-    resolution = resolve_tool(binary, GO_KNOWN_LOCATIONS)
+    resolution = resolve_tool(binary, GO_KNOWN_LOCATIONS, base_dir=target_root)
     if resolution.path is None:
         raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
 

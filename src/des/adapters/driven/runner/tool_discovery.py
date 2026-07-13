@@ -59,6 +59,7 @@ class ToolResolution:
 def resolve_tool(
     name: str,
     known_locations: Sequence[str],
+    base_dir: Path | str | None = None,
 ) -> ToolResolution:
     """Discover ``name`` across the 3-rung scale; return a typed resolution.
 
@@ -67,13 +68,25 @@ def resolve_tool(
     ``<dir>/<name>`` exists and is executable, RESOLVED at that path (the WSL2
     GOTCHA #1 rung). Rung 3 (not found): a LOUD INDETERMINATE naming the
     remediation.
+
+    ``base_dir`` -- when provided, each RELATIVE entry in ``known_locations``
+    is resolved against ``base_dir`` instead of the process CWD (an ABSOLUTE
+    entry is used as-is; the PATH rung is unaffected). Fixes #203: a
+    repo-local tool (e.g. ``<repo>/node_modules/.bin/vitest``) must resolve
+    against the TARGET repo, never the caller's CWD. ``base_dir=None`` (the
+    default) preserves EXACTLY today's CWD-relative behaviour for every
+    existing caller.
     """
     on_path = shutil.which(name)
     if on_path is not None:
         return ToolResolution(rung="on-path", path=on_path)
 
     for location in known_locations:
-        candidate = Path(location) / name
+        location_path = Path(location)
+        if base_dir is not None and not location_path.is_absolute():
+            candidate = Path(base_dir) / location_path / name
+        else:
+            candidate = location_path / name
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return ToolResolution(rung="known-location", path=str(candidate))
 

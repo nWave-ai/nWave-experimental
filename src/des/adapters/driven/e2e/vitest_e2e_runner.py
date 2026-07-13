@@ -36,7 +36,7 @@ def run_vitest_against_installed(
     the shared discovery scale (the LOUD INDETERMINATE channel, never a
     silent pass).
     """
-    resolution = resolve_tool("vitest", VITEST_KNOWN_LOCATIONS)
+    resolution = resolve_tool("vitest", VITEST_KNOWN_LOCATIONS, base_dir=work_dir)
     if resolution.path is None:
         raise RunnerAdapterUnavailable("vitest", reason=resolution.remediation)
     env = {

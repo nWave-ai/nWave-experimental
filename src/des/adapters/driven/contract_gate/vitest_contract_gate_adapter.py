@@ -49,7 +49,7 @@ class VitestContractGateAdapter:
 
     def run_suite(self, repo: Path) -> ContractVerdict:
         """Run the target's whole vitest suite; return the observable verdict."""
-        resolution = resolve_tool(_VITEST_RUNNER, VITEST_KNOWN_LOCATIONS)
+        resolution = resolve_tool(_VITEST_RUNNER, VITEST_KNOWN_LOCATIONS, base_dir=repo)
         if resolution.path is None:
             raise RunnerAdapterUnavailable(
                 _VITEST_RUNNER, reason=resolution.remediation
