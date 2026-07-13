@@ -392,6 +392,20 @@ def main(argv: list[str] | None = None) -> int:
             why="nothing to observe.",
             how="check the path.",
         )
+    try:
+        test_file.relative_to(repo)
+    except ValueError:
+        return _indeterminate(
+            what=f"--test-file {test_file} is outside --repo {repo}",
+            why=(
+                "the red/green seal is keyed to the test file's repo-relative "
+                "path, so a file outside the repo cannot be sealed."
+            ),
+            how=(
+                "pass a --test-file that lives inside --repo (repo-relative, "
+                "or an absolute path under the repo root)."
+            ),
+        )
     run_cmd = (
         tuple(shlex.split(args.run_cmd)) if args.run_cmd else _default_run_cmd(repo)
     )
