@@ -72,8 +72,13 @@ from des.application.slice_at_completeness import (
     files_in_commit,
     missing_at_files,
 )
-from des.cli.carpaccio_format import _lane_profile_for_slice, parse_slice_plan
+from des.cli.carpaccio_format import (
+    _feature_tag_files,
+    _lane_profile_for_slice,
+    parse_slice_plan,
+)
 from des.cli.human_surface import Verdict, print_human_summary
+from des.cli.verify_deliver_integrity import _slice_commit_verified_slices
 from des.domain.lane_profile import AtRequirement
 from des.domain.repo_path_resolver import feature_delta_path
 from des.domain.slice_id_trailer import (
@@ -213,6 +218,7 @@ def _run_regression_gate_via_runner(
 # as intentional so autoflake keeps the otherwise-internally-unused regex.
 __all__ = [
     "_SLICE_ID_TRAILER_RE",
+    "canonical_regression_test_path",
     "extract_slice_id",
     "extract_slice_ids",
     "feature_files_for_slice",
@@ -428,13 +434,46 @@ def _is_at_exempt_lane(repo: Path, feature_id: str, slice_id: str) -> bool:
     return profile is not None and profile.at_requirement is AtRequirement.EXEMPT
 
 
-def _run_contract_gate(repo: Path, feature_id: str, slice_id: str) -> int:
+def _parse_single_line_json_payload(stdout: str) -> dict[str, object] | None:
+    """Parse a child gate's own single-line JSON verdict off its captured stdout.
+
+    Mirrors this AT file's own ``_run_verify_slice_commit`` helper convention:
+    the LAST line starting with ``{`` is the verdict payload (a preceding
+    human-readable line, if any, is not JSON and is skipped). Returns ``None``
+    when no JSON line is present or it fails to parse/is not an object --
+    never raises, so a malformed/absent child payload degrades to "nothing to
+    thread through" rather than crashing the parent gate.
+    """
+    json_lines = [ln for ln in stdout.splitlines() if ln.strip().startswith("{")]
+    if not json_lines:
+        return None
+    try:
+        payload = json.loads(json_lines[-1])
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _run_contract_gate(
+    repo: Path, feature_id: str, slice_id: str
+) -> tuple[int, dict[str, object] | None]:
     """Run E2 -- the feature-scoped contract gate -- for one slice.
 
     Composes `run_contract_gate --feature-id` as a subprocess (DDD-12: the
     test-runner seam stays inside `run_contract_gate`; this CLI adds no pytest
-    call site of its own). Returns the contract gate's exit code -- 0 when the
-    feature-scoped suite cleared, non-zero on a refusal or a malformed scope.
+    call site of its own). Returns ``(exit_code, child_payload)`` -- exit_code
+    is 0 when the feature-scoped suite cleared, non-zero on a refusal or a
+    malformed scope; ``child_payload`` is the child gate's OWN single-line
+    JSON verdict (e.g. a ``FeatureScopeMalformed`` naming its ``reason``/
+    ``error``), or ``None`` when it could not be captured/parsed.
+
+    The child ALREADY emits a self-explaining verdict -- it is the authority
+    on WHY it refused. This function's job is to CARRY that verdict, not
+    re-derive or summarize it: the caller threads ``child_payload``'s own
+    ``error``/``next`` straight into the parent's refusal instead of
+    replacing it with a generic, reason-less template (the trap that void'd
+    two independent examinations: a refusal naming an unrelated cause is
+    worse than one that says nothing).
 
     DDD-1/DDD-2 degrade-LOUD: when ``des_spawn`` itself cannot resolve a usable
     interpreter on this machine it raises ``InterpreterUnavailable`` (the spawn
@@ -459,8 +498,8 @@ def _run_contract_gate(repo: Path, feature_id: str, slice_id: str) -> int:
             text=True,
         )
     except InterpreterUnavailable:
-        return _GATE_INDETERMINATE_EXIT_CODE
-    return completed.returncode
+        return _GATE_INDETERMINATE_EXIT_CODE, None
+    return completed.returncode, _parse_single_line_json_payload(completed.stdout)
 
 
 def _run_regression_gate(
@@ -521,6 +560,254 @@ def _run_regression_gate(
     except InterpreterUnavailable:
         return _GATE_INDETERMINATE_EXIT_CODE, None, None
     return completed.returncode, None, None
+
+
+def _regression_file_naming_components(
+    feature_id: str, slice_id: str
+) -> tuple[str, str]:
+    """The two normalized components (``feature_dir``, ``slice_us``) the
+    regression-file naming convention is built from -- hyphens replaced by
+    underscores. Pure.
+
+    SINGLE SOURCE for both ``_regression_file_glob_candidates`` below and
+    ``canonical_regression_test_path`` (the seam a producer like
+    ``des examine-fixture`` consumes to WRITE a new regression file this gate
+    will later recognize) -- widening the naming convention into one shared
+    private helper instead of letting a producer re-derive/guess it is what
+    makes the produced fixture correct BY CONSTRUCTION (examinable-gate-
+    surface feature, arch invariant: never re-declare this convention).
+    """
+    return feature_id.replace("-", "_"), slice_id.replace("-", "_")
+
+
+def canonical_regression_test_path(
+    feature_id: str,
+    slice_id: str,
+    *,
+    parent: str = "fixture",
+    suffix: str = "behaviour",
+) -> str:
+    """A repo-relative pytest-regression file path this gate's OWN naming
+    convention (``_regression_file_glob_candidates``) resolves for
+    ``slice_id``. Pure.
+
+    The examinable-gate-surface feature's arch invariant: any producer that
+    needs to WRITE a new regression file the gate will later recognize (e.g.
+    ``des examine-fixture``) MUST derive its filename through this function,
+    never by hand-matching the glob pattern below (a private implementation
+    detail) -- a second copy of the convention would reintroduce the exact
+    naming drift this feature exists to end. ``parent``/``suffix`` select
+    WHERE under ``tests/**/{feature_dir}/`` and WHAT filename-tail the file
+    gets; the returned path always satisfies ``test_{slice_us}_*.py`` for the
+    SAME ``slice_us`` normalization ``_regression_file_glob_candidates``
+    applies, so a file written at this path is guaranteed to resolve as
+    exactly one candidate.
+    """
+    feature_dir, slice_us = _regression_file_naming_components(feature_id, slice_id)
+    return f"tests/{parent}/{feature_dir}/test_{slice_us}_{suffix}.py"
+
+
+def _regression_file_glob_candidates(
+    repo: Path, feature_id: str, slice_id: str
+) -> list[Path]:
+    """Every file matching ``slice_id``'s regression-file naming convention.
+
+    Glob ``tests/**/{feature_dir}/test_{slice_us}_*.py``, where
+    ``feature_dir``/``slice_us`` are ``feature_id``/``slice_id`` with hyphens
+    replaced by underscores (``_regression_file_naming_components``) -- the
+    SAME convention this feature's own fixtures follow
+    (``tests/fixture/{feature_id}/test_{slice_id}_*.py``) and the SAME shape
+    already load-bearing on disk (e.g.
+    ``tests/des/acceptance/{feature_id}/test_slice_NN_*.py``). Mirrors
+    ``_slice_feature_dir``'s glob-and-match shape (``run_contract_gate.py``)
+    keyed on filename prefix instead of a Gherkin ``@slice-NN`` tag -- the
+    pytest-native equivalent. Zero or multiple matches are NEVER silently
+    resolved by the caller (RC1 Fix B / RC2 Fix A conservative-keep).
+    """
+    feature_dir, slice_us = _regression_file_naming_components(feature_id, slice_id)
+    return sorted(repo.glob(f"tests/**/{feature_dir}/test_{slice_us}_*.py"))
+
+
+def _shipped_and_entering_regression_files(
+    repo: Path,
+    feature_id: str,
+    entering_slice: str,
+    entering_regression_test_file: str,
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Resolve the {shipped} UNION {entering} regression-file set (RC2 Fix A).
+
+    The entering slice always uses its explicitly declared
+    ``entering_regression_test_file`` (never re-resolved by convention -- the
+    caller's own declaration always wins). Every SHIPPED slice (per the
+    ledger resolver ``_slice_commit_verified_slices``, REUSE -- the
+    un-gameable "which slices are delivered" resolver, already imported one
+    hop away in ``commit_slice.py``) other than the entering slice itself is
+    resolved to its regression file via ``_regression_file_glob_candidates``.
+
+    Returns ``(resolved, unresolved_slice_ids)``: ``resolved`` is an ordered
+    list of ``(slice_id, repo_relative_path)`` pairs -- shipped slices first,
+    then the entering slice; ``unresolved_slice_ids`` names every SHIPPED
+    slice whose file could not be resolved (zero or ambiguous convention
+    matches) -- a conservative-keep signal (never a silent skip) the caller
+    degrades LOUD INDETERMINATE on, mirroring
+    ``_narrow_to_shipped_entering``'s "never silently narrow" discipline.
+    """
+    shipped = sorted(
+        slice_id
+        for slice_id in _slice_commit_verified_slices(repo, feature_id)
+        if slice_id != entering_slice
+    )
+    resolved: list[tuple[str, str]] = []
+    unresolved: list[str] = []
+    for slice_id in shipped:
+        candidates = _regression_file_glob_candidates(repo, feature_id, slice_id)
+        if len(candidates) != 1:
+            unresolved.append(slice_id)
+            continue
+        resolved.append((slice_id, str(candidates[0].relative_to(repo))))
+    resolved.append((entering_slice, entering_regression_test_file))
+    return resolved, unresolved
+
+
+def _run_regression_gate_shipped_and_entering(
+    repo: Path,
+    feature_id: str,
+    entering_slice: str,
+    entering_regression_test_file: str,
+) -> tuple[int, str | None, str | None, str, str, list[str]]:
+    """Run E2 behaviorally over {shipped} UNION {entering} (RC2 Fix A).
+
+    Composes ``_shipped_and_entering_regression_files`` (the ledger-backed
+    shipped-set resolver) with ``_run_regression_gate`` (REUSE, unchanged) in
+    an AND-closed loop -- ALL resolved files must pass, mirroring
+    ``build_tier_exit_verdict``'s "the whole shipped set is retained"
+    preservation clause.
+
+    Returns ``(exit_code, reason, diagnostic, failed_slice_id,
+    failed_regression_test_file, executed_regression_test_files)``.
+    ``failed_slice_id`` / ``failed_regression_test_file`` name the file that
+    actually produced the non-zero/INDETERMINATE outcome -- which may be a
+    SHIPPED slice, not the entering one (the honest attribution RC2's fix
+    introduces: today's E2 leg never re-checks a shipped slice at all, so it
+    FALSE-GREENs). On a fully clean run, or when the shipped set itself is
+    unresolvable, the entering slice's own values are returned.
+
+    ``executed_regression_test_files`` is the ordered list of repo-relative
+    regression-file paths this call ACTUALLY ran (the examiner's finding --
+    "I cannot tell whether the gate really ran my slice's tests" -- a
+    successful verdict must exhibit its own executed scope, not merely name
+    slice ids). It is truncated at the first failing/INDETERMINATE file (the
+    files after it were never reached) and empty when the shipped set itself
+    was unresolvable (nothing was run).
+
+    A SHIPPED slice with NO resolvable regression file degrades LOUD
+    INDETERMINATE (``reason="shipped_regression_file_unresolvable"``) --
+    conservative-keep, never a silent skip of a shipped slice's regression
+    protection.
+    """
+    resolved, unresolved = _shipped_and_entering_regression_files(
+        repo, feature_id, entering_slice, entering_regression_test_file
+    )
+    if unresolved:
+        return (
+            _GATE_INDETERMINATE_EXIT_CODE,
+            "shipped_regression_file_unresolvable",
+            (
+                "the SHIPPED slice(s) "
+                + ", ".join(unresolved)
+                + " have no resolvable regression file on this tree (zero or "
+                "ambiguous convention matches) -- recorded an honest "
+                "SliceCommitIndeterminate (unverified here), never a silent "
+                "skip of a shipped slice's regression protection"
+            ),
+            entering_slice,
+            entering_regression_test_file,
+            [],
+        )
+    executed: list[str] = []
+    for checked_slice_id, checked_file in resolved:
+        executed.append(checked_file)
+        contract_code, indeterminate_reason, indeterminate_diagnostic = (
+            _run_regression_gate(repo, feature_id, checked_file)
+        )
+        if contract_code != 0:
+            return (
+                contract_code,
+                indeterminate_reason,
+                indeterminate_diagnostic,
+                checked_slice_id,
+                checked_file,
+                executed,
+            )
+    return 0, None, None, entering_slice, entering_regression_test_file, executed
+
+
+def _infer_pytest_regression_at_kind(
+    repo: Path, feature_id: str, slice_ids: list[str]
+) -> tuple[str | None, dict[str, object] | None]:
+    """Infer ``at_kind = pytest-regression`` from feature-layout (RC1 Fix B).
+
+    Fires ONLY when the caller supplied neither ``--at-kind`` nor
+    ``--regression-test-file`` (checked by the caller BEFORE invoking this).
+    Reuses ``_feature_tag_files`` (REUSE, already imported for E1) as the
+    ``.feature``-file resolver: when the feature owns at least one
+    ``.feature`` file, gherkin stays the explicit default, byte-identical for
+    every existing caller -- this function only ever routes TOWARD
+    pytest-regression, never away from a genuine gherkin feature.
+
+    Returns ``(regression_test_file, refusal_payload)``:
+
+    - ``(None, None)`` -- ``.feature`` files exist (or ``slice_ids`` is
+      empty); stay on the gherkin default unchanged.
+    - ``(<repo-relative-path>, None)`` -- zero ``.feature`` files AND exactly
+      one convention-matching regression file resolved for the entering
+      (last-listed) slice; the caller flips to ``at_kind =
+      pytest-regression`` with this file.
+    - ``(None, <payload>)`` -- zero ``.feature`` files AND the entering
+      slice's regression file could not be resolved unambiguously (GDP-6,
+      never silently guessed): ``payload`` carries an ``exit_code`` key (pop
+      it before emitting) plus a self-explaining ``error``/``how`` naming the
+      mismatch -- never a bare, reason-less refusal.
+    """
+    if not slice_ids:
+        return None, None
+    if _feature_tag_files(repo, feature_id):
+        return None, None
+    entering_slice = slice_ids[-1]
+    candidates = _regression_file_glob_candidates(repo, feature_id, entering_slice)
+    if len(candidates) == 1:
+        return str(candidates[0].relative_to(repo)), None
+    if len(candidates) > 1:
+        matches = ", ".join(str(c.relative_to(repo)) for c in candidates)
+        return None, {
+            "exit_code": 1,
+            "event": "SliceCommitRefused",
+            "refused_half": "E2",
+            "slice_ids": slice_ids,
+            "error": (
+                "no --at-kind was given and this feature owns zero .feature "
+                f"files -- multiple regression files match the "
+                f"{entering_slice} pytest-regression naming convention, an "
+                f"ambiguous inference is never silently resolved: {matches}"
+            ),
+            "how": (
+                "pass --at-kind pytest-regression --regression-test-file "
+                "<repo-relative-path> explicitly to disambiguate"
+            ),
+        }
+    # Zero candidates: no POSITIVE signal this is a pytest-regression feature
+    # at all (it may simply be a feature that doesn't exist on this tree, or
+    # predates the naming convention) -- conservative-keep means staying on
+    # the gherkin default rather than force-routing away from it, so the
+    # existing gherkin path still reaches ITS OWN real verdict (pinned by
+    # ``test_verify_slice_commit_requires_feature_id.py::
+    # test_present_feature_id_is_never_downgraded_to_indeterminate``: a
+    # nonexistent feature must resolve via E2's contract gate to
+    # ``SliceCommitRefused``, never be diverted into an inference-only
+    # INDETERMINATE). This only ever routes TOWARD pytest-regression on
+    # POSITIVE evidence (>=1 convention match); zero evidence changes
+    # nothing.
+    return None, None
 
 
 def _append_slice_commit_verified(
@@ -890,10 +1177,33 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
 
     # E2 -- one run per listed slice. Default (`gherkin`): the feature-scoped
     # contract gate, unchanged. `--at-kind pytest-regression` (#13): a
-    # BEHAVIORAL attestation -- actually runs `--regression-test-file` on the
-    # committed tree in place of the contract gate, which cannot resolve a
-    # pytest-regression bugfix's structure.
+    # BEHAVIORAL attestation -- actually runs the {shipped} UNION {entering}
+    # regression-file set on the committed tree in place of the contract
+    # gate, which cannot resolve a pytest-regression bugfix's structure.
+    #
+    # RC1 Fix B: when the caller supplied NEITHER --at-kind NOR
+    # --regression-test-file, infer pytest-regression from feature-layout
+    # introspection (zero .feature files) instead of unconditionally routing
+    # into the gherkin scope resolver, which would refuse `zero-collected`
+    # for a reason unrelated to the operator's code.
     is_pytest_regression = args.at_kind == "pytest-regression"
+    regression_test_file = args.regression_test_file
+    if not is_pytest_regression and regression_test_file is None:
+        inferred_file, refusal_payload = _infer_pytest_regression_at_kind(
+            repo, feature_id, slice_ids
+        )
+        if refusal_payload is not None:
+            inferred_exit_code = refusal_payload.pop("exit_code")
+            refusal_payload["commit"] = args.commit
+            _emit_with_human_surface(refusal_payload)
+            assert isinstance(inferred_exit_code, int)
+            return inferred_exit_code
+        if inferred_file is not None:
+            is_pytest_regression = True
+            regression_test_file = inferred_file
+
+    pytest_regression_checked = False
+    regression_test_files_executed: list[str] = []
     for slice_id in slice_ids:
         if _is_at_exempt_lane(repo, feature_id, slice_id):
             # Mirrors the entry gate's `LaneAtExemptionAccepted` early-return
@@ -905,7 +1215,7 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
             # vacuous feature-scoped contract-gate subprocess.
             continue
         if is_pytest_regression:
-            if not args.regression_test_file:
+            if not regression_test_file:
                 _emit_with_human_surface(
                     {
                         "event": "SliceCommitRefused",
@@ -924,13 +1234,39 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                     }
                 )
                 return 1
-            contract_code, indeterminate_reason, indeterminate_diagnostic = (
-                _run_regression_gate(repo, feature_id, args.regression_test_file)
+            if pytest_regression_checked:
+                # RC2 Fix A already ran the {shipped} UNION {entering} set
+                # once for this commit -- a second listed slice (a batched
+                # multi-Slice-Id commit) shares the SAME feature-wide
+                # attestation, never re-run per listed slice.
+                continue
+            pytest_regression_checked = True
+            (
+                contract_code,
+                indeterminate_reason,
+                indeterminate_diagnostic,
+                regression_failed_slice,
+                regression_failed_file,
+                regression_test_files_executed,
+            ) = _run_regression_gate_shipped_and_entering(
+                repo, feature_id, slice_id, regression_test_file
             )
         else:
-            contract_code = _run_contract_gate(repo, feature_id, slice_id)
+            contract_result = _run_contract_gate(repo, feature_id, slice_id)
+            # Compatibility normalization: several pre-existing regression
+            # ATs monkeypatch `_run_contract_gate` with a bare-int stub
+            # (`lambda *a, **k: 0`) to skip the real subprocess spawn. The
+            # genuine implementation returns `(exit_code, child_payload)`;
+            # normalizing here keeps both call shapes working without
+            # touching those tests (single-locus constraint).
+            if isinstance(contract_result, tuple):
+                contract_code, contract_child_payload = contract_result
+            else:
+                contract_code, contract_child_payload = contract_result, None
             indeterminate_reason = None
             indeterminate_diagnostic = None
+            regression_failed_slice = slice_id
+            regression_failed_file = regression_test_file
         # DDD-2 degrade-LOUD: an INDETERMINATE gate (no usable interpreter on
         # this machine, or -- pytest-regression -- a regression-test-file that
         # could not be run) is NOT a refusal -- record the honest
@@ -951,7 +1287,7 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                     diagnostic=indeterminate_diagnostic
                     or (
                         f"the declared --regression-test-file "
-                        f"{args.regression_test_file!r} could not be run on "
+                        f"{regression_failed_file!r} could not be run on "
                         "the committed tree (missing or uncollectible) -- "
                         "recorded an honest SliceCommitIndeterminate "
                         "(unverified here), never a fabricated pass"
@@ -966,23 +1302,36 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                         "refused_half": "E2",
                         "slice_ids": slice_ids,
                         "commit": args.commit,
-                        "failed_slice": slice_id,
-                        "regression_test_file": args.regression_test_file,
+                        "failed_slice": regression_failed_slice,
+                        "regression_test_file": regression_failed_file,
                         "contract_gate_exit_code": contract_code,
                         "error": (
-                            f"slice {slice_id} failed the E2 behavioral "
-                            f"attestation -- {args.regression_test_file} did "
-                            f"not pass on the committed tree (exit "
+                            f"slice {regression_failed_slice} failed the E2 "
+                            f"behavioral attestation -- {regression_failed_file} "
+                            f"did not pass on the committed tree (exit "
                             f"{contract_code})"
                         ),
                         "how": (
-                            f"run `pytest {args.regression_test_file} -q` "
+                            f"run `pytest {regression_failed_file} -q` "
                             "locally, fix the regression, then re-commit via "
                             "`des commit-slice`"
                         ),
                     }
                 )
                 return 1
+            # The child gate already emitted a self-explaining verdict (e.g.
+            # a `FeatureScopeMalformed` naming its own `reason`/`error`/
+            # `next`) -- thread THAT through rather than overwriting it with
+            # a generic, reason-less summary. A refusal that names an
+            # unrelated cause (or none at all) sends the operator hunting a
+            # phantom in innocent code; the child is the authority on why it
+            # refused, this CLI only carries the verdict.
+            child_error = (
+                contract_child_payload.get("error") if contract_child_payload else None
+            )
+            child_how = (
+                contract_child_payload.get("next") if contract_child_payload else None
+            )
             _emit_with_human_surface(
                 {
                     "event": "SliceCommitRefused",
@@ -992,14 +1341,23 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                     "failed_slice": slice_id,
                     "contract_gate_exit_code": contract_code,
                     "error": (
-                        f"slice {slice_id} failed the feature-scoped contract "
-                        f"gate (exit {contract_code})"
+                        child_error
+                        if isinstance(child_error, str) and child_error
+                        else (
+                            f"slice {slice_id} failed the feature-scoped "
+                            f"contract gate (exit {contract_code})"
+                        )
                     ),
                     "how": (
-                        f"inspect the failure with `run_contract_gate --repo .` "
-                        f"(feature {feature_id}, slice {slice_id}), green the "
-                        "failing feature-scoped acceptance test(s), then "
-                        "re-commit via `des commit-slice`"
+                        child_how
+                        if isinstance(child_how, str) and child_how
+                        else (
+                            f"inspect the failure with `run_contract_gate "
+                            f"--repo .` (feature {feature_id}, slice "
+                            f"{slice_id}), green the failing feature-scoped "
+                            "acceptance test(s), then re-commit via "
+                            "`des commit-slice`"
+                        )
                     ),
                 }
             )
@@ -1052,6 +1410,15 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
     }
     if attested_via is not None:
         verified_payload["attested_via"] = attested_via
+    if regression_test_files_executed:
+        # The examiner's finding (certification-legs-observe-real-execution):
+        # a verdict that does not exhibit what it observed is indistinguishable
+        # from a verdict issued over nothing observed. Exhibit the {shipped}
+        # UNION {entering} regression file(s) this call actually ran, so the
+        # consent testifies at least as much as the refusal already does.
+        verified_payload["regression_test_files_executed"] = (
+            regression_test_files_executed
+        )
     _emit_with_human_surface(verified_payload)
     return 0
 
