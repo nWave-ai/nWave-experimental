@@ -165,6 +165,11 @@ _NOT_CURRENT_CLAIM_DOC_PREFIXES = frozenset(
         "docs/feedback/",
         "docs/epic/",
         "docs/operations/",
+        "docs/requirements/",
+        "docs/backlog/",
+        "docs/rfc/",
+        "docs/spike/",
+        "docs/decisions/",
     }
 )
 
