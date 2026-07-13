@@ -31,6 +31,7 @@ from des.domain.atdd_pure_phases import (
     LEGACY_PHASE_ALIASES,
     ATDDPurePhase,
 )
+from des.domain.lane_profile import PHASELESS_LANES
 
 
 def _normalise_marker_value(value: str) -> str:
@@ -168,6 +169,13 @@ class DesMarkers:
     mode: str | None = None
     atdd_pure_phase: str | None = None
     slice_id: str | None = None
+    # The raw DES-LANE marker value (e.g. "bugfix", "prefactoring", "charter"),
+    # or None when absent. A PHASELESS lane (``PHASELESS_LANES`` -- the ONE
+    # definition, in the lane-profile domain SSOT) declares NO DES-PHASE at all:
+    # charter authoring is not one of the 3 canonical DELIVER phases
+    # (fix-po-charter-dispatch-marker-lane), so its dispatch omits the phase
+    # marker rather than borrowing an unrelated phase word.
+    lane: str | None = None
     # has_des_markers: True when the prompt carries ANY DES marker key in EITHER
     # spelling (HTML-comment or plain ``DES-KEY: value`` line). Broader than
     # is_des_task (which keys only on the HTML-comment DES-VALIDATION marker): the
@@ -294,6 +302,9 @@ class DesMarkerParser:
     # transcript can carry the marker back. Raw value, no normalisation
     # (mirrors `_parse_at_kind_from_prompt`'s un-normalised `group(1)`).
     _AT_KIND_PATTERN = re.compile(r"<!--\s*DES-AT-KIND\s*:\s*(\S+)\s*-->")
+    # fix-po-charter-dispatch-marker-lane: the DES-LANE marker (the SAME grammar
+    # `atdd_pure_prompt_validator._DES_LANE_MARKER` already reads from a prompt).
+    _LANE_PATTERN = re.compile(r"<!--\s*DES-LANE\s*:\s*(\S+)\s*-->")
 
     def parse(self, prompt: str) -> DesMarkers:
         """Parse DES markers from a Task prompt string.
@@ -340,6 +351,9 @@ class DesMarkerParser:
         at_kind_match = self._AT_KIND_PATTERN.search(prompt)
         at_kind = at_kind_match.group(1) if at_kind_match else None
 
+        lane_match = self._LANE_PATTERN.search(prompt)
+        lane = lane_match.group(1) if lane_match else None
+
         return DesMarkers(
             is_des_task=is_des_task,
             is_orchestrator_mode=mode == "orchestrator",
@@ -350,6 +364,7 @@ class DesMarkerParser:
             mode=mode,
             atdd_pure_phase=self._parse_phase(prompt),
             slice_id=self._parse_slice(prompt),
+            lane=lane,
             has_des_markers=bool(_DES_MARKER_KEY.search(prompt)),
             carries_validation_marker=carries_validation_marker,
             declared_wave=declared_wave,
@@ -422,7 +437,19 @@ def classify_atdd_pure_dispatch(markers: DesMarkers) -> str:
     """
     if markers.mode != "atdd_pure":
         return "absent"
-    if markers.atdd_pure_phase is None or markers.slice_id is None:
+    if markers.slice_id is None:
+        return "defective"
+    # A PHASELESS lane (fix-po-charter-dispatch-marker-lane) declares NO
+    # DES-PHASE: charter authoring is not one of the 3 canonical DELIVER
+    # phases, so the honest declaration omits the phase word rather than
+    # BORROWING an unrelated one. It is coherent WITHOUT a phase -- and the
+    # phase/scope XOR below (a phase-keyed invariant) simply does not apply.
+    # This is the ONLY relaxation: a phaseless-lane dispatch still needs its
+    # DES-MODE + DES-SLICE + (via the completeness policy) DES-PROJECT-ID, so a
+    # genuinely defective dispatch is refused exactly as before.
+    if markers.lane in PHASELESS_LANES:
+        return "defective" if markers.atdd_pure_phase is not None else "valid"
+    if markers.atdd_pure_phase is None:
         return "defective"
     phase_is_feature_end = markers.atdd_pure_phase in _FEATURE_END_PHASES
     if phase_is_feature_end != markers.is_feature_end:
@@ -440,7 +467,7 @@ def atdd_pure_missing_marker(markers: DesMarkers) -> str | None:
     """
     if markers.mode != "atdd_pure":
         return None
-    if markers.atdd_pure_phase is None:
+    if markers.atdd_pure_phase is None and markers.lane not in PHASELESS_LANES:
         return "des-phase"
     if markers.slice_id is None:
         return "des-slice"

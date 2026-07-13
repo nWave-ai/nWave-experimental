@@ -123,3 +123,21 @@ profiles:
       annotation_token: bugfix
       # names the defect + the regression test test_<name> (readiness gate: bugfix_lane_justification).
       requires: [lane_justification]
+    charter:
+      # NON-CODE-FACING, PHASELESS lane (fix-po-charter-dispatch-marker-lane): a
+      # spine-MANDATED sub-dispatch of a `nw-product-owner` authoring an expectation
+      # charter, issued INSIDE another wave's active floor (nw-bugfix §Phase 0-charter;
+      # nw-deliver §Per-slice pipelining). Charter authoring is NOT one of the 3
+      # canonical DELIVER phases, so the dispatch declares NO DES-PHASE at all -- it
+      # never borrows D_DISTILL (which asserts "the DISTILL-wave acceptance-designer
+      # return") and so never corrupts the audit trail at entry or at exit.
+      # It writes no code and records no ATs -> drop the 5 implementation-only sections.
+      # (drop_sections MUST stay on ONE line -- dispatch_lane_ssot._read_lane_drop_sections.)
+      drop_sections: [ATDD_PURE_PHASES, QUALITY_GATES, AT_COMPLETION_LEDGER, RECORDING_INTEGRITY, TERMINATING_RUN]
+      guard_kind: NONE
+      at_requirement: EXEMPT
+      feature_readiness: false
+      skipped_invariants: [slice_plan_section, scenario_slice_tags, at_review_verdict,
+                           reuse_first_or_design_skip, sustainability]
+      annotation_token: charter
+      requires: []

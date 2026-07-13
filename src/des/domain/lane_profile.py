@@ -109,4 +109,47 @@ LANE_PROFILES: dict[str, LaneProfile] = {
         skipped_invariants=(),
         annotation_token="bugfix",
     ),
+    # The NON-CODE-FACING, PHASELESS cross-wave-child lane
+    # (fix-po-charter-dispatch-marker-lane): a spine-MANDATED sub-dispatch of a
+    # `nw-product-owner` authoring an expectation charter, issued INSIDE another
+    # wave's active floor. It writes no code and records no ATs -> the full 12
+    # MINUS the 5 implementation-only sections (the same drop the `review`
+    # profile takes). Drift-checked PROJECTION of the dispatch SSOT's
+    # `profiles.lane.charter` row, verified by
+    # `des.application.dispatch_lane_ssot.check_lane_profile_drift` -- the SAME
+    # projection contract the sibling lanes above are held to.
+    "charter": LaneProfile(
+        lane_id="charter",
+        required_sections=(
+            "DES_METADATA",
+            "AGENT_IDENTITY",
+            "SKILL_LOADING",
+            "TASK_CONTEXT",
+            "DESIGN_CONTEXT",
+            "BOUNDARY_RULES",
+            "TIMEOUT_INSTRUCTION",
+        ),
+        guard_kind=GuardKind.NONE,
+        feature_readiness=False,
+        at_requirement=AtRequirement.EXEMPT,
+        skipped_invariants=(
+            "slice_plan_section",
+            "scenario_slice_tags",
+            "at_review_verdict",
+            "reuse_first_or_design_skip",
+            "sustainability",
+        ),
+        annotation_token="charter",
+    ),
 }
+
+# The lanes whose dispatch declares NO ``DES-PHASE`` marker at all
+# (fix-po-charter-dispatch-marker-lane). Charter authoring is NOT one of the 3
+# canonical DELIVER phases -- ``ATDDPurePhase`` stays DELIVER-carpaccio-scoped
+# per its own docstring -- so a charter dispatch omits the phase marker rather
+# than BORROWING an unrelated phase word (``D_DISTILL``, which specifically
+# asserts "the upstream DISTILL-wave acceptance-designer RETURN"). This is the
+# ONE definition of "phaseless" every consumer reads: the marker parser's
+# coherence check (``classify_atdd_pure_dispatch``), the marker-completeness
+# policy, and the ``des dispatch`` generator -- so they cannot drift.
+PHASELESS_LANES: frozenset[str] = frozenset({"charter"})

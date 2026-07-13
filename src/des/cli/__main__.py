@@ -387,6 +387,17 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.next_step",
         "main",
     ),
+    # examinable-gate-surface slice-01 (GDP-5): the PRODUCING tool for an
+    # examiner-drivable certification-gate fixture -- builds a real repo with
+    # a genuinely SHIPPED+attested slice, an entering slice, and a
+    # deliberately-red work-ahead slice, each flippable red/green by editing
+    # one line, so a source-blind examiner can reach and break the REAL
+    # `des verify-slice-commit` gate without ever reading the gate's source.
+    _SubcommandRow(
+        "examine-fixture",
+        "des.cli.examine_fixture",
+        "main",
+    ),
 )
 
 

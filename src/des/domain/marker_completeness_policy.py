@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from des.domain.lane_profile import PHASELESS_LANES
+
 
 if TYPE_CHECKING:
     from des.domain.des_marker_parser import DesMarkers
@@ -70,11 +72,19 @@ class MarkerCompletenessPolicy:
         )
 
     def _validate_atdd_pure(self, markers: DesMarkers) -> CompletenessResult:
-        """atdd_pure dispatch completeness — DES-PROJECT-ID + DES-PHASE + DES-SLICE."""
+        """atdd_pure dispatch completeness — DES-PROJECT-ID + DES-PHASE + DES-SLICE.
+
+        A PHASELESS lane (``PHASELESS_LANES`` — the ONE definition, in the
+        lane-profile domain SSOT) declares no DES-PHASE: charter authoring is
+        not one of the 3 canonical DELIVER phases, so its honest envelope omits
+        the phase marker instead of borrowing an unrelated one
+        (fix-po-charter-dispatch-marker-lane). Every OTHER marker is still
+        required — the vocabulary widens, the enforcement does not weaken.
+        """
         missing = []
         if not markers.project_id:
             missing.append("DES-PROJECT-ID")
-        if not markers.atdd_pure_phase:
+        if not markers.atdd_pure_phase and markers.lane not in PHASELESS_LANES:
             missing.append("DES-PHASE")
         if not markers.slice_id:
             missing.append("DES-SLICE")

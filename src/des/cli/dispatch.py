@@ -39,7 +39,7 @@ from des.cli.validate_feature_delta import (
     validate_reuse_analysis_content,
 )
 from des.domain.atdd_pure_phases import FEATURE_END_PHASES, ATDDPurePhase
-from des.domain.lane_profile import LANE_PROFILES
+from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
 
 
 #: Deliberate, distinguishable exit for "bad input" (missing/invalid CLI
@@ -95,26 +95,85 @@ _FEATURE_END_SCOPE = "feature-end"
 
 #: Default AGENT_IDENTITY -- every phase not named in ``_PHASE_AGENTS`` below
 #: (all current implementation phases: ``A_GREEN``, ``D_REFACTOR_COMMIT``, the
-#: review phases, ...) keeps naming the crafter. Mirrors ADR-025's SLIM-crafter
-#: contract: the crafter implements, it never authors tests.
+#: feature-end review return, ...) keeps naming the crafter. Mirrors ADR-025's
+#: SLIM-crafter contract: the crafter implements, it never authors tests.
 _DEFAULT_AGENT = "nw-software-crafter"
+
+#: The non-code-facing examiner (Vera) -- the EXAMINE step (``C_REVIEWER_AUDIT``)
+#: owner (deliver_phase_shape, velocity-v2: "cleared via an ExamineVerdict...
+#: an independent execution-observation, NOT an LLM reviewer-audit",
+#: ``atdd_pure_phases.py:57-59``). Her spec forbids technical/code-reasoning
+#: skills and source/design access BY CONSTRUCTION (RCA
+#: fix-po-charter-dispatch-marker-lane, Face B).
+_EXAMINER_AGENT = "nw-user-examiner"
 
 #: Phase -> agent override map (GDP-5, the producing tool derives the correct
 #: agent per phase instead of hardcoding one for every phase). ``D_DISTILL``
 #: is the AT-authoring phase -- ADR-025 reserves acceptance-test authorship to
-#: ``nw-acceptance-designer``; the SLIM crafter never authors tests. Only
-#: ``D_DISTILL`` is routed here today -- review phases (``C_REVIEWER_AUDIT``,
-#: ``F_FINAL_REVIEW``) are an explicit out-of-scope follow (see this fix's
-#: feature notes), left on ``_DEFAULT_AGENT``.
+#: ``nw-acceptance-designer``; the SLIM crafter never authors tests.
+#: ``C_REVIEWER_AUDIT`` is the EXAMINE step -- routed to the examiner, never
+#: the crafter (Face B fix). ``F_FINAL_REVIEW`` (the feature-end LLM
+#: reviewer-audit return) is intentionally NOT overridden here -- it stays on
+#: ``_DEFAULT_AGENT`` (out of this fix's scope).
 _PHASE_AGENTS: dict[str, str] = {
     ATDDPurePhase.D_DISTILL.value: "nw-acceptance-designer",
+    ATDDPurePhase.C_REVIEWER_AUDIT.value: _EXAMINER_AGENT,
 }
+
+#: Lane -> agent override map for a cross-wave-child lane whose dispatch is
+#: NOT one of the 3 canonical DELIVER phases (RCA fix-po-charter-dispatch-
+#: marker-lane, Face A, §7(a)): a PO authoring an expectation charter. Widens
+#: the SAME agent-resolution concept ``_PHASE_AGENTS`` already carries,
+#: keyed on lane instead of phase for the phaseless lanes in
+#: ``PHASELESS_LANES``.
+_LANE_AGENTS: dict[str, str] = {
+    "charter": "nw-product-owner",
+}
+
+#: The ``--lane`` choice set IS the ``LANE_PROFILES`` domain SSOT (which now
+#: carries the phaseless ``charter`` lane too) -- one definition, no fork.
+#: ``PHASELESS_LANES`` (the SAME SSOT module) names the lanes whose dispatch
+#: declares NO ``DES-PHASE``; ``--phase`` stays required for every other one.
+_KNOWN_LANES: frozenset[str] = frozenset(LANE_PROFILES)
+
+#: ONE set of every NON-CODE-FACING agent this generator can dispatch (RCA
+#: fix-po-charter-dispatch-marker-lane follow-up: "the cure relocated the
+#: disease" -- the false phase moved out of the marker block, then the design
+#: pointer relocated INTO the SKILL_LOADING/DESIGN_CONTEXT section bodies).
+#: DERIVED from ``_LANE_AGENTS`` (the SAME map ``_resolve_agent`` already
+#: reads for phaseless lanes) plus ``_EXAMINER_AGENT`` -- deliberately NOT
+#: derived from ``_PHASE_AGENTS`` wholesale, since that map also carries
+#: ``nw-acceptance-designer`` (D_DISTILL), a CODE-FACING agent that needs the
+#: real design citation and TDD/quality skills. Never a second,
+#: independently-maintained list that can drift: both ``_skill_loading_body``
+#: and ``_design_context_body`` consult this ONE set, so a future
+#: non-code-facing lane/phase widens it once and both bodies stay honest by
+#: construction (the class-level negative AT: no reference to
+#: design/source/ATs).
+_NON_CODE_FACING_AGENTS: frozenset[str] = frozenset(
+    {_EXAMINER_AGENT, *_LANE_AGENTS.values()}
+)
 
 
 def _canonical_phase_values() -> tuple[str, ...]:
     """The live ``ATDDPurePhase`` canonical member values (aliases excluded --
     enum iteration already skips value-aliases like ``EXAMINE``)."""
     return tuple(member.value for member in ATDDPurePhase)
+
+
+def _resolve_agent(phase: str | None, lane: str | None) -> str:
+    """Resolve the AGENT_IDENTITY for a dispatch from its (phase, lane).
+
+    A phaseless cross-wave-child lane (e.g. ``charter``) resolves via
+    ``_LANE_AGENTS`` first -- it has no phase to key on. Otherwise the
+    existing phase-keyed resolution (``_PHASE_AGENTS``, default the crafter)
+    applies unchanged.
+    """
+    if lane is not None and lane in _LANE_AGENTS:
+        return _LANE_AGENTS[lane]
+    if phase is not None:
+        return _PHASE_AGENTS.get(phase, _DEFAULT_AGENT)
+    return _DEFAULT_AGENT
 
 
 def _feature_delta_readiness_advisory(repo_root: Path, feature_id: str) -> str | None:
@@ -177,36 +236,103 @@ def _read_marker_syntax(repo_root: Path) -> str:
     return marker_syntax
 
 
+#: Default SKILL_LOADING body -- code-facing agents (the crafter, the
+#: acceptance-designer) load TDD/quality methodology skills.
+_DEFAULT_SKILL_LOADING = (
+    "Before starting, read your skill files for methodology guidance.\n"
+    "Always load at phase entry: nw-tdd-methodology, nw-quality-framework.\n"
+)
+
+#: SKILL_LOADING body for the examiner -- NO technical/code-reasoning skills
+#: (RCA fix-po-charter-dispatch-marker-lane, Face B: her spec forbids
+#: source/design access BY CONSTRUCTION -- handing her ``nw-tdd-methodology``
+#: is the loaded-gun defect this fix removes).
+_EXAMINER_SKILL_LOADING = (
+    "No technical or code-reasoning skills to load -- the examiner has no "
+    "source or design access by construction.\n"
+)
+
+#: SKILL_LOADING body for the charter-authoring product-owner -- POSITIVE
+#: naming of the charter-authoring competence (``nw-expectation-charter``),
+#: never the crafter's code-reasoning/TDD skills (RCA follow-up: "the cure
+#: relocated the disease" -- SKILL_LOADING still handed the fresh PO
+#: ``nw-tdd-methodology`` after Face A was fixed).
+_CHARTER_SKILL_LOADING = (
+    "Load nw-expectation-charter for charter-authoring competence -- no "
+    "code-reasoning or TDD/quality-framework skills; charter authoring is "
+    "not implementation.\n"
+)
+
+#: Agent -> SKILL_LOADING body override for every NON-CODE-FACING agent.
+#: Consults the SAME ``_NON_CODE_FACING_AGENTS`` SSOT set; ``agent`` not in
+#: this map falls through to ``_DEFAULT_SKILL_LOADING``.
+_NON_CODE_FACING_SKILL_LOADING: dict[str, str] = {
+    _EXAMINER_AGENT: _EXAMINER_SKILL_LOADING,
+    "nw-product-owner": _CHARTER_SKILL_LOADING,
+}
+
+
+def _skill_loading_body(agent: str) -> str:
+    """SKILL_LOADING section body, keyed on the resolved dispatch agent."""
+    return _NON_CODE_FACING_SKILL_LOADING.get(agent, _DEFAULT_SKILL_LOADING)
+
+
+#: DESIGN_CONTEXT body for every NON-CODE-FACING agent -- NO path/word naming
+#: the design, the source, or the ATs (RCA follow-up, the durable
+#: class-level fix): the whole reason a fresh PO writes the charter is that
+#: they have NOT seen the design, and the examiner's exclusion from design is
+#: the instrument, not an omission. Mirrors the neutral body the guard
+#: already accepts for an examine dispatch (``design_context_carries_
+#: architecture`` is not applied to a non-code-facing dispatch).
+_NON_CODE_FACING_DESIGN_CONTEXT = (
+    "N/A -- this dispatch is non-code-facing; no source, design, or "
+    "acceptance-test access by construction.\n"
+)
+
+
+def _design_context_body(agent: str, feature_id: str) -> str:
+    """DESIGN_CONTEXT section body, keyed on the resolved dispatch agent.
+
+    A NON-CODE-FACING agent (``_NON_CODE_FACING_AGENTS``) never receives the
+    ``docs/feature/<id>/feature-delta.md`` pointer -- every other (code-facing)
+    agent keeps the real design citation unchanged.
+    """
+    if agent in _NON_CODE_FACING_AGENTS:
+        return _NON_CODE_FACING_DESIGN_CONTEXT
+    return f"Design reference: docs/feature/{feature_id}/feature-delta.md\n"
+
+
 def _section_body(
     section_id: str,
     *,
     feature_id: str,
-    phase: str,
+    phase: str | None,
     slice_id: str,
     intent: str,
+    agent: str,
 ) -> str:
     """Render one section's scaffold body.
 
     Every body is a minimal, self-consistent stand-in for the section's
     purpose -- the DESIGN_CONTEXT body is the one with a hard content-presence
-    gate downstream (``design_context_carries_architecture``), so it MUST
-    carry a real design-reference token (a ``docs/feature/<id>/feature-
-    delta.md`` path). A section id absent from this map (e.g. a section newly
-    added to the SSOT that this generator does not yet know how to word)
-    still gets its header emitted by the caller with an empty body -- the
-    header is the contract; the prose is not asserted downstream.
+    gate downstream (``design_context_carries_architecture``) for a
+    CODE-FACING agent, so it MUST carry a real design-reference token (a
+    ``docs/feature/<id>/feature-delta.md`` path). A NON-CODE-FACING agent
+    (``_NON_CODE_FACING_AGENTS``) is exempt from that gate BY CONSTRUCTION --
+    ``_design_context_body`` renders the neutral body instead. A section id
+    absent from this map (e.g. a section newly added to the SSOT that this
+    generator does not yet know how to word) still gets its header emitted by
+    the caller with an empty body -- the header is the contract; the prose is
+    not asserted downstream.
     """
     bodies: dict[str, str] = {
-        "DES_METADATA": (f"Slice: {slice_id}\nFeature: {feature_id}\nPhase: {phase}\n"),
-        "AGENT_IDENTITY": f"Agent: {_PHASE_AGENTS.get(phase, _DEFAULT_AGENT)}\n",
-        "SKILL_LOADING": (
-            "Before starting, read your skill files for methodology guidance.\n"
-            "Always load at phase entry: nw-tdd-methodology, nw-quality-framework.\n"
+        "DES_METADATA": (
+            f"Slice: {slice_id}\nFeature: {feature_id}\nPhase: {phase or ''}\n"
         ),
+        "AGENT_IDENTITY": f"Agent: {agent}\n",
+        "SKILL_LOADING": _skill_loading_body(agent),
         "TASK_CONTEXT": f"Slice {slice_id} of feature {feature_id}.\n",
-        "DESIGN_CONTEXT": (
-            f"Design reference: docs/feature/{feature_id}/feature-delta.md\n"
-        ),
+        "DESIGN_CONTEXT": _design_context_body(agent, feature_id),
         "ATDD_PURE_PHASES": (
             "Execute the phase named in the DES-PHASE marker.\n"
             + (f"{intent}\n" if intent else "")
@@ -234,7 +360,7 @@ def _build_prompt(
     *,
     marker_syntax: str,
     feature_id: str,
-    phase: str,
+    phase: str | None,
     slice_id: str,
     lane: str | None,
     intent: str,
@@ -243,8 +369,16 @@ def _build_prompt(
     section_ids: tuple[str, ...],
     at_kind: str,
     regression_test_file: str | None,
+    agent: str,
 ) -> str:
-    """Assemble the full dispatch prompt: marker block, then section headers."""
+    """Assemble the full dispatch prompt: marker block, then section headers.
+
+    ``phase`` is ``None`` for a phaseless cross-wave-child lane (e.g.
+    ``charter``, RCA fix-po-charter-dispatch-marker-lane Face A) -- charter
+    authoring is not one of the 3 canonical DELIVER phases, so the
+    ``DES-PHASE`` marker is omitted entirely rather than borrowing an
+    unrelated phase word.
+    """
 
     def marker(key: str, value: str) -> str:
         return marker_syntax.format(key=key, value=value)
@@ -253,10 +387,11 @@ def _build_prompt(
         marker("DES-VALIDATION", "required"),
         marker("DES-PROJECT-ID", feature_id),
         marker("DES-MODE", "atdd_pure"),
-        marker("DES-PHASE", phase),
-        marker("DES-SLICE", slice_id),
-        marker("DES-WAVE", "deliver"),
     ]
+    if phase is not None:
+        marker_lines.append(marker("DES-PHASE", phase))
+    marker_lines.append(marker("DES-SLICE", slice_id))
+    marker_lines.append(marker("DES-WAVE", "deliver"))
     if lane is not None:
         marker_lines.append(marker("DES-LANE", lane))
         if lane in _LANES_REQUIRING_JUSTIFICATION:
@@ -274,6 +409,7 @@ def _build_prompt(
             phase=phase,
             slice_id=slice_id,
             intent=intent,
+            agent=agent,
         )
         for section_id in section_ids
     ]
@@ -311,15 +447,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--phase",
-        required=True,
+        required=False,
+        default=None,
         choices=_canonical_phase_values(),
-        help="The ATDDPurePhase this dispatch executes.",
+        help=(
+            "The ATDDPurePhase this dispatch executes. Required UNLESS "
+            f"--lane is one of the phaseless cross-wave-child lanes "
+            f"({', '.join(sorted(PHASELESS_LANES))})."
+        ),
     )
     parser.add_argument(
         "--lane",
         default=None,
-        choices=tuple(LANE_PROFILES),
-        help="Optional non-standard lane (e.g. bugfix, prefactoring).",
+        choices=tuple(_KNOWN_LANES),
+        help="Optional non-standard lane (e.g. bugfix, prefactoring, charter).",
     )
     parser.add_argument("--intent", default="", help="Free-text task intent.")
     parser.add_argument(
@@ -373,8 +514,41 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = _build_parser().parse_args(argv)
 
+    phase: str | None = args.phase
+    if phase is None and args.lane not in PHASELESS_LANES:
+        print(
+            "error: --phase is required unless --lane is one of the "
+            f"phaseless cross-wave-child lanes ({', '.join(sorted(PHASELESS_LANES))}) "
+            "-- charter authoring is not one of the 3 canonical DELIVER "
+            "phases (RCA fix-po-charter-dispatch-marker-lane, Face A).",
+            file=sys.stderr,
+        )
+        return _EXIT_USAGE_ERROR
+
+    # COHERENCE guard (as opposed to the SHAPE guards above/below, which check
+    # each flag in isolation): a phaseless lane (`PHASELESS_LANES`) declares NO
+    # `ATDDPurePhase` by construction -- combining it with an explicit --phase
+    # is a self-contradictory request (each part individually valid, the
+    # COMBINATION nonsense). Refuse loudly (GDP-3/6) instead of silently
+    # inventing a best-guess envelope naming one role's agent with another
+    # role's phase.
+    if phase is not None and args.lane in PHASELESS_LANES:
+        print(
+            f"error: --lane {args.lane} is phaseless (it belongs to a "
+            "non-code-facing cross-wave-child dispatch that declares no "
+            f"ATDDPurePhase) and cannot be combined with --phase {phase} "
+            f"(a phase belonging to a different role) -- drop --phase, or "
+            "use a phase-bearing lane instead.",
+            file=sys.stderr,
+        )
+        return _EXIT_USAGE_ERROR
+
     slice_id: str = args.slice_id
-    if args.phase in FEATURE_END_PHASES and slice_id != _FEATURE_END_SCOPE:
+    if (
+        phase is not None
+        and phase in FEATURE_END_PHASES
+        and slice_id != _FEATURE_END_SCOPE
+    ):
         print(
             f"note: --phase {args.phase} is a feature-end-cycle phase -- its "
             "ONLY coherent scope is 'feature-end' (ADR-028 D6, Option A). "
@@ -441,7 +615,7 @@ def main(argv: list[str] | None = None) -> int:
     prompt = _build_prompt(
         marker_syntax=_read_marker_syntax(repo_root),
         feature_id=args.project_id,
-        phase=args.phase,
+        phase=phase,
         slice_id=slice_id,
         lane=args.lane,
         intent=args.intent,
@@ -450,6 +624,7 @@ def main(argv: list[str] | None = None) -> int:
         section_ids=section_ids,
         at_kind=args.at_kind,
         regression_test_file=args.regression_test_file,
+        agent=_resolve_agent(phase, args.lane),
     )
     print(prompt, end="")
     return 0

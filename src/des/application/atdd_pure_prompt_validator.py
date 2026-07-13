@@ -26,7 +26,7 @@ from des.domain.atdd_pure_phases import FEATURE_END_RETURN_PHASE
 from des.domain.design_context_content_check import (
     design_context_carries_architecture,
 )
-from des.domain.lane_profile import LANE_PROFILES
+from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
 from des.ports.driver_ports.validator_port import ValidationResult, ValidatorPort
 
 
@@ -101,6 +101,32 @@ _DES_PHASE_MARKER = re.compile(r"<!--\s*DES-PHASE\s*:\s*(\S+)\s*-->")
 # branch, so substituting the datum substitutes the decision (the AT-2 structural
 # guarantee).
 _DES_LANE_MARKER = re.compile(r"<!--\s*DES-LANE\s*:\s*(\S+)\s*-->")
+
+
+def _is_non_code_facing_dispatch(prompt: str) -> bool:
+    """True for a dispatch whose recipient is NON-CODE-FACING BY
+    CONSTRUCTION -- the DESIGN_CONTEXT content-presence gate must never hold
+    such a dispatch to a citation it structurally cannot carry (RCA
+    fix-po-charter-dispatch-marker-lane). Two independent faces, ONE
+    predicate -- consulting the SAME SSOT ``des dispatch`` itself reads,
+    never a second/private list:
+
+      * the raw DES-PHASE marker names the EXAMINE step (``C_REVIEWER_AUDIT``)
+        -- the non-code-facing ``nw-user-examiner`` dispatch (Face B).
+        Deliberately narrower than ``_REVIEW_DISPATCH_PHASES``: the
+        feature-end review return (``FEATURE_END_RETURN_PHASE``) is still
+        the code-facing LLM reviewer-audit and keeps the gate; OR
+      * the raw DES-LANE marker names a lane in ``PHASELESS_LANES`` (Face A)
+        -- the SAME domain SSOT ``des.domain.lane_profile`` declares as "the
+        ONE definition of 'phaseless' every consumer reads" (today: the
+        ``charter`` lane, a ``nw-product-owner`` authoring an expectation
+        charter -- excluded from design by construction, not by omission).
+    """
+    phase_match = _DES_PHASE_MARKER.search(prompt)
+    if phase_match is not None and phase_match.group(1) == "C_REVIEWER_AUDIT":
+        return True
+    lane_match = _DES_LANE_MARKER.search(prompt)
+    return lane_match is not None and lane_match.group(1) in PHASELESS_LANES
 
 
 def _required_sections(prompt: str) -> tuple[str, ...]:
@@ -254,7 +280,16 @@ class AtddPurePromptValidator(ValidatorPort):
         # a real architecture citation. A header with an empty/placeholder/
         # citation-free body is refused so the crafter never runs without the
         # design it must follow (the root of architectural drift).
-        if "# DESIGN_CONTEXT" in prompt:
+        #
+        # EXEMPT for any NON-CODE-FACING dispatch (RCA
+        # fix-po-charter-dispatch-marker-lane): an EXAMINE (C_REVIEWER_AUDIT)
+        # dispatch (Face B) -- the examiner's exclusion from design is the
+        # instrument, not an omission, forcing a citation onto
+        # nw-user-examiner would hand her the exact source/design access her
+        # spec forbids by construction -- and a phaseless PHASELESS_LANES
+        # dispatch (Face A, e.g. ``charter``) -- a nw-product-owner authoring
+        # an expectation charter is excluded from design the same way.
+        if "# DESIGN_CONTEXT" in prompt and not _is_non_code_facing_dispatch(prompt):
             body = _extract_section_body(prompt, "DESIGN_CONTEXT")
             if not design_context_carries_architecture(body):
                 errors.append(

@@ -20,6 +20,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from des._internal import subset_parser
+from des.adapters.driven.filesystem.wave_active_filesystem_store import (
+    WaveActiveFilesystemStore,
+)
 from des.adapters.driven.logging.audit_events import (
     AgentUsageObservedEvent,
     EventType,
@@ -55,9 +58,34 @@ from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.repo_path_resolver import (
     feature_delta_path as _feature_delta_path,
 )
-from des.domain.wave_active import WAVE_VOCABULARY
+from des.domain.wave_active import WAVE_VOCABULARY, WaveActiveRecord
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 from des.runtime.interpreter import des_spawn
+
+
+# ---------------------------------------------------------------------------
+# Cross-wave-child exit symmetry (fix-po-charter-dispatch-marker-lane)
+# ---------------------------------------------------------------------------
+
+
+def _returning_inside_a_different_active_wave(repo: Path) -> bool:
+    """True when the ACTIVE wave floor names a wave OTHER than ``distill``.
+
+    RCA fix-po-charter-dispatch-marker-lane §4a/§7: the ONLY envelope that
+    passes PreToolUse entry for a non-code-facing spine sub-dispatch (a PO
+    charter, an examiner walk) issued INSIDE another wave's floor borrows the
+    ``D_DISTILL`` + ``feature-end`` declaration. A genuine feature-wide
+    DISTILL-wave completion returns while ``distill`` itself is the active
+    wave (or no wave floor is armed -- the pre-wave-active-tracking
+    baseline); a ``D_DISTILL``-phase return arriving while a DIFFERENT wave
+    (e.g. ``deliver``) is active is, by construction, a cross-wave-child
+    sub-dispatch that borrowed the declaration -- never a real feature-wide
+    DISTILL exit. The active wave is reader-sourced (never self-reported);
+    an absent/unreadable floor is NOT treated as cross-wave-child (fails
+    toward the existing, already-verified gate behaviour).
+    """
+    state = WaveActiveFilesystemStore().read(repo)
+    return isinstance(state, WaveActiveRecord) and state.wave != "distill"
 
 
 # ---------------------------------------------------------------------------
@@ -1882,6 +1910,27 @@ def _handle_distill_exit_gate(
             resolved.effective_cwd or (cwd if isinstance(cwd, str) else "") or "."
         )
         feature_id = resolved.project_id
+
+        # Cross-wave-child exit symmetry (RCA fix-po-charter-dispatch-marker-
+        # lane §4a/§7): a borrowed D_DISTILL declaration on a return arriving
+        # while a DIFFERENT wave is active is never a genuine feature-wide
+        # DISTILL completion -- verifying it against a slice plan the
+        # feature-id legitimately never had traps the agent in a rejection
+        # loop it cannot honestly escape. The honest declaration is exempt at
+        # EXIT exactly as it is at ENTRY (symmetric fix).
+        if _returning_inside_a_different_active_wave(repo):
+            log_hook_invoked(
+                "subagent_stop_distill_exit_intercept",
+                {
+                    "mode": "atdd_pure",
+                    "project_id": feature_id,
+                    "slice_id": resolved.slice_id,
+                    "atdd_pure_phase": resolved.atdd_pure_phase,
+                    "cross_wave_child_exempt": True,
+                },
+                hook_id=hook_id,
+            )
+            return 0
 
         log_hook_invoked(
             "subagent_stop_distill_exit_intercept",
