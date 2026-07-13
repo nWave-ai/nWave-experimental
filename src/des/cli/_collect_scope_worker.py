@@ -224,15 +224,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--path", action="append", default=[])
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--jobs", default=None)
+    # DDD-CERT-3 (certification-legs-observe-real-execution, slice-02): the
+    # marker-agnostic secondary collect. Omitted (None) -> the collect-only
+    # branch applies the SAME `_CONTRACT_MARKER` it always has (byte-for-byte
+    # unchanged default). An explicit empty string ("") -> no `-m` filter at
+    # all (the unmarked collect DDD-CERT-3 needs to distinguish a genuinely
+    # absent suite from one that is merely unmarked). A non-empty override
+    # string replaces the marker expression outright.
+    parser.add_argument("--markers", default=None)
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
     if args.run:
         return _run_scope(args.repo, args.path, jobs=args.jobs)
 
     collector = _Collector()
+    marker_expr = _CONTRACT_MARKER if args.markers is None else args.markers
     pytest_argv = [
-        "-m",
-        _CONTRACT_MARKER,
+        *(["-m", marker_expr] if marker_expr else []),
         "--collect-only",
         "-p",
         "no:cacheprovider",

@@ -203,37 +203,87 @@ class _CollectedScope:
     modify_count: int = 0
 
 
-def _collect_node_ids(repo: Path, paths: list[Path] | None = None) -> list[str]:
+class _UnsetMarkers:
+    """Sentinel: the ``markers`` kwarg was omitted (DDD-CERT-3).
+
+    Distinguishes "caller did not override the marker expression" (the
+    default -- the worker applies its own ``_CONTRACT_MARKER``, today's
+    behavior byte-for-byte) from an EXPLICIT ``markers=None`` (the
+    marker-agnostic secondary collect: no ``-m`` filter at all).
+    """
+
+
+_MARKERS_UNSET = _UnsetMarkers()
+
+
+def _collect_node_ids(
+    repo: Path,
+    paths: list[Path] | None = None,
+    markers: str | None | _UnsetMarkers = _MARKERS_UNSET,
+) -> list[str]:
     """Collect the contract suite's canonical node-ids without running them.
 
     Thin compatibility seam over `_collect_scope` (DDD-12 -- still the single
     collection seam): returns only the canonical identity list. Callers that
     also need pytest's in-process collected count call `_collect_scope`.
+
+    ``markers`` (DDD-CERT-3, certification-legs-observe-real-execution
+    slice-02): omitted -> today's marker-filtered collect, unchanged. An
+    explicit ``None`` -> the marker-agnostic secondary collect (no ``-m``
+    filter).
     """
-    return _collect_scope(repo, paths).node_ids
+    return _collect_scope(repo, paths, markers=markers).node_ids
 
 
-_COLLECT_MEMO: dict[tuple[str, tuple[str, ...]], _CollectedScope] = {}
+_COLLECT_MEMO: dict[tuple[str, tuple[str, ...], str | None], _CollectedScope] = {}
 
 
-def _collect_scope(repo: Path, paths: list[Path] | None = None) -> _CollectedScope:
+def _collect_scope(
+    repo: Path,
+    paths: list[Path] | None = None,
+    markers: str | None | _UnsetMarkers = _MARKERS_UNSET,
+) -> _CollectedScope:
     """Memoizing wrapper over ``_collect_scope_uncached`` (velocity-v2, <5min G-143).
 
     Under ``NWAVE_COLLECT_MEMO`` (set ONLY by the test conftest) the collect of the
     REAL repo tree -- immutable during a test session -- is memoized, so across a
     serial run every dir that collects the whole ~1677-test suite pays the ~22s cost
     ONCE instead of once-per-dir. Synthetic tmp trees (per-test, possibly mutated) are
-    NEVER memoized -- only a non-temp repo is, keyed by (resolved-repo, paths).
+    NEVER memoized -- only a non-temp repo is, keyed by (resolved-repo, paths, markers).
     Production (no env var) is an exact pass-through: zero behavior change, no cache.
     """
     if os.environ.get("NWAVE_COLLECT_MEMO"):
         resolved = str(repo.resolve())
         if not resolved.startswith(tempfile.gettempdir()):
-            key = (resolved, tuple(sorted(str(p) for p in (paths or []))))
+            markers_key = None if isinstance(markers, _UnsetMarkers) else markers
+            key = (
+                resolved,
+                tuple(sorted(str(p) for p in (paths or []))),
+                markers_key,
+            )
             if key not in _COLLECT_MEMO:
-                _COLLECT_MEMO[key] = _collect_scope_uncached(repo, paths)
+                _COLLECT_MEMO[key] = _collect_scope_uncached_dispatch(
+                    repo, paths, markers
+                )
             return _COLLECT_MEMO[key]
-    return _collect_scope_uncached(repo, paths)
+    return _collect_scope_uncached_dispatch(repo, paths, markers)
+
+
+def _collect_scope_uncached_dispatch(
+    repo: Path, paths: list[Path] | None, markers: str | None | _UnsetMarkers
+) -> _CollectedScope:
+    """Call ``_collect_scope_uncached``, preserving the OLD signature on the
+    default (unset-markers) path (DDD-CERT-3).
+
+    The design mandate is "the default call is byte-for-byte identical to
+    before". When ``markers`` is unset, call with the OLD ``(repo, paths)``
+    signature -- NO ``markers`` kwarg -- so an existing test-double that stubs
+    ``_collect_scope_uncached`` with the old signature still works. Only pass
+    ``markers=`` when it is EXPLICITLY set.
+    """
+    if isinstance(markers, _UnsetMarkers):
+        return _collect_scope_uncached(repo, paths)
+    return _collect_scope_uncached(repo, paths, markers=markers)
 
 
 def _light_collect_env() -> dict[str, str] | None:
@@ -255,7 +305,9 @@ def _light_collect_env() -> dict[str, str] | None:
 
 
 def _collect_scope_uncached(
-    repo: Path, paths: list[Path] | None = None
+    repo: Path,
+    paths: list[Path] | None = None,
+    markers: str | None | _UnsetMarkers = _MARKERS_UNSET,
 ) -> _CollectedScope:
     """Derive the canonical collected scope from pytest's IN-PROCESS session.
 
@@ -314,6 +366,7 @@ def _collect_scope_uncached(
                 "--repo",
                 str(repo),
                 *_path_args(paths),
+                *_markers_args(markers),
             ],
             capture_output=True,
             text=True,
@@ -403,6 +456,20 @@ def _path_args(paths: list[Path] | None) -> list[str]:
     for path in paths:
         rendered.extend(["--path", str(path)])
     return rendered
+
+
+def _markers_args(markers: str | None | _UnsetMarkers) -> list[str]:
+    """Render the worker's optional ``--markers`` override (DDD-CERT-3).
+
+    Unset (the default) omits ``--markers`` entirely -- the worker applies its
+    own ``_CONTRACT_MARKER`` default, today's marker-filtered call preserved
+    byte-for-byte. An explicit ``None`` renders ``--markers ""`` (empty string
+    -> no ``-m`` filter at all, the marker-agnostic secondary collect). An
+    explicit non-empty string overrides the marker expression outright.
+    """
+    if isinstance(markers, _UnsetMarkers):
+        return []
+    return ["--markers", markers or ""]
 
 
 def _parse_worker_line(stdout: str, prefix: str) -> dict[str, object] | None:
