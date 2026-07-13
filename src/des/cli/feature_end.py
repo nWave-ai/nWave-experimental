@@ -40,6 +40,7 @@ import sys
 from pathlib import Path
 
 from des.application.feature_end_cycle_service import (
+    CycleIndeterminate,
     CycleRefusal,
     run_feature_end_cycle,
 )
@@ -191,12 +192,37 @@ def _run_cycle(args: argparse.Namespace) -> int:
         )
         return 2
 
+    if isinstance(outcome, CycleIndeterminate):
+        # ADR-GV-002 D4: exit 3, mirroring run_contract_gate.py's existing
+        # local `_GATE_INDETERMINATE_EXIT_CODE` pattern -- a LOUD refusal to
+        # decide, never a fabricated FeatureEndCycleComplete over a leg the
+        # cycle never actually observed (DDD-CERT-2).
+        _emit(
+            {
+                "event": "FeatureEndCycleIndeterminate",
+                "verb": "run",
+                "feature_id": args.feature_id,
+                "error": outcome.reason,
+                "leg_census": {
+                    "ran": outcome.leg_census.ran,
+                    "not_applicable": outcome.leg_census.not_applicable,
+                    "indeterminate": outcome.leg_census.indeterminate,
+                },
+            }
+        )
+        return 3
+
     _emit(
         {
             "event": "FeatureEndCycleComplete",
             "verb": "run",
             "feature_id": args.feature_id,
             "verdict_hash": outcome.verdict_hash,
+            "leg_census": {
+                "ran": outcome.leg_census.ran,
+                "not_applicable": outcome.leg_census.not_applicable,
+                "indeterminate": outcome.leg_census.indeterminate,
+            },
         }
     )
     return 0

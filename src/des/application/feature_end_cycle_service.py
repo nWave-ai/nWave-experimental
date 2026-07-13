@@ -99,6 +99,7 @@ class CycleSuccess:
     """The cycle ran every gate, signed the verdict, and emitted both records."""
 
     verdict_hash: str
+    leg_census: LegCensus
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,68 @@ class CycleRefusal:
     """
 
     error: str
+
+
+@dataclass(frozen=True)
+class LegCensus:
+    """Per-leg census across the feature-end cycle's legs (DDD-CERT-2).
+
+    Distinguishes "N/N legs ran and passed" from "0/N ran, all NA" -- a
+    distinction the prior two-outcome aggregate (``CycleSuccess |
+    CycleRefusal``, with no census) could not express. Each observed
+    ``*Leg*`` outcome contributes exactly one increment via
+    :func:`_fold_leg_census`: ``ran`` (the leg genuinely executed and
+    observed real evidence), ``not_applicable`` (a genuinely-absent
+    precondition, checked BEFORE any subprocess), or ``indeterminate`` (a
+    subprocess/probe ran and degraded -- observed but unresolved, DDD-CERT-1).
+    """
+
+    ran: int = 0
+    not_applicable: int = 0
+    indeterminate: int = 0
+
+
+def _fold_leg_census(census: LegCensus, leg: object) -> LegCensus:
+    """Fold one ``*Leg*`` outcome into the running per-leg census (DDD-CERT-2).
+
+    Recognizes the ``*LegRan`` / ``*LegNotApplicable`` / ``*LegIndeterminate``
+    family-name suffix every leg-result dataclass in this module already
+    follows -- the ``Leg`` infix distinguishes a countable leg outcome from a
+    non-leg control type (e.g. ``WalkingSkeletonNotApplicable``, which is not
+    one of the census-counted legs). Counting a leg needs no per-leg-type
+    branch, so widening a leg family (e.g. a future ``*LegIndeterminate``
+    sibling) needs no change here.
+    """
+    name = type(leg).__name__
+    if "Leg" not in name:
+        return census
+    if name.endswith("Indeterminate"):
+        return LegCensus(census.ran, census.not_applicable, census.indeterminate + 1)
+    if name.endswith("NotApplicable"):
+        return LegCensus(census.ran, census.not_applicable + 1, census.indeterminate)
+    if name.endswith("Ran"):
+        return LegCensus(census.ran + 1, census.not_applicable, census.indeterminate)
+    return census
+
+
+@dataclass(frozen=True)
+class CycleIndeterminate:
+    """The cycle ran but at least one leg reported INDETERMINATE (DDD-CERT-2).
+
+    A THIRD outcome, distinct from both :class:`CycleSuccess` (every observed
+    leg genuinely resolved, verdict signed) and :class:`CycleRefusal` (a leg
+    genuinely FAILED). An INDETERMINATE leg means the cycle could not observe
+    real execution for that leg -- an *epistemic* gap ("I did not observe
+    this"), never resolved toward a fabricated pass (the exact #126/#179
+    false-green this feature closes). ``des feature-end run`` maps this to
+    exit 3 (ADR-GV-002 D4), mirroring ``run_contract_gate.py``'s existing
+    local ``_GATE_INDETERMINATE_EXIT_CODE`` pattern. No signed verdict is
+    produced and no feature-end record is emitted -- the same anti-theater
+    invariant :class:`CycleRefusal` upholds.
+    """
+
+    reason: str
+    leg_census: LegCensus
 
 
 @dataclass(frozen=True)
@@ -144,6 +207,33 @@ class FullSuiteLegNotApplicable:
 
     Anti-theater is preserved: a PRESENT-but-RED full suite still fail-closes
     (``CycleRefusal``); only a genuinely-ABSENT suite is NA.
+    """
+
+    reason: str
+    found_and_excluded: bool = False
+    """True when a runnable suite was FOUND under ``src/<pkg>/tests/`` and
+    deliberately EXCLUDED (the package's own fixtures, already observed by
+    the environmental-e2e leg -- not the repo's contract suite), as opposed
+    to a repo that genuinely carries no test files anywhere. Lets the cycle's
+    zero-ran verdict NAME what it found and why it was excluded, so a
+    found-and-excluded payload is never byte-identical to a genuinely-absent
+    one (self-explaining WHAT/WHY/HOW,
+    feedback_every_failure_explains_what_why_how_to_fix_2026_06_26)."""
+
+
+@dataclass(frozen=True)
+class FullSuiteLegIndeterminate:
+    """The full-suite leg found a runnable suite it could not certify (DDD-CERT-3).
+
+    The marker-filtered collect (``-m "unit or integration or acceptance"``)
+    found zero node-ids, but a SECOND, marker-agnostic collect found >=1: a
+    real, runnable contract suite exists that this leg never observed under
+    the nWave contract-marker convention. An *epistemic* "I did not observe
+    this" must never be mislabeled as an *ontological* "there is nothing to
+    observe" (:class:`FullSuiteLegNotApplicable`) -- the cycle escalates to
+    :class:`CycleIndeterminate` (ADR-GV-002 D1/D3), never a silent
+    ``CycleSuccess`` (the exact #126/#179 false-green this feature closes).
+    Carries the reason naming WHY the leg is indeterminate (degrade-LOUD).
     """
 
     reason: str
@@ -224,12 +314,15 @@ def run_feature_end_cycle(
     feature_dir: Path,
     reviewer_agent_id: str | None,
     verdict: str | None,
-) -> CycleSuccess | CycleRefusal:
+) -> CycleSuccess | CycleIndeterminate | CycleRefusal:
     """Run the feature-end cycle: run the REAL gates, then sign + emit.
 
     Returns :class:`CycleSuccess` carrying the signed ``verdict_hash`` when both
-    REAL gate runs passed and the deep-review verdict signed; otherwise
-    :class:`CycleRefusal` naming the violated precondition -- no record emitted.
+    REAL gate runs passed and the deep-review verdict signed;
+    :class:`CycleIndeterminate` when a leg observed a real, runnable artifact
+    it could not certify (DDD-CERT-2/3 -- the epistemic gap is never resolved
+    toward a fabricated pass); otherwise :class:`CycleRefusal` naming the
+    violated precondition -- no record emitted.
 
     The two gate legs run the REAL gate CLIs (``des walking-skeleton-gate
     --feature-dir`` and ``des verify-environmental-e2e --mode run``) and the
@@ -287,9 +380,22 @@ def run_feature_end_cycle(
     if isinstance(coverage_map, CycleRefusal):
         return coverage_map
 
+    census = LegCensus()
+
     full_suite = _run_full_suite_leg(repo_root=repo_root)
     if isinstance(full_suite, CycleRefusal):
         return full_suite
+    census = _fold_leg_census(census, full_suite)
+    if isinstance(full_suite, FullSuiteLegIndeterminate):
+        # DDD-CERT-2/3: the full-suite leg observed a real, runnable suite it
+        # could not certify -- the cycle escalates to CycleIndeterminate and
+        # refuses to sign/emit (anti-theater, mirrors CycleRefusal's
+        # fail-closed shape). Never a silent CycleSuccess over an unobserved
+        # leg (the exact #126/#179 false-green this feature closes).
+        return CycleIndeterminate(
+            "the feature-end full-suite leg is INDETERMINATE: " + full_suite.reason,
+            leg_census=census,
+        )
     # FullSuiteLegRan / FullSuiteLegNotApplicable both PROCEED: a green suite and
     # a genuinely-absent suite are equally non-blocking (only a PRESENT-but-RED
     # suite returns CycleRefusal above). f-nonbypassable-attestation slice-01
@@ -310,6 +416,7 @@ def run_feature_end_cycle(
     )
     if isinstance(doc_coherence, CycleRefusal):
         return doc_coherence
+    census = _fold_leg_census(census, doc_coherence)
     if isinstance(doc_coherence, DocCoherenceLegRan):
         ledger.append_doc_coherence_verified(feature_id=feature_id)
     else:
@@ -320,6 +427,7 @@ def run_feature_end_cycle(
     )
     if isinstance(execution_reach, CycleRefusal):
         return execution_reach
+    census = _fold_leg_census(census, execution_reach)
     if isinstance(execution_reach, ExecutionReachLegRan):
         ledger.append_execution_reach_verified(feature_id=feature_id)
     else:
@@ -330,6 +438,7 @@ def run_feature_end_cycle(
     )
     if isinstance(fresh_clone, CycleRefusal):
         return fresh_clone
+    census = _fold_leg_census(census, fresh_clone)
     if isinstance(fresh_clone, FreshCloneLegRan):
         ledger.append_fresh_clone_verified(feature_id=feature_id)
     else:
@@ -340,6 +449,47 @@ def run_feature_end_cycle(
     )
     if isinstance(feature_end_examine, CycleRefusal):
         return feature_end_examine
+
+    # ADR-GV-002 D1/D3, Ale-ratified 2026-07-13 charter (DDD-CERT-2): "done"
+    # means "observed", uniformly -- independent of WHICH leg (or how many
+    # legs) resolved NOT_APPLICABLE. A cycle whose every leg resolved
+    # NOT_APPLICABLE (e.g. a genuinely-empty or minimal target repo) observed
+    # ZERO legs genuinely running, so it has no observable done-proof -- WHAT:
+    # census.ran == 0 must never reach a signed CycleSuccess; WHY: signing here
+    # would fabricate FeatureEndCycleComplete over zero real observation, the
+    # exact #126/#179 silent false-green this feature closes; HOW: this is not
+    # a defect to fix on this target repo -- add or point the feature at real,
+    # observable surface (a runnable+marked test suite, coverage.xml, docs,
+    # demo-recipe, ...) so at least one leg can genuinely RUN, then re-run
+    # `des feature-end run`.
+    if census.ran == 0:
+        if (
+            isinstance(full_suite, FullSuiteLegNotApplicable)
+            and full_suite.found_and_excluded
+        ):
+            # Found-and-excluded distinguishability (Vera real-surface
+            # examine, 2026-07-13): a repo whose ONLY tests live under
+            # src/<pkg>/tests/ is not "nothing to verify" -- it is "I found
+            # a suite and correctly excluded it." Naming what was found and
+            # why must never collapse into the genuinely-absent boilerplate
+            # below (an unreached-but-real suite is a failure to verify, not
+            # an absence of anything to verify -- the charter's own words).
+            return CycleIndeterminate(
+                "the feature-end cycle observed zero legs genuinely run "
+                "(leg_census.ran == 0); the full-suite leg " + full_suite.reason,
+                leg_census=census,
+            )
+        return CycleIndeterminate(
+            "the feature-end cycle observed zero legs genuinely run "
+            "(leg_census.ran == 0); every leg resolved NOT_APPLICABLE, so "
+            "there is no observable done-proof -- 'done' means 'observed', "
+            "uniformly, never a fabricated FeatureEndCycleComplete over zero "
+            "observation. Point the feature at real, observable surface "
+            "(a runnable and marked contract suite, coverage.xml, docs, or a "
+            "demo recipe) so at least one leg can genuinely run, then re-run "
+            "`des feature-end run`.",
+            leg_census=census,
+        )
 
     signed = sign_feature_end_review(
         feature_id=feature_id,
@@ -356,7 +506,7 @@ def run_feature_end_cycle(
     ledger.append_feature_end_event(
         FEATURE_END_REVIEW_VERDICT, signed.verdict_hash, feature_id=feature_id
     )
-    return CycleSuccess(signed.verdict_hash)
+    return CycleSuccess(signed.verdict_hash, leg_census=census)
 
 
 def _run_walking_skeleton_gate(
@@ -571,7 +721,12 @@ def _run_coverage_map_verify_leg(
 
 def _run_full_suite_leg(
     *, repo_root: Path
-) -> FullSuiteLegRan | FullSuiteLegNotApplicable | CycleRefusal:
+) -> (
+    FullSuiteLegRan
+    | FullSuiteLegNotApplicable
+    | FullSuiteLegIndeterminate
+    | CycleRefusal
+):
     """Run the FULL contract suite ONCE at feature-end (slice-05, AT-19, §V.B).
 
     The full-suite-once@feature-end allocation: a DISTINCT clean leg that runs
@@ -591,8 +746,27 @@ def _run_full_suite_leg(
     contract tree. Only a PRESENT suite is held to the run: a green suite yields
     ``FullSuiteLegRan`` (gate exit 0); a PRESENT-but-RED suite fail-closes
     (``CycleRefusal``), so a real regression still yields no signed verdict.
+
+    DDD-CERT-3: a repo whose marker-filtered collect is empty BUT a SECOND,
+    marker-agnostic collect finds a real, runnable suite is neither of the
+    above -- it is :class:`FullSuiteLegIndeterminate` (a real artifact this
+    leg did not observe, never conflated with genuine absence).
     """
-    if not _repo_has_contract_suite(repo_root):
+    presence = _repo_has_contract_suite(repo_root)
+    if isinstance(presence, FullSuiteLegIndeterminate):
+        return presence
+    if not presence:
+        if _repo_has_src_only_contract_suite(repo_root):
+            return FullSuiteLegNotApplicable(
+                "found a runnable test suite under src/<pkg>/tests/ -- the "
+                "installable package's own fixtures, already observed by the "
+                "environmental-e2e leg, NOT the repo's contract suite -- "
+                "excluded by design (DDD-CERT-3), so this leg has nothing "
+                "outside src/ to certify. Put a repo-level contract suite "
+                "outside src/ (e.g. tests/ at the repo root) so the "
+                "full-suite leg has something of its own to run.",
+                found_and_excluded=True,
+            )
         return FullSuiteLegNotApplicable(
             "the target repository carries no collectable contract suite; the "
             "feature-end full-suite leg is not applicable (no full suite to run)"
@@ -607,29 +781,136 @@ def _run_full_suite_leg(
     return FullSuiteLegRan(pytest_exit_code=completed.returncode)
 
 
-def _repo_has_contract_suite(repo_root: Path) -> bool:
-    """Whether ``repo_root`` carries at least one collectable contract node-id.
+_CONTRACT_SUITE_TEST_ROOTS = ("tests", "test")
+
+# Denylist over the total repo-root universe (sister's class #201,
+# "enumerate-what-to-ignore -> blind-to-new-field", cured by TOTAL
+# PARTITION -- widened from the two-root allowlist above, DDD-CERT-3
+# non-standard-location fix). Mirrors the carpaccio/`.feature`-walk prune set
+# (``feature_at_files.EXCLUDED_SEARCH_DIRS``) for consistency.
+_CONTRACT_SUITE_PRUNE_DIRS = frozenset(
+    {
+        ".git",
+        ".venv",
+        "__pycache__",
+        "node_modules",
+        "build",
+        "dist",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".hypothesis",
+        ".nwave",
+    }
+)
+
+
+def _repo_has_contract_suite(repo_root: Path) -> bool | FullSuiteLegIndeterminate:
+    """Whether ``repo_root`` carries a contract suite for the full-suite leg.
 
     Reuses the single contract-collection seam (``run_contract_gate.
     _collect_node_ids``, DDD-12 -- no new pytest call site) to ask the genuine
-    question "does this repo have a full suite to run?". Returns True when the
-    collection finds at least one node-id; False when the repo collects nothing
-    (no full suite -> the leg is NOT_APPLICABLE). An untrustworthy collection is
-    treated as "no suite to certify here" rather than crashing the cycle -- the
-    PRESENT-but-RED anti-theater path is the gate run itself, not this presence
-    probe.
+    question "does this repo have a full suite to run?".
+
+    Returns ``True`` when the marker-filtered collect finds >=1 node-id
+    (today's behavior, unchanged -- the leg proceeds to run the gate).
+    Returns ``False`` when the marker-filtered collect is empty AND no
+    marker-agnostic runnable contract suite exists anywhere in the repo
+    outside ``src/`` (genuinely no suite exists -- NOT_APPLICABLE).
+    Returns :class:`FullSuiteLegIndeterminate` when the marker-filtered
+    collect is empty BUT the marker-agnostic secondary collect finds >=1
+    node-id outside ``src/`` -- a real, runnable suite this leg did not
+    observe (DDD-CERT-3): epistemic absence ("I did not observe") is never
+    conflated with ontological absence ("nothing exists").
+
+    Secondary-collect scope (widened past DDD-CERT-1's original two-root
+    allowlist, DDD-CERT-3 non-standard-location fix): the marker-agnostic
+    collect is a DENYLIST over the total repo-root universe, not an allowlist
+    of conventional test roots -- every top-level entry EXCEPT ``src/`` and
+    :data:`_CONTRACT_SUITE_PRUNE_DIRS` is in scope. The original allowlist
+    (:data:`_CONTRACT_SUITE_TEST_ROOTS`) missed a runnable suite at a
+    non-standard repo-level location (e.g. ``custom_tests/``), silently
+    falling through to NOT_APPLICABLE -- the #126 false-green surviving for
+    non-conventional test layouts. Only repo-level DIRECTORIES outside
+    ``src/`` are scanned -- a top-level manifest FILE (e.g.
+    ``pyproject.toml``, present in every real repo) is not a test root and
+    must not be handed to pytest collection, else its collection failure
+    (exit code 4, no such file could be collected) masks a real suite behind
+    an unrelated error. ``src/`` is excluded because an unmarked
+    test bundled UNDER the installable ``src/<pkg>/tests`` is an
+    environmental-e2e FIXTURE that ships with the wheel and is ALREADY
+    OBSERVED by the environmental-e2e leg (build + install + run against the
+    installed artifact) -- it is not the repo's unobserved contract suite, so
+    counting it as INDETERMINATE would double-count an already-observed test.
+    Everything else at the repo root IS the repo's potentially-unobserved
+    contract suite this leg would own. An untrustworthy collection is treated
+    as "no suite to certify here" rather than crashing the cycle -- the
+    PRESENT-but-RED anti-theater path is the gate run itself, not this
+    presence probe.
     """
     from des.cli.run_contract_gate import _collect_node_ids, _CollectionError
     from des.runtime.interpreter import InterpreterUnavailable
 
     try:
-        return bool(_collect_node_ids(repo_root))
+        if bool(_collect_node_ids(repo_root)):
+            return True
     except (_CollectionError, OSError, InterpreterUnavailable):
         # InterpreterUnavailable: a non-pytest repo (e.g. Rust-only: cargo, no
         # pytest interpreter) collects no pytest contract suite -> NOT_APPLICABLE,
         # the cycle PROCEEDS (the documented graceful-degradation intent above).
         # Aligned with the lib edit Lyra@tsunami applied 2026-06-28 (Ale option-B);
-        # sibling of #73. Mirrors worktree commit 6c9ac9cea (FIX2).
+        # sibling of #73. Mirrors worktree commit 6c9ac9cea (FIX2). No pytest
+        # interpreter also means the marker-agnostic secondary collect below
+        # would fail identically -- genuinely NOT_APPLICABLE, not INDETERMINATE.
+        return False
+
+    secondary_scope = [
+        entry
+        for entry in repo_root.iterdir()
+        if entry.is_dir()
+        and entry.name != "src"
+        and entry.name not in _CONTRACT_SUITE_PRUNE_DIRS
+    ]
+    if not secondary_scope:
+        return False
+    try:
+        unmarked = bool(
+            _collect_node_ids(repo_root, paths=secondary_scope, markers=None)
+        )
+    except (_CollectionError, OSError, InterpreterUnavailable):
+        return False
+    if unmarked:
+        return FullSuiteLegIndeterminate(
+            "the target repository carries a runnable contract suite that "
+            "carries none of the unit/integration/acceptance pytest marks; "
+            "the marker-filtered collect found zero node-ids but the "
+            "marker-agnostic collect found a real, runnable suite outside "
+            "src/ -- this leg was NEVER OBSERVED, not genuinely absent "
+            "(DDD-CERT-3)"
+        )
+    return False
+
+
+def _repo_has_src_only_contract_suite(repo_root: Path) -> bool:
+    """Whether ``repo_root`` carries a runnable-but-unmarked suite ONLY under
+    ``src/<pkg>/tests/`` -- the installable package's own fixtures, correctly
+    EXCLUDED from the repo's contract suite (DDD-CERT-3's ``src/`` exclusion,
+    unchanged). Called ONLY when :func:`_repo_has_contract_suite` is about to
+    return a genuine ``False`` (no suite outside ``src/``), so the cycle's
+    zero-ran verdict can NAME the found-but-excluded suite instead of
+    emitting the same undifferentiated text a genuinely-empty repo gets --
+    the found-and-excluded distinguishability gap Vera's real-surface
+    examine caught (2026-07-13).
+    """
+    from des.cli.run_contract_gate import _collect_node_ids, _CollectionError
+    from des.runtime.interpreter import InterpreterUnavailable
+
+    src_root = repo_root / "src"
+    if not src_root.is_dir():
+        return False
+    try:
+        return bool(_collect_node_ids(repo_root, paths=[src_root], markers=None))
+    except (_CollectionError, OSError, InterpreterUnavailable):
         return False
 
 
@@ -1058,6 +1339,7 @@ def _dispatch(repo_root: Path, argv: list[str]) -> subprocess.CompletedProcess[s
 
 
 __all__ = [
+    "CycleIndeterminate",
     "CycleRefusal",
     "CycleSuccess",
     "DocCoherenceLegNotApplicable",
@@ -1066,8 +1348,10 @@ __all__ = [
     "ExecutionReachLegRan",
     "FreshCloneLegNotApplicable",
     "FreshCloneLegRan",
+    "FullSuiteLegIndeterminate",
     "FullSuiteLegNotApplicable",
     "FullSuiteLegRan",
+    "LegCensus",
     "WalkingSkeletonNotApplicable",
     "run_feature_end_cycle",
 ]
