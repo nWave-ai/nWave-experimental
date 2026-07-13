@@ -47,10 +47,19 @@ from xml.etree import ElementTree
 
 
 _SEAL_DIR = Path(".nwave") / "telemetry" / "red-green"
+# Fix B (enabling change, docs/feature/fix-seal-keys-on-nodeid-not-docstring):
+# ``-p no:pspec`` isolates the seal run from pytest-pspec, whose UNGUARDED
+# ``pytest_collection_modifyitems`` rewrites ``item._nodeid`` to embed the
+# test function's docstring on every run, not only ``--pspec`` runs. This is
+# a denylist mitigation, not the fix -- it makes the shape guard below
+# (Fix A) usable on THIS repo's pytest path; it does not, by itself, protect
+# against the NEXT nodeid-mutating plugin.
+_PYTEST_PLUGIN_ISOLATION = ("-p", "no:pspec")
 _DEFAULT_RUN_CMD = (
     sys.executable,
     "-m",
     "pytest",
+    *_PYTEST_PLUGIN_ISOLATION,
     "{test_file}",
     "--junitxml={junit_out}",
     "-q",
@@ -61,6 +70,16 @@ _RUN_TIMEOUT_SECONDS = 600
 _EXIT_OK = 0
 _EXIT_REFUSED = 1
 _EXIT_INDETERMINATE = 2
+
+# Fix A v2 (root-cause fix, replaces the SHAPE proxy this once was): the
+# proxy (embedded newline OR length > 200 chars) is DELETED -- it is BLIND
+# to a short, single-line docstring shared across parametrize cases, the
+# overwhelmingly common real corruption vector
+# (docs/feature/fix-seal-keys-on-nodeid-not-docstring). The settled
+# invariant is COUNT, not SHAPE: it never inspects a `name`'s content, only
+# whether the number of raw <testcase> elements equals the number of
+# distinct classname::name identities derived from them. See the collapse-
+# refusal block in ``_run_and_collect`` below.
 
 
 def _has_tool_uv_table(pyproject: Path) -> bool:
@@ -89,11 +108,11 @@ def _default_run_cmd(repo: Path) -> tuple[str, ...]:
     """
     tail = ("{test_file}", "--junitxml={junit_out}", "-q", "--tb=no")
     if (repo / "uv.lock").is_file() or _has_tool_uv_table(repo / "pyproject.toml"):
-        return ("uv", "run", "pytest", *tail)
+        return ("uv", "run", "pytest", *_PYTEST_PLUGIN_ISOLATION, *tail)
     if (repo / "poetry.lock").is_file():
-        return ("poetry", "run", "pytest", *tail)
+        return ("poetry", "run", "pytest", *_PYTEST_PLUGIN_ISOLATION, *tail)
     if (repo / "Pipfile.lock").is_file() or (repo / "Pipfile").is_file():
-        return ("pipenv", "run", "pytest", *tail)
+        return ("pipenv", "run", "pytest", *_PYTEST_PLUGIN_ISOLATION, *tail)
     return _DEFAULT_RUN_CMD
 
 
@@ -169,9 +188,11 @@ def _run_and_collect(
             )
         outcomes: dict[str, str] = {}
         raw_ids: list[str] = []
+        verdicts_by_id: dict[str, list[str]] = {}
         for case in tree.iter("testcase"):
             classname = case.get("classname", "") or ""
-            test_id = f"{classname}::{case.get('name', '')}"
+            name = case.get("name", "") or ""
+            test_id = f"{classname}::{name}"
             failed = any(child.tag in ("failure", "error") for child in case)
             skipped = any(child.tag == "skipped" for child in case)
             # A collection-error testcase (pytest shape: empty classname,
@@ -202,6 +223,7 @@ def _run_and_collect(
             if skipped:
                 continue
             raw_ids.append(test_id)
+            verdicts_by_id.setdefault(test_id, []).append("fail" if failed else "pass")
             # Fail-dominant fold: a duplicate classname::name (e.g. a
             # pytest-bdd Scenario Outline with N Examples rows emitting
             # byte-identical <testcase> ids) must never let a later PASS
@@ -217,6 +239,48 @@ def _run_and_collect(
             )
         if len(raw_ids) != len(outcomes):
             duplicate_ids = sorted({tid for tid in raw_ids if raw_ids.count(tid) > 1})
+            # Settled invariant (COUNT, not SHAPE --
+            # docs/feature/fix-seal-keys-on-nodeid-not-docstring): raw
+            # <testcase> count must equal distinct classname::name identity
+            # count. A collapse is untrustworthy -- REFUSE fail-closed --
+            # when either (a) it swallows the WHOLE run into one identity
+            # (no distinct id survives to anchor trust), or (b) any one
+            # duplicate group disagrees within itself (a fold would
+            # silently pick an arbitrary verdict). A collapse that is a
+            # genuine subset -- other distinct ids remain, and the
+            # duplicated group agrees with itself -- loses no information
+            # and is only declared, not refused. This never inspects a
+            # `name`'s content: a nodeid-mutating plugin is caught at ANY
+            # docstring length the same way, and honest distinct prose
+            # titles (the vitest `describe > it` shape) are left alone.
+            whole_run_collapse = len(outcomes) == 1
+            disagreeing_ids = sorted(
+                tid for tid in duplicate_ids if len(set(verdicts_by_id[tid])) > 1
+            )
+            if whole_run_collapse or disagreeing_ids:
+                return _indeterminate(
+                    what=(
+                        f"{len(raw_ids)} <testcase> element(s) collapsed "
+                        f"into {len(outcomes)} identit"
+                        f"{'y' if whole_run_collapse else 'ies'}: "
+                        f"{', '.join(duplicate_ids)}"
+                    ),
+                    why=(
+                        "the runner must produce one distinct classname::"
+                        "name identity per real test case; a nodeid-"
+                        "mutating plugin (e.g. pytest-pspec's unguarded "
+                        "pytest_collection_modifyitems rewriting `name` to "
+                        "shared docstring/prose content, at any length) can "
+                        "collapse distinct cases into one id, and no single "
+                        "verdict can be trusted for the folded id(s)."
+                    ),
+                    how=(
+                        "isolate the nodeid-mutating plugin from the run "
+                        "command (e.g. -p no:<plugin>), or ensure the "
+                        "runner emits one distinct classname::name per "
+                        "real test case."
+                    ),
+                )
             _emit(
                 {
                     "event": "RedGreenDuplicateIdCollapse",
