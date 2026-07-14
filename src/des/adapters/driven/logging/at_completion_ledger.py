@@ -290,6 +290,36 @@ _REPAIR_INSTRUCTIONS_PATH = "docs/operations/repair-instructions.md"
 # per-feature shape is unaffected (it migrates in slice-02).
 _QUIESCE_ENV = "NWAVE_AUDIT_LOG_MIGRATING"
 
+# The legacy per-feature telemetry directory (relative to a repo root). This
+# is the SSOT resolution root for `active_feature_id` below -- see its
+# docstring for the disambiguation contract.
+TELEMETRY_DIR_RELPATH = Path(".nwave") / "telemetry" / "atdd-pure"
+
+
+def active_feature_id(repo_root: Path) -> str | None:
+    """The id of the single in-flight feature under ``repo_root``, if any.
+
+    fix-precommit-fabricates-vacuous-scaffold slice-01 (D_REFACTOR_COMMIT):
+    the ONE canonical home for a resolution rule that had drifted into three
+    verbatim reimplementations (``des.cli.run_slice_ats``,
+    ``scripts.hooks.des_declare_done_pre_push``,
+    ``scripts.hooks.spine_ledger_pre_commit_hook``) -- all three callers now
+    import this function instead of carrying their own copy.
+
+    Contract: list the ``*.jsonl`` ledger stems under
+    ``{repo_root}/.nwave/telemetry/atdd-pure/``. Exactly one on disk -> that
+    feature id (the in-flight feature). Zero, or more than one, -> the caller
+    cannot disambiguate which feature is "active" -> ``None``. This function
+    NEVER guesses.
+    """
+    telemetry = repo_root / TELEMETRY_DIR_RELPATH
+    if not telemetry.is_dir():
+        return None
+    ledgers = sorted(p.stem for p in telemetry.glob("*.jsonl"))
+    if len(ledgers) != 1:
+        return None
+    return ledgers[0]
+
 
 class LedgerIntegrityViolation(Exception):
     """Raised when the AT-completion ledger fails its M7 integrity contract.

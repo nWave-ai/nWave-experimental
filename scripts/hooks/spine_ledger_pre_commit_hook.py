@@ -112,11 +112,6 @@ _SLICE_TRAILER_RE = re.compile(r"^(?:Slice-Id|Step-Id):\s*(slice-\d+[a-z]?)\s*$"
 # `slice-NN: subject` form an LLM emits). Used only when no trailer is present.
 _SLICE_TOKEN_RE = re.compile(r"\bslice-\d+[a-z]?\b")
 
-# The spine telemetry directory (per-feature AT-completion ledgers) under a
-# target root, used to resolve the single in-flight feature whose slice is being
-# committed (mirrors `des_declare_done_pre_push._active_feature_id`).
-_TELEMETRY_DIR_RELPATH = Path(".nwave") / "telemetry" / "atdd-pure"
-
 # Commit-message-file source patterns parsed out of the bash command literal.
 # Order matters: `-F` / `--file` are explicit file flags; `-m` / `--message`
 # is an inline string; absent -> default `.git/COMMIT_EDITMSG`.
@@ -251,45 +246,32 @@ def _resolve_commit_slice_id(command: str, target_root: Path) -> str | None:
     return token.group(0) if token else None
 
 
-def _active_feature_id(target_root: Path) -> str | None:
-    """The id of the single in-flight feature whose slice is being committed.
-
-    Mirrors `des_declare_done_pre_push._active_feature_id`: the bypass-debt is
-    scoped to the one feature that carries an AT-completion ledger. Exactly one
-    present -> that feature; zero or more than one -> the hook cannot
-    disambiguate the feature here and does not guess (None).
-    """
-    telemetry = target_root / _TELEMETRY_DIR_RELPATH
-    if not telemetry.is_dir():
-        return None
-    ledgers = sorted(p.stem for p in telemetry.glob("*.jsonl"))
-    if len(ledgers) != 1:
-        return None
-    return ledgers[0]
-
-
 def _record_bypass_debt(command: str, target_root: Path) -> None:
     """Append a `SliceCommitBypassed` debt record for a `--no-verify` commit (DDD-3).
 
     Fires BEFORE git runs (so `--no-verify` cannot skip it). Resolves the bound
     slice from the commit message and the in-flight feature from the telemetry
-    ledger, then appends via the EXISTING `AtCompletionLedger` M7 writer so the
-    record carries `seq` + `record_hash`. Fail-open on the write itself -- a
-    ledger-write error must not change the commit decision (the gate verdict
-    stands on its own).
+    ledger (via the ONE canonical `active_feature_id` -- see
+    `at_completion_ledger.active_feature_id`), then appends via the EXISTING
+    `AtCompletionLedger` M7 writer so the record carries `seq` + `record_hash`.
+    Fail-open on the write itself -- a ledger-write error must not change the
+    commit decision (the gate verdict stands on its own).
     """
     slice_id = _resolve_commit_slice_id(command, target_root)
     if slice_id is None:
-        return
-    feature_id = _active_feature_id(target_root)
-    if feature_id is None:
         return
     try:
         src_dir = _REPO_ROOT / "src"
         if str(src_dir) not in sys.path:
             sys.path.insert(0, str(src_dir))
-        from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+        from des.adapters.driven.logging.at_completion_ledger import (
+            AtCompletionLedger,
+            active_feature_id,
+        )
 
+        feature_id = active_feature_id(target_root)
+        if feature_id is None:
+            return
         AtCompletionLedger(feature_id, target_root).append_slice_commit_bypassed(
             slice_id
         )

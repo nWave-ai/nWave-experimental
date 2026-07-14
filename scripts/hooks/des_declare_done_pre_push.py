@@ -38,32 +38,16 @@ _des_src = Path.cwd() / "src"
 if (_des_src / "des").is_dir() and str(_des_src) not in sys.path:
     sys.path.insert(0, str(_des_src))
 
+from des.adapters.driven.logging.at_completion_ledger import (  # noqa: E402
+    active_feature_id,
+)
 from des.cli import verify_deliver_integrity  # noqa: E402  (after sys.path bootstrap)
-
-
-def _active_feature_id(repo_root: Path) -> str | None:
-    """The id of the single in-flight feature whose done is being declared.
-
-    The terminal declare-done action targets exactly one feature. We read the
-    AT-completion telemetry directory (the ledger SSOT) for the feature ids that
-    carry a ledger; when exactly one is present that is the feature under
-    declaration. Zero -> nothing to attest (no-op). More than one -> the backstop
-    cannot disambiguate the terminal feature here and defers (the SubagentStop
-    surface remains the per-feature attester); it never guesses.
-    """
-    telemetry = repo_root / ".nwave" / "telemetry" / "atdd-pure"
-    if not telemetry.is_dir():
-        return None
-    ledgers = sorted(p.stem for p in telemetry.glob("*.jsonl"))
-    if len(ledgers) != 1:
-        return None
-    return ledgers[0]
 
 
 def main(argv: list[str] | None = None) -> int:
     """Auto-fire the portable done-gate on the terminal push; propagate its veto."""
     repo_root = Path.cwd()
-    feature_id = _active_feature_id(repo_root)
+    feature_id = active_feature_id(repo_root)
     if feature_id is None:
         return 0
     return verify_deliver_integrity.main(
