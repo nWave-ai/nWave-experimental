@@ -68,6 +68,7 @@ from des.cli.axis_b_levers import (
     check_unwired_entry,
     resolve_layout,
 )
+from des.cli.carpaccio_format import GateError, parse_slice_plan
 from des.cli.validate_feature_delta import (
     _SUSTAINABILITY_ACCEPTED_VERDICTS,
     VERDICT_MALFORMED_REUSE_ANALYSIS,
@@ -211,12 +212,37 @@ class _ReadinessReport:
 # --- Invariant check functions (one per first-dispatch friction) ----------
 
 
-def _check_slice_plan_section(workspace: Path) -> _InvariantResult:
-    """Invariant 1: feature-delta.md carries the slice-plan heading.
+def _slice_row_missing_remediation(slice_id: str) -> str:
+    """What/why/how remediation for a `--slice-id` with no Slice Plan row.
 
-    Failure modes (both -> FAILED):
+    Names the offending slice so the operator knows exactly what to fix
+    (bug fix-readiness-gate-clears-on-empty: the gate must refuse a
+    nonexistent slice, never clear it byte-identical to a real one).
+    """
+    return (
+        f"what: no matching row for slice '{slice_id}' in the [REF] Slice "
+        f"Plan table / why: '{slice_id}' was never planned in DISCUSS / "
+        f"how: add a `| {slice_id} | ... |` row to the feature-delta's "
+        f"[REF] Slice Plan table, or correct --slice-id"
+    )
+
+
+def _check_slice_plan_section(workspace: Path, slice_id: str) -> _InvariantResult:
+    """Invariant 1: feature-delta.md carries the slice-plan heading AND the
+    entering slice has a row in the parsed Slice Plan table.
+
+    Failure modes (all -> FAILED):
       * feature-delta.md absent
       * feature-delta.md present but missing the heading text
+      * heading present but the table is malformed (no data rows, no
+        slice-NN id, duplicate id -- ``GateError`` from the shared parser)
+      * heading present, table well-formed, but `slice_id` has no row
+        (the bug this invariant closes: a nonexistent slice must be
+        refused, never cleared byte-identical to a real, planned slice)
+
+    Reuses the SHIPPED `carpaccio_format.parse_slice_plan` +
+    `SlicePlan.row_for` -- the SAME discriminating predicate
+    `carpaccio-slice-gate` already uses -- zero new parsing logic.
     """
     delta = workspace / "feature-delta.md"
     if not delta.is_file():
@@ -241,6 +267,24 @@ def _check_slice_plan_section(workspace: Path) -> _InvariantResult:
             invariant_id=_INV_SLICE_PLAN,
             satisfied=False,
             remediation=_REMEDIATIONS[_INV_SLICE_PLAN],
+        )
+    try:
+        plan = parse_slice_plan(text)
+    except GateError as exc:
+        # Degrade-LOUD: a malformed table (no data rows / no slice-NN id /
+        # duplicate id) never crashes the aggregate -- it names the parser's
+        # own diagnostic so the reuse-first + sustainability legs still emit.
+        detail = exc.payload.get("error") or exc.payload.get("event") or str(exc)
+        return _InvariantResult(
+            invariant_id=_INV_SLICE_PLAN,
+            satisfied=False,
+            remediation=f"{detail} -- {_REMEDIATIONS[_INV_SLICE_PLAN]}",
+        )
+    if plan.row_for(slice_id) is None:
+        return _InvariantResult(
+            invariant_id=_INV_SLICE_PLAN,
+            satisfied=False,
+            remediation=_slice_row_missing_remediation(slice_id),
         )
     return _InvariantResult(invariant_id=_INV_SLICE_PLAN, satisfied=True)
 
@@ -745,7 +789,7 @@ def _run_lane_profile(
     bugfix lane's own audit record shape, one level up).
     """
     checks: dict[str, Callable[[], _InvariantResult]] = {
-        _INV_SLICE_PLAN: lambda: _check_slice_plan_section(workspace),
+        _INV_SLICE_PLAN: lambda: _check_slice_plan_section(workspace, slice_id),
         _INV_SCENARIO_TAGS: lambda: _check_scenario_slice_tags(repo_root, feature_id),
         _INV_AT_VERDICT: lambda: _check_at_review_verdict(
             repo_root, feature_id, slice_id
@@ -947,7 +991,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if report.verdict == "cleared" else 1
 
     report = _ReadinessReport(feature_id=feature_id, slice_id=slice_id)
-    report.invariants.append(_check_slice_plan_section(workspace))
+    report.invariants.append(_check_slice_plan_section(workspace, slice_id))
     report.invariants.append(_check_scenario_slice_tags(repo_root, feature_id))
     report.invariants.append(_check_at_review_verdict(repo_root, feature_id, slice_id))
     report.invariants.append(_check_gate_output_produceable(repo_root))
