@@ -275,6 +275,30 @@ def _load_npm_scripts(repo: Path) -> frozenset[str] | None:
     return frozenset(str(name) for name in scripts)
 
 
+def _warn_gitignore_unreadable(what: str) -> None:
+    """Non-fatal degrade-LOUD notice for an unreadable `.gitignore` (permission
+    denied, broken symlink, ...): emit the labeled event + a human WARNING line.
+    NOT the fatal `_indeterminate` path -- this only fails to WIDEN exemptions,
+    so it stays a WARNING and never touches the exit code (GDP-6, GDP-8)."""
+    _emit(
+        {
+            "event": "DocCoherenceGitignoreUnreadable",
+            "what": what,
+            "why": (
+                "an OSError (permission-denied, broken symlink, ...) "
+                "prevented reading .gitignore -- the runtime-state "
+                "exemption set could not be widened; unrelated real "
+                "path claims are still checked normally."
+            ),
+            "how": (
+                "fix .gitignore's file permissions/symlink, or ignore "
+                "this notice -- it only means fewer paths are exempt."
+            ),
+        }
+    )
+    print(f"⚠ WARNING — {what}. Only affects the exemption set; checks continue.")
+
+
 def _load_gitignore_top_level_dirs(repo: Path) -> frozenset[str]:
     """Top-level dir names the repo's OWN `.gitignore` lists -- unioned into
     the runtime-state exemption set (`_RUNTIME_STATE_TOP_LEVEL`) so a
@@ -294,32 +318,18 @@ def _load_gitignore_top_level_dirs(repo: Path) -> frozenset[str]:
     skipped as ambiguous, never guessed.
     """
     gitignore = repo / ".gitignore"
+    # A broken symlink (present-but-unresolvable) fails `is_file()` (which
+    # follows symlinks) yet is NOT genuinely absent -- degrade LOUD like the
+    # permission-denied case below, never silently drop mention of it.
+    if gitignore.is_symlink() and not gitignore.exists():
+        _warn_gitignore_unreadable(".gitignore could not be read (broken symlink)")
+        return frozenset()
     if not gitignore.is_file():
         return frozenset()
     try:
         raw = gitignore.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
-        what = f".gitignore could not be read ({exc})"
-        _emit(
-            {
-                "event": "DocCoherenceGitignoreUnreadable",
-                "what": what,
-                "why": (
-                    "an OSError (permission-denied, broken symlink, ...) "
-                    "prevented reading .gitignore -- the runtime-state "
-                    "exemption set could not be widened; unrelated real "
-                    "path claims are still checked normally."
-                ),
-                "how": (
-                    "fix .gitignore's file permissions/symlink, or ignore "
-                    "this notice -- it only means fewer paths are exempt."
-                ),
-            }
-        )
-        print(
-            f"⚠ INDETERMINATE — {what}. Only affects the exemption set; "
-            "checks continue."
-        )
+        _warn_gitignore_unreadable(f".gitignore could not be read ({exc})")
         return frozenset()
     top_level: set[str] = set()
     for raw_line in raw.splitlines():
