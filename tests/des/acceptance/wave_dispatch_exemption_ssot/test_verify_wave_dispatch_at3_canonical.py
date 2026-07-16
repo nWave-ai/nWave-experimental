@@ -1,25 +1,29 @@
 """pytest-bdd binding -- fix-verify-wave-dispatch-exemption-ssot slice-01.
 
-Reconciles the two dispatch-exemption checks onto the AT-3-BLOCK canonical model
-(Ale 2026-06-23). The SUT is driven through TWO real driving surfaces (Mandate-16,
+Reconciles the two dispatch-exemption checks onto ONE canonical model. Reconciled
+onto AT-3-BLOCK on 2026-06-23; RATIFIED REVERSED onto AT-3-ALLOW by Ale on
+2026-07-16 (a matching-own-wave DES-WAVE declaration ARMS enforcement, it is not a
+bypass). The SUT is driven through TWO real driving surfaces (Mandate-16,
 Driving-Port-Only):
 
   * verify-wave-dispatch -- the IN-TREE gate ``python -m des.cli.verify_wave_dispatch``
     (Layer-3 subprocess), reading the seeded wave-active floor from its ``cwd``.
   * PreToolUse AT-3 -- the REAL ``PreToolUseService`` (Layer-3 composition) reading
-    the SAME floor. This is the CANONICAL reference verify-wave-dispatch aligns to.
+    the SAME floor. This is the CANONICAL reference verify-wave-dispatch
+    re-reconciles to (now ALLOW).
 
 Step bodies delegate to the composition root (Mandate-12; <=2 statements, final
 statement a composition call, no control flow). The Examples columns are coerced to
 typed domain enums at the step boundary.
 
 ACTIVE-RED / live-green split (atdd_pure -- NOT @skip):
-  * AC-1 + AC-5 (collision -> BLOCK / agreement) are ACTIVE-RED: at HEAD
-    decide_dispatch is floor-blind and ALLOWs the collision while AT-3 BLOCKs it,
-    so these fire semantic AssertionErrors against the observed ALLOW.
+  * AC-1 + AC-5 (collision -> ALLOW / agreement) are ACTIVE-RED at
+    verify-wave-dispatch: at HEAD ``decide_dispatch`` still carries the
+    2026-06-23 collision-BLOCK branch (not yet flipped) while AT-3 now ALLOWs it,
+    so these fire semantic AssertionErrors against the observed BLOCK.
   * AC-2 / AC-3 / AC-4 (preserved ALLOW/BLOCK paths) are live-green regression
     guards: they assert the verdicts the current code ALREADY emits, pinning the
-    invariant the reconcile must not break.
+    invariant the re-reconcile must not break.
 
 S1 (step-text uniqueness): the exemption-reconcile verbs are UNIQUE to this
 feature (distinct vocabulary from the slice-05 wave-dispatch-guard verbs:
@@ -148,6 +152,11 @@ def then_verify_expected(
 @then("the PreToolUse floor check blocks the dispatch")
 def then_at3_blocks(reconcile: ExemptionReconcileComposition) -> None:
     reconcile.then_pre_tool_use_at3_blocks()
+
+
+@then("the PreToolUse floor check allows the dispatch")
+def then_at3_allows(reconcile: ExemptionReconcileComposition) -> None:
+    reconcile.then_pre_tool_use_at3_allows()
 
 
 @then("the two exemption checks agree on the verdict")

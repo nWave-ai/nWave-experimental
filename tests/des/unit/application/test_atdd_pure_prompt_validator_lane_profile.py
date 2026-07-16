@@ -236,7 +236,7 @@ def test_prefactoring_required_sections_tracks_mandatory_sections_via_validator(
         pytest.param(None, id="no-lane-marker-at-all"),
         pytest.param("unknown-lane", id="unrecognized-lane-id"),
         pytest.param(
-            "bugfix", id="a-different-recognized-lane-not-in-LANE_PROFILES-yet"
+            "nonexistent-lane", id="a-lane-id-genuinely-absent-from-LANE_PROFILES"
         ),
     ],
 )
@@ -245,6 +245,16 @@ def test_absent_or_unknown_lane_keeps_full_template_no_leak(lane: str | None) ->
     datum has no entry for, gets the FULL 12-section requirement --
     byte-identical to today. The exemption must never leak into the ordinary
     path via a missing/unknown lookup.
+
+    NOTE (des-dispatch-ssot-renderer Fase-1 blast-radius fix): this
+    parametrize set previously included ``"bugfix"`` as its "recognized lane
+    not yet in LANE_PROFILES" example. Fase-1 POPULATES `LANE_PROFILES["bugfix"]`
+    (see AT-5..AT-8 below), so `"bugfix"` is no longer a genuinely-unknown lane
+    -- keeping it here would have silently degraded this case into a
+    coincidental-full-12-count assertion (bugfix's own required_sections
+    happens to equal the full 12) rather than a real unknown-lane exercise.
+    Replaced with `"nonexistent-lane"`, a lane id with no LANE_PROFILES entry
+    now or ever.
     """
     from des.domain.lane_profile import LANE_PROFILES
 
@@ -268,4 +278,161 @@ def test_full_prefactoring_datum_profile_is_the_only_thing_exempted() -> None:
     assert result.task_invocation_allowed, (
         f"the full 12-section template with no lane marker must still pass "
         f"unchanged. errors={result.errors}"
+    )
+
+
+# AT-5..AT-8 (des-dispatch-ssot-renderer Fase-1 -- bugfix lane RECOGNIZED) ---
+#
+# Design: docs/feature/des-dispatch-ssot-renderer/design/dispatch-ssot-design.md
+# Open Review Point B (bugfix section set = full-12, RED_TO_GREEN guard,
+# readiness requires lane_justification -- CONFIRMED). Behavior-preserving on
+# section COUNT (bugfix's required set IS the full 12, same as today's
+# unknown-lane fall-through) but NOW an explicit datum entry the validator
+# CONSULTS, not a coincidental fall-through. Scope note (Mandate 13,
+# no-direct-domain-testing): only `required_sections` has a driving-port
+# consumer at this Fase-1 layer -- `verify_readiness_pre_dispatch.py` keeps
+# its OWN pre-existing hardcoded `_BUGFIX_LANE` branch (checked BEFORE it
+# ever consults `LANE_PROFILES`) and `carpaccio_format.py`'s lane lookup only
+# fires on an `@prefactoring` slice-plan annotation -- so `LANE_PROFILES
+# ["bugfix"].guard_kind` / `.at_requirement` / `.skipped_invariants` have NO
+# consuming entry point yet. Those fields are deferred to a future slice that
+# converges the readiness gate onto the datum (out of Fase-1 scope); this
+# file's AT-3 precedent (folding the domain drift-guard behind the ONE real
+# consumer) is followed identically for bugfix.
+
+
+def test_bugfix_lane_marker_with_datum_sections_is_accepted() -> None:
+    """A dispatch carrying `DES-LANE: bugfix` + exactly the DATUM's
+    `required_sections` is ACCEPTED. Read from `LANE_PROFILES` (never a
+    literal duplicated in this test), so this fails identically whether the
+    datum entry or the consulting branch is still missing.
+    """
+    from des.domain.lane_profile import LANE_PROFILES
+
+    assert "bugfix" in LANE_PROFILES, (
+        "LANE_PROFILES['bugfix'] must exist before the validator can consult "
+        "it (RED scaffold: the bugfix row is not populated yet)."
+    )
+    sections = LANE_PROFILES["bugfix"].required_sections
+    prompt = _build_prompt("bugfix", sections)
+
+    result = _validate(prompt)
+    assert result.task_invocation_allowed, (
+        "a DES-LANE: bugfix dispatch carrying exactly the datum's "
+        f"required_sections ({sections}) must be ACCEPTED. errors={result.errors}"
+    )
+
+
+def test_bugfix_lane_marker_missing_a_datum_required_section_is_rejected() -> None:
+    """The bugfix profile's OWN required set is enforced -- omitting ONE of
+    its required sections must FAIL, naming it. Bugfix writes code and
+    records ATs, so (unlike prefactoring) it drops NOTHING from the full 12 --
+    this proves the datum lookup is real, not a permissive no-op."""
+    from des.domain.lane_profile import LANE_PROFILES
+
+    assert "bugfix" in LANE_PROFILES, (
+        "LANE_PROFILES['bugfix'] must exist before this omission check can run."
+    )
+    sections = tuple(
+        s
+        for s in LANE_PROFILES["bugfix"].required_sections
+        if s != "RECORDING_INTEGRITY"
+    )
+    prompt = _build_prompt("bugfix", sections)
+
+    result = _validate(prompt)
+    assert not result.task_invocation_allowed, (
+        "a bugfix dispatch missing a section the DATUM requires "
+        "(RECORDING_INTEGRITY) must be REJECTED -- a bugfix writes code and "
+        "records ATs, it does not get a lighter template."
+    )
+    assert any("RECORDING_INTEGRITY" in e for e in result.errors), (
+        f"the rejection must name the missing section. errors={result.errors}"
+    )
+
+
+def test_bugfix_required_sections_equal_the_full_mandatory_set_via_validator() -> None:
+    """AT-8 (drift-guard, mirrors AT-3 for the bugfix row): bugfix's
+    `required_sections` is a LITERAL tuple in `lane_profile.py` (D2: the
+    domain must not import the application-layer
+    `ATDD_PURE_MANDATORY_SECTIONS` to derive it). Per the design (`sections:
+    full-12`, `drop_sections: []`), bugfix drops NOTHING -- its required set
+    must equal `ATDD_PURE_MANDATORY_SECTIONS` verbatim. The oracle compares
+    the validator's accept/reject decision against that live-computed
+    expectation: a prompt built from exactly `ATDD_PURE_MANDATORY_SECTIONS`
+    is ACCEPTED only while the two stay in sync. If bugfix's literal ever
+    narrows (a section silently dropped), the datum becomes a proper subset
+    of the live set and this REDs.
+    """
+    from des.domain.lane_profile import LANE_PROFILES
+
+    assert "bugfix" in LANE_PROFILES, (
+        "LANE_PROFILES['bugfix'] must exist before its drift-guard can run "
+        "(RED scaffold: the bugfix row is not populated yet)."
+    )
+    datum_sections = LANE_PROFILES["bugfix"].required_sections
+    live_expected = ATDD_PURE_MANDATORY_SECTIONS
+
+    prompt = _build_prompt("bugfix", live_expected)
+    result = _validate(prompt)
+
+    in_sync = datum_sections == live_expected
+    assert result.task_invocation_allowed == in_sync, (
+        "DRIFT DETECTED: LANE_PROFILES['bugfix'].required_sections "
+        f"({datum_sections!r}) vs ATDD_PURE_MANDATORY_SECTIONS ({live_expected!r}) "
+        f"-- in_sync={in_sync} but the validator "
+        f"{'accepted' if result.task_invocation_allowed else 'rejected'} a prompt "
+        "carrying exactly the live-computed set. Fix lane_profile.py's literal "
+        f"tuple to restore parity. errors={result.errors}"
+    )
+
+
+def test_bugfix_and_prefactoring_lanes_both_resolve_via_the_same_datum_lookup() -> None:
+    """No hardcoded 'if lane == \"bugfix\"' branch: substituting BOTH datum
+    entries at once and observing BOTH decisions follow the substitution
+    proves `_required_sections` consults `LANE_PROFILES.get(lane)` generically
+    -- one lookup, two lanes, never a per-lane branch.
+    """
+    custom_profiles = {
+        "prefactoring": LaneProfile(
+            lane_id="prefactoring",
+            required_sections=("DES_METADATA",),
+            guard_kind=GuardKind.GREEN_TO_GREEN,
+            feature_readiness=False,
+            at_requirement=AtRequirement.EXEMPT,
+            skipped_invariants=(),
+            annotation_token="prefactoring",
+        ),
+        "bugfix": LaneProfile(
+            lane_id="bugfix",
+            required_sections=("AGENT_IDENTITY", "TASK_CONTEXT"),
+            guard_kind=GuardKind.RED_TO_GREEN,
+            feature_readiness=True,
+            at_requirement=AtRequirement.REQUIRED,
+            skipped_invariants=(),
+            annotation_token="bugfix",
+        ),
+    }
+
+    mp = pytest.MonkeyPatch()
+    try:
+        mp.setattr(
+            atdd_pure_prompt_validator, "LANE_PROFILES", custom_profiles, raising=False
+        )
+        prefactoring_result = _validate(
+            _build_prompt("prefactoring", ("DES_METADATA",))
+        )
+        bugfix_result = _validate(
+            _build_prompt("bugfix", ("AGENT_IDENTITY", "TASK_CONTEXT"))
+        )
+    finally:
+        mp.undo()
+
+    assert prefactoring_result.task_invocation_allowed, (
+        "substituted prefactoring profile (1 section) must be honored. "
+        f"errors={prefactoring_result.errors}"
+    )
+    assert bugfix_result.task_invocation_allowed, (
+        "substituted bugfix profile (2 sections) must be honored by the SAME "
+        f"lookup mechanism. errors={bugfix_result.errors}"
     )

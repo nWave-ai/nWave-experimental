@@ -43,11 +43,11 @@ wave_entering``), so:
     ``not has_des_markers`` is False -> the old guard does NOT block where the
     corrected guard must BLOCK -> the Then asserts BLOCK, the service returns
     allow -> semantic ``AssertionError``.
-  * AT-3 (DES-WAVE-only) -- preservation-GREEN at HEAD via the OLD path
-    (``has_des_markers`` is False because ``_DES_MARKER_KEY`` excludes DES-WAVE,
-    so the old guard blocks) AND must STAY BLOCK under the corrected guard (via
-    ``declared_wave`` counting as partial context) -- the regression guard that
-    the DES-WAVE collision stays closed end-to-end.
+  * AT-3 (DES-WAVE-only) -- live-GREEN at HEAD: the shipped guard already honours
+    a matching OWN ``declared_wave`` as a legitimate wave-membership claim (not a
+    bypass) and ALLOWS it (ratified reversal, Ale 2026-07-16) -- this scenario is
+    a regression guard pinning that the own-wave-declaration ALLOW path stays
+    open end-to-end.
   * AT-4 (no floor, markerless) + AT-5 (wave_entering) -- preservation-GREEN at
     HEAD; pin S1 + the entering exemption are not regressed by the re-point.
 Only test-local types + already-shipped production composition are imported, so
@@ -269,6 +269,8 @@ class GuardComposition:
     # SUT state machine (the corrected S2 guard), under an active floor:
     #   ARMED + FULLY_MARKERLESS          -> ALLOW (K2 benign passthrough)
     #   ARMED + PARTIAL_MARKERS (no -VAL) -> BLOCK (K1 bypass loud)
-    #   ARMED + DES_WAVE_ONLY (no -VAL)   -> BLOCK (collision closed)
+    #   ARMED + DES_WAVE_ONLY (no -VAL)   -> ALLOW (own-wave declaration arms
+    #                                        enforcement -- ratified reversal,
+    #                                        Ale 2026-07-16)
     #   ARMED + wave_entering             -> ALLOW (entering exemption)
     #   NO_FLOOR + any                    -> ALLOW (S1 ad-hoc path)

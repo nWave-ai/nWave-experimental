@@ -134,6 +134,8 @@ def test_commit_slice_refuses_before_any_commit_lands(
         [
             "--repo",
             str(tmp_path),
+            "--feature-id",
+            "build-tier-exit-gate",
             "--message",
             "feat: slice under test",
             "--slice-id",

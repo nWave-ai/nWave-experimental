@@ -48,6 +48,7 @@ from des.application.feature_end_cycle_service import (
     CycleRefusal,
     CycleSuccess,
     FullSuiteLegNotApplicable,
+    FullSuiteLegRan,
     run_feature_end_cycle,
 )
 from des.runtime.interpreter import des_spawn
@@ -196,6 +197,10 @@ class FeatureEndP0GateComposition:
         class ``verify-doc-coherence`` catches standalone."""
         repo_root = self.tmp_path / f"doc-coherence-{uuid.uuid4().hex[:8]}"
         repo_root.mkdir(parents=True)
+        # .gitignore is the runtime-state boundary the real gate now derives
+        # per-target (fix-doc-coherence-target-runtime-dir); unrelated to
+        # this doc-overstatement scenario, so a plain entry suffices.
+        (repo_root / ".gitignore").write_text("node_modules/\n")
         (repo_root / "README.md").write_text(_OVERSTATING_README)
         (repo_root / "src").mkdir()
         (repo_root / "src" / "index.ts").write_text("export {};\n")
@@ -203,6 +208,15 @@ class FeatureEndP0GateComposition:
             json.dumps({"scripts": {"build": "tsc"}})
         )
         self._stage(repo_root)
+        # A WARN outcome folds into leg_census.warned, NOT leg_census.ran
+        # (only DocCoherenceLegRan does) -- force full-suite to a genuine
+        # FullSuiteLegRan (overriding `_stub_sibling_legs`'s NotApplicable)
+        # so leg_census.ran >= 1 and the cycle does not ALSO trip the
+        # unrelated zero-observed-checks charter (leg_census.ran == 0 ->
+        # CycleIndeterminate, ADR-GV-002 D1/D3, pinned elsewhere).
+        self.monkeypatch.setattr(
+            svc, "_run_full_suite_leg", lambda *, repo_root: FullSuiteLegRan(0)
+        )
 
     # --- When ------------------------------------------------------------------
 
@@ -257,6 +271,69 @@ class FeatureEndP0GateComposition:
         )
         assert "EBatchRefactorCompleted" not in text, (
             "a refused cycle must never emit an EBatchRefactorCompleted record"
+        )
+
+    # --- Then: slice-03 warn-not-block (fix-doc-coherence-gate-warns-not-blocks) --
+
+    def then_cycle_signs_as_done(self) -> None:
+        """Port-exposed observable: doc-coherence violations must WARN, not
+        hard-refuse -- the cycle proceeds to a signed ``CycleSuccess``."""
+        assert isinstance(self.result, CycleSuccess), (
+            "expected the feature-end cycle to WARN and still sign the "
+            f"feature as done (advisory, not blocking); actual={self.result!r}"
+        )
+
+    def _ledger_records(self) -> list[dict]:
+        assert self._repo_root is not None, "no fixture staged"
+        ledger_path = (
+            self._repo_root
+            / ".nwave"
+            / "telemetry"
+            / "atdd-pure"
+            / f"{_FEATURE_ID}.jsonl"
+        )
+        if not ledger_path.is_file():
+            return []
+        records: list[dict] = []
+        for line in ledger_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict):
+                records.append(record)
+        return records
+
+    def _find_ledger_record(self, event: str) -> dict | None:
+        matches = [r for r in self._ledger_records() if r.get("event") == event]
+        return matches[-1] if matches else None
+
+    def then_doc_coherence_warning_recorded(self) -> None:
+        """Port-exposed observable: a distinct ``DocCoherenceWarned`` ledger
+        record names the actual violation -- never swallowed into a bare
+        boolean (charter negative oracle #1)."""
+        warned_record = self._find_ledger_record("DocCoherenceWarned")
+        assert warned_record is not None, (
+            "expected a DocCoherenceWarned ledger record after a "
+            f"doc-coherence violation; ledger={self._ledger_records()!r}"
+        )
+        serialized = json.dumps(warned_record)
+        assert "e2e:golden" in serialized or "reconciler.ts" in serialized, (
+            "the DocCoherenceWarned record must name the actual violation, "
+            f"not swallow it into a bare boolean: {warned_record!r}"
+        )
+
+    def then_warning_never_reads_as_verified_clean(self) -> None:
+        """Port-exposed observable: a warned completion must NEVER also
+        carry a ``DocCoherenceVerified`` (clean-pass) record for the same
+        run (charter negative oracle #2)."""
+        assert self._find_ledger_record("DocCoherenceVerified") is None, (
+            "a run completed WITH doc-coherence warnings must never ALSO "
+            f"carry a DocCoherenceVerified (clean-pass) record: "
+            f"{self._ledger_records()!r}"
         )
 
 

@@ -244,6 +244,18 @@ def main(argv: list[str] | None = None) -> int:
         "--collect-only",
         "-p",
         "no:cacheprovider",
+        # Reporting/coverage plugins add ~55s of collection overhead on a large
+        # tree (allure's per-item labelling dominates) but produce nothing this
+        # node-id enumeration reads. Disable them; ``-p no:<plugin>`` is a safe
+        # no-op when the plugin is absent (target-machine-agnostic).
+        "-p",
+        "no:allure_pytest",
+        "-p",
+        "no:pytest_pspec",
+        "-p",
+        "no:pytest_html",
+        "-p",
+        "no:pytest_cov",
         "--rootdir",
         args.repo,
         *(args.path if args.path else [args.repo]),

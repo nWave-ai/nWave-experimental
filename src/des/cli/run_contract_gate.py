@@ -1617,7 +1617,9 @@ class _CommittedScopeIndeterminate:
 
 
 def _committed_scope_digest_quiet(
-    repo: Path, commit: str
+    repo: Path,
+    commit: str,
+    markers: str | None | _UnsetMarkers = _MARKERS_UNSET,
 ) -> _CommittedScopeDigest | _CommittedScopeIndeterminate | _CommittedScopeRefusal:
     """Compute the committed-scope digest of ``commit`` WITHOUT emitting events.
 
@@ -1628,6 +1630,16 @@ def _committed_scope_digest_quiet(
     collected via their bound `@scenario` `.py` step modules, not as direct
     pytest paths), so a committed mixed `.py` + `.feature` suite never trips a
     pytest exit-4 collection error.
+
+    ``markers`` (fix-runner-resolves-per-scope-language slice-01): threaded
+    straight into ``_collect_scope``. UNSET (the default) keeps the marker-
+    filtered ``-m "unit or integration or acceptance"`` collection byte-for-byte
+    -- every existing caller unchanged. An explicit ``None`` collects
+    MARKER-AGNOSTICALLY: a pytest-regression slice on an arbitrary target repo
+    (no auto-marking conftest applying the contract markers) would otherwise
+    have its committed regression test DESELECTED by the marker filter, yielding
+    an empty scope hashed to the VACUOUS ``sha256('')`` digest -- marker-agnostic
+    collection digests the real committed Python scope instead.
 
     git absent / not a work-tree / SHA unresolvable returns
     `_CommittedScopeIndeterminate` (the caller decides whether to refuse LOUD or
@@ -1646,7 +1658,7 @@ def _committed_scope_digest_quiet(
 
     paths = [repo / rel for rel in committed.paths]
     try:
-        scope = _collect_scope(repo, paths=paths)
+        scope = _collect_scope(repo, paths=paths, markers=markers)
         _assert_parity(scope)
     except InterpreterUnavailable as exc:
         return _CommittedScopeRefusal(_emit_interpreter_unavailable(exc))
@@ -1662,7 +1674,9 @@ def _committed_scope_digest_quiet(
 
 
 def _committed_scope_digest_value(
-    repo: Path, commit: str
+    repo: Path,
+    commit: str,
+    markers: str | None | _UnsetMarkers = _MARKERS_UNSET,
 ) -> _CommittedScopeDigest | _CommittedScopeRefusal:
     """Fail-closed committed-scope digest of ``commit`` in ``repo``.
 
@@ -1671,8 +1685,12 @@ def _committed_scope_digest_value(
     (exit 2) -- never silently fingerprinting the working tree (degrade-LOUD).
     This is the seam used by the fail-closed gate roles (`--verify-gate-scope`,
     `--committed-scope-digest`).
+
+    ``markers`` is forwarded to ``_committed_scope_digest_quiet`` -- UNSET keeps
+    the marker-filtered collection, an explicit ``None`` collects marker-
+    agnostically (the pytest-regression carve-out; see that helper's docstring).
     """
-    result = _committed_scope_digest_quiet(repo, commit)
+    result = _committed_scope_digest_quiet(repo, commit, markers)
     if isinstance(result, _CommittedScopeIndeterminate):
         return _CommittedScopeRefusal(_refuse_committed_scope(result.reason))
     return result
@@ -1781,7 +1799,7 @@ def _warn_committed_scope_indeterminate(reason: str) -> None:
     )
 
 
-def _mode_verify_gate_scope(repo: Path, commit: str) -> int:
+def _mode_verify_gate_scope(repo: Path, commit: str, at_kind: str | None = None) -> int:
     """`--verify-gate-scope`: compare the commit's digest to a fresh one.
 
     The fresh digest is the COMMITTED-scope digest of the pinned ``commit`` (the
@@ -1792,13 +1810,28 @@ def _mode_verify_gate_scope(repo: Path, commit: str) -> int:
     trailer no longer matches its OWN committed tree still fails verify. git
     absent / not a work-tree inherits the committed-scope LOUD INDETERMINATE
     refusal (exit 2) rather than silently fingerprinting the working tree.
+
+    ``at_kind == "pytest-regression"`` (fix-runner-resolves-per-scope-language
+    slice-01) SKIPS the whole-tree runner-routing seam -- mirrors
+    ``commit_slice._committed_scope_digest_or_degrade_reason``'s own carve-out,
+    so a pytest-regression slice's digest is re-derived through the SAME
+    pytest-native path Step 3 used to pin it, never coerced through the repo's
+    OTHER (e.g. cargo) lockfile-resolved runner. Every other ``--at-kind``
+    (default / ``gherkin``) keeps the EXISTING runner-routed behavior.
     """
-    route = _maybe_route_digest_through_runner(repo)
-    if isinstance(route, _DigestRouteDegrade):
-        return route.exit_code
-    if isinstance(route, _DigestRouteResult):
-        return _verify_runner_aware_digest(repo, commit, route)
-    fresh_result = _committed_scope_digest_value(repo, commit)
+    if at_kind != "pytest-regression":
+        route = _maybe_route_digest_through_runner(repo)
+        if isinstance(route, _DigestRouteDegrade):
+            return route.exit_code
+        if isinstance(route, _DigestRouteResult):
+            return _verify_runner_aware_digest(repo, commit, route)
+    # pytest-regression collects marker-agnostically so the committed regression
+    # test on a marker-less target repo is not deselected into a vacuous digest
+    # (mirrors the produce leg in commit_slice._committed_scope_digest_or_degrade_reason).
+    markers: str | None | _UnsetMarkers = (
+        None if at_kind == "pytest-regression" else _MARKERS_UNSET
+    )
+    fresh_result = _committed_scope_digest_value(repo, commit, markers)
     if isinstance(fresh_result, _CommittedScopeRefusal):
         return fresh_result.exit_code
     fresh = fresh_result.digest
@@ -2284,10 +2317,37 @@ def _explain_and_guide(reason: str) -> dict[str, str]:
     return _EXPLAIN_AND_GUIDE_TABLE.get(reason, {})
 
 
+# DDD-CERT-6: the build-vs-test-failure discriminator threaded through
+# `_feature_scope_malformed`'s optional `kind=` extra. A `_CollectionError`
+# refusal (the tree does not compile/import) names `build-failure`; a genuine
+# run-time verdict failure (a red assertion -- tests ran, one failed) names
+# `test-failure`. Callers that pass neither leave `kind` absent from the
+# payload (additive key, no shape break for existing consumers).
+_KIND_BUILD_FAILURE = "build-failure"
+_KIND_TEST_FAILURE = "test-failure"
+
+
 def _feature_scope_malformed(
-    feature_id: str, reason: str, error: str, **extra: object
+    feature_id: str,
+    reason: str,
+    error: str,
+    *,
+    exit_code: int = 2,
+    **extra: object,
 ) -> int:
-    """Emit a single ``FeatureScopeMalformed`` verdict and return exit 2."""
+    """Emit a single ``FeatureScopeMalformed`` verdict and return ``exit_code``.
+
+    ``exit_code`` defaults to 2 (malformed input, the behaviour every existing
+    caller relies on byte-for-byte). DDD-CERT-5's selector-coverage refusal is
+    the one caller that passes ``exit_code=_GATE_INDETERMINATE_EXIT_CODE`` (3)
+    -- a passing cargo run over the WRONG scope is an honest INDETERMINATE
+    (the gate could not certify the entering slice), never a generic
+    malformed-input 2.
+
+    ``extra`` may carry ``kind=_KIND_BUILD_FAILURE`` / ``kind=_KIND_TEST_FAILURE``
+    (DDD-CERT-6) -- the build-vs-test-failure discriminator a crafter reads off
+    the raw verdict payload. Callers that do not pass ``kind`` leave it absent.
+    """
     payload: dict[str, object] = {
         "event": "FeatureScopeMalformed",
         "cause": "malformed",
@@ -2298,7 +2358,7 @@ def _feature_scope_malformed(
     payload.update(extra)
     payload.update(_explain_and_guide(reason))
     _emit(payload)
-    return 2
+    return exit_code
 
 
 # The runner token a Cargo.toml target resolves to (test_runner_port._REGISTRY).
@@ -2328,7 +2388,9 @@ _WHOLE_TREE_RUNNER_INDETERMINATE_EVENT = "health.gate.whole-tree-runner.indeterm
 _CARGO_WHOLE_TREE_COMMAND: tuple[str, ...] = ("cargo", "nextest", "run")
 
 
-def _cargo_scope_command(repo: Path, feature_id: str) -> tuple[str, ...]:
+def _cargo_scope_command(
+    repo: Path, feature_id: str
+) -> tuple[tuple[str, ...], dict[str, object] | None]:
     """The cargo ``test_command`` tokens to drive feature-scoped (slice-03 §V.B).
 
     An OPTIONAL ``runner.json`` override is consulted FIRST -- a present
@@ -2337,13 +2399,87 @@ def _cargo_scope_command(repo: Path, feature_id: str) -> tuple[str, ...]:
     feature-id by CONVENTION: ``binary(/<snake_feature_id>/)`` over the FULL snake
     id (kebab ``-`` -> snake ``_``), the ``binary()`` axis (NOT ``test()``, NOT a
     prefix, NOT whole-crate).
+
+    Returns the resolved command tokens PLUS the ``runner.json`` override dict
+    when one was consulted (``None`` for the zero-config convention-derived
+    path). The caller threads the override through to
+    ``_cargo_selector_covers_entering_slice`` -- an override's coverage is
+    judged by its OWN declared ``slice`` binding, never by a token scan (#106).
     """
     override = read_runner_json(feature_id, repo)
     if override is not None and override.get("test_command"):
-        return tuple(str(override["test_command"]).split())
+        return tuple(str(override["test_command"]).split()), override
     snake_feature_id = feature_id.replace("-", "_")
     selector = f"binary(/{snake_feature_id}/)"
-    return ("cargo", "nextest", "run", "-E", selector)
+    return ("cargo", "nextest", "run", "-E", selector), None
+
+
+def _cargo_selector_covers_entering_slice(
+    repo: Path,
+    feature_id: str,
+    entering_slice: str,
+    command: tuple[str, ...],
+    override: dict[str, object] | None,
+) -> bool:
+    """DDD-CERT-5: the SAME M-8 tag-intersection floor ``_mode_feature_scoped``
+    already enforces on the pytest path, applied to the resolved cargo
+    ``test_command`` (convention-derived or ``runner.json``-overridden).
+
+    Resolves the entering slice's ``@slice-NN``-tagged scenario set from the
+    feature's ``.feature`` files (reusing ``_feature_tag_files``/``_slice_tags``,
+    the EXACT resolvers ``_mode_feature_scoped`` calls at 2858-2868) -- proving
+    the feature legitimately owns the entering slice.
+
+    Two DISTINCT coverage proofs past that floor, keyed on whether the
+    override DECLARES its own ``slice`` binding (#106):
+
+    * **Override present AND declares ``slice``**: ``read_runner_json``
+      already binds the file to THIS feature by PATH
+      (``docs/feature/<feature_id>/runner.json`` -- it can never belong to
+      another feature), and the file's own ``slice`` field states which
+      entering slice it targets -- trust it directly: matching
+      ``entering_slice`` -> covers; mismatched -> refuses (a stale/wrong-slice
+      override). Scanning the override's command tokens for the convention's
+      ``snake_feature_id`` would be self-defeating here: ``runner.json``
+      exists PRECISELY for targets whose binaries BREAK that convention
+      (§V.B) -- requiring the token would reject the escape hatch for the
+      exact case it was built to serve.
+    * **No override, OR an override that does NOT declare ``slice``**: the
+      only structural link between a free-text cargo selector and the
+      feature is the ``snake_feature_id`` token ``_cargo_scope_command``'s
+      zero-config selector itself derives, so coverage requires the resolved
+      command to reference it -- the only mechanical way to tell a
+      genuinely-covering selector from one naming an unrelated binary/test
+      filter (#99, DDD-CERT-5's original pin -- a ``runner.json`` that
+      opts into a custom binary but never states WHICH slice it targets
+      still has to prove coverage by naming the feature).
+
+    ZERO ``.feature`` FILES (genericita, gate-scope-digest-runner-agnostic
+    slice-01): a target that owns NO ``.feature`` file at all for this
+    feature -- a pure-Rust dogfood target with no Gherkin authored, distinct
+    from a feature that DOES own ``.feature`` files but none tag the entering
+    slice -- has no Gherkin tag floor to apply. Unlike the pytest path (where
+    ``.feature`` files ARE the scope-definition mechanism, so zero of them
+    means a genuinely vacuous scope), the cargo run-facet's OWN non-vacuity
+    guards (``list_cargo_scope`` / ``run_cargo_scope`` -- empty enumerate,
+    no-binary-match, untrustworthy listing all raise
+    ``RunnerAdapterUnavailable``) are the real safety net here. Coverage is
+    therefore trivially satisfied so the caller proceeds to dispatch cargo
+    and let ITS verdict (or degrade) decide -- never a Gherkin-shaped refusal
+    on a target that never had Gherkin to check.
+    """
+    feature_files = _feature_tag_files(repo, feature_id)
+    if not feature_files:
+        return True
+    collected_slice_tags: set[str] = set()
+    for feature_file in feature_files:
+        collected_slice_tags |= _slice_tags(feature_file)
+    if entering_slice not in collected_slice_tags:
+        return False
+    if override is not None and override.get("slice") is not None:
+        return override["slice"] == entering_slice
+    snake_feature_id = feature_id.replace("-", "_")
+    return any(snake_feature_id in token for token in command)
 
 
 def _maybe_route_through_cargo(
@@ -2365,7 +2501,30 @@ def _maybe_route_through_cargo(
     if not isinstance(resolution, RunnerAdapter) or resolution.name != _CARGO_RUNNER:
         return None
 
-    command = _cargo_scope_command(repo, feature_id)
+    command, override = _cargo_scope_command(repo, feature_id)
+
+    # DDD-CERT-5 (target-machine-agnostic, GDP-1): the selector-coverage floor
+    # is a STATIC, zero-cargo check -- it fires BEFORE dispatching cargo, so the
+    # refusal is reachable on a Python-only box (CI/CD, no cargo installed) and
+    # never spends a cargo run the refusal makes pointless. A non-covering
+    # selector refuses immediately (INDETERMINATE, exit 3) WITHOUT calling the
+    # run-facet at all; the covering path proceeds to dispatch exactly as before
+    # (its cargo run degrades LOUD when cargo is absent).
+    if not _cargo_selector_covers_entering_slice(
+        repo, feature_id, entering_slice, command, override
+    ):
+        return _feature_scope_malformed(
+            feature_id,
+            "selector-does-not-cover-entering-slice",
+            "the resolved cargo test_command "
+            f"{' '.join(command)!r} does not exercise the entering slice "
+            f"{entering_slice!r}'s AT -- a passing cargo run over the wrong "
+            "selector-coverage scope must never be honored as coverage",
+            exit_code=_GATE_INDETERMINATE_EXIT_CODE,
+            entering_slice=entering_slice,
+            runner=resolution.name,
+        )
+
     try:
         verdict = resolution.run(repo, command)
     except RunnerAdapterUnavailable as exc:
@@ -2881,6 +3040,7 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
             "collection-failed",
             f"feature-scoped pytest collection failed: {exc}",
             entering_slice=entering_slice,
+            kind=_KIND_BUILD_FAILURE,
         )
     # DDD-1/DDD-2: narrow the collected scope to the shipped+entering slice set,
     # EXCLUDING a not-yet-entered future-slice scaffold -- by scenario slice-tag,
@@ -2931,6 +3091,7 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
                 "arch-invariant-failed",
                 f"the architecture-invariant run could not be trusted: {exc}",
                 entering_slice=entering_slice,
+                kind=_KIND_BUILD_FAILURE,
             )
         if arch.collected == 0:
             return _feature_scope_malformed(
@@ -2949,6 +3110,7 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
                 "architecture-boundary test in tests/build/**, which the "
                 "whole-tree pre-push gate would refuse",
                 entering_slice=entering_slice,
+                kind=_KIND_TEST_FAILURE,
             )
         arch_collected = arch.collected
 
@@ -3012,6 +3174,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "--verify-gate-scope",
         action="store_true",
         help="Verify --commit's Gate-Scope: trailer against a fresh digest.",
+    )
+    parser.add_argument(
+        "--at-kind",
+        dest="at_kind",
+        default=None,
+        choices=(None, "gherkin", "pytest-regression"),
+        help=(
+            "The acceptance-test kind the digest re-derivation must honor "
+            "(fix-runner-resolves-per-scope-language slice-01). "
+            "'pytest-regression' skips the whole-tree runner-routing seam "
+            "(_maybe_route_digest_through_runner) so a Rust-primary repo's "
+            "cargo lockfile never hijacks a Python-only slice's re-verified "
+            "digest. Omitted / 'gherkin' keeps the EXISTING runner-routed "
+            "--verify-gate-scope behavior byte-identical."
+        ),
     )
     parser.add_argument(
         "--expected-head",
@@ -3191,7 +3368,7 @@ def main(argv: list[str] | None = None, output: OutputPort | None = None) -> int
         if raced is not None:
             _emit(raced)
             return 1
-        return _mode_verify_gate_scope(repo, args.commit)
+        return _mode_verify_gate_scope(repo, args.commit, args.at_kind)
 
     if args.committed_scope_digest:
         return _mode_committed_scope_digest(repo)

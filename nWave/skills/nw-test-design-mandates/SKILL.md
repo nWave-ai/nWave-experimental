@@ -11,6 +11,46 @@ This skill is the Single Source of Truth (SSOT) for every acceptance-test-design
 
 This core holds the cross-cutting concerns (numbering, registry, language-convention frame, compliance-verification handoff) and COMPOSES three narrow mandate modules. The canonical mandate definitions live in the modules — this core does not re-inline them.
 
+## Assertion failure messages state WHAT / WHY / HOW (STANDING)
+
+Every AT assertion's failure message MUST state **WHAT** observable failed (the specific
+expected-vs-actual), **WHY** it matters (the contract it breaks), and **HOW** to fix (what
+the implementation must make true / the concrete remediation). A bare `assert x == y` with
+no message — or a message that only restates the code — is itself a defect: a RED must TEACH
+the crafter exactly what to make true, not force them to reverse-engineer the intent. Same
+what/why/how rule the product's own error surfaces obey.
+
+## Closure obligations — COUNT / PARTITION / SILENCE (STANDING)
+
+Three generative obligations. They fire at AUTHORING time, on the shape of what an AT (or the
+artifact it certifies) asserts — not as a gate that fires after the error. They are
+domain-agnostic: a validator checks the obligation is DISCHARGED without understanding the
+subject. Whenever a scenario, a charter oracle, or a design artifact emits one of these
+shapes, the matching cell is filled inline while writing:
+
+- **Emit a COUNT → name the POPULATION.** A number ("3 consumers wired", "0 findings", "5
+  slices") is meaningless without its denominator: 3 of WHAT total, 0 out of a set that was
+  actually enumerated. An AT asserting a count MUST also pin the population it was drawn from,
+  and assert the count against that population — never a bare integer.
+- **Emit a PARTITION → assert CONSERVATION.** When a whole is split into parts (buckets,
+  statuses, refused/accepted halves, per-category verdicts), the parts MUST sum back to the
+  whole. Assert the conservation law, not just the individual buckets — a partition whose
+  pieces silently drop members is the exact defect this catches.
+- **Declare SILENCE/ABSENCE → name the DISCRIMINATOR.** A "clean / nothing found / no-op /
+  not-applicable" result MUST carry what distinguishes **looked-and-genuinely-absent** from
+  **never-actually-looked** (no capable tier, unparseable input, swallowed error). The AT
+  proves the discriminator by constructing the empty case AND a broken/incapable case and
+  asserting their outputs DIFFER — the negative test no positive test can replace (Vera's
+  absence ≠ incapacity, `nw-user-examiner` §8). A silence indistinguishable from a swallowed
+  error is a false negative wearing a degraded alibi, never a PASS.
+
+Why here, why inline: the obligation is SEEDED mechanically from what the design already
+states — a Reuse Analysis `EXTEND` row that names a field ("binding_name plus template_parts")
+already implies the population; the charter's negative oracle already implies the
+discriminator. Filling the cell while authoring costs the system, not a gate firing after a
+wrong path is taken (GDP-2 inline-at-authoring + GDP-5 cost-on-system). The denominator is not
+documentation — it is the falsifier made mechanical.
+
 ## Composition (load by trigger)
 
 | Module | Kind | Trigger — load when... | Covers |

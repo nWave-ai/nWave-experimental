@@ -381,8 +381,8 @@ def _load_template_skeleton_or_degrade(
     repo_root: Path, feature_id: str
 ) -> tuple[str | None, int | None]:
     """Read + extract the charter template skeleton, or emit the shared
-    degrade-LOUD payload when it is unreadable. Not pure (filesystem read +
-    the degrade path prints to stdout).
+    degrade-LOUD payload when it is unreadable in NEITHER location tried.
+    Not pure (filesystem read + the degrade path prints to stdout).
 
     D4 refactor (feature-end deep review): the ONE template-read locus every
     seed-mode shares -- `_run_bug_observable`, `_run_brownfield_discovery`,
@@ -390,23 +390,43 @@ def _load_template_skeleton_or_degrade(
     read-try/except/extract block byte-for-byte. Extracted verbatim
     (behavior byte-identical); no parallel template-read path remains.
 
+    Bugfix (fix-scaffold-template-from-install-lib, RCA-confirmed): the
+    template genuinely SHIPS alongside this module itself -- both the dev
+    checkout (`src/des/cli/charter_scaffold.py` -> `parents[3]` = repo root)
+    and the installed lib (`lib/python/des/cli/charter_scaffold.py` ->
+    `parents[3]` = the lib root) keep the same `.../nWave/templates/...`
+    sibling-of-source-root shape relative to `__file__`. A CONSUMER repo (no
+    `nWave/templates/` of its own) was missing this MODULE-RELATIVE lookup
+    entirely, so it always degraded even though the shipped template was
+    findable. Tries the module-relative (shipped) location FIRST, then the
+    `repo_root`-relative location (kept as a fallback for a target that
+    carries its own copy) -- degrades LOUD, naming BOTH locations tried,
+    only when the template is found at NEITHER.
+
     Returns:
         `(template_skeleton, None)` on success -- the caller proceeds.
-        `(None, exit_code)` when the template is unreadable -- the caller
-        MUST `return exit_code` immediately (the degrade-LOUD payload has
-        already been printed).
+        `(None, exit_code)` when the template is unreadable at both
+        locations -- the caller MUST `return exit_code` immediately (the
+        degrade-LOUD payload has already been printed).
     """
-    template_path = repo_root / _TEMPLATE_RELATIVE_PATH
-    try:
-        template_content = template_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        exit_code = _degrade(
-            feature_id,
-            VERDICT_MISSING_CHARTER_TEMPLATE,
-            f"cannot read charter template at {template_path}: {exc}",
-        )
-        return None, exit_code
-    return _extract_template_skeleton(template_content), None
+    module_relative_path = Path(__file__).resolve().parents[3] / _TEMPLATE_RELATIVE_PATH
+    repo_root_relative_path = repo_root / _TEMPLATE_RELATIVE_PATH
+
+    for template_path in (module_relative_path, repo_root_relative_path):
+        try:
+            template_content = template_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        return _extract_template_skeleton(template_content), None
+
+    exit_code = _degrade(
+        feature_id,
+        VERDICT_MISSING_CHARTER_TEMPLATE,
+        "cannot read charter template at either "
+        f"{module_relative_path} (module-relative, shipped) or "
+        f"{repo_root_relative_path} (repo-root-relative)",
+    )
+    return None, exit_code
 
 
 def _emit_single_scaffold_result(

@@ -30,7 +30,9 @@ Feature: A benign markerless prompt passes through under an active floor while a
   # DECISION TABLE (the corrected guard, under an active floor unless stated):
   #   ARMED  + fully markerless          -> ALLOW (K2 benign passthrough)  [AT-1]
   #   ARMED  + partial markers (no -VAL) -> BLOCK (K1 bypass loud)         [AT-2]
-  #   ARMED  + DES-WAVE only (no -VAL)   -> BLOCK (collision closed)       [AT-3]
+  #   ARMED  + DES-WAVE only (no -VAL)   -> ALLOW (own-wave declaration    [AT-3]
+  #                                          arms enforcement, RATIFIED
+  #                                          reversal Ale 2026-07-16)
   #   NO floor + markerless              -> ALLOW (S1 ad-hoc, unchanged)   [AT-4]
   #   ARMED  + wave_entering             -> ALLOW (entering, unchanged)    [AT-5]
   #
@@ -39,9 +41,13 @@ Feature: A benign markerless prompt passes through under an active floor while a
   #     guard must ALLOW -> the ALLOW assertion fails with a semantic AssertionError.
   #   AT-2 -- has_des_markers is True for partial markers, so the OLD guard does NOT
   #     block where the corrected guard must BLOCK -> the BLOCK assertion fails RED.
-  #   AT-3/AT-4/AT-5 -- preservation-GREEN at HEAD; they pin that the DES-WAVE
-  #     collision stays closed, S1 stays untouched, and the entering exemption holds
-  #     end-to-end through DELIVER (regression guards, not vacuous greens).
+  #   AT-3 -- live-GREEN at HEAD: the shipped guard already honours a matching OWN
+  #     DES-WAVE declaration as a legitimate wave-membership claim (not a bypass)
+  #     and allows it -- this scenario is a regression guard for that ratified
+  #     2026-07-16 reversal, not a new RED.
+  #   AT-4/AT-5 -- preservation-GREEN at HEAD; they pin that S1 stays untouched and
+  #     the entering exemption holds end-to-end through DELIVER (regression
+  #     guards, not vacuous greens).
 
   @slice-01 @walking_skeleton @driving_port @real-io @contract-shape:bounded-change
   Scenario: A benign markerless prompt passes through while the design wave is active
@@ -58,11 +64,11 @@ Feature: A benign markerless prompt passes through under an active floor while a
     And the block names the wave-bypass so it cannot pass as a silent success
 
   @slice-01 @driving_port @real-io @contract-shape:bounded-change
-  Scenario: A DES-WAVE-only child is still blocked because the wave declaration is partial context
+  Scenario: A DES-WAVE-only child is allowed because its own wave declaration arms enforcement
     Given a design wave floor is armed in an isolated project
     When a child carrying only a wave declaration but missing its required marker is checked by the gate
-    Then the gate blocks the dispatch
-    And the block names the wave-bypass so it cannot pass as a silent success
+    Then the gate allows the dispatch
+    And the gate leaves the benign dispatch completely untouched
 
   @slice-01 @driving_port @real-io @contract-shape:bounded-change
   Scenario: A markerless prompt with no wave active is allowed unchanged

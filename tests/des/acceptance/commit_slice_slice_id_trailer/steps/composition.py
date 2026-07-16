@@ -184,7 +184,27 @@ class CommitSliceComposition:
         assert self._message is not None, "given_message_body must run first"
         parent = _git(self._repo, "rev-parse", "HEAD").strip()
 
-        argv = ["--repo", str(self._repo), "--all", "--message", str(self._message)]
+        argv = [
+            "--repo",
+            str(self._repo),
+            "--feature-id",
+            "fix-commit-slice-omits-slice-id-trailer",
+            "--all",
+            "--message",
+            str(self._message),
+            # The hermetic tmp_path work-tree carries no `.feature` files (the
+            # real slice-01 `.feature` lives in THIS repo, not the throwaway
+            # one this composition commits into), so the default gherkin E2
+            # leg would refuse `no .feature file resolves ... vacuously`
+            # (ADR-DES-001 pre-flight, unrelated to the Slice-Id trailer this
+            # slice actually tests). Point E2 at a REAL committed pytest file
+            # already staged by `given_staged_change` so the pre-flight gets
+            # genuine observed evidence instead of a vacuous pass.
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_new.py",
+        ]
         if slice_id is not None:
             argv += ["--slice-id", str(slice_id)]
 

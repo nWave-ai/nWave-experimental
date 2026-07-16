@@ -7,6 +7,16 @@ disable-model-invocation: true
 
 # Architecture Patterns and Methodologies
 
+## Gate / error surfaces you design state WHAT / WHY / HOW (STANDING)
+
+Every gate, contract check, or error surface you design MUST, on rejection, state **WHAT**
+failed (the specific invariant), **WHY** (the cause), and **HOW** to fix (the concrete
+remediation, routing to the producing tool that makes the artifact valid). A gate whose
+rejection is a bare `FAILED` / exit-code forces the operator to investigate — that is a
+DESIGN defect, not an implementation detail. Design the self-explaining surface IN, and put
+the affordance inline at the authoring point, not only in the reactive rejection (GDP-3 /
+GDP-4 / GDP-2).
+
 ## C4 Model -- Hierarchical Architecture Visualization
 
 Four levels for different audiences:

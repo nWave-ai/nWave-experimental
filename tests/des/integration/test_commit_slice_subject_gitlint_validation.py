@@ -123,11 +123,24 @@ def test_commit_slice_commits_compliant_subject(tmp_path: Path, capsys) -> None:
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "commit-slice-subject-gitlint-validation",
             "--all",
             "--slice-id",
             "slice-01",
             "--message",
             "fix(gitlint-subject): compliant subject commits normally",
+            # This hermetic tmp_path repo carries no `.feature` files (this
+            # AT's real subject is commit-slice's OWN gitlint self-
+            # validation, orthogonal to any Gherkin scenario), so the default
+            # gherkin E2 leg refuses `no .feature file resolves ...
+            # vacuously` (ADR-DES-001 pre-flight). Point E2 at a REAL
+            # committed pytest file already staged above so the pre-flight
+            # gets genuine observed evidence instead of a vacuous pass.
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_new.py",
         ]
     )
     event = _last_json_event(capsys.readouterr().out)
@@ -162,6 +175,8 @@ def test_commit_slice_refuses_subject_starting_with_digit(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "commit-slice-subject-gitlint-validation",
             "--all",
             "--slice-id",
             "slice-01",
@@ -211,6 +226,8 @@ def test_commit_slice_refuses_subject_exceeding_max_length(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "commit-slice-subject-gitlint-validation",
             "--all",
             "--slice-id",
             "slice-01",

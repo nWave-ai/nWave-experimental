@@ -27,7 +27,7 @@ packages = ["src/des", "nwave_ai"]
 
 [project]
 name = "nwave"
-version = "3.21.0+atddpure.708ac0c00"
+version = "3.21.0+atddpure.0251ff9ae"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -458,6 +458,9 @@ test-integration = "python -m pytest tests/des/integration/ tests/plugins/plugin
 test-not-slow    = "python -m pytest tests/ -m 'not slow' --pspec --tb=short --color=yes"
 test-plugins     = "python -m pytest tests/plugins/ --pspec --tb=short --color=yes"
 test-unit        = "python -m pytest tests/des/unit/ tests/installer/unit/ tests/plugins/plugin-architecture/unit/ tests/plugins/install/ --pspec --tb=short --color=yes"
+# Where did the wall-clock go? Reads .nwave/test-durations.jsonl, which the root
+# conftest writes on EVERY run (poles AND the long tail the top-N window hides).
+test-durations   = "python scripts/test_durations_report.py"
 # Linting & formatting (alphabetical)
 format           = "ruff format src/ scripts/ tests/"
 format-check     = "ruff format --check src/ scripts/ tests/"

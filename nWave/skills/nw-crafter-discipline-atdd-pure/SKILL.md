@@ -127,10 +127,11 @@ des run-slice-ats --repo . --entering-slice <s>
 
 **Do not compute or hand-stamp the digest.** The digest the exit gate verifies is the committed-scope digest of HEAD's **committed tree** — but at terminating-run time HEAD is still the slice's PARENT and the slice's new AT files are still **untracked**, so any digest computed *before* the commit fingerprints the wrong (parent) tree → `GateScopeUnverified` (mismatch) → a manual `git commit --amend` was historically required. That amend was inconsistent prose discipline (#67 facet-4 / AD-23 adjacent).
 
-The `G_COMMIT` commit MUST be produced by the mechanical, correct-by-construction subcommand:
+The `G_COMMIT` commit MUST be produced by the mechanical, correct-by-construction subcommand — **`--feature-id` is REQUIRED, not optional** (fix-precommit-fabricates-vacuous-scaffold, RCA §4a): every downstream gate this command runs — E1 completeness, the E2 feature-scoped contract gate, the E3 examine-verdict gate, and the `SliceCommitVerified` record itself — is feature-scoped, and omitting `--feature-id` now REFUSES the commit LOUD (`CommitRefusedMissingFeatureId`) before any git mutation, naming every gate the omission would have skipped, instead of silently disarming all four of them:
 
 ```
 des commit-slice --repo . --all \
+  --feature-id <feature-id> \
   --message "feat(scope): subject
 
 body...

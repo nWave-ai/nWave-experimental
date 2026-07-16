@@ -440,3 +440,19 @@ gates:
     module: des.cli.next_step
     entry_function: main
     language_neutral_contract: true
+
+  # des-refactor-fixer-swarm slice-01 (ADR-SWARM-001): the fixer-harness CLI --
+  # 1:1 mirror of the new _REGISTRY row.
+  - gate_id: refactor
+    responsibility: "Drains one tech-debt pile item (techdebt.md) in an isolated git worktree: claims the item, runs the pluggable agent command, verifies green-to-green on the impacted tests, merges ONLY on a clean confirmed merge, removes the worktree, and moves the item to paidtechdebt.md. Self-reports success / empty-pile / failure (exit 0/0/1, no traceback). Python-only; git-worktree, agent invocation, and env provisioning sit behind driven ports."
+    module: des.cli.refactor
+    entry_function: main
+    language_neutral_contract: true
+
+  # examinable-gate-surface (des examine-fixture): builds a drivable fixture the
+  # real certification gate accepts -- 1:1 mirror of the _REGISTRY row.
+  - gate_id: examine-fixture
+    responsibility: "Builds a real, drivable repository the certification gate (des verify-slice-commit) accepts on the clean case -- a genuinely shipped+attested fixture tree -- so the examine surface can be exercised end-to-end without hand-assembling repo state."
+    module: des.cli.examine_fixture
+    entry_function: main
+    language_neutral_contract: true

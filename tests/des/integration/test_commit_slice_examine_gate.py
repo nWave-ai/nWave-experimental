@@ -21,6 +21,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli.commit_slice import main as commit_slice_main
 from des.cli.record_examine_verdict import main as record_examine_verdict_main
 
@@ -238,6 +239,61 @@ def test_commit_proceeds_when_pass_verdict_seal_matches(tmp_path: Path, capsys) 
     assert event["verified"] is True
 
 
+def test_verified_record_attests_via_examine_verdict_when_that_cleared_it(
+    tmp_path: Path, capsys
+) -> None:
+    """ADR-DES-001 addendum Rule 2 (attribution): a ``SliceCommitVerified``
+    ledger record earned via the examine-verdict carve-out must carry
+    ``attested_via: "examine-verdict"`` -- never a bare, unattributed
+    restatement of ``verified: true``. Distinct invariant from Rule 1's
+    carve-out itself (pinned by ``test_commit_proceeds_when_pass_verdict_
+    seal_matches`` above): that test only proves the commit PROCEEDS; this
+    one proves the record HONESTLY NAMES the evidence source that cleared
+    it -- a reader must be able to tell "pytest gates ran and passed" apart
+    from "no executable gate existed; a human-observed examine PASS is the
+    proof" without inferring it from absence.
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    feature_id, slice_id = "f-examine-attribution", "slice-01"
+    charter = _write_charter(
+        repo, feature_id, slice_id, "# Charter\n\nWalk the checkout flow.\n"
+    )
+    _record_examine_verdict(repo, feature_id, slice_id, charter, "PASS", capsys)
+
+    _add_new_slice_file(repo, "test_slice_01.py")
+    exit_code = commit_slice_main(
+        [
+            "--repo",
+            str(repo),
+            "--all",
+            "--feature-id",
+            feature_id,
+            "--message",
+            f"feat(slice): behaviour\n\nSlice-Id: {slice_id}",
+        ]
+    )
+    capsys.readouterr()  # drain -- the ledger record is the authority here
+
+    assert exit_code == 0, (
+        "reproduction precondition: an examine-cleared, E2-vacuous slice "
+        f"must commit -- exit_code={exit_code!r}"
+    )
+
+    verified_records = AtCompletionLedger(feature_id, repo).read_records(
+        slice_id=slice_id, event_type="SliceCommitVerified"
+    )
+    assert verified_records, (
+        "reproduction precondition: a SliceCommitVerified ledger record "
+        "must exist for the examine-cleared slice"
+    )
+    assert verified_records[-1].get("attested_via") == "examine-verdict", (
+        "a SliceCommitVerified record earned via the examine-verdict "
+        "carve-out must honestly name its evidence source -- observed "
+        f"record={verified_records[-1]!r}"
+    )
+
+
 def test_commit_refused_when_verdict_is_indeterminate(tmp_path: Path, capsys) -> None:
     """INDETERMINATE verdict refuses LOUD (exit 2) -- never a silent pass."""
     repo = tmp_path / "repo"
@@ -270,11 +326,22 @@ def test_commit_refused_when_verdict_is_indeterminate(tmp_path: Path, capsys) ->
 
 
 def test_commit_slice_no_charter_leaves_gate_unarmed(tmp_path: Path, capsys) -> None:
-    """BACKWARD-COMPAT: no charter for the feature -> gate not armed -> unchanged.
+    """BACKWARD-COMPAT: no charter for the feature -> examine gate not armed.
 
     No docs/product/expectations/ directory, no NWAVE_EXAMINE_GATE_OPT_IN, no
-    ExamineVerdict recorded -- the pre-existing commit-slice path is completely
-    unaffected: the slice commits + verifies exactly as before P1.2.
+    ExamineVerdict recorded -- the examine-verdict gate (P1.2) is genuinely
+    unarmed here, and this test is scoped to THAT gate only.
+
+    Post reorder+carve-out (fix-commit-slice-verify-before-commit slice-01),
+    `des commit-slice` ALSO refuses a pre-flight with ZERO observed AT
+    evidence (no resolvable `.feature` file, no `--at-kind
+    pytest-regression`, no recorded examine PASS) -- an orthogonal,
+    independently-armed leg (E2). This fixture supplies neither a `.feature`
+    file nor `--at-kind pytest-regression` evidence, so it now correctly hits
+    THAT refusal (`SliceCommitRefused`, E2) rather than silently committing
+    unverified -- the old "commits + verifies unconditionally" assumption was
+    the pre-flight-less lie this reorder fixed; it is no longer true, nor
+    should it be.
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -294,6 +361,9 @@ def test_commit_slice_no_charter_leaves_gate_unarmed(tmp_path: Path, capsys) -> 
     )
     event = _last_json_event(capsys.readouterr().out)
 
-    assert exit_code == 0
-    assert event["event"] == "SliceCommitted"
-    assert event["verified"] is True
+    assert exit_code == 1, (
+        f"expected the zero-evidence pre-flight to refuse this commit -- "
+        f"exit_code={exit_code!r}, event={event!r}"
+    )
+    assert event["event"] == "SliceCommitRefused", event
+    assert event["refused_half"] == "E2", event

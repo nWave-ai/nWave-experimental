@@ -26,3 +26,7 @@ Every hand-edit of a checked artifact is a producing tool you didn't invoke. The
 - `des feature-delta-doctor` / `des verify-readiness-pre-dispatch` — the readiness gates' self-explaining view; run before hitting the wall.
 
 **Hygiene**: `uv run ruff format` · `uv run ruff check` · `uv run python scripts/docgen.py` (after frontmatter/description edits — freshness gate) · `uv run python scripts/hooks/check_documentation_freshness.py`.
+
+**Unsure about nWave methodology, a command, or wave status?** `/nw-buddy` — the first
+agent to consult for any nWave question (methodology, project navigation, command help,
+wave status, migration, troubleshooting). Ask there before guessing.

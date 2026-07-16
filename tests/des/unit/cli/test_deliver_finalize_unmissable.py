@@ -50,6 +50,7 @@ from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli.commit_slice import main as commit_slice_main
+from des.cli.verify_slice_commit_completeness import canonical_regression_test_path
 
 
 _FEATURE_END_PENDING_EVENT = "FeatureEndPending"
@@ -350,7 +351,35 @@ def test_absent_slice_plan_commit_still_succeeds_without_crash(
     _init_repo(repo)
     feature_id = "fixture-deliver-finalize-no-slice-plan"
     # Deliberately NOT calling _write_two_slice_feature_delta -- no
-    # docs/feature/{feature_id}/feature-delta.md exists at all.
+    # docs/feature/{feature_id}/feature-delta.md exists at all: the
+    # slice-plan-absent condition this scenario exercises MUST stay, so
+    # Step 7's degrade-LOUD marker path is what runs.
+    #
+    # STALE-FIXTURE RECONCILIATION (2026-07-15): seed ONE convention-matching
+    # pytest-regression file so the commit-slice E2 pre-flight routes to the
+    # pytest-regression path instead of the gherkin default. WHY this is
+    # required for the test to reach its OWN intent: with ZERO .feature files
+    # AND zero convention-matching regression files, commit-slice Step 1.5's
+    # `_infer_pytest_regression_at_kind` (RC1 Fix B) conservatively KEEPS the
+    # gherkin default -> E2 dispatches `run_contract_gate --feature-id`, which
+    # trips the load-bearing M-1 non-vacuity floor (a feature with no .feature
+    # file "would pass vacuously" -> exit 2) BEFORE the commit ever lands, so
+    # Step 7 (the FeatureEndPending degrade-LOUD marker, `commit_slice.py`)
+    # never runs -- Step 7 executes only AFTER a successful commit. The M-1
+    # floor is a 7-week-predating anti-gaming invariant and is NOT weakened
+    # here; the fix is fixture-side only: ONE positive-evidence regression file
+    # routes E2 to the pytest-regression path (no gherkin, no M-1 floor), the
+    # commit lands, and Step 7 genuinely exercises the degrade-LOUD path on the
+    # STILL-absent feature-delta.md (the actual behaviour this test proves).
+    # Path derived via the production `canonical_regression_test_path` (never
+    # hand-matching the private glob) -- the same anti-drift discipline the
+    # gate's own naming convention mandates.
+    regression_rel = canonical_regression_test_path(feature_id, "slice-01")
+    _author_production_change(
+        repo,
+        regression_rel,
+        "def test_no_slice_plan_regression_behaviour() -> None:\n    assert True\n",
+    )
 
     _author_production_change(
         repo, "src/app/no_plan.py", "def helper() -> str:\n    return 'no plan'\n"

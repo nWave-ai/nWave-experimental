@@ -41,9 +41,9 @@ from des.cli.carpaccio_format import (
     _config_slice_max,
     _feature_tag_files,
     _legacy_acceptance_dir,
-    _read_feature_files,
     parse_scenarios,
     parse_slice_plan,
+    read_feature_files,
 )
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.repo_path_resolver import (
@@ -106,7 +106,7 @@ def _read_precheck_feature_texts(repo: Path, feature_id: str) -> list[str]:
 
     Collect-ALL discipline: a MISSING binding tag must not suppress the OTHER
     defect diagnostics (tag mismatch, over-ceiling). The gate's binding
-    resolution (``_read_feature_files``) only sees files that already carry the
+    resolution (``read_feature_files``) only sees files that already carry the
     ``@feature-{id}`` tag or live under the legacy directory; an un-bound file
     would yield zero scenarios and silently hide its tag/ceiling defects. So when
     binding resolves no files, fall back to scanning the feature's conventional
@@ -114,7 +114,7 @@ def _read_precheck_feature_texts(repo: Path, feature_id: str) -> list[str]:
     authored content the author is fixing. Both paths feed the SAME
     ``carpaccio_format.parse_scenarios`` predicate (ADR-001, no second parser).
     """
-    bound = _read_feature_files(repo, feature_id)
+    bound = read_feature_files(repo, feature_id)
     if bound:
         return bound
     return [

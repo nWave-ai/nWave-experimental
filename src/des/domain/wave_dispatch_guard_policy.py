@@ -217,19 +217,22 @@ def _is_at3_collision(
     owner_wave: str,
     active_floor: WaveActiveRecord | None,
 ) -> bool:
-    """True for the AT-3 WAVE_MARKER_BYPASS collision case (DDD-1 SSOT reuse).
+    """True for the AT-3 matching-wave collision case (DDD-1 SSOT reuse).
 
     Mirrors the canonical predicate ``PreToolUseService`` applies (the
     ``markers.wave is not None and markers.carries_partial_wave_context and not
     wave_entering`` hinge): an ACTIVE wave floor for THIS owner's wave whose
     ``entry_pending`` is cleared (a non-entering, in-wave dispatch) + a prompt
-    carrying PARTIAL wave context (a ``DES-*`` marker -- including ``DES-WAVE`` --
+    carrying PARTIAL wave context (a ``DES-*`` marker -- including ``DES-WAVE``
     but NOT the required ``DES-VALIDATION`` marker). The active wave + the
     wave-entering signal both come from the floor reader AT-3 uses (never
     self-reported); ``carries_partial_wave_context`` is the SAME ``DesMarkers``
     property AT-3 reads. A matching DES-WAVE marker reads as on-spine to the
-    floor-blind cascade below, so this collision is detected BEFORE that ALLOW
-    and converts it to the BLOCK AT-3 already emits (agreement, not reopen).
+    floor-blind cascade below; this collision is detected so the branch can
+    ALLOW it explicitly (agreeing with AT-3's own ALLOW, per Ale's 2026-07-16
+    re-reconcile onto ALLOW -- a child declaring its OWN active wave is a
+    legitimate wave-membership declaration, the OPPOSITE of a bypass), rather
+    than falling through to the identical ALLOW below by accident.
     """
     if active_floor is None or active_floor.wave != owner_wave:
         return False
@@ -249,10 +252,12 @@ def decide_dispatch(
 ) -> GuardDecision:
     """Decide whether an Agent/Task dispatch enters its wave on-spine.
 
-    The decision cascade (DDD-8/9):
+    The decision cascade (DDD-8/9, re-reconciled onto ALLOW 2026-07-16):
       * a non-owner (reviewer / anything outside WAVE_OWNERS) -> ALLOW (exempt).
-      * the AT-3 collision case (active floor for this wave + non-entering
-        partial-marker in-wave dispatch) -> BLOCK (agrees with PreToolUse AT-3).
+      * the AT-3 matching-wave collision case (active floor for this wave +
+        non-entering partial-marker in-wave dispatch) -> ALLOW (agrees with
+        PreToolUse AT-3's own ALLOW -- a child declaring its OWN active wave is
+        a legitimate wave-membership declaration, not a bypass).
       * a wave-owner carrying the matching DES-WAVE marker -> ALLOW (on-spine).
       * a marker-less wave-owner with a form-valid skip witness -> ALLOW (witness).
       * a marker-less wave-owner with a valid session pre-grant -> ALLOW (grant).
@@ -261,8 +266,10 @@ def decide_dispatch(
     ``active_floor`` is the wave-active record the CLI driver reads (via the same
     ``WaveActiveReader`` store AT-3 uses) and threads in as pure data; None when no
     floor is armed or no reader is wired (the legacy floor-blind behaviour). The
-    collision-BLOCK branch is ADDITIVE -- it fires ONLY for the case AT-3 already
-    blocks, leaving every existing ALLOW path intact (DDD-2).
+    collision branch is ADDITIVE -- it fires ONLY for the case AT-3 already
+    allows, leaving every existing ALLOW path intact (DDD-2), and now emits the
+    SAME ALLOW explicitly (rather than relying on fallthrough) so the reason
+    names the matching-wave signal.
     """
     owner_wave = _wave_owner_for(subagent_type)
     if owner_wave is None:
@@ -275,21 +282,18 @@ def decide_dispatch(
         prompt=prompt, owner_wave=owner_wave, active_floor=active_floor
     ):
         return GuardDecision(
-            verdict=GuardVerdict.BLOCK,
+            verdict=GuardVerdict.ALLOW,
             reason=(
-                f"block: the '{owner_wave}' wave floor is active and this "
-                f"{subagent_type} sub-dispatch carries partial wave context "
-                "(a DES-WAVE marker without the required DES-VALIDATION marker) "
-                "while NOT entering the wave -- a wave-owned child that dropped "
-                "its markers is a wave bypass the PreToolUse AT-3 floor check "
-                "already blocks; verify-wave-dispatch agrees (one exemption SSOT, "
-                "not a reopened bypass). To fix: run `des dispatch --mode "
-                "atdd_pure --project-id <id> --slice <slice> --phase <phase>` "
-                "(emits a gate-valid dispatch carrying the full marker set -- "
-                f"including `<!-- DES-WAVE: {owner_wave} -->` and "
-                "`DES-VALIDATION` -- by construction), or embed both markers "
-                "yourself in the sub-dispatch prompt."
+                f"allow: the '{owner_wave}' wave floor is active and this "
+                f"{subagent_type} sub-dispatch declares the SAME wave via its "
+                "DES-WAVE marker while NOT entering the wave -- a child "
+                "declaring its own active wave is a legitimate wave-membership "
+                "declaration (DES-WAVE only ARMS enforcement, it is the "
+                "opposite of a bypass); verify-wave-dispatch agrees with the "
+                "PreToolUse AT-3 floor check's own ALLOW (one exemption SSOT, "
+                "2026-07-16 re-reconcile)."
             ),
+            recognized_signal="des-wave",
         )
 
     if _marker_is_on_spine(prompt, owner_wave, subagent_type):

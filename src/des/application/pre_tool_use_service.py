@@ -208,6 +208,17 @@ class PreToolUseService(PreToolUsePort):
                 and markers.carries_partial_wave_context
                 and not input_data.wave_entering
             ):
+                # S2a: the child's OWN <!-- DES-WAVE: <wave> --> declaration
+                # MATCHES the active floor's wave -- a legitimate wave-membership
+                # claim, not a bypass (fix-wave-marker-blocks-non-atdd-pure-child
+                # slice-01). DES-WAVE only ARMS enforcement, it never authorizes
+                # past it -- so a MATCHING declaration is honoured (allowed); a
+                # MISSING declaration (no DES-WAVE at all, e.g. a bare DES-STEP-ID
+                # subset) or a MISMATCHED one (declares a DIFFERENT wave than
+                # active) falls through to the DENY below unchanged.
+                if markers.declared_wave == markers.wave:
+                    self._log_allowed(context="wave_marker_match", hook_id=hook_id)
+                    return HookDecision.allow()
                 # S2: a wave is active AND this dispatch carries PARTIAL wave context
                 # (a DES marker subset OR a DES-WAVE declaration) but MISSES the
                 # required DES-VALIDATION marker AND it is NOT entering the wave
@@ -230,6 +241,11 @@ class PreToolUseService(PreToolUsePort):
                     "<!-- DES-VALIDATION --> (and the wave's DES-MODE / DES-PHASE / "
                     "DES-SLICE / DES-PROJECT-ID / DES-STEP-ID / DES-PROJECT-ROOT) "
                     "markers from the parent wave dispatch onto this child prompt.",
+                    "Alternatively, carry a "
+                    f"<!-- DES-WAVE: {markers.wave} --> marker matching the "
+                    "active wave on this sub-dispatch -- a matching DES-WAVE "
+                    "declaration is honoured as a legitimate wave-membership "
+                    "claim and is allowed without DES-VALIDATION.",
                     f"If the '{markers.wave}' wave floor is STALE (a days-old wave "
                     "you are not actually in), clear it with the sanctioned command "
                     '`des wave-clear --reason "<why>"` so the floor no longer '

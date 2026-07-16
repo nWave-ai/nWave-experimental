@@ -334,6 +334,8 @@ class CommonAuditLogSsotComposition:
         assert self._arch_temp_tree is not None, "temp tree not staged"
         proc = subprocess.run(
             [
+                sys.executable,
+                "-m",
                 "pytest",
                 "tests/build/test_no_per_feature_atdd_ledger_writes.py",
                 f"--src-roots={self._arch_temp_tree}",
@@ -640,6 +642,8 @@ class CommonAuditLogSsotComposition:
         """
         proc = subprocess.run(
             [
+                sys.executable,
+                "-m",
                 "pytest",
                 "tests/build/test_no_per_feature_atdd_ledger_writes.py",
                 "-q",

@@ -49,9 +49,14 @@ if TYPE_CHECKING:
 # application layer (AD-05 layering fix) for ``carpaccio_precheck`` /
 # ``carpaccio_slice_gate``; ``__all__`` marks them as intentional re-exports so
 # autoflake does not drop the otherwise-internally-unused legacy resolver.
+# ``read_feature_files`` is the public ``.feature``-reader shared by
+# ``carpaccio_slice_gate`` / ``carpaccio_precheck`` / ``verify_commit_trailers``
+# / ``at_review_verdict`` -- a function used by four modules is a declared part
+# of this module's surface, never a smuggled cross-module private.
 __all__ = [
     "_feature_tag_files",
     "_legacy_acceptance_dir",
+    "read_feature_files",
 ]
 
 
@@ -704,7 +709,7 @@ class Scenario:
     normalized_body: str
 
 
-def _read_feature_files(repo: Path, feature_id: str) -> list[str]:
+def read_feature_files(repo: Path, feature_id: str) -> list[str]:
     """Read every ``.feature`` file self-identifying with ``feature_id``."""
     return [
         path.read_text(encoding="utf-8", errors="replace")
@@ -1014,17 +1019,26 @@ def _check_slice_size(
     """Assertion 1 (gherkin mode): slice size <= N unless a coupled-AT-group
     escape applies.
 
-    The only size escape (ADR-028 D2) is a coupled AT group: every scenario
-    in the slice carries a ``@coupled`` tag AND the plan row records a
-    coupling justification. A plain ``@walking-skeleton`` / ``@infrastructure``
-    annotation does NOT lift the size ceiling -- it governs ordering and the
-    value-annotation check, not slice size.
+    The only size escape (ADR-028 D2) is a coupled AT group: the entering
+    slice's own Slice-Plan row carries a ``@coupled`` annotation AND records a
+    coupling justification (fix-carpaccio-coupled-gherkin-reads-row) -- the
+    ROW is authoritative, mirroring the pytest-regression branch
+    (``check_carpaccio``, ``_COUPLED_TAG_RE.search(entering_row.annotation)``),
+    since the CARPACCIO_SLICE_TOO_LARGE rejection instructs the operator to
+    annotate the row regardless of ``at_kind``. Per-scenario ``@coupled`` tags
+    remain an optional mirror -- honored too, but never required. A plain
+    ``@walking-skeleton`` / ``@infrastructure`` annotation does NOT lift the
+    size ceiling -- it governs ordering and the value-annotation check, not
+    slice size.
     """
     slice_scenarios = _slice_scenarios(scenarios, entering_slice)
     at_count = len(slice_scenarios)
-    all_coupled = bool(slice_scenarios) and all(
+    row = plan.row_for(entering_slice)
+    row_coupled = bool(row is not None and _COUPLED_TAG_RE.search(row.annotation))
+    scenarios_coupled = bool(slice_scenarios) and all(
         s.has_coupled_tag for s in slice_scenarios
     )
+    all_coupled = row_coupled or scenarios_coupled
     return _check_slice_size_count(
         plan,
         entering_slice,

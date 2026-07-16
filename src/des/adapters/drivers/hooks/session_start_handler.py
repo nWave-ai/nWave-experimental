@@ -108,14 +108,15 @@ def _adopt_prior_use_if_warranted(stdin_text: str) -> None:
     SessionStart is gate-exempt (always runs), so this is the wiring point for
     prior-use adoption. Resolves the project root from the hook stdin ``cwd``
     (same envelope shape every handler reads), then asks ``AutoMarkingService``
-    to write the marker IFF prior-use evidence warrants it. Silent and fail-open:
-    any parse/IO error is swallowed so SessionStart's update-notice and
-    housekeeping are never disturbed.
+    to write the marker IFF prior-use evidence warrants it. Fail-open: any
+    parse/IO error is swallowed so SessionStart's update-notice and
+    housekeeping are never disturbed -- but degrades LOUD (a labeled
+    ``[nwave] ...`` diagnostic on stderr), never silently, so a swallowed
+    error is never byte-identical to the genuine no-op (a valid envelope
+    whose cwd is a real directory with no ``.nwave/``).
     """
     try:
         project_root = _parse_cwd(stdin_text)
-        if project_root is None:
-            return
         from des.application.auto_marking_service import (
             AdoptionTrigger,
             AutoMarkingService,
@@ -128,14 +129,30 @@ def _adopt_prior_use_if_warranted(stdin_text: str) -> None:
         sys.stderr.write(f"[nwave] prior-use adoption error (fail-open): {e}\n")
 
 
-def _parse_cwd(stdin_text: str) -> Path | None:
-    """Resolve the project root from the hook stdin envelope's ``cwd`` field."""
+def _parse_cwd(stdin_text: str) -> Path:
+    """Resolve the project root from the hook stdin envelope's ``cwd`` field.
+
+    Raises ``ValueError`` for every malformed-envelope class -- unparseable
+    JSON, a non-object payload, a missing/null/non-string ``cwd``, or a
+    ``cwd`` that does not point at an existing directory -- so the caller
+    routes each of them through the labeled fail-open stderr degrade path.
+    Returns the resolved ``Path`` ONLY for a genuinely valid envelope whose
+    ``cwd`` points at an existing directory -- the sole case that must stay
+    fully silent (no stdout, no stderr).
+    """
     try:
         data = json.loads(stdin_text)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    cwd = data.get("cwd") if isinstance(data, dict) else None
-    return Path(cwd) if cwd else None
+    except json.JSONDecodeError as e:
+        raise ValueError(f"malformed JSON stdin envelope: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"stdin envelope is not a JSON object: {data!r}")
+    cwd = data.get("cwd")
+    if not isinstance(cwd, str) or not cwd:
+        raise ValueError(f"stdin envelope cwd is missing or not a string: {cwd!r}")
+    project_root = Path(cwd)
+    if not project_root.is_dir():
+        raise ValueError(f"stdin envelope cwd is not an existing directory: {cwd!r}")
+    return project_root
 
 
 def _run_housekeeping(des_config: DESConfig) -> None:
@@ -261,11 +278,25 @@ def _build_skew_message(case: str, installed: str | None, checkout: str) -> str:
 
 
 def _session_cwd_is_atdd_pure(cwd: str | None) -> bool:
-    """True when the session cwd is an `atdd_pure`-mode nWave project.
+    """True when the session cwd is an `atdd_pure`-mode nWave PROJECT.
 
-    Reads `{cwd}/.nwave/config.yaml` `workflow.mode`. ADR-030 D6 scopes the
-    skew gate to `atdd_pure` -- classic-mode projects (and non-project cwds)
-    are unaffected, so the SessionStart detector stays silent there.
+    Two conjuncts, both required:
+
+    1. The cwd is an nWave PROJECT -- a `.nwave/` directory exists directly
+       under it. This is the project gate the mode-resolution default cannot
+       supply: `resolve_workflow_mode` DEFAULTS an unconfigured directory to
+       `atdd_pure` (DDD-7), so reading the mode ALONE returns `atdd_pure` on a
+       PLAIN non-nWave dir that has no `.nwave/` at all. Without this conjunct
+       the predicate contradicts its own documented contract below.
+    2. The project is `atdd_pure` -- `resolve_workflow_mode` reads
+       `{cwd}/.nwave/config.yaml` `workflow.mode` (a tracked `.nwave/` with no
+       explicit `classic` config still resolves to the `atdd_pure` default).
+
+    ADR-030 D6 scopes the skew gate to `atdd_pure` -- classic-mode projects
+    (and NON-PROJECT cwds) are unaffected, so the SessionStart detector stays
+    silent there. The `.nwave/`-exists conjunct is what makes "non-project cwds
+    are unaffected" TRUE (a fresh clone of an nWave repo HAS `.nwave/` --
+    `local-config.json` is tracked -- so a genuine nWave project is unaffected).
     """
     if not cwd:
         return False
@@ -274,7 +305,10 @@ def _session_cwd_is_atdd_pure(cwd: str | None) -> bool:
     from des.application.workflow_mode import ATDD_PURE_MODE, resolve_workflow_mode
 
     try:
-        return resolve_workflow_mode(Path(cwd)) == ATDD_PURE_MODE
+        project_dir = Path(cwd)
+        if not (project_dir / ".nwave").is_dir():
+            return False
+        return resolve_workflow_mode(project_dir) == ATDD_PURE_MODE
     except Exception:
         return False
 
@@ -517,11 +551,17 @@ def handle_session_start() -> int:
     # orchestrator-affordance-injection (slice-01): load the shipped
     # spine-discipline + producing-tool affordance from text assets and
     # inject it as additionalContext. Additive to the update-notice and the
-    # gate-affordance nudge above; fail-open.
+    # gate-affordance nudge above; fail-open. Gated on
+    # `_session_cwd_is_atdd_pure` (ADR-030 D6 pattern, mirrored from the skew
+    # detector above) -- a non-atdd_pure / non-nWave cwd must see zero
+    # spine-teaching noise.
     try:
-        affordance = load_orchestrator_affordance(_ORCHESTRATOR_AFFORDANCE_ASSETS_DIR)
-        if affordance:
-            print(json.dumps(_build_orchestrator_affordance_output(affordance)))
+        if _session_cwd_is_atdd_pure(session_cwd):
+            affordance = load_orchestrator_affordance(
+                _ORCHESTRATOR_AFFORDANCE_ASSETS_DIR
+            )
+            if affordance:
+                print(json.dumps(_build_orchestrator_affordance_output(affordance)))
     except Exception:
         pass
 

@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Literal
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.cli._identity_args import meaningful_identity
 from des.cli.carpaccio_format import GateError
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.repo_path_resolver import (
@@ -325,10 +326,10 @@ def _slice_at_derivation(
         at_content_hash = _rust_regression_content_hash(regression_test_file)
         return at_ids, at_content_hash
 
-    from des.cli import carpaccio_slice_gate
+    from des.cli import carpaccio_format, carpaccio_slice_gate
 
     scenarios = carpaccio_slice_gate.parse_scenarios(
-        carpaccio_slice_gate._read_feature_files(repo_root, feature_id)
+        carpaccio_format.read_feature_files(repo_root, feature_id)
     )
     slice_scenarios = [s for s in scenarios if slice_id in s.slice_tags]
     at_ids = [f"AT-{n}" for n in range(1, len(slice_scenarios) + 1)]
@@ -405,6 +406,68 @@ def _verify_feature_slice_exists(
         )
 
 
+# ---------------------------------------------------------------------------
+# meaningless-identity guard (bugfix fix-at-review-verdict-surface, slice-01)
+# ---------------------------------------------------------------------------
+#
+# RCA Defect 2/3 (docs/feature/fix-at-review-verdict-surface/deliver/rca.md):
+# `--reviewer-agent-id`, `--feature-id`, `--slice-id` accepted ANY string
+# argparse's `required=True` was satisfied by -- a placeholder token
+# (`<id>`, the literal text this codebase's OWN remediation strings print),
+# an empty string, or whitespace -- and sealed it verbatim into the
+# AT-completion truth-ledger as if it named a real reviewer/feature/slice.
+#
+# `meaningful_identity` (shared, `des.cli._identity_args`, extracted from
+# `commit_slice.py`) already collapses blank/whitespace to `None`. A literal
+# `<id>` is neither blank nor whitespace, so `meaningful_identity` alone does
+# not catch it -- this module additionally treats an angle-bracket
+# placeholder SHAPE as meaningless too, pinning on MEANING rather than
+# enumerating every possible junk string.
+
+_PLACEHOLDER_SHAPE_RE = re.compile(r"^<.+>$")
+
+
+def _meaningful_identity_arg(raw: str) -> str | None:
+    """argparse ``type=`` for this module's three identity-bearing flags.
+
+    Applies the shared :func:`meaningful_identity` normalizer (blank/
+    whitespace-only collapses to ``None``), then ALSO collapses an
+    angle-bracket placeholder token (e.g. ``<id>``, ``<placeholder>``) to
+    ``None`` -- a value that LOOKS like a fillable slot is not a real
+    identity either.
+    """
+    value = meaningful_identity(raw)
+    if value is None:
+        return None
+    if _PLACEHOLDER_SHAPE_RE.match(value):
+        return None
+    return value
+
+
+def _refuse_meaningless_identity(field: str) -> GateError:
+    """Build the refusal GateError for an identity-bearing CLI arg that is
+    present (argparse-wise) but names no real thing.
+
+    Exit 2, ``ATReviewVerdictRefused`` / ``meaningless-identity`` -- fires
+    BEFORE any ledger write and before the feature/slice existence check, so
+    an empty ``--feature-id`` can never reach (and spuriously pass) the
+    pathlib empty-path-segment collapse (RCA Defect 3).
+    """
+    return GateError(
+        2,
+        {
+            "event": "ATReviewVerdictRefused",
+            "reason": "meaningless-identity",
+            "error": (
+                f"--{field} names no real thing -- blank, whitespace-only, "
+                "and placeholder tokens (e.g. <id>) are treated as absent, "
+                "not as a real identity"
+            ),
+            "how": f"supply a real --{field}, not a placeholder or blank value",
+        },
+    )
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="at_review_verdict",
@@ -414,12 +477,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "ledger; on NEEDS_REVISION nothing is written."
         ),
     )
-    parser.add_argument("--feature-id", required=True)
-    parser.add_argument("--slice-id", required=True)
+    parser.add_argument("--feature-id", required=True, type=_meaningful_identity_arg)
+    parser.add_argument("--slice-id", required=True, type=_meaningful_identity_arg)
     parser.add_argument(
         "--verdict", required=True, choices=["APPROVED", "NEEDS_REVISION"]
     )
-    parser.add_argument("--reviewer-agent-id", required=True)
+    parser.add_argument(
+        "--reviewer-agent-id", required=True, type=_meaningful_identity_arg
+    )
     parser.add_argument("--findings", nargs="*", default=[])
     parser.add_argument("--repo-root", default=None)
     parser.add_argument(
@@ -483,6 +548,19 @@ def main(argv: list[str] | None = None) -> int:
         (repo_root / args.regression_test_file) if args.regression_test_file else None
     )
     try:
+        # Meaningless-identity guard (bugfix fix-at-review-verdict-surface,
+        # slice-01): `_meaningful_identity_arg` has already collapsed a
+        # blank/whitespace/placeholder `--feature-id` / `--slice-id` /
+        # `--reviewer-agent-id` to `None` at the parse boundary -- refuse
+        # BEFORE any ledger write, and before the feature/slice existence
+        # check below (so an empty `--feature-id` never reaches, and can
+        # never spuriously pass, the pathlib empty-path-segment collapse).
+        if args.feature_id is None:
+            raise _refuse_meaningless_identity("feature-id")
+        if args.slice_id is None:
+            raise _refuse_meaningless_identity("slice-id")
+        if args.reviewer_agent_id is None:
+            raise _refuse_meaningless_identity("reviewer-agent-id")
         if args.verdict == _APPROVED:
             # Existence pre-check (bugfix fix-review-verdict-existence-check,
             # slice-01): refuse an APPROVED verdict for an imaginary

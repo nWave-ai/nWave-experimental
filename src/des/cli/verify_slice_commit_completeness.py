@@ -61,6 +61,7 @@ import argparse
 import json
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from des.adapters.driven.git.git_subprocess import git_text as _git
@@ -78,6 +79,7 @@ from des.cli.carpaccio_format import (
     parse_slice_plan,
 )
 from des.cli.human_surface import Verdict, print_human_summary
+from des.cli.run_contract_gate import _GATE_INDETERMINATE_EXIT_CODE
 from des.cli.verify_deliver_integrity import _slice_commit_verified_slices
 from des.domain.lane_profile import AtRequirement
 from des.domain.repo_path_resolver import feature_delta_path
@@ -97,12 +99,21 @@ from des.runtime.interpreter import InterpreterUnavailable, des_spawn
 
 # The contract gate's dedicated INDETERMINATE exit code (DDD-2): the E2 gate
 # could not resolve a usable interpreter on this machine and degraded LOUD
-# INDETERMINATE-and-proceed rather than hard-refusing. Mirrors
-# ``run_contract_gate._GATE_INDETERMINATE_EXIT_CODE`` -- distinct from 0
+# INDETERMINATE-and-proceed rather than hard-refusing -- distinct from 0
 # (cleared), 1 (refused), 2 (hard-refuse / malformed). On this outcome the
 # exit gate mints an honest ``SliceCommitIndeterminate``, never a fabricated
 # ``SliceCommitVerified`` and never a bare refusal.
-_GATE_INDETERMINATE_EXIT_CODE = 3
+#
+# Imported from ``run_contract_gate`` (the SSOT -- slice-05 refactor,
+# certification-legs-observe-real-execution) rather than re-declared: this
+# module already composes ``run_contract_gate`` as its E2 leg (both as a
+# subprocess via ``des.cli.run_contract_gate`` and, for pytest-regression,
+# through the SAME degrade-LOUD sentinel), so a second independent
+# ``= 3`` definition was a duplicated exit-code literal, not an
+# intentional second contract. Re-exported here (module-level name
+# unchanged) so every existing import site
+# (``from des.cli.verify_slice_commit_completeness import
+# _GATE_INDETERMINATE_EXIT_CODE``) keeps resolving to the identical value.
 
 
 # The regression-collection leg's runner-aware whole-tree run convention, keyed
@@ -534,17 +545,33 @@ def _run_regression_gate(
     missing, or whose interpreter ``des_spawn`` itself cannot resolve
     (``InterpreterUnavailable``), is NEVER trusted by presence alone -- it
     returns the SAME ``_GATE_INDETERMINATE_EXIT_CODE`` sentinel
-    ``_run_contract_gate`` uses for its own degrade-LOUD path (with
-    ``reason``/``diagnostic`` both ``None``, instructing the caller to keep
-    the existing pytest-native uncollectible diagnostic), so the caller
-    routes it through the existing ``SliceCommitIndeterminate`` machinery
-    (never a fabricated ``SliceCommitVerified``, never a silent pass). The
-    runner-routed path names the RUNNER as the cause instead (never that
-    literal -- see ``_run_regression_gate_via_runner``).
+    ``_run_contract_gate`` uses for its own degrade-LOUD path, now with a
+    NAMED ``reason``/``diagnostic`` distinguishing WHICH of the two causes
+    fired (fix-runner-resolves-per-scope-language slice-01, Fix B --
+    previously both causes collapsed into the SAME reason-less ``(exit,
+    None, None)``, forcing the caller's generic ``pytest_regression_file_
+    unrunnable`` fallback to speak for both): a genuinely MISSING file
+    returns ``regression_test_file_missing_on_committed_tree``; an
+    unresolvable interpreter returns
+    ``regression_test_file_interpreter_unavailable`` (naming the probed
+    candidates). So the caller routes it through the existing
+    ``SliceCommitIndeterminate`` machinery (never a fabricated
+    ``SliceCommitVerified``, never a silent pass). The runner-routed path
+    names the RUNNER as the cause instead (never these literals -- see
+    ``_run_regression_gate_via_runner``).
     """
     test_path = repo / regression_test_file
     if not test_path.is_file():
-        return _GATE_INDETERMINATE_EXIT_CODE, None, None
+        return (
+            _GATE_INDETERMINATE_EXIT_CODE,
+            "regression_test_file_missing_on_committed_tree",
+            (
+                f"the declared --regression-test-file {regression_test_file!r} "
+                "does not exist on the committed tree -- recorded an honest "
+                "SliceCommitIndeterminate (unverified here), never a "
+                "fabricated pass"
+            ),
+        )
     if _routes_through_runner_port(repo, feature_id, regression_test_file):
         return _run_regression_gate_via_runner(repo, feature_id)
     try:
@@ -557,8 +584,19 @@ def _run_regression_gate(
             capture_output=True,
             text=True,
         )
-    except InterpreterUnavailable:
-        return _GATE_INDETERMINATE_EXIT_CODE, None, None
+    except InterpreterUnavailable as exc:
+        probed = ", ".join(exc.probed) if exc.probed else "(none)"
+        return (
+            _GATE_INDETERMINATE_EXIT_CODE,
+            "regression_test_file_interpreter_unavailable",
+            (
+                "no usable pytest interpreter could be resolved on this "
+                f"machine to run the declared --regression-test-file "
+                f"{regression_test_file!r} -- probed: {probed} -- recorded "
+                "an honest SliceCommitIndeterminate (unverified here), never "
+                "a fabricated pass"
+            ),
+        )
     return completed.returncode, None, None
 
 
@@ -1109,13 +1147,51 @@ def _run_legacy_completeness(repo: Path, args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
-    """The atomic verify-then-record exit gate (`--feature-id` given, DDD-3).
+@dataclass(frozen=True)
+class _VerifiedSliceContext:
+    """The data the CLI-facing atomic needs to record + emit a verified outcome.
 
-    Runs E1 (completeness, feature-scoped) then E2 (the feature-scoped
-    contract gate) and appends one `SliceCommitVerified` record IFF both
-    clear. On any non-zero half the CLI refuses (exit 1, naming the failed
-    half) and appends nothing.
+    Returned by `_run_verify_checks` ONLY when E1+E2(+E3) have fully cleared
+    for every listed slice -- the exact moment the pre-Prefactoring
+    `_run_verify_then_record` used to append the ledger record and emit
+    `SliceCommitVerified` inline. Extracting this as a small explicit value
+    (Prefactoring, fix-commit-slice-verify-before-commit slice-00) is what
+    lets a future pre-flight caller invoke `_run_verify_checks` against a
+    shadow commit WITHOUT ALSO triggering the `SliceCommitVerified` ledger
+    write -- that write stays exclusively in `_run_verify_then_record`, the
+    unchanged post-commit CLI path.
+    """
+
+    feature_id: str
+    slice_ids: list[str]
+    commit_sha: str
+    attested_via: str | None
+    regression_test_files_executed: list[str]
+
+
+def _run_verify_checks(
+    repo: Path, args: argparse.Namespace
+) -> tuple[int, _VerifiedSliceContext | None]:
+    """The pure verify half (Prefactoring): E1 + E2 + E3, no ledger write.
+
+    Same E1 completeness + E2 contract-gate/regression logic + E3
+    examine-verdict logic `_run_verify_then_record` ran before this split --
+    byte-identical refusal/indeterminate payload shapes, byte-identical exit
+    codes, byte-identical `SliceCommitIndeterminate` ledger-write timing
+    (unchanged: that write happens on THIS half, exactly as before -- it is
+    not the conflated write this split targets). The ONE thing this function
+    never does is append a `SliceCommitVerified` record or emit its payload:
+    on a full clear it returns ``(0, _VerifiedSliceContext(...))`` instead,
+    handing the caller everything it needs to do that write itself. Every
+    other exit point returns ``(exit_code, None)`` after already emitting its
+    own verdict (unchanged behaviour) -- ``None`` signals "already handled,
+    nothing left to record".
+
+    Reusable pre-flight seam: a future caller (`des commit-slice`'s
+    shadow-commit pre-flight, ADR-DES-001, slice-01) can call this function
+    directly against an unreachable `git commit-tree` object without risking
+    a duplicate `SliceCommitVerified` write -- the write only ever happens in
+    `_run_verify_then_record`, which this function does not call.
     """
     feature_id = args.feature_id
     slice_id_override = getattr(args, "slice_id", None)
@@ -1142,18 +1218,18 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                 ),
             }
         )
-        return 2
+        return 2, None
 
     slice_ids, commit_sha, error_code, used_override = _resolve_slice_ids(
         repo, args.commit, slice_id_override
     )
     if error_code is not None:
-        return error_code
+        return error_code, None
 
     # E1 -- completeness. A deficient slice refuses before E2 is reached.
     deficient, error_code = _missing_by_slice(repo, args.commit, slice_ids, feature_id)
     if error_code is not None:
-        return error_code
+        return error_code, None
     if deficient:
         _emit_with_human_surface(
             {
@@ -1173,7 +1249,7 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                 ),
             }
         )
-        return 1
+        return 1, None
 
     # E2 -- one run per listed slice. Default (`gherkin`): the feature-scoped
     # contract gate, unchanged. `--at-kind pytest-regression` (#13): a
@@ -1197,13 +1273,14 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
             refusal_payload["commit"] = args.commit
             _emit_with_human_surface(refusal_payload)
             assert isinstance(inferred_exit_code, int)
-            return inferred_exit_code
+            return inferred_exit_code, None
         if inferred_file is not None:
             is_pytest_regression = True
             regression_test_file = inferred_file
 
     pytest_regression_checked = False
     regression_test_files_executed: list[str] = []
+    examine_cleared_slices: set[str] = set()
     for slice_id in slice_ids:
         if _is_at_exempt_lane(repo, feature_id, slice_id):
             # Mirrors the entry gate's `LaneAtExemptionAccepted` early-return
@@ -1233,7 +1310,7 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                         ),
                     }
                 )
-                return 1
+                return 1, None
             if pytest_regression_checked:
                 # RC2 Fix A already ran the {shipped} UNION {entering} set
                 # once for this commit -- a second listed slice (a batched
@@ -1276,24 +1353,30 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
         # non-zero code and refuses.
         if contract_code == _GATE_INDETERMINATE_EXIT_CODE:
             if is_pytest_regression:
-                return _record_indeterminate_outcome(
-                    repo,
-                    args,
-                    feature_id,
-                    slice_ids,
-                    reason=(
-                        indeterminate_reason or "pytest_regression_file_unrunnable"
+                return (
+                    _record_indeterminate_outcome(
+                        repo,
+                        args,
+                        feature_id,
+                        slice_ids,
+                        reason=(
+                            indeterminate_reason or "pytest_regression_file_unrunnable"
+                        ),
+                        diagnostic=indeterminate_diagnostic
+                        or (
+                            f"the declared --regression-test-file "
+                            f"{regression_failed_file!r} could not be run on "
+                            "the committed tree (missing or uncollectible) -- "
+                            "recorded an honest SliceCommitIndeterminate "
+                            "(unverified here), never a fabricated pass"
+                        ),
                     ),
-                    diagnostic=indeterminate_diagnostic
-                    or (
-                        f"the declared --regression-test-file "
-                        f"{regression_failed_file!r} could not be run on "
-                        "the committed tree (missing or uncollectible) -- "
-                        "recorded an honest SliceCommitIndeterminate "
-                        "(unverified here), never a fabricated pass"
-                    ),
+                    None,
                 )
-            return _record_indeterminate_outcome(repo, args, feature_id, slice_ids)
+            return (
+                _record_indeterminate_outcome(repo, args, feature_id, slice_ids),
+                None,
+            )
         if contract_code != 0:
             if is_pytest_regression:
                 _emit_with_human_surface(
@@ -1318,7 +1401,35 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
                         ),
                     }
                 )
-                return 1
+                return 1, None
+            # ADR-DES-001 addendum Rule 1 -- E2-vacuous evidence-aggregation
+            # carve-out. A genuinely empty feature scope ("zero-collected" /
+            # "empty-intersection" -- nothing to run, NEVER a real failure
+            # like "collection-failed"/"arch-invariant-failed"/
+            # "arch-scope-zero-collected", which are never carved out) is the
+            # correct, expected state for a prose/documentation slice that
+            # owns no executable AT by nature. Consult the EXISTING
+            # check_examine_verdict reader for THIS slice before refusing: an
+            # ARMED gate (a charter exists for this feature) with a fresh,
+            # matching-seal PASS clears E2 via the examine evidence instead.
+            # Any other outcome -- unarmed (no charter at all, the
+            # "zero-evidence lie" case), no verdict recorded, a stale seal,
+            # FAIL, INDETERMINATE -- leaves the refusal below UNCHANGED.
+            reason = (
+                contract_child_payload.get("reason") if contract_child_payload else None
+            )
+            if reason in ("zero-collected", "empty-intersection"):
+                from des.cli.commit_slice import (
+                    _examine_gate_armed,
+                    check_examine_verdict,
+                )
+
+                if (
+                    _examine_gate_armed(repo, feature_id)
+                    and check_examine_verdict(repo, feature_id, slice_id) is None
+                ):
+                    examine_cleared_slices.add(slice_id)
+                    continue
             # The child gate already emitted a self-explaining verdict (e.g.
             # a `FeatureScopeMalformed` naming its own `reason`/`error`/
             # `next`) -- thread THAT through rather than overwriting it with
@@ -1332,36 +1443,47 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
             child_how = (
                 contract_child_payload.get("next") if contract_child_payload else None
             )
-            _emit_with_human_surface(
-                {
-                    "event": "SliceCommitRefused",
-                    "refused_half": "E2",
-                    "slice_ids": slice_ids,
-                    "commit": args.commit,
-                    "failed_slice": slice_id,
-                    "contract_gate_exit_code": contract_code,
-                    "error": (
-                        child_error
-                        if isinstance(child_error, str) and child_error
-                        else (
-                            f"slice {slice_id} failed the feature-scoped "
-                            f"contract gate (exit {contract_code})"
-                        )
-                    ),
-                    "how": (
-                        child_how
-                        if isinstance(child_how, str) and child_how
-                        else (
-                            f"inspect the failure with `run_contract_gate "
-                            f"--repo .` (feature {feature_id}, slice "
-                            f"{slice_id}), green the failing feature-scoped "
-                            "acceptance test(s), then re-commit via "
-                            "`des commit-slice`"
-                        )
-                    ),
-                }
+            # DDD-CERT-6 (C9): thread the child's `kind` build-vs-test-failure
+            # discriminator through unchanged -- a crafter reading the E2
+            # SliceCommitRefused verdict alone must see the SAME distinction
+            # C8 names at the raw run_contract_gate level. Additive: a child
+            # payload carrying no `kind` (e.g. the zero-collected/
+            # empty-intersection carve-out reasons) leaves the key absent from
+            # this payload too, never a fabricated `None`.
+            child_kind = (
+                contract_child_payload.get("kind") if contract_child_payload else None
             )
-            return 1
+            refused_payload: dict[str, object] = {
+                "event": "SliceCommitRefused",
+                "refused_half": "E2",
+                "slice_ids": slice_ids,
+                "commit": args.commit,
+                "failed_slice": slice_id,
+                "contract_gate_exit_code": contract_code,
+                "error": (
+                    child_error
+                    if isinstance(child_error, str) and child_error
+                    else (
+                        f"slice {slice_id} failed the feature-scoped "
+                        f"contract gate (exit {contract_code})"
+                    )
+                ),
+                "how": (
+                    child_how
+                    if isinstance(child_how, str) and child_how
+                    else (
+                        f"inspect the failure with `run_contract_gate "
+                        f"--repo .` (feature {feature_id}, slice "
+                        f"{slice_id}), green the failing feature-scoped "
+                        "acceptance test(s), then re-commit via "
+                        "`des commit-slice`"
+                    )
+                ),
+            }
+            if isinstance(child_kind, str) and child_kind:
+                refused_payload["kind"] = child_kind
+            _emit_with_human_surface(refused_payload)
+            return 1, None
 
     # E3 -- the examine-verdict DoD gate (evolution-plan P1.2, hard-wired into
     # the verify-then-record path too, not only `des commit-slice`). EXAMINE is
@@ -1392,32 +1514,73 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
             )
             _emit_with_human_surface(examine_rejection)
             assert isinstance(exit_code, int)
-            return exit_code
+            return exit_code, None
 
-    # E1, E2 and E3 all cleared -- record one SliceCommitVerified per slice.
-    # (#51) the --slice-id override path carries the transparent
-    # attested_via marker so the audit shows the trailer was bypassed;
-    # the normal trailer path carries no such field (byte-unchanged).
-    attested_via = "slice-id-override" if used_override else None
+    # E1, E2 and E3 all cleared. The CLI-facing atomic (`_run_verify_then_record`)
+    # is the ONLY place that appends the SliceCommitVerified ledger record and
+    # emits its payload -- this pure half hands back the data that record
+    # needs instead (Prefactoring, fix-commit-slice-verify-before-commit
+    # slice-00). (#51) the --slice-id override path carries the transparent
+    # attested_via marker so the audit shows the trailer was bypassed; the
+    # normal trailer path carries no such field (byte-unchanged). ADR-DES-001
+    # addendum Rule 2: a slice cleared via Rule 1's examine-verdict carve-out
+    # carries "examine-verdict" instead -- honest attribution, never a blanket
+    # restatement of "nothing failed". Never applied to a normally-cleared
+    # slice (Rule 2's negative half).
+    if used_override:
+        attested_via: str | None = "slice-id-override"
+    elif examine_cleared_slices:
+        attested_via = "examine-verdict"
+    else:
+        attested_via = None
+    return 0, _VerifiedSliceContext(
+        feature_id=feature_id,
+        slice_ids=slice_ids,
+        commit_sha=commit_sha,
+        attested_via=attested_via,
+        regression_test_files_executed=regression_test_files_executed,
+    )
+
+
+def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
+    """The atomic verify-then-record exit gate (`--feature-id` given, DDD-3).
+
+    Composes the pure verify half (`_run_verify_checks`, Prefactoring
+    slice-00) with the ONE `SliceCommitVerified` ledger write: E1 then E2
+    then E3 (unmodified logic, now living in `_run_verify_checks`), then
+    appends exactly one `SliceCommitVerified` record IFF all three clear. On
+    any non-zero half `_run_verify_checks` has ALREADY emitted the
+    refusal/indeterminate verdict -- this function only returns that exit
+    code unchanged and writes nothing further. Behaviour for this function's
+    own caller (`main`) is byte-identical to before the split: same exit
+    codes, same JSON payload shapes, same single ledger-write timing.
+    """
+    exit_code, verified_context = _run_verify_checks(repo, args)
+    if verified_context is None:
+        return exit_code
+
     _append_slice_commit_verified(
-        repo, feature_id, slice_ids, attested_via=attested_via
+        repo,
+        verified_context.feature_id,
+        verified_context.slice_ids,
+        attested_via=verified_context.attested_via,
     )
     verified_payload: dict[str, object] = {
         "event": "SliceCommitVerified",
-        "slice_ids": slice_ids,
+        "slice_ids": verified_context.slice_ids,
         "commit": args.commit,
-        "commit_sha": commit_sha,
+        "commit_sha": verified_context.commit_sha,
     }
-    if attested_via is not None:
-        verified_payload["attested_via"] = attested_via
-    if regression_test_files_executed:
+    if verified_context.attested_via is not None:
+        verified_payload["attested_via"] = verified_context.attested_via
+    if verified_context.regression_test_files_executed:
         # The examiner's finding (certification-legs-observe-real-execution):
         # a verdict that does not exhibit what it observed is indistinguishable
         # from a verdict issued over nothing observed. Exhibit the {shipped}
         # UNION {entering} regression file(s) this call actually ran, so the
         # consent testifies at least as much as the refusal already does.
         verified_payload["regression_test_files_executed"] = (
-            regression_test_files_executed
+            verified_context.regression_test_files_executed
         )
     _emit_with_human_surface(verified_payload)
     return 0

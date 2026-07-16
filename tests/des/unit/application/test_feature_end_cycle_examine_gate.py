@@ -9,11 +9,26 @@ done unless EVERY charter under
 scoped (``slice_id="feature-end"``) PASS ``ExamineVerdict``.
 
 Unit-level, hermetic: the upstream legs (walking-skeleton, env-e2e,
-coverage-map, full-suite) are stubbed to PASS/NOT_APPLICABLE so the test
-isolates the NEW examine leg without spawning real gate subprocesses --
+coverage-map, full-suite) are stubbed to PASS so the test isolates the NEW
+examine leg without spawning real gate subprocesses for THOSE four legs --
 mirrors the existing ``monkeypatch.setattr(module, "des_spawn", ...)``
 wiring-test pattern already used in this codebase (e.g.
 ``test_carpaccio_intercept_bugfix_lane_wiring.py``).
+
+The full-suite stub honestly reports ``FullSuiteLegRan`` (mirrors the
+``FullSuiteLegRan(pytest_exit_code=0)`` a genuine green suite would
+produce), never ``FullSuiteLegNotApplicable``: this fixture models a
+NORMAL delivered feature reaching the examine leg -- the realistic case
+where at least one leg has genuinely run -- not the pathological
+zero-legs-observed repo the certification-legs-observe-real-execution
+guard (``census.ran == 0`` -> ``CycleIndeterminate``) exists to catch.
+Reporting NOT_APPLICABLE here (as this stub once did) would make THIS
+fixture indistinguishable from that pathological case and trip the guard
+for the wrong reason -- masking the examine leg this test actually
+exercises. The three P0 legs run for real (doc-coherence, execution-reach,
+fresh-clone) and genuinely resolve NOT_APPLICABLE against this minimal
+fixture (no coverage.xml / demo-recipe / doc claims worth checking) --
+that is honest too, since nothing was fabricated for them.
 """
 
 from __future__ import annotations
@@ -24,7 +39,7 @@ from des.application import feature_end_cycle_service as svc
 from des.application.feature_end_cycle_service import (
     CycleRefusal,
     CycleSuccess,
-    FullSuiteLegNotApplicable,
+    FullSuiteLegRan,
     run_feature_end_cycle,
 )
 from des.cli.record_examine_verdict import record_examine_verdict
@@ -76,9 +91,7 @@ def _stub_upstream_legs(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_full_suite_leg",
-        lambda *, repo_root: FullSuiteLegNotApplicable(
-            "stubbed: no contract suite in this hermetic fixture"
-        ),
+        lambda *, repo_root: FullSuiteLegRan(pytest_exit_code=0),
     )
 
 

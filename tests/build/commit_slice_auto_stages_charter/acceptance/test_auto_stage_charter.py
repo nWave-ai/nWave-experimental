@@ -205,6 +205,10 @@ def test_absent_charter_dir_seals_with_no_error(tmp_path: Path, capsys) -> None:
             feature_id,
             "--message",
             f"feat(slice): behaviour\n\nSlice-Id: {slice_id}",
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_01.py",
         ]
     )
     event = _last_json_event(capsys.readouterr().out)

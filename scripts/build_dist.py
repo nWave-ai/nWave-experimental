@@ -160,6 +160,38 @@ class DistBuilder:
         self._log(f"Templates: {count} files")
         return count
 
+    def build_nwave_runtime_assets(self) -> int:
+        """nWave/{data,flavors,schemas,dispatch}/ + framework-catalog.yaml -> dist/.
+
+        Mirrors ``build_templates`` (flat, no ``nWave/`` prefix under dist/) --
+        this is the layout ``des_plugin.py``'s ``_install_nwave_runtime_assets``
+        reads for a prebuilt (PyPI/pipx) install via ``framework_source / <subdir>``.
+        Without this, a consumer install never receives
+        ``nWave/data/orchestrator-affordance/`` (or flavors/schemas/dispatch/
+        framework-catalog.yaml) -- every atdd_pure runtime lookup against those
+        assets silently degrades on a pipx-installed nwave-ai.
+        """
+        count = 0
+        for subdir in ("data", "flavors", "schemas", "dispatch"):
+            src = self.nwave_dir / subdir
+            if not src.exists():
+                continue
+            dst = self.dist_dir / subdir
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.copytree(
+                src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
+            )
+            count += sum(1 for p in dst.rglob("*") if p.is_file())
+
+        catalog_src = self.nwave_dir / "framework-catalog.yaml"
+        if catalog_src.exists():
+            shutil.copy2(catalog_src, self.dist_dir / "framework-catalog.yaml")
+            count += 1
+
+        self._log(f"nWave runtime assets: {count} files")
+        return count
+
     def build_skills(self) -> int:
         """nWave/skills/nw-*/ → dist/skills/nw-*/ (flat, public + commands)."""
         src = self.nwave_dir / "skills"
@@ -265,6 +297,7 @@ class DistBuilder:
                 "templates": len(list((self.dist_dir / "templates").iterdir())),
                 "skills": counts.get("skills", 0),
                 "des_module": counts.get("des_module", 0),
+                "nwave_runtime_assets": counts.get("nwave_runtime_assets", 0),
             },
         }
 
@@ -325,6 +358,7 @@ class DistBuilder:
         counts = {}
         counts["agents"] = self.build_agents()
         counts["templates"] = self.build_templates()
+        counts["nwave_runtime_assets"] = self.build_nwave_runtime_assets()
         counts["skills"] = self.build_skills()
         self.build_des_scripts()
         counts["des_module"] = self.build_des_module()

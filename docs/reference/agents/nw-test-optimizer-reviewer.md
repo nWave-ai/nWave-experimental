@@ -5,7 +5,7 @@ Use to validate test-optimizer outputs - hard-blocks if coverage dropped, produc
 **Wave:** Other
 **Model:** haiku
 **Max turns:** 25
-**Tools:** Read, Glob, Grep, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+**Tools:** Read, Glob, Grep, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 
 ## Commands
 

@@ -38,7 +38,7 @@ from steps import steps_slice_04_optout_grid as _slice_04_steps  # noqa: F401
     "slice-04-optout-grid-remaining.feature",
     "NWAVE_FRESHNESS opt-out grid behaviour matches §1.8",
 )
-def test_slice_04_optout_grid_behaviour_matches_spec() -> None:
+def test_optout_grid_behaviour_matches_spec() -> None:
     """AT-04-A: 6-row Scenario Outline over (install_state × opt_out).
 
     Cartesian: {fresh, stale} × {enforce, verbose, empty}. Coupled per
@@ -52,7 +52,7 @@ def test_slice_04_optout_grid_behaviour_matches_spec() -> None:
     "slice-04-optout-grid-remaining.feature",
     "NWAVE_FRESHNESS with an unknown value is REFUSED as DEGRADED",
 )
-def test_slice_04_unknown_optout_value_is_refused_as_degraded() -> None:
+def test_unknown_optout_value_is_refused_as_degraded() -> None:
     """AT-04-B: an unrecognised NWAVE_FRESHNESS value refuses with exit 78.
 
     Mandate 11: layer-3 sad path is an enumerated example (no PBT). Coupled

@@ -123,17 +123,37 @@ _PATH_FORBIDDEN_CHARS = frozenset("<>{}*$()[]\\\"'|;,?!=&#@ \t")
 # Top-level segments that are runtime/config state, not committed-tree
 # content: docs referencing `.nwave/<file>` or `.git/<file>` describe what a
 # project MAY declare / what the tool creates at runtime -- never a claim
-# that this tree ships the file.
+# that this tree ships the file. Widened at runtime (see
+# `_load_gitignore_top_level_dirs`) by any top-level dir the TARGET repo's
+# own `.gitignore` lists -- runtime state is agnostic to the dir's name.
 _RUNTIME_STATE_TOP_LEVEL = frozenset({".git", ".nwave"})
 
 # A claim sharing its line with an explicit negation/future marker is the
 # doc being HONEST about absence (a REJECTED alternative, a "NEW"/CREATE_NEW
 # planned module, an "is ABSENT" note, an open backlog row) -- never flag it.
+#
+# Extension point: `_HONEST_ABSENCE_PHRASINGS` below holds path-adjacent,
+# precise EN/IT phrasings for the same honest-absence intent (a doc noting
+# a claim was renamed/planned/removed). Each entry MUST be precise and
+# path-adjacent -- never a bare word like "propose"/"proposed" on its own,
+# which would blanket-suppress genuine missing-path claims written in a
+# proposal-style sentence (see the RCA guard
+# `test_bare_propose_word_does_not_suppress_a_real_missing_path_claim`).
+_HONEST_ABSENCE_PHRASINGS: tuple[str, ...] = (
+    r"since renamed to",
+    r"not created in this tree",
+    r"planned path",
+    r"planned filename",
+    r"not a repo path",
+    r"removed;\s*no longer present",
+    r"non ancora creato",
+)
 _NEGATED_LINE_RE = re.compile(
     r"\bNEW\b|\bCREATE_NEW\b|\bREJECTED\b|\bABSENT\b|\bMISSING\b|\bTODO\b"
     r"|\bTBD\b|Status:\s*OPEN"
     r"|\b[Ii]s deleted\b|\b[Ww]as deleted\b|\b[Dd]oes not exist\b"
     r"|\b[Dd]o not exist\b|\b[Nn]ot yet\b"
+    r"|" + r"|".join(_HONEST_ABSENCE_PHRASINGS)
 )
 
 # A doc whose ADR "Status" section declares it not-current cannot overstate
@@ -255,6 +275,66 @@ def _load_npm_scripts(repo: Path) -> frozenset[str] | None:
     return frozenset(str(name) for name in scripts)
 
 
+def _load_gitignore_top_level_dirs(repo: Path) -> frozenset[str]:
+    """Top-level dir names the repo's OWN `.gitignore` lists -- unioned into
+    the runtime-state exemption set (`_RUNTIME_STATE_TOP_LEVEL`) so a
+    project's gitignored runtime state need not be hardcoded by name.
+    Pure Python (`Path.read_text`), no `git` CLI -- mirrors
+    `_load_npm_scripts`'s package.json read.
+
+    No `.gitignore` -> empty (falls back to `_RUNTIME_STATE_TOP_LEVEL`
+    alone, byte-identical to before this function existed). Unreadable
+    `.gitignore` (OSError) -> degrades LOUD (emits a labeled event, prints a
+    human-readable notice) but still returns empty -- this arm only WIDENS
+    exemptions, so its failure mode is a resurfaced false-positive, never a
+    silently-passed lie (GDP-6).
+
+    Only single-segment, non-glob, non-negated top-level entries qualify
+    (e.g. `.tmpstate/` -> `.tmpstate`); nested/negated/glob entries are
+    skipped as ambiguous, never guessed.
+    """
+    gitignore = repo / ".gitignore"
+    if not gitignore.is_file():
+        return frozenset()
+    try:
+        raw = gitignore.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        what = f".gitignore could not be read ({exc})"
+        _emit(
+            {
+                "event": "DocCoherenceGitignoreUnreadable",
+                "what": what,
+                "why": (
+                    "an OSError (permission-denied, broken symlink, ...) "
+                    "prevented reading .gitignore -- the runtime-state "
+                    "exemption set could not be widened; unrelated real "
+                    "path claims are still checked normally."
+                ),
+                "how": (
+                    "fix .gitignore's file permissions/symlink, or ignore "
+                    "this notice -- it only means fewer paths are exempt."
+                ),
+            }
+        )
+        print(
+            f"⚠ INDETERMINATE — {what}. Only affects the exemption set; "
+            "checks continue."
+        )
+        return frozenset()
+    top_level: set[str] = set()
+    for raw_line in raw.splitlines():
+        entry = raw_line.strip()
+        if not entry or entry.startswith("#") or entry.startswith("!"):
+            continue
+        if any(ch in entry for ch in "*?["):
+            continue
+        name = entry.rstrip("/")
+        if not name or "/" in name:
+            continue
+        top_level.add(name)
+    return frozenset(top_level)
+
+
 def _check_npm_claims(
     line: str,
     lineno: int,
@@ -300,7 +380,9 @@ def _check_npm_claims(
     return violations
 
 
-def _is_checkable_path_claim(span: str, repo: Path) -> bool:
+def _is_checkable_path_claim(
+    span: str, repo: Path, runtime_state_top_level: frozenset[str]
+) -> bool:
     """Precision guards: only unambiguous repo-relative path claims qualify."""
     if "/" not in span or "://" in span or ".." in span:
         return False
@@ -314,9 +396,10 @@ def _is_checkable_path_claim(span: str, repo: Path) -> bool:
     if not (candidate.endswith("/") or Path(candidate).suffix in _KNOWN_EXTENSIONS):
         return False
     top_level = candidate.split("/", 1)[0]
-    # Runtime-state guard: `.nwave/...` / `.git/...` are declared-config /
-    # tool-runtime locations, never claims about the committed tree.
-    if top_level in _RUNTIME_STATE_TOP_LEVEL:
+    # Runtime-state guard: `.nwave/...` / `.git/...` (plus any top-level dir
+    # the repo's own `.gitignore` lists) are declared-config / tool-runtime
+    # locations, never claims about the committed tree.
+    if top_level in runtime_state_top_level:
         return False
     # Example-tree guard: a path whose top-level directory does not exist
     # in this repo is a claim about some OTHER tree, not about this one.
@@ -324,12 +407,16 @@ def _is_checkable_path_claim(span: str, repo: Path) -> bool:
 
 
 def _check_path_claims(
-    line: str, lineno: int, doc_rel: str, repo: Path
+    line: str,
+    lineno: int,
+    doc_rel: str,
+    repo: Path,
+    runtime_state_top_level: frozenset[str],
 ) -> list[_Violation]:
     violations: list[_Violation] = []
     for match in _INLINE_CODE_RE.finditer(line):
         span = match.group(1).strip()
-        if not _is_checkable_path_claim(span, repo):
+        if not _is_checkable_path_claim(span, repo, runtime_state_top_level):
             continue
         candidate = span.removeprefix("./")
         if not (repo / candidate).exists():
@@ -420,6 +507,7 @@ def _scan_doc(
     repo: Path,
     scripts: frozenset[str] | None,
     result: _ScanResult,
+    runtime_state_top_level: frozenset[str],
 ) -> None:
     doc_rel = str(doc.relative_to(repo)) if doc.is_relative_to(repo) else str(doc)
     try:
@@ -482,11 +570,15 @@ def _scan_doc(
         # Path claims come from inline-code spans in PROSE only: fenced
         # blocks hold example trees/commands, a known false-positive pit.
         if not in_fence:
-            path_violations = _check_path_claims(line, lineno, doc_rel, repo)
+            path_violations = _check_path_claims(
+                line, lineno, doc_rel, repo, runtime_state_top_level
+            )
             result.path_claims += sum(
                 1
                 for m in _INLINE_CODE_RE.finditer(line)
-                if _is_checkable_path_claim(m.group(1).strip(), repo)
+                if _is_checkable_path_claim(
+                    m.group(1).strip(), repo, runtime_state_top_level
+                )
             )
             result.violations.extend(path_violations)
 
@@ -545,9 +637,13 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
 
+    runtime_state_top_level = _RUNTIME_STATE_TOP_LEVEL | _load_gitignore_top_level_dirs(
+        repo
+    )
+
     result = _ScanResult(violations=[])
     for doc in docs:
-        _scan_doc(doc, repo, scripts, result)
+        _scan_doc(doc, repo, scripts, result, runtime_state_top_level)
 
     if result.docs_unreadable:
         return _indeterminate(

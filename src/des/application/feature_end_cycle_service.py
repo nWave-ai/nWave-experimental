@@ -123,35 +123,49 @@ class LegCensus:
     ``*Leg*`` outcome contributes exactly one increment via
     :func:`_fold_leg_census`: ``ran`` (the leg genuinely executed and
     observed real evidence), ``not_applicable`` (a genuinely-absent
-    precondition, checked BEFORE any subprocess), or ``indeterminate`` (a
-    subprocess/probe ran and degraded -- observed but unresolved, DDD-CERT-1).
+    precondition, checked BEFORE any subprocess), ``indeterminate`` (a
+    subprocess/probe ran and degraded -- observed but unresolved,
+    DDD-CERT-1), or ``warned`` (a subprocess ran and reported a genuine,
+    non-blocking finding -- observed, resolved, but advisory rather than
+    clean-pass; fix-doc-coherence-gate-warns-not-blocks).
     """
 
     ran: int = 0
     not_applicable: int = 0
     indeterminate: int = 0
+    warned: int = 0
 
 
 def _fold_leg_census(census: LegCensus, leg: object) -> LegCensus:
     """Fold one ``*Leg*`` outcome into the running per-leg census (DDD-CERT-2).
 
     Recognizes the ``*LegRan`` / ``*LegNotApplicable`` / ``*LegIndeterminate``
-    family-name suffix every leg-result dataclass in this module already
-    follows -- the ``Leg`` infix distinguishes a countable leg outcome from a
-    non-leg control type (e.g. ``WalkingSkeletonNotApplicable``, which is not
-    one of the census-counted legs). Counting a leg needs no per-leg-type
-    branch, so widening a leg family (e.g. a future ``*LegIndeterminate``
-    sibling) needs no change here.
+    / ``*LegWarned`` family-name suffix every leg-result dataclass in this
+    module already follows -- the ``Leg`` infix distinguishes a countable leg
+    outcome from a non-leg control type (e.g. ``WalkingSkeletonNotApplicable``,
+    which is not one of the census-counted legs). Counting a leg needs no
+    per-leg-type branch, so widening a leg family (e.g. a future
+    ``*LegIndeterminate`` or ``*LegWarned`` sibling) needs no change here.
     """
     name = type(leg).__name__
     if "Leg" not in name:
         return census
     if name.endswith("Indeterminate"):
-        return LegCensus(census.ran, census.not_applicable, census.indeterminate + 1)
+        return LegCensus(
+            census.ran, census.not_applicable, census.indeterminate + 1, census.warned
+        )
     if name.endswith("NotApplicable"):
-        return LegCensus(census.ran, census.not_applicable + 1, census.indeterminate)
+        return LegCensus(
+            census.ran, census.not_applicable + 1, census.indeterminate, census.warned
+        )
+    if name.endswith("Warned"):
+        return LegCensus(
+            census.ran, census.not_applicable, census.indeterminate, census.warned + 1
+        )
     if name.endswith("Ran"):
-        return LegCensus(census.ran + 1, census.not_applicable, census.indeterminate)
+        return LegCensus(
+            census.ran + 1, census.not_applicable, census.indeterminate, census.warned
+        )
     return census
 
 
@@ -248,9 +262,29 @@ class FreshCloneLegRan:
 @dataclass(frozen=True)
 class FreshCloneLegNotApplicable:
     """The fresh-clone leg found no ``.nwave/demo-recipe.json`` declared
-    (slice-01, D-2). The gate's own exit-2 INDETERMINATE degrades to a
-    non-blocking NA here: a repo never asked to have a demo recipe is not
-    held to one, and the cycle PROCEEDS.
+    (slice-01, D-2). The PRECONDITION-FIRST absence check (no subprocess
+    spawned) stays a non-blocking NA here: a repo never asked to have a demo
+    recipe is not held to one, and the cycle PROCEEDS.
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True)
+class FreshCloneLegIndeterminate:
+    """The fresh-clone leg's OWN real gate genuinely could not judge (DDD-CERT-4).
+
+    Distinct from :class:`FreshCloneLegNotApplicable`: the PRECONDITION-FIRST
+    absence check (no ``.nwave/demo-recipe.json`` declared, no subprocess
+    spawned) is UNCHANGED and stays NA -- "never a false hard-block on a repo
+    that was never asked to have a demo recipe" is preserved verbatim. This
+    arm is reached only AFTER the real ``des verify-fresh-clone`` subprocess
+    was genuinely DISPATCHED and its OWN exit-2 fired (an *epistemic* "I
+    could not judge" -- e.g. a malformed recipe surviving the presence check
+    -- never an *ontological* "there is nothing to judge"). The cycle
+    escalates to :class:`CycleIndeterminate`, never silently recycling the
+    gate's own degrade into a fabricated ``CycleSuccess`` (the exit-2-to-NA
+    conflation this feature closes, DDD-CERT-4).
     """
 
     reason: str
@@ -266,9 +300,30 @@ class ExecutionReachLegRan:
 @dataclass(frozen=True)
 class ExecutionReachLegNotApplicable:
     """The execution-reach leg found no coverage XML at the conventional path
-    (slice-02, D-2). The gate's own exit-2 INDETERMINATE degrades to a
-    non-blocking NA here: a repo never asked to instrument coverage is not
-    held to a reach check over it, and the cycle PROCEEDS.
+    (slice-02, D-2). The PRECONDITION-FIRST absence check (no subprocess
+    spawned) stays a non-blocking NA here: a repo never asked to instrument
+    coverage is not held to a reach check over it, and the cycle PROCEEDS.
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True)
+class ExecutionReachLegIndeterminate:
+    """The execution-reach leg's OWN real gate genuinely could not judge (DDD-CERT-4).
+
+    Distinct from :class:`ExecutionReachLegNotApplicable`: the
+    PRECONDITION-FIRST absence check (no coverage XML at the conventional
+    path, no subprocess spawned) is UNCHANGED and stays NA -- "never a false
+    hard-block on a repo that never opted into coverage instrumentation" is
+    preserved verbatim. This arm is reached only AFTER the real ``des
+    verify-execution-reach`` subprocess was genuinely DISPATCHED and its OWN
+    exit-2 fired (an *epistemic* "I could not judge" -- e.g. a
+    present-but-malformed ``coverage.xml`` -- never an *ontological* "there
+    is nothing to judge"). The cycle escalates to :class:`CycleIndeterminate`,
+    never silently recycling the gate's own degrade into a fabricated
+    ``CycleSuccess`` (the exit-2-to-NA conflation this feature closes,
+    DDD-CERT-4).
     """
 
     reason: str
@@ -284,12 +339,56 @@ class DocCoherenceLegRan:
 @dataclass(frozen=True)
 class DocCoherenceLegNotApplicable:
     """The doc-coherence leg found no README* / ``docs/`` at all (slice-03,
-    D-2). The gate's own exit-2 INDETERMINATE degrades to a non-blocking NA
-    here: a repo that ships no docs claims at all is not held to this check,
-    and the cycle PROCEEDS.
+    D-2). The PRECONDITION-FIRST absence check (no subprocess spawned) stays
+    a non-blocking NA here: a repo that ships no docs claims at all is not
+    held to this check, and the cycle PROCEEDS.
     """
 
     reason: str
+
+
+@dataclass(frozen=True)
+class DocCoherenceLegIndeterminate:
+    """The doc-coherence leg's OWN real gate genuinely could not judge (DDD-CERT-4).
+
+    Distinct from :class:`DocCoherenceLegNotApplicable`: the
+    PRECONDITION-FIRST absence check (no README*/``docs/`` at all, no
+    subprocess spawned) is UNCHANGED and stays NA -- "never a false
+    hard-block on a repo that ships no docs claims at all" is preserved
+    verbatim. This arm is reached only AFTER the real ``des
+    verify-doc-coherence`` subprocess was genuinely DISPATCHED and its OWN
+    exit-2 fired (an *epistemic* "I could not judge" -- e.g. an unreadable
+    docs location surviving the presence check -- never an *ontological*
+    "there is nothing to judge"). The cycle escalates to
+    :class:`CycleIndeterminate`, never silently recycling the gate's own
+    degrade into a fabricated ``CycleSuccess`` (the exit-2-to-NA conflation
+    this feature closes, DDD-CERT-4).
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True)
+class DocCoherenceLegWarned:
+    """The doc-coherence leg's REAL gate found >=1 false doc claim, but the
+    finding is ADVISORY -- never a hard-block (fix-doc-coherence-gate-warns-
+    not-blocks, GDP-8).
+
+    Distinct from :class:`CycleRefusal`: today the gate's exit 1 (>=1 doc
+    claim is false of the actual tree) fail-closed the WHOLE feature-end
+    cycle -- a team with one honest-but-stale doc reference could not
+    complete certification until every doc claim was hand-fixed. This arm is
+    reached only AFTER the real ``des verify-doc-coherence`` subprocess was
+    genuinely DISPATCHED and its exit-1 fired: the cycle folds this into
+    ``leg_census.warned`` (parallel to ``ran`` / ``not_applicable`` /
+    ``indeterminate``) and PROCEEDS -- never silently dropping the finding,
+    never fabricating a clean ``DocCoherenceVerified``. ``detail`` carries
+    the gate's OWN diagnostic (which doc claim(s) are false), surfaced LOUD
+    in the ``DocCoherenceWarned`` ledger record -- never swallowed into a
+    bare boolean.
+    """
+
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -305,6 +404,38 @@ class WalkingSkeletonNotApplicable:
     """
 
     rationale: str
+
+
+@dataclass(frozen=True)
+class CoverageMapLegRan:
+    """The coverage-map verify leg genuinely ran a real §5.3 verify and PASSED
+    on a human-signed artifact (DDD-CERT-2 retrofit).
+
+    The census family for the coverage-map leg -- added alongside the
+    full-suite/doc-coherence/execution-reach/fresh-clone siblings so a real,
+    substantive check (a cryptographic digest match over genuinely-signed
+    content) counts toward ``leg_census.ran`` exactly like theirs: "done means
+    I watched a check run and it passed," never "I had nothing to look at."
+    Before this retrofit the leg's genuine PASS was invisible to the census,
+    so a feature whose ONLY real check was a signed coverage-map (walking-
+    skeleton/env-e2e legitimately NOT_APPLICABLE, no repo-level suite/docs/
+    coverage.xml/demo-recipe) wrongly reported ``CycleIndeterminate`` over
+    ``leg_census.ran == 0`` despite a real, passing verification having run.
+    """
+
+
+@dataclass(frozen=True)
+class CoverageMapLegNotApplicable:
+    """The coverage-map verify leg found nothing to verify (opt-in-until-adopted).
+
+    Mirrors the sibling legs' precondition-first NA: adoption is INACTIVE
+    repo-wide (``coverage_map_adoption`` in ``.nwave/des-config.json``) AND the
+    map is genuinely absent -- there is nothing honest for the leg to check, so
+    it does not spend a subprocess and the cycle PROCEEDS. Carries the reason
+    naming WHY the leg was inapplicable (degrade-LOUD, no silent skip).
+    """
+
+    reason: str
 
 
 def run_feature_end_cycle(
@@ -380,7 +511,7 @@ def run_feature_end_cycle(
     if isinstance(coverage_map, CycleRefusal):
         return coverage_map
 
-    census = LegCensus()
+    census = _fold_leg_census(LegCensus(), coverage_map)
 
     full_suite = _run_full_suite_leg(repo_root=repo_root)
     if isinstance(full_suite, CycleRefusal):
@@ -417,7 +548,23 @@ def run_feature_end_cycle(
     if isinstance(doc_coherence, CycleRefusal):
         return doc_coherence
     census = _fold_leg_census(census, doc_coherence)
-    if isinstance(doc_coherence, DocCoherenceLegRan):
+    if isinstance(doc_coherence, DocCoherenceLegIndeterminate):
+        # DDD-CERT-4: the doc-coherence gate's OWN exit-2 fired -- an
+        # epistemic gap, never silently recycled into NotApplicable. Mirrors
+        # the full-suite leg's escalation above.
+        return CycleIndeterminate(
+            "the feature-end doc-coherence leg is INDETERMINATE: "
+            + doc_coherence.reason,
+            leg_census=census,
+        )
+    if isinstance(doc_coherence, DocCoherenceLegWarned):
+        # fix-doc-coherence-gate-warns-not-blocks (GDP-8): a real doc-claim
+        # violation is ADVISORY, not blocking -- the cycle PROCEEDS. The
+        # finding is surfaced LOUD via the DISTINCT `DocCoherenceWarned`
+        # record (never `DocCoherenceVerified` -- a warned completion must
+        # never read as doc-coherence having passed clean).
+        ledger.append_doc_coherence_warned(doc_coherence.detail, feature_id=feature_id)
+    elif isinstance(doc_coherence, DocCoherenceLegRan):
         ledger.append_doc_coherence_verified(feature_id=feature_id)
     else:
         ledger.append_doc_coherence_not_applicable(feature_id=feature_id)
@@ -428,6 +575,14 @@ def run_feature_end_cycle(
     if isinstance(execution_reach, CycleRefusal):
         return execution_reach
     census = _fold_leg_census(census, execution_reach)
+    if isinstance(execution_reach, ExecutionReachLegIndeterminate):
+        # DDD-CERT-4: the execution-reach gate's OWN exit-2 fired -- an
+        # epistemic gap, never silently recycled into NotApplicable.
+        return CycleIndeterminate(
+            "the feature-end execution-reach leg is INDETERMINATE: "
+            + execution_reach.reason,
+            leg_census=census,
+        )
     if isinstance(execution_reach, ExecutionReachLegRan):
         ledger.append_execution_reach_verified(feature_id=feature_id)
     else:
@@ -439,6 +594,13 @@ def run_feature_end_cycle(
     if isinstance(fresh_clone, CycleRefusal):
         return fresh_clone
     census = _fold_leg_census(census, fresh_clone)
+    if isinstance(fresh_clone, FreshCloneLegIndeterminate):
+        # DDD-CERT-4: the fresh-clone gate's OWN exit-2 fired -- an epistemic
+        # gap, never silently recycled into NotApplicable.
+        return CycleIndeterminate(
+            "the feature-end fresh-clone leg is INDETERMINATE: " + fresh_clone.reason,
+            leg_census=census,
+        )
     if isinstance(fresh_clone, FreshCloneLegRan):
         ledger.append_fresh_clone_verified(feature_id=feature_id)
     else:
@@ -548,11 +710,7 @@ def _run_walking_skeleton_gate(
         ],
     )
     if completed.returncode != 0:
-        return CycleRefusal(
-            "the walking-skeleton gate failed; the feature-end cycle refuses to "
-            "certify the feature-end is complete (anti-theater): "
-            + _gate_diagnostic(completed)
-        )
+        return _gate_failure_refusal("the walking-skeleton gate", completed)
     verdict = _walking_skeleton_verdict(completed.stdout)
     if verdict is None:
         return CycleRefusal(
@@ -655,11 +813,7 @@ def _run_environmental_e2e_gate(
         ],
     )
     if completed.returncode != 0:
-        return CycleRefusal(
-            "the environmental-e2e gate failed; the feature-end cycle refuses to "
-            "certify the feature-end is complete (anti-theater): "
-            + _gate_diagnostic(completed)
-        )
+        return _gate_failure_refusal("the environmental-e2e gate", completed)
     ledger.append_environmental_e2e_verified(feature_id=feature_id)
     return None
 
@@ -670,7 +824,7 @@ def _run_coverage_map_verify_leg(
     repo_root: Path,
     feature_id: str,
     feature_dir: Path,
-) -> None | CycleRefusal:
+) -> CoverageMapLegRan | CoverageMapLegNotApplicable | CycleRefusal:
     """Run the REAL ported §5.3 coverage-map verify IN-PROCESS; emit on a genuine pass.
 
     DDD-8 / option (b): the cycle runs the ported pure verify core against the
@@ -695,17 +849,23 @@ def _run_coverage_map_verify_leg(
     A PRESENT map is ALWAYS held to the real verify, never NA -- so a half-baked
     map cannot dodge by claiming NA. While adoption is ACTIVE an absent map
     hard-refuses (today's behaviour). On a genuine human-signed PASS, append BOTH
-    verified records. On ANY verify refusal (unsigned ``_pending_`` digest, stale
-    digest, structural-incomplete, attestation-gap, malformed) the cycle
-    fail-closes carrying the verify core's own structured reason and mints
-    NEITHER coverage-map record.
+    verified records and return :class:`CoverageMapLegRan` (DDD-CERT-2 retrofit:
+    folded into ``leg_census.ran`` -- a real digest-matched verify is exactly the
+    "I watched a check run and it passed" the census exists to prove). On ANY
+    verify refusal (unsigned ``_pending_`` digest, stale digest,
+    structural-incomplete, attestation-gap, malformed) the cycle fail-closes
+    carrying the verify core's own structured reason and mints NEITHER
+    coverage-map record.
     """
     coverage_map_path = feature_dir / "distill" / "coverage-map.md"
     adoption = DESConfig(cwd=repo_root).coverage_map_adoption
     if adoption == "inactive" and not coverage_map_path.is_file():
         ledger.append_coverage_map_not_applicable_at_distill_exit(feature_id=feature_id)
         ledger.append_coverage_map_not_applicable_at_deliver_exit(feature_id=feature_id)
-        return None
+        return CoverageMapLegNotApplicable(
+            "coverage-map adoption is inactive and no coverage-map.md is staged; "
+            "the coverage-map verify leg is not applicable"
+        )
 
     verdict = verify_coverage_map(feature_root=feature_dir)
     if isinstance(verdict, CoverageMapRefused):
@@ -716,7 +876,7 @@ def _run_coverage_map_verify_leg(
         )
     ledger.append_coverage_map_verified_at_distill_exit(feature_id=feature_id)
     ledger.append_coverage_map_verified_at_deliver_exit(feature_id=feature_id)
-    return None
+    return CoverageMapLegRan()
 
 
 def _run_full_suite_leg(
@@ -773,11 +933,7 @@ def _run_full_suite_leg(
         )
     completed = _dispatch(repo_root, ["run-contract-gate", "--repo", str(repo_root)])
     if completed.returncode != 0:
-        return CycleRefusal(
-            "the feature-end full-suite leg failed; the feature-end cycle refuses "
-            "to certify the feature-end is complete (anti-theater): "
-            + _gate_diagnostic(completed)
-        )
+        return _gate_failure_refusal("the feature-end full-suite leg", completed)
     return FullSuiteLegRan(pytest_exit_code=completed.returncode)
 
 
@@ -919,7 +1075,13 @@ _DOC_COHERENCE_DOCS_DIRNAME = "docs"
 
 def _run_doc_coherence_gate(
     *, ledger: AtCompletionLedger, repo_root: Path, feature_id: str
-) -> DocCoherenceLegRan | DocCoherenceLegNotApplicable | CycleRefusal:
+) -> (
+    DocCoherenceLegRan
+    | DocCoherenceLegNotApplicable
+    | DocCoherenceLegIndeterminate
+    | DocCoherenceLegWarned
+    | CycleRefusal
+):
     """Run the REAL ``des verify-doc-coherence`` gate (slice-03, evolution-plan
     P0.5, L-2). Derives the verdict from the gate's REAL exit code -- never an
     input flag (anti-theater, DDD-6). Mirrors :func:`_run_execution_reach_gate`'s
@@ -927,7 +1089,8 @@ def _run_doc_coherence_gate(
     the three P0 legs (D-1: the cheapest static check runs first).
 
     D-2 PRECONDITION-FIRST (L-4 NA rule): a target repo shipping no README* at
-    its root and no ``docs/`` directory has nothing honest for the
+    its root and no markdown file anywhere under ``docs/`` (directory
+    EXISTENCE alone is not enough, DDD-CERT-4) has nothing honest for the
     doc-coherence gate to check -- so the leg returns
     :class:`DocCoherenceLegNotApplicable` and the cycle PROCEEDS WITHOUT
     spawning the gate (never a false hard-block on a repo that ships no docs
@@ -940,11 +1103,17 @@ def _run_doc_coherence_gate(
     this leg"), then dispatches the REAL gate and derives the verdict from its
     REAL exit code (anti-theater, DDD-6): exit 0 -> :class:`DocCoherenceLegRan`
     (every checked doc claim is true of the tree); exit 2 ->
-    :class:`DocCoherenceLegNotApplicable` (the gate's own INDETERMINATE, e.g.
-    an unreadable docs location surviving the presence check); any OTHER
-    non-zero exit (1: >=1 doc claim is false of the actual tree) fail-closes
-    the cycle carrying the gate's own diagnostic (which names every false
-    claim).
+    :class:`DocCoherenceLegIndeterminate` (DDD-CERT-4: the gate was genuinely
+    DISPATCHED and its OWN INDETERMINATE fired -- e.g. an unreadable docs
+    location surviving the presence check -- an epistemic "I could not judge",
+    escalated by the cycle to :class:`CycleIndeterminate`, never silently
+    recycled into NA); exit 1 (>=1 doc claim is false of the actual tree)
+    is ADVISORY, not blocking (fix-doc-coherence-gate-warns-not-blocks,
+    GDP-8): the leg returns :class:`DocCoherenceLegWarned` carrying the
+    gate's own diagnostic (which names every false claim), the cycle folds
+    it into ``leg_census.warned`` and PROCEEDS; any OTHER non-zero exit
+    (the gate's own environment-degrade codes) still fail-closes the cycle
+    carrying the gate's own diagnostic.
     """
     if not _repo_has_doc_claims(repo_root):
         return DocCoherenceLegNotApplicable(
@@ -954,25 +1123,114 @@ def _run_doc_coherence_gate(
     ledger.append_doc_coherence_gate_ran(feature_id=feature_id)
     completed = _dispatch(repo_root, ["verify-doc-coherence", "--repo", str(repo_root)])
     if completed.returncode == 2:
-        return DocCoherenceLegNotApplicable(
-            "the doc-coherence gate degraded to INDETERMINATE; not applicable"
+        return DocCoherenceLegIndeterminate(
+            _gate_indeterminate_reason(
+                "doc-coherence",
+                completed,
+                "the gate could not read a doc/link it was asked to "
+                "check (e.g. an unreadable docs location or a malformed doc "
+                "surviving the presence check); fix or remove the doc the "
+                "diagnostic names, then re-run `des feature-end run`",
+            )
         )
+    if completed.returncode == 1:
+        return DocCoherenceLegWarned(_gate_diagnostic(completed))
     if completed.returncode != 0:
-        return CycleRefusal(
-            "the feature-end doc-coherence gate failed; the feature-end "
-            "cycle refuses to certify the feature-end is complete "
-            "(anti-theater): " + _gate_diagnostic(completed)
-        )
+        return _gate_failure_refusal("the feature-end doc-coherence gate", completed)
     return DocCoherenceLegRan()
 
 
+# Repo-relative doc trees the real gate's DEFAULT scan
+# (``verify_doc_coherence._find_doc_files`` with ``--docs`` omitted) DROPS as
+# structurally-not-a-current-tree-claim (forward-looking feature deltas,
+# internal analysis, archived/research material, proposals, ADRs, expectations
+# charters, ...). Mirrored here (L-5: NOT imported) so the feature-end
+# precondition counts a doc claim ONLY when the gate's own default scan would.
+# Kept byte-parallel with ``verify_doc_coherence._NOT_CURRENT_CLAIM_DOC_PREFIXES``
+# + its ``docs/guides/tutorial-*/`` rule -- if that SSOT gains a tree, add it
+# here too (both live in this repo; a drift only ever RE-widens the precondition,
+# never silences a genuine claim).
+_DOC_COHERENCE_NOT_CURRENT_CLAIM_PREFIXES = frozenset(
+    {
+        "docs/feature/",
+        "docs/analysis/",
+        "docs/internal/",
+        "docs/archive/",
+        "docs/research/",
+        "docs/evolution/",
+        "docs/scenarios/",
+        "docs/reports/",
+        "docs/proposals/",
+        "docs/adrs/",
+        "docs/architecture/",
+        "docs/product/architecture/",
+        "docs/product/expectations/",
+        "docs/feedback/",
+        "docs/epic/",
+        "docs/operations/",
+        "docs/requirements/",
+        "docs/backlog/",
+        "docs/rfc/",
+        "docs/spike/",
+        "docs/decisions/",
+    }
+)
+
+
+def _is_current_tree_claim_doc(rel_posix: str) -> bool:
+    """Whether a repo-relative ``docs/`` markdown path is a GENUINE claim about
+    the current tree (mirrors the NEGATION of
+    ``verify_doc_coherence._is_not_current_claim_doc``; L-5: not imported).
+
+    A doc under one of the not-current-claim trees, or a
+    ``docs/guides/tutorial-*/`` reader-example path, is NOT a current-tree
+    claim -- the default scan drops it, so it carries nothing the doc-coherence
+    gate would check.
+    """
+    if any(
+        rel_posix.startswith(prefix)
+        for prefix in _DOC_COHERENCE_NOT_CURRENT_CLAIM_PREFIXES
+    ):
+        return False
+    parts = rel_posix.split("/")
+    is_tutorial = (
+        len(parts) > 2
+        and parts[0] == "docs"
+        and parts[1] == "guides"
+        and parts[2].startswith("tutorial-")
+    )
+    return not is_tutorial
+
+
 def _repo_has_doc_claims(repo_root: Path) -> bool:
-    """Whether ``repo_root`` ships any README* file or a ``docs/`` directory
-    (mirrors ``verify_doc_coherence._find_doc_files``'s default doc-location
-    convention; L-5: does not import ``verify_doc_coherence.py``)."""
+    """Whether ``repo_root`` ships any README* file or at least one
+    CURRENT-TREE-CLAIM ``*.md`` under ``docs/`` (mirrors the DEFAULT scan of
+    ``verify_doc_coherence._find_doc_files``; L-5: does not import
+    ``verify_doc_coherence.py``).
+
+    Directory EXISTENCE alone is not enough (DDD-CERT-4 precondition-first
+    honesty): an empty ``docs/`` directory -- OR a ``docs/`` tree whose ONLY
+    markdown is a structurally-not-a-current-tree-claim doc (a scaffolded
+    ``docs/feature/<id>/`` delta, a ``docs/product/expectations/<id>/`` charter,
+    an ADR under ``docs/product/architecture/``, ...) -- is the SAME genuine
+    "no doc files found" absence the real gate's own DEFAULT scan names (it
+    drops those trees and, finding zero checkable files, exits 2). Counting
+    ANY ``*.md`` (or only ``is_dir()``) would wrongly DISPATCH the real gate
+    on a tree that carries no checkable claim, turning a genuine ontological
+    absence into a spurious post-subprocess INDETERMINATE -- the exact
+    epistemic-vs-ontological conflation DDD-CERT-4 closes. The precondition is
+    aligned 1:1 with the gate's own "would find zero files -> exit 2" boundary,
+    so a charter-/delta-/ADR-only repo resolves NOT_APPLICABLE and PROCEEDS.
+    """
     if any(repo_root.glob("README*")):
         return True
-    return (repo_root / _DOC_COHERENCE_DOCS_DIRNAME).is_dir()
+    docs_dir = repo_root / _DOC_COHERENCE_DOCS_DIRNAME
+    if not docs_dir.is_dir():
+        return False
+    return any(
+        _is_current_tree_claim_doc(md.relative_to(repo_root).as_posix())
+        for md in docs_dir.rglob("*.md")
+    )
 
 
 _COVERAGE_XML_RELPATH = "coverage.xml"
@@ -981,7 +1239,12 @@ _EXECUTION_REACH_SRC_DIR = "src"
 
 def _run_execution_reach_gate(
     *, ledger: AtCompletionLedger, repo_root: Path, feature_id: str
-) -> ExecutionReachLegRan | ExecutionReachLegNotApplicable | CycleRefusal:
+) -> (
+    ExecutionReachLegRan
+    | ExecutionReachLegNotApplicable
+    | ExecutionReachLegIndeterminate
+    | CycleRefusal
+):
     """Run the REAL ``des verify-execution-reach`` gate (slice-02, evolution-plan
     P0.4, L-2). Derives the verdict from the gate's REAL exit code -- never an
     input flag (anti-theater, DDD-6). Mirrors :func:`_run_fresh_clone_gate`'s
@@ -1003,14 +1266,14 @@ def _run_execution_reach_gate(
     verdict from its REAL exit code (anti-theater, DDD-6): exit 0 ->
     :class:`ExecutionReachLegRan` (every production file under the
     conventional source root shows >0 observed line hits); exit 2 ->
-    :class:`ExecutionReachLegNotApplicable` (the gate's own INDETERMINATE,
-    e.g. a ``--src-dir`` that does not resolve under a non-conventional
-    source layout, or a malformed/empty coverage report -- a repo the gate
-    cannot judge, per R8 genericita -- mirrors :func:`_run_doc_coherence_gate`
-    and :func:`_run_fresh_clone_gate`'s own ``== 2`` NA branch); any OTHER
-    non-zero exit (1: >=1 production file with zero hits or absent from the
-    report) fail-closes the cycle carrying the gate's own diagnostic (which
-    names every unreached file).
+    :class:`ExecutionReachLegIndeterminate` (DDD-CERT-4: the gate was
+    genuinely DISPATCHED and its OWN INDETERMINATE fired -- e.g. a
+    ``--src-dir`` that does not resolve under a non-conventional source
+    layout, or a malformed/empty coverage report -- an epistemic "I could not
+    judge", escalated by the cycle to :class:`CycleIndeterminate`, never
+    silently recycled into NA); any OTHER non-zero exit (1: >=1 production
+    file with zero hits or absent from the report) fail-closes the cycle
+    carrying the gate's own diagnostic (which names every unreached file).
     """
     coverage_xml_path = repo_root / _COVERAGE_XML_RELPATH
     if not coverage_xml_path.is_file():
@@ -1032,21 +1295,29 @@ def _run_execution_reach_gate(
         ],
     )
     if completed.returncode == 2:
-        return ExecutionReachLegNotApplicable(
-            "the execution-reach gate degraded to INDETERMINATE; not applicable"
+        return ExecutionReachLegIndeterminate(
+            _gate_indeterminate_reason(
+                "execution-reach",
+                completed,
+                "the gate could not parse the coverage report it reads "
+                "(e.g. a malformed or truncated coverage.xml); regenerate that "
+                "report by re-running your coverage tool, then re-run "
+                "`des feature-end run`",
+            )
         )
     if completed.returncode != 0:
-        return CycleRefusal(
-            "the feature-end execution-reach gate failed; the feature-end "
-            "cycle refuses to certify the feature-end is complete "
-            "(anti-theater): " + _gate_diagnostic(completed)
-        )
+        return _gate_failure_refusal("the feature-end execution-reach gate", completed)
     return ExecutionReachLegRan()
 
 
 def _run_fresh_clone_gate(
     *, ledger: AtCompletionLedger, repo_root: Path, feature_id: str
-) -> FreshCloneLegRan | FreshCloneLegNotApplicable | CycleRefusal:
+) -> (
+    FreshCloneLegRan
+    | FreshCloneLegNotApplicable
+    | FreshCloneLegIndeterminate
+    | CycleRefusal
+):
     """Run the REAL ``des verify-fresh-clone`` gate (slice-01, evolution-plan
     P0.1, L-2). Derives the verdict from the gate's REAL exit code -- never an
     input flag (anti-theater, DDD-6). Mirrors :func:`_run_full_suite_leg`'s
@@ -1066,8 +1337,11 @@ def _run_fresh_clone_gate(
     BEFORE the verdict is known (its presence means "the cycle reached and ran
     this leg"), then dispatches the REAL gate and derives the verdict from its
     REAL exit code (anti-theater, DDD-6): exit 0 -> :class:`FreshCloneLegRan` (a
-    genuine fresh-export build pass); exit 2 -> :class:`FreshCloneLegNotApplicable`
-    (the gate's own INDETERMINATE on a malformed/absent recipe); any OTHER
+    genuine fresh-export build pass); exit 2 ->
+    :class:`FreshCloneLegIndeterminate` (DDD-CERT-4: the gate was genuinely
+    DISPATCHED and its OWN INDETERMINATE fired on a malformed recipe -- an
+    epistemic "I could not judge", escalated by the cycle to
+    :class:`CycleIndeterminate`, never silently recycled into NA); any OTHER
     non-zero exit (1: a real recipe step failed in the fresh export of the
     committed tree; 78: an environment degrade) fail-closes the cycle carrying
     the gate's own diagnostic.
@@ -1080,15 +1354,17 @@ def _run_fresh_clone_gate(
     ledger.append_fresh_clone_gate_ran(feature_id=feature_id)
     completed = _dispatch(repo_root, ["verify-fresh-clone", "--repo", str(repo_root)])
     if completed.returncode == 2:
-        return FreshCloneLegNotApplicable(
-            "the fresh-clone gate degraded to INDETERMINATE; not applicable"
+        return FreshCloneLegIndeterminate(
+            _gate_indeterminate_reason(
+                "fresh-clone",
+                completed,
+                "the gate could not read the demo recipe it executes "
+                "(e.g. a malformed .nwave/demo-recipe.json); fix the recipe the "
+                "diagnostic names, then re-run `des feature-end run`",
+            )
         )
     if completed.returncode != 0:
-        return CycleRefusal(
-            "the feature-end fresh-clone gate failed; the feature-end cycle "
-            "refuses to certify the feature-end is complete (anti-theater): "
-            + _gate_diagnostic(completed)
-        )
+        return _gate_failure_refusal("the feature-end fresh-clone gate", completed)
     return FreshCloneLegRan()
 
 
@@ -1313,6 +1589,44 @@ def _gate_diagnostic(completed: subprocess.CompletedProcess[str]) -> str:
     )
 
 
+def _gate_failure_refusal(
+    label: str, completed: subprocess.CompletedProcess[str]
+) -> CycleRefusal:
+    """The common '<gate/leg> failed; the feature-end cycle refuses...' shape.
+
+    Six legs (walking-skeleton, environmental-e2e, full-suite, doc-coherence,
+    execution-reach, fresh-clone) built this exact CycleRefusal text inline,
+    differing only in the leading clause naming which gate/leg failed. ``label``
+    is that EXACT leading clause each call site already spelled out (e.g.
+    ``"the walking-skeleton gate"``, ``"the feature-end full-suite leg"``) --
+    extracting the repeated suffix changes no emitted byte (RPP L1/L3, DDD-CERT
+    verbatim-preservation: the anti-theater refusal text every leg's docstring
+    documents stays identical).
+    """
+    return CycleRefusal(
+        f"{label} failed; the feature-end cycle refuses to certify the "
+        "feature-end is complete (anti-theater): " + _gate_diagnostic(completed)
+    )
+
+
+def _gate_indeterminate_reason(
+    name: str, completed: subprocess.CompletedProcess[str], how: str
+) -> str:
+    """The common '<gate> genuinely could not judge (DDD-CERT-4)' reason shape.
+
+    Three legs (doc-coherence, execution-reach, fresh-clone) built this exact
+    ``*LegIndeterminate`` reason text inline, differing only in the gate
+    ``name`` and the gate-specific ``how`` remediation clause. Extracting the
+    repeated scaffold changes no emitted byte -- ``name``/``how`` reproduce
+    each call site's original wording verbatim.
+    """
+    return (
+        f"the {name} gate genuinely could not judge (its own exit-2 "
+        "INDETERMINATE); never recycled into not-applicable (DDD-CERT-4). "
+        "Gate diagnostic: " + _gate_diagnostic(completed) + " -- HOW: " + how
+    )
+
+
 def _dispatch(repo_root: Path, argv: list[str]) -> subprocess.CompletedProcess[str]:
     """Run a ``des <argv>`` subcommand over the real ``des`` dispatcher.
 
@@ -1339,11 +1653,14 @@ def _dispatch(repo_root: Path, argv: list[str]) -> subprocess.CompletedProcess[s
 
 
 __all__ = [
+    "CoverageMapLegNotApplicable",
+    "CoverageMapLegRan",
     "CycleIndeterminate",
     "CycleRefusal",
     "CycleSuccess",
     "DocCoherenceLegNotApplicable",
     "DocCoherenceLegRan",
+    "DocCoherenceLegWarned",
     "ExecutionReachLegNotApplicable",
     "ExecutionReachLegRan",
     "FreshCloneLegNotApplicable",

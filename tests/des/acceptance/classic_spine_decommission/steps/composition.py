@@ -472,6 +472,30 @@ class LedgerInterleaveComposition:
         self._feature_id = feature_id
         telemetry = self._project_root / ".nwave" / "telemetry" / "atdd-pure"
         telemetry.mkdir(parents=True, exist_ok=True)
+        # Defect-1 sweep tail (fix-at-review-verdict-surface, slice-01): the
+        # real `at_review_verdict` CLI's APPROVED path runs
+        # `_verify_feature_slice_exists` (commit 40dd29414), which refuses when
+        # `docs/feature/{feature_id}/feature-delta.md` is absent OR the driven
+        # slice is not a Slice Plan row. Stage a real feature-delta with rows
+        # for the slices this interleave drives (slice-01, slice-02) so the
+        # precondition passes and the multi-writer interleave is exercised.
+        feature_delta = (
+            self._project_root
+            / "docs"
+            / "feature"
+            / str(feature_id)
+            / "feature-delta.md"
+        )
+        feature_delta.parent.mkdir(parents=True, exist_ok=True)
+        feature_delta.write_text(
+            f"# Feature Delta: {feature_id}\n\n"
+            "## Wave: DISCUSS / [REF] Slice Plan\n\n"
+            "| Slice | Value statement | Status | Annotation | Justification |\n"
+            "|---|---|---|---|---|\n"
+            "| slice-01 | the completion writer appends a gate event | done | | |\n"
+            "| slice-02 | the review verdict writer appends a record | done | | |\n",
+            encoding="utf-8",
+        )
 
     def writer_appends_record(self, writer: LedgerWriter, slice_id: str) -> None:
         """Have the named REAL writer append a record to the shared ledger.

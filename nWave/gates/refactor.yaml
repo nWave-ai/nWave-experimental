@@ -1,0 +1,55 @@
+# Gate-contract: refactor (des-refactor-fixer-swarm feature, slice-01)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=refactor.
+
+gate_id: refactor
+responsibility: |
+  Drains one tech-debt pile item (techdebt.md) in an isolated git worktree:
+  claims the item, runs the pluggable agent command, verifies green-to-green on
+  the impacted tests, merges ONLY on a clean confirmed merge, removes the
+  worktree, and moves the item to paidtechdebt.md. Self-reports success /
+  empty-pile / failure (exit 0/0/1, no traceback). Python-only; git-worktree,
+  agent invocation, and env provisioning sit behind driven ports (ADR-SWARM-001).
+module: des.cli.refactor
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --pile
+    required: true
+    type: path
+    help: "Path to the tech-debt pile file (techdebt.md) to drain one item from."
+  - name: --agent-cmd
+    required: true
+    type: string
+    help: "The shell command that runs the fixer agent on the claimed item."
+  - name: --max-parallel
+    required: false
+    type: int
+    help: "Maximum concurrent drains (loop driver only)."
+    default: "1"
+  - name: --driver
+    required: false
+    type: choice
+    choices: ["python", "loop"]
+    help: "The loop driver: python worker-pool, or /loop for Claude Code."
+    default: "python"
+  - name: --prompt-template
+    required: false
+    type: path
+    help: "Path to a user-editable prompt-template file for the agent."
+
+log_events:
+  - RefactorItemDrained
+
+failure_modes:
+  - error_class: DrainRefused
+    exit_code: 1
+    remediation: "Read the self-reported reason (unparseable pile / worktree-creation / merge-blocked); fix the named cause, then re-run `des refactor`."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - cli

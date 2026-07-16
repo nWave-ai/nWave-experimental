@@ -65,7 +65,6 @@ from des.cli.carpaccio_format import (
     _at_review_rejection,
     _feature_tag_files,
     _lane_profile_for_slice,
-    _read_feature_files,
     _resolve_slice_max,
     _slice_scenarios,
     check_carpaccio,
@@ -74,6 +73,7 @@ from des.cli.carpaccio_format import (
     parse_scenarios,
     parse_slice_plan,
     pytest_regression_content_hash,
+    read_feature_files,
 )
 from des.cli.human_surface import Verdict, print_human_summary
 from des.cli.verify_negative_at import _scan_file as _scan_negative_at_file
@@ -905,7 +905,7 @@ def main(argv: list[str] | None = None) -> int:
                 },
             )
         plan = parse_slice_plan(delta_path.read_text(encoding="utf-8"))
-        scenarios = parse_scenarios(_read_feature_files(repo, feature_id))
+        scenarios = parse_scenarios(read_feature_files(repo, feature_id))
         slice_max, slice_max_source = _resolve_slice_max(repo)
         coupled_event = check_carpaccio(
             plan,

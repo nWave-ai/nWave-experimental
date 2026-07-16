@@ -1,8 +1,16 @@
 """Composition root -- fix-verify-wave-dispatch-exemption-ssot (slice-01).
 
-Reconciles the TWO dispatch-exemption checks that today give OPPOSITE verdicts on
-the same dispatch, onto ONE canonical model (AT-3-BLOCK, ratified Ale 2026-06-23).
-The composition drives BOTH real checks through their real driving surfaces:
+Reconciles the TWO dispatch-exemption checks onto ONE canonical model. History:
+on 2026-06-23 they were reconciled onto AT-3-BLOCK for the collision case (a
+non-entering child carrying ONLY its own matching `<!-- DES-WAVE: <wave> -->`
+marker). Ale RATIFIED a reversal on 2026-07-16 (asymmetric authority): a child
+that declares its OWN active wave is a legitimate wave-membership declaration
+that ARMS enforcement -- the OPPOSITE of a bypass -- so the collision case is now
+ALLOW. The PreToolUse AT-3 side is ALREADY FLIPPED (`pre_tool_use_service.py`
+allows a matching `declared_wave`); this feature re-reconciles verify-wave-dispatch
+onto the SAME ALLOW. The genuine-bypass protection (mismatched-wave / markerless /
+subset dispatches) is UNCHANGED and stays BLOCKED. The composition drives BOTH
+real checks through their real driving surfaces:
 
   * verify-wave-dispatch -- the IN-TREE gate ``des.cli.verify_wave_dispatch``
     (Mandate-13, Layer-3 subprocess). Invoked as ``python -m
@@ -15,26 +23,27 @@ The composition drives BOTH real checks through their real driving surfaces:
     the real filesystem ``WaveActiveFilesystemStore`` reading the SAME seeded
     floor). Observable = ``HookDecision.action`` ("allow"|"block") -> the
     ALLOW/BLOCK binary AT-3 actually emits in production. This is the CANONICAL
-    reference the
-    reconcile aligns verify-wave-dispatch TO.
+    reference verify-wave-dispatch is re-reconciled TO (now ALLOW).
 
 The collision case (AC-1 / AC-5) is: an ACTIVE wave floor (entry_pending cleared)
 + a dispatch carrying ONLY a matching ``<!-- DES-WAVE: <wave> -->`` marker (no
-DES-VALIDATION -> ``carries_partial_wave_context``) + NOT wave-entering. AT-3
-BLOCKs it (WAVE_MARKER_BYPASS). verify-wave-dispatch ALLOWs it today (a matching
-marker reads as on-spine, floor-blind). The reconcile makes verify-wave-dispatch
-ALSO BLOCK -> the two checks AGREE (AC-5).
+DES-VALIDATION -> ``carries_partial_wave_context``) + NOT wave-entering. AT-3 now
+ALLOWs it (a matching ``declared_wave`` is a legitimate wave-membership
+declaration, not a bypass). verify-wave-dispatch still BLOCKs it at HEAD (the
+2026-06-23 collision-BLOCK branch in ``decide_dispatch`` has not yet been
+flipped). The re-reconcile makes verify-wave-dispatch ALSO ALLOW -> the two
+checks AGREE on ALLOW (AC-5).
 
 DRIVING-PORT-ONLY (Mandate-16): no decomposed helper is tested -- both checks are
 driven through their composition-root driving surfaces. A correctly-leveled AT
-makes TBU structurally impossible: delete the new collision-BLOCK branch from
-``decide_dispatch`` and AC-1 + AC-5 go RED.
+makes TBU structurally impossible: keep the collision branch in ``decide_dispatch``
+BLOCKing and AC-1 + AC-5 stay RED.
 
-ACTIVE-RED (atdd_pure -- NOT @skip): at HEAD ``decide_dispatch`` is floor-blind, so
-verify-wave-dispatch ALLOWs the collision while AT-3 BLOCKs it -> AC-1 (expects
-BLOCK) and AC-5 (expects agreement) fire semantic AssertionErrors against the
-observed ALLOW. The preserved-path scenarios (AC-2/3/4) assert the verdicts the
-current code ALREADY emits -> live-green regression guards.
+ACTIVE-RED (atdd_pure -- NOT @skip): at HEAD ``decide_dispatch`` still BLOCKs the
+collision while AT-3 now ALLOWs it -> AC-1 (expects ALLOW) and AC-5 (expects
+agreement) fire semantic AssertionErrors against the observed BLOCK. The
+preserved-path scenarios (AC-2/3/4) assert the verdicts the current code ALREADY
+emits -> live-green regression guards.
 
 Step bodies delegate here (Mandate-12, no logic in step bodies). The Universe the
 ATs track is the port-exposed names (exit code / verdict token /
@@ -337,16 +346,24 @@ class ExemptionReconcileComposition:
 
     def then_pre_tool_use_at3_blocks(self) -> None:
         assert self._at3_allowed is False, (
-            "the PreToolUse AT-3 floor check is expected to BLOCK the collision "
-            "case (this pins the canonical reference verify-wave-dispatch aligns "
-            f"to). {self._observed()}"
+            "the PreToolUse AT-3 floor check is expected to BLOCK this dispatch. "
+            f"{self._observed()}"
+        )
+
+    def then_pre_tool_use_at3_allows(self) -> None:
+        assert self._at3_allowed is True, (
+            "the PreToolUse AT-3 floor check is expected to ALLOW the collision "
+            "case (a matching DES-WAVE declaration arms enforcement, it is not a "
+            "bypass -- ratified 2026-07-16; this pins the canonical reference "
+            f"verify-wave-dispatch re-reconciles to). {self._observed()}"
         )
 
     def then_both_checks_agree(self) -> None:
         """AC-5: for the evaluated dispatch, the two checks emit the SAME verdict.
 
-        The load-bearing SSOT assertion: a verify-wave-dispatch ALLOW paired with
-        an AT-3 BLOCK (the contradiction this feature dissolves) is a FAILURE.
+        The load-bearing SSOT assertion: a verify-wave-dispatch/AT-3 disagreement
+        on the collision case (either direction) is a FAILURE. Post the
+        2026-07-16 reversal, the canonical agreed verdict is ALLOW.
         """
         assert self._at3_allowed is not None and self._verify_exit is not None, (
             "must drive BOTH checks (When) before asserting agreement"

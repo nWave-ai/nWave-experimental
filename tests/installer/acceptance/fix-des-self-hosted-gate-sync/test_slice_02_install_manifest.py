@@ -37,7 +37,7 @@ from steps import steps_slice_02_install_manifest as _slice_02_steps  # noqa: F4
     "slice-02-install-manifest-write.feature",
     "Install plugin writes a schema-v1 manifest for each source kind",
 )
-def test_slice_02_install_writes_schema_v1_manifest_for_each_source_kind() -> None:
+def test_install_writes_a_schema_v1_manifest_for_each_source_kind() -> None:
     """AT-02-A: parametrize over (dev-checkout | pre-built | wheel) — 3 rows.
 
     Each row asserts the manifest is present, schema_version=1, source_kind
@@ -49,7 +49,7 @@ def test_slice_02_install_writes_schema_v1_manifest_for_each_source_kind() -> No
     "slice-02-install-manifest-write.feature",
     "After a fresh install the gate proceeds for the dev checkout",
 )
-def test_slice_02_gate_proceeds_for_dev_checkout_after_install() -> None:
+def test_gate_proceeds_for_dev_checkout_after_fresh_install() -> None:
     """AT-02-B: post-install `import des.cli` PROCEEDs with state C."""
 
 
@@ -57,7 +57,7 @@ def test_slice_02_gate_proceeds_for_dev_checkout_after_install() -> None:
     "slice-02-install-manifest-write.feature",
     "Mutating a representative installed file makes the gate REFUSE state D",
 )
-def test_slice_02_gate_refuses_state_d_after_file_mutation() -> None:
+def test_gate_refuses_state_d_after_representative_installed_file_mutation() -> None:
     """AT-02-C: parametrize over (freshness.py | run_contract_gate.py |
     repo_source_probe.py) — 3 rows. Each row mutates one installed file
     and asserts the gate REFUSEs with state D citing the diverged file.

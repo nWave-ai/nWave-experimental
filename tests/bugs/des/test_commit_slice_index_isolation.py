@@ -47,10 +47,12 @@ Fixture reuse (per dispatch instruction -- do NOT hand-roll a new harness):
 itself mirrors ``tests/des/integration/test_commit_slice.py``) -- the exact
 pytest-collectible git work-tree shape that already makes ``des
 commit-slice``'s whole-tree committed-scope digest + build-tier/examine-gate
-checks pass cleanly today, with NO ``--feature-id`` (unused-on-the-non-
-degraded-path per the CLI's own ``--feature-id`` help text) and NO
-``--no-verify-commit`` (the harness installs no git hooks, so there is
-nothing to skip -- matching every prior sibling test's precedent).
+checks pass cleanly today, with a ``--feature-id`` (now MANDATORY -- see
+``CommitRefusedMissingFeatureId``, the earliest-possible GDP-1 guard that
+fires before any git mutation, including before this file's own
+extraneous-staged-content guard) and NO ``--no-verify-commit`` (the harness
+installs no git hooks, so there is nothing to skip -- matching every prior
+sibling test's precedent).
 """
 
 from __future__ import annotations
@@ -162,6 +164,8 @@ def test_commit_slice_never_sweeps_extraneous_staged_content(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "fix-commit-slice-index-isolation",
             "--path",
             str(slice_file.relative_to(repo)),
             "--message",
@@ -226,10 +230,16 @@ def test_commit_slice_clean_index_unaffected_by_path(tmp_path: Path, capsys) -> 
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "fix-commit-slice-index-isolation",
             "--path",
             str(slice_file.relative_to(repo)),
             "--message",
             "feat(slice): add clean-index slice behaviour\n\nSlice-Id: slice-01",
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            str(slice_file.relative_to(repo)),
         ]
     )
     event = _last_json_event(capsys.readouterr().out)
@@ -273,9 +283,15 @@ def test_commit_slice_all_flag_exempt_from_extraneous_check(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "fix-commit-slice-index-isolation",
             "--all",
             "--message",
             "feat(slice): add all-flag slice behaviour\n\nSlice-Id: slice-01",
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            str(slice_file.relative_to(repo)),
         ]
     )
     event = _last_json_event(capsys.readouterr().out)
@@ -328,10 +344,16 @@ def test_commit_slice_extraneous_entry_inside_declared_path_is_not_refused(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "fix-commit-slice-index-isolation",
             "--path",
             str(slice_dir.relative_to(repo)),
             "--message",
             "feat(slice): add subdir slice behaviour\n\nSlice-Id: slice-01",
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            str(main_file.relative_to(repo)),
         ]
     )
     event = _last_json_event(capsys.readouterr().out)

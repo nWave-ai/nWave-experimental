@@ -398,6 +398,12 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.examine_fixture",
         "main",
     ),
+    # des-refactor-fixer-swarm slice-01 (ADR-SWARM-001): the fixer-harness CLI.
+    # RED scaffold wiring authored by DISTILL -- `des.cli.refactor.main` raises
+    # AssertionError (the drain loop is not yet implemented), so this row makes
+    # the failure "drain not implemented" (MISSING_FUNCTIONALITY), never an
+    # argparse `invalid choice` usage error, for the slice-01 walking-skeleton.
+    _SubcommandRow("refactor", "des.cli.refactor", "main"),
 )
 
 

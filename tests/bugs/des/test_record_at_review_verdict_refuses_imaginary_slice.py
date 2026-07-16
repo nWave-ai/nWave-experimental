@@ -14,8 +14,8 @@ that `docs/feature/{feature_id}/feature-delta.md` exists, nor that `slice_id`
 is a row in its `[REF] Slice Plan` table.
 
 Confirmed mechanism: for `at_kind="gherkin"`, `_slice_at_derivation` calls
-`carpaccio_slice_gate.parse_scenarios(carpaccio_slice_gate._read_feature_files
-(repo_root, feature_id))` (line 330-332) -- `_read_feature_files` ->
+`carpaccio_slice_gate.parse_scenarios(carpaccio_format.read_feature_files
+(repo_root, feature_id))` (line 330-332) -- `read_feature_files` ->
 `feature_at_files.feature_tag_files` (`src/des/application/feature_at_files.py`
 :64-89) returns `[]` (no exception) when zero `.feature` files
 self-identify with `@feature-{feature_id}`. `parse_scenarios([])` returns

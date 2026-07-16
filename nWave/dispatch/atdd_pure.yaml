@@ -45,6 +45,11 @@ sections:
       Skills path: ~/.claude/skills/nw-{skill-name}/SKILL.md
       Always load at phase entry: nw-tdd-methodology, nw-quality-framework.
       In atdd_pure mode also load nw-crafter-discipline-atdd-pure at phase entry.
+      At A_GREEN ALSO load the paradigm-appropriate code-design catalog -- nw-code-design-oo
+      (Object Calisthenics + RPP anti-smell taxonomy + effect isolation) for an OO project, or
+      nw-code-design-fp for an FP project -- so production code is written smell-free by construction.
+      Do NOT load nw-refactor (E_BATCH_REFACTOR phase only) or nw-mutation-test (project-DEPRECATED,
+      FR-1) at A_GREEN -- they are phase-inappropriate noise here, not write-time skills.
       Resolve structural facts via mcp__tsunami__* (callers_of / reads_of), never ad-hoc grep.
   - id: TASK_CONTEXT
     template: |
@@ -63,6 +68,8 @@ sections:
   - id: QUALITY_GATES
     template: |
       - All the slice's ATs pass before commit (RAW summary, -n0; check `uptime`, pause if load>10).
+        Run tests via the PROJECT'S resolved runner (e.g. `uv run python -m pytest`), NEVER a bare
+        `python` -- the target box may have no `python` on PATH (target-machine-agnostic mandate).
       - No new tests authored by the crafter (DISTILL owns AT authorship).
       - Coverage maintained or improved.
       - src/des/** must NOT import scripts.* (F-D-09). ruff + mypy clean on touched files.
@@ -86,8 +93,10 @@ sections:
       clean; confirmation of zero test edits.
   - id: TIMEOUT_INSTRUCTION
     template: |
-      Target ~30 turns. Machine load-sensitive (`uptime`; pause if load>10). STOP after the
-      ATs are green + non-regression confirmed. Do NOT commit.
+      Target ~60 turns -- a run needs room to seal, run static checks, and REPORT after the
+      last command; too small a budget kills the agent between the work and its confirmation
+      (observed ~6x: work done, closing step lost). Machine load-sensitive (`uptime`; pause if
+      load>10). STOP after the ATs are green + non-regression confirmed. Do NOT commit.
 
 # Section-SELECTION profiles. `full` = every section. `review` = full minus the 5
 # implementation-only sections (a read-only review writes no code). `lane.*` rows are

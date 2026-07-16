@@ -176,9 +176,22 @@ def test_commit_slice_preserves_pushed_commit_when_head_regresses(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "fix-commit-slice-never-amends-pushed",
             "--all",
             "--message",
             "feat(slice): slice-01 behaviour\n\nSlice-Id: slice-01",
+            # This hermetic repo carries no `.feature` files (this AT's real
+            # subject is the remote-ancestry guard, orthogonal to any Gherkin
+            # scenario), so the default gherkin E2 leg would refuse `no
+            # .feature file resolves ... vacuously` (ADR-DES-001 pre-flight).
+            # Point E2 at the REAL committed pytest file staged above so the
+            # pre-flight gets genuine observed evidence instead of a vacuous
+            # pass.
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_01.py",
         ]
     )
     capsys.readouterr()  # drain
@@ -200,9 +213,18 @@ def test_commit_slice_preserves_pushed_commit_when_head_regresses(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "fix-commit-slice-never-amends-pushed",
             "--all",
             "--message",
             "feat(slice): slice-01 behaviour (with charter)\n\nSlice-Id: slice-01",
+            # Same evidence source as the setup call above -- the file is
+            # still on disk (a `git reset --soft` never touches the working
+            # tree), so this remains a real, currently-passing pytest file.
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_01.py",
         ]
     )
     event = _last_json_event(capsys.readouterr().out)
@@ -252,9 +274,22 @@ def test_commit_slice_single_commit_flow_unaffected_without_remote(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "fix-commit-slice-never-amends-pushed",
             "--all",
             "--message",
             "feat(slice): add the new slice behaviour\n\nSlice-Id: slice-01",
+            # This hermetic repo carries no `.feature` files (this AT's real
+            # subject is the byte-identical no-remote flow, orthogonal to any
+            # Gherkin scenario), so the default gherkin E2 leg would refuse
+            # `no .feature file resolves ... vacuously` (ADR-DES-001
+            # pre-flight). Point E2 at the REAL committed pytest file staged
+            # above so the pre-flight gets genuine observed evidence instead
+            # of a vacuous pass.
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_new.py",
         ]
     )
     event = _last_json_event(capsys.readouterr().out)
@@ -305,9 +340,22 @@ def test_commit_slice_never_rewrites_a_sha_present_on_origin(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "fix-commit-slice-never-amends-pushed",
             "--all",
             "--message",
             "feat(slice): slice-01 behaviour\n\nSlice-Id: slice-01",
+            # This hermetic repo carries no `.feature` files (this AT's real
+            # subject is the remote-ancestry guard, orthogonal to any Gherkin
+            # scenario), so the default gherkin E2 leg would refuse `no
+            # .feature file resolves ... vacuously` (ADR-DES-001 pre-flight).
+            # Point E2 at the REAL committed pytest file staged above so the
+            # pre-flight gets genuine observed evidence instead of a vacuous
+            # pass.
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_01.py",
         ]
     )
     capsys.readouterr()
@@ -327,9 +375,18 @@ def test_commit_slice_never_rewrites_a_sha_present_on_origin(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "fix-commit-slice-never-amends-pushed",
             "--all",
             "--message",
             "feat(slice): slice-01 behaviour (with charter)\n\nSlice-Id: slice-01",
+            # Same evidence source as the setup call above -- the file is
+            # still on disk (a `git reset --soft` never touches the working
+            # tree), so this remains a real, currently-passing pytest file.
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_01.py",
         ]
     )
     capsys.readouterr()

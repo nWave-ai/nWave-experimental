@@ -351,7 +351,7 @@ def _section_body(
         "TERMINATING_RUN": (
             "Report files created/modified; RAW pass/fail of the slice's ATs.\n"
         ),
-        "TIMEOUT_INSTRUCTION": "Target ~30 turns. STOP after the ATs are green.\n",
+        "TIMEOUT_INSTRUCTION": "Target ~60 turns -- a crafter/AT run needs room to seal, run static checks, and REPORT after the last command; too small a budget kills the agent between the work and its confirmation. STOP after the ATs are green.\n",
     }
     return bodies.get(section_id, "")
 

@@ -195,7 +195,7 @@ BULK_HASHES = {
     "nw-agent-testing": "58093930e354b85b07be5fe0a08fc4ed",
     "nw-ai-workflow-tutorials": "93e15d83c8b2042102785dff4c677bb7",
     "nw-architectural-styles-tradeoffs": "f6dc4a1e0f1ac40d9d1dd0d25d9c90f4",
-    "nw-architecture-patterns": "3a5a33c192f7d1796230bc8031e3c12c",
+    "nw-architecture-patterns": "f7cd2c114c72307ee46a6114e16d664a",
     "nw-assessment-kirkpatrick": "abaecd7a3e1d040b4a4b53971e1716d8",
     "nw-authoritative-sources": "29aa67bf5e4dd89382504767654ed6a4",
     "nw-backward-design-ubd": "8e88399482057722474748531482667f",
@@ -355,7 +355,7 @@ BULK_HASHES = {
     # modules (b2b, cialdini); core is a lean composing router. §22.0 reviewed.
     "nw-proposal-structure": "bec9dd508f567c847da44cd41ee56821",
     "nw-psychological-safety": "106382f562186d415f5b5ad1430542b7",
-    "nw-quality-framework": "178207cd3adfe3ed14084bf165361549",
+    "nw-quality-framework": "133bdc6013d23e6e5402b8de996f1805",
     "nw-quality-validation": "41cee9327afa9d4e579b7c0699eb544d",
     "nw-query-optimization": "17959230c1a5f619b4a172e5e8196068",
     "nw-research-methodology": "e4910ea40aefc82f421640138986f300",
@@ -405,7 +405,9 @@ BULK_HASHES = {
     # Hash updated 2026-06-17: decompose-and-recompose into 3 nw-test-design-mandates-*
     # modules (scenario-design, layered-mechanics, composition-contract); core is now
     # a lean composing router + Mandate Registry. §22.0 reviewed.
-    "nw-test-design-mandates": "a123a96f14ee5b8dbbdf83c52bdd060a",
+    # Hash updated 2026-07-16: add the STANDING Closure obligations section
+    # (COUNT->population / PARTITION->conservation / SILENCE->discriminator; methodology Cambio-1).
+    "nw-test-design-mandates": "6d1b1fdeaff4eff7341bbf96be055742",
     "nw-test-organization-conventions": "64778077de4b55a493e89cf0e06ce681",
     "nw-test-refactoring-catalog": "9dd4d17224b32058386f4413027253bd",
     "nw-tlaplus-verification": "39ba15e1845e237a9d2014c467aa56ff",

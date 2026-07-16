@@ -33,27 +33,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def built_wheel(tmp_path_factory) -> Path:
-    """Build a wheel from the current project and return its path.
-
-    Uses module scope to avoid rebuilding for every test.
-    """
-    output_dir = tmp_path_factory.mktemp("wheel_output")
-    result = subprocess.run(
-        [sys.executable, "-m", "build", "--wheel", "--outdir", str(output_dir)],
-        cwd=str(PROJECT_ROOT),
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert result.returncode == 0, (
-        f"Wheel build failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-
-    wheels = list(output_dir.glob("*.whl"))
-    assert len(wheels) == 1, f"Expected exactly 1 wheel, found {len(wheels)}"
-    return wheels[0]
+@pytest.fixture(scope="session")
+def built_wheel(shared_wheel: Path) -> Path:
+    """The session-shared dev wheel (build-once-share; see root conftest)."""
+    return shared_wheel
 
 
 @pytest.fixture(scope="module")

@@ -22,7 +22,7 @@ from des.cli import carpaccio_slice_gate as _gate
 
 # Transparently mirror the real module's namespace so every caller of the
 # legacy `scripts.cli.carpaccio_slice_gate` path -- including ones that reach
-# for `_`-prefixed helpers (`at_review_verdict.py` reuses `_read_feature_files`,
+# for `_`-prefixed helpers (`at_review_verdict.py` reuses `read_feature_files`,
 # `_slice_scenarios`, `_at_content_hash`) -- resolves against the moved module.
 globals().update(
     {name: getattr(_gate, name) for name in dir(_gate) if not name.startswith("__")}

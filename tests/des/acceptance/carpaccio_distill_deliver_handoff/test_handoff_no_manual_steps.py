@@ -18,7 +18,7 @@ INVESTIGATION (this slice, verified empirically against HEAD):
 
   F1 CLOSED -- `des.application.feature_at_files.feature_tag_files` resolves a
      `.feature` file by its file-level `@feature-{id}` tag (rglob over tests/);
-     `carpaccio_format._read_feature_files` reads them. (feature_at_files.py:52-58)
+     `carpaccio_format.read_feature_files` reads them. (feature_at_files.py:52-58)
   F2 CLOSED -- `carpaccio_format._parse_scenarios_in_text` clears pending tags at
      the `Feature:` line (no inheritance); `_check_total_coverage` REJECTS a
      scenario with tag_count == 0 with exit 44. (carpaccio_format.py:393-395,
@@ -112,7 +112,7 @@ def _single_slice_plan(repo: Path) -> carpaccio_format.SlicePlan:
 def test_ac1_feature_tag_discovery_finds_scenarios(tmp_path: Path) -> None:
     """A `@feature-{id}`-tagged `.feature` is DISCOVERED by the real gate.
 
-    Drives `feature_tag_files` (the discovery SSOT) + `_read_feature_files` +
+    Drives `feature_tag_files` (the discovery SSOT) + `read_feature_files` +
     `parse_scenarios` over a hermetic tmp tree. Pins friction-1: the
     discovery-by-feature-tag path returns >= 1 scenario; it cannot silently
     regress to the 0-scenarios / exit-45 gap.
@@ -133,7 +133,7 @@ def test_ac1_feature_tag_discovery_finds_scenarios(tmp_path: Path) -> None:
 
     # The gate's own discovery+parse path over the discovered files.
     scenarios = carpaccio_format.parse_scenarios(
-        carpaccio_format._read_feature_files(repo, _FEATURE_ID)
+        carpaccio_format.read_feature_files(repo, _FEATURE_ID)
     )
     assert len(scenarios) >= 1, (
         "friction-1 REOPENED: gate discovery returned 0 scenarios for a "
@@ -161,7 +161,7 @@ def test_ac2_missing_slice_tag_is_rejected(tmp_path: Path) -> None:
         scenario_slice_tag=None,  # the friction-2 probe: no per-scenario slice tag
     )
     scenarios = carpaccio_format.parse_scenarios(
-        carpaccio_format._read_feature_files(repo, _FEATURE_ID)
+        carpaccio_format.read_feature_files(repo, _FEATURE_ID)
     )
     # Sanity: the scenario WAS parsed (so the rejection is about the missing
     # slice tag, not about the scenario being invisible).
@@ -195,13 +195,29 @@ def test_ac3_approved_verdict_round_trips(tmp_path: Path) -> None:
     test. Pins friction-3: the verdict-record path round-trips automatically.
 
     Transitively also exercises friction-1 (the recorder + gate both discover
-    the hermetic `.feature` via `_read_feature_files`).
+    the hermetic `.feature` via `read_feature_files`).
     """
     repo = tmp_path
     _write_feature(
         repo,
         feature_tag=f"@feature-{_FEATURE_ID}",
         scenario_slice_tag=f"@{_SLICE_ID}",
+    )
+    # Defect-1 sweep tail (fix-at-review-verdict-surface, slice-01): the
+    # APPROVED recorder path runs `_verify_feature_slice_exists` (added by
+    # commit 40dd29414), which refuses when
+    # `docs/feature/{feature_id}/feature-delta.md` is absent. Stage a real one
+    # with a Slice Plan row for the driven feature/slice so the precondition
+    # passes and the round-trip reaches the behaviour this test proves.
+    feature_delta = repo / "docs" / "feature" / _FEATURE_ID / "feature-delta.md"
+    feature_delta.parent.mkdir(parents=True, exist_ok=True)
+    feature_delta.write_text(
+        f"# Feature Delta: {_FEATURE_ID}\n\n"
+        "## Wave: DISCUSS / [REF] Slice Plan\n\n"
+        "| Slice | Value statement | Status | Annotation | Justification |\n"
+        "|---|---|---|---|---|\n"
+        f"| {_SLICE_ID} | the customer completes the demo journey | done | | |\n",
+        encoding="utf-8",
     )
     ledger = repo / ".nwave" / "telemetry" / "atdd-pure" / f"{_FEATURE_ID}.jsonl"
     assert not ledger.exists(), "precondition failed: ledger pre-exists"
@@ -232,7 +248,7 @@ def test_ac3_approved_verdict_round_trips(tmp_path: Path) -> None:
     # GateError on absent / not-approved / stale-at-set / stale-at-content;
     # a clean return == the slice is accepted as approved.
     scenarios = carpaccio_format.parse_scenarios(
-        carpaccio_format._read_feature_files(repo, _FEATURE_ID)
+        carpaccio_format.read_feature_files(repo, _FEATURE_ID)
     )
     carpaccio_slice_gate.check_at_review(repo, _FEATURE_ID, _SLICE_ID, scenarios)
     # Reaching here == the round-trip is accepted (no GateError raised).

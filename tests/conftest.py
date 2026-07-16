@@ -5,10 +5,12 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from filelock import FileLock
 
 
 # ---------------------------------------------------------------------------
@@ -16,6 +18,97 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _PROJECT_ROOT = Path(__file__).parent.parent
+
+
+# ---------------------------------------------------------------------------
+# Build-once-share: the project's dev wheel is IDENTICAL across the whole
+# session (the source tree is immutable within a run), yet ~15 test sites each
+# rebuild it from scratch (``python -m build --wheel`` ~20 s apiece). This
+# session-scoped, xdist-safe fixture builds it EXACTLY ONCE and every consumer
+# reuses the same artifact -- no test is hidden or excluded, only the redundant
+# from-scratch rebuild is removed. First worker to reach the FileLock builds;
+# the rest reuse the produced ``.whl``. No cross-run cache on purpose: a single
+# per-run build is correct by construction and cannot go stale.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def shared_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Build the project dev wheel once per session, shared across xdist workers.
+
+    Returns the path to the single built ``.whl``. Consumers must treat it as
+    read-only (it is shared). Swap any local ``python -m build --wheel`` fixture
+    to depend on this instead of rebuilding.
+    """
+    # ``getbasetemp().parent`` is the run-root shared by every xdist worker.
+    shared_root = tmp_path_factory.getbasetemp().parent
+    wheel_dir = shared_root / "shared_wheel"
+    lock = shared_root / "shared_wheel.lock"
+    with FileLock(str(lock)):
+        existing = list(wheel_dir.glob("*.whl")) if wheel_dir.exists() else []
+        if not existing:
+            wheel_dir.mkdir(parents=True, exist_ok=True)
+            result = subprocess.run(
+                [sys.executable, "-m", "build", "--wheel", "--outdir", str(wheel_dir)],
+                cwd=str(_PROJECT_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            assert result.returncode == 0, (
+                "shared wheel build failed:\n"
+                f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            )
+    wheels = list(wheel_dir.glob("*.whl"))
+    assert len(wheels) == 1, f"expected 1 shared wheel, found {len(wheels)}: {wheels}"
+    return wheels[0]
+
+
+@pytest.fixture(scope="session")
+def shared_wheel_venv(
+    shared_wheel: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Path:
+    """A clean venv with the dev wheel installed, built ONCE per session (uv).
+
+    Uses ``uv venv`` + ``uv pip install`` (≈10× faster than ``python -m venv`` +
+    ``pip install`` for the ~137-package dependency closure) so the real
+    install-and-smoke path stays genuine while the from-scratch install cost is
+    paid once and shared. Read-only for consumers. Returns the venv dir.
+    """
+    shared_root = tmp_path_factory.getbasetemp().parent
+    venv_dir = shared_root / "shared_wheel_venv"
+    venv_python = venv_dir / "bin" / "python"
+    lock = shared_root / "shared_wheel_venv.lock"
+    with FileLock(str(lock)):
+        if not venv_python.exists():
+            create = subprocess.run(
+                ["uv", "venv", str(venv_dir)],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            assert create.returncode == 0, (
+                f"uv venv failed:\nstdout: {create.stdout}\nstderr: {create.stderr}"
+            )
+            install = subprocess.run(
+                [
+                    "uv",
+                    "pip",
+                    "install",
+                    "--python",
+                    str(venv_python),
+                    str(shared_wheel),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            assert install.returncode == 0, (
+                "uv pip install of shared wheel failed:\n"
+                f"stdout: {install.stdout}\nstderr: {install.stderr}"
+            )
+    assert venv_python.exists(), f"shared wheel venv missing python: {venv_python}"
+    return venv_dir
 
 
 # ---------------------------------------------------------------------------
@@ -1266,6 +1359,18 @@ def _iter_step_modules(test_dir: Path):
                 yield from nested.glob("*.py")
 
 
+# Per-FILE cache for the item-level scan. `pytest_collection_modifyitems` calls
+# this once PER ITEM (thousands of times), but the result depends only on
+# ``test_file`` -- and the body globs the test dir (composition*.py + steps/**)
+# on every call. Without memoization those directory globs run once per item
+# (O(items x globs)); a same-file test module with 40 test functions re-globs
+# its dir 40 times. Memoizing by ``test_file`` collapses the thousands of calls
+# to one-per-unique-file, which is the dominant cost of whole-tree collection
+# (the `des run-contract-gate --collect-only` subprocess the acceptance poles
+# spawn). Pure function of the filesystem, stable within a run.
+_real_repo_item_cache: dict[Path, bool] = {}
+
+
 def _item_depends_on_real_repo(test_file: Path) -> bool:
     """True iff this test item drives a cwd=<real repo> subprocess.
 
@@ -1282,7 +1387,20 @@ def _item_depends_on_real_repo(test_file: Path) -> bool:
     modules do not import one another, so a cwd=repo test does not implicate
     its innocent unit-test neighbours. This keeps the ``real_repo_scan``
     worker group tight and the suite parallel where it safely can be.
+
+    Memoized by ``test_file`` (see ``_real_repo_item_cache``): the directory
+    globs below must not re-run once per item in a same-file module.
     """
+    cached = _real_repo_item_cache.get(test_file)
+    if cached is not None:
+        return cached
+    result = _compute_item_depends_on_real_repo(test_file)
+    _real_repo_item_cache[test_file] = result
+    return result
+
+
+def _compute_item_depends_on_real_repo(test_file: Path) -> bool:
+    """Uncached body of :func:`_item_depends_on_real_repo` (memoized wrapper)."""
     if _file_drives_real_repo_cwd(test_file):
         return True
     test_dir = test_file.parent
@@ -1333,7 +1451,12 @@ def pytest_collection_modifyitems(config, items):
     try:
         import allure
 
-        has_allure = True
+        # Importability is NOT enough: a run that disables the plugin with
+        # `-p no:allure_pytest` (the contract-gate collection does this for speed)
+        # leaves `allure` importable but its plugin unregistered, so `allure.epic()`
+        # returns a non-marker and `add_marker` raises. Gate the labeling on the
+        # plugin actually being ACTIVE, not merely installed.
+        has_allure = config.pluginmanager.hasplugin("allure_pytest")
     except ImportError:
         has_allure = False
 
@@ -1557,3 +1680,77 @@ def pytest_sessionfinish(session, exitstatus):
             Path(sidecar).write_text(line + "\n", encoding="utf-8")
         except OSError:
             pass
+
+    _flush_test_durations(session.config)
+
+
+# ---------------------------------------------------------------------------
+# 3e: Always-on per-test duration capture.
+#
+# EVERY run records the wall-clock of EVERY phase of EVERY test, so "which
+# tests are slow?" is answerable from ANY run -- never a re-run with
+# `--durations`, never a top-N window that hides the long tail (200 tests at 3s
+# outweigh the slowest 15 and no `--durations=15` ever shows them).
+#
+# Written to a FILE, never stdout, on purpose: `--durations=0` in `addopts`
+# would dump one line per phase (~20k on this tree) into EVERY run's output --
+# including the `des` gates that PARSE that output (commit-slice,
+# run-contract-gate) and every targeted crafter run. The file costs nothing to
+# ignore and everything to have.
+#
+# xdist-safe: the CONTROLLER truncates once at session start; each worker
+# appends its own batch at session finish, so the file holds exactly one run.
+# Analyse with `uv run poe test-durations` (aggregates by test/file/dir).
+# ---------------------------------------------------------------------------
+
+_TEST_DURATIONS: list[dict[str, object]] = []
+
+
+def _durations_path() -> Path:
+    """The always-on per-test duration log (gitignored; env-overridable)."""
+    override = os.environ.get("NWAVE_TEST_DURATIONS_FILE")
+    return (
+        Path(override)
+        if override
+        else _PROJECT_ROOT / ".nwave" / "test-durations.jsonl"
+    )
+
+
+def pytest_sessionstart(session):
+    """Truncate the duration log once per run (controller only, never workers)."""
+    if hasattr(session.config, "workerinput"):
+        return  # an xdist worker — the controller already truncated
+    try:
+        path = _durations_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+    except OSError:
+        pass  # profiling must never fail a run
+
+
+def pytest_runtest_logreport(report):
+    """Record every phase's wall-clock (setup + call + teardown, per test)."""
+    _TEST_DURATIONS.append(
+        {
+            "nodeid": report.nodeid,
+            "when": report.when,
+            "duration": round(report.duration, 4),
+            "outcome": report.outcome,
+        }
+    )
+
+
+def _flush_test_durations(config) -> None:
+    """Append this session's (or this xdist worker's) duration batch."""
+    if not _TEST_DURATIONS:
+        return
+    import json
+
+    try:
+        path = _durations_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            for record in _TEST_DURATIONS:
+                fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except OSError:
+        pass  # profiling must never fail a run

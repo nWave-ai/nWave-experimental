@@ -5,7 +5,7 @@ Use to review system design architecture outputs. Validates trade-off analysis, 
 **Wave:** DESIGN
 **Model:** haiku
 **Max turns:** 25
-**Tools:** Read, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+**Tools:** Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 
 ## Skills
 

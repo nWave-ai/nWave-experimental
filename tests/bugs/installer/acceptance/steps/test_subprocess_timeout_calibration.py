@@ -65,10 +65,13 @@ HEADROOM_RATIO: float = 3.5
 #   - test_build_dist.py    — pytest --durations=0 average ~0.39s
 #   - validate_installed_wheel.py — repeated subprocess invocation harness ~5s
 TIMEOUT_TARGETS: dict[tuple[str, int], float] = {
-    # test_install_smoke.py: pip-install (66s), venv-create (10s), wheel-build (6s)
-    ("tests/build/unit/test_install_smoke.py", 51): 66.0,
-    ("tests/build/unit/test_install_smoke.py", 72): 10.0,
-    ("tests/build/unit/test_install_smoke.py", 84): 6.0,
+    # Build-once-share (2026-07-15) moved the wheel-build + smoke-venv subprocesses
+    # out of test_install_smoke.py into the session-scoped shared fixtures in
+    # tests/conftest.py: shared_wheel (python -m build, ~20s) + shared_wheel_venv
+    # (uv venv ~10s, uv pip install ~66s). Same RCA hot spots, new home.
+    ("tests/conftest.py", 56): 20.0,
+    ("tests/conftest.py", 88): 10.0,
+    ("tests/conftest.py", 104): 66.0,
     # test_build_dist.py: 5 build_dist.py invocations (~0.4s avg)
     ("tests/build/unit/test_build_dist.py", 427): 0.4,
     ("tests/build/unit/test_build_dist.py", 445): 0.4,

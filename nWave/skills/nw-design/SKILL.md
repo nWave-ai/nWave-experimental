@@ -98,6 +98,11 @@ Rules:
 - "The existing class has too many dependencies" is NOT a valid justification — simplify the existing class instead (see F-4: strategy pattern extraction).
 - The reviewer MUST verify this table exists and challenge every "CREATE_NEW" decision.
 - Gate: Reuse Analysis table present with zero unjustified CREATE_NEW decisions.
+- **Closure seed**: an `EXTEND` row that names a field, a count, a partition, or an
+  absence/silence SEEDS a closure obligation the DISTILL AT must discharge — name the
+  population behind a count, assert conservation across a partition, name the discriminator that
+  tells looked-and-absent from never-looked. Write the implied population/law/discriminator into
+  the row's Justification so the ATD inherits it (SSOT: Closure obligations, `nw-test-design-mandates`).
 
 ## Prefactoring Assessment (mandatory DESIGN output — the sibling of Reuse Analysis)
 

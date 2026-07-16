@@ -26,6 +26,30 @@ refutation stance INVERTS the burden:
 Popperian asymmetry — the single biggest shift from a confirmation review. Incomplete without
 lens-diversity (Pillar 2).
 
+## Pillar 1b — the SCORE is INDEPENDENT of design-agreement (the coherence-maximizer counter-force)
+
+The subtlest way a review passes a wrong artifact: it scores how well the artifact AGREES with
+the stated design/intent, not whether the artifact SURVIVES an independent attempt to break it.
+An artifact that matches the design is coherent — it is not thereby correct. A reviewer rewarded
+for confirming design-coherence maximizes COHERENCE, not TRUTH: it climbs the gradient toward
+"reads as intended" and awards its highest score exactly where the artifact and the design tell
+the same story — which is precisely where a shared blind spot hides. This gradient is the force
+the whole stance exists to oppose; default-to-refuted (Pillar 2) and the exhibited counterexample
+(Pillar 3) only bite if the SCORE itself is blind to design-agreement.
+
+- **Score only survival, never agreement.** The verdict is a function of "did the constructed
+  counterexample get caught?" — NOT "does this match what the design said?". Set the design aside
+  as a claim to be broken, not an oracle to be confirmed against. Two artifacts that agree can
+  both be wrong in the same way; agreement is evidence of nothing.
+- **An empirical design-question is resolved by a TARGETED probe, not by assent.** When the design
+  carries a question to settle at review/RED ("Q-1: verify X at RED", "confirm the wiring reaches
+  production"), it is discharged by a probe that DISCRIMINATES the specific cause — not a coarse
+  end-to-end red compatible with every cause, and never by the artifact asserting the question is
+  answered. A walking-skeleton test that calls the target directly (callers in tests, ZERO in
+  production) resolves nothing: it is `never_wired` wearing the name of the discipline that exists
+  to prevent it. Ask the code-analysis port for the production-caller count (Tsunami → AST → grep,
+  degrade-LOUD) — do not eyeball it.
+
 ## Pillar 2 — two levers, BOTH required
 
 1. **Default-to-refuted** — uncertain = REFUTED, not "probably fine". Forces the artifact to

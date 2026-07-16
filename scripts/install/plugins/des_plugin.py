@@ -627,12 +627,18 @@ class DESPlugin(InstallationPlugin):
         installer shipped only the code, so these resolutions failed on every
         installed instance (F-DES-INSTALL-SHIPS-NWAVE-RUNTIME-ASSETS).
 
-        Source-install path only. The pre-built (dist) tree does not yet carry
-        these assets beside its des package — that is named residue
-        (build_dist must ship nWave runtime assets for the PyPI path).
+        Both source and prebuilt (dist/PyPI) install paths are covered. The
+        prebuilt layout is FLAT under ``framework_source`` (``dist/data/``,
+        ``dist/flavors/``, ... — no nested ``nWave/`` prefix), mirroring how
+        ``_install_des_templates`` reads ``framework_source / "templates"``;
+        ``build_dist.py``'s ``build_nwave_runtime_assets`` produces exactly
+        that layout. (Previously this resolved
+        ``framework_source / "nWave" / subdir``, a path that never exists
+        under ``dist/`` — every pipx/PyPI-installed session silently lost
+        these assets, including ``data/orchestrator-affordance/``.)
         """
         if using_prebuilt and context.framework_source is not None:
-            nwave_source = context.framework_source / "nWave"
+            nwave_source = context.framework_source
         elif context.project_root:
             nwave_source = context.project_root / "nWave"
         else:
@@ -654,12 +660,13 @@ class DESPlugin(InstallationPlugin):
             )
             return None
 
-        target_root.mkdir(parents=True, exist_ok=True)
+        copied_anything = False
 
         for subdir in self._NWAVE_RUNTIME_ASSET_DIRS:
             src = nwave_source / subdir
             if not src.exists():
                 continue
+            target_root.mkdir(parents=True, exist_ok=True)
             dst = target_root / subdir
             if dst.exists():
                 shutil.rmtree(dst)
@@ -668,11 +675,25 @@ class DESPlugin(InstallationPlugin):
                 dst,
                 ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
             )
+            copied_anything = True
 
         for filename in self._NWAVE_RUNTIME_ASSET_FILES:
             src = nwave_source / filename
             if src.exists():
+                target_root.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, target_root / filename)
+                copied_anything = True
+
+        if not copied_anything:
+            # nwave_source exists (e.g. it IS framework_source itself for the
+            # prebuilt path) but carries none of the expected subdirs/files --
+            # nothing to snapshot into schema-v2, behave like the "absent"
+            # case (schema stays v1).
+            context.logger.info(
+                f"  ⚠️  no nWave runtime asset subdirs/files found under "
+                f"{nwave_source} — skipping"
+            )
+            return None
 
         context.logger.info(f"  📦 nWave runtime assets shipped to {target_root}")
         return target_root

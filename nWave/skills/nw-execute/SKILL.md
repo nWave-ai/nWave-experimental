@@ -15,6 +15,8 @@ argument-hint: '[agent] [feature-id] [step-id] - Example: @nw-software-crafter "
 
 Dispatch one unit of DELIVER work to an agent. The unit depends on `workflow.mode` (read from `.nwave/config.yaml`): under `classic` it is a single roadmap step; under `atdd_pure` it is one carpaccio slice run through the per-slice lean cycle. <!-- mode-ref-ok -->
 
+> **Do NOT invoke `/nw-execute` directly to deliver a FEATURE.** It is ONE unit of DELIVER work, not the wave. Deliver a feature through **`/nw-deliver`** — it owns the multi-slice loop, the finalize, and the feature-end cycle, and drives `/nw-execute` internally per slice. The ONLY sanctioned standalone use is a single-slice **bugfix**, driven by **`/nw-bugfix`** (its atdd_pure lane runs `/nw-execute` for the one regression slice). Calling `/nw-execute` standalone for feature work skips the deliver-cycle orchestration (slice plan, the loop, feature-end) — exactly the reverse-engineering trap a clean instance falls into. Route: feature → `/nw-deliver`; bug → `/nw-bugfix`; unsure → `/nw-buddy`. <!-- mode-ref-ok -->
+
 ## Workflow Mode
 
 `/nw-execute` reads `workflow.mode` from `.nwave/config.yaml` and branches on it before doing anything else. <!-- mode-ref-ok -->
@@ -27,7 +29,8 @@ Per-mode descriptor + DELIVER phase shape, projected from the mode registry (nev
   Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
-- **`classic`** — `/nw-execute` extracts a single step from `roadmap.json` and dispatches it; the agent appends phase events to `execution-log.json`. This is the default and everything below under "Context Files", "Dispatcher Workflow", and "TDD_PHASES" describes the `classic` path.
+- **`atdd_pure` is the DEFAULT** (SSOT: `des.application.workflow_mode.resolve_workflow_mode` returns `atdd_pure` when `.nwave/config.yaml` is absent OR omits the key — ADR-028 D6). A fresh clone / clean session with no committed mode declaration runs `atdd_pure`, never `classic`. Read the mode with that resolver, not a "classic-when-absent" assumption. <!-- mode-ref-ok -->
+- **`classic`** — `/nw-execute` extracts a single step from `roadmap.json` and dispatches it; the agent appends phase events to `execution-log.json`. DEPRECATED (ADR-028 D6) — the explicit-only fallback, entered ONLY when `.nwave/config.yaml` explicitly declares `workflow.mode: classic`; NEVER the absent-key default. Everything below under "Context Files", "Dispatcher Workflow", and "TDD_PHASES" describes the `classic` path. <!-- mode-ref-ok -->
 - **`atdd_pure`** — `/nw-execute` IS the **per-slice lean cycle**: it executes ONE carpaccio slice. See "ATDD-Pure Per-Slice Lean Cycle" below. <!-- mode-ref-ok -->
 
 ### ATDD-Pure Per-Slice Lean Cycle

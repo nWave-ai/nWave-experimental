@@ -188,8 +188,18 @@ def _init_pytest_fixture(root: Path) -> Path:
     _git(fixture, "config", "user.email", "fixture@example.test")
     _git(fixture, "add", "-A")
     _git(fixture, "commit", "--quiet", "-m", "chore: fixture baseline")
+    # Head-tagged (# @feature-{id} / # @slice-01) so this file doubles as
+    # BOTH the slice's own change AND the E1/E2 pre-flight's real
+    # pytest-regression evidence (fold-in reorder, ADR-DES-001 slice-01) --
+    # `des commit-slice`'s Step-1.5 pre-flight now genuinely refuses a commit
+    # with ZERO observed AT evidence (no `.feature` file, no `--at-kind
+    # pytest-regression`, no examine PASS); mirrors
+    # ``tests/bugs/des/test_commit_slice_gates_run_before_commit.py``'s
+    # ``_write_regression_test`` convention.
     (fixture / "test_slice_change.py").write_text(
-        "def test_slice_change():\n    assert 2 + 2 == 4\n", encoding="utf-8"
+        f"# @feature-{_FEATURE_ID}\n# @{_SLICE_ID}\n"
+        "def test_slice_change():\n    assert 2 + 2 == 4\n",
+        encoding="utf-8",
     )
     return fixture
 
@@ -336,11 +346,21 @@ def _drive_cli(
 def _commit_slice(
     fixture: Path, env: dict[str, str], *extra: str
 ) -> tuple[int, str, str]:
+    """Drive the REAL `des commit-slice` over the fixture.
+
+    ``--feature-id`` is MANDATORY on the real CLI (``CommitRefusedMissingFeatureId``
+    -- an optional flag must never be able to disarm the E1/E2/E3 gates), so it is
+    part of the base invocation here: every AT in this module drives the SAME armed
+    command the crafter drives, and the digest lane under test is reached rather
+    than short-circuited by the missing-flag refusal.
+    """
     return _drive_cli(
         "des.cli.commit_slice",
         [
             "--repo",
             str(fixture),
+            "--feature-id",
+            _FEATURE_ID,
             "--message",
             "feat(fixture): land the slice-01 digest lane",
             "--slice-id",
@@ -358,6 +378,12 @@ def _committed_scope_digest_cli(fixture: Path, env: dict[str, str]) -> tuple[int
     This CLI mode ALREADY routes through `_maybe_route_digest_through_runner`
     (bare digest on stdout), so it is the shipped runner-aware reference the
     commit-slice trailer must cohere with.
+
+    NOTE: this mode has no `--at-kind` parameter -- `_mode_committed_scope_digest`
+    always collects marker-filtered (fix-runner-resolves-per-scope-language slice-01
+    left `--at-kind` wired ONLY onto `--verify-gate-scope`, mirroring `commit_slice
+    ._verify`'s own CLI shape). For an `at-kind == "pytest-regression"` trailer, use
+    `_verify_gate_scope_digest_cli` instead -- the oracle that is actually at-kind-aware.
     """
     code, stdout, _stderr = _drive_cli(
         "des.cli.run_contract_gate",
@@ -365,6 +391,44 @@ def _committed_scope_digest_cli(fixture: Path, env: dict[str, str]) -> tuple[int
         env,
     )
     return code, stdout.strip().splitlines()[-1] if stdout.strip() else ""
+
+
+def _verify_gate_scope_digest_cli(
+    fixture: Path, env: dict[str, str], *, at_kind: str | None
+) -> tuple[int, str | None]:
+    """`run_contract_gate --verify-gate-scope --commit HEAD [--at-kind ...]`.
+
+    The REAL gate-verification path that ACTUALLY gates a commit --
+    `commit_slice._verify` (commit_slice.py:1085-1104) drives this EXACT CLI
+    shape (`--verify-gate-scope --commit HEAD`, `--at-kind` forwarded only
+    when `at_kind == "pytest-regression"`) to re-verify the trailer it just
+    minted. Unlike the bare `--committed-scope-digest` oracle above, this mode
+    IS `--at-kind`-aware (`_mode_verify_gate_scope`, run_contract_gate.py:1802)
+    -- for `at_kind == "pytest-regression"` it re-derives the digest via the
+    SAME marker-agnostic `_committed_scope_digest_value(repo, commit,
+    markers=None)` call Step 3 used to pin the trailer
+    (`commit_slice._committed_scope_digest_or_degrade_reason`), so it is the
+    byte-coherent oracle for a pytest-regression trailer -- never the vacuous
+    marker-filtered scope the bare digest mode would compute.
+
+    Returns the digest carried by whichever terminal event fired
+    (`GateScopeVerified.gate_scope_digest` on a match,
+    `GateScopeUnverified.fresh_digest` on a mismatch, for diagnostics), or
+    `None` if neither event was observed.
+    """
+    argv = ["--repo", str(fixture), "--verify-gate-scope", "--commit", "HEAD"]
+    if at_kind is not None:
+        argv.extend(["--at-kind", at_kind])
+    code, stdout, stderr = _drive_cli("des.cli.run_contract_gate", argv, env)
+    events = _events(stdout, stderr)
+    for event in events:
+        if event.get("event") == "GateScopeVerified":
+            digest = event.get("gate_scope_digest")
+            return code, str(digest) if digest is not None else None
+        if event.get("event") == "GateScopeUnverified":
+            digest = event.get("fresh_digest")
+            return code, str(digest) if digest is not None else None
+    return code, None
 
 
 # ---------------------------------------------------------------------------
@@ -513,7 +577,7 @@ def test_cargo_repo_with_untrustworthy_enumerate_still_degrades_loud_never_a_fab
     fixture = _init_cargo_fixture(tmp_path)
     env = _child_env(fake_bin)
 
-    code, stdout, stderr = _commit_slice(fixture, env, "--feature-id", _FEATURE_ID)
+    code, stdout, stderr = _commit_slice(fixture, env)
     events = _events(stdout, stderr)
 
     # Invariant half: an untrustworthy enumerate must never yield a clean pass.
@@ -575,7 +639,7 @@ def test_empty_cargo_enumeration_degrades_to_indeterminate_not_vacuous_verified(
     fixture = _init_cargo_fixture(tmp_path)
     env = _child_env(fake_bin)
 
-    code, stdout, stderr = _commit_slice(fixture, env, "--feature-id", _FEATURE_ID)
+    code, stdout, stderr = _commit_slice(fixture, env)
     events = _events(stdout, stderr)
     trailer = _trailer_digest(fixture)
 
@@ -638,7 +702,7 @@ def test_unparseable_cargo_listing_degrades_loud_not_verified(
     fixture = _init_cargo_fixture(tmp_path)
     env = _child_env(fake_bin)
 
-    code, stdout, stderr = _commit_slice(fixture, env, "--feature-id", _FEATURE_ID)
+    code, stdout, stderr = _commit_slice(fixture, env)
     events = _events(stdout, stderr)
 
     assert not (code == 0 and _has_event(events, "SliceCommitted")), (
@@ -663,26 +727,49 @@ def test_unparseable_cargo_listing_degrades_loud_not_verified(
 
 
 # ---------------------------------------------------------------------------
-# AT-4 -- pytest-target regression guard (GREEN today, must stay green)
+# AT-4 -- pytest-target regression guard: at-kind-aware coherence (GREEN)
 # ---------------------------------------------------------------------------
 
 
-def test_pytest_repo_slice_commit_digest_lane_is_still_unchanged(
+def test_pytest_repo_slice_commit_digest_lane_is_at_kind_aware_coherent(
     tmp_path: Path,
 ) -> None:
-    """The pytest-target digest lane stays byte-coherent (no regression).
+    """The pytest-regression trailer coheres with the AT-KIND-AWARE oracle.
 
-    Given a committed single-lockfile Python fixture, when the slice lands
-    through `des commit-slice`, then the commit clears (`SliceCommitted`), the
-    trailer carries a real (non-placeholder) digest, and it coheres with the
-    pytest-path `--committed-scope-digest` oracle on the same fixture. Guards
-    the fix against perturbing the existing pytest path (the ADD-not-mutate
-    discipline: historic Gate-Scope trailers stay verifiable).
+    Given a committed single-lockfile Python fixture, when a `pytest-regression`
+    slice lands through `des commit-slice --at-kind pytest-regression`, then the
+    commit clears (`SliceCommitted`), the trailer carries a real (non-vacuous,
+    non-placeholder) digest, and it coheres with `run_contract_gate
+    --verify-gate-scope --at-kind pytest-regression` -- the SAME `--at-kind`-aware
+    re-verification `commit_slice._verify` runs to gate this exact commit.
+
+    STALE-PIN HISTORY (fix-runner-resolves-per-scope-language Bug B, 2026-07-16):
+    this AT used to compare the trailer against the BARE `--committed-scope-digest`
+    oracle (no `--at-kind`). PRE-fix, Step 3 and that bare oracle both collected
+    marker-filtered scope over this fixture and both landed on the VACUOUS
+    `sha256("")` digest -- the AT passed by two empty digests coinciding, silently
+    pinning the exact vacuous-trailer defect this feature fixes. POST-fix Step 3
+    digests `pytest-regression` scope MARKER-AGNOSTICALLY (a genuinely non-vacuous
+    digest), so it diverges from the still marker-filtered bare oracle -- the bare
+    oracle was never told the scope was `pytest-regression` and has no `--at-kind`
+    parameter to tell it (`_mode_committed_scope_digest` ignores it). The FIX is to
+    ask the oracle the SAME question commit-slice's own verify leg asks: pass
+    `--at-kind pytest-regression` to `--verify-gate-scope`, which IS at-kind-aware
+    (`_mode_verify_gate_scope`) and re-derives the digest through the identical
+    marker-agnostic path Step 3 used to pin it. That restores TRUE byte-coherence
+    without re-baselining onto the vacuous digest -- the honest fix, not a re-pin.
     """
     fixture = _init_pytest_fixture(tmp_path)
     env = _child_env(fake_bin=None)
 
-    code, stdout, stderr = _commit_slice(fixture, env)
+    code, stdout, stderr = _commit_slice(
+        fixture,
+        env,
+        "--at-kind",
+        "pytest-regression",
+        "--regression-test-file",
+        "test_slice_change.py",
+    )
     events = _events(stdout, stderr)
     trailer = _trailer_digest(fixture)
 
@@ -694,11 +781,24 @@ def test_pytest_repo_slice_commit_digest_lane_is_still_unchanged(
         f"the pytest-target trailer must stay a real committed-scope digest; "
         f"got {trailer!r}." + _diag(code, stdout, stderr)
     )
-
-    oracle_code, oracle_digest = _committed_scope_digest_cli(fixture, env)
-    assert oracle_code == 0 and trailer == oracle_digest, (
-        "the pytest-target trailer must stay byte-coherent with the "
-        "`--committed-scope-digest` oracle: oracle exit "
-        f"{oracle_code}, oracle digest {oracle_digest!r}, trailer {trailer!r}."
+    assert trailer != _VACUOUS_DIGEST, (
+        "the pytest-regression trailer must be a REAL non-vacuous digest over "
+        "the committed regression test, never the empty-scope sha256('') "
+        f"marker (the defect this feature fixes); got {trailer!r}."
         + _diag(code, stdout, stderr)
+    )
+
+    oracle_code, oracle_digest = _verify_gate_scope_digest_cli(
+        fixture, env, at_kind="pytest-regression"
+    )
+    assert oracle_code == 0 and trailer == oracle_digest, (
+        "the pytest-regression trailer must be byte-coherent with the "
+        "AT-KIND-AWARE `--verify-gate-scope --at-kind pytest-regression` "
+        "oracle -- the SAME re-verification `commit_slice._verify` runs to "
+        f"gate this commit: oracle exit {oracle_code}, oracle digest "
+        f"{oracle_digest!r}, trailer {trailer!r}." + _diag(code, stdout, stderr)
+    )
+    assert oracle_digest != _VACUOUS_DIGEST, (
+        "the oracle itself must not degrade to the vacuous digest either -- "
+        f"got oracle digest {oracle_digest!r}." + _diag(code, stdout, stderr)
     )

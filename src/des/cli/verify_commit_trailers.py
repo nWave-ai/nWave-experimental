@@ -39,7 +39,7 @@ from des.cli.carpaccio_format import (
     GateError,
     SlicePlan,
     _at_review_rejection,
-    _read_feature_files,
+    read_feature_files,
 )
 from des.cli.carpaccio_slice_gate import (
     check_at_review,
@@ -135,7 +135,7 @@ def _audit_slice(repo: Path, slice_id: str, commit_sha: str) -> None:
     feature_id = _feature_id_for_slice(repo, slice_id)
     if feature_id is None:
         raise _at_review_rejection("absent", slice_id)
-    scenarios = parse_scenarios(_read_feature_files(repo, feature_id))
+    scenarios = parse_scenarios(read_feature_files(repo, feature_id))
     plan = _slice_plan_for_feature(repo, feature_id)
     check_at_review(
         repo,

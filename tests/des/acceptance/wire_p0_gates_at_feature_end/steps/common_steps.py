@@ -85,3 +85,22 @@ def then_no_feature_end_verdict_recorded(
     composition: FeatureEndP0GateComposition,
 ) -> None:
     composition.then_no_feature_end_verdict_recorded()
+
+
+@then("the feature-end cycle signs the feature as done")
+def then_cycle_signs_as_done(composition: FeatureEndP0GateComposition) -> None:
+    composition.then_cycle_signs_as_done()
+
+
+@then("the doc-coherence findings are recorded as a warning naming the violation")
+def then_doc_coherence_warning_recorded(
+    composition: FeatureEndP0GateComposition,
+) -> None:
+    composition.then_doc_coherence_warning_recorded()
+
+
+@then("the warning is never recorded as doc-coherence verified clean")
+def then_warning_never_reads_as_verified_clean(
+    composition: FeatureEndP0GateComposition,
+) -> None:
+    composition.then_warning_never_reads_as_verified_clean()

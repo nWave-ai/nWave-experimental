@@ -99,7 +99,13 @@ def test_commit_slice_verifies_clean_with_new_untracked_at(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "commit-slice-mechanics",
             "--all",
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_new.py",
             "--message",
             "feat(slice): add the new slice behaviour\n\nSlice-Id: slice-01",
         ]
@@ -148,6 +154,8 @@ def test_commit_slice_refuses_message_with_gate_scope_trailer(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "commit-slice-mechanics",
             "--all",
             "--message",
             "feat(x): thing\n\nGate-Scope: " + ("a" * 64),
@@ -168,6 +176,8 @@ def test_commit_slice_refuses_empty_index(tmp_path: Path, capsys) -> None:
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "commit-slice-mechanics",
             "--all",
             "--message",
             "feat(x): nothing to commit\n\nSlice-Id: slice-02",
@@ -229,7 +239,17 @@ def test_commit_slice_runs_pre_commit_hook_exactly_once(tmp_path: Path, capsys) 
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "commit-slice-mechanics",
             "--all",
+            # Real observed evidence for the pre-flight E1+E2 gate (a resolvable
+            # .feature would work equally well; pytest-regression is the
+            # lighter-weight fixture for a hook-counting test whose real
+            # subject is orthogonal to AT kind).
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_new.py",
             "--message",
             "feat(slice): hook counted once\n\nSlice-Id: slice-01",
         ]
@@ -275,8 +295,16 @@ def test_commit_slice_no_verify_commit_skips_hook_entirely(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "commit-slice-mechanics",
             "--all",
             "--no-verify-commit",
+            # Real observed evidence for the pre-flight E1+E2 gate -- orthogonal
+            # to this test's real subject (the hook is skipped entirely).
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_new.py",
             "--message",
             "feat(slice): hook skipped entirely\n\nSlice-Id: slice-02",
         ]
@@ -331,7 +359,10 @@ def test_commit_slice_stamps_reviewed_by_from_ledger(tmp_path: Path, capsys) -> 
     The load-bearing regression for the recurrence: with an APPROVED
     ATReviewVerdict recorded for the slice, commit-slice mechanically stamps
     `Reviewed-by: <record_hash> (APPROVED)` WITHOUT the operator hand-typing it
-    into --message (feature discovered from the ledger dir -- no --feature-id).
+    into --message. `--feature-id` is passed (now mandatory) matching the
+    feature the verdict was recorded under -- the ledger READ (keyed by that
+    feature-id) is aligned with the ledger WRITE below, exercising the SAME
+    mechanical-stamp lookup this test guards.
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -346,7 +377,15 @@ def test_commit_slice_stamps_reviewed_by_from_ledger(tmp_path: Path, capsys) -> 
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            feature_id,
             "--all",
+            # Real observed evidence for the pre-flight E1+E2 gate -- orthogonal
+            # to this test's real subject (the Reviewed-by: mechanical stamp).
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_new.py",
             "--message",
             "feat(slice): behaviour with recorded review\n\nSlice-Id: slice-01",
         ]
@@ -383,7 +422,15 @@ def test_commit_slice_warns_loud_when_no_recorded_verdict(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "commit-slice-mechanics",
             "--all",
+            # Real observed evidence for the pre-flight E1+E2 gate -- orthogonal
+            # to this test's real subject (the loud stderr WARNING).
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_new.py",
             "--message",
             "feat(slice): behaviour without recorded review\n\nSlice-Id: slice-07",
         ]
@@ -426,7 +473,15 @@ def test_commit_slice_preserves_hand_stamped_reviewed_by(
         [
             "--repo",
             str(repo),
+            "--feature-id",
+            "commit-slice-mechanics",
             "--all",
+            # Real observed evidence for the pre-flight E1+E2 gate -- orthogonal
+            # to this test's real subject (verbatim Reviewed-by: preservation).
+            "--at-kind",
+            "pytest-regression",
+            "--regression-test-file",
+            "tests/unit/test_slice_new.py",
             "--message",
             "feat(slice): hand-stamped review\n\n"
             f"Reviewed-by: {hand_hash} (APPROVED)\n\nSlice-Id: slice-03",

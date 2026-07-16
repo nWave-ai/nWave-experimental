@@ -185,7 +185,7 @@ Before completing DEVOPS, produce `docs/feature/{feature-id}/devops/wave-decisio
 **Single narrative file**: `docs/feature/{feature-id}/feature-delta.md` — environment matrix, CI/CD outline, monitoring contracts, deployment strategy, mutation strategy, observability stack, branching strategy, coexistence matrix all become `## Wave: DEVOPS / [REF|WHY|HOW] <Section>` headings.
 
 **Machine artifacts** (declared, parseable by downstream):
-- `docs/feature/{feature-id}/environments.yaml` — target environments + coexistence matrix + platform coverage + deployment assumptions. DISTILL parses this to parametrize acceptance scenarios over environments (Mandate 4 / Environmental Realism).
+- `docs/feature/{feature-id}/devops/environments.yaml` — target environments + coexistence matrix + platform coverage + deployment assumptions. DISTILL parses this to parametrize acceptance scenarios over environments (Mandate 4 / Environmental Realism).
 
 **SSOT updates** (per Recommendation 3 / back-propagation contract):
 - `docs/product/kpi-contracts.yaml` — instrumentation deltas: per-KPI data collection (event names, log fields, metric labels), dashboard mapping, alerting thresholds. Created if absent; extended otherwise.

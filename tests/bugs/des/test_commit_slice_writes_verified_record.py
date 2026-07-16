@@ -286,8 +286,12 @@ def test_commit_slice_writes_no_verified_record_when_at_incomplete(
     a `SliceCommitVerified` record -- the fold-in's honesty invariant: no
     fabricated pass when the verify-then-record's E1 leg would fail.
 
-    Green both BEFORE the fix (commit-slice writes no record at all today)
-    and AFTER (the fold-in's E1 leg refuses, so still no record is written).
+    Post reorder+carve-out (fix-commit-slice-verify-before-commit slice-01),
+    the E1 completeness leg now runs PRE-FLIGHT (before the commit lands),
+    so this reproduction is refused outright (`SliceCommitRefused`, E1,
+    naming the missing `.feature` file) rather than landing a commit with no
+    verified record -- a STRONGER instance of the same honesty invariant:
+    zero commit, therefore trivially zero fabricated record.
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -330,13 +334,15 @@ def test_commit_slice_writes_no_verified_record_when_at_incomplete(
     )
     event = _last_json_event(capsys.readouterr().out)
 
-    # Existing commit-slice behavior unchanged: the commit still lands
-    # (commit-slice's own pre-fold-in checks do not gate on AT completeness).
-    assert exit_code == 0, (
-        f"expected the slice commit to still land -- exit_code={exit_code!r}, "
-        f"event={event!r}"
+    # Post reorder+carve-out: the E1 pre-flight now refuses this commit
+    # BEFORE it lands (it names the missing .feature file), rather than
+    # letting it land silently without a verified record.
+    assert exit_code == 1, (
+        f"expected the slice commit to be refused pre-flight (E1: missing "
+        f".feature AT file) -- exit_code={exit_code!r}, event={event!r}"
     )
-    assert event.get("event") == "SliceCommitted", event
+    assert event.get("event") == "SliceCommitRefused", event
+    assert event.get("refused_half") == "E1", event
 
     verified = AtCompletionLedger(_NEGATIVE_FEATURE_ID, repo).verified_slices()
     assert _NEGATIVE_SLICE not in verified, (

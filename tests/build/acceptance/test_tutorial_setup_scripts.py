@@ -23,6 +23,12 @@ from pathlib import Path
 import pytest
 
 
+# Confidence-tier (Ale 2026-07-15): 5 real venv.create+pip-install runs (~57.7s) --
+# a genuine end-to-end setup-script confidence smoke, deterministic. e2e-tier it so
+# CI's per-PR gate (-m "not e2e") skips it; the release-gate runs (-m "e2e") keep it.
+pytestmark = pytest.mark.e2e
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 GUIDES_DIR = PROJECT_ROOT / "docs" / "guides"
 

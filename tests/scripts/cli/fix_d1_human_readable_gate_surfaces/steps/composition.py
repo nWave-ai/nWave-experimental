@@ -583,6 +583,15 @@ class SpineTripleSurfaceFixture:
         ``--verdict NEEDS_REVISION`` → no ledger write (DEGRADED verdict line).
         The CLI exits 0 either way; the human surface distinguishes the
         operator-facing outcome.
+
+        RCA fix (Defect 1, docs/feature/fix-at-review-verdict-surface/deliver/
+        rca.md): the success path drives ``main()``'s ``verdict == APPROVED``
+        branch, which since commit ``40dd29414`` calls
+        ``_verify_feature_slice_exists`` and refuses when
+        ``docs/feature/{feature_id}/feature-delta.md`` is absent. Stage a real
+        one (Slice Plan row shape mirrors ``_stage_carpaccio_slice_gate``
+        above) ONLY on the success path, mirroring that check's
+        ``verdict == APPROVED``-only guard.
         """
         feature_id = "slice02-fixture-feature"
         tests_dir = (
@@ -596,6 +605,20 @@ class SpineTripleSurfaceFixture:
             "    Given a stub\n    When stuff happens\n    Then it works\n"
         )
         (tests_dir / "fixture.feature").write_text(scenario_block, encoding="utf-8")
+        if success_path:
+            feature_dir = self.repo_root / "docs" / "feature" / feature_id
+            feature_dir.mkdir(parents=True, exist_ok=True)
+            slice_rows = (
+                "| slice-01 | a stub value | pending |   | stub justification |\n"
+            )
+            delta = (
+                "# slice-02 fixture feature\n\n"
+                "## Wave: DISCUSS / [REF] Slice Plan\n\n"
+                "| slice-id | value statement | status | annotation | justification |\n"
+                "|----------|-----------------|--------|------------|---------------|\n"
+                + slice_rows
+            )
+            (feature_dir / "feature-delta.md").write_text(delta, encoding="utf-8")
         # No signing key: the producer is keyless (oss-review-verdict-demotion
         # S2 — key absence is a non-event).
         # Ledger directory must exist for the writer.

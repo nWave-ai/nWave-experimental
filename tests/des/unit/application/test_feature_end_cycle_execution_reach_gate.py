@@ -17,14 +17,16 @@ itself is NEVER stubbed: the fixture plants a REAL Cobertura coverage XML
 zero-hit production file, so once wired the leg's real subprocess dispatch
 genuinely observes the planted defect.
 
-Active-RED today (impl missing): ``run_feature_end_cycle`` does not yet call
-``verify-execution-reach`` at all, so every fixture below reaches
-``CycleSuccess`` regardless of the planted defect --
-``test_never_executed_file_refuses_feature_end`` fails with a genuine
-``AssertionError`` (expected ``CycleRefusal``, got ``CycleSuccess``), not a
-setup/import error. The other two tests are REGRESSION/GENERICITÀ guards
-(already green -- they pin the unchanged/NA behaviour the new leg must
-preserve once wired).
+SHIPPED (``run_feature_end_cycle`` now wires ``verify-execution-reach`` for
+real): ``test_never_executed_file_refuses_feature_end`` pins the refusal on
+a genuinely never-run production file;
+``test_fully_reached_tree_still_reaches_done`` is the REGRESSION guard for
+the clean/fully-reached path; ``test_src_dir_missing_execution_reach_gate_
+exit2_yields_cycle_indeterminate`` is the GENERICITÀ guard pinning that the
+gate's own exit-2 (regardless of root cause) escalates to
+``CycleIndeterminate`` (DDD-CERT-4, reconciled 2026-07-14 -- see the
+stale-record reconciliation note further below in this file for the
+superseded ``CycleSuccess``/NOT_APPLICABLE contract this file used to pin).
 
 Requirement coverage markers (R3/R4/R7/R8) are placed per-TEST-FUNCTION below
 (the ``verify-spec-coverage`` gate's marker scan is function-scoped -- a
@@ -37,6 +39,7 @@ from pathlib import Path
 
 from des.application import feature_end_cycle_service as svc
 from des.application.feature_end_cycle_service import (
+    CycleIndeterminate,
     CycleRefusal,
     CycleSuccess,
     FullSuiteLegNotApplicable,
@@ -177,50 +180,57 @@ def test_fully_reached_tree_still_reaches_done(tmp_path: Path, monkeypatch) -> N
     print(f"VERBATIM (clean): {result!r}")
 
 
-def test_no_coverage_xml_proceeds_not_applicable(tmp_path: Path, monkeypatch) -> None:
-    """GENERICITÀ GUARDRAIL (R8): a target repo that never produced a
-    Cobertura coverage report (opted out of coverage instrumentation) has
-    nothing honest for the execution-reach gate to judge -- the gate's OWN
-    contract degrades to INDETERMINATE (exit 2) on this precondition. Per
-    the feature-delta's L-4 default (a candidate NA condition named 1:1 with
-    the gate's own indeterminate trigger), the cycle must treat this as
-    NOT_APPLICABLE and PROCEED -- never a false hard-block on a repo that
-    never opted into coverage instrumentation."""
-    _stub_non_execution_reach_legs(monkeypatch)
-    repo_root = tmp_path / "no-coverage"
-    src = repo_root / "src"
-    src.mkdir(parents=True)
-    (src / "used.py").write_text("def greet():\n    return 'ok'\n")
-    # Deliberately NO coverage.xml anywhere under repo_root.
-    feature_dir = _seed_feature_dir(repo_root)
-
-    result = _run_cycle(repo_root, feature_dir)
-
-    assert isinstance(result, CycleSuccess)
-    print(f"VERBATIM (no-coverage-NA): {result!r}")
+# NOTE (2026-07-14 stale-record reconciliation): a
+# `test_no_coverage_xml_proceeds_not_applicable` unit test previously lived
+# here, pinning `CycleSuccess` for a minimal repo with no coverage.xml at
+# all. That contract was superseded by TWO ratified charters under
+# `docs/product/expectations/certification-legs-observe-real-execution/`:
+# zero-observation (`feature-end-does-not-certify-done-over-zero-observed-
+# checks.md`, slice-02) means a cycle where every leg -- including this one
+# -- resolves NOT_APPLICABLE must yield `CycleIndeterminate`, never
+# `CycleSuccess`. The unit test's two facts are now pinned at finer/broader
+# granularity by the shipped acceptance suite: the LEG-level fact (missing
+# coverage.xml -> `ExecutionReachLegNotApplicable`, never `*Indeterminate`)
+# is asserted directly via `svc._run_execution_reach_gate` in
+# `test_genuinely_absent_coverage_xml_stays_not_applicable_regression`
+# (test_slice_03_execution_reach_gate_exit2_yields_indeterminate.py); the
+# CYCLE-level "zero legs ran -> CycleIndeterminate" fact is asserted
+# generically (multiple fixture shapes) in
+# test_slice_02_full_suite_leg_marker_miss_yields_indeterminate.py. Removed
+# as a redundant stale record rather than updated (git keeps history).
 
 
-def test_src_dir_missing_proceeds_not_applicable(tmp_path: Path, monkeypatch) -> None:
-    """REGRESSION-CLASS GUARDRAIL (R8, sibling-gate parity, deep-review D2): a
-    target repo whose production code lives under a non-conventional root
-    (e.g. ``lib/`` instead of the hardcoded ``src/``) HAS a valid Cobertura
-    ``coverage.xml`` -- the precondition-check (:730 ``coverage_xml_path.
-    is_file()``) passes and the gate is genuinely dispatched -- but the REAL
-    ``des verify-execution-reach`` gate exits 2 (``ExecutionReachIndeterminate``:
-    "src-dir src is not a directory under <repo>", ``verify_execution_reach.py``
-    :189-194) because it cannot find the hardcoded ``src/`` root
-    (``_EXECUTION_REACH_SRC_DIR = "src"``, :698).
+def test_src_dir_missing_execution_reach_gate_exit2_yields_cycle_indeterminate(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """REGRESSION-CLASS GUARDRAIL (R8, sibling-gate parity, deep-review D2,
+    RECONCILED 2026-07-14 to DDD-CERT-4): a target repo whose production
+    code lives under a non-conventional root (e.g. ``lib/`` instead of the
+    hardcoded ``src/``) HAS a valid Cobertura ``coverage.xml`` -- the
+    precondition-check (``coverage_xml_path.is_file()``) passes and the gate
+    is genuinely dispatched -- but the REAL ``des verify-execution-reach``
+    gate exits 2 (``ExecutionReachIndeterminate``: "src-dir src is not a
+    directory under <repo>") because it cannot find the hardcoded ``src/``
+    root (``_EXECUTION_REACH_SRC_DIR = "src"``).
 
-    Per the sibling legs' contract -- ``_run_doc_coherence_gate`` (:675) and
-    ``_run_fresh_clone_gate`` (:793) both special-case ``returncode == 2`` into
-    their own ``...LegNotApplicable`` so the cycle PROCEEDS -- an INDETERMINATE
-    gate verdict must NEVER become a false hard-block (R8 genericita
-    guardrail): a repo the gate cannot judge is NOT_APPLICABLE, never refused.
+    SUPERSEDES the pre-2026-07-14 contract this test used to pin
+    (``CycleSuccess`` / NOT_APPLICABLE): per
+    ``could-not-judge-is-not-not-applicable.md`` (DDD-CERT-4, ratified),
+    the gate's OWN exit-2 ("I could not judge") is an epistemic gap that
+    must NEVER be silently recycled into NOT_APPLICABLE -- it escalates to
+    ``CycleIndeterminate``. ``_run_execution_reach_gate`` maps
+    ``returncode == 2`` to ``ExecutionReachLegIndeterminate``, and the cycle
+    escalates that immediately to ``CycleIndeterminate`` (never proceeding
+    to sign a verdict).
 
-    ACTIVE-RED today: ``_run_execution_reach_gate`` (:749) checks only
-    ``completed.returncode != 0`` with no ``== 2`` branch, so this genuinely
-    reaches ``CycleRefusal`` today -- a genuine ``AssertionError`` (expected
-    ``CycleSuccess``, got ``CycleRefusal``), not a setup/import error.
+    This test's continuing value beyond slice-03's own exit-2 AT
+    (``test_execution_reach_gate_exit2_yields_cycle_indeterminate``, which
+    triggers exit-2 via a present-but-*malformed* coverage.xml): it pins a
+    SECOND, structurally distinct root cause reaching the SAME exit-2 path
+    -- a missing/non-conventional ``src/`` layout, not a parse failure --
+    proving the escalation is genuinely decoupled from WHY the gate could
+    not judge (R8 genericità: any exit-2, for any reason, escalates
+    uniformly).
 
     # covers: R8
     """
@@ -237,5 +247,11 @@ def test_src_dir_missing_proceeds_not_applicable(tmp_path: Path, monkeypatch) ->
 
     result = _run_cycle(repo_root, feature_dir)
 
-    assert isinstance(result, CycleSuccess)
-    print(f"VERBATIM (src-dir-missing-NA): {result!r}")
+    assert isinstance(result, CycleIndeterminate), (
+        "the gate's own exit-2 (src-dir does not resolve) must escalate to "
+        f"CycleIndeterminate, never a silently-recycled CycleSuccess: {result!r}"
+    )
+    assert "execution-reach" in result.reason
+    assert "src-dir" in result.reason
+    _assert_no_signed_verdict(repo_root, _FEATURE_ID)
+    print(f"VERBATIM (src-dir-missing-indeterminate): {result!r}")

@@ -38,6 +38,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.application import feature_end_cycle_service as svc
 from des.application.feature_end_cycle_service import (
     CycleRefusal,
@@ -49,6 +50,32 @@ from des.application.feature_end_cycle_service import (
 
 _FEATURE_ID = "feat-fresh-clone-gate"
 _RECIPE = '{"steps": [{"name": "build", "cmd": ["python3", "main.py"]}]}\n'
+
+_MARKED_RUNNABLE_TEST_BODY = (
+    "import pytest\n\n\n@pytest.mark.unit\ndef test_widget_behaves():\n"
+    "    assert 1 + 1 == 2\n"
+)
+
+
+def _seed_marked_runnable_suite(repo_root: Path) -> None:
+    """A real, marked (``@pytest.mark.unit``), runnable pytest suite at the
+    conventional ``tests/`` root plus a realistic top-level ``pyproject.toml``
+    manifest -- mirrors
+    ``test_slice_03_execution_reach_gate_exit2_yields_indeterminate.py``'s
+    ``_seed_genuinely_absent_coverage`` full-suite seed. Makes the full-suite
+    leg genuinely RUN (``FullSuiteLegRan``), so ``leg_census.ran >= 1`` and the
+    all-other-legs-NA regression fixture below stays coherent with slice-02's
+    ratified ``census.ran == 0`` -> ``CycleIndeterminate`` charter (it is
+    legitimately ``ran == 1``, not ``ran == 0``)."""
+    tests_dir = repo_root / "tests"
+    tests_dir.mkdir(parents=True)
+    (tests_dir / "test_widget.py").write_text(
+        _MARKED_RUNNABLE_TEST_BODY, encoding="utf-8"
+    )
+    (repo_root / "pyproject.toml").write_text(
+        '[project]\nname = "feat-fresh-clone-gate"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -169,23 +196,98 @@ def test_clean_committed_tree_still_reaches_done(tmp_path: Path, monkeypatch) ->
     print(f"VERBATIM (clean): {result!r}")
 
 
-def test_no_demo_recipe_proceeds_not_applicable(tmp_path: Path, monkeypatch) -> None:
-    """GENERICITÀ GUARDRAIL (R8): a target repo that never declared
-    ``.nwave/demo-recipe.json`` has nothing honest for the fresh-clone gate to
-    execute -- the gate's OWN contract degrades to INDETERMINATE (exit 2) on
-    this precondition. Per the feature-delta's L-4 default (a candidate NA
-    condition named 1:1 with the gate's own indeterminate trigger), the cycle
-    must treat this as NOT_APPLICABLE and PROCEED -- never a false
-    hard-block on a repo that was never asked to have a demo recipe."""
-    _stub_non_fresh_clone_legs(monkeypatch)
+def test_no_demo_recipe_stays_leg_not_applicable_regression(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """GENERICITÀ GUARDRAIL (R8) + STALE-RECORD RECONCILIATION (2026-07-15): a
+    target repo that never declared ``.nwave/demo-recipe.json`` has nothing
+    honest for the fresh-clone gate to execute -- the LEG resolves
+    ``FreshCloneLegNotApplicable`` (the PRECONDITION-FIRST absence check, no
+    subprocess spawned) -- never a false hard-block on a repo that was never
+    asked to have a demo recipe.
+
+    RECONCILED to the ratified charter
+    (``docs/product/expectations/certification-legs-observe-real-execution/
+    feature-end-does-not-certify-done-over-zero-observed-checks.md``,
+    slice-02, commit ``4c976e0a3``): a cycle where EVERY leg resolves
+    NOT_APPLICABLE (``leg_census.ran == 0``) must yield
+    ``CycleIndeterminate``, never ``CycleSuccess`` -- "done means observed,
+    never done over zero observed checks." The PRIOR version of this test
+    drove an all-NA fixture (this leg NA + full-suite/doc-coherence/
+    execution-reach all NA too, ``leg_census = {ran:0, not_applicable:4}``)
+    and asserted ``CycleSuccess`` -- that directly contradicts the charter
+    (mirrors the execution-reach sibling's stale-record reconciliation,
+    ``test_feature_end_cycle_execution_reach_gate.py``'s superseded
+    ``test_no_coverage_xml_proceeds_not_applicable``, removed there since
+    already pinned finer/broader elsewhere; here the LEG-level distinction
+    adds genuine value not pinned elsewhere, so this test is UPDATED rather
+    than removed).
+
+    Asserts the TRUE intent at TWO altitudes (mirrors
+    ``test_slice_03_execution_reach_gate_exit2_yields_indeterminate.py::
+    test_genuinely_absent_coverage_xml_stays_not_applicable_regression``):
+
+    1. LEG level (the regression guard this test exists to preserve): call
+       the REAL, unstubbed ``_run_fresh_clone_gate`` directly on the
+       no-demo-recipe fixture and assert it resolves
+       ``FreshCloneLegNotApplicable`` -- never ``*Indeterminate``.
+    2. CYCLE level (now legitimate, not a charter violation): the fixture
+       ALSO seeds a real, marked, genuinely-running full-suite leg
+       (``_seed_marked_runnable_suite``), so ``leg_census.ran >= 1`` and the
+       cycle rightfully reaches ``CycleSuccess`` -- this is NOT "Complete
+       over all-NA" (that stays ``CycleIndeterminate``, pinned generically
+       by slice-02's census-guard ATs,
+       ``test_slice_02_full_suite_leg_marker_miss_yields_indeterminate.py``);
+       it is "Complete because a real leg ran, AND the fresh-clone leg
+       specifically stayed NA rather than flipping to Indeterminate on
+       genuine absence."
+    """
     repo_root = tmp_path / "no-recipe"
     _init_repo(repo_root)
     (repo_root / "f.txt").write_text("x")
-    _git(repo_root, "add", "f.txt")
+    _seed_marked_runnable_suite(repo_root)  # census.ran >= 1 (full-suite REAL)
+    _git(repo_root, "add", "-A")
     _git(repo_root, "commit", "-qm", "no demo recipe declared")
     feature_dir = _seed_feature_dir(repo_root)
 
+    # Sibling legs OTHER than fresh-clone and full-suite are still
+    # short-circuited; full-suite is intentionally LEFT REAL (not stubbed)
+    # -- it is the genuinely-running leg that makes census.ran >= 1
+    # legitimate.
+    monkeypatch.setattr(
+        svc,
+        "_run_walking_skeleton_gate",
+        lambda *, repo_root, feature_dir: repo_root,
+    )
+    monkeypatch.setattr(
+        svc,
+        "_run_environmental_e2e_gate",
+        lambda *, ledger, repo_root, feature_id, feature_dir, walking_skeleton: None,
+    )
+    monkeypatch.setattr(
+        svc,
+        "_run_coverage_map_verify_leg",
+        lambda *, ledger, repo_root, feature_id, feature_dir: None,
+    )
+
+    leg_outcome = svc._run_fresh_clone_gate(
+        ledger=AtCompletionLedger(_FEATURE_ID, repo_root),
+        repo_root=repo_root,
+        feature_id=_FEATURE_ID,
+    )
+    assert isinstance(leg_outcome, svc.FreshCloneLegNotApplicable), (
+        "a target repo that never declared a demo recipe (genuine "
+        "ontological absence, precondition-first, no subprocess spawned) "
+        "must resolve the FRESH-CLONE LEG to NotApplicable -- never "
+        f"Indeterminate: {leg_outcome!r}"
+    )
+
     result = _run_cycle(repo_root, feature_dir)
 
-    assert isinstance(result, CycleSuccess)
+    assert isinstance(result, CycleSuccess), (
+        "the fixture ALSO seeds a real, marked, genuinely-running full-suite "
+        "leg (census.ran >= 1) so the cycle legitimately reaches "
+        "CycleSuccess -- this is NOT 'Complete over all-NA' (that stays "
+        f"CycleIndeterminate): {result!r}"
+    )
     print(f"VERBATIM (no-recipe-NA): {result!r}")

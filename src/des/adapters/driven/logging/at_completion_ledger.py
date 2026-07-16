@@ -217,6 +217,18 @@ DOC_COHERENCE_GATE_RAN = "DocCoherenceGateRan"
 DOC_COHERENCE_VERIFIED = "DocCoherenceVerified"
 DOC_COHERENCE_NOT_APPLICABLE = "DocCoherenceNotApplicable"
 
+# The doc-coherence advisory-WARN event name (fix-doc-coherence-gate-warns-not-
+# blocks, GDP-8: a doc-coherence finding must WARN loud, never hard-block the
+# whole feature-end cycle). Minted in place of `DocCoherenceVerified` when the
+# REAL `des verify-doc-coherence` gate exits 1 (>=1 doc claim is false of the
+# actual tree) -- the cycle no longer fail-closes on this leg alone. Carries
+# the gate's OWN diagnostic text (`detail`, e.g. the false npm-script/file-path
+# claims it named) so the finding is surfaced LOUDLY, never swallowed into a
+# bare boolean. DISTINCT from `DocCoherenceVerified` -- a warned completion
+# must never read as "doc-coherence passed clean". Feature-scoped
+# (`slice_id == ""`).
+DOC_COHERENCE_WARNED = "DocCoherenceWarned"
+
 # The silent-bypass debt event name (f-nonbypassable-attestation slice-02, DDD-3).
 # An LLM/developer-issued `git commit --no-verify` (or `-n`) skips git's own
 # pre-commit/commit-msg hooks, so the per-commit Gate-Scope stamping never runs and
@@ -1059,6 +1071,28 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             feature_id=feature_id,
         )
 
+    def append_doc_coherence_warned(
+        self, detail: str, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `DocCoherenceWarned` advisory record
+        (fix-doc-coherence-gate-warns-not-blocks).
+
+        Emitted in place of `DocCoherenceVerified` when the REAL
+        `des verify-doc-coherence` gate exits 1 (>=1 doc claim is false of
+        the actual tree). The finding no longer hard-refuses the feature-end
+        cycle -- it WARNS loud: `detail` carries the gate's OWN diagnostic
+        text (which claim was found false), never a bare "warned" flag with
+        the disclosure dropped. DISTINCT from `DocCoherenceVerified` -- a
+        completion carrying this record must never ALSO read as doc-coherence
+        having passed clean.
+
+        Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": DOC_COHERENCE_WARNED, "slice_id": "", "detail": detail},
+            feature_id=feature_id,
+        )
+
     def append_slice_commit_bypassed(
         self, slice_id: str, *, feature_id: str | None = None
     ) -> dict[str, Any]:
@@ -1845,6 +1879,7 @@ __all__ = [
     "DOC_COHERENCE_GATE_RAN",
     "DOC_COHERENCE_NOT_APPLICABLE",
     "DOC_COHERENCE_VERIFIED",
+    "DOC_COHERENCE_WARNED",
     "EBATCH_REFACTOR_COMPLETED",
     "ENVIRONMENTAL_E2E_GATE_RAN",
     "ENVIRONMENTAL_E2E_VERIFIED",

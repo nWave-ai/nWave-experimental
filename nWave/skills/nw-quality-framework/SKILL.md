@@ -7,6 +7,16 @@ disable-model-invocation: true
 
 # Quality Framework
 
+## Error surfaces state WHAT / WHY / HOW (STANDING)
+
+Every error surface your code emits — an exception message, a gate rejection, a
+degrade/`INDETERMINATE`, a non-zero exit — MUST state **WHAT** failed (the specific
+invariant/check/assertion), **WHY** (the cause), and **HOW** to fix (the concrete
+remediation or next command). A bare `FAILED` / exit-code / `error:` with no
+what/why/how is ITSELF a defect — fix the message. The reader must never have to
+investigate to learn what to do next; and where a producing tool exists, the HOW
+names it (never "hand-author this").
+
 ## Commit Readiness Gates (11)
 
 All pass before committing:

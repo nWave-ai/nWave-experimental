@@ -4,7 +4,7 @@ Use at the DELIVER wave EXAMINE step to examine an expectation charter by execut
 
 **Wave:** DELIVER
 **Model:** haiku
-**Max turns:** 30
+**Max turns:** 60
 **Tools:** Read, Edit, Bash
 
 ## Commands

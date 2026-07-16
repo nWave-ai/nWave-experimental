@@ -41,6 +41,23 @@ if TYPE_CHECKING:
 
 _PYTEST_RUNNER = "pytest"
 
+# Reporting/coverage plugins add large collection overhead (allure's per-item
+# labelling alone is ~55 s on a ~7700-test tree) but produce NOTHING the gate's
+# scope enumeration reads -- it needs node-ids only, never reports. Disable them
+# for the gate's collect-only subprocess. ``-p no:<plugin>`` is a safe no-op when
+# the plugin is absent, so this stays target-machine-agnostic (a leaner install
+# without allure/pspec/html/cov is unaffected).
+_QUIET_REPORTING_PLUGINS = (
+    "-p",
+    "no:allure_pytest",
+    "-p",
+    "no:pytest_pspec",
+    "-p",
+    "no:pytest_html",
+    "-p",
+    "no:pytest_cov",
+)
+
 
 class PythonContractGateAdapter:
     """Runs the target Python codebase's own pytest suite; reports the verdict."""
@@ -48,7 +65,14 @@ class PythonContractGateAdapter:
     def collect_scope(self, repo: Path) -> list[str]:
         """Enumerate the target's pytest node-id scope (``--collect-only``)."""
         completed = subprocess.run(
-            [python_for(None), "-m", "pytest", "--collect-only", "-q"],
+            [
+                python_for(None),
+                "-m",
+                "pytest",
+                "--collect-only",
+                "-q",
+                *_QUIET_REPORTING_PLUGINS,
+            ],
             cwd=repo,
             capture_output=True,
             text=True,

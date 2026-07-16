@@ -16,8 +16,6 @@ Tests exercise them against a real wheel installed in a temp venv.
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -31,7 +29,11 @@ from scripts.validation.validate_installed_wheel import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+# WS-15 P1 re-tier (2026-07-14): a real wheel build (~19.8 s one-shot setup) is an
+# artifact-build cost, not a unit-test cost -- it does not belong in the fast-feedback
+# `-m "not slow"` tier. Mark the whole module `slow` so pre-commit/pre-push skip it;
+# CI's full/slow tier still runs it. Opus-reviewed WS-15 plan, category-7 P1.
+pytestmark = pytest.mark.slow
 
 
 # ---------------------------------------------------------------------------
@@ -39,58 +41,19 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def built_wheel(tmp_path_factory) -> Path:
-    """Build a wheel from the current project and return its path."""
-    output_dir = tmp_path_factory.mktemp("wheel_output")
-    result = subprocess.run(
-        [sys.executable, "-m", "build", "--wheel", "--outdir", str(output_dir)],
-        cwd=str(PROJECT_ROOT),
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    assert result.returncode == 0, (
-        f"Wheel build failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-
-    wheels = list(output_dir.glob("*.whl"))
-    assert len(wheels) == 1, f"Expected exactly 1 wheel, found {len(wheels)}"
-    return wheels[0]
+@pytest.fixture(scope="session")
+def built_wheel(shared_wheel: Path) -> Path:
+    """The session-shared dev wheel (build-once-share; see root conftest)."""
+    return shared_wheel
 
 
-@pytest.fixture(scope="module")
-def installed_venv(built_wheel: Path, tmp_path_factory) -> Path:
-    """Create a clean venv, install the wheel, return the venv path."""
-    venv_dir = tmp_path_factory.mktemp("smoke_venv")
-
-    # Create venv
-    result = subprocess.run(
-        [sys.executable, "-m", "venv", str(venv_dir)],
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    assert result.returncode == 0, (
-        f"venv creation failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-
-    # Install wheel (no dev deps)
-    venv_python = venv_dir / "bin" / "python"
-    result = subprocess.run(
-        [str(venv_python), "-m", "pip", "install", str(built_wheel)],
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    assert result.returncode == 0, (
-        f"Wheel install failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
-
-    return venv_dir
+@pytest.fixture(scope="session")
+def installed_venv(shared_wheel_venv: Path) -> Path:
+    """The session-shared clean venv with the dev wheel installed via uv."""
+    return shared_wheel_venv
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def venv_python(installed_venv: Path) -> Path:
     """Return the path to the venv's Python interpreter."""
     return installed_venv / "bin" / "python"

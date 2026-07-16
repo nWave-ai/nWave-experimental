@@ -77,10 +77,22 @@ import pytest
 
 from des.cli import run_contract_gate
 from des.cli.commit_slice import main as commit_slice_main
+from des.cli.record_examine_verdict import main as record_examine_verdict_main
 from des.cli.run_contract_gate import _ArchVerdict, _ResourceWindowResult
 
 
+_FEATURE_ID = "scoped-per-slice-build-tier-wiring"
+
+# Head-tagged (# @feature-{id} / # @slice-01) so this file doubles as BOTH the
+# build-tier's scoped regression target AND the E1/E2 pre-flight's real
+# pytest-regression evidence (fold-in reorder, ADR-DES-001 slice-01) --
+# `des commit-slice`'s Step-1.5 pre-flight now genuinely refuses a commit with
+# ZERO observed AT evidence (no `.feature` file, no `--at-kind
+# pytest-regression`, no examine PASS); mirrors
+# ``tests/bugs/des/test_commit_slice_gates_run_before_commit.py``'s
+# ``_write_regression_test`` convention.
 _PASSING_TEST = (
+    f"# @feature-{_FEATURE_ID}\n# @slice-01\n"
     "import pytest\npytestmark = pytest.mark.unit\n\n"
     "def test_behaviour():\n    assert True\n"
 )
@@ -205,7 +217,16 @@ def _drive_commit_slice(
         run_contract_gate, "_await_resource_window", _fake_await_resource_window
     )
 
-    exit_code = commit_slice_main(["--repo", str(repo), "--all", *argv_extra])
+    exit_code = commit_slice_main(
+        [
+            "--repo",
+            str(repo),
+            "--feature-id",
+            _FEATURE_ID,
+            "--all",
+            *argv_extra,
+        ]
+    )
     out = capsys.readouterr().out
     events = [
         json.loads(line) for line in out.splitlines() if line.strip().startswith("{")
@@ -242,6 +263,8 @@ def test_commit_slice_drives_scoped_build_tier_with_the_declared_regression_test
             "feat(slice): scope the per-slice build tier\n\nSlice-Id: slice-01",
             "--regression-test-file",
             "tests/build/slice_01/test_regression.py",
+            "--at-kind",
+            "pytest-regression",
         ],
         monkeypatch=monkeypatch,
         capsys=capsys,
@@ -300,6 +323,8 @@ def test_commit_slice_scoped_seal_emits_whole_tree_deferred_event_naming_feature
             "feat(slice): scope the per-slice build tier\n\nSlice-Id: slice-01",
             "--regression-test-file",
             "tests/build/slice_01/test_regression.py",
+            "--at-kind",
+            "pytest-regression",
         ],
         monkeypatch=monkeypatch,
         capsys=capsys,
@@ -343,11 +368,53 @@ def test_commit_slice_without_regression_test_file_preserves_whole_tree_build_ti
     verify), not lost.") + Summary ("If no light set is defined, the scoped
     run is the slice test alone -- still correct: the whole-tree floor at
     feature-end is the safety net.").
+
+    This slice (slice-02) deliberately declares NO --regression-test-file --
+    that absence IS the invariant under test (a declared scope must never
+    silently leak in). So the E1/E2 pre-flight evidence this slice needs
+    cannot come from the pytest-regression route (which itself REQUIRES
+    --regression-test-file) -- it comes from the examine-verdict carve-out
+    instead (a real, distinct evidence source; ADR-DES-001 addendum Rule 1):
+    a charter + a fresh matching-seal PASS ``ExamineVerdict`` clears the
+    otherwise-vacuous ``zero-collected`` E2 leg for slice-02, mirroring
+    ``tests/des/integration/test_commit_slice_examine_gate.py``'s
+    ``_write_charter``/``_record_examine_verdict`` convention.
     """
     repo = tmp_path / "repo"
     _init_repo_with_build_tier(repo)
     (repo / "tests" / "unit" / "test_slice_new.py").write_text(
         "def test_slice_new():\n    assert 1 + 1 == 2\n", encoding="utf-8"
+    )
+    charter_dir = repo / "docs" / "product" / "expectations" / _FEATURE_ID
+    charter_dir.mkdir(parents=True, exist_ok=True)
+    charter_file = charter_dir / "slice-02.md"
+    charter_file.write_text(
+        "# Charter\n\nWalk the whole-tree-preserved build-tier seal.\n",
+        encoding="utf-8",
+    )
+    charter_relpath = str(charter_file.relative_to(repo))
+    examine_exit_code = record_examine_verdict_main(
+        [
+            "--repo",
+            str(repo),
+            "--feature-id",
+            _FEATURE_ID,
+            "--slice",
+            "slice-02",
+            "--charter",
+            charter_relpath,
+            "--verdict",
+            "PASS",
+            "--observations",
+            "observed during slice-02 walkthrough",
+            "--examiner",
+            "nw-user-examiner",
+        ]
+    )
+    capsys.readouterr()  # drain -- the producer's own JSON is not under test here
+    assert examine_exit_code == 0, (
+        "fixture precondition: recording the examine PASS verdict must "
+        f"itself succeed -- got exit {examine_exit_code}"
     )
 
     run = _drive_commit_slice(

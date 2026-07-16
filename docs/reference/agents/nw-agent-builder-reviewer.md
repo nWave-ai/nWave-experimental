@@ -5,7 +5,7 @@ Use for review and critique tasks - Agent design and quality review specialist. 
 **Wave:** Other
 **Model:** haiku
 **Max turns:** 20
-**Tools:** Read, Glob, Grep, Task
+**Tools:** Read, Glob, Grep, Bash, Task
 
 ## Skills
 
