@@ -140,7 +140,7 @@ class FeatureEndP0GateComposition:
         self.monkeypatch.setattr(
             svc,
             "_run_full_suite_leg",
-            lambda *, repo_root: FullSuiteLegNotApplicable(
+            lambda *, repo_root, feature_id=None: FullSuiteLegNotApplicable(
                 "stubbed: no contract suite in this hermetic acceptance fixture"
             ),
         )
@@ -215,7 +215,7 @@ class FeatureEndP0GateComposition:
         # unrelated zero-observed-checks charter (leg_census.ran == 0 ->
         # CycleIndeterminate, ADR-GV-002 D1/D3, pinned elsewhere).
         self.monkeypatch.setattr(
-            svc, "_run_full_suite_leg", lambda *, repo_root: FullSuiteLegRan(0)
+            svc, "_run_full_suite_leg", lambda *, repo_root, feature_id=None: FullSuiteLegRan(0)
         )
 
     # --- When ------------------------------------------------------------------

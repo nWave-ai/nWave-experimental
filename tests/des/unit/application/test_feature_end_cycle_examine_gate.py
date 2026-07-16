@@ -91,7 +91,7 @@ def _stub_upstream_legs(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_full_suite_leg",
-        lambda *, repo_root: FullSuiteLegRan(pytest_exit_code=0),
+        lambda *, repo_root, feature_id=None: FullSuiteLegRan(pytest_exit_code=0),
     )
 
 

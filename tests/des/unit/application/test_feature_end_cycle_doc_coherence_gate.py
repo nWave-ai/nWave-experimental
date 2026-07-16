@@ -124,7 +124,7 @@ def _stub_non_doc_coherence_legs(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_full_suite_leg",
-        lambda *, repo_root: FullSuiteLegNotApplicable(
+        lambda *, repo_root, feature_id=None: FullSuiteLegNotApplicable(
             "stubbed: no contract suite in this hermetic fixture"
         ),
     )
@@ -202,7 +202,7 @@ def test_doc_overstating_absent_code_warns_but_does_not_refuse_feature_end(
     # CycleIndeterminate, ADR-GV-002 D1/D3, pinned elsewhere). Mirrors
     # the regression AT's ``_stub_full_suite_ran``.
     monkeypatch.setattr(
-        svc, "_run_full_suite_leg", lambda *, repo_root: FullSuiteLegRan(0)
+        svc, "_run_full_suite_leg", lambda *, repo_root, feature_id=None: FullSuiteLegRan(0)
     )
     repo_root = tmp_path / "planted"
     repo_root.mkdir(parents=True)

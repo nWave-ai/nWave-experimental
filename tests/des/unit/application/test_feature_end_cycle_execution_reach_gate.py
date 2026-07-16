@@ -102,7 +102,7 @@ def _stub_non_execution_reach_legs(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_full_suite_leg",
-        lambda *, repo_root: FullSuiteLegNotApplicable(
+        lambda *, repo_root, feature_id=None: FullSuiteLegNotApplicable(
             "stubbed: no contract suite in this hermetic fixture"
         ),
     )
