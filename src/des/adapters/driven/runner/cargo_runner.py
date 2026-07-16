@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.git_subprocess import git_text
+from des.adapters.driven.runner.pytest_runner import run_timeout_seconds
 from des.adapters.driven.runner.tool_discovery import resolve_tool
 from des.ports.test_runner_port import (
     ListScope,
@@ -105,13 +106,25 @@ def run_cargo_scope(
     if resolution.path is None:
         raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
 
-    completed = subprocess.run(
-        [resolution.path, *subcommand],
-        capture_output=True,
-        text=True,
-        cwd=target_root,
-        env=_env_with_cargo_dir(resolution.path, target_root),
-    )
+    try:
+        completed = subprocess.run(
+            [resolution.path, *subcommand],
+            capture_output=True,
+            text=True,
+            cwd=target_root,
+            env=_env_with_cargo_dir(resolution.path, target_root),
+            timeout=run_timeout_seconds(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                f"the cargo command did not complete within "
+                f"{run_timeout_seconds():.0f}s (a hanging/deadlocking run) -- "
+                "INDETERMINATE, never a silent unbounded hang; raise "
+                "NWAVE_GATE_RUN_TIMEOUT if this is a legitimate long run"
+            ),
+        ) from exc
 
     if completed.returncode == _NO_MATCH_EXIT:
         raise RunnerAdapterUnavailable(
@@ -184,7 +197,18 @@ def list_cargo_scope(
             text=True,
             cwd=target_root,
             env=_env_with_cargo_dir(resolution.path, target_root),
+            timeout=run_timeout_seconds(),
         )
+    except subprocess.TimeoutExpired as exc:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                "`cargo nextest list` did not complete within "
+                f"{run_timeout_seconds():.0f}s (a hanging/deadlocking "
+                "enumeration) -- INDETERMINATE, never a silent unbounded "
+                "hang; raise NWAVE_GATE_RUN_TIMEOUT if this is legitimate"
+            ),
+        ) from exc
     except UnicodeDecodeError as exc:
         raise RunnerAdapterUnavailable(
             adapter.name,

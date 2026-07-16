@@ -32,6 +32,7 @@ from des.adapters.driven.logging.at_completion_ledger import (
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
+from des.adapters.driven.runner.pytest_runner import run_timeout_seconds
 from des.adapters.drivers.hooks.carpaccio_intercept import (
     _predecessor_slice,
     _slice_number,
@@ -344,6 +345,13 @@ def _run_gate(repo: Path, *args: str) -> int:
     S1 runtime boundary -- never a raw `sys.executable` reference. The gate
     subprocess only needs *a* Python (the gates are `des.cli` modules already
     visible on the running interpreter), so `capability=None` applies.
+
+    ``timeout=run_timeout_seconds()`` bounds the child (RCA Branch B item
+    b.2, defense-in-depth): the child itself may route into an unbounded
+    grandchild (e.g. a mis-routed cargo subprocess) -- this outer bound keeps
+    a blocked reverify from hanging silently even if an inner bound is ever
+    missing. Anchored on the same SSOT ceiling (``NWAVE_GATE_RUN_TIMEOUT``,
+    default 45 min) the pytest run-facet and the arch-run subprocess use.
     """
     completed = des_spawn(
         None,
@@ -351,12 +359,18 @@ def _run_gate(repo: Path, *args: str) -> int:
         cwd=repo,
         capture_output=True,
         text=True,
+        timeout=run_timeout_seconds(),
     )
     return completed.returncode
 
 
 def _compose_gates(
-    repo: Path, commit: str, feature_id: str, slice_id: str
+    repo: Path,
+    commit: str,
+    feature_id: str,
+    slice_id: str,
+    *,
+    at_kind: str | None = None,
 ) -> str | None:
     """Run gates E1 and E2 for real; return the failing gate name or None.
 
@@ -392,12 +406,10 @@ def _compose_gates(
     if e1_code != 0:
         return "check_slice_at_completeness"
 
-    e2_code = _run_gate(
-        repo,
-        "des.cli.run_contract_gate",
-        "--repo",
-        str(repo),
-    )
+    e2_args = ["des.cli.run_contract_gate", "--repo", str(repo)]
+    if at_kind is not None:
+        e2_args += ["--at-kind", at_kind]
+    e2_code = _run_gate(repo, *e2_args)
     if e2_code != 0:
         return "run_contract_gate"
 

@@ -102,6 +102,20 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="The commit-ish carrying the slice (e.g. HEAD).",
     )
+    parser.add_argument(
+        "--at-kind",
+        dest="at_kind",
+        default=None,
+        choices=(None, "gherkin", "pytest-regression"),
+        help=(
+            "The acceptance-test kind the slice's committed suite carries "
+            "(fix-reverify-slice-commit-at-kind). 'pytest-regression' skips "
+            "the whole-tree runner-routing seam in the composed E2 gate so a "
+            "Python-only slice reverify never mis-routes through a "
+            "Rust-primary repo's cargo lockfile. Omitted / 'gherkin' keeps "
+            "the EXISTING runner-routed behavior byte-identical."
+        ),
+    )
     return parser
 
 
@@ -121,7 +135,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # Gate composition: the preconditions (P1-P6) have all passed.
-    failing_gate = _compose_gates(repo, args.commit, args.feature_id, args.slice_id)
+    failing_gate = _compose_gates(
+        repo, args.commit, args.feature_id, args.slice_id, at_kind=args.at_kind
+    )
     if failing_gate is not None:
         # Gate-fail path (step 04). A non-zero gate fails closed: append a
         # genuine `SliceCommitBlocked` ledger record the identical way the U2

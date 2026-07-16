@@ -1889,7 +1889,7 @@ def _mode_verify_gate_scope(repo: Path, commit: str, at_kind: str | None = None)
     return 0
 
 
-def _mode_run_suite(repo: Path) -> int:
+def _mode_run_suite(repo: Path, at_kind: str | None = None) -> int:
     """Default mode: run the whole-tree contract suite + emit a digest.
 
     Emits the single-line JSON ``ContractGateResult`` event on BOTH stdout
@@ -1913,14 +1913,38 @@ def _mode_run_suite(repo: Path) -> int:
     suite still RUNS (the producer's other job) and PROCEEDS exit 0 -- the
     fail-closed REFUSE (exit 2) belongs to the verify role, not the producer.
     A genuinely untrustworthy collection still fails closed (exit 2).
+
+    ``at_kind == "pytest-regression"`` (fix-reverify-slice-commit-at-kind)
+    SKIPS the whole-tree runner-routing seam entirely -- mirrors
+    ``_mode_verify_gate_scope``'s own carve-out (fix-runner-resolves-per-
+    scope-language slice-01) -- so a pytest-regression slice's suite run
+    is never coerced through the repo's OTHER (e.g. cargo) lockfile-resolved
+    runner. Every other ``--at-kind`` (default / ``gherkin``) keeps the
+    EXISTING runner-routed behavior byte-identical.
     """
     routed_registered = _maybe_route_through_registered_contract_gate(repo)
     if routed_registered is not None:
         return routed_registered
-    routed = _maybe_route_through_runner_whole_tree(repo)
-    if routed is not None:
-        return routed
-    committed = _committed_scope_digest_quiet(repo, "HEAD")
+    if at_kind != "pytest-regression":
+        routed = _maybe_route_through_runner_whole_tree(repo)
+        if routed is not None:
+            return routed
+    if at_kind == "pytest-regression":
+        # A pytest-regression slice pins its digest through the SAME
+        # pytest-native, marker-agnostic committed-scope path Step 3 used
+        # (``markers=None``), and makes the committed scope git-REQUIRED
+        # (fail-closed): a tree that cannot be pinned to a commit yields a
+        # Refusal returned early below, so the suite-run never routes through
+        # the repo's OTHER (e.g. cargo) lockfile-resolved runner nor
+        # certifies an unpinnable tree. Every other ``at_kind`` (default /
+        # ``gherkin``) keeps the EXISTING degrade-LOUD quiet path byte-for-byte.
+        committed: (
+            _CommittedScopeDigest
+            | _CommittedScopeIndeterminate
+            | _CommittedScopeRefusal
+        ) = _committed_scope_digest_value(repo, "HEAD", markers=None)
+    else:
+        committed = _committed_scope_digest_quiet(repo, "HEAD")
     if isinstance(committed, _CommittedScopeRefusal):
         return committed.exit_code
     digest: str | None
@@ -2682,6 +2706,12 @@ def _emit_whole_tree_resolved(
     the three resolution facts the ATs assert on: the resolved ``runner`` identity,
     whether the whole-tree run was ``routed`` to a non-pytest runner, and whether
     the ``digest`` leg degraded to no-digest (D6 -- no non-pytest enumerate facet).
+
+    ``what``/``why``/``how`` (RCA Branch B item b.4, fix-reverify-slice-commit-
+    at-kind) match the sibling ``BuildTierResourceWait``/``BuildTierRefused``
+    events -- this preamble is the earliest, ALWAYS-present seam of a whole-tree
+    run, so it is where a blocked reverify's terminal ``SliceReverifyBlocked``
+    payload gets its routing reason from, instead of an empty-output hang.
     """
     print(
         json.dumps(
@@ -2690,6 +2720,18 @@ def _emit_whole_tree_resolved(
                 "runner": runner,
                 "routed": routed,
                 "digest_degraded": digest_degraded,
+                "what": "whole-tree runner resolution",
+                "why": (
+                    f"the whole-tree contract gate resolved runner {runner!r} "
+                    f"({'routed to a non-pytest runner' if routed else 'the default pytest path'}"
+                    f"{', digest leg degraded to no-digest' if digest_degraded else ''})"
+                ),
+                "how": (
+                    "pass --at-kind pytest-regression to force the pytest-native "
+                    "path on a Python-only slice inside a polyglot repo, or "
+                    "provide a runner.json declaring the intended test_command "
+                    "if this resolution is wrong"
+                ),
             }
         ),
         file=sys.stderr,
@@ -3388,7 +3430,7 @@ def main(argv: list[str] | None = None, output: OutputPort | None = None) -> int
             return 2
         return _mode_feature_scoped(repo, args.feature_id, args.entering_slice)
 
-    return _mode_run_suite(repo)
+    return _mode_run_suite(repo, args.at_kind)
 
 
 if __name__ == "__main__":  # pragma: no cover
