@@ -1541,6 +1541,30 @@ def _run_contract_suite(repo: Path, *, junit_xml_path: Path | None = None) -> in
     return completed.returncode
 
 
+def _marker_mismatch_note(excluded_count: int, agnostic_count: int) -> str:
+    """What/why/how remediation for a marker-filtered-STRICT-SUBSET scope.
+
+    Target-agnosticism fix (RCA:
+    docs/feature/fix-collector-marker-filter-target-agnostic/deliver/rca.md):
+    the default collect applies ``-m "unit or integration or acceptance"``
+    (``_FULL_SUITE_MARKER``). nwave-dev stamps every item with those markers
+    via its own conftest auto-marker, so its whole suite matches -- but a
+    FOREIGN target repo whose tests carry none (or only some) of those markers
+    collects a STRICT SUBSET under the filter even though pytest genuinely
+    finds every test unfiltered. This NAMES the excluded count (the tests the
+    marker filter silently dropped from the contract scope) rather than lying
+    that the scope is "genuinely zero" (the all-unmarked case, excluded ==
+    agnostic) or scoping silently to the marked subset (the Vera-surfaced
+    partial case, ``0 < filtered < agnostic``).
+    """
+    return (
+        f"{excluded_count} of {agnostic_count} collected tests carry no "
+        "unit/integration/acceptance marker and were EXCLUDED from the "
+        "contract scope -- mark them, or add a pytest_collection_modifyitems "
+        "conftest auto-marker; the contract gate scopes by those markers"
+    )
+
+
 def _mode_print_digest(repo: Path) -> int:
     """`--collect-only --print-digest`: emit a fresh digest, run nothing.
 
@@ -1548,14 +1572,38 @@ def _mode_print_digest(repo: Path) -> int:
     in-process collection (ADR-001): ``node_id_count`` (the digested-set
     cardinality) and ``collected_count`` (``len(session.items)``). They make
     the canonical-coverage parity observable through the driving port.
+
+    Target-agnosticism (RCA:
+    docs/feature/fix-collector-marker-filter-target-agnostic/deliver/rca.md):
+    the marker-FILTERED collect is always a SUBSET of the marker-AGNOSTIC
+    collect (``markers=None``, the SAME ``_collect_scope`` seam, DDD-12 -- no
+    new collector). Whenever it is a STRICT subset (``filtered < agnostic`` --
+    covering BOTH the all-unmarked ``filtered == 0`` case AND the Vera-surfaced
+    partial ``0 < filtered < agnostic`` case, where some tests are marked and
+    some are not), the digest falls back to the agnostic scope AND the event
+    names the marker mismatch (what/why/how) -- naming how many collected tests
+    the marker filter silently excluded -- instead of reporting the filtered
+    subset as the genuine scope (the false "genuinely collected zero" verdict,
+    or the silent-subset drop). A genuinely empty scope (zero under BOTH
+    collects) still reports zero, honestly. A marked repo (filtered ==
+    agnostic, e.g. nwave-dev) never triggers the fallback -- its behavior and
+    digest are unchanged.
     """
     route = _maybe_route_digest_through_runner(repo)
     if isinstance(route, _DigestRouteDegrade):
         return route.exit_code
     if isinstance(route, _DigestRouteResult):
         return _emit_runner_aware_digest(route)
+    marker_mismatch: str | None = None
     try:
         scope = _collect_scope(repo)
+        agnostic_scope = _collect_scope(repo, markers=None)
+        if len(scope.node_ids) < len(agnostic_scope.node_ids):
+            excluded_count = len(agnostic_scope.node_ids) - len(scope.node_ids)
+            marker_mismatch = _marker_mismatch_note(
+                excluded_count, len(agnostic_scope.node_ids)
+            )
+            scope = agnostic_scope
         _assert_parity(scope)
     except InterpreterUnavailable as exc:
         return _emit_interpreter_unavailable(exc)
@@ -1575,17 +1623,15 @@ def _mode_print_digest(repo: Path) -> int:
     # Plain stdout so callers can capture the bare digest (composition does
     # `.strip()` on it); the JSON event goes to stderr for machine readers.
     print(digest)
-    print(
-        json.dumps(
-            {
-                "event": "GateScopeDigest",
-                "gate_scope_digest": digest,
-                "node_id_count": len(scope.node_ids),
-                "collected_count": scope.collected_count,
-            }
-        ),
-        file=sys.stderr,
-    )
+    digest_event: dict[str, object] = {
+        "event": "GateScopeDigest",
+        "gate_scope_digest": digest,
+        "node_id_count": len(scope.node_ids),
+        "collected_count": scope.collected_count,
+    }
+    if marker_mismatch is not None:
+        digest_event["marker_mismatch"] = marker_mismatch
+    print(json.dumps(digest_event), file=sys.stderr)
     return 0
 
 
