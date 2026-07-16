@@ -37,11 +37,13 @@ a pytest fallback, NEVER a silent pass.
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.git.git_subprocess import git_text
 from des.adapters.driven.runner.tool_discovery import resolve_tool
 from des.ports.test_runner_port import (
     ListScope,
@@ -52,6 +54,8 @@ from des.ports.test_runner_port import (
 
 if TYPE_CHECKING:
     from des.ports.test_runner_port import RunnerAdapter
+
+_logger = logging.getLogger(__name__)
 
 
 # The cargo binary name resolved at the head of the declared command.
@@ -106,7 +110,7 @@ def run_cargo_scope(
         capture_output=True,
         text=True,
         cwd=target_root,
-        env=_env_with_cargo_dir(resolution.path),
+        env=_env_with_cargo_dir(resolution.path, target_root),
     )
 
     if completed.returncode == _NO_MATCH_EXIT:
@@ -179,7 +183,7 @@ def list_cargo_scope(
             capture_output=True,
             text=True,
             cwd=target_root,
-            env=_env_with_cargo_dir(resolution.path),
+            env=_env_with_cargo_dir(resolution.path, target_root),
         )
     except UnicodeDecodeError as exc:
         raise RunnerAdapterUnavailable(
@@ -255,17 +259,59 @@ def _parse_nextest_list(stdout: str) -> tuple[str, ...]:
     return tuple(sorted(set(identities)))
 
 
-def _env_with_cargo_dir(cargo_path: str) -> dict[str, str]:
+def _env_with_cargo_dir(cargo_path: str, target_root: Path) -> dict[str, str]:
     """A copied env with the resolved cargo's dir prepended to ``PATH``.
 
     So the shelled cargo finds its own subcommands (``cargo-nextest``) even when
     the resolved cargo was found off PATH (the known-location rung).
+
+    Also reuses a warm ``target/`` build-cache when ``target_root`` is a LINKED
+    git worktree with no ``CARGO_TARGET_DIR`` already set (RCA: a fresh/linked
+    worktree cold-compiling the whole crate OOMs or empty-scopes the digest).
+    An operator/CI-set ``CARGO_TARGET_DIR`` is NEVER overridden; a plain repo or
+    any git-resolution failure leaves the env untouched (degrade-LOUD, never a
+    guessed dir, never a crash) -- see ``_worktree_target_dir``.
     """
     env = dict(os.environ)
     cargo_dir = str(Path(cargo_path).parent)
     existing = env.get("PATH", "")
     env["PATH"] = cargo_dir + os.pathsep + existing if existing else cargo_dir
+
+    if "CARGO_TARGET_DIR" not in env:
+        reused = _worktree_target_dir(target_root)
+        if reused is not None:
+            env["CARGO_TARGET_DIR"] = str(reused)
+
     return env
+
+
+def _worktree_target_dir(target_root: Path) -> Path | None:
+    """The main checkout's warm ``target/`` dir when ``target_root`` is a
+    LINKED git worktree; ``None`` for a plain repo, absent ``git``, or any
+    resolution failure.
+
+    Detection: ``git rev-parse --git-common-dir`` returns an ABSOLUTE path to
+    the main checkout's git-dir for a linked worktree, and a RELATIVE ``.git``
+    for a plain repo. Never raises past this seam -- a missing ``git``, a
+    non-repo ``target_root``, or any other subprocess failure degrades LOUD to
+    "no reuse" (logged, never a crash, never a guessed dir).
+    """
+    try:
+        common_dir = git_text(target_root, "rev-parse", "--git-common-dir").strip()
+    except (subprocess.CalledProcessError, OSError) as exc:
+        _logger.info(
+            "cargo_runner: CARGO_TARGET_DIR worktree-reuse skipped for %s "
+            "(git-common-dir probe failed: %s) -- leaving env untouched",
+            target_root,
+            exc,
+        )
+        return None
+
+    if not common_dir or not Path(common_dir).is_absolute():
+        return None
+
+    main_checkout_root = Path(common_dir).resolve().parent
+    return main_checkout_root / "target"
 
 
 __all__ = ["CARGO_KNOWN_LOCATIONS", "list_cargo_scope", "run_cargo_scope"]
