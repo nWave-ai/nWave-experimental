@@ -58,6 +58,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from xml.etree import ElementTree
 
 
 if TYPE_CHECKING:
@@ -108,9 +109,23 @@ class CycleRefusal:
 
     No signed verdict was produced and no feature-end record was emitted -- the
     anti-theater invariant: a failed gate yields no fake "feature-end complete".
+
+    ``failing_tests`` / ``failing_count`` / ``junit_artifact``
+    (fix-feature-end-refusal-names-failing-tests, GDP-3): the full-suite leg's
+    refusal ENRICHES the bare ``error`` text with the WHAT-detail that lets an
+    operator act without a 25-30 min diagnostic re-run -- the bounded list of
+    failing node-ids, the TRUE total, and the filesystem path of the
+    persisted JUnit XML report that outlives the run. ``None`` (the default,
+    every OTHER leg's refusal) means "not applicable to this refusal" -- the
+    CLI omits these keys from the emitted payload entirely, never a false
+    zero (never ``failing_count=0`` / ``failing_tests=[]`` standing in for
+    "not applicable").
     """
 
     error: str
+    failing_tests: tuple[str, ...] | None = None
+    failing_count: int | None = None
+    junit_artifact: str | None = None
 
 
 @dataclass(frozen=True)
@@ -513,7 +528,7 @@ def run_feature_end_cycle(
 
     census = _fold_leg_census(LegCensus(), coverage_map)
 
-    full_suite = _run_full_suite_leg(repo_root=repo_root)
+    full_suite = _run_full_suite_leg(repo_root=repo_root, feature_id=feature_id)
     if isinstance(full_suite, CycleRefusal):
         return full_suite
     census = _fold_leg_census(census, full_suite)
@@ -879,8 +894,107 @@ def _run_coverage_map_verify_leg(
     return CoverageMapLegRan()
 
 
+_FULL_SUITE_JUNIT_RELDIR = Path(".nwave") / "telemetry" / "feature-end"
+
+# The named-failing-tests display ceiling (fix-feature-end-refusal-names-
+# failing-tests, GDP-3): the refusal's `failing_tests` list names AT MOST
+# this many node-ids -- `failing_count` still reports the TRUE total, so a
+# suite with hundreds of failures never floods the payload while the
+# overflow is never silently dropped from the count.
+_FAILING_TESTS_DISPLAY_LIMIT = 20
+
+
+def _full_suite_junit_artifact_path(repo_root: Path, feature_id: str) -> Path:
+    """The stable JUnit XML artifact path for ``feature_id``'s full-suite leg.
+
+    ``.nwave/telemetry/feature-end/{feature_id}-suite.junit.xml`` -- outlives
+    the run (per the design contract), so an operator can inspect it after
+    the fact without re-running the whole suite.
+    """
+    return repo_root / _FULL_SUITE_JUNIT_RELDIR / f"{feature_id}-suite.junit.xml"
+
+
+def _relative_junit_artifact(junit_path: Path, repo_root: Path) -> str:
+    """Render ``junit_path`` relative to ``repo_root`` when possible (portable)."""
+    try:
+        return str(junit_path.relative_to(repo_root))
+    except ValueError:
+        return str(junit_path)
+
+
+def _parse_junit_failing_node_ids(junit_path: Path) -> tuple[str, ...]:
+    """The failing/erroring ``<testcase>`` node-ids from a persisted JUnit XML.
+
+    Reconstructs pytest's own ``<file>::<name>`` node-id shape from the
+    standard JUnit attributes pytest's ``--junit-xml`` writes (``file`` when
+    present, else ``classname``, plus ``name``) -- a node-id containing the
+    real test function name, matching what a bounded diagnostic list should
+    name. Returns an empty tuple when the report is missing, malformed, or
+    genuinely records no failure/error -- the caller treats that as "cannot
+    honestly account for this refusal" (never a false zero, task #106).
+    """
+    try:
+        tree = ElementTree.parse(junit_path)
+    except (ElementTree.ParseError, OSError):
+        return ()
+    failing: list[str] = []
+    for testcase in tree.getroot().iter("testcase"):
+        if testcase.find("failure") is None and testcase.find("error") is None:
+            continue
+        name = testcase.get("name") or ""
+        prefix = testcase.get("file") or testcase.get("classname") or ""
+        failing.append(f"{prefix}::{name}" if prefix else name)
+    return tuple(failing)
+
+
+def _bounded_failing_tests(
+    all_failing: tuple[str, ...],
+) -> tuple[tuple[str, ...], int]:
+    """Bound ``all_failing`` to :data:`_FAILING_TESTS_DISPLAY_LIMIT`; return
+    ``(named, true_total)`` -- ``true_total`` is always the FULL count, even
+    when ``named`` is truncated."""
+    total = len(all_failing)
+    if total <= _FAILING_TESTS_DISPLAY_LIMIT:
+        return all_failing, total
+    return all_failing[:_FAILING_TESTS_DISPLAY_LIMIT], total
+
+
+def _full_suite_failure_refusal(
+    completed: subprocess.CompletedProcess[str],
+    *,
+    junit_path: Path | None,
+    repo_root: Path,
+) -> CycleRefusal:
+    """Build the full-suite leg's refusal, enriched with the JUnit evidence.
+
+    Sources the failing node-ids from ``junit_path`` -- the JUnit report
+    ``_run_full_suite_leg`` requested from the REGISTERED contract-gate
+    facet's ``run_suite`` (the unmarked, whole-suite run that DRIVES this
+    very refusal), never from the marker-scoped parity run
+    (``_run_contract_suite``), which can disagree about which tests even
+    exist in scope (task #106 reloop). Falls back to the bare
+    :func:`_gate_failure_refusal` text (``failing_tests``/``failing_count``/
+    ``junit_artifact`` all ``None``) when no report was requested, the
+    report is missing/malformed, or it genuinely records zero failing
+    testcases -- never a false zero standing in for "unavailable".
+    """
+    base = _gate_failure_refusal("the feature-end full-suite leg", completed)
+    if junit_path is None or not junit_path.is_file():
+        return base
+    all_failing = _parse_junit_failing_node_ids(junit_path)
+    if not all_failing:
+        return base
+    named, total = _bounded_failing_tests(all_failing)
+    return CycleRefusal(
+        base.error,
+        failing_tests=named,
+        failing_count=total,
+        junit_artifact=_relative_junit_artifact(junit_path, repo_root),
+    )
+
+
 def _run_full_suite_leg(
-    *, repo_root: Path
+    *, repo_root: Path, feature_id: str | None = None
 ) -> (
     FullSuiteLegRan
     | FullSuiteLegNotApplicable
@@ -931,9 +1045,20 @@ def _run_full_suite_leg(
             "the target repository carries no collectable contract suite; the "
             "feature-end full-suite leg is not applicable (no full suite to run)"
         )
-    completed = _dispatch(repo_root, ["run-contract-gate", "--repo", str(repo_root)])
+    junit_path = (
+        _full_suite_junit_artifact_path(repo_root, feature_id)
+        if feature_id is not None
+        else None
+    )
+    argv = ["run-contract-gate", "--repo", str(repo_root)]
+    if junit_path is not None:
+        junit_path.parent.mkdir(parents=True, exist_ok=True)
+        argv += ["--junit-xml", str(junit_path)]
+    completed = _dispatch(repo_root, argv)
     if completed.returncode != 0:
-        return _gate_failure_refusal("the feature-end full-suite leg", completed)
+        return _full_suite_failure_refusal(
+            completed, junit_path=junit_path, repo_root=repo_root
+        )
     return FullSuiteLegRan(pytest_exit_code=completed.returncode)
 
 

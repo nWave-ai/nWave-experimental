@@ -54,8 +54,16 @@ class ContractGatePort(Protocol):
         """Enumerate the target's contract-gate node-id scope."""
         ...
 
-    def run_suite(self, repo: Path) -> ContractVerdict:
-        """Run the target's contract suite; return the observable verdict."""
+    def run_suite(
+        self, repo: Path, *, junit_xml_path: Path | None = None
+    ) -> ContractVerdict:
+        """Run the target's contract suite; return the observable verdict.
+
+        ``junit_xml_path`` (fix-feature-end-refusal-names-failing-tests),
+        when given, asks the facet to persist a JUnit XML report of THIS run
+        at that filesystem path -- a facet that cannot honor it may ignore
+        the kwarg; the pytest facet honors it.
+        """
         ...
 
 

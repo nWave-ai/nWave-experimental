@@ -47,15 +47,25 @@ class VitestContractGateAdapter:
         """Enumerate the target's vitest test-file scope (file-granularity)."""
         return [str(path) for path in sorted(repo.rglob("*.test.ts"))]
 
-    def run_suite(self, repo: Path) -> ContractVerdict:
-        """Run the target's whole vitest suite; return the observable verdict."""
+    def run_suite(
+        self, repo: Path, *, junit_xml_path: Path | None = None
+    ) -> ContractVerdict:
+        """Run the target's whole vitest suite; return the observable verdict.
+
+        ``junit_xml_path`` (fix-feature-end-refusal-names-failing-tests,
+        ContractGatePort parity): when given, requests vitest's own JUnit
+        reporter so this run persists a JUnit XML report a caller can parse.
+        """
         resolution = resolve_tool(_VITEST_RUNNER, VITEST_KNOWN_LOCATIONS, base_dir=repo)
         if resolution.path is None:
             raise RunnerAdapterUnavailable(
                 _VITEST_RUNNER, reason=resolution.remediation
             )
+        argv = [resolution.path, "run"]
+        if junit_xml_path is not None:
+            argv.extend(["--reporter=junit", f"--outputFile={junit_xml_path}"])
         completed = subprocess.run(
-            [resolution.path, "run"],
+            argv,
             cwd=repo,
             check=False,
         )

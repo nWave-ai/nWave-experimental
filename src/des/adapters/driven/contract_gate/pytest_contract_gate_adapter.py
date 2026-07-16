@@ -80,13 +80,20 @@ class PythonContractGateAdapter:
         )
         return [line for line in completed.stdout.splitlines() if "::" in line]
 
-    def run_suite(self, repo: Path) -> ContractVerdict:
-        """Run the target's whole pytest suite; return the observable verdict."""
-        completed = subprocess.run(
-            [python_for(None), "-m", "pytest", "-p", "no:cacheprovider"],
-            cwd=repo,
-            check=False,
-        )
+    def run_suite(
+        self, repo: Path, *, junit_xml_path: Path | None = None
+    ) -> ContractVerdict:
+        """Run the target's whole pytest suite; return the observable verdict.
+
+        ``junit_xml_path`` (fix-feature-end-refusal-names-failing-tests),
+        when given, adds ``--junit-xml=<path>`` so THIS unmarked whole-suite
+        run -- the one that drives the returned verdict -- persists a JUnit
+        XML report a caller can parse for the failing node-ids.
+        """
+        argv = [python_for(None), "-m", "pytest", "-p", "no:cacheprovider"]
+        if junit_xml_path is not None:
+            argv.append(f"--junit-xml={junit_xml_path}")
+        completed = subprocess.run(argv, cwd=repo, check=False)
         return ContractVerdict(passed=completed.returncode == 0, runner=_PYTEST_RUNNER)
 
 

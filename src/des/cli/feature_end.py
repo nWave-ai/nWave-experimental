@@ -182,14 +182,24 @@ def _run_cycle(args: argparse.Namespace) -> int:
         verdict=args.verdict,
     )
     if isinstance(outcome, CycleRefusal):
-        _emit(
-            {
-                "event": "FeatureEndCycleRefused",
-                "verb": "run",
-                "feature_id": args.feature_id,
-                "error": outcome.error,
-            }
-        )
+        payload: dict[str, object] = {
+            "event": "FeatureEndCycleRefused",
+            "verb": "run",
+            "feature_id": args.feature_id,
+            "error": outcome.error,
+        }
+        # fix-feature-end-refusal-names-failing-tests (GDP-3): the full-suite
+        # leg's refusal carries the WHAT-detail an operator needs to act
+        # without a 25-30 min diagnostic re-run. `None` (every OTHER leg's
+        # refusal) omits the key entirely -- never a false zero standing in
+        # for "not applicable to this refusal".
+        if outcome.failing_tests is not None:
+            payload["failing_tests"] = list(outcome.failing_tests)
+        if outcome.failing_count is not None:
+            payload["failing_count"] = outcome.failing_count
+        if outcome.junit_artifact is not None:
+            payload["junit_artifact"] = outcome.junit_artifact
+        _emit(payload)
         return 2
 
     if isinstance(outcome, CycleIndeterminate):

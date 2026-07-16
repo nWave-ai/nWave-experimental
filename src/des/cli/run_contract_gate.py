@@ -1497,7 +1497,7 @@ def _full_suite_marker_args(repo: Path, interpreter: str) -> list[str]:
     ]
 
 
-def _run_contract_suite(repo: Path) -> int:
+def _run_contract_suite(repo: Path, *, junit_xml_path: Path | None = None) -> int:
     """Run the FEATURE-END full-suite scope; return its pytest exit code.
 
     slice-05 / C10: this is the feature-end full-suite leg (run ONCE at
@@ -1505,15 +1505,26 @@ def _run_contract_suite(repo: Path) -> int:
     full-suite marker argv is owned by ``_full_suite_marker_args`` (the SSOT) so
     the per-slice RUN path never wires the whole-tree marker.
 
+    ``junit_xml_path`` (fix-feature-end-refusal-names-failing-tests), when
+    given, adds ``--junit-xml=<path>`` so this (marker-scoped) run persists a
+    JUnit XML report. Only the UNROUTED fallback path (no registered
+    ``ContractGatePort`` facet) ever passes this -- the registered-facet path
+    sources its JUnit report from ``facet.run_suite`` instead (the whole-suite,
+    unmarked run that actually drives the refusal verdict), never from this
+    marker-scoped parity call.
+
     Parallel-by-default via pytest-xdist (``-n auto``) -- the perf fix that cuts
     the serial ~30 min whole-suite RUN to ~6 min on 4 cores. Degrades LOUD to
     serial when xdist is absent or when the operator sets ``NWAVE_GATE_JOBS``
     to a serial token (see ``_parallel_pytest_args``).
     """
     interpreter = pytest_interpreter()
+    argv = _full_suite_marker_args(repo, interpreter)
+    if junit_xml_path is not None:
+        argv = [*argv, f"--junit-xml={junit_xml_path}"]
     try:
         completed = subprocess.run(
-            _full_suite_marker_args(repo, interpreter),
+            argv,
             cwd=repo,
             timeout=run_timeout_seconds(),
         )
@@ -1889,8 +1900,17 @@ def _mode_verify_gate_scope(repo: Path, commit: str, at_kind: str | None = None)
     return 0
 
 
-def _mode_run_suite(repo: Path, at_kind: str | None = None) -> int:
+def _mode_run_suite(
+    repo: Path, at_kind: str | None = None, *, junit_xml_path: Path | None = None
+) -> int:
     """Default mode: run the whole-tree contract suite + emit a digest.
+
+    ``junit_xml_path`` (fix-feature-end-refusal-names-failing-tests): when
+    given, requests a persisted JUnit XML report of the run that DRIVES the
+    pass/fail verdict -- the registered-facet's ``run_suite`` when a
+    ``ContractGatePort`` facet is routed, else this function's own fallback
+    ``_run_contract_suite`` call. Omitted (``None``, the default) is a
+    byte-identical no-op -- zero behaviour change for every existing caller.
 
     Emits the single-line JSON ``ContractGateResult`` event on BOTH stdout
     (the pre-existing machine-readable contract — DISCUSS row 4: no breaking
@@ -1922,7 +1942,9 @@ def _mode_run_suite(repo: Path, at_kind: str | None = None) -> int:
     runner. Every other ``--at-kind`` (default / ``gherkin``) keeps the
     EXISTING runner-routed behavior byte-identical.
     """
-    routed_registered = _maybe_route_through_registered_contract_gate(repo)
+    routed_registered = _maybe_route_through_registered_contract_gate(
+        repo, junit_xml_path=junit_xml_path
+    )
     if routed_registered is not None:
         return routed_registered
     if at_kind != "pytest-regression":
@@ -1954,7 +1976,7 @@ def _mode_run_suite(repo: Path, at_kind: str | None = None) -> int:
         _warn_committed_scope_indeterminate(committed.reason)
         digest = None
     try:
-        suite_code = _run_contract_suite(repo)
+        suite_code = _run_contract_suite(repo, junit_xml_path=junit_xml_path)
     except InterpreterUnavailable as exc:
         return _emit_interpreter_unavailable(exc)
     except _CollectionError as exc:
@@ -2581,8 +2603,19 @@ def _maybe_route_through_cargo(
     return 0
 
 
-def _maybe_route_through_registered_contract_gate(repo: Path) -> int | None:
+def _maybe_route_through_registered_contract_gate(
+    repo: Path, *, junit_xml_path: Path | None = None
+) -> int | None:
     """Route through a REGISTERED ``contract_gate`` facet; else return ``None``.
+
+    ``junit_xml_path`` (fix-feature-end-refusal-names-failing-tests): forwarded
+    to ``facet.run_suite`` ONLY when given (never as an unconditional ``None``
+    kwarg), so a test double implementing the pre-existing single-arg
+    ``run_suite(self, repo)`` shape keeps working unchanged when no caller
+    requests a JUnit report. This is the whole-suite, UNMARKED run that
+    DRIVES the returned pass/fail verdict -- the correct JUnit source (never
+    the marker-scoped ``_run_contract_suite`` parity call below, which can
+    disagree with this run about which tests even exist in scope).
 
     unified-language-adapter-registry slice-01 (ADR-ULAR-001 prefactoring, C5),
     extended in slice-02 (C8/C11): sprout-and-fall-through seam mirroring
@@ -2659,7 +2692,11 @@ def _maybe_route_through_registered_contract_gate(repo: Path) -> int | None:
     )
     with routing_active_for(repo):
         try:
-            verdict = facet.run_suite(repo)
+            verdict = (
+                facet.run_suite(repo, junit_xml_path=junit_xml_path)
+                if junit_xml_path is not None
+                else facet.run_suite(repo)
+            )
         except InterpreterUnavailable as exc:
             return _emit_interpreter_unavailable(
                 InterpreterUnavailable("pytest", exc.probed)
@@ -3260,6 +3297,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "CoverageOnExecutedPathFlagged."
         ),
     )
+    parser.add_argument(
+        "--junit-xml",
+        dest="junit_xml",
+        default=None,
+        help=(
+            "Persist a JUnit XML report of the default (full-suite) run at "
+            "this filesystem path (fix-feature-end-refusal-names-failing-"
+            "tests). Only honored by the default run-suite mode."
+        ),
+    )
     return parser
 
 
@@ -3430,7 +3477,8 @@ def main(argv: list[str] | None = None, output: OutputPort | None = None) -> int
             return 2
         return _mode_feature_scoped(repo, args.feature_id, args.entering_slice)
 
-    return _mode_run_suite(repo, args.at_kind)
+    junit_xml_path = Path(args.junit_xml) if args.junit_xml else None
+    return _mode_run_suite(repo, args.at_kind, junit_xml_path=junit_xml_path)
 
 
 if __name__ == "__main__":  # pragma: no cover
