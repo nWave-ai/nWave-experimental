@@ -144,7 +144,7 @@ def _stub_full_suite_ran(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_full_suite_leg",
-        lambda *, repo_root: FullSuiteLegRan(pytest_exit_code=0),
+        lambda *, repo_root, feature_id=None: FullSuiteLegRan(pytest_exit_code=0),
     )
 
 
@@ -155,7 +155,7 @@ def _stub_full_suite_not_applicable(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_full_suite_leg",
-        lambda *, repo_root: FullSuiteLegNotApplicable(
+        lambda *, repo_root, feature_id=None: FullSuiteLegNotApplicable(
             "stubbed: no contract suite in this hermetic fixture"
         ),
     )
