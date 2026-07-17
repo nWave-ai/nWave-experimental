@@ -46,6 +46,7 @@ from des.adapters.driven.environment.stub_environment_probe import (
     StubEnvironmentProbe,
 )
 from des.adapters.driven.git.git_feature_delta_adapter import GitFeatureDeltaAdapter
+from des.adapters.driven.git.git_subprocess import resolve_default_base_ref
 from des.adapters.driven.install.pip_target_installer import PipTargetInstaller
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.domain.gate_outcome import GateOutcome, GateVerdict
@@ -92,9 +93,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--delta-base-ref",
-        default="master",
+        default=None,
         help="The base ref the feature's installability delta is measured "
-        "against (git diff --diff-filter=A {base_ref}...HEAD).",
+        "against (git diff --diff-filter=A {base_ref}...HEAD). Omitted -> "
+        "resolved from local git state (resolve_default_base_ref); "
+        "unresolvable -> a loud INDETERMINATE naming this flag.",
     )
     return parser
 
@@ -131,7 +134,7 @@ def _added_installable_paths(added: AddedPaths) -> tuple[str, ...]:
 
 
 def _feature_ships_new_installable(
-    delta_port: FeatureDeltaPort, repo_root: Path, base_ref: str
+    delta_port: FeatureDeltaPort, repo_root: Path, delta_base_ref: str | None
 ) -> tuple[str, ...] | Indeterminate:
     """Delta-aware installability probe (slice-03) -- the un-gameable cross-check.
 
@@ -140,7 +143,21 @@ def _feature_ships_new_installable(
     delta-added installable paths (empty tuple = ships none), or propagates
     `Indeterminate` LOUD when git could not establish the delta -- never an empty
     tuple masking a git failure (the degrade-LOUD mandate, AD-21).
+
+    Resolves the base ref LAZILY, right here -- the sole call site the git delta
+    is genuinely needed. `delta_base_ref` is the explicit `--delta-base-ref` flag
+    value, or `None` when omitted (resolved from local git state via
+    `resolve_default_base_ref`). An unresolvable default degrades to the same
+    `Indeterminate` this function already propagates for a git-diff failure, so a
+    caller that never reaches this function (e.g. a manifest-declared
+    not_applicable claim with an unjustified/empty rationale) never pays the
+    base-ref-resolution cost or its failure mode.
     """
+    base_ref = delta_base_ref
+    if base_ref is None:
+        base_ref = resolve_default_base_ref(repo_root)
+        if base_ref is None:
+            return Indeterminate(_UNRESOLVABLE_DEFAULT_BASE_REF_REASON)
     added = delta_port.added_paths(repo_root, base_ref)
     if isinstance(added, Indeterminate):
         return added
@@ -163,7 +180,7 @@ def _feature_under_gate(
     feature_dir: Path,
     delta_port: FeatureDeltaPort,
     repo_root: Path,
-    base_ref: str,
+    delta_base_ref: str | None,
 ) -> FeatureUnderGate:
     """Build the `FeatureUnderGate` value object from the manifest (or its absence).
 
@@ -182,7 +199,7 @@ def _feature_under_gate(
     """
     if manifest is None:
         return _delta_derived_feature_under_gate(
-            feature_dir, delta_port, repo_root, base_ref
+            feature_dir, delta_port, repo_root, delta_base_ref
         )
 
     root = _resolved_feature_root(manifest, feature_dir)
@@ -194,7 +211,7 @@ def _feature_under_gate(
                 "walking_skeleton_applicable:false requires a non-empty "
                 "not_applicable_rationale"
             )
-        ships = _feature_ships_new_installable(delta_port, repo_root, base_ref)
+        ships = _feature_ships_new_installable(delta_port, repo_root, delta_base_ref)
         if isinstance(ships, Indeterminate):
             return FeatureUnderGate(
                 feature_root=root,
@@ -230,14 +247,16 @@ def _feature_under_gate(
     # NO duplicate logic. delta-adds-no-installable -> NOT_APPLICABLE; delta-adds-an-
     # installable -> ships_installer_artifact=True -> domain FAILs (a no-AT installer
     # feature cannot dodge -- invariant preserved); git Indeterminate -> degrade-LOUD.
-    return _delta_derived_feature_under_gate(root, delta_port, repo_root, base_ref)
+    return _delta_derived_feature_under_gate(
+        root, delta_port, repo_root, delta_base_ref
+    )
 
 
 def _delta_derived_feature_under_gate(
     feature_root: Path,
     delta_port: FeatureDeltaPort,
     repo_root: Path,
-    base_ref: str,
+    delta_base_ref: str | None,
 ) -> FeatureUnderGate:
     """Build the VO by COMPUTING applicability from the feature's git delta.
 
@@ -248,7 +267,7 @@ def _delta_derived_feature_under_gate(
     ships_installer_artifact=True -> domain FAILs (a no-AT installer feature cannot
     dodge -- invariant preserved); git Indeterminate -> degrade-LOUD.
     """
-    ships = _feature_ships_new_installable(delta_port, repo_root, base_ref)
+    ships = _feature_ships_new_installable(delta_port, repo_root, delta_base_ref)
     if isinstance(ships, Indeterminate):
         return FeatureUnderGate(
             feature_root=feature_root,
@@ -304,6 +323,20 @@ def _emit_usage_error(message: str) -> None:
     )
 
 
+# The DISTINCT, self-explaining Indeterminate reason (GDP-3 what/why/how) emitted
+# when `--delta-base-ref` is omitted AND `resolve_default_base_ref` cannot resolve
+# the repo's default branch from local git state. Deliberately NEVER the generic
+# `GitFeatureDeltaAdapter` "git diff failed (exit 128)" plumbing string -- a
+# base-ref-resolution failure is a DIFFERENT cause from a git-diff failure, and
+# must be named as such.
+_UNRESOLVABLE_DEFAULT_BASE_REF_REASON = (
+    "the repository's default branch could not be resolved (no "
+    "refs/remotes/origin/HEAD symref and no master/main candidate ref found "
+    "in local git state) -- pass --delta-base-ref <ref> to name the base ref "
+    "the feature's installability delta is measured against"
+)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the walking-skeleton gate; return the verdict exit code."""
     parser = _build_parser()
@@ -312,6 +345,15 @@ def main(argv: list[str] | None = None) -> int:
     feature_dir = Path(args.feature_dir).resolve()
     repo_root = Path(args.repo_root).resolve()
 
+    # LAZY base-ref resolution (regression fix): the default base ref is
+    # resolved only where the DELTA-DERIVED applicability path genuinely
+    # reaches for it -- inside `_feature_ships_new_installable`, the sole call
+    # site. A manifest-declared `walking_skeleton_applicable: false` claim is
+    # read from the manifest alone and must be judged (rationale-refusal
+    # included, USAGE exit 2) REGARDLESS of whether the default base ref is
+    # resolvable; eagerly resolving it here would let an unresolvable-default
+    # INDETERMINATE (exit 4) preempt that refusal for a fixture that never
+    # needed the git delta at all.
     try:
         manifest = _load_manifest(feature_dir)
         feature = _feature_under_gate(

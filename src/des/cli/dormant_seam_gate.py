@@ -18,9 +18,12 @@ Arguments::
                                read from the repo, not this dir, for slice-01)
     --repo-root <dir>          (default ".") the repository the net-new delta is
                                measured in (layout-independent invocation)
-    --delta-base-ref <ref>     (default "master") the base ref the net-new delta
-                               is measured against (git diff --diff-filter=A
-                               {base_ref}...HEAD, behind ChangedSymbolPort)
+    --delta-base-ref <ref>     (default: resolved from local git state via
+                               resolve_default_base_ref; unresolvable -> a loud
+                               cannot-evaluate INDETERMINATE naming this flag)
+                               the base ref the net-new delta is measured against
+                               (git diff --diff-filter=A {base_ref}...HEAD,
+                               behind ChangedSymbolPort)
 
 Exit codes (DESIGN D-5)::
 
@@ -57,6 +60,7 @@ import sys
 from pathlib import Path
 
 from des.adapters.driven.git.git_changed_symbol_adapter import GitChangedSymbolAdapter
+from des.adapters.driven.git.git_subprocess import resolve_default_base_ref
 from des.cli.human_surface import Verdict, print_human_summary
 from des.ports.driven_ports.changed_symbol_port import (
     ChangedSymbolPort,
@@ -160,9 +164,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--delta-base-ref",
-        default="master",
+        default=None,
         help="The base ref the net-new delta is measured against "
-        "(git diff --diff-filter=A {base_ref}...HEAD).",
+        "(git diff --diff-filter=A {base_ref}...HEAD). Omitted -> resolved "
+        "from local git state (resolve_default_base_ref); unresolvable -> a "
+        "loud cannot-evaluate INDETERMINATE naming this flag.",
     )
     return parser
 
@@ -632,6 +638,20 @@ def _emit_cannot_evaluate(reason: str, feature_dir: Path) -> None:
     )
 
 
+# The DISTINCT, self-explaining cannot-evaluate reason (GDP-3 what/why/how)
+# emitted when `--delta-base-ref` is omitted AND `resolve_default_base_ref`
+# cannot resolve the repo's default branch from local git state. Deliberately
+# NEVER the generic `GitChangedSymbolAdapter` "git diff failed (exit 128)"
+# plumbing string -- a base-ref-resolution failure is a DIFFERENT cause from a
+# git-diff failure, and must be named as such.
+_UNRESOLVABLE_DEFAULT_BASE_REF_REASON = (
+    "the repository's default branch could not be resolved (no "
+    "refs/remotes/origin/HEAD symref and no master/main candidate ref found "
+    "in local git state) -- pass --delta-base-ref <ref> to name the base ref "
+    "the feature's net-new delta is measured against"
+)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the dormant-seam gate; return the non-halting exit code."""
     parser = _build_parser()
@@ -644,7 +664,14 @@ def main(argv: list[str] | None = None) -> int:
         _emit_usage_error(f"feature dir does not exist: {feature_dir}")
         return 2
 
-    outcome = _evaluate(GitChangedSymbolAdapter(), repo_root, args.delta_base_ref)
+    base_ref = args.delta_base_ref
+    if base_ref is None:
+        base_ref = resolve_default_base_ref(repo_root)
+        if base_ref is None:
+            _emit_cannot_evaluate(_UNRESOLVABLE_DEFAULT_BASE_REF_REASON, feature_dir)
+            return 3
+
+    outcome = _evaluate(GitChangedSymbolAdapter(), repo_root, base_ref)
     if isinstance(outcome, Indeterminate):
         _emit_cannot_evaluate(outcome.reason, feature_dir)
         return 3
