@@ -93,6 +93,16 @@ _ANNOTATION_ESCAPE_RE = re.compile(
 )
 _PREFACTORING_TAG_RE = re.compile(r"@prefactoring\b")
 
+#: The `[REF] Slice Plan` Annotation-cell token that names the regression-test
+#: file backing a `pytest-regression` bugfix slice (bug #94's mechanical-seal
+#: route). Public (no leading underscore): the ONE shared locus every consumer
+#: of the `@regression-test-file:<path>` grammar imports -- the G-DISTILL-EXIT
+#: hook (`subagent_stop_handler._mechanical_seal_cleared_slices`) and the
+#: `des next` loop projection (`deliver_loop_projection._project_pending_slice`)
+#: both resolve this token to the SAME regex, never a second, independently
+#: drifting copy (fix-des-next-blind-to-sealed-red, ZERO-DEFECTS dedup).
+REGRESSION_TEST_FILE_ANNOTATION_RE = re.compile(r"@regression-test-file:(\S+)")
+
 
 class GateError(Exception):
     """A gate verdict carrying a non-zero exit code and a JSON payload.

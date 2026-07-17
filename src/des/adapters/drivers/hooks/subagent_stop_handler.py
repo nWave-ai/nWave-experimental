@@ -1342,8 +1342,10 @@ _SLICE_PLAN_STATUS_VOCABULARY = frozenset({"pending", "shipped"})
 # Annotation-cell token that names the regression-test file backing a
 # pytest-regression bugfix slice, so `_mechanical_seal_cleared_slices` can
 # discover which file to check without any table-parser change (the
-# Annotation column is free text already).
-_REGRESSION_TEST_FILE_ANNOTATION_RE = re.compile(r"@regression-test-file:(\S+)")
+# Annotation column is free text already). The regex itself now lives in
+# `des.cli.carpaccio_format.REGRESSION_TEST_FILE_ANNOTATION_RE` -- the ONE
+# shared locus (fix-des-next-blind-to-sealed-red, ZERO-DEFECTS dedup) --
+# imported at point of use below rather than re-declared here.
 
 
 class _SlicePlanParseUnresolved(Exception):
@@ -1435,7 +1437,9 @@ def _mechanical_seal_cleared_slices(
     for row in rows:
         if row.slice_id not in missing:
             continue
-        match = _REGRESSION_TEST_FILE_ANNOTATION_RE.search(row.annotation)
+        match = carpaccio_format.REGRESSION_TEST_FILE_ANNOTATION_RE.search(
+            row.annotation
+        )
         if match is None:
             continue
         regression_test_file = repo / match.group(1)

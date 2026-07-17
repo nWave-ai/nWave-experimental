@@ -39,9 +39,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.cli import carpaccio_slice_gate, feature_delta_doctor
 from des.cli import commit_slice as _commit_slice
-from des.cli import feature_delta_doctor
 from des.cli.carpaccio_format import (
+    REGRESSION_TEST_FILE_ANNOTATION_RE,
     GateError,
     SlicePlan,
     SlicePlanRow,
@@ -158,7 +159,7 @@ def project_next_step(repo_root: Path, feature_id: str) -> NextStep:
             ),
         )
 
-    return _project_pending_slice(repo_root, feature_id, pending_row.slice_id)
+    return _project_pending_slice(repo_root, feature_id, pending_row)
 
 
 def _feature_delta_path(repo_root: Path, feature_id: str) -> Path:
@@ -172,11 +173,16 @@ def _first_pending_row(plan: SlicePlan) -> SlicePlanRow | None:
     return None
 
 
-def _project_pending_slice(repo_root: Path, feature_id: str, slice_id: str) -> NextStep:
+def _project_pending_slice(
+    repo_root: Path, feature_id: str, pending_row: SlicePlanRow
+) -> NextStep:
+    slice_id = pending_row.slice_id
     ledger = AtCompletionLedger(feature_id, repo_root)
     records = ledger.read_records()
 
-    if not _has_event_for_slice(records, _RED_OBSERVED_EVENT, slice_id):
+    if not _has_event_for_slice(
+        records, _RED_OBSERVED_EVENT, slice_id
+    ) and not _mechanical_seal_clears_red(repo_root, pending_row):
         return _wave_command_step(
             feature_id=feature_id,
             slice_id=slice_id,
@@ -228,6 +234,28 @@ def _project_pending_slice(repo_root: Path, feature_id: str, slice_id: str) -> N
         f"slice {slice_id} is EXAMINE-verified -- the producing-tool commit "
         "step (D_REFACTOR_COMMIT) is out of slice-01's scope; see "
         "feature-delta.md [REF] Slice Plan slice-02."
+    )
+
+
+def _mechanical_seal_clears_red(repo_root: Path, pending_row: SlicePlanRow) -> bool:
+    """True when the pending row's mechanical RED seal satisfies precondition-1
+    (the ``RedObserved`` requirement) WITHOUT a ledger record.
+
+    Reuses ``carpaccio_slice_gate._mechanical_seal_satisfied`` -- the EXACT
+    predicate the DELIVER-entry carpaccio gate (``check_at_review``) and the
+    G-DISTILL-EXIT hook (``subagent_stop_handler._mechanical_seal_cleared_
+    slices``) already trust -- never a parallel re-derivation of the same
+    fact (SSOT). Fail-closed on every degraded input: no ``@regression-test-
+    file:`` annotation token, or the seal itself absent/stale/unwitnessed,
+    both resolve to ``False`` (still route to ``/nw-distill``), matching the
+    mechanical-seal route's existing fail-closed semantics.
+    """
+    match = REGRESSION_TEST_FILE_ANNOTATION_RE.search(pending_row.annotation)
+    if match is None:
+        return False
+    regression_test_file = repo_root / match.group(1)
+    return carpaccio_slice_gate._mechanical_seal_satisfied(
+        repo_root, regression_test_file
     )
 
 
