@@ -104,17 +104,17 @@ def test_zero_scannable_scope_is_not_mislabeled_presence_only(
     scannable AT tokens must NOT get the "presence-only" / "add a negative
     AT" wording -- there is nothing to add a negative assertion TO. The
     real cause (no scannable AT surface in this file/scope -- wrong
-    file/dir was pointed at) must be named instead. Exit code (refusal)
-    is unchanged -- this pins the MESSAGE only.
+    file/dir was pointed at) must be named instead. Per fix #42 a
+    zero-scannable scope is INDETERMINATE (exit 2), not a red refusal.
     """
     prose_file = tmp_path / "booking-notes.md"
     prose_file.write_text(_ZERO_SCANNABLE_PROSE)
 
     exit_code = main(["--test-file", str(prose_file), "--all-critical"])
 
-    assert exit_code == 1  # decision/exit unchanged (RCA non-goal)
+    assert exit_code == 2  # zero-scannable scope is INDETERMINATE per fix #42
     event = _first_event(capsys)
-    assert event["event"] == "NegativeAtRefused"
+    assert event["event"] == "NegativeAtIndeterminate"
 
     text = _flatten_scope_text(event)
     assert _PRESENCE_ONLY_WORDING not in text, (

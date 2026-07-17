@@ -175,8 +175,10 @@ def _plant_fake_cargo(bin_dir: Path, *, list_exit: int) -> None:
     bin_dir.mkdir(parents=True, exist_ok=True)
     if list_exit == 0:
         list_body = (
-            f'  echo "{_FAKE_NEXTEST_BINARY}:"\n'
-            + "".join(f'  echo "    {test}"\n' for test in _FAKE_NEXTEST_TESTS)
+            "".join(
+                f'  echo "{_FAKE_NEXTEST_BINARY} {test}"\n'
+                for test in _FAKE_NEXTEST_TESTS
+            )
             + "  exit 0\n"
         )
     else:

@@ -228,6 +228,7 @@ def _run_regression_gate_via_runner(
 # them with argparse + verdict emission. ``__all__`` marks the re-exported names
 # as intentional so autoflake keeps the otherwise-internally-unused regex.
 __all__ = [
+    "_GATE_INDETERMINATE_EXIT_CODE",
     "_SLICE_ID_TRAILER_RE",
     "canonical_regression_test_path",
     "extract_slice_id",
@@ -1586,6 +1587,19 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
     return 0
 
 
+_INDETERMINATE_NO_EXAMINE_RESCUE_HOW = (
+    "this degrade has no examine-verdict escape -- the examine-verdict "
+    "carve-out only fires on a genuinely empty AT scope "
+    "(zero-collected/empty-intersection), not on an unavailable interpreter "
+    "or runner. Fix the interpreter/runner resolution on this machine and "
+    "re-run `des commit-slice`, OR, if this slice's AT scope is genuinely "
+    "empty by design (a prose/@prefactoring slice), record a PASS "
+    "examine-verdict first (`des record-examine-verdict`), then re-run "
+    "`des commit-slice` -- it will re-run E2 and, on a genuinely empty "
+    "scope, seal via attested_via: examine-verdict."
+)
+
+
 def _record_indeterminate_outcome(
     repo: Path,
     args: argparse.Namespace,
@@ -1598,6 +1612,7 @@ def _record_indeterminate_outcome(
         "interpreter on this machine -- recorded an honest "
         "SliceCommitIndeterminate (unverified here), never a fabricated pass"
     ),
+    how: str = _INDETERMINATE_NO_EXAMINE_RESCUE_HOW,
 ) -> int:
     """Mint the honest INDETERMINATE outcome for the listed slices (DDD-2).
 
@@ -1612,6 +1627,15 @@ def _record_indeterminate_outcome(
     wedges the chain -- and emits the honest event so the operator sees the
     gate could not verify here. Returns the dedicated INDETERMINATE exit code
     (distinct from 0 verified, 1 refused, 2 malformed).
+
+    `how` is TRUE per cause (RCA Q3): both callers of this function reach it
+    only via the interpreter/runner-unavailable branch of `_run_verify_checks`
+    (`contract_code == _GATE_INDETERMINATE_EXIT_CODE`, line 1354) -- a branch
+    that RETURNS before the examine-verdict carve-out (a genuinely-empty AT
+    scope, a different branch at line 1405-1432) is ever consulted. The
+    default `how` therefore states honestly that THIS degrade has no direct
+    examine-verdict rescue, while still naming the conditional rescue for a
+    genuinely-empty AT scope -- never an unconditional (false) promise.
     """
     _append_slice_commit_indeterminate(repo, feature_id, slice_ids, reason)
     _emit_with_human_surface(
@@ -1620,6 +1644,7 @@ def _record_indeterminate_outcome(
             "slice_ids": slice_ids,
             "commit": args.commit,
             "error": diagnostic,
+            "how": how,
         }
     )
     return _GATE_INDETERMINATE_EXIT_CODE

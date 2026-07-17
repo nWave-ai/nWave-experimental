@@ -64,7 +64,7 @@ _ADAPTER = RunnerAdapter(name="cargo-test")
 _SCOPED_COMMAND = ("cargo", "nextest", "run", "--test", "ws_driver")
 # Non-empty nextest-list-shaped stdout so the list facet does not itself raise
 # an (unrelated) empty-scope INDETERMINATE -- see `_parse_nextest_list`.
-_LIST_STDOUT = "ws_driver:\n    it_works\n"
+_LIST_STDOUT = "ws_driver it_works\n"
 
 
 # --- fixture builders: REAL git, zero cargo/compilation ---------------------

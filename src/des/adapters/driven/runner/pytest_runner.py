@@ -30,7 +30,11 @@ import os
 import subprocess
 from typing import TYPE_CHECKING
 
-from des.ports.test_runner_port import ListScope, RunVerdict
+from des.ports.test_runner_port import (
+    ListScope,
+    RunnerAdapterUnavailable,
+    RunVerdict,
+)
 from des.runtime.interpreter import python_for
 
 
@@ -43,6 +47,32 @@ if TYPE_CHECKING:
 # pytest exit codes that mean "the scope is GREEN": 0 = passed, 5 = nothing
 # collected (an empty scope is not a red verdict).
 _GREEN_EXIT_CODES = frozenset({0, 5})
+
+
+def _signal_kill_reason(returncode: int) -> str | None:
+    """``None`` for a normal exit; else the named signal/OOM-kill reason (GDP-3).
+
+    Shared by all 4 runner leaf adapters (imported here per the existing
+    ``run_timeout_seconds``-lives-in-pytest_runner convention, re-imported by
+    cargo/vitest/go) so the host-OS signal vocabulary is modeled ONCE, mirroring
+    ``run_contract_gate._describe_worker_kill`` (not imported directly: that
+    function lives in the ``des.cli`` layer, which already imports FROM this
+    adapter package -- importing it back here would be a layering cycle).
+
+    Detects the two host-OS signal-kill conventions a subprocess exposes on
+    completion: POSIX ``returncode < 0`` (the negated signal number) and the
+    ``128 + signal`` shell convention (137 = SIGKILL/OOM, 143 = SIGTERM).
+    """
+    if returncode < 0:
+        signal_num = -returncode
+        return (
+            f"signal {signal_num} (SIGKILL/OOM-kill)"
+            if signal_num == 9
+            else f"signal {signal_num}"
+        )
+    if returncode in (137, 143):
+        return f"exit code {returncode} (OOM-kill / SIGTERM shell convention)"
+    return None
 
 
 def run_timeout_seconds() -> float:
@@ -107,6 +137,15 @@ def run_pytest_scope(
         # ZERO DEFECTS: a deadlocking scoped test must never block the runner
         # forever -- fail LOUD as a non-green verdict on the ceiling.
         return RunVerdict(passed=False, runner=adapter.name)
+    kill_reason = _signal_kill_reason(completed.returncode)
+    if kill_reason is not None:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                f"the pytest run was killed by the OS ({kill_reason}), not a "
+                "test failure -- INDETERMINATE, retry once memory/load recover"
+            ),
+        )
     passed = completed.returncode in _GREEN_EXIT_CODES
     return RunVerdict(passed=passed, runner=adapter.name)
 

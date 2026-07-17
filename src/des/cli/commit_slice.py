@@ -148,7 +148,10 @@ from des.cli.verify_deliver_integrity import (
     _declared_slice_plan_slice_ids,
     _slice_commit_verified_slices,
 )
-from des.cli.verify_slice_commit_completeness import _append_slice_commit_indeterminate
+from des.cli.verify_slice_commit_completeness import (
+    _INDETERMINATE_NO_EXAMINE_RESCUE_HOW,
+    _append_slice_commit_indeterminate,
+)
 from des.domain.examine_verdict_signing import charter_seal as _charter_seal
 from des.domain.slice_id_trailer import extract_slice_ids
 
@@ -856,6 +859,28 @@ def _staged_paths(repo: Path) -> list[str]:
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
+def _slice_build_tier_paths(repo: Path) -> list[Path]:
+    """The entering slice's OWN currently-staged paths under ``tests/build/``.
+
+    Design B refinement (fix-gherkin-slice-build-tier-scoping, slice-02):
+    called AFTER ``_stage()`` has already run, so ``_staged_paths`` reflects
+    exactly what THIS slice is about to commit (its declared ``--path`` list,
+    or the full ``--all`` staged fileset). Intersecting that with
+    ``tests/build/`` yields the slice's own committed build-tier content --
+    never an unrelated future-slice/in-flight scaffold that merely lives
+    elsewhere under the tree (that content stays untouched, deferred to
+    feature-end via the existing ``BuildTierWholeTreeDeferred`` event).
+    Empty when the slice touches nothing under ``tests/build/`` (the common
+    Gherkin per-slice case) -- ``build_tier_exit_verdict`` already resolves an
+    empty scope to the honest ``BuildTierNotApplicable`` no-op.
+    """
+    return [
+        repo / path
+        for path in _staged_paths(repo)
+        if path == "tests/build" or path.startswith("tests/build/")
+    ]
+
+
 def _covered_by_declared_scope(staged_path: str, declared_paths: list[str]) -> bool:
     """True iff ``staged_path`` is exactly, or nested under, a declared path."""
     for declared in declared_paths:
@@ -1494,7 +1519,38 @@ def main(argv: list[str] | None = None) -> int:
     regression_test_file = (
         repo / args.regression_test_file if args.regression_test_file else None
     )
-    if build_tier_exit_verdict(repo, regression_test_file=regression_test_file) != 0:
+    # Design B refinement (fix-gherkin-slice-build-tier-scoping, slice-02,
+    # 2026-07-17): opt every per-slice seal into the SCOPED build tier
+    # explicitly, not only the --regression-test-file case -- unchanged from
+    # slice-01. When a regression_test_file IS declared, light_invariant_paths
+    # stays [] (scoped_paths = [regression_test_file], byte-identical to
+    # before). When NO regression_test_file is declared (the Gherkin
+    # per-slice case), slice-01 always passed light_invariant_paths=[],
+    # which LOST fail-closed for a slice that commits its OWN failing
+    # tests/build/** test: the empty scope deferred the WHOLE tree
+    # unconditionally, even though the slice's own committed content under
+    # tests/build/ was never actually run. Fix: resolve the entering slice's
+    # OWN committed paths under tests/build/ (its --path list, or the --all
+    # staged fileset, intersected with tests/build/**) via
+    # _slice_build_tier_paths and hand THAT as light_invariant_paths. An
+    # empty intersection (the slice touches nothing under tests/build/, the
+    # common Gherkin case) still resolves to the existing
+    # BuildTierNotApplicable + BuildTierWholeTreeDeferred no-op
+    # (poison-avoidance preserved -- an unrelated in-flight tests/build/**
+    # scaffold never sweeps in). A non-empty intersection runs the arch
+    # invariants on exactly those committed paths and REFUSES on violation --
+    # restoring fail-closed for the slice's own committed build-tier content.
+    light_invariant_paths = (
+        [] if regression_test_file is not None else _slice_build_tier_paths(repo)
+    )
+    if (
+        build_tier_exit_verdict(
+            repo,
+            regression_test_file=regression_test_file,
+            light_invariant_paths=light_invariant_paths,
+        )
+        != 0
+    ):
         return 1
 
     # Examine-verdict exit check (evolution-plan P1.2 -- User-Examiner wiring):
@@ -1690,6 +1746,7 @@ def main(argv: list[str] | None = None) -> int:
                     "enumerate facet was untrustworthy) -- recorded an honest "
                     "SliceCommitIndeterminate (unverified here), never a "
                     "fabricated pass",
+                    "how": _INDETERMINATE_NO_EXAMINE_RESCUE_HOW,
                 }
             )
         return 1

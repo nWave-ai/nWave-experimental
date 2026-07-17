@@ -197,12 +197,17 @@ class InterceptDecision:
         event: The structured event name for the block payload, or None when
             the dispatch is allowed / passed through.
         reason: A human-readable block reason, or None.
+        how: A TRUE, actionable recovery step for THIS block (GDP-3), or None
+            when the block site has not yet earned one. Never a generic
+            placeholder -- only a cure the caller can verify is true for the
+            exact cause that fired.
     """
 
     is_block: bool
     is_atdd_pure: bool
     event: str | None = None
     reason: str | None = None
+    how: str | None = None
 
     @classmethod
     def passthrough(cls) -> InterceptDecision:
@@ -215,9 +220,13 @@ class InterceptDecision:
         return cls(is_block=False, is_atdd_pure=True)
 
     @classmethod
-    def block(cls, event: str, reason: str) -> InterceptDecision:
+    def block(
+        cls, event: str, reason: str, how: str | None = None
+    ) -> InterceptDecision:
         """A recognised atdd_pure dispatch the U1 gate rejected."""
-        return cls(is_block=True, is_atdd_pure=True, event=event, reason=reason)
+        return cls(
+            is_block=True, is_atdd_pure=True, event=event, reason=reason, how=how
+        )
 
 
 def _real_carpaccio_runner(
@@ -571,6 +580,20 @@ def _carpaccio_order_block(
             f"carpaccio slice {slice_id} entered out of order: its predecessor "
             f"{predecessor} has no SliceCommitVerified ledger record -- deliver "
             "carpaccio slices in order"
+        ),
+        # GDP-3 HOW: the one universally-true cure regardless of WHICH of the
+        # 3 backfill no-op conditions fired (no commit on disk / E1-deficient /
+        # digest-unverified, `_attempt_predecessor_backfill` collapses all
+        # three to a silent None -- RCA Q4(b) "Constraint on (b)"). Naming a
+        # more specific cause here would overclaim discrimination the code
+        # cannot verify, so this names ONLY the re-establish path.
+        how=(
+            f"an in-gate auto-backfill was already attempted for {predecessor} "
+            "and could not recover a record -- re-establish its "
+            "SliceCommitVerified record via `des commit-slice --slice-id "
+            f"{predecessor} --feature-id {feature_id} --message <message> "
+            "--path <paths>` (or --all), which stamps the Slice-Id trailer and "
+            f"re-verifies. Then retry this dispatch for {slice_id}."
         ),
     )
 

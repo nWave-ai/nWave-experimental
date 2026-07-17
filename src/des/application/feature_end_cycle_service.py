@@ -143,12 +143,27 @@ class LegCensus:
     DDD-CERT-1), or ``warned`` (a subprocess ran and reported a genuine,
     non-blocking finding -- observed, resolved, but advisory rather than
     clean-pass; fix-doc-coherence-gate-warns-not-blocks).
+
+    ``attested_not_applicable`` (fix-attested-na-counts-as-observed,
+    2026-07-17 Ale-ratified reconciliation): a DISTINCT sub-count of
+    ``not_applicable`` -- ONLY the env-e2e and coverage-map legs' NA, both
+    granted through an UN-GAMEABLE repo-level cross-check (the WS-floor git
+    delta for env-e2e; the repo-wide ``coverage_map_adoption`` switch +
+    genuine map absence for coverage-map). This is DISTINCT from every
+    other leg's plain ``not_applicable`` (full-suite, doc-coherence,
+    execution-reach, fresh-clone), which stays a genuinely-UNOBSERVED
+    absence -- Class A's thesis (a repo that never ran a leg is not "done")
+    is preserved for those. An attested-NA leg was EXAMINED and found
+    genuinely inapplicable via a signal a feature cannot forge -- that
+    examination IS an observation, so it counts toward the cycle's
+    zero-observed floor while a bare "I looked and found nothing" does not.
     """
 
     ran: int = 0
     not_applicable: int = 0
     indeterminate: int = 0
     warned: int = 0
+    attested_not_applicable: int = 0
 
 
 def _fold_leg_census(census: LegCensus, leg: object) -> LegCensus:
@@ -167,21 +182,56 @@ def _fold_leg_census(census: LegCensus, leg: object) -> LegCensus:
         return census
     if name.endswith("Indeterminate"):
         return LegCensus(
-            census.ran, census.not_applicable, census.indeterminate + 1, census.warned
+            census.ran,
+            census.not_applicable,
+            census.indeterminate + 1,
+            census.warned,
+            census.attested_not_applicable,
         )
     if name.endswith("NotApplicable"):
         return LegCensus(
-            census.ran, census.not_applicable + 1, census.indeterminate, census.warned
+            census.ran,
+            census.not_applicable + 1,
+            census.indeterminate,
+            census.warned,
+            census.attested_not_applicable,
         )
     if name.endswith("Warned"):
         return LegCensus(
-            census.ran, census.not_applicable, census.indeterminate, census.warned + 1
+            census.ran,
+            census.not_applicable,
+            census.indeterminate,
+            census.warned + 1,
+            census.attested_not_applicable,
         )
     if name.endswith("Ran"):
         return LegCensus(
-            census.ran + 1, census.not_applicable, census.indeterminate, census.warned
+            census.ran + 1,
+            census.not_applicable,
+            census.indeterminate,
+            census.warned,
+            census.attested_not_applicable,
         )
     return census
+
+
+def _mark_attested_not_applicable(census: LegCensus) -> LegCensus:
+    """Increment ``attested_not_applicable`` on ``census`` (DDD-CERT-2 sibling).
+
+    Called explicitly by the two legs whose NA is granted through an
+    un-gameable repo-level cross-check (env-e2e, coverage-map) --
+    deliberately NOT folded via :func:`_fold_leg_census`'s generic
+    type-name convention, because the attested bucket is a property of
+    WHICH check minted the NA (a specific, named cross-check), never a
+    property of the outcome's type-name shape alone.
+    """
+    return LegCensus(
+        census.ran,
+        census.not_applicable,
+        census.indeterminate,
+        census.warned,
+        census.attested_not_applicable + 1,
+    )
 
 
 @dataclass(frozen=True)
@@ -507,6 +557,15 @@ def run_feature_end_cycle(
     if isinstance(walking_skeleton, CycleRefusal):
         return walking_skeleton
 
+    # fix-attested-na-counts-as-observed: the WS-NA propagation IS the
+    # un-gameable cross-check (slice-03's delta probe) that grants the
+    # env-e2e leg its NA -- attest it into the census BEFORE the leg runs,
+    # since `_run_environmental_e2e_gate` itself returns `None` on this path
+    # (it is not a `*Leg*`-family type `_fold_leg_census` can count).
+    census = LegCensus()
+    if isinstance(walking_skeleton, WalkingSkeletonNotApplicable):
+        census = _mark_attested_not_applicable(census)
+
     environmental = _run_environmental_e2e_gate(
         ledger=ledger,
         repo_root=repo_root,
@@ -526,7 +585,13 @@ def run_feature_end_cycle(
     if isinstance(coverage_map, CycleRefusal):
         return coverage_map
 
-    census = _fold_leg_census(LegCensus(), coverage_map)
+    census = _fold_leg_census(census, coverage_map)
+    if isinstance(coverage_map, CoverageMapLegNotApplicable):
+        # fix-attested-na-counts-as-observed: the coverage leg's NA is ALSO
+        # only reachable through DDD-3's un-gameable repo-level adoption
+        # cross-check (`adoption == "inactive" and not coverage_map_path.
+        # is_file()`) -- attest it too.
+        census = _mark_attested_not_applicable(census)
 
     full_suite = _run_full_suite_leg(repo_root=repo_root, feature_id=feature_id)
     if isinstance(full_suite, CycleRefusal):
@@ -639,7 +704,17 @@ def run_feature_end_cycle(
     # observable surface (a runnable+marked test suite, coverage.xml, docs,
     # demo-recipe, ...) so at least one leg can genuinely RUN, then re-run
     # `des feature-end run`.
-    if census.ran == 0:
+    # fix-attested-na-counts-as-observed (2026-07-17 Ale-ratified
+    # reconciliation): an attested-NA leg (env-e2e / coverage-map, both
+    # granted only through their own un-gameable repo-level cross-check) IS
+    # an observation -- a cycle whose every leg resolved via one of THOSE
+    # cross-checks has genuinely examined the feature, even though no leg
+    # RAN a subprocess. Class A's thesis is preserved unweakened for every
+    # OTHER leg: a genuinely-unrun leg (full-suite, doc-coherence,
+    # execution-reach, fresh-clone -- none of which mint an attested-NA)
+    # still leaves census.attested_not_applicable == 0, so the guard below
+    # still fires exactly as Class A demands.
+    if census.ran == 0 and census.attested_not_applicable == 0:
         if (
             isinstance(full_suite, FullSuiteLegNotApplicable)
             and full_suite.found_and_excluded

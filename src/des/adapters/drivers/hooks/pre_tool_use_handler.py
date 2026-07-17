@@ -71,11 +71,14 @@ _D_DISTILL_PHASE = ATDDPurePhase.D_DISTILL.value
 
 def _atdd_pure_intercept_block(decision: InterceptDecision) -> dict[str, str]:
     """Render the `{decision:block}` body for a U1 intercept block."""
-    return {
+    payload = {
         "decision": "block",
         "event": decision.event or "AtddPureHookInternalError",
         "reason": decision.reason or "atdd_pure dispatch blocked by the U1 gate",
     }
+    if decision.how:
+        payload["how"] = decision.how
+    return payload
 
 
 def _distill_dispatch_block(reason: str) -> dict[str, str]:

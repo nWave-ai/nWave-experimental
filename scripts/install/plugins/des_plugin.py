@@ -627,18 +627,23 @@ class DESPlugin(InstallationPlugin):
         installer shipped only the code, so these resolutions failed on every
         installed instance (F-DES-INSTALL-SHIPS-NWAVE-RUNTIME-ASSETS).
 
-        Both source and prebuilt (dist/PyPI) install paths are covered. The
-        prebuilt layout is FLAT under ``framework_source`` (``dist/data/``,
-        ``dist/flavors/``, ... — no nested ``nWave/`` prefix), mirroring how
-        ``_install_des_templates`` reads ``framework_source / "templates"``;
-        ``build_dist.py``'s ``build_nwave_runtime_assets`` produces exactly
-        that layout. (Previously this resolved
-        ``framework_source / "nWave" / subdir``, a path that never exists
-        under ``dist/`` — every pipx/PyPI-installed session silently lost
-        these assets, including ``data/orchestrator-affordance/``.)
+        Two independent "prebuilt" channels ship different physical layouts
+        under the same ``using_prebuilt`` flag: the GitHub-release ``dist/``
+        tarball is FLAT under ``framework_source`` (``dist/data/``,
+        ``dist/flavors/``, ... — no nested ``nWave/`` prefix; ``build_dist.py``'s
+        ``build_nwave_runtime_assets`` produces exactly that layout), while the
+        PyPI/pipx wheel is NESTED (``site-packages/nWave/nWave/<name>`` —
+        ``patch_pyproject.py``'s force-include map ships these assets one
+        level deeper, since ``framework_source`` itself already resolves to
+        ``site-packages/nWave/`` on a pipx install). Probe NESTED-FIRST with a
+        FLAT FALLBACK: a ``dist/`` tarball ``framework_source`` never has a
+        ``nWave`` child (no ``build_dist.py`` step ever creates ``dist/nWave/``),
+        so the nested probe can only ever match the wheel layout, making the
+        two branches unambiguous by construction.
         """
         if using_prebuilt and context.framework_source is not None:
-            nwave_source = context.framework_source
+            nested = context.framework_source / "nWave"
+            nwave_source = nested if nested.is_dir() else context.framework_source
         elif context.project_root:
             nwave_source = context.project_root / "nWave"
         else:

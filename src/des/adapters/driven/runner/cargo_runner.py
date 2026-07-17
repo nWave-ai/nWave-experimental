@@ -44,7 +44,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.git_subprocess import git_text
-from des.adapters.driven.runner.pytest_runner import run_timeout_seconds
+from des.adapters.driven.runner.pytest_runner import (
+    _signal_kill_reason,
+    run_timeout_seconds,
+)
 from des.adapters.driven.runner.tool_discovery import resolve_tool
 from des.ports.test_runner_port import (
     ListScope,
@@ -143,6 +146,16 @@ def run_cargo_scope(
                 f"(exit {_NO_BINARY_MATCH_EXIT}, empty-scope) in the target -- "
                 "INDETERMINATE, not a cargo-red; provide a runner.json with an "
                 "explicit test_command that selects the crate's tests and retry"
+            ),
+        )
+
+    kill_reason = _signal_kill_reason(completed.returncode)
+    if kill_reason is not None:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                f"the cargo run was killed by the OS ({kill_reason}), not a "
+                "test failure -- INDETERMINATE, retry once memory/load recover"
             ),
         )
 
@@ -263,23 +276,26 @@ def list_cargo_scope(
 def _parse_nextest_list(stdout: str) -> tuple[str, ...]:
     """Parse ``cargo nextest list`` default output into stable node-id identities.
 
-    nextest groups its listing by binary: a non-indented ``<binary>:`` header
-    followed by indented test paths. Each indented test is combined with its
-    binary header into ``<binary>::<test>`` so the identity set is stable and
-    binary-disambiguated -- the cargo analogue of pytest's class-aware
-    ``fspath::Class::method`` canonical identity. Returns the sorted, deduplicated
-    set (the order-stable digest input).
+    The REAL default output is FLAT: every non-blank line is a complete,
+    non-indented ``<binary-id> <test-path>`` pair (space-separated, zero leading
+    whitespace, no trailing ``:`` header -- verified against a live run, `cat -A`
+    traced). Each line is split on its FIRST space into ``<binary-id>`` and
+    ``<test-path>``, then joined as ``<binary-id>::<test-path>`` so the identity
+    set is stable and binary-disambiguated -- the cargo analogue of pytest's
+    class-aware ``fspath::Class::method`` canonical identity. A line with no
+    space (malformed/unparseable) mints no identity. Returns the sorted,
+    deduplicated tuple (the order-stable digest input); blank/whitespace-only
+    stdout returns ``()`` -- never a fabricated identity from noise.
     """
-    binary = ""
     identities: list[str] = []
     for raw in stdout.splitlines():
-        if not raw.strip():
+        line = raw.strip()
+        if not line:
             continue
-        if raw[0].isspace():
-            test = raw.strip()
-            identities.append(f"{binary}::{test}" if binary else test)
-        else:
-            binary = raw.strip().rstrip(":")
+        binary_id, separator, test_path = line.partition(" ")
+        if not separator:
+            continue
+        identities.append(f"{binary_id}::{test_path}")
     return tuple(sorted(set(identities)))
 
 

@@ -49,6 +49,7 @@ today, they pin the UNCHANGED behavior the fix must preserve verbatim.
 from __future__ import annotations
 
 import json
+import stat
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
@@ -75,12 +76,18 @@ _OVERSTATING_README = (
     "The reconciler lives in `src/reconciler.ts`.\n"
 )
 
-# A README with a doc claim (so `_repo_has_doc_claims` is True and the gate is
-# genuinely dispatched) but NO `.gitignore` at all -- the real gate's own
-# `_resolve_runtime_state_top_level` returns None on an absent/unreadable
-# .gitignore, so it exits 2 (INDETERMINATE), deterministically and without any
-# chmod/symlink trickery.
-_HONEST_README_NO_GITIGNORE = "# Demo\n\nThis project has a build step.\n"
+# An UNREADABLE README (chmod 0o000) -- the real gate's `docs_unreadable`
+# branch (`verify_doc_coherence.py` main() L658-672) is the ONE exit-2 path
+# still reachable once `_repo_has_doc_claims` has already returned True
+# (`glob("README*")` is an existence check, unaffected by permission bits --
+# confirmed empirically, mirrors `test_doc_coherence_unreadable_loud.py`
+# L119-121). NOTE (RCA `fix-doc-coherence-indeterminate-escalation`,
+# 2026-07-17): the prior fixture here assumed a MISSING `.gitignore` alone
+# triggers exit 2 via a `_resolve_runtime_state_top_level` function that does
+# not exist in the gate -- that assumption went stale when commit f1927b2ef
+# made the gate `.gitignore`-tolerant (empty exemption fallback, exit 0), 7h
+# after this AT was authored. Swapped to the proven unreadable-doc trigger.
+_UNREADABLE_README_CONTENT = "# Demo\n\nThis content must never be scanned.\n"
 
 _MARKED_RUNNABLE_PASSING_TEST_BODY = (
     "import pytest\n\n\n@pytest.mark.unit\ndef test_widget_behaves():\n"
@@ -294,23 +301,29 @@ def test_doc_coherence_exit2_indeterminate_still_escalates_regression(
     tmp_path: Path, monkeypatch
 ) -> None:
     """PIN (already GREEN, unchanged): the gate's OWN exit-2 INDETERMINATE
-    (an epistemic "I could not judge" -- here, an undeterminable runtime-state
-    boundary: docs exist but no .gitignore) must still escalate to
-    ``CycleIndeterminate`` -- it must NEVER be folded into the new advisory
-    WARN outcome (DDD-CERT-4: epistemic gap, not a resolvable finding)."""
+    (an epistemic "I could not judge" -- here, an unreadable doc file the
+    gate cannot scan) must still escalate to ``CycleIndeterminate`` -- it
+    must NEVER be folded into the new advisory WARN outcome (DDD-CERT-4:
+    epistemic gap, not a resolvable finding)."""
     _stub_non_doc_coherence_legs(monkeypatch)
     _stub_full_suite_not_applicable(monkeypatch)
-    repo_root = tmp_path / "gitignore-missing"
+    repo_root = tmp_path / "readme-unreadable"
     repo_root.mkdir(parents=True)
-    (repo_root / "README.md").write_text(_HONEST_README_NO_GITIGNORE)
+    readme = repo_root / "README.md"
+    readme.write_text(_UNREADABLE_README_CONTENT)
+    readme.chmod(0o000)
     feature_dir = _seed_feature_dir(repo_root)
 
-    result = _run_cycle(repo_root, feature_dir)
+    try:
+        result = _run_cycle(repo_root, feature_dir)
+    finally:
+        # Restore readability so tmp_path teardown can remove the file.
+        readme.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
     assert isinstance(result, CycleIndeterminate), (
-        "an undeterminable doc-coherence runtime-state boundary (no "
-        ".gitignore) must stay CycleIndeterminate, never silently recycled "
-        f"into the new advisory WARN path: {result!r}"
+        "an undeterminable doc-coherence runtime-state boundary (an "
+        "unreadable doc) must stay CycleIndeterminate, never silently "
+        f"recycled into the new advisory WARN path: {result!r}"
     )
     assert "doc-coherence" in result.reason
 

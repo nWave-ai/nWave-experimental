@@ -760,6 +760,10 @@
 
 - [nw-test-refactoring-catalog](nw-test-refactoring-catalog.md) — Detailed refactoring mechanics with step-by-step procedures, and test code smell catalog with detection patterns and before/after examples
 
+## nw-throughput
+
+- [nw-throughput](nw-throughput.md) — How to maximize delivery throughput while driving the nWave spine — the Theory-of-Constraints insight (the box, not the agents), the N-cloud-ONE-box resource-aware pipeline, and the re-runnable measure. Load when orchestrating multi-slice/multi-feature delivery.
+
 ## nw-tlaplus-verification
 
 - [nw-tlaplus-verification](nw-tlaplus-verification.md) — TLA+ formal verification for design correctness and PBT pipeline integration

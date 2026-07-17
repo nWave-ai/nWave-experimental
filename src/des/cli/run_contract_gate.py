@@ -1049,6 +1049,34 @@ def build_tier_exit_verdict(
         full=full,
         output=output,
     )
+    if not run_paths:
+        # Design B (2026-07-17): a caller that opted into the SCOPED tier
+        # (regression_test_file and/or light_invariant_paths given, not
+        # full) but resolved to a genuinely EMPTY scope -- the Gherkin
+        # per-slice case with no regression test of its own -- has nothing
+        # to run. Special-case it explicitly HERE, before the heavy
+        # resource-window wait and BEFORE handing the empty list to
+        # _run_arch_invariant_set (whose own worker seam re-expands an
+        # empty --path selection to the whole repo). The
+        # BuildTierWholeTreeDeferred event already fired above (inside
+        # _resolve_build_tier_run_paths); this pairs it with an honest N/A
+        # rather than a silent pass or a whole-tree sweep.
+        _emit(
+            {
+                "event": _BUILD_TIER_NOT_APPLICABLE_EVENT,
+                "reason": "empty per-slice arch scope",
+                "detail": (
+                    "the per-slice scope resolved to zero paths (no "
+                    "regression_test_file, no light invariants) -- there is "
+                    "nothing to run for this slice; the whole-tree "
+                    "tests/build/** tier is deferred to feature-end (see the "
+                    "BuildTierWholeTreeDeferred event) -- recorded as an "
+                    "honest N/A, not a pass claim"
+                ),
+            },
+            output,
+        )
+        return 0
 
     window = _await_resource_window(
         resource_readings=resource_readings, sleep_fn=sleep_fn, output=output

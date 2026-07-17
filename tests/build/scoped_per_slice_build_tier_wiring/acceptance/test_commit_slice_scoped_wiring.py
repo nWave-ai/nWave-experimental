@@ -350,33 +350,45 @@ def test_commit_slice_scoped_seal_emits_whole_tree_deferred_event_naming_feature
 
 
 # ---------------------------------------------------------------------------
-# T3 (negative_at) -- a commit-slice with NO declared --regression-test-file
-# preserves the SAME whole-tree build_tier_exit_verdict(repo) call as before
-# this wiring change: the feature-end/full whole-tree floor is untouched
-# (coverage moved to feature-end, not lost), and the commit still succeeds
-# (no crash). This is an INVARIANT GUARD -- GREEN today AND after the fix.
+# T3 (negative_at) -- Design B (design owner LOCKED 2026-07-17, supersedes
+# this test's original "preserve whole-tree" invariant -- see
+# tests/bugs/des/test_gherkin_commit_slice_defers_whole_tree_build_tier.py
+# for the RCA + full Design B rationale): a commit-slice with NO declared
+# --regression-test-file has a legitimately EMPTY per-slice arch scope (a
+# Gherkin slice owns no arch test of its own). That empty scope must resolve
+# to a no-op BuildTierNotApplicable AND LOUDLY emit BuildTierWholeTreeDeferred
+# naming feature-end -- it must NEVER select/execute the whole-tree
+# build_tier_exit_verdict(repo) call per-slice. The whole-tree floor is the
+# feature-end/--full safety net (T-full-mode in the sibling RCA file pins
+# that leg unchanged), not a per-slice cost every Gherkin seal pays. RED
+# until the crafter wires commit_slice.py to opt the no-regression-test-file
+# path into the SCOPED tier too (currently it still calls
+# build_tier_exit_verdict(repo) zero-kwarg -> whole tree).
 # CONTRACT_SHAPE: bounded-change (invariant guard)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.negative_at
-def test_commit_slice_without_regression_test_file_preserves_whole_tree_build_tier_call(
+def test_commit_slice_without_regression_test_file_defers_whole_tree_build_tier_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Outcome anchor: feature-delta Architecture & Contract ("Feature-end /
-    full path untouched... the coverage moved to feature-end (batch-then-
-    verify), not lost.") + Summary ("If no light set is defined, the scoped
-    run is the slice test alone -- still correct: the whole-tree floor at
-    feature-end is the safety net.").
+    """Outcome anchor (Design B, supersedes the pre-2026-07-17 anchor): a
+    commit-slice seal with NO --regression-test-file has a legitimately
+    EMPTY per-slice arch scope -- it must resolve to a no-op
+    ``BuildTierNotApplicable`` and LOUDLY emit ``BuildTierWholeTreeDeferred``
+    naming feature-end, never execute the whole-tree
+    ``build_tier_exit_verdict(repo)`` call per-slice. The whole-tree floor
+    moves to feature-end (``--full``) -- deferred, never lost.
 
     This slice (slice-02) deliberately declares NO --regression-test-file --
-    that absence IS the invariant under test (a declared scope must never
-    silently leak in). So the E1/E2 pre-flight evidence this slice needs
-    cannot come from the pytest-regression route (which itself REQUIRES
-    --regression-test-file) -- it comes from the examine-verdict carve-out
-    instead (a real, distinct evidence source; ADR-DES-001 addendum Rule 1):
-    a charter + a fresh matching-seal PASS ``ExamineVerdict`` clears the
-    otherwise-vacuous ``zero-collected`` E2 leg for slice-02, mirroring
+    that absence IS the invariant under test (an empty per-slice scope must
+    defer, never silently widen to whole-tree). So the E1/E2 pre-flight
+    evidence this slice needs cannot come from the pytest-regression route
+    (which itself REQUIRES --regression-test-file) -- it comes from the
+    examine-verdict carve-out instead (a real, distinct evidence source;
+    ADR-DES-001 addendum Rule 1): a charter + a fresh matching-seal PASS
+    ``ExamineVerdict`` clears the otherwise-vacuous ``zero-collected`` E2 leg
+    for slice-02, mirroring
     ``tests/des/integration/test_commit_slice_examine_gate.py``'s
     ``_write_charter``/``_record_examine_verdict`` convention.
     """
@@ -389,7 +401,7 @@ def test_commit_slice_without_regression_test_file_preserves_whole_tree_build_ti
     charter_dir.mkdir(parents=True, exist_ok=True)
     charter_file = charter_dir / "slice-02.md"
     charter_file.write_text(
-        "# Charter\n\nWalk the whole-tree-preserved build-tier seal.\n",
+        "# Charter\n\nWalk the deferred-to-feature-end build-tier seal.\n",
         encoding="utf-8",
     )
     charter_relpath = str(charter_file.relative_to(repo))
@@ -431,25 +443,44 @@ def test_commit_slice_without_regression_test_file_preserves_whole_tree_build_ti
         "des commit-slice with NO --regression-test-file must still succeed "
         f"(no crash) -- got exit {run.exit_code}, events={run.events}"
     )
-    assert run.arch_paths_calls, (
-        "the build-tier arch-invariant runner must still be invoked exactly "
-        f"once -- got 0 calls, events={run.events}"
-    )
     whole_tree = repo / "tests" / "build"
-    selected = {Path(p) for p in run.arch_paths_calls[-1]}
-    assert selected == {whole_tree}, (
-        "a commit-slice with NO declared --regression-test-file must preserve "
-        "the SAME whole-tree build_tier_exit_verdict(repo) call as before "
-        "this wiring change (the feature-end/full whole-tree floor stays "
-        f"untouched) -- expected {{{whole_tree}}}, got {selected}"
+    calls_as_sets = [{Path(p) for p in call} for call in run.arch_paths_calls]
+    for selected in calls_as_sets:
+        assert selected == set(), (
+            "MISSING_FUNCTIONALITY (Design B): a commit-slice with NO "
+            "declared --regression-test-file has a legitimately EMPTY "
+            "per-slice arch scope -- it must resolve to a no-op "
+            "BuildTierNotApplicable, never select/execute the whole-tree "
+            f"build_tier_exit_verdict(repo) call -- expected an empty "
+            f"selection (or no call at all), got selected={selected} "
+            f"(the whole {whole_tree} tree). "
+            f"{_MISSING_FUNCTIONALITY_HOW}"
+        )
+
+    not_applicable_events = [
+        event for event in run.events if event.get("event") == "BuildTierNotApplicable"
+    ]
+    assert not_applicable_events, (
+        "MISSING_FUNCTIONALITY (Design B): a commit-slice with NO declared "
+        "--regression-test-file must LOUDLY emit BuildTierNotApplicable (a "
+        "no-op) for its empty per-slice arch scope -- proof the empty scope "
+        "was special-cased explicitly instead of executing the whole-tree "
+        f"tier per-slice. Got events={run.event_names()}. "
+        f"{_MISSING_FUNCTIONALITY_HOW}"
     )
+
     deferral_events = [
         event
         for event in run.events
         if event.get("event") == "BuildTierWholeTreeDeferred"
     ]
-    assert not deferral_events, (
-        "with no scope declared there is nothing to defer -- the whole tree "
-        f"already ran, so BuildTierWholeTreeDeferred must NOT fire -- got "
-        f"{deferral_events}"
+    assert deferral_events, (
+        "MISSING_FUNCTIONALITY (Design B): a commit-slice with NO declared "
+        "--regression-test-file must LOUDLY emit BuildTierWholeTreeDeferred "
+        "naming feature-end -- proof the whole-tree tier was deferred, not "
+        f"lost. Got events={run.event_names()}. {_MISSING_FUNCTIONALITY_HOW}"
+    )
+    assert deferral_events[0].get("deferred_to") == "feature-end", (
+        "the deferral record must name feature-end as where the whole-tree "
+        f"run moves to -- got {deferral_events[0]}"
     )

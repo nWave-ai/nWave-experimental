@@ -414,6 +414,16 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
+  # feature-end-certifies-real-consumers slice-01 (GDP-1/5): the PRODUCING
+  # tool for the two feature-end certification preconditions. 1:1 mirror of
+  # the new _REGISTRY row; matching per-gate file
+  # feature-end-preconditions-scaffold.yaml.
+  - gate_id: feature-end-preconditions-scaffold
+    responsibility: "Generates the two feature-end certification preconditions the real gates already consume: (a) --target environmental-e2e appends a feature's `## Environmental E2E\\n- test: <path>\\n` block when absent (idempotent no-op otherwise; degrades LOUD on a missing feature-delta or a non-existent --e2e-test path); (b) --target demo-recipe writes `.nwave/demo-recipe.json` ONLY when a src+tests layout AND a pyproject.toml [tool.poe.tasks] install/build/test convention are BOTH confidently detected (GDP-6, conservative -- never guesses; degrades LOUD otherwise, naming the recipe schema to hand-author). Idempotent (never overwrites); JSON verdict {target, written, verdict, detail}. Filesystem-only, no git."
+    module: des.cli.feature_end_preconditions_scaffold
+    entry_function: main
+    language_neutral_contract: true
+
   # charter-scaffold slice-02 (the ENFORCEMENT half): the backstop gate that
   # verifies a scaffolded charter is genuinely FILLED. 1:1 mirror of the new
   # _REGISTRY row; matching per-gate file verify-charter-filled.yaml.

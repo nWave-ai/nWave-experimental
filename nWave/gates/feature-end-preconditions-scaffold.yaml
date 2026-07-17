@@ -1,0 +1,69 @@
+# Gate-contract: feature-end-preconditions-scaffold
+# (feature-end-certifies-real-consumers feature, slice-01, GDP-1/5 producing-tool
+# principle)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=feature-end-preconditions-scaffold.
+
+gate_id: feature-end-preconditions-scaffold
+responsibility: |
+  The PRODUCING tool for the two feature-end certification preconditions the
+  real gates already consume (GDP-5, system-pays; GDP-1, fires at
+  DISTILL-authoring time instead of at feature-end). Two `--target` modes:
+
+  - `environmental-e2e`: appends `## Environmental E2E\n- test: <path>\n` to
+    `docs/feature/<feature-id>/feature-delta.md` when absent (idempotent
+    no-op otherwise, never clobbering a pre-existing block). Degrades LOUD on
+    a missing feature-delta or a `--e2e-test` path that is not an existing
+    file.
+  - `demo-recipe`: writes `.nwave/demo-recipe.json` ONLY when a src+tests
+    layout AND a `pyproject.toml [tool.poe.tasks]` install/build/test
+    convention are BOTH confidently detected (Earned Trust / GDP-6 --
+    conservative, never guesses a plausible-but-wrong recipe). Degrades LOUD
+    otherwise, naming the recipe schema for the operator to hand-author.
+
+  `written` is True only when the run put NEW content on disk; `verdict ==
+  "accepted"` covers both a real write and an idempotent no-op.
+module: des.cli.feature_end_preconditions_scaffold
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --target
+    required: true
+    type: string
+    help: "environmental-e2e or demo-recipe -- which precondition to scaffold."
+  - name: --feature-id
+    required: false
+    type: string
+    help: "Required for --target environmental-e2e."
+  - name: --e2e-test
+    required: false
+    type: path
+    help: "Required for --target environmental-e2e: repo-relative path to the declared e2e test."
+  - name: --repo-root
+    required: false
+    type: path
+    help: "Repository root to read/write under (default: cwd)."
+
+log_events: []
+
+failure_modes:
+  - error_class: MissingFeatureDelta
+    exit_code: 1
+    remediation: "The JSON verdict names 'missing-feature-delta'; create docs/feature/<feature-id>/feature-delta.md before scaffolding."
+  - error_class: E2eTestNotFound
+    exit_code: 1
+    remediation: "The JSON verdict names 'e2e-test-not-found'; the 'detail' field names the missing --e2e-test path -- seed the test file (or fix the path) before re-running."
+  - error_class: LayoutNotConfidentlyDetected
+    exit_code: 1
+    remediation: "The JSON verdict names 'layout-not-confidently-detected'; the 'detail' field carries the .nwave/demo-recipe.json schema to hand-author -- a resolvable src+tests layout AND a pyproject.toml [tool.poe.tasks] install/build/test convention were not BOTH confidently detected."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

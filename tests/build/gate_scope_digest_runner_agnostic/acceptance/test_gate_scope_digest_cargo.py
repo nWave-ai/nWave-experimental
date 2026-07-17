@@ -87,8 +87,9 @@ _FEATURE_ID = "gate-scope-digest-runner-agnostic"
 _SLICE_ID = "slice-01"
 
 # The deterministic test identities the FAKE cargo's `nextest list` reports.
-# `_parse_nextest_list` (cargo_runner.py:206-226) combines the non-indented
-# `<binary>:` header with each indented test into `<binary>::<test>`.
+# `_parse_nextest_list` (cargo_runner.py:276-...) parses the REAL FLAT shape:
+# each non-blank line is a non-indented `<binary-id> <test-path>` pair, split
+# on its FIRST space and joined as `<binary-id>::<test-path>`.
 _FAKE_NEXTEST_BINARY = "gate_scope_fixture"
 _FAKE_NEXTEST_TESTS = ("digest::verifies_alpha", "digest::verifies_beta")
 _EXPECTED_CARGO_NODE_IDS = tuple(
@@ -222,8 +223,10 @@ def _plant_fake_cargo(bin_dir: Path, *, list_exit: int) -> None:
     bin_dir.mkdir(parents=True, exist_ok=True)
     if list_exit == 0:
         list_body = (
-            f'  echo "{_FAKE_NEXTEST_BINARY}:"\n'
-            + "".join(f'  echo "    {test}"\n' for test in _FAKE_NEXTEST_TESTS)
+            "".join(
+                f'  echo "{_FAKE_NEXTEST_BINARY} {test}"\n'
+                for test in _FAKE_NEXTEST_TESTS
+            )
             + "  exit 0\n"
         )
     elif list_exit == 4:

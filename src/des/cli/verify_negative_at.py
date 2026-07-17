@@ -60,10 +60,17 @@ WHY, and HOW to fix -- the standing what/why/how rule):
     0  NegativeAtNotApplicable -- no critical scopes found and no
                                   --all-critical; N/A is honest, criticality
                                   is never fabricated
-    1  NegativeAtRefused       -- >=1 critical scope has ZERO negative ATs;
-                                  the payload names each offending scope
+    1  NegativeAtRefused       -- >=1 critical scope has real, scannable ATs
+                                  but ZERO of them is negative (presence-only
+                                  coverage); the payload names each scope
     2  NegativeAtIndeterminate -- the gate could not analyze (missing file,
-                                  unparseable source, no input); NEVER a pass
+                                  unparseable source, no input, a scope with
+                                  genuinely ZERO scannable AT surface, or an
+                                  unresolvable pytest-bdd scenarios(...)
+                                  indirection); NEVER a pass, and NEVER the
+                                  red REFUSED a genuine weak-AT scope gets --
+                                  "I could not look" is not "I looked and
+                                  it's weak"
 
 Python + stdlib only; no test execution, no external tools.
 """
@@ -115,7 +122,9 @@ _HOW_TO_FIX = (
 )
 _HOW_TO_FIX_NO_SURFACE = (
     "check --test-file/--test-dir points at the file/dir holding the ATs; "
-    "re-run with --test-dir <dir>; verify the test-naming convention"
+    "re-run with --test-dir <dir>; verify the test-naming convention; if "
+    "this is a pytest-bdd step-shim, verify its scenarios(...) call points "
+    "at an existing .feature file"
 )
 
 
@@ -221,8 +230,64 @@ def _is_negative_pytest_name(name: str) -> bool:
     ) or _name_signals_negative(name)
 
 
+def _module_level_scenarios_call(tree: ast.Module) -> ast.Call | None:
+    """A module-level ``pytest_bdd.scenarios(<literal>)`` call, if present --
+    either the imported-name form (``from pytest_bdd import scenarios``) or
+    the attribute form (``pytest_bdd.scenarios(...)``). Only the first
+    positional argument is inspected (the minimal, well-known shape); a
+    non-literal or missing first argument does not match."""
+    for node in tree.body:
+        call = node.value if isinstance(node, ast.Expr) else None
+        if not isinstance(call, ast.Call):
+            continue
+        func = call.func
+        if isinstance(func, ast.Attribute):
+            name = func.attr
+        elif isinstance(func, ast.Name):
+            name = func.id
+        else:
+            name = None
+        if name != "scenarios" or not call.args:
+            continue
+        first_arg = call.args[0]
+        if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+            return call
+    return None
+
+
+def _resolve_pytest_bdd_scenarios(path: Path, call: ast.Call) -> _FileScan | int:
+    """Delegate a pytest-bdd ``scenarios(<literal>)`` shim to its companion
+    ``.feature`` file, resolved relative to the SHIM's own directory
+    (pytest-bdd's own resolution rule) -- reuses ``_scan_feature_file``, the
+    parser that already finds the ATs correctly. Degrades to INDETERMINATE
+    (never a silent zero-scannable) when the referenced ``.feature`` cannot
+    be resolved -- naming the pytest-bdd indirection explicitly."""
+    first_arg = call.args[0]
+    assert isinstance(first_arg, ast.Constant)  # guarded by the caller
+    literal = first_arg.value
+    assert isinstance(literal, str)  # guarded by the caller
+    resolved = (path.parent / literal).resolve()
+    if not resolved.is_file():
+        return _indeterminate(
+            what=f"pytest-bdd scenarios({literal!r}) in {path} does not resolve",
+            why=(
+                "the referenced .feature file was not found relative to "
+                "the shim's own directory -- the pytest-bdd indirection "
+                "cannot be followed."
+            ),
+            how=(
+                "verify the scenarios(...) path is correct and the "
+                ".feature file exists at the resolved location."
+            ),
+        )
+    return _scan_feature_file(resolved)
+
+
 def _scan_pytest_file(path: Path) -> _FileScan | int:
-    """AST scan: every test_* function (module-level or in classes)."""
+    """AST scan: every test_* function (module-level or in classes), OR --
+    when the file is a pytest-bdd step-shim (a module-level
+    ``scenarios(<literal>)`` call) -- delegation to the companion
+    ``.feature`` file it declares."""
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except (OSError, SyntaxError, UnicodeDecodeError) as exc:
@@ -231,6 +296,9 @@ def _scan_pytest_file(path: Path) -> _FileScan | int:
             why=str(exc),
             how="fix the file (it must be valid Python) and re-run.",
         )
+    scenarios_call = _module_level_scenarios_call(tree)
+    if scenarios_call is not None:
+        return _resolve_pytest_bdd_scenarios(path, scenarios_call)
     cases: list[_Case] = []
 
     def _collect(body: list[ast.stmt], inherited_marks: frozenset[str]) -> None:
@@ -421,6 +489,27 @@ def _refuse(offending: list[dict[str, object]]) -> int:
     return _EXIT_REFUSED
 
 
+def _indeterminate_scopes(offending: list[dict[str, object]]) -> int:
+    """Aggregate INDETERMINATE verdict for scope(s) with genuinely ZERO
+    scannable AT surface -- mirrors ``_refuse``'s shape, but exits 2, never
+    the red REFUSED (1) a genuine weak-AT scope gets. Reached only when
+    every offending scope's ``kind`` is ``"no_surface"`` -- a genuine
+    ``"weak"`` scope always takes priority via ``_refuse`` (GDP-6: a real
+    problem must never be hidden behind an honest-incapacity shrug)."""
+    _emit(
+        {
+            "event": "NegativeAtIndeterminate",
+            "what": f"{len(offending)} critical scope(s) have no scannable AT surface",
+            "why": "each scope has its own cause -- see each scope's why.",
+            "how": "see each scope's how for the specific remedy.",
+            "scopes": offending,
+        }
+    )
+    for scope in offending:
+        print(f"⚠ INDETERMINATE — no scannable AT surface: {scope['file']}")
+    return _EXIT_INDETERMINATE
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="des verify-negative-at",
@@ -492,6 +581,7 @@ def main(argv: list[str] | None = None) -> int:
         if negatives:
             continue
         if scan.cases:
+            kind = "weak"
             scope_what = f"critical scope {scan.path} has no negative AT"
             scope_why = (
                 "every AT in this scope asserts only that the expected "
@@ -500,12 +590,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             scope_how = _HOW_TO_FIX
         else:
+            kind = "no_surface"
             scope_what = f"no scannable AT surface found in {scan.path}"
             scope_why = (
                 "the scanner found zero test-declaration tokens "
-                "(test_*/@Scenario/fn|func|function|def <name>) -- nothing "
-                "to assert a negative case against; this is NOT a weak-AT "
-                "problem."
+                "(test_*/@Scenario/fn|func|function|def <name>/pytest-bdd "
+                "scenarios(...)) -- nothing to assert a negative case "
+                "against; this is NOT a weak-AT problem."
             )
             scope_how = _HOW_TO_FIX_NO_SURFACE
         offending.append(
@@ -517,6 +608,7 @@ def main(argv: list[str] | None = None) -> int:
                     else "critical-marked tests"
                 ),
                 "critical_cases": [{"name": c.name, "line": c.line} for c in criticals],
+                "kind": kind,
                 "what": scope_what,
                 "why": scope_why,
                 "how": scope_how,
@@ -524,7 +616,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if offending:
-        return _refuse(offending)
+        if any(scope["kind"] == "weak" for scope in offending):
+            return _refuse(offending)
+        return _indeterminate_scopes(offending)
     if critical_scopes == 0:
         _emit(
             {

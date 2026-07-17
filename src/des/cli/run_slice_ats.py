@@ -577,6 +577,26 @@ def _slice_run_scope(
     )
 
 
+def _telemetry_ledger_count(repo_root: Path) -> int:
+    """How many in-flight ``atdd-pure`` telemetry ledgers exist under ``repo_root``.
+
+    ``active_feature_id`` (the SSOT identity resolver) deliberately collapses
+    "zero" and "more than one" into the SAME ``None`` -- it only needs to know
+    whether picking ONE is safe. The no-real-AT guard (DDD-8/CT-8) needs to
+    tell those two apart: ZERO ledgers means no feature is tracked here at
+    all, so there is no ambiguity to hide a pytest-convention AT behind
+    (NOT_APPLICABLE is safe); MULTIPLE ledgers is genuine ambiguity (a pytest
+    AT could exist and be invisible -- INDETERMINATE, never a guess). This
+    function COUNTS; it never PICKS -- the identity resolution stays solely
+    in ``active_feature_id``, so there is still exactly one place that decides
+    "which feature is active".
+    """
+    telemetry = repo_root / TELEMETRY_DIR_RELPATH
+    if not telemetry.is_dir():
+        return 0
+    return len(list(telemetry.glob("*.jsonl")))
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the entering slice's ATs and project the verdict onto the exit code.
 
@@ -628,17 +648,32 @@ def main(argv: list[str] | None = None) -> int:
 
     if slice_dir is None:
         # PYTEST arm -- the head-tag oracle NEEDS the feature id. Without one
-        # (zero OR multiple in-flight ledgers) a pytest-convention AT cannot be
-        # discovered at all, so "no AT found" would be a LIE: we cannot
-        # distinguish "there is no AT" from "there is an AT I am unable to see".
-        # Degrade LOUD -- never a silent NOT_APPLICABLE/exit-0, which is exactly
-        # the indistinguishable-from-a-pass failure this feature exists to close.
+        # a pytest-convention AT cannot be discovered by feature id alone, but
+        # ``active_feature_id`` collapses two DIFFERENT situations into the
+        # same ``None`` (ZERO ledgers vs MULTIPLE ledgers) -- and only one of
+        # them is genuine ambiguity:
+        #
+        #   * ZERO ledgers -- no atdd-pure feature is being tracked under this
+        #     repo AT ALL. There is no ambiguity to hide a pytest-convention AT
+        #     behind: nothing is in flight, so the pytest arm has nothing to
+        #     discover either. Combined with no Gherkin AT (``slice_dir is
+        #     None``), this slice genuinely has no real AT of either
+        #     convention on disk -- DDD-8/CT-8's NOT_APPLICABLE, not a guess.
+        #   * MULTIPLE ledgers -- genuine ambiguity: several features ARE in
+        #     flight and which one is "active" cannot be told apart, so a
+        #     pytest AT COULD exist and be invisible. "No AT found" here would
+        #     be a LIE. Degrade LOUD to INDETERMINATE -- never a silent
+        #     NOT_APPLICABLE/exit-0, the indistinguishable-from-a-pass failure
+        #     this feature exists to close.
         if feature_id is None:
+            ledger_count = _telemetry_ledger_count(repo_root)
+            if ledger_count == 0:
+                return _emit_not_applicable(entering_slice)
             return _emit_indeterminate(
                 repo_root,
                 entering_slice,
                 (
-                    "cannot resolve the active feature id -- zero or multiple "
+                    "cannot resolve the active feature id -- multiple "
                     f"in-flight telemetry ledgers under {TELEMETRY_DIR_RELPATH} "
                     "(ambiguous); a pytest-convention slice AT is discovered BY "
                     "feature id, so this slice's AT cannot be seen -- which is "

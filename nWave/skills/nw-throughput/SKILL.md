@@ -38,10 +38,18 @@ slices or features — it is how you keep the pipeline full without tripping the
    Running the whole tree per-slice is the JIT poison that forbids pipelining. Seal 3-10' → 1-2'.
 
 4. **Resource-aware box launch (C3 / GDP-6 starvation-class).** BEFORE a heavy box gate,
-   check resources (free RAM > ~700 MB ∧ load < ~cores×2); if not, wait a bounded window
-   with progress. A gate killed by resources is **INDETERMINATE-with-retry, NEVER a red** —
-   distinguish a resource kill (137/143, aborted run) from a genuine failure. **The trigger
-   is RAM, not load.**
+   check resources (**MemAvailable** above the gate's own floor ∧ load < ~cores×2); if not,
+   wait a bounded window with progress. **The SSOT for the exact threshold is the code, not
+   this line**: `run_contract_gate._read_mem_available_mib` / `_DEFAULT_MIN_MEM_AVAILABLE_MIB`
+   (~700 MiB today, and `NWAVE_BUILD_TIER_MIN_MEM_AVAILABLE_MIB` overrides it) — do NOT copy
+   that number here, POINT to it, so a threshold change never leaves this doc lying. Threshold
+   on **MemAvailable** — the figure earlyoom watches and the gate already uses — **NOT MemFree /
+   the `free -m` "free" column**, which excludes reclaimable page cache and reads ~5x lower: a
+   box at 270 MB "free" but 6.7 GB MemAvailable is NOT starved, and holding it there is
+   throughput lost to a wrong number. Read `MemAvailable:` from `/proc/meminfo` (or `free -m`
+   **"available"** column), never "free". A gate killed by
+   resources is **INDETERMINATE-with-retry, NEVER a red** — distinguish a resource kill
+   (137/143, aborted run) from a genuine failure. **The trigger is MemAvailable, not load.**
 
 5. **Verify per-slice with Vera-Haiku (C4), not a continuous review loop.** Vera-Haiku
    examines each slice's charter at Haiku cost; the deep review is a feature-end panel

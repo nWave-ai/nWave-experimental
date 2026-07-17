@@ -345,6 +345,17 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # (Intent pre-filled from the Value statement verbatim), idempotent,
     # degrade-LOUD on a missing/malformed feature-delta or absent Slice Plan.
     _SubcommandRow("charter-scaffold", "des.cli.charter_scaffold", "main"),
+    # feature-end-certifies-real-consumers slice-01 (GDP-1/5): the PRODUCING
+    # tool for the two feature-end certification preconditions -- a
+    # feature's `## Environmental E2E` block, and the project's
+    # `.nwave/demo-recipe.json` -- so verify-environmental-e2e and
+    # verify-fresh-clone have something honest generated for them instead of
+    # hand-authored tribal knowledge nobody produces.
+    _SubcommandRow(
+        "feature-end-preconditions-scaffold",
+        "des.cli.feature_end_preconditions_scaffold",
+        "main",
+    ),
     # fix-record-review-verdict-ledger slice-01 (#45, WS-6): the general
     # reviewer-verdict PRODUCER -- ad-hoc reviewers (nw-agent-builder-reviewer
     # and other non-wave reviewers) had NO ledger, so a reviewer dying before

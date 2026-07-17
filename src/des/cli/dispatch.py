@@ -31,7 +31,7 @@ import sys
 from pathlib import Path
 
 from des._internal import subset_parser
-from des.application.dispatch_lane_ssot import _read_full_sections
+from des.application.dispatch_lane_ssot import _DISPATCH_YAML_PARTS, _read_full_sections
 from des.cli.validate_feature_delta import (
     VERDICT_METHODOLOGY_EXEMPT,
     VERDICT_NO_OVERLAP_DECLARED,
@@ -40,6 +40,7 @@ from des.cli.validate_feature_delta import (
 )
 from des.domain.atdd_pure_phases import FEATURE_END_PHASES, ATDDPurePhase
 from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
+from des.domain.repo_path_resolver import resolve_repo_root
 
 
 #: Deliberate, distinguishable exit for "bad input" (missing/invalid CLI
@@ -60,7 +61,10 @@ _REUSE_READY_VERDICTS = frozenset(
     }
 )
 
-_DISPATCH_YAML_PARTS = ("nWave", "dispatch", "atdd_pure.yaml")
+#: The dispatch SSOT literal -- SSOT-of-SSOT is `dispatch_lane_ssot.py` (this
+#: module already imports `_read_full_sections` from there); imported, never
+#: redefined, so the two consumers cannot silently diverge (feature-delta:
+#: fix-dispatch-ssot-consuming-repo).
 _VENDORS_YAML_PARTS = ("nWave", "dispatch", "vendors.yaml")
 _VENDOR_ID = "claude_code"
 
@@ -176,11 +180,19 @@ def _resolve_agent(phase: str | None, lane: str | None) -> str:
     return _DEFAULT_AGENT
 
 
-def _feature_delta_readiness_advisory(repo_root: Path, feature_id: str) -> str | None:
+def _feature_delta_readiness_advisory(
+    project_root: Path, feature_id: str
+) -> str | None:
     """Return a proactive readiness ADVISORY string, or ``None`` when the
     feature-delta is readiness-ready (GDP-1/2: catch it at generation time,
     before the crafter is dispatched and the separate readiness gate
     ``verify-readiness-pre-dispatch`` rejects it after the fact).
+
+    ``project_root`` is the PROJECT axis (the caller's own repo), resolved
+    independently of the SSOT axis (``ssot_dir`` in ``main``) -- never the
+    installed-runtime asset dir, so a real project's feature-delta is never
+    silently looked up under the wrong tree (RCA fix-dispatch-ssot-consuming
+    -repo, Branch B).
 
     ADVISORY-ONLY -- the caller prints this to stderr and generation
     continues unconditionally; this function never raises and never causes
@@ -191,7 +203,7 @@ def _feature_delta_readiness_advisory(repo_root: Path, feature_id: str) -> str |
     unexpected error while validating its content is swallowed (``None`` --
     skip the advisory) rather than crashing prompt generation.
     """
-    delta_path = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
     try:
         content = delta_path.read_text(encoding="utf-8")
     except OSError:
@@ -214,15 +226,18 @@ def _feature_delta_readiness_advisory(repo_root: Path, feature_id: str) -> str |
     )
 
 
-def _read_marker_syntax(repo_root: Path) -> str:
+def _read_marker_syntax(ssot_dir: Path) -> str:
     """Read the claude_code vendor's marker syntax from ``vendors.yaml``.
+
+    ``ssot_dir`` is the RUNTIME axis (the same directory ``vendors.yaml`` and
+    ``atdd_pure.yaml`` are read from) -- never the PROJECT axis.
 
     Degrades to the literal fallback (matching the same vendor row) on any
     read/parse failure or missing vendor entry -- a transient SSOT read
     problem must not crash the generator; the fallback is byte-identical to
     the vendors.yaml SSOT's current claude_code row.
     """
-    vendors_path = repo_root.joinpath(*_VENDORS_YAML_PARTS)
+    vendors_path = ssot_dir.joinpath(*_VENDORS_YAML_PARTS)
     try:
         text = vendors_path.read_text(encoding="utf-8")
         document = subset_parser.load(text)
@@ -557,26 +572,73 @@ def main(argv: list[str] | None = None) -> int:
         )
         slice_id = _FEATURE_END_SCOPE
 
-    # SSOT resolution order: explicit --repo-root wins > cwd IF
-    # cwd/nWave/dispatch/atdd_pure.yaml exists > the installed-runtime
-    # assets dir > the LOUD refusal below (naming both cures).
-    if args.repo_root is not None:
-        repo_root: Path = args.repo_root
+    # SSOT resolution order (RUNTIME axis -- a dispatch SSOT is an
+    # install/checkout concern, never a project one): explicit --repo-root
+    # wins ONLY IF it actually carries nWave/dispatch/atdd_pure.yaml > cwd IF
+    # cwd/nWave/dispatch/atdd_pure.yaml exists > the installed-runtime assets
+    # dir > the LOUD refusal below (naming both cures). An explicit
+    # --repo-root pointing at a consuming project (no nWave/dispatch/ of its
+    # own -- the exact reported defect, RCA fix-dispatch-ssot-consuming-repo
+    # Branch A) now FALLS THROUGH to the installed-runtime fallback instead
+    # of unconditionally winning and refusing.
+    if (
+        args.repo_root is not None
+        and args.repo_root.joinpath(*_DISPATCH_YAML_PARTS).is_file()
+    ):
+        ssot_dir: Path = args.repo_root
     elif Path.cwd().joinpath(*_DISPATCH_YAML_PARTS).is_file():
-        repo_root = Path.cwd()
+        ssot_dir = Path.cwd()
     else:
-        repo_root = _INSTALLED_DISPATCH_ASSETS_DIR.parent.parent
+        ssot_dir = _INSTALLED_DISPATCH_ASSETS_DIR.parent.parent
 
-    dispatch_yaml_path = repo_root.joinpath(*_DISPATCH_YAML_PARTS)
+    # PROJECT axis (feature-delta lookup, below): resolved INDEPENDENTLY of
+    # the SSOT axis above via the existing, already-reused `repo_path_
+    # resolver` SSOT (flag -> NWAVE_REPO_ROOT env -> cwd) -- never the
+    # installed-runtime directory, so a real project's feature-delta is never
+    # silently looked up under the wrong tree (RCA Branch B). `--repo-root`
+    # keeps driving BOTH axes when given explicitly (no new flag, no silent
+    # meaning-swap): it now means "the project root, and the SSOT source IF
+    # it happens to carry one" -- a strict widening of the prior "the SSOT
+    # source, unconditionally" reading, never a narrowing.
+    project_root = resolve_repo_root(
+        str(args.repo_root) if args.repo_root is not None else None
+    )
+
+    dispatch_yaml_path = ssot_dir.joinpath(*_DISPATCH_YAML_PARTS)
 
     try:
         yaml_text = dispatch_yaml_path.read_text(encoding="utf-8")
     except OSError as exc:
+        installed_dispatch_yaml = _INSTALLED_DISPATCH_ASSETS_DIR / "atdd_pure.yaml"
+        if installed_dispatch_yaml.is_file():
+            # The installed runtime DOES ship the SSOT -- reinstalling would
+            # not change a byte of it. The real cure is resolution-order:
+            # neither cwd nor an explicit --repo-root pointed at a directory
+            # that carries nWave/dispatch/atdd_pure.yaml.
+            cure = (
+                "fix: neither the current directory nor --repo-root "
+                f"({args.repo_root}) carries nWave/dispatch/atdd_pure.yaml -- "
+                "pass --repo-root pointing at a checkout that has it, or "
+                "omit --repo-root to let the installed-runtime SSOT resolve "
+                "automatically"
+                if args.repo_root is not None
+                else "fix: pass --repo-root pointing at a checkout containing "
+                "nWave/dispatch/atdd_pure.yaml"
+            )
+        else:
+            # The installed runtime itself is missing/broken -- reinstalling
+            # is the TRUE cure here (an install-plugin defect, not something
+            # --repo-root can fix).
+            cure = (
+                "fix: the installed runtime's nWave/dispatch/atdd_pure.yaml "
+                f"is missing/unreadable at {installed_dispatch_yaml} -- this "
+                "is an install-plugin defect, not something --repo-root can "
+                "cure; reinstall nWave (python -m nwave_ai.cli install) so "
+                "the installed runtime ships nWave/dispatch/atdd_pure.yaml, "
+                "or pass --repo-root pointing at a checkout that has it"
+            )
         print(
-            f"error: cannot read dispatch SSOT at {dispatch_yaml_path}: {exc}\n"
-            "fix: pass --repo-root pointing at a checkout containing "
-            "nWave/dispatch/atdd_pure.yaml, or reinstall nWave so the "
-            "installed runtime ships nWave/dispatch/atdd_pure.yaml",
+            f"error: cannot read dispatch SSOT at {dispatch_yaml_path}: {exc}\n{cure}",
             file=sys.stderr,
         )
         return _EXIT_USAGE_ERROR
@@ -608,12 +670,12 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.lane not in _LANES_REQUIRING_JUSTIFICATION:
-        advisory = _feature_delta_readiness_advisory(repo_root, args.project_id)
+        advisory = _feature_delta_readiness_advisory(project_root, args.project_id)
         if advisory is not None:
             print(advisory, file=sys.stderr)
 
     prompt = _build_prompt(
-        marker_syntax=_read_marker_syntax(repo_root),
+        marker_syntax=_read_marker_syntax(ssot_dir),
         feature_id=args.project_id,
         phase=phase,
         slice_id=slice_id,

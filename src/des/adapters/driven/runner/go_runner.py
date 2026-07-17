@@ -39,6 +39,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.runner.pytest_runner import _signal_kill_reason
 from des.adapters.driven.runner.tool_discovery import resolve_tool
 from des.ports.test_runner_port import RunnerAdapterUnavailable, RunVerdict
 
@@ -92,6 +93,16 @@ def run_go_scope(
         cwd=target_root,
         env=_env_with_go_dir(resolution.path),
     )
+
+    kill_reason = _signal_kill_reason(completed.returncode)
+    if kill_reason is not None:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                f"the go run was killed by the OS ({kill_reason}), not a "
+                "test failure -- INDETERMINATE, retry once memory/load recover"
+            ),
+        )
 
     return RunVerdict(passed=completed.returncode == 0, runner=adapter.name)
 
