@@ -564,3 +564,246 @@ def test_unknown_lane_is_a_clear_error_never_a_traceback() -> None:
         "the error must guide the caller toward a known lane "
         f"{sorted(LANE_PROFILES)}. combined={combined!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# AT-5 -- DESIGN_CONTEXT never points to a nonexistent file (bug
+# fix-des-dispatch-broken-design-context-pointer)
+#
+# ROOT CAUSE (RCA, evidence-backed): `_design_context_body(agent, feature_id)`
+# (src/des/cli/dispatch.py:308-317) hardcodes
+# `f"Design reference: docs/feature/{feature_id}/feature-delta.md\n"` for
+# every code-facing agent regardless of `lane` (it takes no `lane` param) and
+# regardless of whether that file actually exists on disk. A bugfix lane has
+# no feature-delta.md by design (the RCA doc is the design source) -- so the
+# bugfix crafter dispatch envelope names a file that will never resolve, and
+# `_feature_delta_readiness_advisory` (which WOULD warn) is unconditionally
+# skipped for the bugfix lane (`_LANES_REQUIRING_JUSTIFICATION` gate at
+# dispatch.py:672, keyed wrong -- it should key on `LaneProfile.
+# feature_readiness`, which is True for bugfix) -- so bugfix loses both the
+# correct pointer AND the warning. Charter oracle:
+# docs/product/expectations/fix-des-dispatch-broken-design-context-pointer/
+# the-dispatch-envelope-never-points-a-crafter-at-a-file-that-does-not-exist.md
+#
+# Driving surface: SAME hermetic subprocess boundary as AT-1..AT-4 above
+# (`python -m des.cli.__main__ dispatch`) -- never a stubbed generator. Each
+# AT here runs the REAL CLI in an isolated ``tmp_path`` cwd (so
+# ``docs/feature/<id>/feature-delta.md`` existence is test-controlled) with
+# ``NWAVE_REPO_ROOT`` popped from the child env so the project-root axis
+# resolves via cwd, never a leaked ambient value (`resolve_repo_root`'s
+# flag > env > cwd precedence, src/des/domain/repo_path_resolver.py).
+#
+# CONTRACT_SHAPE: bounded-change (same finite, closed-world SSOT-rendering
+# shape as the rest of this file -- example-based, no PBT).
+# ---------------------------------------------------------------------------
+
+_DESIGN_CONTEXT_SECTION_PATTERN = re.compile(
+    r"# DESIGN_CONTEXT\n(.*?)(?=\n# [A-Z_]+\n|\Z)", re.DOTALL
+)
+
+#: Shape-check for AT-5d: ANY `docs/feature/.../feature-delta.md`-shaped
+#: substring, not just the one literal path for one feature-id -- a fix that
+#: merely reworded the sentence around an unchanged dangling path must still
+#: fail this.
+_FEATURE_DELTA_PATH_SHAPE_PATTERN = re.compile(
+    r"docs/feature/[\w./-]+/feature-delta\.md"
+)
+
+
+def _design_context_section(prompt: str) -> str:
+    """Extract just the `# DESIGN_CONTEXT` section body from a rendered
+    dispatch prompt (scopes assertions to that one section, never accidentally
+    matching an unrelated section)."""
+    match = _DESIGN_CONTEXT_SECTION_PATTERN.search(prompt)
+    assert match is not None, f"no DESIGN_CONTEXT section found in prompt:\n{prompt}"
+    return match.group(1)
+
+
+def _isolated_dispatch_env() -> dict[str, str]:
+    """`_dispatch_env()` plus `NWAVE_REPO_ROOT` popped -- so the child
+    process's project-root axis (`resolve_repo_root`) resolves via its cwd,
+    never a leaked ambient value from the outer test-runner environment."""
+    env = _dispatch_env()
+    env.pop("NWAVE_REPO_ROOT", None)
+    return env
+
+
+def _run_bugfix_dispatch_without_feature_delta(
+    tmp_path: Path, feature_id: str
+) -> subprocess.CompletedProcess[str]:
+    """Run `des dispatch --lane bugfix` with the child cwd = an EMPTY
+    `tmp_path` (no `docs/feature/<feature_id>/feature-delta.md` anywhere under
+    it) -- the exact precondition the bug reproduces under."""
+    return subprocess.run(
+        _dispatch_argv(
+            "--mode",
+            "atdd_pure",
+            "--project-id",
+            feature_id,
+            "--slice",
+            "feature-end",
+            "--phase",
+            "A_GREEN",
+            "--lane",
+            "bugfix",
+            "--defect",
+            "some defect",
+            "--regression-test",
+            "test_probe_regression",
+        ),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_isolated_dispatch_env(),
+        cwd=str(tmp_path),
+    )
+
+
+def test_bugfix_lane_design_context_never_names_a_dangling_feature_delta_path(
+    tmp_path: Path,
+) -> None:
+    """POSITIVE (the bug, RED today): `--lane bugfix` for a feature-id whose
+    `docs/feature/<id>/feature-delta.md` does NOT exist must NOT emit that
+    bare dangling pointer in `# DESIGN_CONTEXT` -- it must instead say
+    plainly no feature-delta.md exists and name the bugfix design source
+    (RCA / dispatch intent / regression test) instead.
+
+    FAILS TODAY: `_design_context_body` (dispatch.py:308-317) hardcodes the
+    feature-delta.md pointer for every code-facing agent with no filesystem
+    check and no `lane` parameter -- it emits the dangling path unconditionally.
+    """
+    feature_id = "probe-bugfix-missing-delta"
+    result = _run_bugfix_dispatch_without_feature_delta(tmp_path, feature_id)
+
+    assert result.returncode == 0, (
+        "a bugfix dispatch with no feature-delta.md must still produce the "
+        f"full envelope; got exit {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    design_context = _design_context_section(result.stdout)
+
+    dangling_pointer = f"docs/feature/{feature_id}/feature-delta.md"
+    assert dangling_pointer not in design_context, (
+        "DESIGN_CONTEXT must never point the crafter at a nonexistent "
+        f"feature-delta.md -- found the dangling pointer {dangling_pointer!r} "
+        f"in the DESIGN_CONTEXT section:\n{design_context}"
+    )
+
+    lowered = design_context.lower()
+    assert "feature-delta.md" in lowered and (
+        "no " in lowered or "not " in lowered or "does not exist" in lowered
+    ), (
+        "DESIGN_CONTEXT must say PLAINLY that no feature-delta.md exists for "
+        f"this bugfix, not merely omit the pointer silently -- section:\n{design_context}"
+    )
+    assert any(
+        keyword in lowered for keyword in ("rca", "regression test", "dispatch intent")
+    ), (
+        "DESIGN_CONTEXT must NAME what the crafter should use INSTEAD of a "
+        "design doc (the RCA, the dispatch intent, or the regression test) -- "
+        f"section:\n{design_context}"
+    )
+
+
+def test_bugfix_lane_design_context_fallback_is_not_a_reworded_dangling_path(
+    tmp_path: Path,
+) -> None:
+    """NEGATIVE (resolvability, not just shape): the positive-case fallback
+    body must not itself contain ANY `docs/feature/.../feature-delta.md`
+    -shaped substring -- a fix that reworded the sentence around an unchanged
+    (still-nonexistent) path is the SAME defect wearing different words, not
+    a fix. A downstream shape-only gate checking "does the DESIGN_CONTEXT
+    section mention a path" would wrongly accept that -- this AT pins that
+    the path itself must be GONE, not merely re-sentenced.
+
+    FAILS TODAY: same root cause as the sibling AT above -- the hardcoded
+    pointer is exactly `docs/feature/<id>/feature-delta.md`, which matches
+    this shape pattern.
+    """
+    feature_id = "probe-bugfix-missing-delta-shape-check"
+    result = _run_bugfix_dispatch_without_feature_delta(tmp_path, feature_id)
+
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    design_context = _design_context_section(result.stdout)
+
+    shape_match = _FEATURE_DELTA_PATH_SHAPE_PATTERN.search(design_context)
+    assert shape_match is None, (
+        "DESIGN_CONTEXT must not contain ANY docs/feature/.../feature-delta.md"
+        f"-shaped path when the file does not exist -- found {shape_match.group(0) if shape_match else None!r} "
+        f"in section:\n{design_context}"
+    )
+
+
+def test_bugfix_lane_design_context_still_points_to_an_existing_feature_delta(
+    tmp_path: Path,
+) -> None:
+    """NEGATIVE (no regression): when `docs/feature/<id>/feature-delta.md`
+    genuinely EXISTS for a bugfix-lane dispatch, DESIGN_CONTEXT must still
+    reference it -- the fix must not blanket-drop the real pointer for every
+    bugfix dispatch, only the DANGLING one.
+    """
+    feature_id = "probe-bugfix-with-delta"
+    delta_dir = tmp_path / "docs" / "feature" / feature_id
+    delta_dir.mkdir(parents=True)
+    (delta_dir / "feature-delta.md").write_text("# Feature Delta\n", encoding="utf-8")
+
+    result = _run_bugfix_dispatch_without_feature_delta(tmp_path, feature_id)
+
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    design_context = _design_context_section(result.stdout)
+
+    expected_pointer = f"docs/feature/{feature_id}/feature-delta.md"
+    assert expected_pointer in design_context, (
+        "a feature-delta.md that genuinely EXISTS must still be referenced "
+        f"in DESIGN_CONTEXT (no regression) -- section:\n{design_context}"
+    )
+
+
+def test_plain_dispatch_design_context_still_points_to_an_existing_feature_delta(
+    tmp_path: Path,
+) -> None:
+    """NEGATIVE (no regression, non-bugfix code-facing agent): a plain
+    (no `--lane`) dispatch for a feature-id WITH a real feature-delta.md must
+    keep pointing to it -- threading `lane` into `_design_context_body` must
+    not perturb the non-bugfix, code-facing-agent path.
+    """
+    feature_id = "probe-plain-with-delta"
+    delta_dir = tmp_path / "docs" / "feature" / feature_id
+    delta_dir.mkdir(parents=True)
+    (delta_dir / "feature-delta.md").write_text("# Feature Delta\n", encoding="utf-8")
+
+    result = subprocess.run(
+        _dispatch_argv(
+            "--mode",
+            "atdd_pure",
+            "--project-id",
+            feature_id,
+            "--slice",
+            "slice-01",
+            "--phase",
+            "A_GREEN",
+        ),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_isolated_dispatch_env(),
+        cwd=str(tmp_path),
+    )
+
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    design_context = _design_context_section(result.stdout)
+
+    expected_pointer = f"docs/feature/{feature_id}/feature-delta.md"
+    assert expected_pointer in design_context, (
+        "a non-bugfix, code-facing dispatch with a real feature-delta.md "
+        f"must keep pointing to it -- section:\n{design_context}"
+    )

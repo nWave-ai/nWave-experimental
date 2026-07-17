@@ -180,13 +180,21 @@ def _resolve_agent(phase: str | None, lane: str | None) -> str:
     return _DEFAULT_AGENT
 
 
-def _feature_delta_readiness_advisory(
-    project_root: Path, feature_id: str
-) -> str | None:
-    """Return a proactive readiness ADVISORY string, or ``None`` when the
-    feature-delta is readiness-ready (GDP-1/2: catch it at generation time,
-    before the crafter is dispatched and the separate readiness gate
-    ``verify-readiness-pre-dispatch`` rejects it after the fact).
+def _feature_delta_missing_advisory(project_root: Path, feature_id: str) -> str | None:
+    """Return a proactive readiness ADVISORY string when NO feature-delta.md
+    exists on disk for ``feature_id``, or ``None`` when one does (GDP-1/2:
+    catch it at generation time, before the crafter is dispatched and the
+    separate readiness gate ``verify-readiness-pre-dispatch`` rejects it
+    after the fact).
+
+    EXISTENCE-only leg of the readiness check -- gated at the call site on
+    ``LaneProfile.feature_readiness`` (True for bugfix, so a bugfix dispatch
+    with no feature-delta.md now gets this existence advisory too; the
+    reuse-analysis CONTENT leg in ``_feature_delta_content_advisory`` stays
+    gated on ``_LANES_REQUIRING_JUSTIFICATION`` -- bugfix-exempt, unchanged).
+    Split out of the former combined ``_feature_delta_readiness_advisory``
+    (RCA fix-des-dispatch-broken-design-context-pointer, fix B: existence and
+    content are orthogonal checks that were wrongly sharing one gate).
 
     ``project_root`` is the PROJECT axis (the caller's own repo), resolved
     independently of the SSOT axis (``ssot_dir`` in ``main``) -- never the
@@ -197,22 +205,40 @@ def _feature_delta_readiness_advisory(
     ADVISORY-ONLY -- the caller prints this to stderr and generation
     continues unconditionally; this function never raises and never causes
     ``main`` to change its exit code.
+    """
+    delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    if delta_path.is_file():
+        return None
+    return (
+        f"advisory: the feature-delta for '{feature_id}' is not "
+        f"readiness-ready -- no feature-delta.md found at {delta_path}; "
+        "fix it before dispatching the crafter (the readiness gate will "
+        "otherwise reject it)"
+    )
 
-    Degrade-loud-but-safe: a missing feature-delta file for a feature-phase
-    dispatch IS itself advisory-worthy (the file will be required later); an
-    unexpected error while validating its content is swallowed (``None`` --
-    skip the advisory) rather than crashing prompt generation.
+
+def _feature_delta_content_advisory(project_root: Path, feature_id: str) -> str | None:
+    """Return a proactive readiness ADVISORY string when an EXISTING
+    feature-delta.md's Reuse Analysis content is not readiness-ready, or
+    ``None`` when it is ready, absent, or unreadable/unparsable.
+
+    CONTENT-only leg of the readiness check -- gated at the call site on
+    ``_LANES_REQUIRING_JUSTIFICATION`` (bugfix stays exempt, unchanged from
+    before the fix-B split: a bugfix has no Reuse Analysis to validate).
+
+    ADVISORY-ONLY -- same contract as ``_feature_delta_missing_advisory``.
+
+    Degrade-loud-but-safe: a missing/unreadable file is not this leg's
+    concern (the existence leg owns that signal) -- swallowed to ``None``
+    here rather than double-reporting; an unexpected error while validating
+    content is likewise swallowed (``None`` -- skip the advisory) rather
+    than crashing prompt generation.
     """
     delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
     try:
         content = delta_path.read_text(encoding="utf-8")
     except OSError:
-        return (
-            f"advisory: the feature-delta for '{feature_id}' is not "
-            f"readiness-ready -- no feature-delta.md found at {delta_path}; "
-            "fix it before dispatching the crafter (the readiness gate will "
-            "otherwise reject it)"
-        )
+        return None
     try:
         result = validate_reuse_analysis_content(content)
     except Exception:
@@ -305,15 +331,46 @@ _NON_CODE_FACING_DESIGN_CONTEXT = (
 )
 
 
-def _design_context_body(agent: str, feature_id: str) -> str:
-    """DESIGN_CONTEXT section body, keyed on the resolved dispatch agent.
+#: DESIGN_CONTEXT body for a bugfix-lane dispatch whose feature-id has NO
+#: feature-delta.md on disk (RCA fix-des-dispatch-broken-design-context-
+#: pointer): a bugfix has no design delta by design (the RCA/regression-test
+#: pair IS its design source, per ADR-025's SLIM-crafter discipline) -- this
+#: fallback names that explicitly, never the dangling pointer. Deliberately
+#: carries NO ``docs/feature/.../feature-delta.md``-shaped substring (the
+#: downstream shape-gate ``_FEATURE_DELTA_PATH_SHAPE_PATTERN`` in the AT would
+#: catch a merely-reworded dangling path) while still citing a real
+#: design-reference token (``ADR-025``) so the body keeps satisfying the REAL
+#: production predicate ``design_context_carries_architecture`` -- the same
+#: gate a bugfix (code-facing) dispatch is held to.
+_BUGFIX_MISSING_FEATURE_DELTA_DESIGN_CONTEXT = (
+    "No feature-delta.md exists for this bugfix (bugfix lane carries no "
+    "design delta by design, per ADR-025 SLIM-crafter discipline). Design "
+    "context for this bugfix: consult the RCA / dispatch intent, plus the "
+    "regression test named in DES-REGRESSION-TEST-FILE.\n"
+)
+
+
+def _design_context_body(
+    agent: str, feature_id: str, lane: str | None, project_root: Path
+) -> str:
+    """DESIGN_CONTEXT section body, keyed on the resolved dispatch agent
+    (and, for a bugfix-lane code-facing dispatch, on whether a
+    feature-delta.md genuinely exists on disk).
 
     A NON-CODE-FACING agent (``_NON_CODE_FACING_AGENTS``) never receives the
-    ``docs/feature/<id>/feature-delta.md`` pointer -- every other (code-facing)
-    agent keeps the real design citation unchanged.
+    ``docs/feature/<id>/feature-delta.md`` pointer -- every other
+    (code-facing) agent keeps the real design citation, UNLESS ``lane ==
+    "bugfix"`` and the file does not actually exist under ``project_root``
+    (RCA fix-des-dispatch-broken-design-context-pointer): a bugfix has no
+    feature-delta.md by design, so pointing the crafter at one that will
+    never resolve is the exact defect this branch fixes.
     """
     if agent in _NON_CODE_FACING_AGENTS:
         return _NON_CODE_FACING_DESIGN_CONTEXT
+    if lane == "bugfix":
+        delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
+        if not delta_path.is_file():
+            return _BUGFIX_MISSING_FEATURE_DELTA_DESIGN_CONTEXT
     return f"Design reference: docs/feature/{feature_id}/feature-delta.md\n"
 
 
@@ -325,6 +382,8 @@ def _section_body(
     slice_id: str,
     intent: str,
     agent: str,
+    lane: str | None,
+    project_root: Path,
 ) -> str:
     """Render one section's scaffold body.
 
@@ -347,7 +406,7 @@ def _section_body(
         "AGENT_IDENTITY": f"Agent: {agent}\n",
         "SKILL_LOADING": _skill_loading_body(agent),
         "TASK_CONTEXT": f"Slice {slice_id} of feature {feature_id}.\n",
-        "DESIGN_CONTEXT": _design_context_body(agent, feature_id),
+        "DESIGN_CONTEXT": _design_context_body(agent, feature_id, lane, project_root),
         "ATDD_PURE_PHASES": (
             "Execute the phase named in the DES-PHASE marker.\n"
             + (f"{intent}\n" if intent else "")
@@ -385,6 +444,7 @@ def _build_prompt(
     at_kind: str,
     regression_test_file: str | None,
     agent: str,
+    project_root: Path,
 ) -> str:
     """Assemble the full dispatch prompt: marker block, then section headers.
 
@@ -425,6 +485,8 @@ def _build_prompt(
             slice_id=slice_id,
             intent=intent,
             agent=agent,
+            lane=lane,
+            project_root=project_root,
         )
         for section_id in section_ids
     ]
@@ -669,10 +731,28 @@ def main(argv: list[str] | None = None) -> int:
         else full_sections
     )
 
+    # Fix B (RCA fix-des-dispatch-broken-design-context-pointer): the
+    # EXISTENCE leg and the reuse-analysis CONTENT leg are orthogonal checks
+    # that used to share one gate (`_LANES_REQUIRING_JUSTIFICATION`), which
+    # wrongly exempted the bugfix lane from BOTH -- a bugfix genuinely has no
+    # Reuse Analysis to validate (CONTENT stays exempt, unchanged), but it
+    # DOES have a feature-delta.md existence question worth flagging
+    # (EXISTENCE now keys on `LaneProfile.feature_readiness`, True for
+    # bugfix).
+    lane_profile = LANE_PROFILES.get(args.lane) if args.lane is not None else None
+    if lane_profile is None or lane_profile.feature_readiness:
+        missing_advisory = _feature_delta_missing_advisory(
+            project_root, args.project_id
+        )
+        if missing_advisory is not None:
+            print(missing_advisory, file=sys.stderr)
+
     if args.lane not in _LANES_REQUIRING_JUSTIFICATION:
-        advisory = _feature_delta_readiness_advisory(project_root, args.project_id)
-        if advisory is not None:
-            print(advisory, file=sys.stderr)
+        content_advisory = _feature_delta_content_advisory(
+            project_root, args.project_id
+        )
+        if content_advisory is not None:
+            print(content_advisory, file=sys.stderr)
 
     prompt = _build_prompt(
         marker_syntax=_read_marker_syntax(ssot_dir),
@@ -687,6 +767,7 @@ def main(argv: list[str] | None = None) -> int:
         at_kind=args.at_kind,
         regression_test_file=args.regression_test_file,
         agent=_resolve_agent(phase, args.lane),
+        project_root=project_root,
     )
     print(prompt, end="")
     return 0

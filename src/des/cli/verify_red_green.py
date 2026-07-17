@@ -45,6 +45,8 @@ import tempfile
 from pathlib import Path
 from xml.etree import ElementTree
 
+from des.ports import test_runner_port
+
 
 _SEAL_DIR = Path(".nwave") / "telemetry" / "red-green"
 # Fix B (enabling change, docs/feature/fix-seal-keys-on-nodeid-not-docstring):
@@ -94,18 +96,64 @@ def _has_tool_uv_table(pyproject: Path) -> bool:
     return any(line.strip() == "[tool.uv]" for line in text.splitlines())
 
 
-def _default_run_cmd(repo: Path) -> tuple[str, ...]:
-    """Derive the DEFAULT runner command from the TARGET ``repo``'s Python
-    packaging manifest (filesystem-only, no shelling out -- GDP-7).
-
-    ``sys.executable`` binds to the interpreter that LAUNCHED verify-red-green,
-    not the target repo's environment -- on a uv/poetry/pipenv target repo
-    that runs pytest in the WRONG env. Derive from the manifest instead so the
-    default always runs in the target's own environment; fall back to the
-    unchanged ``_DEFAULT_RUN_CMD`` (current sys.executable -m pytest form)
-    when no recognized manifest is present. An explicit ``--run-cmd`` always
-    wins over this derivation (see ``main``).
+class _UnsupportedRunnerLayout(Exception):
+    """Raised by ``_default_run_cmd`` when ``test_runner_port.resolve`` matches
+    a REGISTERED, RECOGNIZED runner (e.g. ``cargo-test``, ``vitest``,
+    ``go-test``) that verify-red-green has no pytest-style run-cmd template
+    for. Distinct from an UNRECOGNIZED layout (zero matched lockfiles at
+    all), which keeps the legacy Python-assumed pytest fallback -- see
+    ``_default_run_cmd``. Caught in ``main`` and turned into a loud REFUSAL
+    (exit 1), never a silent fall-through to pytest.
     """
+
+    def __init__(self, runner: str) -> None:
+        self.runner = runner
+        super().__init__(
+            f"resolved runner {runner!r} has no verify-red-green run-cmd template"
+        )
+
+
+def _default_run_cmd(repo: Path) -> tuple[str, ...]:
+    """Derive the DEFAULT runner command from the TARGET ``repo``'s test-runner
+    layout (filesystem-only, no shelling out -- GDP-7).
+
+    Delegates layout RESOLUTION to the existing closed-union registry
+    ``des.ports.test_runner_port.resolve`` (never a private, hand-rolled,
+    open-ended if/elif chain) -- the SAME registry the contract gate already
+    consumes:
+
+    * resolves to the ``pytest`` runner (``pyproject.toml`` / ``pytest.ini``)
+      -> layer the Python-env run-prefix (uv/poetry/pipenv) on top, exactly as
+      before -- orthogonal to *which* runner, not a competing resolver.
+      ``sys.executable`` binds to the interpreter that LAUNCHED
+      verify-red-green, not the target repo's environment -- on a
+      uv/poetry/pipenv target repo that runs pytest in the WRONG env, so the
+      manifest-derived prefix always runs in the target's own environment.
+    * resolves to a DIFFERENT recognized runner (``cargo-test``, ``vitest``,
+      ``go-test``, ...) -> verify-red-green has no run-cmd template for it;
+      raises ``_UnsupportedRunnerLayout`` so ``main`` can REFUSE loud instead
+      of silently reaching pytest against a non-Python target.
+    * resolves to NOTHING (``Indeterminate`` / ``UnrecognizedRunner`` -- zero
+      matched lockfiles) -> preserves the legacy behavior: assume a
+      lockfile-less Python repo and fall back to the unchanged
+      ``_DEFAULT_RUN_CMD`` (current sys.executable -m pytest form).
+
+    An explicit ``--run-cmd`` always wins over this derivation (see ``main``).
+    """
+    resolution = test_runner_port.resolve(repo)
+    if (
+        isinstance(resolution, test_runner_port.RunnerAdapter)
+        and resolution.name != "pytest"
+    ):
+        raise _UnsupportedRunnerLayout(resolution.name)
+    # Either resolved to "pytest", or Indeterminate/UnrecognizedRunner (no
+    # matched lockfile at all) -- both keep the legacy Python-assumed pytest
+    # fallback (unchanged behavior for the plain-repo case).
+    return _pytest_default_run_cmd(repo)
+
+
+def _pytest_default_run_cmd(repo: Path) -> tuple[str, ...]:
+    """Layer the Python-env run-prefix (uv/poetry/pipenv) on the pytest tail."""
     tail = ("{test_file}", "--junitxml={junit_out}", "-q", "--tb=no")
     if (repo / "uv.lock").is_file() or _has_tool_uv_table(repo / "pyproject.toml"):
         return ("uv", "run", "pytest", *_PYTEST_PLUGIN_ISOLATION, *tail)
@@ -120,10 +168,53 @@ def _emit(payload: dict[str, object]) -> None:
     print(json.dumps(payload))
 
 
-def _indeterminate(what: str, why: str, how: str) -> int:
-    _emit({"event": "RedGreenIndeterminate", "what": what, "why": why, "how": how})
+def _indeterminate(what: str, why: str, how: str, cmd: object = None) -> int:
+    payload: dict[str, object] = {
+        "event": "RedGreenIndeterminate",
+        "what": what,
+        "why": why,
+        "how": how,
+    }
+    if cmd is not None:
+        payload["cmd"] = list(cmd) if isinstance(cmd, (list, tuple)) else cmd
+    _emit(payload)
     print(f"⚠ INDETERMINATE — {what}. {why} Fix: {how}")
     return _EXIT_INDETERMINATE
+
+
+def _unsupported_layout_refusal(exc: _UnsupportedRunnerLayout) -> int:
+    """REFUSE loud (exit 1) for a resolved runner verify-red-green has no
+    run-cmd template for -- names the incapacity, the resolved layout, and
+    the ``--run-cmd`` escape hatch (GDP-3/GDP-4), never a silent pytest
+    fall-through against a non-Python target."""
+    what = (
+        f"no verify-red-green run-cmd template for the resolved runner {exc.runner!r}"
+    )
+    why = (
+        "des.ports.test_runner_port.resolve() recognized this target's "
+        f"layout (runner={exc.runner!r}) but verify-red-green only carries "
+        "a pytest-style run-cmd template -- running pytest against this "
+        "target would silently mis-execute (empty/false results), not "
+        "witness the developer's tests."
+    )
+    how = (
+        "pass --run-cmd '<runner invocation> {test_file} {junit_out}' "
+        "explicitly (verify-red-green is runner-agnostic via JUnit XML -- "
+        "pytest, cargo-nextest, and vitest all emit it)."
+    )
+    cmd = [f"<no run-cmd template for runner={exc.runner!r}>"]
+    _emit(
+        {
+            "event": "RedGreenRefused",
+            "phase": "layout",
+            "what": what,
+            "why": why,
+            "how": how,
+            "cmd": cmd,
+        }
+    )
+    print(f"✗ REFUSED — {what}. {why} Fix: {how}")
+    return _EXIT_REFUSED
 
 
 def _seal_path(repo: Path, test_file: Path) -> Path:
@@ -162,12 +253,14 @@ def _run_and_collect(
                 what=f"runner not found: {cmd[0]}",
                 why="the declared run command's tool is not on PATH.",
                 how="install it or declare another via --run-cmd.",
+                cmd=cmd,
             )
         except subprocess.TimeoutExpired:
             return _indeterminate(
                 what=f"test run timed out after {_RUN_TIMEOUT_SECONDS}s",
                 why="the declared run command did not finish.",
                 how="run it manually; fix or re-budget the suite.",
+                cmd=cmd,
             )
         try:
             tree = ElementTree.parse(junit_out)
@@ -185,6 +278,7 @@ def _run_and_collect(
                     "`des record-at-review-verdict` (two-part attestation) "
                     "instead."
                 ),
+                cmd=cmd,
             )
         outcomes: dict[str, str] = {}
         raw_ids: list[str] = []
@@ -236,6 +330,7 @@ def _run_and_collect(
                 what="zero test cases collected",
                 why="an empty run seals nothing (and must never pass).",
                 how="check the test file path and the runner invocation.",
+                cmd=cmd,
             )
         if len(raw_ids) != len(outcomes):
             duplicate_ids = sorted({tid for tid in raw_ids if raw_ids.count(tid) > 1})
@@ -355,6 +450,7 @@ def _record_red(repo: Path, test_file: Path, run_cmd: tuple[str, ...]) -> int:
             "test_file": str(test_file.relative_to(repo)),
             "failing": failing,
             "passing_pins": sorted(t for t, o in outcomes.items() if o == "pass"),
+            "cmd": list(run_cmd),
         }
     )
     print(f"✓ RED observed — {len(failing)} failing (witness candidates) recorded")
@@ -479,9 +575,13 @@ def main(argv: list[str] | None = None) -> int:
                 "or an absolute path under the repo root)."
             ),
         )
-    run_cmd = (
-        tuple(shlex.split(args.run_cmd)) if args.run_cmd else _default_run_cmd(repo)
-    )
+    if args.run_cmd:
+        run_cmd = tuple(shlex.split(args.run_cmd))
+    else:
+        try:
+            run_cmd = _default_run_cmd(repo)
+        except _UnsupportedRunnerLayout as exc:
+            return _unsupported_layout_refusal(exc)
     if args.record_red:
         return _record_red(repo, test_file, run_cmd)
     return _verify_green(repo, test_file, run_cmd)

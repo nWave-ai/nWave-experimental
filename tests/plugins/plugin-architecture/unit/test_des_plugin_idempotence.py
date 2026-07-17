@@ -258,22 +258,45 @@ class TestDESHookIdempotence:
         assert len(non_des) == 1, f"Expected 1 preserved user entry, got {non_des}"
         assert "load_persona.py" in non_des[0]["hooks"][0]["command"]
 
-        # DES entry registered exactly once, correct command shape, no matcher
+        # Two DES UserPromptSubmit entries register (fix-orchestrator-affordance-
+        # refresh-independent added the standalone stdlib-only refresh alongside
+        # the wave-active anchor adapter entry). Both carry a DES marker, both
+        # matcher-less.
         des = [e for e in entries if shared_hooks.is_des_hook_entry(e)]
-        assert len(des) == 1, f"Expected 1 DES UserPromptSubmit entry, got {des}"
-        command = des[0]["hooks"][0]["command"]
-        assert command.endswith(
-            "-m des.adapters.drivers.hooks.claude_code_hook_adapter user-prompt-submit"
-        ), f"Unexpected command shape: {command}"
-        assert "PYTHONPATH=" in command and "lib/python" in command
-        assert "/.venv/" not in command, "Project-local .venv must not leak"
-        assert "matcher" not in des[0], "UserPromptSubmit has no tool matcher"
+        assert len(des) == 2, f"Expected 2 DES UserPromptSubmit entries, got {des}"
 
-        # Idempotence: second install does not duplicate either entry
+        # The wave-active anchor entry: correct adapter command shape, no matcher.
+        anchor = [
+            e
+            for e in des
+            if e["hooks"][0]["command"].endswith(
+                "-m des.adapters.drivers.hooks.claude_code_hook_adapter "
+                "user-prompt-submit"
+            )
+        ]
+        assert len(anchor) == 1, f"Expected 1 wave-active anchor entry, got {anchor}"
+        anchor_command = anchor[0]["hooks"][0]["command"]
+        assert "PYTHONPATH=" in anchor_command and "lib/python" in anchor_command
+        assert "/.venv/" not in anchor_command, "Project-local .venv must not leak"
+        assert "matcher" not in anchor[0], "UserPromptSubmit has no tool matcher"
+
+        # The standalone orchestrator-affordance refresh entry: shell command
+        # invoking the shipped script directly, matcher-less.
+        standalone = [
+            e
+            for e in des
+            if "orchestrator_affordance_refresh" in e["hooks"][0]["command"]
+        ]
+        assert len(standalone) == 1, (
+            f"Expected 1 standalone affordance-refresh entry, got {standalone}"
+        )
+        assert "matcher" not in standalone[0], "UserPromptSubmit has no tool matcher"
+
+        # Idempotence: second install does not duplicate any entry
         plugin._install_des_hooks(install_context)
         settings = json.loads(settings_file.read_text())
         entries = settings["hooks"]["UserPromptSubmit"]
-        assert len(entries) == 2, f"Expected persona + DES entries, got {entries}"
+        assert len(entries) == 3, f"Expected persona + 2 DES entries, got {entries}"
 
     @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
     def test_install_after_python_path_change_replaces_hooks(

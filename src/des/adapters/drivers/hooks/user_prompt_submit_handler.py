@@ -8,20 +8,24 @@ calls ``on_prompt_submitted`` (which arms the wave-active floor on a
 Router command: ``user-prompt-submit``. The arm happens deterministically from
 the literal command -- whether or not a model turn or skill load ever occurs.
 
-Also carries the 30-MINUTE re-injection of the orchestrator spine-discipline
+Also carries the 15-MINUTE re-injection of the orchestrator spine-discipline
 affordance (feature: affordance-refresh-30min, formerly
-orchestrator-affordance-hourly-refresh). SessionStart / clear / compact
-inject the affordance once via
+orchestrator-affordance-hourly-refresh; cadence tightened 30min -> 15min by
+fix-orchestrator-affordance-refresh-independent). SessionStart / clear /
+compact inject the affordance once via
 ``session_start_handler.load_orchestrator_affordance``; on a long-running
 session (1M context) that single injection can go stale. This handler
 mirrors the SAME content on every submitted prompt, gated by a
 ``.nwave/orchestrator-affordance-last-injected`` sentinel file whose mtime is
 the "last injected at" timestamp -- the same idiomatic pattern
 ``HousekeepingService._clean_signal_files`` uses for signal-file staleness --
-so the refresh fires at most once per 30 minutes. Missing or corrupt
-sentinel state degrades to "elapsed" (inject) rather than silently going
-dormant. Fail-open: any internal error is swallowed and the hook always
-exits 0.
+so the refresh fires at most once per 15 minutes. This sentinel is SHARED
+with the standalone, spine-independent
+``scripts/hooks/orchestrator_affordance_refresh.py`` hook, which mirrors the
+same 900-second cadence for sessions where the ``des`` package cannot be
+imported. Missing or corrupt sentinel state degrades to "elapsed" (inject)
+rather than silently going dormant. Fail-open: any internal error is
+swallowed and the hook always exits 0.
 """
 
 from __future__ import annotations
@@ -47,7 +51,7 @@ from des.ports.driver_ports.wave_active_anchor_port import PromptSubmission
 _ORCHESTRATOR_AFFORDANCE_SENTINEL_RELATIVE = (
     Path(".nwave") / "orchestrator-affordance-last-injected"
 )
-_ORCHESTRATOR_AFFORDANCE_REFRESH_SECONDS = 1800
+_ORCHESTRATOR_AFFORDANCE_REFRESH_SECONDS = 900
 
 
 def _is_orchestrator_affordance_sentinel_elapsed(
@@ -100,7 +104,7 @@ def _build_user_prompt_submit_affordance_output(affordance: str) -> dict[str, ob
 
 
 def _maybe_refresh_orchestrator_affordance(project_root: Path) -> None:
-    """Re-inject the orchestrator affordance when the 30-minute sentinel has elapsed.
+    """Re-inject the orchestrator affordance when the 15-minute sentinel has elapsed.
 
     Fail-open: any error (unreadable assets, unwritable sentinel, etc.) is
     swallowed -- a refresh failure must never block prompt submission.

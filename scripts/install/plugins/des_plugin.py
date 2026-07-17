@@ -231,6 +231,13 @@ class DESPlugin(InstallationPlugin):
         # SOLE writer of `.git/hooks/pre-push`; this script deployment is
         # unrelated to that file.
         shared_hooks.GIT_PRE_PUSH_BACKSTOP_SCRIPT,
+        # fix-orchestrator-affordance-refresh-independent: the standalone,
+        # stdlib-only, `des`-import-free orchestrator-affordance refresh
+        # hook (wired via hook_definitions._STANDALONE_ORCHESTRATOR_
+        # AFFORDANCE_REFRESH_{SESSION_START,USER_PROMPT_SUBMIT}). Ships
+        # flat to ~/.claude/scripts/ so it resolves independent of whether
+        # the `des` package is importable in the target session.
+        "orchestrator_affordance_refresh.py",
     ]
     # Asset-family key for the DES scripts list in the shared
     # .nwave-manifest.json mechanism (scripts/shared/skill_distribution.py).

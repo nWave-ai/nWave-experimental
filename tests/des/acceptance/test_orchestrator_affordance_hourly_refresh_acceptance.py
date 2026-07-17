@@ -72,7 +72,7 @@ import pytest
 
 
 _SENTINEL_RELATIVE = Path(".nwave") / "orchestrator-affordance-last-injected"
-_REFRESH_THRESHOLD_SECONDS = 1800
+_REFRESH_THRESHOLD_SECONDS = 900
 
 
 def _sentinel_path(project_root: Path) -> Path:
@@ -198,8 +198,8 @@ class TestOrchestratorAffordanceHourlyRefreshAcceptance:
     def test_sentinel_just_under_the_threshold_boundary_not_reinjected(
         self, tmp_path, capsys
     ):
-        """Negative AT (boundary): sentinel backdated to 1799s (just under the
-        1800s/30-minute threshold) -> still no re-injection."""
+        """Negative AT (boundary): sentinel backdated to 899s (just under the
+        900s/15-minute threshold) -> still no re-injection."""
         project_root = tmp_path
         _write_sentinel_with_age(
             project_root, seconds_ago=_REFRESH_THRESHOLD_SECONDS - 1
@@ -210,7 +210,7 @@ class TestOrchestratorAffordanceHourlyRefreshAcceptance:
         assert exit_code == 0
         captured = capsys.readouterr()
         assert captured.out.strip() == "", (
-            "1799s elapsed is still under the 1800s threshold -- must not re-inject yet"
+            "899s elapsed is still under the 900s threshold -- must not re-inject yet"
         )
 
     def test_missing_sentinel_degrades_to_elapsed_and_injects(self, tmp_path, capsys):

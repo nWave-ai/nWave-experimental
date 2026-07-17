@@ -79,7 +79,7 @@ from tests.common.in_process_cli import run_hook_in_process
 
 
 _SENTINEL_RELATIVE = Path(".nwave") / "orchestrator-affordance-last-injected"
-_REFRESH_THRESHOLD_SECONDS = 1800
+_REFRESH_THRESHOLD_SECONDS = 900
 _ROUTER_ARGV = ["hook_router", "user-prompt-submit"]
 
 
@@ -271,8 +271,8 @@ class TestOrchestratorAffordanceHourlyRefreshRouterAcceptance:
     def test_sentinel_just_under_the_threshold_boundary_not_reinjected_via_router(
         self, sandbox: Path
     ) -> None:
-        """Negative AT (boundary): sentinel backdated to 1799s (just under
-        the 1800s/30-minute threshold), driven through the REAL router --
+        """Negative AT (boundary): sentinel backdated to 899s (just under
+        the 900s/15-minute threshold), driven through the REAL router --
         still no re-injection. Mirrors the direct-handler sibling suite's
         boundary pin."""
         project_root = sandbox
@@ -286,7 +286,7 @@ class TestOrchestratorAffordanceHourlyRefreshRouterAcceptance:
 
         assert exit_code == 0
         assert stdout.strip() == "", (
-            "1799s elapsed is still under the 1800s threshold -- must not "
+            "899s elapsed is still under the 900s threshold -- must not "
             "re-inject yet, via the router"
         )
 

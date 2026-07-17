@@ -3,6 +3,9 @@
 Every hand-edit of a checked artifact is a producing tool you didn't invoke. The catalog
 (the system pays, not you):
 
+**Where am I in the loop? What is the next legal step?** (reach for this BEFORE deriving anything by hand)
+- `des next --feature-id <id> [--format json]` — read-only advisory of the next legal atdd_pure DELIVER-loop step for a feature (DISTILL the next slice · GREEN via crafter · examine · commit-slice). Reach for THIS instead of reconstructing "what's next" from memory. NEVER auto-execute the returned `how` — pasting it is a human/agent decision point.
+
 **Authoring the dispatch / feature-delta**
 - `des dispatch --mode atdd_pure --project-id <id> --slice <slice> --phase A_GREEN [--lane bugfix --defect <d> --regression-test <t>] [--at-kind pytest-regression --regression-test-file <f>] --intent "<task>"` — GENERATES a gate-valid crafter dispatch prompt by construction. Never hand-assemble the marker block / 12 sections. Add `--at-kind pytest-regression --regression-test-file <f>` for a feature whose AT is a pytest file (not gherkin).
 - `des feature-delta-doctor <path>` — one-pass gap aggregator over a feature-delta.md (missing sections, malformed Wave headings, malformed/unjustified Reuse Analysis). Run BEFORE DISTILL; fix every gap it lists.
@@ -15,6 +18,7 @@ Every hand-edit of a checked artifact is a producing tool you didn't invoke. The
 - `des carpaccio-slice-gate --feature-id <id> --entering-slice <slice> [--at-kind pytest-regression --regression-test-file <f>]` — run it DIRECTLY to see the full what/why/how when the hook-truncated `ATReviewGateRejected` fires.
 
 **After the crafter (examine + commit)**
+- `des examine-fixture --out <dir> [--feature-id <id>]` — BUILDS a real, drivable repository the certification gate (`des verify-slice-commit`) accepts on the clean case (a shipped+attested slice, an entering slice, a deliberately-red work-ahead slice, each flippable red/green by editing one line) — so an examiner (Vera) who cannot read source can still REACH and BREAK the gate's real surface. Reach for THIS instead of hand-building an examine fixture.
 - `des record-examine-verdict --repo . --feature-id <id> --slice <s> --charter <path> --verdict PASS --observations "<Vera's findings>" --examiner nw-user-examiner` — records Vera's charter-sealed verdict. A PASS with ≥1 flag is REFUSED (mechanical).
 - `des commit-slice ...` — correct-by-construction slice commit (stages, Slice-Id trailer, folds in verify-then-record). Stamps Gate-Scope — do not hand-add.
 

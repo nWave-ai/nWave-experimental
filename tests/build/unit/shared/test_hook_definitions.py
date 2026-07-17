@@ -67,10 +67,13 @@ class TestHookEventDefinitions:
         "user-prompt-submit") wave-active anchor entry, total 13 -> 14.
         The --no-verify reminder guard (Ale 2026-06-26) added the 5th
         PreToolUse/Bash entry (#7 -> #8 PreToolUse), total 14 -> 15.
+        fix-orchestrator-affordance-refresh-independent added 2 standalone
+        entries -- SessionStart (matcher=None, standalone) and
+        UserPromptSubmit (matcher=None, standalone) -- total 15 -> 17.
         Matcher coexistence: Claude Code permits multiple entries per
         (event, matcher) tuple.
         """
-        assert len(HOOK_EVENTS) == 15
+        assert len(HOOK_EVENTS) == 17
 
         # Verify exact event/matcher/action triples
         events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
@@ -92,6 +95,16 @@ class TestHookEventDefinitions:
         assert ("SessionStart", "startup", "session-start") in events_matchers
         assert ("SubagentStart", None, "subagent-start") in events_matchers
         assert ("UserPromptSubmit", None, "user-prompt-submit") in events_matchers
+        assert (
+            "SessionStart",
+            None,
+            "orchestrator-affordance-refresh-standalone",
+        ) in events_matchers
+        assert (
+            "UserPromptSubmit",
+            None,
+            "orchestrator-affordance-refresh-standalone",
+        ) in events_matchers
 
     def test_hook_event_types_covers_five_distinct_types(self):
         """HOOK_EVENT_TYPES contains exactly the 6 Claude Code event types."""

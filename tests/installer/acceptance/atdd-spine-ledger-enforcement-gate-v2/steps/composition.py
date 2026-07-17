@@ -1558,10 +1558,14 @@ _PRE_SLICE_04_SUBAGENT_STOP_COUNT = 2
 # amendment) registered the UserPromptSubmit wave-active anchor entry, so
 # the LIVE registry now carries 14/7/3. A further orthogonal addition (the
 # --no-verify reminder guard, Ale 2026-06-26) registered a 5th PreToolUse/Bash
-# entry, so the LIVE registry now carries 15/8/3. The slice-04 behavioural
-# claim (every spine-ledger entry carries the `# des-hook:` marker) is
-# unaffected by any addition; only the absolute live-count pins shift.
-_POST_SLICE_04_HOOK_EVENTS_COUNT = 15
+# entry, so the LIVE registry now carries 15/8/3. A further orthogonal
+# addition (fix-orchestrator-affordance-refresh-independent) registered the
+# standalone SessionStart + UserPromptSubmit affordance-refresh entries (both
+# matcher-less, neither PreToolUse nor SubagentStop), so the LIVE registry now
+# carries 17/8/3. The slice-04 behavioural claim (every spine-ledger entry
+# carries the `# des-hook:` marker) is unaffected by any addition; only the
+# absolute live-count pins shift.
+_POST_SLICE_04_HOOK_EVENTS_COUNT = 17
 _POST_SLICE_04_PRE_TOOL_USE_COUNT = 8
 _POST_SLICE_04_SUBAGENT_STOP_COUNT = 3
 

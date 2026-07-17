@@ -189,6 +189,78 @@ _BASH_NO_VERIFY_REMINDER = (
     'echo "$INPUT" | python3 -m scripts.hooks.no_verify_reminder'
 )
 
+# Standalone, spine-independent orchestrator-affordance refresh (fix-
+# orchestrator-affordance-refresh-independent). Unlike the DES-runtime-coupled
+# refresh in session_start_handler.py / user_prompt_submit_handler.py (which
+# depend on `des` being importable and, for SessionStart, on
+# `matcher="startup"` -- never firing on resume/clear/compact), this script
+# is stdlib-only, imports zero `des` module, and resolves its assets relative
+# to its own `Path(__file__)`. Ships flat to `<claude_dir>/scripts/` via
+# `DESPlugin.DES_HOOKS` (installer) and lives under the plugin bundle's
+# `scripts/` (plugin distribution).
+#
+# The command is a python `-c` discovery one-liner rather than a bare
+# `$HOME/...` path or a `-m scripts.hooks.X` module import, for three reasons:
+#   1. The SAME shell_command string is emitted VERBATIM into BOTH the
+#      installer settings.json AND the plugin bundle (`generate_hook_config`
+#      copies `shell_command` as-is for both distributions). A literal `$HOME`
+#      would leak into the plugin bundle, whose hook commands MUST resolve via
+#      `CLAUDE_PLUGIN_ROOT`, never `$HOME` -- so a bare `$HOME/...` path fails
+#      the plugin-relative invariant (test_des_bundle_steps).
+#   2. `python3 -m scripts.hooks.X` resolves the module via cwd, which at hook
+#      runtime is the USER's project, not the nWave install -> ModuleNotFoundError
+#      on a fresh target (RCA Branch F). The discovery one-liner instead
+#      `runpy.run_path`s the script by its resolved ABSOLUTE path, so cwd is
+#      irrelevant.
+#   3. Reading `HOME` / `CLAUDE_PLUGIN_ROOT` from `os.environ` INSIDE the python
+#      one-liner (never the literal shell token `$HOME`) keeps the command
+#      string free of `$HOME` / `~/` while still resolving the real install
+#      location. Mirrors the existing `_PLUGIN_DISCOVERY_SCRIPT` pattern in
+#      build_plugin.py.
+#
+# Discovery order matches build_plugin's: CLAUDE_PLUGIN_ROOT/scripts (plugin
+# hook env), then the plugin cache glob, then ~/.claude/scripts (installer).
+# `runpy.run_path(..., run_name="__main__")` runs the stdlib-only script with
+# `__file__` set to its real absolute path, so the script's asset resolution
+# (`Path(__file__).parent.parent / lib / nWave / data / ...`) lands on the
+# shipped assets. Script-not-found degrades LOUD (stderr), never a silent no-op.
+#
+# `matcher=None` on BOTH entries: SessionStart fires on
+# startup|resume|clear|compact (the exact gap this fixes); UserPromptSubmit
+# self-gates internally on a 900-second sentinel (see the script's own
+# docstring), so no PreToolUse-style shell fast-path is needed here.
+_STANDALONE_ORCHESTRATOR_AFFORDANCE_DISCOVERY = (
+    "import os,sys,runpy;"
+    "from pathlib import Path;"
+    "n='orchestrator_affordance_refresh.py';"
+    "r=os.environ.get('CLAUDE_PLUGIN_ROOT','');"
+    "h=os.environ.get('HOME','');"
+    "c=[Path(r)/'scripts'/n] if r else [];"
+    "c+=sorted(Path(h).joinpath('.claude/plugins/cache').glob('*/nw/*/scripts/'+n)) if h else [];"
+    "c+=[Path(h)/'.claude'/'scripts'/n] if h else [];"
+    "s=next((p for p in c if p.exists()),None);"
+    "sys.argv=[n,'{event}'];"
+    "runpy.run_path(str(s),run_name='__main__') if s "
+    "else sys.stderr.write('[orchestrator-affordance-refresh] script not found\\n')"
+)
+
+
+def _standalone_orchestrator_affordance_command(event: str) -> str:
+    """Build the des-free discovery command for the standalone refresh hook."""
+    one_liner = _STANDALONE_ORCHESTRATOR_AFFORDANCE_DISCOVERY.format(event=event)
+    return (
+        "# des-hook:orchestrator-affordance-refresh-standalone\n"
+        'python3 -c "' + one_liner + '"'
+    )
+
+
+_STANDALONE_ORCHESTRATOR_AFFORDANCE_REFRESH_SESSION_START = (
+    _standalone_orchestrator_affordance_command("SessionStart")
+)
+_STANDALONE_ORCHESTRATOR_AFFORDANCE_REFRESH_USER_PROMPT_SUBMIT = (
+    _standalone_orchestrator_affordance_command("UserPromptSubmit")
+)
+
 # Pure-shell wrapper around the slice-03 spine-ledger SubagentStop detector,
 # slice-04 of atdd-spine-ledger-enforcement-gate-v2. Mirrors the slice-02
 # module-import pattern (`python3 -m
@@ -261,6 +333,12 @@ GIT_PRE_PUSH_BACKSTOP_SCRIPT = "des_declare_done_pre_push.py"
 # orthogonal to the other four Bash entries). Lives in the SSOT so the reminder
 # survives the install-time settings.json rewrite that drops manual hook edits.
 # Total grows 14 -> 15.
+#
+# fix-orchestrator-affordance-refresh-independent: 2 new entries join -- a
+# standalone SessionStart (matcher=None, fires on startup|resume|clear|compact)
+# and a standalone UserPromptSubmit (matcher=None, self-gated internally on a
+# 900s sentinel), both invoking the stdlib-only, `des`-import-free
+# orchestrator_affordance_refresh.py script directly. Total grows 15 -> 17.
 HOOK_EVENTS: tuple[HookEvent, ...] = (
     HookEvent(event="PreToolUse", matcher="Agent", action="pre-task"),
     HookEvent(event="PreToolUse", matcher="Write", action="pre-write", is_guard=True),
@@ -307,6 +385,18 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     HookEvent(event="SessionStart", matcher="startup", action="session-start"),
     HookEvent(event="SubagentStart", matcher=None, action="subagent-start"),
     HookEvent(event="UserPromptSubmit", matcher=None, action="user-prompt-submit"),
+    HookEvent(
+        event="SessionStart",
+        matcher=None,
+        action="orchestrator-affordance-refresh-standalone",
+        shell_command=_STANDALONE_ORCHESTRATOR_AFFORDANCE_REFRESH_SESSION_START,
+    ),
+    HookEvent(
+        event="UserPromptSubmit",
+        matcher=None,
+        action="orchestrator-affordance-refresh-standalone",
+        shell_command=_STANDALONE_ORCHESTRATOR_AFFORDANCE_REFRESH_USER_PROMPT_SUBMIT,
+    ),
 )
 
 # The distinct event types DES registers (for validation).
