@@ -113,6 +113,10 @@ _HOW_TO_FIX = (
     "unrelated input must NOT trigger the behavior; see the negative-AT "
     "convention in this gate's --help"
 )
+_HOW_TO_FIX_NO_SURFACE = (
+    "check --test-file/--test-dir points at the file/dir holding the ATs; "
+    "re-run with --test-dir <dir>; verify the test-naming convention"
+)
 
 
 @dataclass(frozen=True)
@@ -406,17 +410,9 @@ def _refuse(offending: list[dict[str, object]]) -> int:
     _emit(
         {
             "event": "NegativeAtRefused",
-            "what": (
-                f"{len(offending)} critical scope(s) carry NO negative AT "
-                "(presence-only coverage)"
-            ),
-            "why": (
-                "a presence-only AT set proves the right output CAN appear, "
-                "never that the wrong one CANNOT (the GS-8 class: red once, "
-                "then green forever while asserting almost nothing); weak "
-                "assertions die only to negative ATs."
-            ),
-            "how": _HOW_TO_FIX,
+            "what": f"{len(offending)} critical scope(s) carry NO negative AT",
+            "why": "each offending scope has its own cause -- see each scope's why.",
+            "how": "see each offending scope's how for the specific remedy.",
             "scopes": offending,
         }
     )
@@ -495,6 +491,23 @@ def main(argv: list[str] | None = None) -> int:
         negative_ats_found += len(negatives)
         if negatives:
             continue
+        if scan.cases:
+            scope_what = f"critical scope {scan.path} has no negative AT"
+            scope_why = (
+                "every AT in this scope asserts only that the expected "
+                "output appears (presence-only); none asserts the wrong "
+                "output is NOT produced."
+            )
+            scope_how = _HOW_TO_FIX
+        else:
+            scope_what = f"no scannable AT surface found in {scan.path}"
+            scope_why = (
+                "the scanner found zero test-declaration tokens "
+                "(test_*/@Scenario/fn|func|function|def <name>) -- nothing "
+                "to assert a negative case against; this is NOT a weak-AT "
+                "problem."
+            )
+            scope_how = _HOW_TO_FIX_NO_SURFACE
         offending.append(
             {
                 "file": str(scan.path),
@@ -504,13 +517,9 @@ def main(argv: list[str] | None = None) -> int:
                     else "critical-marked tests"
                 ),
                 "critical_cases": [{"name": c.name, "line": c.line} for c in criticals],
-                "what": f"critical scope {scan.path} has no negative AT",
-                "why": (
-                    "every AT in this scope asserts only that the expected "
-                    "output appears (presence-only); none asserts the wrong "
-                    "output is NOT produced."
-                ),
-                "how": _HOW_TO_FIX,
+                "what": scope_what,
+                "why": scope_why,
+                "how": scope_how,
             }
         )
 
