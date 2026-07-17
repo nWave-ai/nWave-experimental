@@ -134,6 +134,9 @@ from des.adapters.driven.logging.at_completion_ledger import (
     active_feature_id,
 )
 from des.cli._identity_args import meaningful_identity
+from des.cli.carpaccio_format import GateError as _CarpaccioGateError
+from des.cli.carpaccio_format import is_slice_coupled as _is_slice_coupled
+from des.cli.carpaccio_format import parse_slice_plan as _parse_slice_plan
 from des.cli.record_examine_verdict import examine_ledger_path as _examine_ledger_path
 from des.cli.run_contract_gate import (
     _committed_scope_digest_value,
@@ -153,6 +156,7 @@ from des.cli.verify_slice_commit_completeness import (
     _append_slice_commit_indeterminate,
 )
 from des.domain.examine_verdict_signing import charter_seal as _charter_seal
+from des.domain.repo_path_resolver import feature_delta_path as _feature_delta_path
 from des.domain.slice_id_trailer import extract_slice_ids
 
 
@@ -505,6 +509,35 @@ _EXAMINE_GATE_ENV = "NWAVE_EXAMINE_GATE_OPT_IN"
 
 _EXAMINE_VERDICT_EVENT = "ExamineVerdictRecorded"
 
+# The distinct DEFER outcome (RCA constraint c): a `@coupled` slice's examine
+# is DEFERRED to feature-end, never silently dropped. Discriminated from a
+# refusal payload by the ABSENCE of an `exit_code` key -- every refusal this
+# module emits carries one; a DEFER payload never does (see
+# `check_examine_verdict`'s docstring).
+_EXAMINE_DEFERRED_EVENT = "ExamineDeferredToFeatureEnd"
+
+
+def _slice_is_coupled(repo: Path, feature_id: str, slice_id: str) -> bool:
+    """Whether ``slice_id``'s OWN Slice-Plan row (the SAME trusted
+    feature-delta the carpaccio entry gate already reads) carries the
+    ``@coupled`` annotation.
+
+    Fail-CLOSED to ``False`` on ANY read failure -- an absent feature-delta,
+    an absent row for this slice, or a malformed Slice-Plan table -- per RCA
+    constraint (d): the deferral must never be granted except through this
+    ONE trusted source, never a stray/informal claim of coupling elsewhere
+    (e.g. a comment in an AT file).
+    """
+    delta_path = _feature_delta_path(repo, feature_id)
+    if not delta_path.is_file():
+        return False
+    try:
+        feature_delta_text = delta_path.read_text(encoding="utf-8")
+        plan = _parse_slice_plan(feature_delta_text)
+    except (OSError, UnicodeDecodeError, _CarpaccioGateError):
+        return False
+    return _is_slice_coupled(plan, slice_id)
+
 
 def _examine_gate_armed(repo: Path, feature_id: str | None) -> bool:
     """Whether the examine-verdict commit gate applies to this commit.
@@ -592,8 +625,21 @@ def check_examine_verdict(
     caller pops before emitting) otherwise -- every refusal states WHAT
     failed, WHY, and HOW to fix it (never a bare event name).
 
+    A THIRD outcome exists for a ``@coupled`` slice with no per-slice record
+    (RCA fix-coupled-slice-examine-deferred-to-feature-end): a DEFER payload
+    carrying event ``ExamineDeferredToFeatureEnd`` and deliberately NO
+    ``exit_code`` key -- the discriminator every caller uses to tell "defer,
+    proceed" apart from "refuse, exit_code pops cleanly". A ``@coupled`` slice
+    has no independently-observable surface (its guarantee is only checkable
+    through the ASSEMBLED feature), so demanding a per-slice PASS asks for
+    evidence that cannot exist; feature-end's unconditional per-charter
+    examine leg (``feature_end_cycle_service._run_feature_end_examine_leg``)
+    covers it instead -- deferred, never dropped.
+
     Refusal taxonomy (fail-closed, never a silent pass):
-      * ``ExamineVerdictMissing``       (exit 2) -- no record at all.
+      * ``ExamineVerdictMissing``       (exit 2) -- no record at all, and the
+        slice is NOT ``@coupled`` (a ``@coupled`` slice defers instead, see
+        above).
       * ``ExamineVerdictRefused``       (exit 1) -- recorded verdict is FAIL.
       * ``ExamineVerdictIndeterminate`` (exit 2) -- recorded verdict is
         INDETERMINATE (an unexaminable slice carries no observable value --
@@ -608,6 +654,23 @@ def check_examine_verdict(
 
     record = _latest_examine_verdict(repo, feature_id, slice_id)
     if record is None:
+        if _slice_is_coupled(repo, feature_id, slice_id):
+            return {
+                "event": _EXAMINE_DEFERRED_EVENT,
+                "feature_id": feature_id,
+                "slice_id": slice_id,
+                "what": (
+                    f"slice {slice_id} is @coupled -- its examine is "
+                    "DEFERRED to feature-end"
+                ),
+                "why": (
+                    "a @coupled Slice-Plan row has no independently-"
+                    "observable surface (its guarantee is only checkable "
+                    "through the ASSEMBLED feature); feature-end's "
+                    "unconditional per-charter examine leg covers it "
+                    "instead of a per-slice ExamineVerdict."
+                ),
+            }
         return {
             "event": "ExamineVerdictMissing",
             "exit_code": 2,
@@ -873,11 +936,23 @@ def _slice_build_tier_paths(repo: Path) -> list[Path]:
     Empty when the slice touches nothing under ``tests/build/`` (the common
     Gherkin per-slice case) -- ``build_tier_exit_verdict`` already resolves an
     empty scope to the honest ``BuildTierNotApplicable`` no-op.
+
+    Existence-filtered (RCA docs/analysis/root-cause-analysis-build-tier-arch-
+    scope-zero-collect.md, Permanent fix P1, Branch A defense-in-depth): a
+    staged path that is a DELETION or the delete-half of an unflagged rename
+    is reported by plain ``git diff --cached --name-only`` identically to a
+    live addition/modification -- ``git`` gives no rename/delete signal here.
+    A path that no longer exists on disk cannot carry a live arch-invariant
+    test, so it is dropped before reaching ``_run_arch_invariant_set`` (pure
+    narrowing -- behavior-preserving for every path that does exist;
+    ``build_tier_exit_verdict``'s own scope-kind branch is the primary fix and
+    still degrades correctly if a stale path reaches it another way).
     """
     return [
         repo / path
         for path in _staged_paths(repo)
-        if path == "tests/build" or path.startswith("tests/build/")
+        if (path == "tests/build" or path.startswith("tests/build/"))
+        and (repo / path).exists()
     ]
 
 
@@ -1557,11 +1632,17 @@ def main(argv: list[str] | None = None) -> int:
     # the SAME chokepoint as the build-tier check above. A no-op unless ARMED
     # for this feature (see the module-level note); when armed, EVERY entering
     # slice-id must carry a fresh PASS ExamineVerdict or the commit is refused
-    # fail-closed BEFORE the placeholder commit lands.
+    # fail-closed BEFORE the placeholder commit lands -- UNLESS the slice is
+    # `@coupled` (RCA fix-coupled-slice-examine-deferred-to-feature-end), in
+    # which case `check_examine_verdict` returns a DEFER payload (no
+    # `exit_code` key -- the discriminator) instead of a refusal: this guard
+    # lets the commit proceed, and the deferral is attested ONCE downstream
+    # at `_run_verify_then_record`'s single-write chokepoint (Step 6 fold-in
+    # below), never here.
     if args.feature_id is not None:
         for slice_id in extract_slice_ids(message):
             examine_rejection = check_examine_verdict(repo, args.feature_id, slice_id)
-            if examine_rejection is not None:
+            if examine_rejection is not None and "exit_code" in examine_rejection:
                 exit_code = examine_rejection.pop("exit_code")
                 _emit(examine_rejection)
                 assert isinstance(exit_code, int)

@@ -56,6 +56,7 @@ if TYPE_CHECKING:
 __all__ = [
     "_feature_tag_files",
     "_legacy_acceptance_dir",
+    "is_slice_coupled",
     "read_feature_files",
 ]
 
@@ -157,6 +158,24 @@ class SlicePlan:
             if row.slice_id == slice_id:
                 return row
         return None
+
+
+def is_slice_coupled(plan: SlicePlan, slice_id: str) -> bool:
+    """Whether ``slice_id``'s OWN Slice-Plan row carries the ``@coupled``
+    annotation -- the SAME predicate the carpaccio entry gate already trusts
+    (``_COUPLED_TAG_RE.search(row.annotation)``, e.g. ``carpaccio_format.py:
+    890, 1047``), exported here so a second gate (the E3 examine-verdict
+    commit gate) can consult it without re-deriving the regex (RCA Branch B --
+    fix-coupled-slice-examine-deferred-to-feature-end).
+
+    Fail-closed to ``False`` when the row is absent -- an entering slice with
+    no Slice-Plan row is never granted the ``@coupled`` observability
+    exemption.
+    """
+    row = plan.row_for(slice_id)
+    if row is None:
+        return False
+    return bool(_COUPLED_TAG_RE.search(row.annotation))
 
 
 # ---------------------------------------------------------------------------

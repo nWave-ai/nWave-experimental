@@ -103,6 +103,16 @@ now reads from the wired config", gets the charter (the observable behavior fina
 5. **Expected observations (the oracle)** — including AT LEAST ONE NEGATIVE observation (the
    system must NOT claim success while the outcome is absent). Gate: ≥1 positive + ≥1 negative
    observation present.
+   - **BOUNDED BY BREADTH — every oracle row (positive AND negative) MUST be satisfiable within
+     THIS slice's implemented breadth.** A negative oracle whose only remediation is a
+     future/unimplemented feature is NOT an oracle for this slice — writing it makes Vera FAIL a
+     slice that is legitimately done for its own breadth (Ale 2026-07-17: this over-scoped a
+     charter and blocked a done slice for a day). If a failure mode matters but its cure lives in
+     a LATER slice, name it as a DEFERRED RESIDUE / hardening backlog item in the Intent or a
+     `Deferred:`/`Out-of-scope:` note — NOT as a `Negative:` oracle row. The negative oracle
+     you keep is the one THIS slice's own behavior must satisfy (the ways THIS cure could itself
+     become a disease), never the ways a not-yet-built feature would. If you cannot make a
+     negative oracle pass with the code this slice ships, it belongs to a future slice, not here.
 6. **Session log** — append-only, `date | examiner | verdict | observations` table. Gate: never
    edited retroactively, only appended.
 7. **Arming check** — writing the charter under `docs/product/expectations/{feature-id}/` is

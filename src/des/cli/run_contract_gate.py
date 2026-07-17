@@ -196,11 +196,23 @@ class _CollectedScope:
       dedupe. With the class-aware identity the gap between this and
       ``len(node_ids)`` is just the hypothesis-rerun duplicate set -- the only
       legitimate collapse.
+
+    ``marker_mismatch`` (Q-169 permanent fix, RCA:
+    docs/analysis/root-cause-analysis-contract-gate-python-marker-agnostic.md):
+    ADDITIVE field, default ``None`` -- every existing construction site and
+    equality comparison is unaffected. Populated by ``_collect_scope`` (the
+    seam, not a per-caller opt-in) with a what/why/how note when the caller's
+    marker-FILTERED collect was a STRICT SUBSET of the marker-AGNOSTIC collect
+    and the seam transparently substituted the agnostic scope. ``None`` means
+    either the caller explicitly chose its own marker policy, or the filtered
+    and agnostic collects agreed (an already-marked repo, or a genuinely-empty
+    scope) -- no substitution happened.
     """
 
     node_ids: list[str]
     collected_count: int
     modify_count: int = 0
+    marker_mismatch: str | None = None
 
 
 class _UnsetMarkers:
@@ -267,6 +279,82 @@ def _collect_scope(
                 )
             return _COLLECT_MEMO[key]
     return _collect_scope_uncached_dispatch(repo, paths, markers)
+
+
+def _collect_scope_with_marker_fallback(
+    repo: Path,
+    paths: list[Path] | None = None,
+    markers: str | None | _UnsetMarkers = _MARKERS_UNSET,
+) -> _CollectedScope:
+    """The marker-agnostic fallback seam (Q-169 permanent fix, RCA:
+    docs/analysis/root-cause-analysis-contract-gate-python-marker-agnostic.md).
+
+    Root cause: the marker policy was a PER-CALLER opt-in (``markers=`` kwarg)
+    instead of ONE shared seam-level default -- two of six production callers
+    remembered to request the marker-agnostic collect (the ``--collect-only
+    --print-digest`` debug surface, and the ``at_kind == "pytest-regression"``
+    carve-out for its own unrelated reason); four did not, so a marker-less
+    foreign target repo either silently sealed a vacuous ``sha256('')``
+    digest or was falsely refused.
+
+    Built ON TOP of ``_collect_scope`` (DDD-12 -- still the single pytest-argv
+    owner; this adds NO new collector, no new call site into
+    ``_collect_scope_worker``). ``_collect_scope`` / ``_collect_node_ids``
+    themselves stay byte-identical, PURE, filtered-only collectors -- a raw
+    direct caller (e.g. a diagnostic premise check) still observes the
+    unfiltered-vs-filtered collect distinction unchanged. This function is the
+    ONE shared place the four previously-unfixed production call sites
+    (``commit_slice``'s produce leg via ``_committed_scope_digest_quiet``,
+    ``_mode_verify_gate_scope`` / ``_mode_run_suite`` via
+    ``_committed_scope_digest_value``, and ``_mode_feature_scoped``) now route
+    through, plus ``_mode_print_digest`` (simplified to read
+    ``marker_mismatch`` off this seam instead of computing its own local
+    double-collect) -- no caller re-implements the comparison itself.
+
+    When the caller did NOT explicitly override the marker policy (``markers``
+    is ``_MARKERS_UNSET``), collect filtered first, then collect
+    marker-agnostically. If the filtered collect is a STRICT SUBSET of the
+    agnostic collect (covers BOTH the all-excluded case, filtered == 0 <
+    agnostic, AND the partial-marking case, 0 < filtered < agnostic),
+    transparently return the agnostic scope with ``marker_mismatch``
+    populated.
+
+    Two cases are deliberately left UNCHANGED (no substitution, no
+    ``marker_mismatch``):
+
+    * A genuinely-empty scope -- zero under BOTH the filtered and the
+      agnostic collect. There is nothing to fall back to; fabricating a
+      nonzero count here would be the exact defect this fix must not
+      introduce.
+    * An already-marked repo (nwave-dev's own conftest auto-marker
+      convention) -- filtered == agnostic, so the comparison is a structural
+      no-op and the returned scope is byte-identical to before.
+
+    An EXPLICIT ``markers`` override (``None``, or a custom expression -- the
+    ``pytest-regression`` carve-out) is the caller's OWN informed choice; no
+    fallback second-guesses it.
+
+    Performance note (RCA "Performance risk", flagged for follow-up, not
+    solved here): this pays the agnostic-collect cost on every UNSET-markers
+    call, whether or not a mismatch exists (an already-marked repo -- e.g.
+    nwave-dev's own gate -- still pays it to CONFIRM parity). The <5min G-143
+    mandate is protected today by ``_collect_scope``'s memoizing wrapper
+    (``NWAVE_COLLECT_MEMO``, test-session-scoped) for the real repo tree; a
+    production bound is future work, not required for this fix.
+    """
+    filtered = _collect_scope(repo, paths, markers=markers)
+    if not isinstance(markers, _UnsetMarkers):
+        return filtered
+    agnostic = _collect_scope(repo, paths, markers=None)
+    if len(filtered.node_ids) >= len(agnostic.node_ids):
+        return filtered
+    excluded_count = len(agnostic.node_ids) - len(filtered.node_ids)
+    return _CollectedScope(
+        node_ids=agnostic.node_ids,
+        collected_count=agnostic.collected_count,
+        modify_count=agnostic.modify_count,
+        marker_mismatch=_marker_mismatch_note(excluded_count, len(agnostic.node_ids)),
+    )
 
 
 def _collect_scope_uncached_dispatch(
@@ -1167,6 +1255,40 @@ def build_tier_exit_verdict(
         return 1
     elapsed = round(time.monotonic() - started, 2)
     if arch.collected == 0:
+        scope_requested = (
+            regression_test_file is not None or light_invariant_paths is not None
+        )
+        is_scoped_run = scope_requested and not full
+        if is_scoped_run:
+            # RCA docs/analysis/root-cause-analysis-build-tier-arch-scope-zero-collect.md
+            # (Permanent fix P1): at file-granularity a zero-collected scoped
+            # run is the ORDINARY outcome for a non-test-bearing staged path
+            # (scaffolding/__init__.py/conftest.py -> Branch B) or a staged
+            # deletion/rename-away path (pytest usage error -> Branch A) --
+            # never evidence the WHOLE arch tier vanished. Degrade to the same
+            # honest N/A the empty-run_paths branch above already uses; the
+            # whole-tree floor below stays byte-identical (GDP-6).
+            _emit(
+                {
+                    "event": _BUILD_TIER_NOT_APPLICABLE_EVENT,
+                    "reason": "scoped arch collect returned zero",
+                    "detail": (
+                        "the entering slice's own scoped tests/build/** run "
+                        f"({[str(p) for p in run_paths]}) collected zero "
+                        "runnable node-ids under the contract marker filter "
+                        "-- this slice's own build-tier content carries no "
+                        "arch-invariant test of its own (a non-test-bearing "
+                        "staged file, or a deleted/renamed path), not "
+                        "evidence the whole arch tier is vacuous; the "
+                        "whole-tree tests/build/** tier is deferred to "
+                        "feature-end (see the BuildTierWholeTreeDeferred "
+                        "event) -- recorded as an honest N/A, not a pass "
+                        "claim"
+                    ),
+                },
+                output,
+            )
+            return 0
         _emit(
             {
                 "event": "BuildTierRefused",
@@ -1601,37 +1723,24 @@ def _mode_print_digest(repo: Path) -> int:
     cardinality) and ``collected_count`` (``len(session.items)``). They make
     the canonical-coverage parity observable through the driving port.
 
-    Target-agnosticism (RCA:
-    docs/feature/fix-collector-marker-filter-target-agnostic/deliver/rca.md):
-    the marker-FILTERED collect is always a SUBSET of the marker-AGNOSTIC
-    collect (``markers=None``, the SAME ``_collect_scope`` seam, DDD-12 -- no
-    new collector). Whenever it is a STRICT subset (``filtered < agnostic`` --
-    covering BOTH the all-unmarked ``filtered == 0`` case AND the Vera-surfaced
-    partial ``0 < filtered < agnostic`` case, where some tests are marked and
-    some are not), the digest falls back to the agnostic scope AND the event
-    names the marker mismatch (what/why/how) -- naming how many collected tests
-    the marker filter silently excluded -- instead of reporting the filtered
-    subset as the genuine scope (the false "genuinely collected zero" verdict,
-    or the silent-subset drop). A genuinely empty scope (zero under BOTH
-    collects) still reports zero, honestly. A marked repo (filtered ==
-    agnostic, e.g. nwave-dev) never triggers the fallback -- its behavior and
-    digest are unchanged.
+    Target-agnosticism (Q-169 permanent fix, RCA:
+    docs/analysis/root-cause-analysis-contract-gate-python-marker-agnostic.md):
+    the marker-agnostic fallback lives at the shared seam now
+    (``_collect_scope_with_marker_fallback``), not locally in this mode -- a
+    single call (default UNSET markers) already returns the corrected scope
+    (with ``.marker_mismatch`` populated when the filtered collect was a
+    strict subset of the agnostic one) or the unchanged filtered scope
+    otherwise. This mode only READS ``.marker_mismatch`` off the returned
+    scope -- it no longer computes its own secondary agnostic collect (that
+    would now be a wasteful double-collect on top of the seam's own).
     """
     route = _maybe_route_digest_through_runner(repo)
     if isinstance(route, _DigestRouteDegrade):
         return route.exit_code
     if isinstance(route, _DigestRouteResult):
         return _emit_runner_aware_digest(route)
-    marker_mismatch: str | None = None
     try:
-        scope = _collect_scope(repo)
-        agnostic_scope = _collect_scope(repo, markers=None)
-        if len(scope.node_ids) < len(agnostic_scope.node_ids):
-            excluded_count = len(agnostic_scope.node_ids) - len(scope.node_ids)
-            marker_mismatch = _marker_mismatch_note(
-                excluded_count, len(agnostic_scope.node_ids)
-            )
-            scope = agnostic_scope
+        scope = _collect_scope_with_marker_fallback(repo)
         _assert_parity(scope)
     except InterpreterUnavailable as exc:
         return _emit_interpreter_unavailable(exc)
@@ -1657,8 +1766,8 @@ def _mode_print_digest(repo: Path) -> int:
         "node_id_count": len(scope.node_ids),
         "collected_count": scope.collected_count,
     }
-    if marker_mismatch is not None:
-        digest_event["marker_mismatch"] = marker_mismatch
+    if scope.marker_mismatch is not None:
+        digest_event["marker_mismatch"] = scope.marker_mismatch
     print(json.dumps(digest_event), file=sys.stderr)
     return 0
 
@@ -1717,14 +1826,14 @@ def _committed_scope_digest_quiet(
     pytest exit-4 collection error.
 
     ``markers`` (fix-runner-resolves-per-scope-language slice-01): threaded
-    straight into ``_collect_scope``. UNSET (the default) keeps the marker-
-    filtered ``-m "unit or integration or acceptance"`` collection byte-for-byte
-    -- every existing caller unchanged. An explicit ``None`` collects
-    MARKER-AGNOSTICALLY: a pytest-regression slice on an arbitrary target repo
-    (no auto-marking conftest applying the contract markers) would otherwise
-    have its committed regression test DESELECTED by the marker filter, yielding
-    an empty scope hashed to the VACUOUS ``sha256('')`` digest -- marker-agnostic
-    collection digests the real committed Python scope instead.
+    straight into ``_collect_scope_with_marker_fallback`` (Q-169: the shared
+    marker-agnostic fallback seam). UNSET (the default) collects filtered
+    first, but transparently substitutes the marker-agnostic scope when the
+    filtered collect is a strict subset -- so a marker-less target repo (no
+    auto-marking conftest applying the contract markers) no longer has its
+    committed tests DESELECTED into a VACUOUS ``sha256('')`` digest. An
+    explicit ``None`` (the pytest-regression carve-out) collects
+    MARKER-AGNOSTICALLY outright, unchanged from before.
 
     git absent / not a work-tree / SHA unresolvable returns
     `_CommittedScopeIndeterminate` (the caller decides whether to refuse LOUD or
@@ -1743,7 +1852,7 @@ def _committed_scope_digest_quiet(
 
     paths = [repo / rel for rel in committed.paths]
     try:
-        scope = _collect_scope(repo, paths=paths, markers=markers)
+        scope = _collect_scope_with_marker_fallback(repo, paths=paths, markers=markers)
         _assert_parity(scope)
     except InterpreterUnavailable as exc:
         return _CommittedScopeRefusal(_emit_interpreter_unavailable(exc))
@@ -3180,11 +3289,17 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
         )
 
     # M-1: real node-id collection over the feature's test scope. Routed
-    # through the existing `_collect_node_ids` seam (DDD-12 -- no third pytest
-    # call site); scoped to the directories holding the resolved .feature files.
+    # through `_collect_scope_with_marker_fallback` (Q-169: the shared
+    # marker-agnostic fallback seam over the existing `_collect_scope` --
+    # DDD-12, no third pytest call site); scoped to the directories holding
+    # the resolved .feature files. A marker-less-but-genuinely-populated
+    # feature scope (no unit/integration/acceptance marker on its step
+    # module) no longer false-refuses at the M-1 floor below (RCA branch C).
     scope_dirs = sorted({feature_file.parent for feature_file in feature_files})
     try:
-        raw_node_ids = _collect_node_ids(repo, paths=scope_dirs)
+        raw_node_ids = _collect_scope_with_marker_fallback(
+            repo, paths=scope_dirs
+        ).node_ids
     except InterpreterUnavailable as exc:
         return _degrade_interpreter_unavailable(exc)
     except _CollectionError as exc:

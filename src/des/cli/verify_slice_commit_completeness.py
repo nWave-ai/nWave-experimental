@@ -883,6 +883,26 @@ def _append_slice_commit_verified(
         )
 
 
+def _append_examine_deferred_to_feature_end(
+    repo: Path, feature_id: str, slice_ids: frozenset[str]
+) -> None:
+    """Record one `ExamineDeferredToFeatureEnd` event per `@coupled` slice
+    whose examine was DEFERRED (RCA fix-coupled-slice-examine-deferred-to-
+    feature-end, constraints c + e).
+
+    Written at the SAME single chokepoint as `_append_slice_commit_verified`
+    (`_run_verify_then_record`, the ONE place this function is called) --
+    never inside `check_examine_verdict` itself and never at any of that
+    function's 2-3 call sites per commit invocation, so the attestation is
+    never duplicated. Deliberately visible, never a silent bypass: an auditor
+    scanning `.nwave/**/*.jsonl` can tell "deferred on purpose" apart from
+    "nobody checked".
+    """
+    ledger = AtCompletionLedger(feature_id, repo)
+    for slice_id in slice_ids:
+        ledger.append_gate_event("ExamineDeferredToFeatureEnd", slice_id)
+
+
 def _append_slice_commit_indeterminate(
     repo: Path,
     feature_id: str,
@@ -1168,6 +1188,7 @@ class _VerifiedSliceContext:
     commit_sha: str
     attested_via: str | None
     regression_test_files_executed: list[str]
+    deferred_examine_slices: frozenset[str] = frozenset()
 
 
 def _run_verify_checks(
@@ -1503,19 +1524,29 @@ def _run_verify_checks(
     # enforced (Ale 2026-07-05: "without evidence the slice is not implemented").
     from des.cli.commit_slice import check_examine_verdict
 
+    deferred_examine_slices: set[str] = set()
     for slice_id in slice_ids:
         examine_rejection = check_examine_verdict(repo, feature_id, slice_id)
-        if examine_rejection is not None:
-            exit_code = examine_rejection.pop("exit_code")
-            examine_rejection["refused_half"] = "E3"
-            examine_rejection.setdefault(
-                "error",
-                f"{examine_rejection.get('what', '')} -- "
-                f"FIX: {examine_rejection.get('how', '')}",
-            )
-            _emit_with_human_surface(examine_rejection)
-            assert isinstance(exit_code, int)
-            return exit_code, None
+        if examine_rejection is None:
+            continue
+        if "exit_code" not in examine_rejection:
+            # DEFER outcome (RCA fix-coupled-slice-examine-deferred-to-
+            # feature-end): a `@coupled` slice with no per-slice record --
+            # not a refusal. Collect it so `_run_verify_then_record`'s SOLE
+            # write chokepoint (constraint e) can attest the deferral exactly
+            # once; this pure half writes nothing itself.
+            deferred_examine_slices.add(slice_id)
+            continue
+        exit_code = examine_rejection.pop("exit_code")
+        examine_rejection["refused_half"] = "E3"
+        examine_rejection.setdefault(
+            "error",
+            f"{examine_rejection.get('what', '')} -- "
+            f"FIX: {examine_rejection.get('how', '')}",
+        )
+        _emit_with_human_surface(examine_rejection)
+        assert isinstance(exit_code, int)
+        return exit_code, None
 
     # E1, E2 and E3 all cleared. The CLI-facing atomic (`_run_verify_then_record`)
     # is the ONLY place that appends the SliceCommitVerified ledger record and
@@ -1532,6 +1563,8 @@ def _run_verify_checks(
         attested_via: str | None = "slice-id-override"
     elif examine_cleared_slices:
         attested_via = "examine-verdict"
+    elif deferred_examine_slices:
+        attested_via = "examine-deferred"
     else:
         attested_via = None
     return 0, _VerifiedSliceContext(
@@ -1540,6 +1573,7 @@ def _run_verify_checks(
         commit_sha=commit_sha,
         attested_via=attested_via,
         regression_test_files_executed=regression_test_files_executed,
+        deferred_examine_slices=frozenset(deferred_examine_slices),
     )
 
 
@@ -1566,6 +1600,12 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
         verified_context.slice_ids,
         attested_via=verified_context.attested_via,
     )
+    if verified_context.deferred_examine_slices:
+        _append_examine_deferred_to_feature_end(
+            repo,
+            verified_context.feature_id,
+            verified_context.deferred_examine_slices,
+        )
     verified_payload: dict[str, object] = {
         "event": "SliceCommitVerified",
         "slice_ids": verified_context.slice_ids,
