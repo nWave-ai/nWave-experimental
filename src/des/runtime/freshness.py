@@ -30,7 +30,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from des.adapters.driven.freshness.repo_source_probe import RepoSourceProbe
+from des.adapters.driven.freshness.repo_source_probe import (
+    NO_MANIFEST_REASON,
+    NO_MANIFEST_REMEDIATION,
+    RepoSourceProbe,
+)
 from des.ports.driven_ports.freshness_port import FreshnessProbe, FreshnessVerdict
 
 
@@ -68,16 +72,40 @@ def _emit_event(payload: dict[str, Any]) -> None:
 
 _REMEDIATION = "python scripts/install/install_nwave.py"
 
+# Reason-keyed remediation overrides (RCA fix-des-silent-config-failure, root
+# cause B): the blanket `_REMEDIATION` ("reinstall") is wrong for a DEGRADED
+# cause with nothing to reinstall. Keyed off `NO_MANIFEST_REASON` (the SSOT
+# text `RepoSourceProbe` returns for the dev-editable-binary-from-non-
+# project-cwd topology) so a `FreshnessVerdict` that reproduces this exact
+# reason — whether or not it went through `RepoSourceProbe` — still resolves
+# to the differentiated fix. Extend this map as more DEGRADED causes gain a
+# cause-appropriate remediation; unmapped reasons keep the blanket fallback.
+_REASON_REMEDIATION_OVERRIDES: dict[str, str] = {
+    NO_MANIFEST_REASON: NO_MANIFEST_REMEDIATION,
+}
+
+
+def _resolve_remediation(verdict: FreshnessVerdict) -> str:
+    """Cause-appropriate remediation: probe-supplied > reason-mapped > blanket."""
+    if verdict.remediation:
+        return verdict.remediation
+    return _REASON_REMEDIATION_OVERRIDES.get(verdict.reason, _REMEDIATION)
+
 
 def _refuse(verdict: FreshnessVerdict) -> None:
     """Emit the structured refusal event + human diagnostic, then exit 78."""
+    remediation = _resolve_remediation(verdict)
     _emit_event(
         {
             "event": "des.runtime.freshness.refused",
             "state": verdict.state,
             "reason": verdict.reason,
-            "remediation": _REMEDIATION,
+            "remediation": remediation,
         }
+    )
+    print(
+        f"⚠ freshness check refused — {verdict.reason}. Fix: {remediation}",
+        file=sys.stderr,
     )
     sys.exit(_REFUSE_EXIT_CODE)
 

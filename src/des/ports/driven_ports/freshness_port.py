@@ -35,10 +35,18 @@ class FreshnessVerdict:
     installed/source facts used for diagnostics on REFUSE. Slice-01 ships the
     minimum subset that satisfies AT-01-A and AT-01-B: ``state`` and
     ``reason``. Slice-02/03 will extend with ``installed`` and ``source``.
+
+    ``remediation`` (fix-des-silent-config-failure, RCA root cause B): an
+    optional cause-appropriate fix string a :class:`FreshnessProbe` MAY
+    supply per branch (e.g. ``RepoSourceProbe`` names the dev-editable-
+    no-manifest cause explicitly). ``None`` means "no probe-supplied
+    override" — the caller (``des.runtime.freshness``) falls back to a
+    reason-keyed default, then the blanket remediation string.
     """
 
     state: FreshnessStateLabel
     reason: str
+    remediation: str | None = None
 
 
 class FreshnessProbe(Protocol):

@@ -56,6 +56,17 @@ _REQUIRED_FIELDS = (
     "tree_hash",
 )
 
+# The DEGRADED "no manifest" reason text + its cause-appropriate remediation
+# (RCA fix-des-silent-config-failure, root cause B): the dev-editable-binary-
+# from-a-non-project-cwd topology has nothing to reinstall — the fix is
+# running from a project/source checkout. Exported (not `_`-prefixed) so
+# `des.runtime.freshness` can key its reason->remediation fallback map off
+# the same SSOT text, keeping a directly-constructed `FreshnessVerdict` (e.g.
+# in tests, or another `FreshnessProbe` adapter) correctly differentiated
+# even without going through this probe.
+NO_MANIFEST_REASON = "no install manifest — reinstall required"
+NO_MANIFEST_REMEDIATION = "run from a project directory or the nWave source checkout"
+
 
 class RepoSourceProbe:
     """Production FreshnessProbe — reads ``_install_manifest.json``."""
@@ -87,7 +98,8 @@ class RepoSourceProbe:
         if not manifest_path.exists():
             return FreshnessVerdict(
                 state="DEGRADED",
-                reason="no install manifest — reinstall required",
+                reason=NO_MANIFEST_REASON,
+                remediation=NO_MANIFEST_REMEDIATION,
             )
         raw_text = manifest_path.read_text(encoding="utf-8")
         if not raw_text:
@@ -196,4 +208,4 @@ class RepoSourceProbe:
         return None
 
 
-__all__ = ["RepoSourceProbe"]
+__all__ = ["NO_MANIFEST_REASON", "NO_MANIFEST_REMEDIATION", "RepoSourceProbe"]
