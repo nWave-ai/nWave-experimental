@@ -22,9 +22,14 @@ three sets are coherent.
 Filesystem + regex only (GDP-7 agnostic): the registry is parsed as TEXT from
 `<repo_root>/src/des/cli/__main__.py` -- never imported -- so this module can
 evaluate an arbitrary `--repo-root` (including throwaway fixture trees) without
-executing that tree's Python. Degrade-LOUD (GDP-6): a missing/malformed
-`_catalog.yaml` never crashes with a traceback and never silently passes --
-it returns a non-zero exit with a named diagnostic.
+executing that tree's Python. Degrade-LOUD (GDP-6) on THREE surfaces, never a
+traceback and never a silent pass: (1) a missing/unreadable nWave-dev CLI
+registry (`--repo-root` is not an nWave-dev checkout), (2) a missing/unreadable
+`nWave/gates/` directory (same cause), and (3) a missing/malformed
+`_catalog.yaml`. All three raise a `CoherenceInputUnavailableError` (subclass
+`CatalogMalformedError` for surface 3) that `main()` renders as a single
+human-readable guidance line plus an `indeterminate` JSON verdict with a
+non-zero exit.
 
 Stdlib-only (no ``import yaml``) per the DES-bundle contract (F-D-09,
 `tests/build/acceptance/plugin/steps/test_des_bundle_steps.py::des_no_external_deps`):
@@ -53,7 +58,15 @@ _GATE_ID_ENTRY_RE = re.compile(
 _META_CATALOG_FILES = frozenset({"_catalog.yaml", "_schema.yaml"})
 
 
-class CatalogMalformedError(Exception):
+class CoherenceInputUnavailableError(Exception):
+    """An input needed to evaluate catalog coherence is missing or unreadable
+    -- typically because `--repo-root` is not an nWave-dev checkout at all
+    (no CLI registry, no `nWave/gates/` directory). `CatalogMalformedError`
+    is the more specific subclass for a present-but-malformed catalog file.
+    """
+
+
+class CatalogMalformedError(CoherenceInputUnavailableError):
     """`nWave/gates/_catalog.yaml` is missing, unreadable, or fails to parse."""
 
 
@@ -98,9 +111,20 @@ class CoherenceResult:
 
 
 def _parse_registry_names(repo_root: Path) -> frozenset[str]:
-    """Regex-parse `_SubcommandRow("<name>", ...)` occurrences (no import)."""
+    """Regex-parse `_SubcommandRow("<name>", ...)` occurrences (no import).
+
+    Raises `CoherenceInputUnavailableError` when the nWave-dev CLI registry
+    module can't be read -- the common case being `repo_root` is not an
+    nWave-dev checkout at all (bare dir, unrelated project, missing path).
+    """
     main_py = repo_root / "src" / "des" / "cli" / "__main__.py"
-    text = main_py.read_text(encoding="utf-8")
+    try:
+        text = main_py.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise CoherenceInputUnavailableError(
+            "cannot read the nWave-dev CLI registry module -- this "
+            "repo_root does not look like an nWave-dev checkout"
+        ) from exc
     return frozenset(_SUBCOMMAND_ROW_NAME_RE.findall(text))
 
 
@@ -133,7 +157,15 @@ def _parse_catalog_gate_ids(repo_root: Path) -> frozenset[str]:
 
 
 def _parse_per_gate_stems(repo_root: Path) -> frozenset[str]:
+    """Raises `CoherenceInputUnavailableError` when `nWave/gates/` is missing
+    or not a directory -- symmetric with `_parse_registry_names` above, same
+    root cause (`repo_root` is not an nWave-dev checkout)."""
     gates_dir = repo_root / "nWave" / "gates"
+    if not gates_dir.is_dir():
+        raise CoherenceInputUnavailableError(
+            "cannot read the nWave gate catalog directory -- this repo_root "
+            "does not look like an nWave-dev checkout"
+        )
     return frozenset(
         p.stem for p in gates_dir.glob("*.yaml") if p.name not in _META_CATALOG_FILES
     )
@@ -142,8 +174,11 @@ def _parse_per_gate_stems(repo_root: Path) -> frozenset[str]:
 def compute_catalog_coherence(repo_root: Path) -> CoherenceResult:
     """Pure comparison of the registry/catalog/per-gate-file sets under repo_root.
 
-    Raises `CatalogMalformedError` if `_catalog.yaml` is missing, unreadable,
-    or fails to parse -- callers degrade this LOUD, never silently.
+    Raises `CoherenceInputUnavailableError` if the nWave-dev CLI registry or
+    the `nWave/gates/` directory can't be read (repo_root is not an
+    nWave-dev checkout), or its `CatalogMalformedError` subclass if
+    `_catalog.yaml` specifically is missing, unreadable, or fails to parse --
+    callers degrade this LOUD, never silently.
     """
     registry_names = _parse_registry_names(repo_root)
     catalog_gate_ids = _parse_catalog_gate_ids(repo_root)
@@ -216,15 +251,24 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         result = compute_catalog_coherence(repo_root)
-    except CatalogMalformedError as exc:
+    except CoherenceInputUnavailableError as exc:
+        how = [
+            "point --repo-root at a real nWave-dev checkout (it must hold "
+            "the nWave-dev CLI registry module and an nWave/gates/ catalog "
+            "directory); if you believe you are already inside one, fix or "
+            "restore nWave/gates/_catalog.yaml so it parses as valid YAML "
+            "with a top-level 'gates' list."
+        ]
+        print(
+            f"verify-catalog-coherence: {exc} -- this check only evaluates "
+            "an nWave-dev checkout. " + how[0],
+            file=sys.stderr,
+        )
         verdict = {
             "event": "CatalogCoherenceChecked",
             "verdict": "indeterminate",
             "reason": f"cannot evaluate catalog coherence: {exc}",
-            "how": [
-                "fix or restore nWave/gates/_catalog.yaml so it parses as "
-                "valid YAML with a top-level 'gates' list."
-            ],
+            "how": how,
             "drifting_ids": [],
         }
         print(json.dumps(verdict))

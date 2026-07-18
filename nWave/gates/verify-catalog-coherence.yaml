@@ -39,6 +39,9 @@ failure_modes:
   - error_class: CatalogMalformed
     exit_code: 1
     remediation: "Fix or restore nWave/gates/_catalog.yaml so it parses as valid YAML with a top-level 'gates' list; the verdict names the unreadable/malformed path."
+  - error_class: CoherenceInputUnavailable
+    exit_code: 1
+    remediation: "The nWave-dev CLI registry module or the nWave/gates/ catalog directory could not be read -- --repo-root is not an nWave-dev checkout. Point --repo-root at a real nWave-dev checkout; the command prints a plain-text guidance line plus an 'indeterminate' JSON verdict, never a raw Python traceback."
 
 idempotency: idempotent
 
