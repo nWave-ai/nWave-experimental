@@ -64,6 +64,33 @@ def _build_parser() -> argparse.ArgumentParser:
             "a real deep-review verdict); run (run the feature-end cycle -- run "
             "the gates, then sign + emit the feature-end records)."
         ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "KNOWN GAP, measured 2026-07-18 -- the feature-end EXAMINE cannot "
+            "be dispatched yet:\n"
+            "  The feature-end cycle prescribes an EXAMINE at step 2 of 5 (an\n"
+            "  independent, execution-observing walk of the FINISHED feature),\n"
+            "  but the DES phase vocabulary has NO word for a feature-SCOPE\n"
+            "  examine, so that dispatch is refused. Six refused dispatches,\n"
+            "  three legal paths tried, all rejected for different reasons.\n"
+            "\n"
+            "  DO NOT route around it with F_FINAL_REVIEW. That pair IS legal\n"
+            "  (it is a feature-end phase), but the word means the deep code\n"
+            "  REVIEW, not the examine -- using it writes the wrong step into\n"
+            "  the audit trail to satisfy a gate, which is the falsification\n"
+            "  these ledgers exist to prevent.\n"
+            "\n"
+            "  CONSEQUENCE for planning: slice-level delivery is UNAFFECTED --\n"
+            "  a swarm can grind slices in parallel today. Only the feature-END\n"
+            "  seal waits. Plan the swarm on slices; hold feature-end until the\n"
+            "  phase word lands.\n"
+            "\n"
+            "  Fix in flight: feature `feature-end-examine-phase` adds the\n"
+            "  DISTINCT word FEATURE_END_EXAMINE. If you touch that code, note\n"
+            "  the trap: the canonical middle slot is ALREADY named EXAMINE and\n"
+            "  is used PER-SLICE -- widening FEATURE_END_PHASES with that word\n"
+            "  makes every per-slice examine illegal everywhere."
+        ),
     )
     verbs = parser.add_subparsers(dest="verb", required=True)
 

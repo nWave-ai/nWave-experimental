@@ -52,6 +52,27 @@ def _build_parser() -> argparse.ArgumentParser:
             "Measure a change's blast radius (files/lines/boundary/consumers) "
             "and report its tier."
         ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "COST, measured 2026-07-18 -- read this before putting the command "
+            "on a hot path:\n"
+            "  A file with FEW consumers measures in well under a second.\n"
+            "  A file with MANY consumers can exceed 200 SECONDS (2m16 of CPU,\n"
+            "  then a timeout) -- the cost is the consumer_counts resolution,\n"
+            "  which walks the callers of every touched symbol.\n"
+            "\n"
+            "  So: a SLOW run is a symptom of high fan-in, NOT a high tier.\n"
+            "  Do not read the wait as an answer, and do not let a hot file\n"
+            "  block a lane decision -- put a `timeout` on the call, and treat\n"
+            "  a timeout as 'unmeasured', never as S and never as L.\n"
+            "\n"
+            "  This is stated here rather than left as folklore: an operator\n"
+            "  who has not personally hit the hang has no other way to learn\n"
+            "  it. Tracked for a real fix (degrade LOUD on a resolution "
+            "budget\n"
+            "  instead of hanging) -- see backlog F-BLAST-RADIUS-CONSUMER-"
+            "COST."
+        ),
     )
     parser.add_argument("--repo", required=True, help="The repository root.")
     parser.add_argument(
