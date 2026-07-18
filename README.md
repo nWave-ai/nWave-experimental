@@ -6,7 +6,7 @@
 >
 > This repository is **private and access-controlled** — published for preview only to collaborators. There is **no PyPI package** for this channel. You install **locally from this clone**.
 
-**Build:** atdd-pure preview @ `cee37d6c6` (source `feature/atdd-pure-staging` `cee37d6c65f5d6d8496ff7ee00367e6f54f28946`)
+**Build:** atdd-pure preview @ `1d1c78e76` (source `feature/atdd-pure-staging` `1d1c78e7650b86388b2035a0211f6455893240d4`)
 
 ---
 

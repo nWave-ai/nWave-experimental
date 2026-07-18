@@ -476,6 +476,7 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         gate: str | None = None,
         justification: str | None = None,
         attested_via: str | None = None,
+        regression_test_file: str | None = None,
     ) -> dict[str, Any]:
         """Append one slice gate-boundary audit record under the M7 write contract.
 
@@ -506,6 +507,16 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         stays byte-identical); when present, threaded into `fields` and hashed
         into `record_hash` like every other field.
 
+        #59 signature delta (fix-commit-slice-reverify-uses-stored-file): the
+        optional ``regression_test_file`` kwarg carries the repo-relative
+        pytest-regression file the ENTERING slice actually declared via
+        ``--regression-test-file`` at commit time. Defaults to None (every
+        existing call site stays byte-identical); when present, threaded into
+        `fields` and hashed into `record_hash` like every other field. This is
+        the STORED value a later slice's commit re-check reads instead of
+        re-guessing a naming-convention glob against a non-convention-named
+        file.
+
         Returns the appended record.
         """
         fields: dict[str, Any] = {"event": event, "slice_id": slice_id}
@@ -515,6 +526,8 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             fields["justification"] = justification
         if attested_via is not None:
             fields["attested_via"] = attested_via
+        if regression_test_file is not None:
+            fields["regression_test_file"] = regression_test_file
         return self._append_record(fields, feature_id=feature_id)
 
     def append_contract_frozen(

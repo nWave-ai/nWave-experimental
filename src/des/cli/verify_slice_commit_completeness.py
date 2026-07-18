@@ -667,6 +667,53 @@ def _regression_file_glob_candidates(
     return sorted(repo.glob(f"tests/**/{feature_dir}/test_{slice_us}_*.py"))
 
 
+def _declared_regression_test_file(
+    repo: Path, feature_id: str, slice_id: str
+) -> str | None:
+    """The repo-relative pytest-regression file ``slice_id`` itself declared
+    via ``--regression-test-file`` at its OWN ``SliceCommitVerified`` time
+    (#59, fix-commit-slice-reverify-uses-stored-file).
+
+    Raw-JSONL scan of the legacy per-feature ledger
+    (``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``) -- mirrors
+    ``_slice_commit_verified_slices``'s (``verify_deliver_integrity.py``)
+    tolerant-scan shape (skip unparseable lines, absent ledger -> None)
+    rather than ``AtCompletionLedger.read_records``'s fail-closed integrity
+    sweep: this is a best-effort STORED-value lookup feeding a
+    conservative-keep fallback (the naming-convention glob), never the sole
+    source of truth, so a corrupt/unreadable ledger degrades to "no stored
+    value" (glob fallback fires) instead of crashing the commit-slice gate.
+
+    Returns the LAST matching record's ``regression_test_file`` (idempotent
+    re-verification of an already-verified slice may append further records,
+    C4a) -- the most recent declaration wins. ``None`` when no
+    ``SliceCommitVerified`` record for ``slice_id`` carries the field (e.g. a
+    historical record predating this feature, or a non-pytest-regression
+    slice).
+    """
+    ledger = repo / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
+    if not ledger.is_file():
+        return None
+    declared: str | None = None
+    try:
+        for line in ledger.read_text(encoding="utf-8").splitlines():
+            if '"SliceCommitVerified"' not in line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if (
+                rec.get("event") == "SliceCommitVerified"
+                and rec.get("slice_id") == slice_id
+                and isinstance(rec.get("regression_test_file"), str)
+            ):
+                declared = rec["regression_test_file"]
+    except OSError:
+        return None
+    return declared
+
+
 def _shipped_and_entering_regression_files(
     repo: Path,
     feature_id: str,
@@ -681,14 +728,27 @@ def _shipped_and_entering_regression_files(
     ledger resolver ``_slice_commit_verified_slices``, REUSE -- the
     un-gameable "which slices are delivered" resolver, already imported one
     hop away in ``commit_slice.py``) other than the entering slice itself is
-    resolved to its regression file via ``_regression_file_glob_candidates``.
+    resolved:
+
+    1. FIRST, its own STORED declaration (#59, fix-commit-slice-reverify-
+       uses-stored-file): ``_declared_regression_test_file`` reads the file
+       the shipped slice itself declared via ``--regression-test-file`` at
+       its OWN commit time. If present AND still a real file on this tree,
+       it wins -- no naming-convention guessing needed.
+    2. Else, the naming-convention glob (``_regression_file_glob_candidates``,
+       UNCHANGED) -- the pre-#59 behaviour, still the only signal available
+       for a historical record that predates this field.
+
+    Only when BOTH miss is the slice ``unresolved`` (GDP-6: never a silent
+    guess -- a genuinely missing file, whether the stored path was deleted or
+    no convention match exists, degrades LOUD).
 
     Returns ``(resolved, unresolved_slice_ids)``: ``resolved`` is an ordered
     list of ``(slice_id, repo_relative_path)`` pairs -- shipped slices first,
     then the entering slice; ``unresolved_slice_ids`` names every SHIPPED
-    slice whose file could not be resolved (zero or ambiguous convention
-    matches) -- a conservative-keep signal (never a silent skip) the caller
-    degrades LOUD INDETERMINATE on, mirroring
+    slice whose file could not be resolved (no stored value, and zero or
+    ambiguous convention matches) -- a conservative-keep signal (never a
+    silent skip) the caller degrades LOUD INDETERMINATE on, mirroring
     ``_narrow_to_shipped_entering``'s "never silently narrow" discipline.
     """
     shipped = sorted(
@@ -699,6 +759,10 @@ def _shipped_and_entering_regression_files(
     resolved: list[tuple[str, str]] = []
     unresolved: list[str] = []
     for slice_id in shipped:
+        declared = _declared_regression_test_file(repo, feature_id, slice_id)
+        if declared is not None and (repo / declared).is_file():
+            resolved.append((slice_id, declared))
+            continue
         candidates = _regression_file_glob_candidates(repo, feature_id, slice_id)
         if len(candidates) != 1:
             unresolved.append(slice_id)
@@ -855,6 +919,8 @@ def _append_slice_commit_verified(
     slice_ids: list[str],
     *,
     attested_via: str | None = None,
+    entering_slice_id: str | None = None,
+    entering_regression_test_file: str | None = None,
 ) -> None:
     """Record one `SliceCommitVerified` event per verified slice (DDD-3).
 
@@ -875,11 +941,27 @@ def _append_slice_commit_verified(
     threaded through to the ledger record as a transparent field so the audit
     shows the trailer was bypassed. Absent/None on the normal trailer path --
     that record stays byte-unchanged.
+
+    ``entering_slice_id`` / ``entering_regression_test_file`` (#59,
+    fix-commit-slice-reverify-uses-stored-file): when the entering commit
+    declared a pytest-regression file, ``entering_regression_test_file`` is
+    threaded into the ``SliceCommitVerified`` record for ``entering_slice_id``
+    ONLY -- every other slice_id in ``slice_ids`` (a batched multi-Slice-Id
+    commit) is written exactly as before, with no ``regression_test_file``
+    field. This is the STORED value a later slice's commit re-check reads
+    (``_declared_regression_test_file``) instead of re-guessing a naming-
+    convention glob against a possibly non-convention-named file.
     """
     ledger = AtCompletionLedger(feature_id, repo)
     for slice_id in slice_ids:
+        regression_test_file = (
+            entering_regression_test_file if slice_id == entering_slice_id else None
+        )
         ledger.append_gate_event(
-            "SliceCommitVerified", slice_id, attested_via=attested_via
+            "SliceCommitVerified",
+            slice_id,
+            attested_via=attested_via,
+            regression_test_file=regression_test_file,
         )
 
 
@@ -1189,6 +1271,8 @@ class _VerifiedSliceContext:
     attested_via: str | None
     regression_test_files_executed: list[str]
     deferred_examine_slices: frozenset[str] = frozenset()
+    entering_slice_id: str | None = None
+    entering_regression_test_file: str | None = None
 
 
 def _run_verify_checks(
@@ -1302,6 +1386,7 @@ def _run_verify_checks(
 
     pytest_regression_checked = False
     regression_test_files_executed: list[str] = []
+    entering_regression_slice_id: str | None = None
     examine_cleared_slices: set[str] = set()
     for slice_id in slice_ids:
         if _is_at_exempt_lane(repo, feature_id, slice_id):
@@ -1340,6 +1425,7 @@ def _run_verify_checks(
                 # attestation, never re-run per listed slice.
                 continue
             pytest_regression_checked = True
+            entering_regression_slice_id = slice_id
             (
                 contract_code,
                 indeterminate_reason,
@@ -1574,6 +1660,10 @@ def _run_verify_checks(
         attested_via=attested_via,
         regression_test_files_executed=regression_test_files_executed,
         deferred_examine_slices=frozenset(deferred_examine_slices),
+        entering_slice_id=entering_regression_slice_id,
+        entering_regression_test_file=(
+            regression_test_file if entering_regression_slice_id is not None else None
+        ),
     )
 
 
@@ -1599,6 +1689,8 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
         verified_context.feature_id,
         verified_context.slice_ids,
         attested_via=verified_context.attested_via,
+        entering_slice_id=verified_context.entering_slice_id,
+        entering_regression_test_file=verified_context.entering_regression_test_file,
     )
     if verified_context.deferred_examine_slices:
         _append_examine_deferred_to_feature_end(
