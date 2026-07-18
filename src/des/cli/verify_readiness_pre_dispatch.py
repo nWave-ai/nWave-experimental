@@ -68,7 +68,14 @@ from des.cli.axis_b_levers import (
     check_unwired_entry,
     resolve_layout,
 )
-from des.cli.carpaccio_format import GateError, parse_slice_plan
+from des.cli.carpaccio_format import (
+    GateError,
+    _no_scenarios_rejection,
+    _slice_scenarios,
+    parse_scenarios,
+    parse_slice_plan,
+    read_feature_files,
+)
 from des.cli.validate_feature_delta import (
     _SUSTAINABILITY_ACCEPTED_VERDICTS,
     VERDICT_MALFORMED_REUSE_ANALYSIS,
@@ -289,30 +296,57 @@ def _check_slice_plan_section(workspace: Path, slice_id: str) -> _InvariantResul
     return _InvariantResult(invariant_id=_INV_SLICE_PLAN, satisfied=True)
 
 
-def _check_scenario_slice_tags(repo_root: Path, feature_id: str) -> _InvariantResult:
-    """Invariant 2: every Gherkin scenario for the feature carries a @slice-NN tag.
+def _check_scenario_slice_tags(
+    repo_root: Path, feature_id: str, slice_id: str
+) -> _InvariantResult:
+    """Invariant 2: every Gherkin scenario for the feature carries a @slice-NN
+    tag, AND the ENTERING slice owns at least one matching scenario.
 
-    Searches `tests/**/<feature_id>/**/*.feature` and verifies each Scenario:
-    line's preceding tag block contains `@slice-NN`. When NO feature files
-    exist yet for the feature (first dispatch), the invariant is SATISFIED
-    (vacuous truth -- no scenarios means no untagged scenarios). The dispatch
-    is still gated by other invariants.
+    Two legs, evaluated in order:
+      (a) legacy leg (unchanged): searches `tests/**/<feature_id>/**/*.feature`
+          and verifies each Scenario: line's preceding tag block contains
+          `@slice-NN` at all (a feature-wide "nothing untagged" check).
+      (b) per-slice ownership leg (bug #73, twin of #27 -- fix-readiness-not-
+          vacuously-cleared): delegates to carpaccio's OWN predicates
+          (`read_feature_files` + `parse_scenarios` + `_slice_scenarios`,
+          the SAME tag-based resolver + per-slice filter `des
+          carpaccio-slice-gate` uses -- never a reimplemented scan) so this
+          gate can no longer vacuously CLEAR a slice that owns zero matching
+          scenarios while carpaccio correctly REJECTS the identical slice.
+
+    When NO feature files exist yet for the feature at all (first dispatch,
+    pre-DISTILL), the invariant is SATISFIED (vacuous truth -- no scenarios
+    means nothing to check, and carpaccio has not been asked to gate this
+    slice yet either). The dispatch is still gated by other invariants.
     """
     tests_dir = repo_root / "tests"
-    if not tests_dir.is_dir():
-        # Workspace lacks tests/ -- no scenarios to verify; vacuously satisfied.
+    if tests_dir.is_dir():
+        legacy_feature_files = [
+            p for p in tests_dir.rglob("*.feature") if feature_id in p.parts
+        ]
+        if legacy_feature_files:
+            untagged = _collect_untagged_scenarios(legacy_feature_files)
+            if untagged:
+                return _InvariantResult(
+                    invariant_id=_INV_SCENARIO_TAGS,
+                    satisfied=False,
+                    remediation=_REMEDIATIONS[_INV_SCENARIO_TAGS],
+                )
+
+    feature_texts = read_feature_files(repo_root, feature_id)
+    if not feature_texts:
         return _InvariantResult(invariant_id=_INV_SCENARIO_TAGS, satisfied=True)
 
-    feature_files = [p for p in tests_dir.rglob("*.feature") if feature_id in p.parts]
-    if not feature_files:
-        return _InvariantResult(invariant_id=_INV_SCENARIO_TAGS, satisfied=True)
-
-    untagged = _collect_untagged_scenarios(feature_files)
-    if untagged:
+    scenarios = parse_scenarios(feature_texts)
+    if not _slice_scenarios(scenarios, slice_id):
+        rejection = _no_scenarios_rejection(repo_root, feature_id, slice_id)
+        remediation = str(
+            rejection.payload.get("error") or _REMEDIATIONS[_INV_SCENARIO_TAGS]
+        )
         return _InvariantResult(
             invariant_id=_INV_SCENARIO_TAGS,
             satisfied=False,
-            remediation=_REMEDIATIONS[_INV_SCENARIO_TAGS],
+            remediation=remediation,
         )
     return _InvariantResult(invariant_id=_INV_SCENARIO_TAGS, satisfied=True)
 
@@ -790,7 +824,9 @@ def _run_lane_profile(
     """
     checks: dict[str, Callable[[], _InvariantResult]] = {
         _INV_SLICE_PLAN: lambda: _check_slice_plan_section(workspace, slice_id),
-        _INV_SCENARIO_TAGS: lambda: _check_scenario_slice_tags(repo_root, feature_id),
+        _INV_SCENARIO_TAGS: lambda: _check_scenario_slice_tags(
+            repo_root, feature_id, slice_id
+        ),
         _INV_AT_VERDICT: lambda: _check_at_review_verdict(
             repo_root, feature_id, slice_id
         ),
@@ -992,7 +1028,9 @@ def main(argv: list[str] | None = None) -> int:
 
     report = _ReadinessReport(feature_id=feature_id, slice_id=slice_id)
     report.invariants.append(_check_slice_plan_section(workspace, slice_id))
-    report.invariants.append(_check_scenario_slice_tags(repo_root, feature_id))
+    report.invariants.append(
+        _check_scenario_slice_tags(repo_root, feature_id, slice_id)
+    )
     report.invariants.append(_check_at_review_verdict(repo_root, feature_id, slice_id))
     report.invariants.append(_check_gate_output_produceable(repo_root))
     report.invariants.append(_check_pre_commit_scope(repo_root, feature_id))

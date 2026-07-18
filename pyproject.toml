@@ -27,7 +27,7 @@ packages = ["src/des", "nwave_ai"]
 
 [project]
 name = "nwave"
-version = "3.21.0+atddpure.1d1c78e76"
+version = "3.21.0+atddpure.887166b1d"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
