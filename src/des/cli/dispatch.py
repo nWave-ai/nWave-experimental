@@ -41,6 +41,7 @@ from des.cli.validate_feature_delta import (
 from des.domain.atdd_pure_phases import FEATURE_END_PHASES, ATDDPurePhase
 from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
 from des.domain.repo_path_resolver import resolve_repo_root
+from des.domain.wave_active import WAVE_VOCABULARY
 
 
 #: Deliberate, distinguishable exit for "bad input" (missing/invalid CLI
@@ -436,6 +437,7 @@ def _build_prompt(
     feature_id: str,
     phase: str | None,
     slice_id: str,
+    wave: str,
     lane: str | None,
     intent: str,
     defect: str | None,
@@ -466,7 +468,7 @@ def _build_prompt(
     if phase is not None:
         marker_lines.append(marker("DES-PHASE", phase))
     marker_lines.append(marker("DES-SLICE", slice_id))
-    marker_lines.append(marker("DES-WAVE", "deliver"))
+    marker_lines.append(marker("DES-WAVE", wave))
     if lane is not None:
         marker_lines.append(marker("DES-LANE", lane))
         if lane in _LANES_REQUIRING_JUSTIFICATION:
@@ -531,6 +533,20 @@ def _build_parser() -> argparse.ArgumentParser:
             "The ATDDPurePhase this dispatch executes. Required UNLESS "
             f"--lane is one of the phaseless cross-wave-child lanes "
             f"({', '.join(sorted(PHASELESS_LANES))})."
+        ),
+    )
+    parser.add_argument(
+        "--wave",
+        default="deliver",
+        choices=tuple(sorted(WAVE_VOCABULARY)),
+        help=(
+            "Which WAVE this dispatch belongs to (default: deliver). The value "
+            "is stamped as the DES-WAVE marker, which is how a hook knows what "
+            "discipline to arm. It was hardcoded to 'deliver' until 2026-07-18, "
+            "so a DISCUSS or DESIGN dispatch generated here was LABELLED deliver "
+            "-- and the operator, to satisfy the deliver template, ended up "
+            "handing a DESIGN context to a wave that runs BEFORE design. The "
+            "choices come from the WAVE_VOCABULARY SSOT, never a second list."
         ),
     )
     parser.add_argument(
@@ -759,6 +775,7 @@ def main(argv: list[str] | None = None) -> int:
         feature_id=args.project_id,
         phase=phase,
         slice_id=slice_id,
+        wave=args.wave,
         lane=args.lane,
         intent=args.intent,
         defect=args.defect,
