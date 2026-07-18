@@ -39,6 +39,7 @@ from des.cli.validate_feature_delta import (
     validate_reuse_analysis_content,
 )
 from des.domain.atdd_pure_phases import FEATURE_END_PHASES, ATDDPurePhase
+from des.domain.des_marker_parser import dispatch_is_phaseless
 from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
 from des.domain.repo_path_resolver import resolve_repo_root
 from des.domain.wave_active import WAVE_VOCABULARY
@@ -674,10 +675,13 @@ def main(argv: list[str] | None = None) -> int:
     # are DELIVER's, and a wave that authors a document runs none of them.
     # Demanding one here forced the operator to borrow an unrelated DELIVER
     # phase word just to get a dispatch out -- writing a false step into the
-    # audit trail to satisfy a flag.
+    # audit trail to satisfy a flag. ``dispatch_is_phaseless`` is the ONE
+    # predicate every validity-deciding locus consults (fix-dispatch-
+    # validity-ssot) -- this generator is locus 1, never a private
+    # re-derivation of the lane/wave union.
     _wave_profile = WAVE_DISPATCH_PROFILES.get(args.wave)
-    _wave_is_phaseless = _wave_profile is not None and not _wave_profile.runs_tests
-    if phase is None and args.lane not in PHASELESS_LANES and not _wave_is_phaseless:
+    _phaseless = dispatch_is_phaseless(lane=args.lane, declared_wave=args.wave)
+    if phase is None and not _phaseless:
         print(
             "error: --phase is required for a DELIVER-scope dispatch. It is "
             "NOT required when --lane is one of the phaseless cross-wave-child "
@@ -691,20 +695,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         return _EXIT_USAGE_ERROR
 
-    # COHERENCE guard (as opposed to the SHAPE guards above/below, which check
-    # each flag in isolation): a phaseless lane (`PHASELESS_LANES`) declares NO
-    # `ATDDPurePhase` by construction -- combining it with an explicit --phase
-    # is a self-contradictory request (each part individually valid, the
-    # COMBINATION nonsense). Refuse loudly (GDP-3/6) instead of silently
-    # inventing a best-guess envelope naming one role's agent with another
-    # role's phase.
-    if phase is not None and args.lane in PHASELESS_LANES:
+    # COHERENCE guard (as opposed to the SHAPE guard above, which checks each
+    # flag in isolation): a phaseless dispatch (phaseless lane OR authoring
+    # wave) declares NO `ATDDPurePhase` by construction -- combining it with
+    # an explicit --phase is a self-contradictory request (each part
+    # individually valid, the COMBINATION nonsense). Refuse loudly (GDP-3/6)
+    # instead of silently inventing a best-guess envelope naming one role's
+    # agent with another role's phase.
+    if phase is not None and _phaseless:
         print(
-            f"error: --lane {args.lane} is phaseless (it belongs to a "
-            "non-code-facing cross-wave-child dispatch that declares no "
-            f"ATDDPurePhase) and cannot be combined with --phase {phase} "
-            f"(a phase belonging to a different role) -- drop --phase, or "
-            "use a phase-bearing lane instead.",
+            f"error: --lane {args.lane} / --wave {args.wave} is phaseless (it "
+            "belongs to a non-code-facing cross-wave-child dispatch, or an "
+            "authoring wave, that declares no ATDDPurePhase) and cannot be "
+            f"combined with --phase {phase} (a phase belonging to a "
+            "different role) -- drop --phase, or use a phase-bearing "
+            "lane/wave instead.",
             file=sys.stderr,
         )
         return _EXIT_USAGE_ERROR

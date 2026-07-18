@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from des.domain.lane_profile import PHASELESS_LANES
+from des.domain.des_marker_parser import dispatch_is_phaseless
 
 
 if TYPE_CHECKING:
@@ -80,17 +80,39 @@ class MarkerCompletenessPolicy:
     def _validate_atdd_pure(self, markers: DesMarkers) -> CompletenessResult:
         """atdd_pure dispatch completeness — DES-PROJECT-ID + DES-PHASE + DES-SLICE.
 
-        A PHASELESS lane (``PHASELESS_LANES`` — the ONE definition, in the
-        lane-profile domain SSOT) declares no DES-PHASE: charter authoring is
-        not one of the 3 canonical DELIVER phases, so its honest envelope omits
-        the phase marker instead of borrowing an unrelated one
-        (fix-po-charter-dispatch-marker-lane). Every OTHER marker is still
-        required — the vocabulary widens, the enforcement does not weaken.
+        A phaseless dispatch (``dispatch_is_phaseless`` — the ONE predicate
+        every validity-deciding locus consults, fix-dispatch-validity-ssot)
+        declares no DES-PHASE: a ``PHASELESS_LANES`` lane (charter authoring
+        is not one of the 3 canonical DELIVER phases,
+        fix-po-charter-dispatch-marker-lane) or an authoring wave (discuss /
+        design / devops / distill run no ``ATDDPurePhase`` machinery) both
+        omit the phase marker instead of borrowing an unrelated one. Every
+        OTHER marker is still required — the vocabulary widens, the
+        enforcement does not weaken. Combining a phaseless dispatch with an
+        EXPLICIT DES-PHASE is the self-contradictory inverse -- rejected
+        outright, mirroring ``classify_atdd_pure_dispatch``'s 'defective'.
         """
+        phaseless = dispatch_is_phaseless(
+            lane=markers.lane, declared_wave=markers.declared_wave
+        )
+        if phaseless and markers.atdd_pure_phase is not None:
+            return CompletenessResult(
+                is_valid=False,
+                reason=(
+                    "DES_MARKERS_INCOHERENT: DES-PHASE present on a "
+                    "phaseless dispatch (phaseless lane or authoring wave)"
+                ),
+                recovery_suggestions=[
+                    "Drop --phase -- a phaseless lane/wave declares no "
+                    "ATDDPurePhase by construction; do not borrow one from "
+                    "a different role.",
+                ],
+            )
+
         missing = []
         if not markers.project_id:
             missing.append("DES-PROJECT-ID")
-        if not markers.atdd_pure_phase and markers.lane not in PHASELESS_LANES:
+        if not markers.atdd_pure_phase and not phaseless:
             missing.append("DES-PHASE")
         if not markers.slice_id:
             missing.append("DES-SLICE")

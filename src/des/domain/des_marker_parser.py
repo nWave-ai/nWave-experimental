@@ -32,6 +32,7 @@ from des.domain.atdd_pure_phases import (
     ATDDPurePhase,
 )
 from des.domain.lane_profile import PHASELESS_LANES
+from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
 
 
 def _normalise_marker_value(value: str) -> str:
@@ -416,6 +417,35 @@ class DesMarkerParser:
 # ---------------------------------------------------------------------------
 
 
+def dispatch_is_phaseless(*, lane: str | None, declared_wave: str | None) -> bool:
+    """The ONE predicate answering "is this dispatch phaseless by construction?"
+
+    fix-dispatch-validity-ssot: three independent loci (the ``des dispatch``
+    generator, this module's ``classify_atdd_pure_dispatch`` /
+    ``atdd_pure_missing_marker``, and ``MarkerCompletenessPolicy``) each used
+    to carry their OWN copy of this rule -- and one of them (the completeness
+    policy) never learned the wave half, so the SAME dispatch was valid to
+    two loci and invalid to a third. This function is the single answer every
+    locus now CONSULTS instead of re-deriving.
+
+    Two independent axes union into "phaseless": a ``PHASELESS_LANES`` lane
+    (a non-code-facing cross-wave-child dispatch, e.g. ``charter``) OR an
+    authoring wave (``WAVE_DISPATCH_PROFILES[declared_wave].runs_tests is
+    False`` -- discuss / design / devops / distill run no ``ATDDPurePhase``
+    machinery at all). Always derived from the queryable profile data, never
+    a hand-written wave/lane-name list, so the exemption cannot silently go
+    stale as either vocabulary grows. An unrecognised or absent
+    ``declared_wave`` falls through to False -- fail-closed, phase stays
+    required.
+    """
+    if lane in PHASELESS_LANES:
+        return True
+    if declared_wave is None:
+        return False
+    profile = WAVE_DISPATCH_PROFILES.get(declared_wave)
+    return profile is not None and not profile.runs_tests
+
+
 def classify_atdd_pure_dispatch(markers: DesMarkers) -> str:
     """Classify a parsed marker set as 'absent' / 'valid' / 'defective'.
 
@@ -446,8 +476,13 @@ def classify_atdd_pure_dispatch(markers: DesMarkers) -> str:
     # phase/scope XOR below (a phase-keyed invariant) simply does not apply.
     # This is the ONLY relaxation: a phaseless-lane dispatch still needs its
     # DES-MODE + DES-SLICE + (via the completeness policy) DES-PROJECT-ID, so a
-    # genuinely defective dispatch is refused exactly as before.
-    if markers.lane in PHASELESS_LANES:
+    # genuinely defective dispatch is refused exactly as before. An authoring
+    # wave (discuss/design/devops/distill) is phaseless BY CONSTRUCTION for the
+    # SAME reason -- ``ATDDPurePhase`` stays DELIVER-carpaccio-scoped -- so it
+    # gets the identical relaxation via the single ``dispatch_is_phaseless``
+    # predicate (fix-dispatch-validity-ssot), never a second hand-written
+    # lane-shaped list.
+    if dispatch_is_phaseless(lane=markers.lane, declared_wave=markers.declared_wave):
         return "defective" if markers.atdd_pure_phase is not None else "valid"
     if markers.atdd_pure_phase is None:
         return "defective"
@@ -467,7 +502,9 @@ def atdd_pure_missing_marker(markers: DesMarkers) -> str | None:
     """
     if markers.mode != "atdd_pure":
         return None
-    if markers.atdd_pure_phase is None and markers.lane not in PHASELESS_LANES:
+    if markers.atdd_pure_phase is None and not dispatch_is_phaseless(
+        lane=markers.lane, declared_wave=markers.declared_wave
+    ):
         return "des-phase"
     if markers.slice_id is None:
         return "des-slice"
