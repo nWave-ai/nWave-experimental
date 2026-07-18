@@ -210,6 +210,20 @@ class _InvariantResult:
     # The CodeFactPort confidence label carried with the lever-1 wiring flag
     # (degrade-LOUD, ADR-LA-001). Empty for invariants that carry no code-fact.
     confidence: str = ""
+    # Did this gate actually VERIFY the invariant, or is it declining to BLOCK
+    # on it without having checked anything? The two are different facts and
+    # collapsing them is a lie: a policy-driven non-block ("this axis is
+    # advisory here") was reported byte-identical to a real attestation
+    # ("I looked, and it holds"). A downstream gate that DOES hard-require the
+    # same thing then contradicts us, and the operator sees two gates disagree
+    # with no way to tell which one actually measured (Ale 2026-07-18).
+    #
+    # `satisfied` keeps its ONE meaning: does this invariant BLOCK the dispatch.
+    # `attested` carries the orthogonal fact: was it checked. An unattested
+    # non-block still clears -- the velocity-v2 advisory decision (Ale
+    # 2026-07-04) is deliberately preserved -- but it can no longer claim to
+    # have verified what it never looked at.
+    attested: bool = True
 
 
 @dataclass
@@ -449,7 +463,31 @@ def _check_at_review_verdict(
     if _at_review_verdict_recorded(repo_root, feature_id, slice_id):
         return _InvariantResult(invariant_id=_INV_AT_VERDICT, satisfied=True)
     if not _human_authorization_required(repo_root):
-        return _InvariantResult(invariant_id=_INV_AT_VERDICT, satisfied=True)
+        # NOT satisfied-because-verified: satisfied-because-not-enforced-here.
+        # We looked for an ATReviewVerdict and did NOT find one; the rigor axis
+        # says do not BLOCK on that, so the dispatch proceeds. It does NOT say
+        # the attestation exists -- and the carpaccio gate downstream may still
+        # hard-require it (it does, for any slice whose at_kind cannot take the
+        # mechanical-seal route). Reporting `attested=False` is what lets the
+        # operator see WHY two gates disagree instead of guessing.
+        return _InvariantResult(
+            invariant_id=_INV_AT_VERDICT,
+            satisfied=True,
+            attested=False,
+            remediation=(
+                "NOT VERIFIED, not blocking: no ATReviewVerdict is recorded for "
+                "this slice, and `rigor.human_authorization` is off so this gate "
+                "does not block on it. A DOWNSTREAM gate still can -- the "
+                "carpaccio slice gate hard-requires the attestation for any "
+                "slice that cannot take the mechanical-seal route. To attest it "
+                "now: `des record-at-review-verdict --feature-id <id> --slice "
+                "<slice-NN> --verdict APPROVED --reviewer-agent-id <reviewer>` "
+                "after an independent reviewer has reviewed the slice's ATs; on "
+                "the pytest-regression path `des verify-red-green --record-red "
+                "--test-file <f>` + `des verify-negative-at --test-file <f> "
+                "--all-critical` clears it mechanically instead."
+            ),
+        )
     return _InvariantResult(
         invariant_id=_INV_AT_VERDICT,
         satisfied=False,
@@ -975,8 +1013,16 @@ def _emit_report(report: _ReadinessReport) -> None:
         "invariants": [
             {
                 "id": inv.invariant_id,
-                "status": "satisfied" if inv.satisfied else "failed",
+                # Three distinct outcomes, never two: verified-and-holds,
+                # not-checked-and-not-blocking, and checked-and-fails. The
+                # middle one used to render byte-identical to the first.
+                "status": (
+                    ("satisfied" if inv.attested else "not-verified")
+                    if inv.satisfied
+                    else "failed"
+                ),
                 "satisfied": inv.satisfied,
+                "attested": inv.attested,
                 "remediation": inv.remediation,
                 "confidence": inv.confidence,
             }

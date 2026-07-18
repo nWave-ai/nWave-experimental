@@ -1019,13 +1019,38 @@ def evaluate_atdd_pure_dispatch(
     if classification == "absent":
         return InterceptDecision.passthrough()
     if classification == "defective":
-        missing = atdd_pure_missing_marker(markers) or "des-mode"
+        missing = atdd_pure_missing_marker(markers)
+        if missing is not None:
+            return InterceptDecision.block(
+                event="AtddPureMarkerSetIncomplete",
+                reason=(
+                    f"atdd_pure dispatch prompt is missing a well-formed {missing} "
+                    "marker -- the dispatch prompt must carry all three markers. "
+                    "GENERATE it instead of hand-writing it: `des dispatch --mode "
+                    "atdd_pure --project-id <id> --slice <slice-NN> --phase "
+                    "<phase>` emits every marker BY CONSTRUCTION."
+                ),
+            )
+        # NOTHING is missing -- every marker parsed cleanly. The dispatch is
+        # defective for the OTHER reason classify_atdd_pure_dispatch rejects:
+        # the (phase, scope) pair is INCOHERENT. Blaming a marker here (the
+        # former `or "des-mode"` default) sends the reader to repair a marker
+        # that is demonstrably well-formed -- measured 2026-07-18: six dispatches
+        # refused for a "missing des-mode marker" whose value the parser read
+        # correctly every time. Name the real incoherence instead.
         return InterceptDecision.block(
-            event="AtddPureMarkerSetIncomplete",
+            event="AtddPurePhaseScopeIncoherent",
             reason=(
-                f"atdd_pure dispatch prompt is missing a well-formed {missing} "
-                "marker -- the dispatch prompt must carry all three markers "
-                "(/nw-deliver rendering defect)"
+                f"atdd_pure dispatch declares phase '{markers.atdd_pure_phase}' "
+                f"with scope '{markers.slice_id}' -- every marker is present and "
+                "well-formed, but the PAIR is not legal. A feature-end-cycle "
+                "phase (E_BATCH_REFACTOR / F_FINAL_REVIEW) is the only kind that "
+                "may carry scope 'feature-end'; every other phase is per-slice "
+                "and must carry a 'slice-NN' scope (ADR-028 D6). Fix ONE of the "
+                "two so they agree: either name the per-slice scope this phase "
+                "belongs to, or -- if you genuinely mean the whole feature -- "
+                "declare a feature-end-cycle phase. Do NOT touch the markers: "
+                "they are fine."
             ),
         )
 
