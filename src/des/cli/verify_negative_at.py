@@ -85,6 +85,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from des.cli.pytest_bdd_detection import (
+    module_level_scenarios_call as _module_level_scenarios_call,
+)
+
 
 _PYTEST_NEGATIVE_MARK = "negative_at"
 _PYTEST_CRITICAL_MARK = "critical"
@@ -228,31 +232,6 @@ def _is_negative_pytest_name(name: str) -> bool:
     return any(
         token in name for token in _PYTEST_NEGATIVE_NAME_TOKENS
     ) or _name_signals_negative(name)
-
-
-def _module_level_scenarios_call(tree: ast.Module) -> ast.Call | None:
-    """A module-level ``pytest_bdd.scenarios(<literal>)`` call, if present --
-    either the imported-name form (``from pytest_bdd import scenarios``) or
-    the attribute form (``pytest_bdd.scenarios(...)``). Only the first
-    positional argument is inspected (the minimal, well-known shape); a
-    non-literal or missing first argument does not match."""
-    for node in tree.body:
-        call = node.value if isinstance(node, ast.Expr) else None
-        if not isinstance(call, ast.Call):
-            continue
-        func = call.func
-        if isinstance(func, ast.Attribute):
-            name = func.attr
-        elif isinstance(func, ast.Name):
-            name = func.id
-        else:
-            name = None
-        if name != "scenarios" or not call.args:
-            continue
-        first_arg = call.args[0]
-        if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
-            return call
-    return None
 
 
 def _resolve_pytest_bdd_scenarios(path: Path, call: ast.Call) -> _FileScan | int:

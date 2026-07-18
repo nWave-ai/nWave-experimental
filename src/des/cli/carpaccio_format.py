@@ -36,6 +36,7 @@ from des.application.feature_at_files import (
 from des.application.feature_at_files import (
     feature_tag_files as _feature_tag_files,
 )
+from des.cli.pytest_bdd_detection import module_level_scenarios_call
 from des.domain.lane_profile import LANE_PROFILES, AtRequirement, LaneProfile
 from des.domain.slice_id_trailer import SLICE_TAG_RE
 
@@ -543,6 +544,30 @@ def _malformed_regression_file(detail: str) -> GateError:
     )
 
 
+def _malformed_pytest_bdd_bound_file(
+    regression_test_file: Path, scenarios_call: ast.Call
+) -> GateError:
+    """Bug #64 (twin of #29/#42): ``--at-kind pytest-regression`` was blind to
+    a module-level ``pytest_bdd.scenarios(<literal>)`` binding and misreported
+    it as ``zero test_* functions`` -- a false "your file is broken/empty"
+    that sends the maintainer chasing a non-existent authoring mistake.
+    ``scenarios_call`` is only ever handed a call whose first positional
+    argument is a string literal (guarded by
+    :func:`des.cli.pytest_bdd_detection.module_level_scenarios_call`)."""
+    first_arg = scenarios_call.args[0]
+    assert isinstance(first_arg, ast.Constant)  # guarded by the caller
+    feature_literal = first_arg.value
+    assert isinstance(feature_literal, str)  # guarded by the caller
+    return _malformed_regression_file(
+        f"{regression_test_file} is gherkin/pytest-bdd-bound, not a plain "
+        f"pytest-regression file: it carries a module-level "
+        f"scenarios({feature_literal!r}) binding, so pytest-bdd registers "
+        "its tests dynamically at collection time and no literal test_* "
+        "function exists to count. Re-run with --at-kind gherkin instead of "
+        "--at-kind pytest-regression."
+    )
+
+
 # ---------------------------------------------------------------------------
 # pytest-regression AT-discovery mode (ADR-001, fix-pre-push-hook-dual-
 # installer-collision) -- the pytest-native mirror of "one Gherkin Scenario
@@ -584,6 +609,9 @@ def count_pytest_regression_ats(regression_test_file: Path) -> int:
         raise _malformed_regression_file(
             f"cannot parse {regression_test_file}: {exc}"
         ) from exc
+    scenarios_call = module_level_scenarios_call(tree)
+    if scenarios_call is not None:
+        raise _malformed_pytest_bdd_bound_file(regression_test_file, scenarios_call)
     count = sum(
         1
         for node in tree.body
