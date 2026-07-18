@@ -91,7 +91,10 @@ class DesEnforcementPolicy:
             is_enforced=True,
             reason=self.ENFORCED_REASON.format(step_id=match.group()),
             recovery_suggestions=[
-                "Add DES markers to the Task prompt:",
+                "GENERATE the dispatch -- `des dispatch --project-id <id> "
+                "--slice <slice-NN> --phase <phase>` emits these markers for you "
+                "(atdd_pure, the default). If you hand-write the prompt instead, "
+                "it needs:",
                 "<!-- DES-VALIDATION : required -->",
                 "<!-- DES-PROJECT-ID : {project-id} -->",
                 "<!-- DES-STEP-ID : {step-id} -->",

@@ -51,9 +51,9 @@ class ValidationResult:
     errors: list[str]
     task_invocation_allowed: bool
     duration_ms: float
-    recovery_guidance: list[str] = (
-        None  # Actionable guidance for fixing validation errors
-    )
+    # Actionable guidance for fixing validation errors; None when the run had
+    # no errors to guide on (get_recovery_guidance returns None in that case).
+    recovery_guidance: list[str] | None = None
 
 
 class MandatorySectionChecker:
@@ -75,6 +75,21 @@ class MandatorySectionChecker:
         "BOUNDARY_RULES",  # Scope and file modifications allowed
         "TIMEOUT_INSTRUCTION",  # Turn budget and exit conditions
     ]
+
+    # The producing tool. A dispatch prompt is GENERATED, never hand-assembled:
+    # `des dispatch` emits every mandatory section BY CONSTRUCTION, so a section
+    # cannot go missing. Hand-adding the named section below also works, but
+    # hand-assembly is precisely how a section goes missing in the first place --
+    # so the generator leads the guidance and the per-section notes follow it as
+    # a description of WHAT each section carries (GDP-4/GDP-5).
+    RECOVERY_LEAD = (
+        "GENERATE the dispatch, do not hand-write it: `des dispatch --project-id "
+        '<feature-id> --slice <slice-NN> --phase <phase> --intent "<task>"` emits '
+        "a prompt carrying every mandatory section BY CONSTRUCTION. Copy its "
+        "output verbatim. (This 9-section shape belongs to the DEPRECATED classic "
+        "mode -- new work runs atdd_pure, which `des dispatch` defaults to.) The "
+        "missing section(s) below describe what the generator would have produced:"
+    )
 
     # Recovery guidance for each mandatory section
     RECOVERY_GUIDANCE_MAP = {
@@ -112,7 +127,7 @@ class MandatorySectionChecker:
 
         return errors
 
-    def get_recovery_guidance(self, errors: list[str]) -> list[str]:
+    def get_recovery_guidance(self, errors: list[str]) -> list[str] | None:
         """
         Generate actionable recovery guidance for validation errors.
 
@@ -139,7 +154,10 @@ class MandatorySectionChecker:
                         break
 
         if guidance_items:
-            return guidance_items
+            # The producing tool leads: routing to `des dispatch` comes BEFORE the
+            # per-section notes, so the reader reaches for the generator first and
+            # only falls back to hand-adding a section if they choose to.
+            return [self.RECOVERY_LEAD, *guidance_items]
         return None
 
 
@@ -243,7 +261,7 @@ class DESMarkerValidator:
     The marker value MUST be exactly 'required' (case-sensitive).
     """
 
-    def validate(self, prompt: str) -> list:
+    def validate(self, prompt: str) -> list[str]:
         """
         Validate DES-VALIDATION marker in prompt.
 
@@ -305,7 +323,7 @@ class ExecutionLogValidator:
     def _resolve_active_phases(
         self,
         schema_version: str,
-        phase_log: list[dict] | None = None,
+        phase_log: list[dict[str, object]] | None = None,
     ) -> tuple[str, ...]:
         """Return the active phase list for a given log's schema_version.
 
@@ -337,7 +355,7 @@ class ExecutionLogValidator:
 
     def validate(
         self,
-        phase_log: list[dict],
+        phase_log: list[dict[str, object]],
         schema_version: str = "3.0",
         skip_schema_validation: bool = False,
     ) -> list[str]:
@@ -365,7 +383,7 @@ class ExecutionLogValidator:
         Returns:
             List of error messages (empty if all valid)
         """
-        errors = []
+        errors: list[str] = []
 
         # Skip phase count and presence validation if phase_log is empty
         # This happens when no EXECUTION_LOG_* sections are found in the prompt
@@ -427,7 +445,7 @@ class ExecutionLogValidator:
 
         return errors
 
-    def get_recovery_guidance(self, errors: list[str]) -> list[str]:
+    def get_recovery_guidance(self, errors: list[str]) -> list[str] | None:
         """
         Generate actionable recovery guidance for validation errors.
 
@@ -493,7 +511,7 @@ class TemplateValidator:
     before allowing Task invocation.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize validator with checkers."""
         self.marker_validator = DESMarkerValidator()
         self.section_checker = MandatorySectionChecker()
@@ -565,7 +583,9 @@ class TemplateValidator:
             recovery_guidance=recovery_guidance,
         )
 
-    def _extract_execution_log_from_prompt(self, prompt: str) -> list[dict]:
+    def _extract_execution_log_from_prompt(
+        self, prompt: str
+    ) -> list[dict[str, object]]:
         """
         Extract and parse phase execution log from prompt text.
 
@@ -637,7 +657,7 @@ class TemplateValidator:
         return prompt[section_start:next_marker_index]
 
     @staticmethod
-    def _parse_narrative_format(section_content: str) -> list[dict]:
+    def _parse_narrative_format(section_content: str) -> list[dict[str, object]]:
         """Parse Format A: 'Phase PHASE_NAME status: STATUS (optional context)'."""
         entries = []
         matches = re.findall(r"Phase\s+(\w+)\s+status:\s+(\w+)", section_content)
@@ -646,7 +666,7 @@ class TemplateValidator:
         return entries
 
     @staticmethod
-    def _parse_list_format(section_content: str) -> list[dict]:
+    def _parse_list_format(section_content: str) -> list[dict[str, object]]:
         """Parse Format B: 'STATUS: PHASE1, PHASE2, ...'."""
         entries = []
         statuses = ["EXECUTED", "SKIPPED", "IN_PROGRESS", "NOT_EXECUTED"]
@@ -664,7 +684,7 @@ class TemplateValidator:
         return entries
 
     @staticmethod
-    def _parse_key_value_format(section_content: str) -> list[dict]:
+    def _parse_key_value_format(section_content: str) -> list[dict[str, object]]:
         """Parse Format C: 'Phase PHASE_NAME: status=STATUS, outcome=VALUE, blocked_by=REASON'."""
         entries = []
         pattern = r"Phase\s+(\w+):\s+status=(\w+)(?:,\s+outcome=(\w+))?(?:,\s+blocked_by=([^\n,]+))?"
@@ -684,7 +704,9 @@ class TemplateValidator:
         return entries
 
     @staticmethod
-    def _deduplicate_phase_log(phase_log: list[dict]) -> list[dict]:
+    def _deduplicate_phase_log(
+        phase_log: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
         """Remove duplicate entries by (phase_name, status) key, preserving order."""
         seen = set()
         unique_entries = []

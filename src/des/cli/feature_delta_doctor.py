@@ -100,7 +100,12 @@ def _wave_heading_gaps(content: str) -> list[Gap]:
                 f"malformed Wave heading at line {offender.line}: '{offender.heading}'"
             ),
             why=offender.reason,
-            how="Rewrite the heading as '## Wave: <NAME> / [REF|WHY|HOW] <Section>'.",
+            how=(
+                "Replace the malformed heading with the GENERATED one: `des "
+                "feature-delta-schema inject --wave <wave>` emits the canonical "
+                "'## Wave: <NAME> / [REF|WHY|HOW] <Section>' form -- paste it over "
+                "the offending line rather than hand-correcting the punctuation."
+            ),
         )
         for offender in result.offenders
     ]
@@ -113,7 +118,13 @@ def _missing_section_gaps(content: str) -> list[Gap]:
         how = (
             "Add the canonical '## Reuse Analysis' heading."
             if section_name == "Reuse Analysis"
-            else f"Add a '## Wave: <NAME> / [REF] {section_name}' heading."
+            else (
+                "GENERATE the heading, do not retype it: `des feature-delta-schema "
+                "inject --wave <wave>` emits every canonical "
+                f"'## Wave: <NAME> / [REF] <Section>' heading -- copy the "
+                f"'{section_name}' line VERBATIM into feature-delta.md and fill "
+                "its body. Hand-typing the heading is how it ends up malformed."
+            )
         )
         gaps.append(
             Gap(

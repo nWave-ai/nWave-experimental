@@ -42,7 +42,7 @@ failure_modes:
     remediation: "Run des record-at-review-verdict to record an APPROVED verdict for the entering slice."
   - error_class: SlicePlanSectionMissing
     exit_code: 1
-    remediation: "Add `## Wave: DISCUSS / [REF] Slice Plan` section"
+    remediation: "GENERATE the heading: `des feature-delta-schema inject --wave discuss` emits the canonical `## Wave: DISCUSS / [REF] Slice Plan` heading -- paste it in and fill the table rows"
   - error_class: ATReviewGateRejected
     exit_code: 1
     remediation: "Record ATReviewVerdict via at_review_verdict CLI"

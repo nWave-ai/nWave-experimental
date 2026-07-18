@@ -38,11 +38,22 @@ Feature: The git pre-commit test hook is removed; the safety net is kept and fla
     Then the pre-commit "pytest-validation" test hook is absent
     And the fast pre-commit "pytest-fast-gate" hook is present
 
-  # ---- CT-6: the pre-push net stays and carries the interim marker ------------
+  # ---- CT-6: the interim net is RETIRED, and the retirement is LOUD -----------
+  #
+  # UPDATED 2026-07-18 (Ale-ratified): the interim net's own exit precondition --
+  # "dropped once the feature-end certainty is proven" -- is now SATISFIED: the
+  # feature-end cycle runs the full suite itself, so the pre-push duplicate was
+  # paying the same cost twice on every push. The hook moved to `stages: [manual]`.
+  #
+  # The INVARIANT is unchanged and still enforced here: no test authority may
+  # vanish SILENTLY. What the scenario asserts flips from "the net is present"
+  # to "the net is retired AND the retirement names its consequences in the
+  # config text" -- a bare `stages: [manual]` with no explanation would be the
+  # silent drop this feature exists to forbid.
 
   @slice-03 @driving_port @real-io @us-interim-net @contract-shape:pure-function
-  Scenario: The pre-push full-suite net is kept with an explicit interim marker
+  Scenario: The retired pre-push net names what replaced it and what it cost
     Given the shipped pre-commit config
     When the push-stage hooks are inspected
-    Then the pre-push "pytest-quick-tiers" full-suite hook is present
-    And the pre-push full-suite carries the explicit interim removal marker
+    Then the "pytest-quick-tiers" full-suite hook no longer fires at pre-push
+    And the retirement of the pre-push full-suite is explained in the config text

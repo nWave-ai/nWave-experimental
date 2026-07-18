@@ -64,7 +64,13 @@ class MarkerCompletenessPolicy:
 
         return self._result_for(
             missing,
-            recovery_lead="Add the missing DES markers to the Task prompt:",
+            recovery_lead=(
+                "GENERATE the dispatch -- `des dispatch` emits these markers for "
+                "you. This prompt declares the DEPRECATED classic mode; new work "
+                "runs atdd_pure (`des dispatch --project-id <id> --slice "
+                "<slice-NN> --phase <phase>`, the default). If you hand-write a "
+                "classic prompt anyway, it needs:"
+            ),
             marker_template_lines=(
                 "<!-- DES-PROJECT-ID : {project-id} -->",
                 "<!-- DES-STEP-ID : {step-id} -->",
@@ -91,7 +97,14 @@ class MarkerCompletenessPolicy:
 
         return self._result_for(
             missing,
-            recovery_lead="Add the missing atdd_pure DES markers to the Task prompt:",
+            recovery_lead=(
+                "GENERATE the dispatch -- `des dispatch --mode atdd_pure "
+                "--project-id <id> --slice <slice-NN> --phase <phase>` emits these "
+                "markers for you (add `--lane bugfix --defect <d> "
+                "--regression-test <path>` for a single-slice bugfix; the lane "
+                "markers and justification are generated too). If you hand-write "
+                "the prompt instead, it needs:"
+            ),
             marker_template_lines=(
                 "<!-- DES-PROJECT-ID : {project-id} -->",
                 "<!-- DES-PHASE : {phase} -->",

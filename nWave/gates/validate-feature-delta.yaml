@@ -45,10 +45,10 @@ failure_modes:
     remediation: "Repair the slice-plan section per the emitted verdict (add section, fix 5-column table, or add user-value to an all-@infrastructure plan)"
   - error_class: RejectedReuseAnalysis
     exit_code: 1
-    remediation: "Add or justify the DESIGN Reuse Analysis section per the emitted verdict"
+    remediation: "Run `des feature-delta-doctor <feature-delta.md>` to see this alongside every other structural gap; then add or justify the DESIGN Reuse Analysis section per the emitted verdict"
   - error_class: MalformedWaveHeading
     exit_code: 1
-    remediation: "Add a [REF|WHY|HOW] token to each `## Wave:` heading"
+    remediation: "GENERATE the headings: `des feature-delta-schema inject --wave <wave>` emits every canonical `## Wave: <NAME> / [REF|WHY|HOW] <Section>` form -- paste over the offending lines rather than hand-correcting the token"
 
 idempotency: idempotent
 

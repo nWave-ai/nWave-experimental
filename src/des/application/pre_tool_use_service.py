@@ -299,12 +299,17 @@ class PreToolUseService(PreToolUsePort):
             return HookDecision.block(
                 reason=reason,
                 recovery_suggestions=[
-                    "The classic dispatch template is missing one or more of its 9 "
-                    "mandatory sections -- add the missing mandatory section(s) named "
-                    f"in the block reason ({reason}) to the dispatch prompt.",
-                    "Use the classic dispatch template as the source of truth: every "
-                    "one of the 9 mandatory sections must be present before the "
-                    "dispatch is allowed.",
+                    "GENERATE the dispatch, do not hand-write it: `des dispatch "
+                    "--project-id <feature-id> --slice <slice-NN> --phase <phase> "
+                    '--intent "<task>"` emits a prompt carrying every mandatory '
+                    "section BY CONSTRUCTION. Copy its output verbatim.",
+                    "This prompt declares the DEPRECATED classic mode (9 sections, "
+                    "roadmap-driven). New work runs atdd_pure, which `des dispatch` "
+                    "defaults to -- prefer regenerating there over repairing this.",
+                    f"What is missing right now: {reason}. Hand-adding the named "
+                    "section does work -- but hand-assembly is exactly how a "
+                    "mandatory section goes missing, so regenerating is the "
+                    "cheaper fix and the one that cannot drift again.",
                 ],
             )
 
@@ -352,13 +357,20 @@ class PreToolUseService(PreToolUsePort):
         return HookDecision.block(
             reason=reason,
             recovery_suggestions=[
-                "The atdd_pure markers are valid but the dispatch is missing one or "
-                "more of its atdd_pure mandatory sections -- add the missing "
-                f"atdd_pure section(s) named in the block reason ({reason}) to the "
-                "dispatch prompt.",
-                "Use the atdd_pure dispatch template as the source of truth: every "
-                "atdd_pure mandatory section must be present before the dispatch is "
-                "allowed.",
+                "GENERATE the dispatch, do not hand-write it: `des dispatch "
+                "--mode atdd_pure --project-id <feature-id> --slice <slice-NN> "
+                '--phase <phase> --intent "<task>"` emits a prompt carrying every '
+                "atdd_pure mandatory section BY CONSTRUCTION. Copy its output "
+                "verbatim -- do not re-type it.",
+                "For a single-slice BUGFIX (no feature-delta by design) add "
+                "`--lane bugfix --defect <what-is-broken> --regression-test <path>`: "
+                "the generator emits the lane markers and justification for you. "
+                "Hand-writing those markers is not required and is how they end up "
+                "malformed.",
+                f"What is missing right now: {reason}. Hand-adding the named "
+                "section does work -- but hand-assembly is exactly how a mandatory "
+                "section goes missing, so regenerating is the cheaper fix and the "
+                "one that cannot drift again.",
             ],
         )
 

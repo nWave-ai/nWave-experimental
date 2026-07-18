@@ -1280,7 +1280,7 @@ def _is_offending_top_level_test(rel_path: str) -> bool:
 #
 # Fix (test-infra only, no production change): detect cwd=real-repo
 # dependence by scanning the item's own test module AND its sibling
-# ``composition*.py`` / ``*steps*/`` modules for a ``cwd=<real repo>``
+# ``*composition*.py`` / ``*steps*/`` modules for a ``cwd=<real repo>``
 # subprocess call (most suites keep the call in a composition / step module
 # the test imports, not in the test file itself), then pin the item to the
 # ``real_repo_scan`` xdist group. Under ``--dist=loadgroup`` every member of
@@ -1316,7 +1316,7 @@ _REAL_REPO_CWD_RE = re.compile(
 # may hold one cwd=repo test next to dozens of pure unit tests; pinning the
 # whole directory would over-serialize the innocent ones onto the single
 # worker and inflate the suite wall-time. We scan the item's OWN test module
-# plus the directory's ``composition*.py`` and ``*steps*/`` modules (which
+# plus the directory's ``*composition*.py`` and ``*steps*/`` modules (which
 # BDD suites import), but NOT sibling ``test_*.py`` modules (tests do not
 # import one another).
 _real_repo_file_cache: dict[Path, bool] = {}
@@ -1377,7 +1377,7 @@ def _item_depends_on_real_repo(test_file: Path) -> bool:
     Scans, at per-file granularity:
 
     1. The item's OWN test module — direct ``cwd=<real repo>`` usage.
-    2. The directory's ``composition*.py`` modules — BDD suites keep the
+    2. The directory's ``*composition*.py`` modules — BDD suites keep the
        subprocess-spawning steps in a composition module the test imports.
     3. Modules under any ``*steps*`` subdirectory — pytest-bdd step
        definitions (named ``steps/``, ``<feature>_steps/``, ``gate_steps/``,
@@ -1404,7 +1404,7 @@ def _compute_item_depends_on_real_repo(test_file: Path) -> bool:
     if _file_drives_real_repo_cwd(test_file):
         return True
     test_dir = test_file.parent
-    for path in sorted(test_dir.glob("composition*.py")):
+    for path in sorted(test_dir.glob("*composition*.py")):
         if _file_drives_real_repo_cwd(path):
             return True
     try:

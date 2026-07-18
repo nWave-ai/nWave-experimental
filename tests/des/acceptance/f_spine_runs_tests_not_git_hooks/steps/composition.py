@@ -340,7 +340,11 @@ class SliceRunComposition:
 # The discriminating multi-word phrase the pre-push full-suite must carry once
 # DELIVER lands DDD-4 (the interim marker). A discriminating phrase (not a
 # substring of a common word) per the prose-surface protocol-driver rule.
-_INTERIM_MARKER_PHRASE = "INTERIM safety net -- removable only when"
+# CT-6 (inverted 2026-07-18): the net is retired, and the retirement must be
+# EXPLAINED, never a bare `stages: [manual]`. The phrase is deliberately the
+# CONSEQUENCE-naming line, not the "RETIRED" label -- a label can be pasted
+# without thought; naming the consequences cannot.
+_RETIREMENT_MARKER_PHRASE = "Two consequences, named rather than discovered later"
 
 _PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 
@@ -428,31 +432,46 @@ class PreCommitConfigComposition:
             f"(it is not the slow test path -- it stays); stages line: {stages!r}"
         )
 
-    def then_push_stage_hook_present(self, hook_id: str) -> None:
-        """Assert the named full-suite hook STILL fires at pre-push (CT-6)."""
+    def then_push_stage_hook_retired(self, hook_id: str) -> None:
+        """Assert the named full-suite hook NO LONGER fires at pre-push (CT-6).
+
+        Ale-ratified 2026-07-18: the interim net's own exit precondition -- the
+        feature-end certainty -- is satisfied (the feature-end cycle runs the
+        full suite itself), so the pre-push duplicate was paying the same cost
+        twice on every push. The hook is retired to ``stages: [manual]``.
+
+        The hook BLOCK must still exist: retiring it to `manual` keeps it
+        runnable on demand and keeps the config self-documenting. DELETING the
+        block outright would erase the evidence that the net ever existed --
+        that is the silent drop this feature forbids.
+        """
         block = self._hook_block(hook_id)
         assert block, (
-            f"expected the pre-push full-suite hook {hook_id!r} present (the net "
-            "is kept); it is absent"
+            f"expected the {hook_id!r} hook block to still EXIST (retired to "
+            "manual, not deleted -- deleting it erases the evidence that the "
+            "net ever existed); it is absent entirely"
         )
         stages = self._stages_of(hook_id)
-        assert "pre-push" in stages, (
-            f"expected {hook_id!r} to fire at pre-push (the interim net); stages "
-            f"line: {stages!r}"
+        assert "pre-push" not in stages, (
+            f"expected {hook_id!r} NOT to fire at pre-push -- the feature-end "
+            "cycle already runs the full suite, so this duplicate cost every "
+            f"push twice (Ale-ratified 2026-07-18); stages line: {stages!r}"
         )
 
-    def then_interim_marker_present(self) -> None:
-        """Assert the pre-push full-suite carries the explicit interim marker (CT-6).
+    def then_retirement_is_explained(self) -> None:
+        """Assert the config TEXT explains the retirement (CT-6, inverted).
 
-        The marker is a discriminating multi-word phrase naming the removal
-        precondition -- so the net cannot be silently dropped before certainty.
-        At HEAD the config carries NO such phrase -> semantic AssertionError.
+        The invariant is unchanged: no test authority may vanish SILENTLY. A
+        bare ``stages: [manual]`` with no prose would be exactly that silent
+        drop. The config must name what replaced the net AND what the
+        retirement costs -- so a later reader can re-derive the decision
+        instead of finding an unexplained disabled hook.
         """
-        assert _INTERIM_MARKER_PHRASE in self._config_text, (
-            "expected the pre-push full-suite to carry the explicit interim "
-            f"removal marker {_INTERIM_MARKER_PHRASE!r} (DDD-4 -- the net is "
-            "removable only when the feature-end certainty is proven); the "
-            "shipped config carries no such marker."
+        assert _RETIREMENT_MARKER_PHRASE in self._config_text, (
+            "expected the retired pre-push full-suite to carry an explicit "
+            f"retirement explanation containing {_RETIREMENT_MARKER_PHRASE!r} "
+            "(the net may be dropped, but never SILENTLY -- name what replaced "
+            "it and what it costs); the shipped config carries no such text."
         )
 
 

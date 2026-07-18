@@ -156,13 +156,22 @@ _DESIGN_SKIP_HEADING = "## Wave: DESIGN / [REF] Design Skipped"
 # Remediation strings (mirror the per-gate yaml failure_modes).
 _REMEDIATIONS: dict[str, str] = {
     _INV_SLICE_PLAN: (
-        "Add `## Wave: DISCUSS / [REF] Slice Plan` heading + table to feature-delta.md"
+        "GENERATE the heading, do not retype it: `des feature-delta-schema inject "
+        "--wave discuss` emits the canonical `## Wave: DISCUSS / [REF] Slice Plan` "
+        "heading -- paste it into feature-delta.md and fill the table rows. "
+        "Run `des feature-delta-doctor <feature-delta.md>` to see EVERY structural "
+        "gap in one pass instead of one gate rejection at a time"
     ),
     _INV_SCENARIO_TAGS: (
         "Tag every Gherkin scenario with `@slice-NN` per friction #57 invariant 2"
     ),
     _INV_AT_VERDICT: (
-        "Record ATReviewVerdict via at_review_verdict CLI for entering slice"
+        "Run the recorder -- `des record-at-review-verdict --feature-id <id> "
+        "--slice <slice-NN> --verdict APPROVED` -- after an independent reviewer "
+        "has reviewed the entering slice's ATs. On the pytest-regression "
+        "(bugfix) path the mechanical pair `des verify-red-green --record-red "
+        "--test-file <f>` + `des verify-negative-at --test-file <f> "
+        "--all-critical` clears this invariant instead, with no reviewer dispatch"
     ),
     _INV_GATE_OUTPUT: (
         "Run carpaccio CLI from valid CWD (freshness gate compatible per friction #16)"
@@ -171,14 +180,22 @@ _REMEDIATIONS: dict[str, str] = {
         "Add `@skip @pending` markers to RED scaffolds within pre-commit pytest scope"
     ),
     _INV_REUSE_FIRST: (
-        "Add a `## Reuse Analysis` section (DDD-8 / nw-design SKILL.md step 5) OR, "
-        "if DESIGN was deliberately skipped, a "
-        "`## Wave: DESIGN / [REF] Design Skipped` witness with a non-empty rationale"
+        "Run `des feature-delta-doctor <feature-delta.md>` FIRST -- it names every "
+        "structural gap in one pass, so you fix them together instead of one gate "
+        "rejection at a time. What is missing here is a `## Reuse Analysis` "
+        "section: `des feature-delta-schema inject --wave design` emits its "
+        "canonical heading, the ANALYSIS itself is authoring work (DDD-8 / "
+        "nw-design SKILL.md step 5). If DESIGN was "
+        "deliberately skipped, a `## Wave: DESIGN / [REF] Design Skipped` witness "
+        "with a non-empty rationale satisfies this invariant instead"
     ),
     _INV_SUSTAINABILITY: (
-        "Add a well-formed `## Test Reuse & Consolidation Analysis` section "
-        "(nw-distill sustainability section) OR a `Test-Reuse-Analysis: "
-        "methodology-exempt` marker to feature-delta.md"
+        "Run `des feature-delta-doctor <feature-delta.md>` to see this gap "
+        "alongside every other structural gap in one pass. The section itself is "
+        "authoring work: a well-formed `## Test Reuse & Consolidation Analysis` "
+        "(nw-distill sustainability section), OR a `Test-Reuse-Analysis: "
+        "methodology-exempt` marker when the feature legitimately has no test "
+        "reuse to analyse"
     ),
 }
 

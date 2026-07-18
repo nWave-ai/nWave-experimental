@@ -75,11 +75,11 @@ def then_fast_commit_hook_present(
     precommit.then_commit_stage_hook_present(hook_id)
 
 
-@then(parsers.parse('the pre-push "{hook_id}" full-suite hook is present'))
-def then_push_hook_present(precommit: PreCommitConfigComposition, hook_id: str) -> None:
-    precommit.then_push_stage_hook_present(hook_id)
+@then(parsers.parse('the "{hook_id}" full-suite hook no longer fires at pre-push'))
+def then_push_hook_retired(precommit: PreCommitConfigComposition, hook_id: str) -> None:
+    precommit.then_push_stage_hook_retired(hook_id)
 
 
-@then("the pre-push full-suite carries the explicit interim removal marker")
-def then_interim_marker_present(precommit: PreCommitConfigComposition) -> None:
-    precommit.then_interim_marker_present()
+@then("the retirement of the pre-push full-suite is explained in the config text")
+def then_retirement_explained(precommit: PreCommitConfigComposition) -> None:
+    precommit.then_retirement_is_explained()
