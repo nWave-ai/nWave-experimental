@@ -53,6 +53,23 @@ disable-model-invocation: true
 | `/nw-mikado` | software-crafter | Complex refactoring roadmaps with visual tracking (experimental) |
 | `/nw-buddy` | buddy (Guide) | Ask any question about nWave — methodology, commands, project state |
 
+## `des` Subcommands — the producing tools (NOT slash commands; run in a shell)
+
+The `/nw-*` commands orchestrate waves. `des` is the runtime underneath them: the tools that
+PRODUCE the artifacts the gates check. Reach for these instead of hand-building what a gate
+verifies — every hand-edit of a checked artifact is a producing tool you did not invoke.
+
+| Command | Purpose | When to Use |
+|---------|---------|-------------|
+| `des blast-radius --repo . --paths <files>` | Measures a change's real reach — files, lines, boundary files, consumer counts — and classifies it S/M/L | BEFORE choosing how to do a piece of work. The line count is NOT the radius: a 2-line change to a symbol with 6 callers measures M. Errors degrade toward L, never silently toward S |
+| `des commit --owned-paths <p...> --step-id <id> --message <m>` | **The SAFE commit when more than one agent shares the working tree.** Holds an exclusive lock AND builds from a temporary index containing only the owned paths | Whenever a sibling instance or a dispatched agent may be writing to the same tree. A bare `git commit` lets the second writer sweep up files the first had staged — measured 8 work-losses in one day |
+| `des commit-slice ...` | Correct-by-construction slice commit: stages, stamps the `Slice-Id` and `Gate-Scope` trailers, folds in verify-then-record | Committing a delivered slice. Never hand-add a Gate-Scope trailer |
+| `des examine-fixture --out <dir>` | Builds a real, drivable repository the certification gate accepts, with slices flippable red/green by editing one line | Before dispatching an examiner (Vera): she cannot read source, so she needs a surface she can REACH and BREAK. Do not hand-build one |
+| `des record-examine-verdict ...` | Records the examiner's charter-sealed verdict | After an examine, before the commit. A PASS carrying ≥1 flag is refused mechanically — the orchestrator does not get to decide |
+| `des verify-red-green --record-red --test-file <f>` | Seals the observed RED, bound to the file's current CONTENT | After the ATs are authored and failing. Editing the file afterwards VOIDS the seal — re-run it |
+| `des dispatch --mode atdd_pure --project-id <id> --slice <s> --phase <p>` | GENERATES a compliant agent dispatch with its mandatory sections | Dispatching a crafter or reviewer. Hand-assembling the prompt is how a mandatory section goes missing | <!-- mode-ref-ok -->
+| ⚠️ `des next --feature-id <id>` | Projects the next legal step in the DELIVER loop | **PARTIAL — do not treat as authoritative.** It reads the markdown Status column, not the ledger. When it disagrees with `.nwave/telemetry/atdd-pure/<id>.jsonl`, believe the LEDGER, and never auto-run the `how` it prints |
+
 > For the full authoritative command reference, read `docs/reference/commands/index.md`.
 
 ## Common User Scenarios -> Command

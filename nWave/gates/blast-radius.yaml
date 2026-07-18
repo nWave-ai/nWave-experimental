@@ -1,0 +1,56 @@
+# Gate-contract: blast-radius (D4 Phase 1 — control-plane SSOT mirror)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=blast-radius.
+
+gate_id: blast-radius
+responsibility: |
+  Measure a change's real reach -- files, lines changed, boundary files and
+  consumer counts -- and classify it into a tier (S/M/L) from that measurement.
+  The line count is NOT the radius: a two-line change to a symbol with many
+  callers measures larger. Measurement errors degrade toward L, never silently
+  toward S.
+module: des.cli.blast_radius
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --repo
+    required: true
+    type: path
+    help: "The repository root."
+  - name: --paths
+    required: false
+    type: string
+    help: "Explicit paths to measure (repeatable). One input mode only."
+  - name: --staged
+    required: false
+    type: bool
+    help: "Measure the staged scope (git diff --cached). One input mode only."
+    default: false
+  - name: --diff
+    required: false
+    type: string
+    help: "Measure the scope since REF (git diff REF). One input mode only."
+
+log_events:
+  - BlastRadiusMeasured
+  - BlastRadiusInputRejected
+  - BlastRadiusConfigRejected
+
+failure_modes:
+  - error_class: BlastRadiusInputRejected
+    exit_code: 2
+    remediation: "Provide exactly one input mode (--paths / --staged / --diff) and verify every declared path exists in the scope being measured."
+  - error_class: BlastRadiusConfigRejected
+    exit_code: 2
+    remediation: "A configured blast_radius threshold in .nwave/des-config.json is outside its documented floor/ceiling range; correct the offending threshold."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

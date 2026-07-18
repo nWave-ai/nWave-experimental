@@ -133,6 +133,11 @@ from des.adapters.driven.logging.at_completion_ledger import (
     LedgerIntegrityViolation,
     active_feature_id,
 )
+from des.application.blast_radius_measurement import (
+    BlastRadiusInputRejected,
+    BlastRadiusVerdict,
+    measure_blast_radius,
+)
 from des.cli._identity_args import meaningful_identity
 from des.cli.carpaccio_format import GateError as _CarpaccioGateError
 from des.cli.carpaccio_format import is_slice_coupled as _is_slice_coupled
@@ -155,6 +160,7 @@ from des.cli.verify_slice_commit_completeness import (
     _INDETERMINATE_NO_EXAMINE_RESCUE_HOW,
     _append_slice_commit_indeterminate,
 )
+from des.domain.blast_radius import BlastRadiusConfigRejected
 from des.domain.examine_verdict_signing import charter_seal as _charter_seal
 from des.domain.repo_path_resolver import feature_delta_path as _feature_delta_path
 from des.domain.slice_id_trailer import extract_slice_ids
@@ -879,6 +885,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "(produce + amend only). The verify is the acceptance proof; skipping it "
         "is for callers that verify separately.",
     )
+    parser.add_argument(
+        "--tier",
+        default=None,
+        choices=("S", "M", "L"),
+        help=(
+            "Declared blast-radius tier ceiling for the declared --path scope "
+            "(or the resolved --all staged set). When the MEASURED blast "
+            "radius (the SAME measure_blast_radius orchestration "
+            "`des blast-radius` uses) exceeds the declared tier, the commit "
+            "is REFUSED before anything lands (BlastRadiusTierExceeded). "
+            "Omitted (default): no cap is applied, byte-identical to today."
+        ),
+    )
     return parser
 
 
@@ -1050,6 +1069,195 @@ def _stage(repo: Path, paths: list[str], stage_all: bool) -> dict[str, object] |
             "empty slice commit",
         }
     return None
+
+
+# ---------------------------------------------------------------------------
+# Blast-radius tier cap (slice-03 of blast-radius-measured-tier, GDP-1/3/6):
+# refuses BEFORE any commit lands when the MEASURED blast radius of the
+# declared scope exceeds the declared ``--tier``. A no-op when ``--tier`` is
+# omitted (byte-identical to today). Reuses the SAME ``measure_blast_radius``
+# orchestration slice-02 shipped (DT2) -- never a parallel, simplified
+# escalation rule; an indeterminate measurement (an unparseable touched file)
+# already escalates to L inside ``classify_tier`` (GDP-6), inherited
+# unchanged, so "unknown blast radius" is never silently trusted.
+# ---------------------------------------------------------------------------
+
+_BLAST_RADIUS_TIER_ORDER: dict[str, int] = {"S": 0, "M": 1, "L": 2}
+
+
+def _blast_radius_scope_arg(use_all: bool, declared_paths: list[str]) -> str:
+    """The ``des blast-radius`` scope flag mirroring a declared commit-slice
+    scope: ``--staged`` for ``--all``, else ``--paths <declared_paths>``."""
+    if use_all:
+        return "--staged"
+    return "--paths " + " ".join(shlex.quote(p) for p in declared_paths)
+
+
+def _blast_radius_tier_how(
+    repo: Path,
+    declared_tier: str,
+    measured_tier: str,
+    declared_paths: list[str],
+    use_all: bool,
+) -> str:
+    """The self-explaining HOW for a ``BlastRadiusTierExceeded`` refusal (GDP-3).
+
+    Interpolates the REAL repo path and, for a ``--path``-declared scope, the
+    ACTUAL declared paths (never a ``<placeholder>``, per the printed-
+    remediation rule at the top of this module) into a runnable
+    ``des blast-radius`` command that re-measures the SAME scope, then names
+    a concrete remediation: accept the real tier, or split the slice smaller.
+    """
+    repo_arg = shlex.quote(str(repo))
+    scope_arg = _blast_radius_scope_arg(use_all, declared_paths)
+    return (
+        f"re-measure with `des blast-radius --repo {repo_arg} {scope_arg}` -- "
+        f"the declared scope measures tier {measured_tier}, exceeding the "
+        f"declared --tier {declared_tier}. Either accept the real tier "
+        f"(--tier {measured_tier}) or split the slice into a smaller scope."
+    )
+
+
+def _blast_radius_tier_refusal(
+    repo: Path,
+    declared_tier: str,
+    verdict: BlastRadiusVerdict,
+    declared_paths: list[str],
+    use_all: bool,
+) -> dict[str, object]:
+    """The ``BlastRadiusTierExceeded`` payload -- structured tiers (DT1) +
+    self-explaining what/why/how prose naming the driving measure, never a
+    bare tier letter."""
+    measured_tier = verdict.tier.value
+    why = (
+        "; ".join(verdict.reasons)
+        if verdict.reasons
+        else (f"measured tier {measured_tier} exceeds declared tier {declared_tier}")
+    )
+    return {
+        "event": "BlastRadiusTierExceeded",
+        "exit_code": 1,
+        "declared_tier": declared_tier,
+        "measured_tier": measured_tier,
+        "what": (
+            f"the measured blast radius is tier {measured_tier}, which "
+            f"exceeds the declared --tier {declared_tier}"
+        ),
+        "why": why,
+        "how": _blast_radius_tier_how(
+            repo, declared_tier, measured_tier, declared_paths, use_all
+        ),
+    }
+
+
+def _reset_preserving_pre_existing_staging(
+    repo: Path, pre_stage_snapshot: list[str]
+) -> None:
+    """Unstage only what THIS invocation added, preserving whatever the
+    operator had ALREADY staged before invoking ``commit-slice`` (D8, GDP-6).
+
+    A plain ``git reset`` unstages the ENTIRE index unconditionally --
+    correct only when nothing was staged before this invocation began. Under
+    ``--all`` the extraneous-staged-content guard is exempt by construction
+    (the operator explicitly asked for everything), so pre-existing staged
+    content (e.g. curated ``git add -p`` hunks for unrelated work) rides
+    along into the index. Staging intent is real work, not reconstructible
+    from the working tree -- so on refusal, the delta between what is staged
+    NOW and ``pre_stage_snapshot`` (taken before ``_stage()`` ran) is exactly
+    what THIS invocation added; unstaging only that delta leaves the
+    operator's own staged paths untouched. An empty delta is a no-op --
+    nothing this invocation staged remains to undo.
+    """
+    delta = sorted(set(_staged_paths(repo)) - set(pre_stage_snapshot))
+    if delta:
+        git_run(repo, "reset", "--", *delta)
+
+
+def _check_blast_radius_tier(
+    repo: Path, declared_tier: str, declared_paths: list[str], use_all: bool
+) -> dict[str, object] | None:
+    """Measure the declared scope; return a refusal payload iff it exceeds
+    ``declared_tier`` (or the measurement itself was rejected), else None.
+
+    Called AFTER staging (the SAME staged scope the commit is about to
+    carry): ``--all`` measures ``des blast-radius --staged`` (the resolved
+    ``--all`` staged set, D3); an explicit ``--path`` list measures
+    ``des blast-radius --paths <declared_paths>`` (DT2) -- the SAME
+    orchestration ``des blast-radius`` itself runs, never a re-derived rule.
+
+    D3 (blocker fix): ``measure_blast_radius`` can raise
+    ``BlastRadiusInputRejected`` (a declared ``--path`` entry does not exist
+    -- e.g. it was DELETED, which ``_stage()`` above has already staged) or
+    ``BlastRadiusConfigRejected`` (a present, well-typed threshold outside
+    its floor/ceiling). Both are caught HERE and turned into a structured
+    refusal payload -- mirroring ``des blast-radius``'s own CLI (D3, GDP-3)
+    -- so the caller's ``_reset_preserving_pre_existing_staging`` +
+    exit-code-pop handling always runs before returning: never an uncaught
+    exception escaping ``main()`` with a staged deletion left dangling in
+    the index.
+
+    D7: every OTHER exception is caught by a TOTAL handler below (not an
+    ever-growing except tuple) and mapped to the same structured shape --
+    the tier cap sits on the pre-commit chokepoint, so its failure surface
+    must be total, degrading LOUD rather than escaping as a traceback that
+    skips the caller's cleanup.
+    """
+    try:
+        verdict = (
+            measure_blast_radius(repo, staged=True)
+            if use_all
+            else measure_blast_radius(repo, paths=declared_paths)
+        )
+    except BlastRadiusInputRejected as exc:
+        return {
+            "event": "BlastRadiusInputRejected",
+            "exit_code": 2,
+            "what": str(exc),
+            "why": "the declared --tier scope could not be measured -- a "
+            "declared --path entry does not exist (e.g. it was deleted).",
+            "how": "verify every --path entry exists in the SAME scope you "
+            "are about to commit, or drop --tier for this invocation.",
+        }
+    except BlastRadiusConfigRejected as exc:
+        return {
+            "event": "BlastRadiusConfigRejected",
+            "exit_code": 2,
+            "what": str(exc),
+            "why": f"a configured blast_radius threshold under {repo} is "
+            "outside its documented floor/ceiling range.",
+            "how": "fix the offending threshold in .nwave/des-config.json, "
+            "or drop --tier for this invocation.",
+        }
+    except Exception as exc:
+        # ANY other failure inside `measure_blast_radius` / `_resolve_scope`
+        # (a failing `git diff`, an unparseable git object, a filesystem
+        # error, ...) -- a total handler, not an ever-growing except tuple.
+        # The tier cap sits on the pre-commit chokepoint: its failure
+        # surface must be total, degrading LOUD to a structured, self-
+        # explaining refusal (GDP-3/6) that still reaches the caller's
+        # D8-corrected cleanup, rather than an uncaught traceback that skips
+        # it and leaves staged content dangling.
+        return {
+            "event": "BlastRadiusMeasurementFailed",
+            "exit_code": 1,
+            "what": f"measuring the declared --tier scope failed: {exc}",
+            "why": f"an unexpected {type(exc).__name__} escaped the blast-"
+            "radius measurement -- the scope could not be reliably "
+            "measured, so the tier cap cannot be evaluated.",
+            "how": "re-run `des blast-radius --repo "
+            f"{shlex.quote(str(repo))} "
+            f"{_blast_radius_scope_arg(use_all, declared_paths)}` "
+            "to reproduce and diagnose the underlying failure, or drop "
+            "--tier for this invocation.",
+        }
+    if (
+        _BLAST_RADIUS_TIER_ORDER[verdict.tier.value]
+        <= _BLAST_RADIUS_TIER_ORDER[declared_tier]
+    ):
+        return None
+    return _blast_radius_tier_refusal(
+        repo, declared_tier, verdict, declared_paths, use_all
+    )
 
 
 def _commit_with_placeholder(repo: Path, message: str, no_verify: bool) -> None:
@@ -1561,10 +1769,14 @@ def main(argv: list[str] | None = None) -> int:
         args.paths = [*args.paths, *_charter_dir_to_stage(repo, args.feature_id)]
 
     try:
-        # Snapshot BEFORE staging the declared paths (extraneous-staged-content
-        # guard, fix-commit-slice-index-isolation) -- `--all` is exempt by
-        # construction, since the operator explicitly asked for everything.
-        pre_stage_snapshot = None if args.all else _staged_paths(repo)
+        # Snapshot BEFORE staging the declared paths -- unconditional (D8,
+        # fix-commit-slice-index-isolation-follow-up): the extraneous-staged-
+        # content guard below still EXEMPTS `--all` by construction (the
+        # operator explicitly asked for everything), but the snapshot itself
+        # must exist even under `--all` so a LATER refusal (the tier cap,
+        # below) can unstage only the delta THIS invocation added instead of
+        # discarding the operator's own pre-existing staged content.
+        pre_stage_snapshot = _staged_paths(repo)
         malformed = _stage(repo, args.paths, args.all)
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
         _emit({"event": "MalformedInput", "error": f"git staging failed: {exc}"})
@@ -1573,12 +1785,28 @@ def main(argv: list[str] | None = None) -> int:
         _emit(malformed)
         return 2
 
-    if pre_stage_snapshot is not None:
+    if not args.all:
         extraneous = _extraneous_staged_paths(pre_stage_snapshot, args.paths)
         if extraneous:
             refusal = _extraneous_staged_content_refusal(repo, extraneous)
             exit_code = refusal.pop("exit_code")
             _emit(refusal)
+            assert isinstance(exit_code, int)
+            return exit_code
+
+    # Blast-radius tier cap (slice-03, F-blast-radius-measured-tier): refuses
+    # BEFORE any commit lands when the MEASURED blast radius of the declared
+    # scope exceeds the declared --tier. A no-op when --tier is omitted
+    # (byte-identical to today). Refusal unstages only what THIS invocation
+    # staged (D8) -- the operator's own pre-existing staged content (only
+    # reachable under `--all`, since the guard above already refuses it
+    # otherwise) is preserved, never silently swept away by the cleanup.
+    if args.tier is not None:
+        tier_refusal = _check_blast_radius_tier(repo, args.tier, args.paths, args.all)
+        if tier_refusal is not None:
+            _reset_preserving_pre_existing_staging(repo, pre_stage_snapshot)
+            exit_code = tier_refusal.pop("exit_code")
+            _emit(tier_refusal)
             assert isinstance(exit_code, int)
             return exit_code
 
@@ -1751,13 +1979,22 @@ def main(argv: list[str] | None = None) -> int:
                     os.environ["PYTHONDONTWRITEBYTECODE"] = _prev_dont_write_bytecode
             if rescue_reason is None:
                 # Unstage `_stage()`'s `git add -A`/`--path` -- a refusal
-                # must leave no half-committed dangling state: the index
-                # goes back to matching HEAD (a plain `git reset`, no
-                # ref/HEAD move -- the commit was never made). Any file the
-                # OPERATOR wrote before this invocation (tracked or
-                # untracked) is content, never deleted by a refusal; only
-                # the STAGING commit-slice itself performed is undone.
-                git_run(repo, "reset")
+                # must leave no half-committed dangling state (no ref/HEAD
+                # move: the commit was never made). Any file the OPERATOR
+                # wrote before this invocation (tracked or untracked) is
+                # content, never deleted by a refusal.
+                #
+                # D10: this uses the DELTA reset, not a bare `git reset`.
+                # A bare reset clears the WHOLE index, which under `--all`
+                # also discards staging the operator curated BEFORE
+                # invoking (the extraneous-staged-content guard is exempt
+                # under `--all`, so that content rides along into the
+                # index) -- the SAME defect D8 corrected in the tier-cap
+                # refusal path, which survived here in the second, MORE
+                # frequently taken refusal path. Both properties hold
+                # together: everything THIS invocation staged is undone,
+                # and nothing staged before it is touched.
+                _reset_preserving_pre_existing_staging(repo, pre_stage_snapshot)
                 return preflight_exit_code
             # rescue_reason is not None: fall through. `preflight_already_minted`
             # stays False -- this branch minted nothing; Step 3's mint below

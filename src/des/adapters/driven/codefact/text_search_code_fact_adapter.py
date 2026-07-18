@@ -168,11 +168,14 @@ class TextSearchAdapter:
     # -- textual primitives ------------------------------------------------
 
     def _call_sites(self, callable_name: str) -> list[str]:
-        """Files containing a textual ``<callable_name>(`` call-site, sans its def.
+        """Every textual ``<callable_name>(`` call SITE, one entry per occurrence.
 
         A definition line (``def flush`` / ``class flush``) is NOT a call-site;
         a ``.flush(`` or bare ``flush(`` usage is. Name matching only (the floor's
-        declared-``noisy`` limitation, ADR-LA-001 Consequences).
+        declared-``noisy`` limitation, ADR-LA-001 Consequences). A file with N
+        distinct occurrences contributes N entries here — never collapsed to one
+        entry per FILE containing a call (D1: `consumer_counts` counts call
+        sites, not files; the AST tier applies the same rule).
         """
         if not callable_name:
             return []
@@ -184,8 +187,10 @@ class TextSearchAdapter:
         for source_file in self._iter_files():
             text = self._read(source_file)
             without_defs = definition_pattern.sub("", text)
-            if call_pattern.search(without_defs):
-                hits.append(str(source_file))
+            hits.extend(
+                f"{source_file}:{match.start()}"
+                for match in call_pattern.finditer(without_defs)
+            )
         return hits
 
     def _iter_files(self) -> list[Path]:

@@ -4,6 +4,29 @@ Feature-delta: docs/feature/blast-radius-measured-tier/feature-delta.md
   ([REF] Slice Plan slice-01 row, [REF] Architecture & Contract Tests,
   [REF] Reuse Analysis -- New components).
 
+**SUPERSEDED NOTE (2026-07-18, transitional contract retired by slice-02, NOT
+a weakening):** the historical description below (paragraphs 2-5) documents
+slice-01's ORIGINAL, DECLAREDLY TRANSITORY contract, written when nothing
+existed yet to reverse-engineer -- it explicitly said "not yet wired --
+slice-02 scope" for `boundary_files`/`consumer_counts`. Slice-02 has now
+wired both for real. Two of the original assertions in
+`test_blast_radius_reports_a_small_tier_from_real_git_measures` became
+logically incompatible with slice-02's own contract once its fixture files
+carried real top-level Python symbols: `consumer_counts == {}` cannot hold
+for a touched `.py` file that DECLARES a symbol (slice-02's own
+`test_a_file_outside_every_boundary_glob_never_triggers_boundary_escalation`
+requires a zero-caller symbol to be a REAL entry valued `0`, never an absent
+key). Rather than relax the `consumer_counts == {}` assertion (which would
+lose the anti-fabrication guardrail this AT exists to enforce), the WS
+fixture now uses two plain-text (non-`.py`) data files -- `consumer_counts`
+stays HONESTLY `{}` because a non-Python touched file contributes ZERO
+`consumer_counts` entries BY DESIGN (feature-delta obligation (b)), not
+because nothing was computed. The `reasons`-names-"not yet wired" assertion
+is retired outright (that phrasing no longer exists once boundary/consumer
+detection is real) and replaced with the equally strong, now-true claim that
+a clean S-tier verdict fires ZERO reasons. See `_init_git_repo_data_only`
+below and its use in the walking-skeleton test.
+
 Slice-01 value (feature-delta Slice Plan): `des blast-radius --repo <path>
 --paths <f1> <f2> ...` is a real, E2E-wired CLI command -- given a trivial
 fixture repo it reports REAL `files` + `lines_changed` measures (via
@@ -102,6 +125,28 @@ def _init_git_repo(root: Path) -> None:
     _git(root, "commit", "-q", "-m", "base commit")
 
 
+def _init_git_repo_data_only(root: Path) -> None:
+    """A real git work-tree with two small tracked NON-PYTHON data files.
+
+    WS-only fixture variant (2026-07-18, see the module docstring's SUPERSEDED
+    NOTE) -- the shared `_init_git_repo` (used unchanged by every other
+    slice-01/slice-02 test) still seeds `.py` files with a top-level `def`
+    each. This variant seeds `.txt` files instead, precisely so the
+    walking-skeleton's `consumer_counts == {}` claim stays true post-slice-02:
+    a non-`.py` touched file contributes ZERO `consumer_counts` entries by
+    design (never because nothing was computed).
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@t")
+    _git(root, "config", "user.name", "t")
+    _git(root, "config", "--local", "core.hooksPath", ".git/hooks")
+    (root / "note_a.txt").write_text("alpha\n", encoding="utf-8")
+    (root / "note_b.txt").write_text("beta\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "base commit")
+
+
 def _last_json_line(stdout: str) -> dict:
     """The last `{...}`-shaped stdout line, parsed. Mirrors the
     `_last_json_event` precedent in `tests/des/integration/test_commit_slice.py`
@@ -131,15 +176,6 @@ def _invoke_in_process(
     return exit_code, captured.err, payload
 
 
-def _reasons_name_boundary_and_consumer_as_not_wired(reasons: list[str]) -> bool:
-    joined = " ".join(reasons).lower()
-    return (
-        "boundary" in joined
-        and "consumer" in joined
-        and ("not yet wired" in joined or "not wired" in joined)
-    )
-
-
 # --- @walking_skeleton -- the ONE subprocess-E2E for the whole feature ----
 
 
@@ -153,7 +189,10 @@ def test_blast_radius_reports_a_small_tier_from_real_git_measures(
     A developer runs `des blast-radius --paths <f1> <f2>` against a repo
     where they touched two files with a handful of lines, and gets back a
     real S-tier verdict grounded in `git diff HEAD --numstat` -- not a
-    fabricated placeholder.
+    fabricated placeholder. Uses `_init_git_repo_data_only` (non-`.py` data
+    files, see the module docstring's SUPERSEDED NOTE): this keeps
+    `consumer_counts == {}` honestly true post-slice-02 without touching the
+    shared `_init_git_repo` every other slice-01/slice-02 test relies on.
     """
     des_binary = shutil.which("des")
     assert des_binary is not None, (
@@ -163,13 +202,13 @@ def test_blast_radius_reports_a_small_tier_from_real_git_measures(
     )
 
     repo = tmp_path / "repo"
-    _init_git_repo(repo)
+    _init_git_repo_data_only(repo)
     # Uncommitted, small edit across the two tracked files -- 2 files
     # touched (<= SMALL_MAX_FILES), 4 lines added total (<= SMALL_MAX_LINES).
-    with (repo / "module_a.py").open("a", encoding="utf-8") as handle:
-        handle.write("def a2():\n    return 2\n")
-    with (repo / "module_b.py").open("a", encoding="utf-8") as handle:
-        handle.write("def b2():\n    return 3\n")
+    with (repo / "note_a.txt").open("a", encoding="utf-8") as handle:
+        handle.write("second line\nthird line\n")
+    with (repo / "note_b.txt").open("a", encoding="utf-8") as handle:
+        handle.write("second line\nthird line\n")
 
     completed = subprocess.run(
         [
@@ -178,8 +217,8 @@ def test_blast_radius_reports_a_small_tier_from_real_git_measures(
             "--repo",
             str(repo),
             "--paths",
-            "module_a.py",
-            "module_b.py",
+            "note_a.txt",
+            "note_b.txt",
         ],
         capture_output=True,
         text=True,
@@ -197,9 +236,16 @@ def test_blast_radius_reports_a_small_tier_from_real_git_measures(
     assert payload["measures"]["lines_changed"] == 4
     # boundary/consumer are honestly empty AND self-explaining -- never a
     # silent fabricated "we checked, found zero" (GDP-6 vacuous-truth family).
+    # Both are honestly empty because neither touched file is a `.py` file
+    # (see the module docstring's SUPERSEDED NOTE) -- never because nothing
+    # was computed once slice-02 wired real detection.
     assert payload["measures"]["boundary_files"] == []
     assert payload["measures"]["consumer_counts"] == {}
-    assert _reasons_name_boundary_and_consumer_as_not_wired(payload["reasons"])
+    assert payload["reasons"] == [], (
+        "a clean S-tier verdict (no boundary crossing, no consumer count, no "
+        "size overage) fires ZERO reasons -- reasons only names conditions "
+        "that actually triggered (GDP-3), never a placeholder for absence"
+    )
     # Dual-surface emission (Reuse Analysis: reuses `print_human_summary`) --
     # a human-readable line on stderr, distinct from the machine JSON.
     assert completed.stderr.strip() != ""

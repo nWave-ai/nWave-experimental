@@ -19,8 +19,9 @@ Hexagonal Architecture:
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
+from des.domain.blast_radius import BlastRadiusConfigRejected, BlastRadiusThresholds
 from des.domain.nwave_dir_gitignore import ensure_nwave_gitignore
 from des.domain.rigor.review_step_registry import (
     REVIEW_STEP_CATALOG,
@@ -524,6 +525,167 @@ class DESConfig:
     def housekeeping_skill_log_max_bytes(self) -> int:
         """Get maximum skill log size in bytes before rotation. Default: 1 MiB."""
         return self._housekeeping().get("skill_log_max_bytes", 1_048_576)
+
+    # ------------------------------------------------------------------
+    # Blast-radius thresholds (EXTEND, feature blast-radius-measured-tier
+    # slice-02). `_blast_radius()` is a sibling cascade to `_rigor()` /
+    # `_housekeeping()`: project -> global -> empty dict, full-block
+    # override (a project `blast_radius` key -- even empty -- shadows the
+    # entire global block, same discipline as `_rigor()`).
+    #
+    # Per-key resolution (feature-delta "Floor/ceiling validation"):
+    #   - ABSENT key -> the canonical hardcoded default, unchanged.
+    #   - PRESENT but WRONG TYPE -> the canonical default (malformed, not
+    #     deliberate -- mirrors `_scan_atdd_pure_int`'s non-int-degrades
+    #     precedent in `carpaccio_format.py`).
+    #   - PRESENT, well-typed, OUTSIDE its floor/ceiling -> HARD FAIL
+    #     (`BlastRadiusConfigRejected`, GDP-3/GDP-6) -- never a silent
+    #     clamp, never a silent fallback.
+    # ------------------------------------------------------------------
+
+    _BLAST_RADIUS_DEFAULTS = BlastRadiusThresholds()
+
+    def _blast_radius(self) -> dict[str, Any]:
+        """Return blast_radius sub-config via cascade: project -> global -> {}."""
+        if "blast_radius" in self._config_data:
+            return cast("dict[str, Any]", self._config_data["blast_radius"])
+        return cast("dict[str, Any]", self._global_config_data.get("blast_radius", {}))
+
+    def _resolve_blast_radius_int(
+        self, key: str, default: int, *, floor: int, ceiling: int
+    ) -> int:
+        """Resolve one numeric `blast_radius.<key>` threshold (see class docstring)."""
+        block = self._blast_radius()
+        if key not in block:
+            return default
+        value = block[key]
+        if not isinstance(value, int) or isinstance(value, bool):
+            return default
+        if value < floor or value > ceiling:
+            raise BlastRadiusConfigRejected(
+                f"blast_radius.{key}={value} in .nwave/des-config.json is "
+                f"outside its valid range [{floor}, {ceiling}] -- fix the "
+                f"value, or remove the key to use the framework default "
+                f"({default})"
+            )
+        return value
+
+    @property
+    def blast_radius_small_max_files(self) -> int:
+        """Threshold `blast_radius.small_max_files`. Floor 1, ceiling 20."""
+        return self._resolve_blast_radius_int(
+            "small_max_files",
+            self._BLAST_RADIUS_DEFAULTS.small_max_files,
+            floor=1,
+            ceiling=20,
+        )
+
+    @property
+    def blast_radius_small_max_lines(self) -> int:
+        """Threshold `blast_radius.small_max_lines`. Floor 1, ceiling 500."""
+        return self._resolve_blast_radius_int(
+            "small_max_lines",
+            self._BLAST_RADIUS_DEFAULTS.small_max_lines,
+            floor=1,
+            ceiling=500,
+        )
+
+    @property
+    def blast_radius_small_max_consumers(self) -> int:
+        """Threshold `blast_radius.small_max_consumers`. Floor 1, ceiling 50."""
+        return self._resolve_blast_radius_int(
+            "small_max_consumers",
+            self._BLAST_RADIUS_DEFAULTS.small_max_consumers,
+            floor=1,
+            ceiling=50,
+        )
+
+    @property
+    def blast_radius_large_min_consumers(self) -> int:
+        """Threshold `blast_radius.large_min_consumers`.
+
+        Floor is DYNAMIC: `small_max_consumers + 1` (the resolved value, not
+        the canonical constant) -- the M band between them must never
+        collapse to empty. Ceiling 1000.
+
+        The floor is enforced against the EFFECTIVE resolved value, whether
+        it came from an explicit config entry or fell through to the
+        canonical default -- `_resolve_blast_radius_int` alone only checks
+        the floor on the explicit-value path, so an ABSENT (or malformed)
+        `large_min_consumers` key whose silent default now conflicts with an
+        explicitly-raised `small_max_consumers` would otherwise slip through
+        as a silently incoherent pair (D7).
+        """
+        small_max = self.blast_radius_small_max_consumers
+        floor = small_max + 1
+        value = self._resolve_blast_radius_int(
+            "large_min_consumers",
+            self._BLAST_RADIUS_DEFAULTS.large_min_consumers,
+            floor=floor,
+            ceiling=1000,
+        )
+        if value < floor:
+            small_source = self._blast_radius_key_source("small_max_consumers")
+            large_source = self._blast_radius_key_source("large_min_consumers")
+            raise BlastRadiusConfigRejected(
+                f"blast_radius.small_max_consumers={small_max} (effective, "
+                f"{small_source}) and blast_radius.large_min_consumers="
+                f"{value} (effective, {large_source}) in "
+                ".nwave/des-config.json are incoherent -- large_min_consumers "
+                "must be strictly greater than small_max_consumers so the M "
+                "band never collapses to empty. Fix: raise "
+                "blast_radius.large_min_consumers above "
+                f"{small_max} in .nwave/des-config.json, or lower "
+                "blast_radius.small_max_consumers."
+            )
+        return value
+
+    def _blast_radius_key_source(self, key: str) -> str:
+        """Report whether `blast_radius.<key>`'s effective value is explicit
+        config or the canonical default -- for GDP-3 rejection messages."""
+        block = self._blast_radius()
+        if key not in block:
+            return "its canonical default"
+        raw = block[key]
+        if not isinstance(raw, int) or isinstance(raw, bool):
+            return "its canonical default (configured value malformed)"
+        return "configured"
+
+    @property
+    def blast_radius_boundary_globs(self) -> tuple[str, ...]:
+        """`blast_radius.boundary_globs` -- TYPE-only validation (feature-delta).
+
+        A non-list, empty list, or a list containing any non-string/empty
+        entry is malformed and falls back to the canonical default list
+        WHOLESALE (never a partial/filtered list). A well-typed list
+        REPLACES the default wholesale (D5) -- never merged/appended.
+        """
+        block = self._blast_radius()
+        value = block.get("boundary_globs")
+        if (
+            isinstance(value, list)
+            and value
+            and all(isinstance(entry, str) and entry for entry in value)
+        ):
+            return tuple(value)
+        return self._BLAST_RADIUS_DEFAULTS.boundary_globs
+
+    def resolve_blast_radius_thresholds(self) -> BlastRadiusThresholds:
+        """Assemble the full `BlastRadiusThresholds` from the cascade above.
+
+        Raises `BlastRadiusConfigRejected` (propagated from any of the four
+        numeric properties) when a present, well-typed value breaches its
+        floor/ceiling -- the caller (the application-layer measurement
+        orchestration) lets this propagate to the CLI's `BlastRadiusConfigRejected`
+        handler unchanged.
+        """
+        return BlastRadiusThresholds(
+            small_max_files=self.blast_radius_small_max_files,
+            small_max_lines=self.blast_radius_small_max_lines,
+            small_max_consumers=self.blast_radius_small_max_consumers,
+            large_min_consumers=self.blast_radius_large_min_consumers,
+            boundary_globs=self.blast_radius_boundary_globs,
+        )
 
     # --- Observability (NWave unified logging) ---
 

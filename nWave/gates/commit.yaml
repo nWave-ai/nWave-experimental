@@ -1,0 +1,57 @@
+# Gate-contract: commit (D4 Phase 1 — control-plane SSOT mirror)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=commit.
+
+gate_id: commit
+responsibility: |
+  The SAFE commit when more than one agent shares a working tree. Holds an
+  exclusive lock AND builds the commit from a TEMPORARY index seeded with HEAD
+  plus ONLY the declared owned paths, so the scope is correct by construction:
+  a foreign file, a concurrently-staged file, or a hook's auto-staged file
+  cannot enter it, and another agent's staged work is left intact. Opens no
+  stash window.
+module: des.cli.commit
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --repo-dir
+    required: true
+    type: path
+    help: "Path to the git repository / project root."
+  - name: --owned-paths
+    required: true
+    type: string
+    help: "The paths this invocation owns (repeatable). Only these enter the commit."
+  - name: --step-id
+    required: true
+    type: string
+    help: "The step identifier stamped as the commit's Step-Id trailer."
+  - name: --message
+    required: true
+    type: string
+    help: "The commit message body."
+
+log_events:
+  - CommitCreated
+  - CommitSkippedNoChanges
+  - MalformedInput
+  - CommitFailed
+
+failure_modes:
+  - error_class: MalformedInput
+    exit_code: 2
+    remediation: "Provide a non-empty --message, a --step-id, and at least one --owned-paths entry that exists in the repository."
+  - error_class: CommitFailed
+    exit_code: 2
+    remediation: "Resolve the underlying git commit failure (index state, lock contention) and retry."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

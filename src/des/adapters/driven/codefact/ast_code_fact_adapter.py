@@ -42,7 +42,7 @@ from des.testarch.adapters.python_ast import PythonAstAdapter
 
 if TYPE_CHECKING:
     from des.ports.code_fact_port import CapabilityDescriptor
-    from des.testarch.ports import FunctionInfo, TestSuiteAstAdapter
+    from des.testarch.ports import TestSuiteAstAdapter
 
 
 # A source file the structural tier parses. Python-only here (the reference
@@ -376,47 +376,42 @@ class AstAdapter:
     # -- structural primitives (delegate-only, NO ``import ast`` here) ------
 
     def _call_sites(self, callable_name: str) -> list[str]:
-        """Files with a structural call-site of ``callable_name``, sans its own def.
+        """Every structural call SITE of ``callable_name``, one entry per occurrence.
 
         A call-site is an ``ast.Call`` whose resolved callee name equals (or ends
         with ``.``+) ``callable_name``, found in a function that is NOT the
         callable's own definition. Resolution is structural via the delegated
-        parser — never a textual ``name(`` regex.
+        parser — never a textual ``name(`` regex. A file with N distinct calls
+        contributes N entries here — never collapsed to one entry per FILE
+        containing a call (D1: `consumer_counts` counts call sites, not files).
         """
         if not callable_name:
             return []
-        return [
-            str(source_file)
-            for source_file in self._iter_files()
-            if self._file_has_external_call(source_file, callable_name)
-        ]
+        sites: list[str] = []
+        for source_file in self._iter_files():
+            sites.extend(self._external_call_sites(source_file, callable_name))
+        return sites
 
-    def _file_has_external_call(self, source_file: Path, callable_name: str) -> bool:
-        """True iff a function in ``source_file`` calls ``callable_name`` externally.
+    def _external_call_sites(self, source_file: Path, callable_name: str) -> list[str]:
+        """Every ``"<file>:<lineno>"`` call-site location of ``callable_name``
+        in ``source_file``, sans its own definition.
 
         A function whose own name is ``callable_name`` is its definition, not a
         call-site, and is skipped — so a def line never counts as a usage. An
         unparseable ``source_file`` (``_parse`` returns ``None``) has no
-        structural call-sites to report and degrades to ``False``.
+        structural call-sites to report and degrades to an empty list.
         """
         tree = self._parse(source_file)
         if tree is None:
-            return False
+            return []
+        locations: list[str] = []
         for function in self._parser.functions_in_module(tree):
             if function.name == callable_name:
                 continue
-            if self._function_calls(tree, function, callable_name):
-                return True
-        return False
-
-    def _function_calls(
-        self, tree: object, function: FunctionInfo, callable_name: str
-    ) -> bool:
-        """True iff ``function`` contains a structural call to ``callable_name``."""
-        for call in self._parser.calls_in_function(tree, function):
-            if self._callee_matches(call.callee, callable_name):
-                return True
-        return False
+            for call in self._parser.calls_in_function(tree, function):
+                if self._callee_matches(call.callee, callable_name):
+                    locations.append(f"{source_file}:{call.lineno}")
+        return locations
 
     def _parse(self, source_file: Path) -> object | None:
         """Parse ``source_file`` into the opaque tree handle (delegated parser).

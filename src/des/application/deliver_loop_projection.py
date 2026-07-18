@@ -20,13 +20,17 @@ a copy-paste-able command precisely because pasting is a human/agent decision
 point; a wrapper that reads a ``NextStep`` and immediately invokes ``how``
 collapses that decision point into automation.
 
-Slice-01 scope: the THREE mid-loop judgment-bearing phases (AT-authoring
-absent, GREEN absent, EXAMINE absent) for a single ``pending`` Slice-Plan
-row. The producing-tool branch (D_REFACTOR_COMMIT, all preconditions met),
-the feature-end branch, and the drift/absent-ledger INDETERMINATE branches
-are later slices' scope (feature-delta.md [REF] Slice Plan slice-02/03/04)
--- reaching one of them here raises ``NotImplementedError`` naming the
-follow-on slice rather than fabricating untested behaviour.
+Per-slice scope covers the FOUR mid-loop states for a single Slice-Plan row:
+AT-authoring absent (-> DISTILL), GREEN absent (-> DELIVER), EXAMINE absent
+(-> DELIVER), and EXAMINE-verified-but-not-yet-committed (-> the mechanical
+``des commit-slice`` producing tool). TERMINAL ledger evidence
+(``SliceCommitVerified``) always wins over a stale markdown ``Status``
+column: a row still marked ``pending`` whose slice already carries
+``SliceCommitVerified`` is drift, not a step, and is reported
+``INDETERMINATE`` naming the disagreement rather than re-prescribing
+already-shipped work (fix-des-next-honours-terminal-evidence). The
+feature-end branch remains a later slice's scope (feature-delta.md [REF]
+Slice Plan slice-03/04).
 
 CONTRACT_SHAPE: pure-function -- reads only, returns a frozen ``NextStep``
 value, zero mutation (nw-code-design-oo Effect Isolation, plan-value
@@ -38,7 +42,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.adapters.driven.logging.at_completion_ledger import (
+    SLICE_COMMIT_VERIFIED,
+    AtCompletionLedger,
+    LedgerIntegrityViolation,
+)
 from des.cli import carpaccio_slice_gate, feature_delta_doctor
 from des.cli import commit_slice as _commit_slice
 from des.cli.carpaccio_format import (
@@ -108,8 +116,15 @@ def project_next_step(repo_root: Path, feature_id: str) -> NextStep:
     structural preflight -- a gap short-circuits to ``INDETERMINATE`` naming
     the doctor's own gap, never a re-derivation of its classification; (2)
     parses the Slice Plan; (3) reads the AT-completion ledger for the
-    feature; (4) walks the per-slice precondition order (feature-delta.md
-    "Per-slice precondition order") for the first ``pending`` row.
+    feature UNDER the M7 fail-closed integrity contract -- an unreadable
+    ledger degrades LOUD to ``INDETERMINATE`` naming the read failure,
+    never a raw traceback (GDP-6); (4) resolves TERMINAL ledger evidence
+    (``SliceCommitVerified``) for every slice BEFORE trusting the markdown
+    ``Status`` column -- a slice carrying terminal evidence whose ``Status``
+    still reads ``pending`` is drift, not a step, and is reported
+    ``INDETERMINATE`` naming the disagreement (feature-delta.md [REF]
+    Per-slice precondition order); (5) walks the per-slice precondition
+    order for the first genuinely pending row.
     """
     delta_path = _feature_delta_path(repo_root, feature_id)
     if not delta_path.is_file():
@@ -146,7 +161,47 @@ def project_next_step(repo_root: Path, feature_id: str) -> NextStep:
                 "plan has no pending row to project a next step for"
             ),
         )
-    pending_row = _first_pending_row(plan)
+
+    try:
+        records = AtCompletionLedger(feature_id, repo_root).read_records()
+    except LedgerIntegrityViolation as exc:
+        return _indeterminate(
+            feature_id,
+            what=(
+                f"the AT-completion ledger for feature {feature_id!r} is "
+                f"unreadable or malformed ({exc.args[0] if exc.args else 'unknown'})"
+            ),
+            why=(
+                "read_records() raised LedgerIntegrityViolation while "
+                f"consulting terminal ledger evidence: {exc}; a corrupt "
+                "ledger must degrade LOUD to INDETERMINATE, never a "
+                "confident next-step over unreadable evidence (GDP-6)"
+            ),
+        )
+
+    terminal_slice_ids = frozenset(
+        str(record["slice_id"])
+        for record in records
+        if record.get("event") == SLICE_COMMIT_VERIFIED
+    )
+
+    pending_row = _first_pending_row(plan, terminal_slice_ids)
+    if isinstance(pending_row, _DriftedSlice):
+        return _indeterminate(
+            feature_id,
+            what=(
+                f"slice {pending_row.slice_id} carries a terminal "
+                f"{SLICE_COMMIT_VERIFIED} ledger record but the Slice Plan "
+                "Status column still reads 'pending'"
+            ),
+            why=(
+                "the AT-completion ledger and the feature-delta.md Slice "
+                "Plan disagree on whether this slice is done; "
+                "feature-delta.md [REF] Per-slice precondition order "
+                "requires this drift be reported, never silently resolved "
+                "by trusting either source alone"
+            ),
+        )
     if pending_row is None:
         return _indeterminate(
             feature_id,
@@ -159,26 +214,50 @@ def project_next_step(repo_root: Path, feature_id: str) -> NextStep:
             ),
         )
 
-    return _project_pending_slice(repo_root, feature_id, pending_row)
+    return _project_pending_slice(repo_root, feature_id, pending_row, records)
 
 
 def _feature_delta_path(repo_root: Path, feature_id: str) -> Path:
     return repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
 
 
-def _first_pending_row(plan: SlicePlan) -> SlicePlanRow | None:
+@dataclass(frozen=True)
+class _DriftedSlice:
+    """A markdown-``pending`` row whose slice already carries terminal
+    (``SliceCommitVerified``) ledger evidence -- the ledger-vs-table
+    disagreement feature-delta.md [REF] Per-slice precondition order names
+    as "drift, not a step".
+    """
+
+    slice_id: str
+
+
+def _first_pending_row(
+    plan: SlicePlan, terminal_slice_ids: frozenset[str]
+) -> SlicePlanRow | _DriftedSlice | None:
     for row in plan.rows:
-        if row.status.strip().lower() == _PENDING_STATUS:
-            return row
+        if row.status.strip().lower() != _PENDING_STATUS:
+            continue
+        if row.slice_id in terminal_slice_ids:
+            return _DriftedSlice(slice_id=row.slice_id)
+        return row
     return None
 
 
 def _project_pending_slice(
-    repo_root: Path, feature_id: str, pending_row: SlicePlanRow
+    repo_root: Path,
+    feature_id: str,
+    pending_row: SlicePlanRow,
+    records: list[dict[str, Any]],
 ) -> NextStep:
+    """Walk the per-slice precondition order for a row already confirmed
+    genuinely pending (``_first_pending_row`` has already ruled out terminal-
+    evidence drift for this row's slice -- reaching the end of this walk
+    means RedObserved, ATReviewVerdict, and an ExamineVerdict are ALL
+    recorded with no SliceCommitVerified yet: purely mechanical, never a
+    raw ``NotImplementedError`` traceback).
+    """
     slice_id = pending_row.slice_id
-    ledger = AtCompletionLedger(feature_id, repo_root)
-    records = ledger.read_records()
 
     if not _has_event_for_slice(
         records, _RED_OBSERVED_EVENT, slice_id
@@ -230,10 +309,24 @@ def _project_pending_slice(
             how=f"/nw-deliver --feature-id {feature_id}",
         )
 
-    raise NotImplementedError(
-        f"slice {slice_id} is EXAMINE-verified -- the producing-tool commit "
-        "step (D_REFACTOR_COMMIT) is out of slice-01's scope; see "
-        "feature-delta.md [REF] Slice Plan slice-02."
+    return _producing_tool_step(
+        feature_id=feature_id,
+        slice_id=slice_id,
+        phase=ATDDPurePhase.D_REFACTOR_COMMIT,
+        what=(
+            f"slice {slice_id} is EXAMINE-verified but not yet committed "
+            "(no SliceCommitVerified ledger record)."
+        ),
+        why=(
+            "RedObserved, ATReviewVerdict, and an ExamineVerdict are all "
+            "recorded for this slice with nothing left to author; the "
+            "remaining step is purely mechanical (feature-delta.md [REF] "
+            "Per-slice precondition order)."
+        ),
+        how=(
+            f"des commit-slice --repo {repo_root} --feature-id {feature_id} "
+            f"--slice-id {slice_id} --message <commit message> --all"
+        ),
     )
 
 
@@ -284,6 +377,29 @@ def _wave_command_step(
         slice_id=slice_id,
         phase=phase.value,
         step_kind="wave-command",
+        what=what,
+        why=why,
+        how=how,
+        schema_version=_SCHEMA_VERSION,
+    )
+
+
+def _producing_tool_step(
+    *,
+    feature_id: str,
+    slice_id: str,
+    phase: ATDDPurePhase,
+    what: str,
+    why: str,
+    how: str,
+) -> NextStep:
+    return NextStep(
+        event=_EVENT,
+        feature_id=feature_id,
+        loop_state="SLICE_IN_PROGRESS",
+        slice_id=slice_id,
+        phase=phase.value,
+        step_kind="producing-tool",
         what=what,
         why=why,
         how=how,

@@ -114,6 +114,24 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
+  - gate_id: commit
+    responsibility: "The SAFE commit when more than one agent shares a working tree: holds an exclusive lock and builds the commit from a temporary index seeded with HEAD plus ONLY the declared owned paths, so a foreign or concurrently-staged file cannot enter it and another agent's staged work is left intact."
+    module: des.cli.commit
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: blast-radius
+    responsibility: "Measure a change's real reach (files, lines, boundary files, consumer counts) and classify it into a tier (S/M/L) from that measurement; the line count is not the radius, and measurement errors degrade toward L, never silently toward S."
+    module: des.cli.blast_radius
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: record-prose-delivered
+    responsibility: "Record the completion of a PROSE slice -- one whose deliverable is documentation rather than code, and which therefore has no test suite to attest it -- so a doc-only slice can reach SliceCommitVerified instead of leaving feature integrity unreconciled."
+    module: des.cli.record_prose_delivered
+    entry_function: main
+    language_neutral_contract: true
+
   - gate_id: emit-feature-end
     responsibility: "Emit one feature-end completion-ledger record (EBatchRefactorCompleted or FeatureEndReviewVerdict bound to a signed verdict hash); a verdict without its signed hash is refused (anti-theater)."
     module: des.cli.emit_feature_end

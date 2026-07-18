@@ -147,6 +147,29 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.at_review_verdict",
         "main",
     ),
+    # `des.cli.commit` (the `des-commit` entry point) was reachable only as a
+    # legacy standalone script, never as `des commit` -- the same
+    # implemented-not-wired class the anti-orphan guard below catches. It is a
+    # real subcommand: it serialises the commit critical section under an
+    # exclusive flock and builds the commit from a TEMPORARY index seeded with
+    # HEAD plus only the owned paths, so a concurrent agent's staged work cannot
+    # be swept in. That is the mitigation the shared-tree work-loss RCA asks for
+    # (F-SHARED-TREE-EATS-UNCOMMITTED-WORK), so it must be reachable by name.
+    _SubcommandRow(
+        "commit",
+        "des.cli.commit",
+        "main",
+    ),
+    # fix-record-prose-delivered-unreachable: `des.cli.record_prose_delivered`
+    # was a complete producer with ZERO registry rows -- implemented, never
+    # wired. A PROSE slice (no ATs, doc-review APPROVED only) therefore had no
+    # way to mint its SliceProseDelivered record, and verify-integrity reported
+    # FeatureUnreconciled on an otherwise-complete feature. This row is the fix.
+    _SubcommandRow(
+        "record-prose-delivered",
+        "des.cli.record_prose_delivered",
+        "main",
+    ),
     # mode-registry-single-locus slice-05: the two new mechanical guardrails
     # (Layer A + Layer B) that make the next mode shotgun-surgery structurally
     # impossible. Both are reachable as `des <gate-id>` subcommands and mirrored

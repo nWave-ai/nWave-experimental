@@ -1230,9 +1230,16 @@ def _no_scenarios_rejection(repo: Path, feature_id: str, slice_id: str) -> GateE
         f"legacy acceptance dir {legacy_dir}"
     )
     pytest_regression_path = (
-        "OR, if this slice's AT is a pytest regression test (not a Gherkin "
-        "scenario), enter via the mechanical-seal route: "
-        "`--at-kind pytest-regression --regression-test-file <path>`."
+        "OR, if this slice's ATs are PYTEST tests rather than Gherkin scenarios "
+        "-- a bugfix regression test, OR a feature's plain pytest acceptance "
+        "tests, which are equally valid here -- enter via the mechanical-seal "
+        "route: `--at-kind pytest-regression --regression-test-file <path>`. "
+        "The flag is named for the bugfix case but is NOT limited to it: any "
+        "pytest AT file sealed with `des verify-red-green --record-red` + "
+        "`des verify-negative-at` clears this gate. NOTE: recording an "
+        "ATReviewVerdict does NOT open this gate on its own -- the Gherkin scan "
+        "above runs first, so a reviewer verdict is an attestation WITHIN the "
+        "Gherkin route, not an alternative to it."
     )
     return GateError(
         45,

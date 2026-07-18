@@ -216,7 +216,7 @@ BULK_HASHES = {
     # routing) + /nw-roadmap deprecation (classic-only, removed in v4) row framing.
     # Prior hash updated 2026-07-08: mode_registry FR-1 mutation-test alignment
     # (naked-literal reword).
-    "nw-buddy-command-catalog": "8464f81d06dfbedf451974c67611b839",
+    "nw-buddy-command-catalog": "db05da12457f26a90bf51a566921951c",
     "nw-buddy-project-reading": "63fccdf0187159a10205b3d85ce2729c",
     "nw-buddy-ssot-knowledge": "7a801cc1b1ab7379a258f621a08a71f5",
     # Hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation —
