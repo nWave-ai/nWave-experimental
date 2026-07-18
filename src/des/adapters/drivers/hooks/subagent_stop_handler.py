@@ -1448,6 +1448,76 @@ def _mechanical_seal_cleared_slices(
     return frozenset(cleared)
 
 
+# fix-distill-exit-bugfix-lane-degrade: the DES-REGRESSION-TEST-FILE marker a
+# returning D_DISTILL agent echoes on ITS OWN transcript, mirroring
+# `carpaccio_intercept.py`'s identically-named marker (dispatch-prompt side)
+# and `DesMarkerParser._AT_KIND_PATTERN`'s sibling (also return-transcript
+# side). This marker is NOT yet threaded through `DesMarkerParser` /
+# `_AtddPureResolvedContext` (grounding note verified by the acceptance-
+# designer: no existing return-transcript path reads it) -- read directly
+# here, scoped to the ONE consumer below, rather than widening the shared
+# parser for a single call site.
+_TRANSCRIPT_REGRESSION_TEST_FILE_PATTERN = re.compile(
+    r"<!--\s*DES-REGRESSION-TEST-FILE\s*:\s*(\S+)\s*-->"
+)
+
+
+def _transcript_regression_test_file(agent_transcript_path: str | None) -> str | None:
+    """The raw DES-REGRESSION-TEST-FILE marker value on the RETURNING agent's
+    own transcript, or None when the marker is absent (or no transcript path
+    is available). First match wins -- the bugfix-lane degrade below only
+    ever needs a single, unambiguous file.
+    """
+    if not agent_transcript_path:
+        return None
+    for entry in _read_transcript_entries(agent_transcript_path):
+        message = entry.get("message", {})
+        if not isinstance(message, dict):
+            continue
+        content = _strip_fenced_regions(
+            _normalize_message_content(message.get("content", ""))
+        )
+        match = _TRANSCRIPT_REGRESSION_TEST_FILE_PATTERN.search(content)
+        if match is not None:
+            return match.group(1)
+    return None
+
+
+def _bugfix_lane_mechanical_seal_clears(
+    repo: Path, *, at_kind: str | None, agent_transcript_path: str | None
+) -> bool:
+    """True when a D_DISTILL return with NO feature-delta.md still clears
+    G-DISTILL-EXIT via the mechanical-seal route (bug #94 alignment).
+
+    A bugfix lane carries no `feature-delta.md` BY DESIGN (ADR-025 SLIM-
+    crafter discipline) -- there is no `[REF] Slice Plan` Annotation cell to
+    carry a `@regression-test-file:<path>` token for
+    `_mechanical_seal_cleared_slices` to discover. The DES-REGRESSION-TEST-
+    FILE marker on the RETURNING transcript is the only place left for that
+    discovery to live for this lane.
+
+    Fail-closed on every degraded input, mirroring
+    `_mechanical_seal_cleared_slices`'s own discipline: an absent or explicit
+    non-`"pytest-regression"` ``at_kind`` (no marker at all, or an explicit
+    declaration of a different kind such as ``"gherkin"``), a missing
+    DES-REGRESSION-TEST-FILE marker, or an unsatisfied seal (stale/absent
+    `RedObserved` evidence, or an unsatisfied negative-AT mandate) all return
+    False -- the caller then re-raises the original `FileNotFoundError` into
+    the unchanged, fail-closed `SlicePlanParseUnresolved` block. This is
+    never a blanket "no feature-delta.md -> pass": only an EXPLICIT
+    mechanical-seal-eligible declaration backed by a genuinely satisfied seal
+    clears.
+    """
+    if at_kind != "pytest-regression":
+        return False
+    regression_test_file = _transcript_regression_test_file(agent_transcript_path)
+    if regression_test_file is None:
+        return False
+    from des.cli.carpaccio_slice_gate import _mechanical_seal_satisfied
+
+    return _mechanical_seal_satisfied(repo, repo / regression_test_file)
+
+
 def _markdown_shipped_slices(repo: Path, feature_id: str) -> frozenset[str]:
     """The set of slice ids whose markdown `Status` cell is `shipped` (M12).
 
@@ -1897,6 +1967,14 @@ def _handle_distill_exit_gate(
         `DistillExitVerdictIncomplete`
       - unparseable slice-plan     -> fail-closed block `SlicePlanParseUnresolved`
         (never a vacuous "zero planned slices" pass, mirror of U4)
+      - NO feature-delta.md at all (bugfix lane, ADR-025) AND the return is
+        mechanical-seal-eligible for its OWN declared regression-test-file
+        (`_bugfix_lane_mechanical_seal_clears`) -> emit
+        `WorkflowPhaseCompletedDistill` + allow (fix-distill-exit-bugfix-
+        lane-degrade: aligns this denominator read with
+        `_mechanical_seal_cleared_slices`'s existing degrade on the SAME
+        missing file); any other missing-file combination still falls
+        through to the unchanged `SlicePlanParseUnresolved` block
 
     The whole branch body is wrapped in a try/except (M1): any exception is an
     `AtddPureHookInternalError` block + exit 0, never the bare exit-1 path.
@@ -1953,7 +2031,36 @@ def _handle_distill_exit_gate(
         # it cannot block, so the existing verdict gate below is unchanged.
         _run_decision_table_traceability_gate(repo, feature_id)
 
-        planned = _slice_plan_slice_ids(repo, feature_id)
+        try:
+            planned = _slice_plan_slice_ids(repo, feature_id)
+        except FileNotFoundError:
+            # fix-distill-exit-bugfix-lane-degrade: a bugfix lane carries NO
+            # feature-delta.md BY DESIGN (ADR-025 SLIM-crafter discipline) --
+            # `_mechanical_seal_cleared_slices` a few lines below ALREADY
+            # degrades gracefully on this SAME missing file, but this read
+            # (the "planned" denominator) fires FIRST and, unchecked, would
+            # crash into `SlicePlanParseUnresolved` before that branch is
+            # ever reached. Align the two loci: when the returning agent is
+            # mechanical-seal-eligible for its OWN declared regression-test-
+            # file, the absence of a slice-plan is the EXPECTED shape for
+            # this lane, not an error -- clear DISTILL-exit directly. Any
+            # other combination (no at_kind, an explicit non-pytest-
+            # regression at_kind, no marker, or an unsatisfied seal) is fail-
+            # closed by `_bugfix_lane_mechanical_seal_clears` and re-raises
+            # the original error into the unchanged block below.
+            transcript_path = hook_input.get("agent_transcript_path")
+            if _bugfix_lane_mechanical_seal_clears(
+                repo,
+                at_kind=resolved.at_kind,
+                agent_transcript_path=(
+                    transcript_path if isinstance(transcript_path, str) else None
+                ),
+            ):
+                ledger = AtCompletionLedger(feature_id, repo)
+                ledger.append_workflow_phase_completed_distill()
+                return 0
+            raise
+
         ledger = AtCompletionLedger(feature_id, repo)
         verdict_signed = ledger.review_verdict_slices()
 
