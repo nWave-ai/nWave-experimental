@@ -356,6 +356,11 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.feature_end_preconditions_scaffold",
         "main",
     ),
+    # blast-radius-measured-tier slice-01 (GDP-1/5): the PRODUCING tool for the
+    # measured S/M/L change-tier -- real files/lines measures over --paths,
+    # boundary/consumer honestly not-yet-wired in slice-01 (explicit reasons
+    # entry, never fabricated zeros).
+    _SubcommandRow("blast-radius", "des.cli.blast_radius", "main"),
     # fix-record-review-verdict-ledger slice-01 (#45, WS-6): the general
     # reviewer-verdict PRODUCER -- ad-hoc reviewers (nw-agent-builder-reviewer
     # and other non-wave reviewers) had NO ledger, so a reviewer dying before

@@ -6,6 +6,13 @@ Every hand-edit of a checked artifact is a producing tool you didn't invoke. The
 **Where am I in the loop? What is the next legal step?** (reach for this BEFORE deriving anything by hand)
 - `des next --feature-id <id> [--format json]` — read-only advisory of the next legal atdd_pure DELIVER-loop step for a feature (DISTILL the next slice · GREEN via crafter · examine · commit-slice). Reach for THIS instead of reconstructing "what's next" from memory. NEVER auto-execute the returned `how` — pasting it is a human/agent decision point.
 
+**Which lane? MEASURE the blast radius first — the line count is not the radius** (velocity spine, ratified 2026-07-18)
+- `des blast-radius --repo . --paths <files...>` — measures a change's tier (S/M/L) from REAL data: files, lines (git diff), boundary/consumer signals (honest `not yet wired` reasons where unimplemented — never fabricated zeros). Errors degrade toward L, never silently toward S.
+- **S lane** (measured small: ≤2 files/≤10 lines, no boundary): charter(PO) → orchestrator applies fix+test DIRECTLY → RED seal → Vera-haiku (real CLI) → commit-slice (tier-capped: an over-cap diff is refused+escalated). RCA optional when the cause is known.
+- **M lane** (stable design): @prefactoring if needed → ONE DISTILL pass (all ATs) → resident crafter (skeleton-first, incremental commits) → ONE Vera → the FULL feature-end cycle (deep review · env-e2e · full-suite · sign+emit), never skipped.
+- **L lane** (emergent design / boundary / many consumers): the per-slice cycle, unchanged.
+- **Test pyramid default**: ONE `@walking_skeleton` subprocess-E2E per FEATURE; every other AT in-process/in-memory. Wiring = the WS + Vera on the real surface + feature-end backstop.
+
 **Authoring the dispatch / feature-delta**
 - `des dispatch --mode atdd_pure --project-id <id> --slice <slice> --phase A_GREEN [--lane bugfix --defect <d> --regression-test <t>] [--at-kind pytest-regression --regression-test-file <f>] --intent "<task>"` — GENERATES a gate-valid crafter dispatch prompt by construction. Never hand-assemble the marker block / 12 sections. Add `--at-kind pytest-regression --regression-test-file <f>` for a feature whose AT is a pytest file (not gherkin).
 - `des feature-delta-doctor <path>` — one-pass gap aggregator over a feature-delta.md (missing sections, malformed Wave headings, malformed/unjustified Reuse Analysis). Run BEFORE DISTILL; fix every gap it lists.
