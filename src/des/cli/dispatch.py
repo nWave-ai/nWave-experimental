@@ -42,6 +42,7 @@ from des.domain.atdd_pure_phases import FEATURE_END_PHASES, ATDDPurePhase
 from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
 from des.domain.repo_path_resolver import resolve_repo_root
 from des.domain.wave_active import WAVE_VOCABULARY
+from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
 
 
 #: Deliberate, distinguishable exit for "bad input" (missing/invalid CLI
@@ -166,18 +167,37 @@ def _canonical_phase_values() -> tuple[str, ...]:
     return tuple(member.value for member in ATDDPurePhase)
 
 
-def _resolve_agent(phase: str | None, lane: str | None) -> str:
-    """Resolve the AGENT_IDENTITY for a dispatch from its (phase, lane).
+#: The wave-owning agent for each AUTHORING wave -- the third resolution axis,
+#: consulted when a dispatch declares neither lane nor phase. Without it a
+#: DISCUSS/DESIGN/DEVOPS dispatch fell to ``_DEFAULT_AGENT`` (the software
+#: crafter) and NAMED THE CRAFTER as the recipient of a wave whose output is a
+#: document, not code. Values mirror the wave table in CLAUDE.md; DELIVER is
+#: absent on purpose -- its recipient is phase-resolved, and feature-end
+#: likewise.
+_WAVE_AGENTS: dict[str, str] = {
+    "discuss": "nw-product-owner",
+    "design": "nw-solution-architect",
+    "devops": "nw-platform-architect",
+    "distill": "nw-acceptance-designer",
+}
+
+
+def _resolve_agent(phase: str | None, lane: str | None, wave: str | None = None) -> str:
+    """Resolve the AGENT_IDENTITY for a dispatch from its (phase, lane, wave).
 
     A phaseless cross-wave-child lane (e.g. ``charter``) resolves via
-    ``_LANE_AGENTS`` first -- it has no phase to key on. Otherwise the
-    existing phase-keyed resolution (``_PHASE_AGENTS``, default the crafter)
-    applies unchanged.
+    ``_LANE_AGENTS`` first -- it has no phase to key on. Then the phase-keyed
+    resolution (``_PHASE_AGENTS``). Then the WAVE-keyed resolution, which is
+    what an authoring wave travels: it declares neither lane nor phase, so
+    without this axis it silently resolved to the crafter. Only a dispatch
+    matching none of the three falls to ``_DEFAULT_AGENT``.
     """
     if lane is not None and lane in _LANE_AGENTS:
         return _LANE_AGENTS[lane]
     if phase is not None:
         return _PHASE_AGENTS.get(phase, _DEFAULT_AGENT)
+    if wave is not None and wave in _WAVE_AGENTS:
+        return _WAVE_AGENTS[wave]
     return _DEFAULT_AGENT
 
 
@@ -384,6 +404,8 @@ def _section_body(
     intent: str,
     agent: str,
     lane: str | None,
+    wave: str,
+    runs_tests: bool,
     project_root: Path,
 ) -> str:
     """Render one section's scaffold body.
@@ -402,19 +424,37 @@ def _section_body(
     """
     bodies: dict[str, str] = {
         "DES_METADATA": (
-            f"Slice: {slice_id}\nFeature: {feature_id}\nPhase: {phase or ''}\n"
+            f"Slice: {slice_id}\nFeature: {feature_id}\n"
+            # A phaseless dispatch (authoring wave / phaseless lane) declares
+            # NO phase -- print the wave instead of an empty `Phase:` label,
+            # which reads as a dropped field rather than an absent one.
+            + (f"Phase: {phase}\n" if phase else f"Wave: {wave}\n")
         ),
         "AGENT_IDENTITY": f"Agent: {agent}\n",
         "SKILL_LOADING": _skill_loading_body(agent),
-        "TASK_CONTEXT": f"Slice {slice_id} of feature {feature_id}.\n",
+        "TASK_CONTEXT": (
+            f"Slice {slice_id} of feature {feature_id}.\n"
+            if runs_tests
+            else f"Wave {wave} for feature {feature_id} (scope: {slice_id}).\n"
+            + (f"{intent}\n" if intent else "")
+        ),
         "DESIGN_CONTEXT": _design_context_body(agent, feature_id, lane, project_root),
         "ATDD_PURE_PHASES": (
             "Execute the phase named in the DES-PHASE marker.\n"
             + (f"{intent}\n" if intent else "")
         ),
         "QUALITY_GATES": (
-            "All the slice's ATs pass before commit. No new tests authored "
-            "by the crafter.\n"
+            (
+                "All the slice's ATs pass before commit. No new tests authored "
+                "by the crafter.\n"
+            )
+            if runs_tests
+            else (
+                f"The {wave} wave's own gate stack decides this dispatch "
+                f"(see nWave/waves/{wave}.yaml for the authoritative gate-ids "
+                "and the output contract). Author the wave's [REF] sections; "
+                "run no tests and write no production code.\n"
+            )
         ),
         "AT_COMPLETION_LEDGER": (
             "Record phase outcomes to the AT-completion ledger.\n"
@@ -422,11 +462,29 @@ def _section_body(
         "RECORDING_INTEGRITY": (
             "Do not fake green. Never weaken, skip, or rewrite a DISTILL-authored AT.\n"
         ),
-        "BOUNDARY_RULES": f"Stay within slice {slice_id}'s value statement.\n",
+        "BOUNDARY_RULES": (
+            f"Stay within slice {slice_id}'s value statement.\n"
+            if runs_tests
+            else (
+                f"Produce only the {wave} wave's artifacts. Do NOT implement, "
+                "and do NOT pre-empt a downstream wave's decisions.\n"
+            )
+        ),
         "TERMINATING_RUN": (
             "Report files created/modified; RAW pass/fail of the slice's ATs.\n"
         ),
-        "TIMEOUT_INSTRUCTION": "Target ~60 turns -- a crafter/AT run needs room to seal, run static checks, and REPORT after the last command; too small a budget kills the agent between the work and its confirmation. STOP after the ATs are green.\n",
+        "TIMEOUT_INSTRUCTION": (
+            "Target ~60 turns -- a crafter/AT run needs room to seal, run static "
+            "checks, and REPORT after the last command; too small a budget kills "
+            "the agent between the work and its confirmation. STOP after the ATs "
+            "are green.\n"
+            if runs_tests
+            else (
+                f"Target ~60 turns. STOP once the {wave} wave's artifacts are "
+                "authored and their gate has been RUN -- report its raw verdict. "
+                "Do not continue into a downstream wave.\n"
+            )
+        ),
     }
     return bodies.get(section_id, "")
 
@@ -443,6 +501,7 @@ def _build_prompt(
     defect: str | None,
     regression_test: str | None,
     section_ids: tuple[str, ...],
+    runs_tests: bool,
     at_kind: str,
     regression_test_file: str | None,
     agent: str,
@@ -488,6 +547,8 @@ def _build_prompt(
             intent=intent,
             agent=agent,
             lane=lane,
+            wave=wave,
+            runs_tests=runs_tests,
             project_root=project_root,
         )
         for section_id in section_ids
@@ -608,12 +669,24 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
     phase: str | None = args.phase
-    if phase is None and args.lane not in PHASELESS_LANES:
+    # An AUTHORING wave is phaseless for the SAME structural reason a
+    # phaseless lane is: the 3 canonical phases (A_GREEN / EXAMINE / COMMIT)
+    # are DELIVER's, and a wave that authors a document runs none of them.
+    # Demanding one here forced the operator to borrow an unrelated DELIVER
+    # phase word just to get a dispatch out -- writing a false step into the
+    # audit trail to satisfy a flag.
+    _wave_profile = WAVE_DISPATCH_PROFILES.get(args.wave)
+    _wave_is_phaseless = _wave_profile is not None and not _wave_profile.runs_tests
+    if phase is None and args.lane not in PHASELESS_LANES and not _wave_is_phaseless:
         print(
-            "error: --phase is required unless --lane is one of the "
-            f"phaseless cross-wave-child lanes ({', '.join(sorted(PHASELESS_LANES))}) "
-            "-- charter authoring is not one of the 3 canonical DELIVER "
-            "phases (RCA fix-po-charter-dispatch-marker-lane, Face A).",
+            "error: --phase is required for a DELIVER-scope dispatch. It is "
+            "NOT required when --lane is one of the phaseless cross-wave-child "
+            f"lanes ({', '.join(sorted(PHASELESS_LANES))}), nor when --wave "
+            "names an authoring wave "
+            f"({', '.join(sorted(w for w, p in WAVE_DISPATCH_PROFILES.items() if not p.runs_tests))}) "
+            "-- neither runs one of the 3 canonical DELIVER phases. Do NOT "
+            "borrow a DELIVER phase word to satisfy this flag: pass the right "
+            "--wave instead.",
             file=sys.stderr,
         )
         return _EXIT_USAGE_ERROR
@@ -741,11 +814,27 @@ def main(argv: list[str] | None = None) -> int:
         )
         return _EXIT_USAGE_ERROR
 
-    section_ids = (
-        LANE_PROFILES[args.lane].required_sections
-        if args.lane is not None
-        else full_sections
-    )
+    # Profile precedence: lane (the KIND of work) beats wave (WHICH wave),
+    # because a prefactoring lane inside DELIVER is still a prefactoring. A
+    # dispatch with neither reads the wave datum; only an unrecognised wave
+    # falls to the full implementation set (fail-closed, never downgraded).
+    # Profile precedence: lane (the KIND of work) beats wave (WHICH wave),
+    # because a prefactoring lane inside DELIVER is still a prefactoring.
+    #
+    # A DELIVER-scope dispatch (``runs_tests``) keeps reading its sections
+    # from the dispatch SSOT YAML at render time -- the wave datum's deliver
+    # row exists for the GUARD (which cannot read that YAML) and must never
+    # become a second, drifting source for the generator. Only an AUTHORING
+    # wave, absent from the YAML's single full profile, reads the datum.
+    if args.lane is not None:
+        section_ids = LANE_PROFILES[args.lane].required_sections
+        runs_tests = True
+    elif _wave_profile is not None and not _wave_profile.runs_tests:
+        section_ids = _wave_profile.required_sections
+        runs_tests = False
+    else:
+        section_ids = full_sections
+        runs_tests = True
 
     # Fix B (RCA fix-des-dispatch-broken-design-context-pointer): the
     # EXISTENCE leg and the reuse-analysis CONTENT leg are orthogonal checks
@@ -755,15 +844,24 @@ def main(argv: list[str] | None = None) -> int:
     # DOES have a feature-delta.md existence question worth flagging
     # (EXISTENCE now keys on `LaneProfile.feature_readiness`, True for
     # bugfix).
+    # The EXISTENCE leg carries the same wave constraint as the CONTENT leg
+    # below: DISCUSS is the wave that CREATES the feature-delta, so demanding
+    # one before it runs asks for an artifact that cannot exist yet (and in
+    # epic mode never will -- fractal JIT authors only the epic-delta).
     lane_profile = LANE_PROFILES.get(args.lane) if args.lane is not None else None
-    if lane_profile is None or lane_profile.feature_readiness:
+    _cites_design = _wave_profile is None or _wave_profile.cites_design
+    if _cites_design and (lane_profile is None or lane_profile.feature_readiness):
         missing_advisory = _feature_delta_missing_advisory(
             project_root, args.project_id
         )
         if missing_advisory is not None:
             print(missing_advisory, file=sys.stderr)
 
-    if args.lane not in _LANES_REQUIRING_JUSTIFICATION:
+    # The Reuse Analysis is a DESIGN artifact. Advising its absence on a
+    # dispatch for DISCUSS -- the wave that runs BEFORE design -- demands an
+    # artifact that cannot exist yet, the same inversion the section profile
+    # above closes. Only waves that CITE a design are held to it.
+    if args.lane not in _LANES_REQUIRING_JUSTIFICATION and _cites_design:
         content_advisory = _feature_delta_content_advisory(
             project_root, args.project_id
         )
@@ -781,9 +879,10 @@ def main(argv: list[str] | None = None) -> int:
         defect=args.defect,
         regression_test=args.regression_test,
         section_ids=section_ids,
+        runs_tests=runs_tests,
         at_kind=args.at_kind,
         regression_test_file=args.regression_test_file,
-        agent=_resolve_agent(phase, args.lane),
+        agent=_resolve_agent(phase, args.lane, args.wave),
         project_root=project_root,
     )
     print(prompt, end="")

@@ -438,7 +438,7 @@ def test_gherkin_feature_without_at_kind_flag_is_never_rerouted_to_pytest_regres
     _write_feature_file(repo, feature_id, "slice-01")
     _commit_with_trailer(repo, "slice-01", "feat(slice): gherkin-authored feature")
 
-    exit_code, payload = _run_verify_slice_commit(repo, feature_id, capsys)
+    _exit_code, payload = _run_verify_slice_commit(repo, feature_id, capsys)
 
     assert "regression_test_file" not in payload, (
         "a feature that legitimately has .feature files must never be "

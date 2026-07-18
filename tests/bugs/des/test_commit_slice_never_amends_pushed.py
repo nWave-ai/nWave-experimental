@@ -166,7 +166,7 @@ def test_commit_slice_preserves_pushed_commit_when_head_regresses(
     so the pushed commit becomes an unreachable sibling -- a semantic
     `AssertionError` on the ancestry check, not a crash or collection error.
     """
-    repo, origin = _init_repo_with_pushed_origin(tmp_path)
+    repo, _origin = _init_repo_with_pushed_origin(tmp_path)
 
     # Land + push the slice-like commit (the "rust-hardening slice" analogue).
     (repo / "tests" / "unit" / "test_slice_01.py").write_text(
@@ -331,7 +331,7 @@ def test_commit_slice_never_rewrites_a_sha_present_on_origin(
     diverging sibling, so the plain push is REJECTED (non-fast-forward) --
     a semantic `AssertionError` on the push's exit code/stderr, not a crash.
     """
-    repo, origin = _init_repo_with_pushed_origin(tmp_path)
+    repo, _origin = _init_repo_with_pushed_origin(tmp_path)
 
     (repo / "tests" / "unit" / "test_slice_01.py").write_text(
         "def test_slice_01():\n    assert 3 + 3 == 6\n", encoding="utf-8"

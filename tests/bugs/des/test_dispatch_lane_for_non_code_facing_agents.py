@@ -268,7 +268,7 @@ def test_dispatch_guard_accepts_examiner_dispatch_without_architecture_citation(
     prompt = _build_examine_prompt_without_design_citation(feature_id)
 
     service = service_factory.create_pre_tool_use_service(
-        audit_writer_factory=lambda: NullAuditLogWriter()
+        audit_writer_factory=NullAuditLogWriter
     )
     decision = service.validate(
         PreToolUseInput(
@@ -392,7 +392,7 @@ def test_dispatch_guard_still_refuses_a_genuinely_incomplete_atdd_pure_dispatch(
     )
 
     service = service_factory.create_pre_tool_use_service(
-        audit_writer_factory=lambda: NullAuditLogWriter()
+        audit_writer_factory=NullAuditLogWriter
     )
     decision = service.validate(
         PreToolUseInput(
@@ -630,7 +630,7 @@ def test_generated_non_code_facing_envelope_is_accepted_by_the_same_guard(
     assert exit_code == 0, f"dispatch generation must succeed. stderr={stderr!r}"
 
     service = service_factory.create_pre_tool_use_service(
-        audit_writer_factory=lambda: NullAuditLogWriter()
+        audit_writer_factory=NullAuditLogWriter
     )
     decision = service.validate(
         PreToolUseInput(prompt=stdout, subagent_type=subagent_type, wave_entering=False)

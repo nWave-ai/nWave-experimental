@@ -67,6 +67,7 @@ from des.application.slice_at_completeness import missing_at_files
 from des.domain.atdd_pure_phases import (
     CARPACCIO_ENTRY_PHASES as _CARPACCIO_ENTRY_PHASES,
 )
+from des.domain.atdd_pure_phases import FEATURE_END_PHASES
 from des.domain.des_marker_parser import (
     BOOTSTRAPPABLE_GATES,
     DesMarkerParser,
@@ -1044,8 +1045,12 @@ def evaluate_atdd_pure_dispatch(
                 f"atdd_pure dispatch declares phase '{markers.atdd_pure_phase}' "
                 f"with scope '{markers.slice_id}' -- every marker is present and "
                 "well-formed, but the PAIR is not legal. A feature-end-cycle "
-                "phase (E_BATCH_REFACTOR / F_FINAL_REVIEW) is the only kind that "
-                "may carry scope 'feature-end'; every other phase is per-slice "
+                # DERIVED from the vocabulary SSOT, never hand-listed: a
+                # hardcoded enumeration silently becomes a LIE the moment a
+                # phase word is added (it already omitted D_DISTILL, and
+                # FEATURE_END_EXAMINE would have made it wrong again).
+                f"phase ({' / '.join(sorted(FEATURE_END_PHASES))}) is the only "
+                "kind that may carry scope 'feature-end'; every other phase is "
                 "and must carry a 'slice-NN' scope (ADR-028 D6). Fix ONE of the "
                 "two so they agree: either name the per-slice scope this phase "
                 "belongs to, or -- if you genuinely mean the whole feature -- "

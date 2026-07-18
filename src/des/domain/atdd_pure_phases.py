@@ -79,6 +79,17 @@ class ATDDPurePhase(str, Enum):
     D_REFACTOR_COMMIT = "D_REFACTOR_COMMIT"
     D_DISTILL = "D_DISTILL"
 
+    # feature-end-examine-phase slice-01 (DESIGN Decision D1): the feature-end
+    # EXAMINE phase word -- an independent, execution-observing walk of the
+    # FINISHED feature (step 2 of the /nw-deliver feature-end cycle). DISTINCT
+    # from the per-slice ``EXAMINE`` alias below: reusing ``C_REVIEWER_AUDIT``
+    # here would make every per-slice examine dispatch ILLEGAL the moment that
+    # word also became a ``FEATURE_END_PHASES`` member. Like ``D_DISTILL``, this
+    # is a per-FEATURE routing node -- excluded from ``CANONICAL_PHASES`` via
+    # ``_NON_DELIVER_PHASES`` the same way, and NOT a member of the per-slice
+    # carpaccio cycle (absent from ``LEGAL_TRANSITIONS``).
+    FEATURE_END_EXAMINE = "FEATURE_END_EXAMINE"
+
     # evolution-plan P1.2 (User-Examiner spine wiring): ``EXAMINE`` is a VALUE
     # ALIAS of ``C_REVIEWER_AUDIT`` -- the SAME phase slot in the 3-link
     # sequence, cleared going forward via a recorded execution-observation
@@ -167,9 +178,14 @@ class IllegalPhaseTransition(Exception):
 # minus the asserted D_DISTILL exclusion. Adding a fourth DELIVER phase or
 # re-introducing a retired one bumps the count above 3 -> the slice-01 AT reds.
 
-# The single non-DELIVER enum member: an upstream-wave routing node, excluded
-# from the per-slice canonical projection and from LEGAL_TRANSITIONS.
-_NON_DELIVER_PHASES: frozenset[ATDDPurePhase] = frozenset({ATDDPurePhase.D_DISTILL})
+# The non-DELIVER enum members: upstream-wave / per-feature routing nodes,
+# excluded from the per-slice canonical projection and from LEGAL_TRANSITIONS.
+# D_DISTILL is the upstream DISTILL-wave return; FEATURE_END_EXAMINE
+# (feature-end-examine-phase slice-01) is the per-feature examine routing node
+# -- neither is a member of the per-slice carpaccio A_GREEN -> ... cycle.
+_NON_DELIVER_PHASES: frozenset[ATDDPurePhase] = frozenset(
+    {ATDDPurePhase.D_DISTILL, ATDDPurePhase.FEATURE_END_EXAMINE}
+)
 
 # Member names excluded from the canonical DELIVER vocabulary (upstream wave).
 _NON_DELIVER_NAMES: frozenset[str] = frozenset(
@@ -312,11 +328,13 @@ COMMIT_GATE_PHASES: frozenset[str] = frozenset(
 ) | _legacy_words("G_COMMIT")
 
 # The feature-end-cycle phases (ADR-028 D6): the legacy E_BATCH_REFACTOR /
-# F_FINAL_REVIEW words plus the canonical per-feature D_DISTILL routing node.
-# A dispatch in one of these phases is per-FEATURE, so its only coherent scope is
-# `feature-end`. The per-slice commit phase D_REFACTOR_COMMIT is NOT here.
+# F_FINAL_REVIEW words plus the canonical per-feature D_DISTILL routing node
+# plus the per-feature FEATURE_END_EXAMINE routing node (feature-end-examine-
+# phase slice-01, DESIGN Decision D1). A dispatch in one of these phases is
+# per-FEATURE, so its only coherent scope is `feature-end`. The per-slice
+# commit phase D_REFACTOR_COMMIT is NOT here.
 FEATURE_END_PHASES: frozenset[str] = frozenset(
-    {ATDDPurePhase.D_DISTILL.value}
+    {ATDDPurePhase.D_DISTILL.value, ATDDPurePhase.FEATURE_END_EXAMINE.value}
 ) | _legacy_words("E_BATCH_REFACTOR", "F_FINAL_REVIEW")
 
 # The single phase word that routes a returning agent to the U4 feature-end

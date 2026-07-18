@@ -210,9 +210,7 @@ def test_override_attests_a_bare_commit_via_behavioral_proof(
     """
     repo = tmp_path / "repo"
     _git_init(repo)
-    _write_regression_test(
-        repo, _FEATURE_ID_OVERRIDE_POS, "slice-01", passing=True
-    )
+    _write_regression_test(repo, _FEATURE_ID_OVERRIDE_POS, "slice-01", passing=True)
     _bare_commit_no_trailer(repo)
 
     exit_code, payload = _run_verify_slice_commit(
@@ -274,9 +272,7 @@ def test_override_never_attests_when_the_regression_test_fails(
     """
     repo = tmp_path / "repo"
     _git_init(repo)
-    _write_regression_test(
-        repo, _FEATURE_ID_OVERRIDE_FAIL, "slice-01", passing=False
-    )
+    _write_regression_test(repo, _FEATURE_ID_OVERRIDE_FAIL, "slice-01", passing=False)
     _bare_commit_no_trailer(repo)
 
     exit_code, payload = _run_verify_slice_commit(
@@ -346,9 +342,7 @@ def test_override_refuses_without_a_declared_regression_test(
         f"exit code with no error text is itself a defect: payload={payload!r}"
     )
 
-    verified = AtCompletionLedger(
-        _FEATURE_ID_OVERRIDE_NO_PROOF, repo
-    ).verified_slices()
+    verified = AtCompletionLedger(_FEATURE_ID_OVERRIDE_NO_PROOF, repo).verified_slices()
     assert "slice-01" not in verified, (
         "a --slice-id override declaring no behavioral proof must never "
         f"reach a SliceCommitVerified record -- verified={sorted(verified)!r}"
@@ -422,9 +416,7 @@ def test_legacy_trailer_path_is_unchanged_without_the_override_flag(
     """
     repo = tmp_path / "repo"
     _git_init(repo)
-    _write_regression_test(
-        repo, _FEATURE_ID_LEGACY_UNCHANGED, "slice-01", passing=True
-    )
+    _write_regression_test(repo, _FEATURE_ID_LEGACY_UNCHANGED, "slice-01", passing=True)
     _commit_with_trailer(repo, "slice-01", "fix: trailer-carrying legacy fix")
 
     exit_code, payload = _run_verify_slice_commit(

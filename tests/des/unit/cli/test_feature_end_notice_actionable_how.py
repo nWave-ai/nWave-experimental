@@ -151,9 +151,9 @@ def _has_only_tolerated_placeholders(printed_text: str) -> bool:
     tokens = _bare_placeholder_tokens(printed_text)
     if not tokens <= _TOLERATED_BARE_PLACEHOLDERS:
         return False
-    if "<id>" in tokens and not _how_explains_reviewer_id_placeholder(printed_text):
-        return False
-    return True
+    return not (
+        "<id>" in tokens and not _how_explains_reviewer_id_placeholder(printed_text)
+    )
 
 
 # ---------------------------------------------------------------------------

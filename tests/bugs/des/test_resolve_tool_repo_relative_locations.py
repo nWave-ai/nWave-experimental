@@ -38,7 +38,6 @@ adapter-direct precedent.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -56,7 +55,7 @@ def _make_repo_local_tool(repo: Path, tool_name: str = _TOOL_NAME) -> Path:
     bin_dir.mkdir(parents=True)
     fake_tool = bin_dir / tool_name
     fake_tool.write_text("#!/bin/sh\nexit 0\n")
-    os.chmod(fake_tool, 0o755)
+    fake_tool.chmod(0o755)
     return fake_tool
 
 

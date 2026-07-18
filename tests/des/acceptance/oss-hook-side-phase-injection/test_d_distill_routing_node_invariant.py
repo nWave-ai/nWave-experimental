@@ -18,7 +18,11 @@ carpaccio cycle, not a member of it).
 
 from __future__ import annotations
 
-from des.domain.atdd_pure_phases import LEGAL_TRANSITIONS, ATDDPurePhase
+from des.domain.atdd_pure_phases import (
+    FEATURE_END_PHASES,
+    LEGAL_TRANSITIONS,
+    ATDDPurePhase,
+)
 
 
 def test_d_distill_is_an_asserted_exclusion_from_legal_transitions() -> None:
@@ -29,9 +33,19 @@ def test_d_distill_is_an_asserted_exclusion_from_legal_transitions() -> None:
     """
     assert ATDDPurePhase.D_DISTILL not in LEGAL_TRANSITIONS
 
-    # The remaining seven canonical carpaccio phases ARE source keys -- the
-    # exclusion is specific to D_DISTILL, not a hole in the matrix.
+    # Every remaining canonical carpaccio phase IS a source key -- the
+    # exclusion is exactly the FEATURE-END phases, not a hole in the matrix.
+    #
+    # DERIVED from FEATURE_END_PHASES rather than naming D_DISTILL literally:
+    # the exclusion was never "D_DISTILL specifically", it was "phases outside
+    # the per-slice A->G cycle". D_DISTILL was merely the only one when this
+    # guard was written, so the literal read as the rule. Adding
+    # FEATURE_END_EXAMINE (feature `feature-end-examine-phase`) made that
+    # literal FALSE while the invariant it stood for stayed true -- so the
+    # guard now reads the vocabulary SSOT and covers every future feature-end
+    # phase by construction. It still fails LOUDLY if a genuine per-slice
+    # phase goes missing from the matrix, which is what it exists to catch.
     carpaccio_phases = {
-        phase for phase in ATDDPurePhase if phase is not ATDDPurePhase.D_DISTILL
+        phase for phase in ATDDPurePhase if phase.value not in FEATURE_END_PHASES
     }
     assert carpaccio_phases == set(LEGAL_TRANSITIONS.keys())

@@ -37,7 +37,6 @@ Applied here to ``.gitignore`` rather than a scanned doc.
 
 from __future__ import annotations
 
-import os
 import stat
 from pathlib import Path
 
@@ -146,7 +145,7 @@ def test_broken_symlink_gitignore_warns_and_names_it_not_silently_dropped(
         "# Coherent Doc\n\nEverything documented here is true of the tree.\n"
     )
     gitignore = tmp_path / ".gitignore"
-    os.symlink("/nonexistent/target", gitignore)
+    gitignore.symlink_to("/nonexistent/target")
 
     exit_code, combined = _run_gate(["--repo", str(tmp_path)], capsys)
     combined_lower = combined.lower()

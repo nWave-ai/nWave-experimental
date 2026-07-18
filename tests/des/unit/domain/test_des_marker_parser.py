@@ -202,162 +202,173 @@ class TestSliceMarkerAcceptsCoupledSplitLetterSuffix:
         )
 
 
-class TestFeatureEndExamineDispatchClassification:
-    """`classify_atdd_pure_dispatch`'s XOR extends to a feature-scope EXAMINE.
+# ---------------------------------------------------------------------------
+# feature-end-examine-phase / slice-01 -- the closed-world (phase, scope) XOR
+# table for a FEATURE-SCOPE examine.
+#
+# Feature: docs/feature/feature-end-examine-phase/feature-delta.md.
+# `/nw-deliver`'s feature-end cycle prescribes an EXAMINE at step 2 of 5 -- an
+# independent, execution-observing walk of the FINISHED feature -- but no DES
+# dispatch phase word names it, so it cannot be dispatched at all (measured
+# 2026-07-18: six refused dispatches across three distinct legal paths).
+#
+# PHASE-WORD: `FEATURE_END_EXAMINE` -- the new, DISTINCT `DES-PHASE` token this
+# slice adds to the closed phase vocabulary. Distinct per DESIGN Decision D1
+# (feature-delta.md): reusing the canonical `EXAMINE` / `C_REVIEWER_AUDIT` word
+# would make every PER-SLICE examine dispatch ILLEGAL the moment that word also
+# became a `FEATURE_END_PHASES` member -- exactly what the anti-regression test
+# below guards against.
+#
+# The invariant under test (des_marker_parser.py:454-456, UNCHANGED by this
+# feature): `phase in FEATURE_END_PHASES  <=>  scope == 'feature-end'`.
+# `FEATURE_END_EXAMINE` is expected to become a new `FEATURE_END_PHASES` member
+# (src/des/domain/atdd_pure_phases.py:318) once implemented; the XOR rule itself
+# is reused verbatim, never weakened.
+#
+# Driving surface: the REAL `DesMarkerParser().parse(prompt)` ->
+# `classify_atdd_pure_dispatch(markers)` pipeline -- the same surface the
+# PreToolUse dispatch guard applies. A prompt fixture with an HTML-comment
+# `DES-PHASE` marker exercises BOTH the marker-vocabulary lookup
+# (`_NORMALISED_PHASE_BY_TOKEN`, derived from the live `ATDDPurePhase` enum) and
+# the XOR classification in one pass -- never a hand-built `DesMarkers` that
+# could paper over a missing vocabulary entry.
+#
+# CONTRACT_SHAPE: pure-function. Universe: the `classify_atdd_pure_dispatch`
+# return value (`'absent' | 'valid' | 'defective'`) plus the parsed
+# `atdd_pure_phase` field (the mechanism-level witness that the word was
+# actually RECOGNISED, not merely that the outcome happened to match).
+#
+# Placement note: these are MODULE-LEVEL functions, deliberately kept in THIS
+# module (the Reuse Analysis EXTEND decision) so the closed-world XOR table
+# stays readable as ONE artifact alongside the sibling marker-grammar tables
+# above.
+# ---------------------------------------------------------------------------
 
-    Feature: feature-end-examine-phase (docs/feature/feature-end-examine-phase/
-    feature-delta.md). `/nw-deliver`'s feature-end cycle prescribes an EXAMINE
-    at step 2 of 5 -- an independent, execution-observing walk of the FINISHED
-    feature -- but no DES dispatch phase word names it, so it cannot be
-    dispatched (measured 2026-07-18: six refused dispatches across three legal
-    paths).
+_XOR_PROMPT_TEMPLATE = (
+    "<!-- DES-VALIDATION : required -->\n"
+    "<!-- DES-MODE : atdd_pure -->\n"
+    "<!-- DES-PHASE : {phase} -->\n"
+    "<!-- DES-SLICE : {slice} -->\n"
+    "Execute step"
+)
 
-    PHASE-WORD: `FEATURE_END_EXAMINE` -- the new, DISTINCT `DES-PHASE` token
-    this slice adds to the closed phase vocabulary. Distinct per DESIGN
-    Decision D1 (feature-delta.md): reusing the canonical `EXAMINE` /
-    `C_REVIEWER_AUDIT` word would make every PER-SLICE examine illegal the
-    moment it also became a `FEATURE_END_PHASES` member -- that is exactly
-    what `test_canonical_per_slice_examine_still_valid_at_slice_scope` below
-    guards against.
+# The new phase word this slice introduces (DESIGN Decision D1).
+FEATURE_END_EXAMINE_PHASE_WORD = "FEATURE_END_EXAMINE"
 
-    The invariant under test (des_marker_parser.py:454-456, unchanged by this
-    feature): `phase in FEATURE_END_PHASES  <=>  scope == 'feature-end'`.
-    `FEATURE_END_EXAMINE` is expected to become a new `FEATURE_END_PHASES`
-    member (`src/des/domain/atdd_pure_phases.py:318`) once implemented.
+# The marker-vocabulary word for the CANONICAL per-slice examine slot.
+# `ATDDPurePhase.EXAMINE` is a value alias of `ATDDPurePhase.C_REVIEWER_AUDIT`
+# (atdd_pure_phases.py:97), so `C_REVIEWER_AUDIT` IS the per-slice EXAMINE word
+# a dispatch carries.
+_CANONICAL_PER_SLICE_EXAMINE_WORD = "C_REVIEWER_AUDIT"
 
-    Driving surface: the REAL `DesMarkerParser().parse(prompt)` ->
-    `classify_atdd_pure_dispatch(markers)` pipeline -- the same surface the
-    PreToolUse hook applies to a returning dispatch. A prompt fixture with an
-    HTML-comment `DES-PHASE` marker exercises both the marker-vocabulary
-    lookup (`_NORMALISED_PHASE_BY_TOKEN`, derived from the live `ATDDPurePhase`
-    enum) and the XOR classification in one pass -- not a hand-built
-    `DesMarkers` that could paper over a missing vocabulary entry.
+_PHASE_NOT_IN_VOCABULARY = (
+    "DES-PHASE : {word} did not parse into DesMarkers.atdd_pure_phase -- the "
+    "word is not yet a recognised ATDDPurePhase member (add it to the enum, "
+    "src/des/domain/atdd_pure_phases.py:54). got atdd_pure_phase={got!r}"
+)
 
-    CONTRACT_SHAPE: pure-function. Universe: the `classify_atdd_pure_dispatch`
-    return value (`'absent' | 'valid' | 'defective'`) plus the parsed
-    `atdd_pure_phase` field (the mechanism-level witness that the word was
-    actually recognised, not merely that the outcome happened to match).
+
+def test_feature_end_examine_phase_with_feature_end_scope_is_valid() -> None:
+    """POSITIVE (R1): the new feature-scope examine phase word declared together
+    with scope `feature-end` reaches the examiner -- classifies `valid`.
+
+    RED today: `FEATURE_END_EXAMINE` is out-of-vocabulary
+    (`_NORMALISED_PHASE_BY_TOKEN` has no entry for it), so
+    `DesMarkers.atdd_pure_phase` parses to `None` and
+    `classify_atdd_pure_dispatch` returns `'defective'` via the
+    `atdd_pure_phase is None` branch -- not `'valid'`.
     """
-
-    _PROMPT_TEMPLATE = (
-        "<!-- DES-VALIDATION : required -->\n"
-        "<!-- DES-MODE : atdd_pure -->\n"
-        "<!-- DES-PHASE : {phase} -->\n"
-        "<!-- DES-SLICE : {slice} -->\n"
-        "Execute step"
+    # covers: R1
+    parser = DesMarkerParser()
+    prompt = _XOR_PROMPT_TEMPLATE.format(
+        phase=FEATURE_END_EXAMINE_PHASE_WORD, slice="feature-end"
     )
 
-    _NEW_PHASE_WORD = "FEATURE_END_EXAMINE"
+    markers = parser.parse(prompt)
 
-    def test_feature_end_examine_phase_with_feature_end_scope_is_valid(self):
-        """POSITIVE (R1): the new feature-scope examine phase word declared
-        together with scope `feature-end` reaches the examiner -- classifies
-        `valid`.
-
-        RED today: `FEATURE_END_EXAMINE` is out-of-vocabulary
-        (`_NORMALISED_PHASE_BY_TOKEN` has no entry for it), so
-        `DesMarkers.atdd_pure_phase` parses to `None` and
-        `classify_atdd_pure_dispatch` returns `'defective'` (the
-        `atdd_pure_phase is None` branch), not `'valid'`.
-
-        # covers: R1
-        """
-        parser = DesMarkerParser()
-        prompt = self._PROMPT_TEMPLATE.format(
-            phase=self._NEW_PHASE_WORD, slice="feature-end"
+    assert markers.atdd_pure_phase == FEATURE_END_EXAMINE_PHASE_WORD, (
+        _PHASE_NOT_IN_VOCABULARY.format(
+            word=FEATURE_END_EXAMINE_PHASE_WORD, got=markers.atdd_pure_phase
         )
+    )
+    classification = classify_atdd_pure_dispatch(markers)
+    assert classification == "valid", (
+        f"DES-PHASE : {FEATURE_END_EXAMINE_PHASE_WORD} + DES-SLICE : "
+        f"feature-end must classify 'valid' -- got {classification!r}. Fix: "
+        f"add {FEATURE_END_EXAMINE_PHASE_WORD} to FEATURE_END_PHASES "
+        "(src/des/domain/atdd_pure_phases.py:318) so the XOR "
+        "(phase in FEATURE_END_PHASES <=> scope == 'feature-end') resolves "
+        "coherently for this combination."
+    )
 
-        markers = parser.parse(prompt)
 
-        assert markers.atdd_pure_phase == self._NEW_PHASE_WORD, (
-            f"DES-PHASE : {self._NEW_PHASE_WORD} did not parse into "
-            "DesMarkers.atdd_pure_phase -- the word is not yet a recognised "
-            "ATDDPurePhase member (add it to the enum, "
-            "src/des/domain/atdd_pure_phases.py:54). "
-            f"got atdd_pure_phase={markers.atdd_pure_phase!r}"
+def test_canonical_per_slice_examine_still_valid_at_slice_scope() -> None:
+    """ANTI-REGRESSION (R2): the canonical per-slice examine slot
+    (`DES-PHASE : C_REVIEWER_AUDIT`, the marker-vocabulary word for
+    `ATDDPurePhase.EXAMINE` / `ATDDPurePhase.C_REVIEWER_AUDIT`) at a `slice-NN`
+    scope STILL classifies `valid`.
+
+    THE TRAP THIS GUARDS: if the implementation widens `FEATURE_END_PHASES` by
+    adding `C_REVIEWER_AUDIT` (or by reusing the canonical `EXAMINE` word)
+    instead of the DISTINCT `FEATURE_END_EXAMINE` word, every per-slice examine
+    dispatch across all three live instances becomes `defective`. This
+    assertion must fail LOUDLY the moment that mistake is made.
+
+    GREEN from the start, by design: a regression guard, not a repro of an open
+    defect -- its value is that it goes RED the instant someone widens the
+    wrong side of the XOR.
+    """
+    # covers: R2
+    parser = DesMarkerParser()
+    prompt = _XOR_PROMPT_TEMPLATE.format(
+        phase=_CANONICAL_PER_SLICE_EXAMINE_WORD, slice="slice-04"
+    )
+
+    markers = parser.parse(prompt)
+    classification = classify_atdd_pure_dispatch(markers)
+
+    assert classification == "valid", (
+        f"DES-PHASE : {_CANONICAL_PER_SLICE_EXAMINE_WORD} + DES-SLICE : "
+        f"slice-04 must stay 'valid' -- got {classification!r}. This is the "
+        "per-slice EXAMINE slot (ADR-027); adding C_REVIEWER_AUDIT (or the "
+        "EXAMINE alias) to FEATURE_END_PHASES would make EVERY per-slice "
+        "examine dispatch defective -- use a DISTINCT feature-end-examine "
+        "phase word instead (DESIGN Decision D1, feature-delta.md)."
+    )
+
+
+def test_feature_end_examine_phase_rejects_a_per_slice_scope() -> None:
+    """NEGATIVE (R3): the new feature-scope examine phase word declared together
+    with a `slice-NN` scope classifies `defective` -- the XOR still bites in
+    the other direction.
+
+    RED today for the RIGHT reason. Today's `'defective'` outcome is VACUOUS:
+    `FEATURE_END_EXAMINE` is unrecognised, so `atdd_pure_phase` is `None` and
+    ANY scope yields `'defective'` via the `atdd_pure_phase is None`
+    short-circuit, never the XOR itself. The mechanism assertion below pins
+    that the word IS recognised (post-fix, `atdd_pure_phase` must equal the new
+    word), so the outcome assertion is proven by the REAL XOR (a feature-end
+    phase at a non-feature-end scope), not by an unrelated out-of-vocabulary
+    short-circuit.
+    """
+    # covers: R3
+    parser = DesMarkerParser()
+    prompt = _XOR_PROMPT_TEMPLATE.format(
+        phase=FEATURE_END_EXAMINE_PHASE_WORD, slice="slice-04"
+    )
+
+    markers = parser.parse(prompt)
+
+    assert markers.atdd_pure_phase == FEATURE_END_EXAMINE_PHASE_WORD, (
+        _PHASE_NOT_IN_VOCABULARY.format(
+            word=FEATURE_END_EXAMINE_PHASE_WORD, got=markers.atdd_pure_phase
         )
-        classification = classify_atdd_pure_dispatch(markers)
-        assert classification == "valid", (
-            f"DES-PHASE : {self._NEW_PHASE_WORD} + DES-SLICE : feature-end "
-            f"must classify 'valid' -- got {classification!r}. Fix: add "
-            f"{self._NEW_PHASE_WORD} to FEATURE_END_PHASES "
-            "(src/des/domain/atdd_pure_phases.py:318) so the XOR "
-            "(phase in FEATURE_END_PHASES <=> scope == 'feature-end') "
-            "resolves coherently for this combination."
-        )
-
-    def test_canonical_per_slice_examine_still_valid_at_slice_scope(self):
-        """ANTI-REGRESSION (R2): the canonical per-slice examine slot
-        (`DES-PHASE : C_REVIEWER_AUDIT`, the marker-vocabulary word for
-        `ATDDPurePhase.EXAMINE`/`ATDDPurePhase.C_REVIEWER_AUDIT`) at a
-        `slice-NN` scope STILL classifies `valid`.
-
-        THE TRAP THIS GUARDS: if the implementation widens
-        `FEATURE_END_PHASES` by adding `C_REVIEWER_AUDIT` (or reuses the
-        canonical `EXAMINE` word) instead of a distinct
-        `FEATURE_END_EXAMINE` word, every per-slice examine dispatch across
-        all three live instances becomes `defective` -- this assertion must
-        fail loudly the moment that mistake is made.
-
-        GREEN from the start (by design): this is a regression guard, not a
-        repro of an open defect -- its value is that it goes RED the instant
-        someone widens the wrong side of the XOR.
-
-        # covers: R2
-        """
-        parser = DesMarkerParser()
-        prompt = self._PROMPT_TEMPLATE.format(
-            phase="C_REVIEWER_AUDIT", slice="slice-04"
-        )
-
-        markers = parser.parse(prompt)
-        classification = classify_atdd_pure_dispatch(markers)
-
-        assert classification == "valid", (
-            "DES-PHASE : C_REVIEWER_AUDIT + DES-SLICE : slice-04 must stay "
-            f"'valid' -- got {classification!r}. This is the per-slice "
-            "EXAMINE slot (ADR-027); adding C_REVIEWER_AUDIT (or the "
-            "EXAMINE alias) to FEATURE_END_PHASES would make every per-slice "
-            "examine dispatch defective -- use a DISTINCT feature-end-"
-            "examine phase word instead (DESIGN Decision D1, "
-            "feature-delta.md)."
-        )
-
-    def test_feature_end_examine_phase_with_slice_scope_is_defective(self):
-        """NEGATIVE (R3): the new feature-scope examine phase word declared
-        together with a `slice-NN` scope classifies `defective` -- the XOR
-        still bites in the other direction.
-
-        RED today for the RIGHT reason: today's `'defective'` outcome is
-        vacuous -- `FEATURE_END_EXAMINE` is unrecognised, so `atdd_pure_phase`
-        is `None` and ANY scope is `'defective'` via the
-        `atdd_pure_phase is None` branch, never the XOR itself. The mechanism
-        assertion below pins that the word IS recognised (post-fix,
-        `atdd_pure_phase` must equal the new word) so the outcome assertion
-        is proven by the real XOR (feature-end phase + non-feature-end
-        scope), not by an unrelated out-of-vocabulary short-circuit.
-
-        # covers: R3
-        """
-        parser = DesMarkerParser()
-        prompt = self._PROMPT_TEMPLATE.format(
-            phase=self._NEW_PHASE_WORD, slice="slice-04"
-        )
-
-        markers = parser.parse(prompt)
-
-        assert markers.atdd_pure_phase == self._NEW_PHASE_WORD, (
-            f"DES-PHASE : {self._NEW_PHASE_WORD} did not parse into "
-            "DesMarkers.atdd_pure_phase -- the word is not yet a recognised "
-            "ATDDPurePhase member (add it to the enum, "
-            "src/des/domain/atdd_pure_phases.py:54). "
-            f"got atdd_pure_phase={markers.atdd_pure_phase!r}"
-        )
-        classification = classify_atdd_pure_dispatch(markers)
-        assert classification == "defective", (
-            f"DES-PHASE : {self._NEW_PHASE_WORD} + DES-SLICE : slice-04 "
-            f"must classify 'defective' -- got {classification!r}. "
-            f"{self._NEW_PHASE_WORD} is a FEATURE_END_PHASES member, so its "
-            "only coherent scope is the 'feature-end' literal (ADR-028 D6, "
-            "Option A) -- a slice-NN scope must still trip the XOR."
-        )
+    )
+    classification = classify_atdd_pure_dispatch(markers)
+    assert classification == "defective", (
+        f"DES-PHASE : {FEATURE_END_EXAMINE_PHASE_WORD} + DES-SLICE : slice-04 "
+        f"must classify 'defective' -- got {classification!r}. "
+        f"{FEATURE_END_EXAMINE_PHASE_WORD} is a FEATURE_END_PHASES member, so "
+        "its only coherent scope is the 'feature-end' literal (ADR-028 D6, "
+        "Option A) -- a slice-NN scope must still trip the XOR."
+    )

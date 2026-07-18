@@ -87,16 +87,18 @@ def _write_pytest_head_tagged_file(repo_root: Path, *, tag: str) -> Path:
     [
         pytest.param(
             "_slice_tags",
-            lambda feature_file: run_contract_gate._slice_tags(feature_file),
+            run_contract_gate._slice_tags,
             id="run_contract_gate._slice_tags",
         ),
         pytest.param(
             "_scenario_slice_index",
-            lambda feature_file: set().union(
-                *run_contract_gate._scenario_slice_index(feature_file).values()
-            )
-            if run_contract_gate._scenario_slice_index(feature_file)
-            else set(),
+            lambda feature_file: (
+                set().union(
+                    *run_contract_gate._scenario_slice_index(feature_file).values()
+                )
+                if run_contract_gate._scenario_slice_index(feature_file)
+                else set()
+            ),
             id="run_contract_gate._scenario_slice_index",
         ),
     ],

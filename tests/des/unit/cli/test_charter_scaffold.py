@@ -446,7 +446,7 @@ def test_blank_value_statement_never_creates_a_dotmd_garbage_file(
     _seed_repo(tmp_path)
     _write_feature_delta(tmp_path, FEATURE_ID, BLANK_VALUE_STATEMENT_FEATURE_DELTA)
 
-    exit_code, payload = _invoke(tmp_path, capsys)
+    _exit_code, payload = _invoke(tmp_path, capsys)
 
     expectations_dir = _expectations_dir(tmp_path, FEATURE_ID)
     garbage_path = expectations_dir / ".md"

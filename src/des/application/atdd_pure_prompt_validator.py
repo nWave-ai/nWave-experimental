@@ -27,6 +27,7 @@ from des.domain.design_context_content_check import (
     design_context_carries_architecture,
 )
 from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
+from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
 from des.ports.driver_ports.validator_port import ValidationResult, ValidatorPort
 
 
@@ -102,6 +103,15 @@ _DES_PHASE_MARKER = re.compile(r"<!--\s*DES-PHASE\s*:\s*(\S+)\s*-->")
 # guarantee).
 _DES_LANE_MARKER = re.compile(r"<!--\s*DES-LANE\s*:\s*(\S+)\s*-->")
 
+# Raw DES-WAVE marker (first match). The THIRD selection axis, orthogonal to
+# phase (role) and lane (kind of work): which WAVE this dispatch serves. An
+# authoring wave (DISCUSS/DESIGN/DEVOPS/DISTILL) declares no phase and no
+# lane, so before this axis existed such a dispatch fell through to the
+# fail-closed DELIVER default and was held to the 12 implementation sections
+# -- including DESIGN_CONTEXT on DISCUSS, a wave that runs BEFORE any design
+# exists. See des.domain.wave_dispatch_profile for the measured harm.
+_DES_WAVE_MARKER = re.compile(r"<!--\s*DES-WAVE\s*:\s*(\S+)\s*-->")
+
 
 def _is_non_code_facing_dispatch(prompt: str) -> bool:
     """True for a dispatch whose recipient is NON-CODE-FACING BY
@@ -138,8 +148,15 @@ def _required_sections(prompt: str) -> tuple[str, ...]:
       * else a recognized ``<!-- DES-LANE : X -->`` whose entry EXISTS in the
         LANE_PROFILES datum → that lane's ``required_sections`` (a datum lookup,
         never a hardcoded lane branch);
-      * any other phase/lane, OR NO marker at all → the full 12 (fail-closed
-        default: an unclassified or unknown-lane dispatch is treated as
+      * else a recognized ``<!-- DES-WAVE : X -->`` whose entry EXISTS in the
+        WAVE_DISPATCH_PROFILES datum → that wave's ``required_sections``. This
+        is the axis an AUTHORING wave travels: DISCUSS/DESIGN/DEVOPS/DISTILL
+        declare no phase and no lane, so without this lookup they fell to the
+        fail-closed DELIVER default and were held to the 12 implementation
+        sections -- DESIGN_CONTEXT among them, which DISCUSS (running BEFORE
+        DESIGN) structurally cannot cite;
+      * any other phase/lane/wave, OR NO marker at all → the full 12
+        (fail-closed default: an unclassified dispatch is treated as
         implementation, never silently downgraded to a lighter profile).
     """
     match = _DES_PHASE_MARKER.search(prompt)
@@ -150,6 +167,11 @@ def _required_sections(prompt: str) -> tuple[str, ...]:
         profile = LANE_PROFILES.get(lane_match.group(1))
         if profile is not None:
             return profile.required_sections
+    wave_match = _DES_WAVE_MARKER.search(prompt)
+    if wave_match is not None:
+        wave_profile = WAVE_DISPATCH_PROFILES.get(wave_match.group(1))
+        if wave_profile is not None:
+            return wave_profile.required_sections
     return ATDD_PURE_MANDATORY_SECTIONS
 
 
