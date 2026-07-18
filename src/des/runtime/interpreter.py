@@ -29,7 +29,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 
 Capability = Literal["pytest"]
@@ -49,12 +49,31 @@ class InterpreterUnavailable(RuntimeError):
     rather than passing a lie downstream.
     """
 
-    def __init__(self, capability: Capability, probed: list[str]) -> None:
+    def __init__(
+        self,
+        capability: Capability,
+        probed: list[str],
+        *,
+        repo_root: Path | None = None,
+    ) -> None:
         self.capability = capability
         self.probed = probed
+        self.repo_root = repo_root
         candidates = ", ".join(probed) if probed else "(none)"
+        if repo_root is None:
+            super().__init__(
+                f"no interpreter capable of '{capability}' — probed: {candidates}"
+            )
+            return
+        expected_venv = _venv_executable(repo_root / ".venv")
         super().__init__(
-            f"no interpreter capable of '{capability}' — probed: {candidates}"
+            f"no interpreter capable of '{capability}' for repo {repo_root} — "
+            f"checked VIRTUAL_ENV (unset, or outside this repo) and the repo's "
+            f"own virtualenv at {expected_venv} (not found), then the fallback "
+            f"ladder: {candidates}. Create/activate a virtualenv for this repo, "
+            f"e.g. `python -m venv {repo_root}/.venv && "
+            f"source {repo_root}/.venv/bin/activate && pip install pytest`, "
+            "then retry."
         )
 
 
@@ -79,6 +98,62 @@ def _candidates() -> list[str]:
             ladder.append(str(sibling))
 
     return ladder
+
+
+def _venv_executable(venv_dir: Path) -> Path:
+    """Path to the python executable inside a venv directory, cross-platform."""
+    if sys.platform == "win32":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python"
+
+
+def _project_root_for(repo_root: Path) -> Path | None:
+    """Walk up from ``repo_root`` to the nearest ancestor with a ``pyproject.toml``.
+
+    The ``repo_root``-scoped counterpart of ``_project_root()``, which anchors
+    on THIS module's own ``__file__`` and is therefore blind to which repo a
+    caller is targeting (defect #79) — a consumer repo gated by an installed
+    ``des`` never shares an ancestor with the installed package's location.
+    """
+    resolved = repo_root.resolve()
+    for ancestor in (resolved, *resolved.parents):
+        if (ancestor / "pyproject.toml").is_file():
+            return ancestor
+    return None
+
+
+def _repo_scoped_candidates(repo_root: Path) -> list[str]:
+    """Candidate interpreters scoped to ``repo_root``, checked BEFORE the
+    name-trusted generic ladder (``_candidates()``):
+
+    1. ``VIRTUAL_ENV`` — but ONLY when that virtualenv is rooted inside
+       ``repo_root``: never name-trusted merely because it is set — a
+       caller's OWN activated venv for an unrelated repo (e.g. the venv
+       ``des`` itself is running under) must not leak into another repo's
+       resolution.
+    2. ``<nearest pyproject.toml ancestor of repo_root>/.venv/bin/python``.
+
+    Existence-filtered only — capability is PROBED uniformly by the caller
+    (``python_for``), never trusted here just because a path exists.
+    """
+    candidates: list[str] = []
+
+    virtual_env = os.environ.get("VIRTUAL_ENV")
+    if virtual_env:
+        venv_root = Path(virtual_env).resolve()
+        if venv_root.is_relative_to(repo_root.resolve()):
+            venv_python = _venv_executable(venv_root)
+            if venv_python.is_file():
+                candidates.append(str(venv_python))
+
+    project_root = _project_root_for(repo_root)
+    if project_root is not None:
+        venv_python = _venv_executable(project_root / ".venv")
+        candidate_str = str(venv_python)
+        if venv_python.is_file() and candidate_str not in candidates:
+            candidates.append(candidate_str)
+
+    return candidates
 
 
 def _project_root() -> Path | None:
@@ -177,29 +252,55 @@ def can_import(interpreter: str, module: str) -> bool:
         return False
 
 
-def python_for(capability: Capability | None) -> str:
+def python_for(capability: Capability | None, repo_root: Path | None = None) -> str:
     """Return the path to a Python interpreter that satisfies ``capability``.
 
-    ``capability=None`` returns ``sys.executable`` unconditionally — the
-    no-requirement case for callers that only need *a* Python (e.g. ``-m pip``
-    or ``-m des.cli.*`` spawns, where the running interpreter already has the
-    correct ``des`` visibility).
+    ``capability=None`` and ``repo_root=None`` returns ``sys.executable``
+    unconditionally — the no-requirement case for callers that only need *a*
+    Python (e.g. ``-m pip`` or ``-m des.cli.*`` spawns, where the running
+    interpreter already has the correct ``des`` visibility).
 
     ``capability="pytest"`` climbs the fallback ladder, probing each candidate,
     and returns the first interpreter that can import pytest. Raises
     ``InterpreterUnavailable`` if no candidate qualifies — never returns a
     known-bad interpreter.
+
+    ``repo_root``, when given, steers resolution at the TARGET repo being
+    gated rather than the installed ``des`` package's own location (defect
+    #79 — ``_project_root()``/``_uv_python()`` anchor on this module's own
+    ``__file__``, never the caller's target). The repo-scoped rungs
+    (``VIRTUAL_ENV`` when rooted inside ``repo_root``, then
+    ``<repo_root>/.venv/bin/python``) are probed BEFORE the existing
+    name-trusted ladder, which stays as a later fallback rung — so
+    ``repo_root`` naming this repo's own checkout (the dogfood self-gate
+    path) resolves byte-identically to the no-``repo_root`` call. A
+    ``capability=None`` request with a ``repo_root`` still prefers the
+    repo-scoped venv over the running interpreter (the E2 contract-gate
+    route), since the fallback ladder always yields at least
+    ``sys.executable`` the request can never go unsatisfied.
     """
-    if capability is None:
+    if capability is None and repo_root is None:
         return sys.executable
 
+    ladder = [
+        *(_repo_scoped_candidates(repo_root) if repo_root is not None else []),
+        *_candidates(),
+    ]
+
     probed: list[str] = []
-    for candidate in _candidates():
+    for candidate in ladder:
+        if candidate in probed:
+            continue
         probed.append(candidate)
-        if _has_capability(candidate):
+        if capability is None or _has_capability(candidate):
             return candidate
 
-    raise InterpreterUnavailable(capability, probed)
+    # capability is never None here: a None capability always matches the
+    # first rung (the ladder is never empty — _candidates()[0] is always
+    # sys.executable), so only a real capability requirement reaches this
+    # raise.
+    assert capability is not None
+    raise InterpreterUnavailable(capability, probed, repo_root=repo_root)
 
 
 def _des_root() -> str:
@@ -229,7 +330,11 @@ def des_subprocess_env(base: dict[str, str] | None = None) -> dict[str, str]:
     existing = env.get("PYTHONPATH", "")
     parts = [_des_root(), *(existing.split(os.pathsep) if existing else [])]
     seen: set[str] = set()
-    deduped = [p for p in parts if p and not (p in seen or seen.add(p))]
+    deduped: list[str] = []
+    for p in parts:
+        if p and p not in seen:
+            seen.add(p)
+            deduped.append(p)
     env["PYTHONPATH"] = os.pathsep.join(deduped)
     return env
 
@@ -238,8 +343,8 @@ def des_spawn(
     capability: Capability | None,
     *module_args: str,
     script: str | None = None,
-    **kw: object,
-) -> subprocess.CompletedProcess:
+    **kw: Any,
+) -> subprocess.CompletedProcess[Any]:
     """The single boundary that spawns a ``des`` Python subprocess.
 
     Composes the two interpreter primitives BY CONSTRUCTION so no caller can
@@ -268,6 +373,6 @@ def des_spawn(
         argv = [python_for(capability), "-m", *module_args]
     return subprocess.run(
         argv,
-        env=des_subprocess_env(base=base_env),  # type: ignore[arg-type]
-        **kw,  # type: ignore[arg-type]
+        env=des_subprocess_env(base=base_env),
+        **kw,
     )

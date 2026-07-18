@@ -102,7 +102,13 @@ def _stub_subprocess_run(monkeypatch: pytest.MonkeyPatch, returncode: int) -> No
 
 
 def _setup_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(pytest_runner, "pytest_interpreter", lambda: "/fake/python")
+    # `run_pytest_scope` forwards `repo_root=target_root` (defect #79) --
+    # the stub accepts the (unused) kwarg so the call shape stays compatible;
+    # every assertion in this file is unaffected (the stub's RETURN VALUE,
+    # which the exit-code-mapping assertions depend on, is untouched).
+    monkeypatch.setattr(
+        pytest_runner, "pytest_interpreter", lambda repo_root=None: "/fake/python"
+    )
 
 
 def _setup_cargo(monkeypatch: pytest.MonkeyPatch) -> None:

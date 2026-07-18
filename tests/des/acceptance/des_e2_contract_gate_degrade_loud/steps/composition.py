@@ -106,7 +106,12 @@ def _force_interpreter_absent() -> Iterator[None]:
     absent-interpreter seam deterministically, never an environment accident.
     """
 
-    def _raise(capability: object = None) -> str:
+    def _raise(capability: object = None, *, repo_root: object = None) -> str:
+        # `repo_root` (slice-02, defect #79 D1): production `python_for` now
+        # accepts an optional `repo_root=` kwarg (`pytest_interpreter`
+        # threads it through) -- the double must accept the SAME call shape
+        # so every resolution path still hits this forced-absent seam,
+        # rather than crashing on an unexpected keyword argument.
         raise InterpreterUnavailable(str(capability or "pytest"), ["<forced-absent>"])
 
     prior_interp = _interp.python_for

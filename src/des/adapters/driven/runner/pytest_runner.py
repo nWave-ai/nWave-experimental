@@ -92,7 +92,7 @@ def run_timeout_seconds() -> float:
         return 2700.0
 
 
-def pytest_interpreter() -> str:
+def pytest_interpreter(repo_root: Path | None = None) -> str:
     """Resolve the python interpreter the pytest run-facet drives, behind the port.
 
     The SINGLE sanctioned resolution of a pytest-capable python interpreter for
@@ -105,11 +105,25 @@ def pytest_interpreter() -> str:
     a non-python target resolves its own run-facet via the registry and never
     reaches this python facet).
 
+    ``repo_root``, when given, steers resolution at the TARGET repo being run
+    (defect #79) rather than the installed ``des`` package's own location --
+    see ``run_pytest_scope``, the only caller that has a ``target_root`` to
+    forward. Callers with no target repo of their own (the nwave-dev dogfood
+    workers) omit it and keep today's behavior unchanged.
+
     Raises ``InterpreterUnavailable`` (F-21 boundary) when no candidate can
     import pytest -- the gate maps that to its existing INDETERMINATE/exit-2
     degrade-LOUD path, unchanged.
+
+    ``repo_root=None`` calls ``python_for("pytest")`` with NO ``repo_root=``
+    kwarg at all (not ``repo_root=None``) -- byte-identical to the pre-fix
+    call shape, so an existing test double that monkeypatches ``python_for``
+    with the pre-fix single-argument signature keeps working unchanged for
+    every caller that has no target repo of its own.
     """
-    return python_for("pytest")
+    if repo_root is None:
+        return python_for("pytest")
+    return python_for("pytest", repo_root=repo_root)
 
 
 def run_pytest_scope(
@@ -124,7 +138,7 @@ def run_pytest_scope(
     exit code to a verdict, and names the runner the verdict was earned in
     (``adapter.name``) so the gate can prove it ran in the RESOLVED runner.
     """
-    interpreter = pytest_interpreter()
+    interpreter = pytest_interpreter(repo_root=target_root)
     try:
         completed = subprocess.run(
             [interpreter, "-m", "pytest", "-p", "no:cacheprovider", *scoped_node_ids],

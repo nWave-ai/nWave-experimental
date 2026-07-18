@@ -443,7 +443,7 @@ def _collect_scope_uncached(
     populated session whose canonical identities are empty is the vacuous-digest
     defect.
     """
-    interpreter = pytest_interpreter()
+    interpreter = pytest_interpreter(repo_root=repo)
     worker = Path(__file__).with_name("_collect_scope_worker.py")
     worker_env = _light_collect_env()
     try:
@@ -614,7 +614,7 @@ def _arch_invariant_paths(repo: Path) -> list[Path]:
     return []
 
 
-def _resolve_arch_run_interpreter() -> str:
+def _resolve_arch_run_interpreter(repo: Path) -> str:
     """Resolve the arch-invariant RUN worker's interpreter (F-21-safe).
 
     Short-circuits the subprocess-probed ``pytest_interpreter()`` boundary
@@ -627,11 +627,13 @@ def _resolve_arch_run_interpreter() -> str:
     candidate is never trusted by NAME alone, only by a verified fact about
     the exact binary being resolved). Falls back to the full probed boundary
     when this process is not itself running under pytest (e.g. a real ``des
-    commit-slice`` CLI invocation) -- unchanged production behaviour.
+    commit-slice`` CLI invocation) -- unchanged production behaviour, now
+    repo-scoped (defect #79 D1) so the fallback resolves ``repo``'s own
+    virtualenv rather than the installed ``des`` interpreter's ladder.
     """
     if "pytest" in sys.modules:
         return sys.executable
-    return pytest_interpreter()
+    return pytest_interpreter(repo_root=repo)
 
 
 def _can_import_xdist_in_process() -> bool:
@@ -709,7 +711,7 @@ def _run_arch_invariant_set(repo: Path, arch_paths: list[Path]) -> _ArchVerdict:
     the resource-aware caller (``build_tier_exit_verdict``) fakes exactly
     that one spawn in its acceptance tests.
     """
-    interpreter = _resolve_arch_run_interpreter()
+    interpreter = _resolve_arch_run_interpreter(repo)
     worker = Path(__file__).with_name("_collect_scope_worker.py")
     parallel = _resolve_arch_run_parallel_args(repo, interpreter)
     jobs_args = ["--jobs", parallel[1]] if parallel else []
@@ -1668,7 +1670,7 @@ def _run_contract_suite(repo: Path, *, junit_xml_path: Path | None = None) -> in
     serial when xdist is absent or when the operator sets ``NWAVE_GATE_JOBS``
     to a serial token (see ``_parallel_pytest_args``).
     """
-    interpreter = pytest_interpreter()
+    interpreter = pytest_interpreter(repo_root=repo)
     argv = _full_suite_marker_args(repo, interpreter)
     if junit_xml_path is not None:
         argv = [*argv, f"--junit-xml={junit_xml_path}"]
@@ -2881,8 +2883,15 @@ def _maybe_route_through_registered_contract_gate(
                 else facet.run_suite(repo)
             )
         except InterpreterUnavailable as exc:
+            # D3 (slice-02 regression): the facet resolves its interpreter
+            # via `python_for(None, repo_root=repo)` (capability-agnostic --
+            # see `PythonContractGateAdapter`), so `exc.capability` is
+            # `None` here. Relabel to the "pytest" contract this route
+            # certifies WHILE preserving `exc.repo_root` -- so the rich
+            # repo/venv/remedy message slice-02 restored survives alongside
+            # the correct capability.
             return _emit_interpreter_unavailable(
-                InterpreterUnavailable("pytest", exc.probed)
+                InterpreterUnavailable("pytest", exc.probed, repo_root=exc.repo_root)
             )
     pytest_exit_code = _run_contract_suite(repo)
     committed = _committed_scope_digest_quiet(repo, "HEAD")

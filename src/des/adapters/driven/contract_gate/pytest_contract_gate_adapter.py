@@ -11,16 +11,21 @@ nwave-dev-specific fallback body -- ``run_contract_gate.py::_run_contract_suite`
 -- the seam falls through to when no adapter is registered, unchanged and
 untouched by this adapter).
 
-The interpreter is resolved through ``python_for(None)`` (the F-21 boundary
-contract: no raw ``sys.executable`` in ``src/des/**``). ``None`` -- not
-``"pytest"`` -- is deliberate: this adapter is reached from WITHIN the gate's
-own already-running, pytest-capable interpreter (the dogfood / subprocess-e2e
-driving process), whose env (including the caller's ``PYTHONPATH``) the spawned
-pytest child inherits by default (``F-DES-SUBPROCESS-PYTHONPATH-PROPAGATION``).
-``python_for("pytest")`` would re-probe/re-climb the interpreter ladder and can
-resolve a DIFFERENT rung interpreter that does not carry the caller's
-``PYTHONPATH`` -- the running interpreter is already the right one, so ``None``
-returns it unconditionally without a redundant probe.
+The interpreter is resolved through ``python_for(None, repo_root=repo)`` (the
+F-21 boundary contract: no raw ``sys.executable`` in ``src/des/**``). ``None``
+-- not ``"pytest"`` -- is deliberate: for the dogfood / subprocess-e2e case
+(``repo`` names THIS repo, or shares no separate ``.venv``), the gate's own
+already-running interpreter is already the right one, and its env (including
+``PYTHONPATH``) the spawned pytest child inherits by default
+(``F-DES-SUBPROCESS-PYTHONPATH-PROPAGATION``). ``repo_root=repo`` (defect #79)
+extends that: on a CONSUMER repo whose own ``.venv`` differs from the
+installed ``des``'s interpreter, resolution steers to ``repo``'s own
+virtualenv instead of blindly reusing the gate's interpreter, which owns
+none of the target's dependencies. ``python_for("pytest")`` (capability-gated)
+would re-probe/re-climb the ladder and can resolve a DIFFERENT rung
+interpreter that does not carry the caller's ``PYTHONPATH`` -- ``None``
+(no capability requirement) avoids that redundant probe while still letting
+``repo_root`` steer which venv wins.
 
 Stdlib ``subprocess`` + the resolved interpreter, per F-D-09 (no ``scripts.*``
 import from ``src/des/**``).
@@ -66,7 +71,7 @@ class PythonContractGateAdapter:
         """Enumerate the target's pytest node-id scope (``--collect-only``)."""
         completed = subprocess.run(
             [
-                python_for(None),
+                python_for(None, repo_root=repo),
                 "-m",
                 "pytest",
                 "--collect-only",
@@ -90,7 +95,13 @@ class PythonContractGateAdapter:
         run -- the one that drives the returned verdict -- persists a JUnit
         XML report a caller can parse for the failing node-ids.
         """
-        argv = [python_for(None), "-m", "pytest", "-p", "no:cacheprovider"]
+        argv = [
+            python_for(None, repo_root=repo),
+            "-m",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+        ]
         if junit_xml_path is not None:
             argv.append(f"--junit-xml={junit_xml_path}")
         completed = subprocess.run(argv, cwd=repo, check=False)

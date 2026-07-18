@@ -222,6 +222,19 @@ def run_conformance_gate(
         )
         return CONFORMANCE_GATE_INDETERMINATE
 
+    if discovery_source is None and not realized_by_plugin:
+        print(
+            f"{_CONFORMANCE_GATE_LOUD_PREFIX}: 0 plugins probed via the live "
+            f"nwave.lang.adapter entry-points discovery -- cannot certify "
+            f"conformance on nothing. Is the interpreter/entry-points "
+            f"correct? Expected >=1 plugin from pyproject "
+            f'[project.entry-points."nwave.lang.adapter"]. Re-check with: '
+            f"python -m scripts.cli.validate_language_adapter_catalog "
+            f"--check-conformance",
+            file=sys.stderr,
+        )
+        return CONFORMANCE_GATE_INDETERMINATE
+
     verdict = detect_per_plugin_capability_conformance(required, realized_by_plugin)
     if verdict.flagged:
         for violation in verdict.violations:
@@ -454,6 +467,19 @@ def run_port_realization_gate(
 
     for note in unknown_port_notes:
         _print_unknown_port_note(note)
+
+    if discovery_source is None and plugin_count == 0:
+        print(
+            f"{_PORT_REALIZATION_LOUD_PREFIX}: 0 plugins probed via the live "
+            f"nwave.lang.adapter entry-points discovery -- cannot certify "
+            f"port-realization on nothing. Is the interpreter/entry-points "
+            f"correct? Expected >=1 plugin from pyproject "
+            f'[project.entry-points."nwave.lang.adapter"]. Re-check with: '
+            f"python -m scripts.cli.validate_language_adapter_catalog "
+            f"{_CHECK_PORT_REALIZATION_FLAG}",
+            file=sys.stderr,
+        )
+        return PORT_REALIZATION_GATE_INDETERMINATE
 
     if not verdict.flagged:
         print(

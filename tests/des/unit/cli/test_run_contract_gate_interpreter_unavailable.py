@@ -82,7 +82,11 @@ def test_interpreter_unavailable_surfaces_as_exit_2_structured_payload(
     """
     probed = ["/usr/bin/python3", "/opt/venv/bin/python"]
 
-    def boom(capability):  # type: ignore[no-untyped-def]
+    def boom(capability, repo_root=None):  # type: ignore[no-untyped-def]
+        # `PythonContractGateAdapter.collect_scope`/`run_suite` forward
+        # `repo_root=repo` (defect #79) -- accept the (unused) kwarg so the
+        # call shape stays compatible; the raised exception (and every
+        # assertion below) is unaffected.
         raise InterpreterUnavailable(capability, probed)
 
     monkeypatch.setattr(pytest_runner, "python_for", boom)
