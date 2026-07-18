@@ -63,6 +63,8 @@ DISTILL produces ALL ATs as **active-RED scaffolds** — RUN + raise `AssertionE
 
 **atdd_pure (the path)**: per-slice JIT — current slice scenarios active-RED (run + raise `AssertionError`); future-slice scenarios ABSENT from disk. No `@skip` ever: absent (future slice) or active-RED (current slice). <!-- mode-ref-ok -->
 
+**Test-pyramid default (Ale-ratified 2026-07-18): ONE `@walking_skeleton` subprocess-E2E per FEATURE** (authored with the first slice) — all other ATs drive IN-PROCESS/in-memory by default; extra E2E only with explicit written justification. Wiring is covered by the triple: the feature's single WS + Vera's real-surface EXAMINE per charter observable + the feature-end cycle (env-e2e + full-suite + deep-review). Never multiply subprocess-E2E scenarios to "prove wiring" — that is the speed regression the subprocess-overuse gate flags.
+
 > **Two distinct axes — do NOT conflate (the dispatch-guard enforces this).** A `D_DISTILL` dispatch's `DES-SLICE` marker is ALWAYS the literal `feature-end`: it declares the **wave scope** (DISTILL authors the whole feature's AT scaffolds in one pass), NOT which slice you write. The **JIT** above (current active-RED / future absent-from-disk) is a different axis — it is what LANDS on disk. So `DES-SLICE: feature-end` and "current-slice-only scenarios on disk" are both true at once: the marker names the wave, the JIT names the files. Marking a `D_DISTILL` dispatch with a concrete `slice-NN` is the exact conflation the guard rejects — use `feature-end`.
 
 Pre-DELIVER fail-for-right-reason gate (`nw-distill-red-scaffolding`) = DELIVER RED-phase entry/exit gate per ADR-025 D2.

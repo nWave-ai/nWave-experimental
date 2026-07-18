@@ -34,7 +34,7 @@ Three port classes, each with default test treatment. Table = PROJECT-LEVEL: dec
 
 | Port type | Examples | Default in test |
 |---|---|---|
-| **Driving** (entry point) | HTTP API, CLI, in-process call, hook | **In-process via the `OutputPort`** — drive the real entry (`cli main(argv)` / application-service method) IN-PROCESS with a fake output port, no interpreter fork. **subprocess-e2e ONLY for `@walking_skeleton`** (the one scenario per command that proves the installed artifact is wired). |
+| **Driving** (entry point) | HTTP API, CLI, in-process call, hook | **In-process via the `OutputPort`** — drive the real entry (`cli main(argv)` / application-service method) IN-PROCESS with a fake output port, no interpreter fork. **subprocess-e2e ONLY for `@walking_skeleton`** (ONE scenario per FEATURE that proves the installed artifact is wired). |
 | **Driven internal** (shared state) | Repository, read model, application cache | **In-memory fake by DEFAULT** (config-switch row below); a config parameter selects the real/prod-like mechanism (Testcontainers / dedicated env) for the CI-or-local prod-like run declared in the project Infrastructure Policy. |
 | **Driven external / non-deterministic** | Clock, email, SMS, push, payment, LLM, third-party API | Fake/stub with output capture (so a `Then` can observe the side effect) |
 
@@ -46,7 +46,7 @@ Port unclassifiable by agent → ask the user with a soft prompt. Do NOT improvi
 
 The Driving default INVERTS the old "CLI = subprocess runner" assumption. A new acceptance test drives the entry point **in-process** by default: it calls the real `cli main(argv)` (or an application-service method) directly, threading a fake `OutputPort` that captures the terminal output a `Then` asserts on. No `subprocess.run([sys.executable, ...])` fork — the same Mandate-13 driving-port semantics, 10–100× faster. (Language-agnostic: the rule is "call the shipped entry in-process with a captured output sink"; the `cli main(argv)` form is the Python illustration.)
 
-**subprocess-e2e is reserved for `@walking_skeleton`.** Only the walking-skeleton scenario per command legitimately proves the installed CLI/artifact is wired end-to-end (real fork, real terminal). EVERY other AT defaults to in-process. A non-`@walking_skeleton` AT that forks an interpreter is a speed regression flagged by the subprocess-overuse gate.
+**subprocess-e2e is reserved for `@walking_skeleton` — ONE per FEATURE.** Only the feature's single walking-skeleton scenario legitimately proves the installed CLI/artifact is wired end-to-end (real fork, real terminal). EVERY other AT defaults to in-process/in-memory. A non-`@walking_skeleton` AT that forks an interpreter is a speed regression flagged by the subprocess-overuse gate. Wiring coverage beyond the single WS is carried by Vera's EXAMINE (every charter observable exercised through the REAL surface) + the feature-end cycle (env-e2e + full-suite + deep-review) — never by multiplying E2E scenarios.
 
 ### The "CLI = e2e by construction" caveat is DISSOLVED
 
@@ -55,9 +55,9 @@ The old caveat held that a CLI command can only be tested end-to-end (subprocess
 | Facet | What it proves | Default treatment |
 |---|---|---|
 | **output-content / behaviour** | the command computes + emits the right output | **in-process** via the `OutputPort` (captured, asserted on the fake's buffer) |
-| **terminal-wiring** | the installed binary actually reaches a real terminal | **exactly one `@walking_skeleton`** per command (subprocess-e2e) |
+| **terminal-wiring** | the installed binary actually reaches a real terminal | **exactly one `@walking_skeleton`** per FEATURE (subprocess-e2e) |
 
-The content facet (the bulk of the ATs) drives in-process; the wiring facet is the single WS. A command therefore needs ONE subprocess AT (its WS), not one per scenario.
+The content facet (the bulk of the ATs) drives in-process; the wiring facet is the single WS. A FEATURE therefore needs ONE subprocess AT (its WS), not one per scenario, slice, or command — a feature spanning multiple commands routes its single WS through the primary user journey, and the remaining commands' wiring is covered by Vera's real-surface EXAMINE + feature-end env-e2e.
 
 ### Config-switch — in-memory local default / testcontainers prod-like
 

@@ -24,7 +24,9 @@ Integration tests for adapters (real filesystem, real subprocess) are naturally 
 
 ## E2E Test Management
 
-**atdd_pure (the path)**: per-slice JIT — only the current slice's E2E scenarios exist on disk (active-RED). Future-slice scenarios are absent. No @skip. Implement the current slice's active-RED scenarios to GREEN, commit, then DISTILL authors the next slice's scenarios. <!-- mode-ref-ok -->
+**atdd_pure (the path)**: per-slice JIT — only the current slice's scenarios exist on disk (active-RED). Future-slice scenarios are absent. No @skip. Implement the current slice's active-RED scenarios to GREEN, commit, then DISTILL authors the next slice's scenarios. <!-- mode-ref-ok -->
+
+**Test-pyramid default (Ale-ratified 2026-07-18): ONE `@walking_skeleton` subprocess-E2E per FEATURE — never per slice, never per command.** The feature's single WS lands with the first slice and proves the installed wiring once; every other scenario (all slices) drives IN-PROCESS/in-memory through the driving port. Wiring coverage beyond the single WS is a declared triple, not scenario multiplication: (a) the feature's WS; (b) Vera's EXAMINE exercising every charter observable through the REAL surface (the user-perspective manual test); (c) the feature-end cycle (env-e2e + full-suite + deep-review) backstopping paths no observable reaches. An additional subprocess-E2E requires an explicit written justification (e.g. the slice's value IS an integration boundary).
 
 > **DEPRECATED — classic**: enable one E2E test at a time by marking all but first with skip/ignore; enable next after commit. This pattern is deprecated per ADR-GV-001 D6 / `F-SUNSET-CLASSIC-MODE`.
 
