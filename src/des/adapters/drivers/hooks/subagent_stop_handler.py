@@ -1947,9 +1947,7 @@ def _handle_distill_exit_gate(
     never dispatches the reviewer (Claude Code hooks cannot spawn agents).
 
     Decision table (C5):
-      denominator = `_parse_slice_plan_rows` (the SAME U4 resolves, order
-                    preserved -- fix-distill-exit-blocks-jit-slices slice-01
-                    needs the declared row order, not just the id set)
+      denominator = `_slice_plan_slice_ids` (the SAME U4 resolves)
       numerator   = `ledger.review_verdict_slices()` UNION
                     `_mechanical_seal_cleared_slices(missing, resolved.at_kind)`
                     (bug #94: the mechanical-seal route -- a fresh
@@ -1963,19 +1961,10 @@ def _handle_distill_exit_gate(
                     WHOLE route fail-closed, mirroring the DELIVER-entry
                     sibling (`carpaccio_slice_gate.py:490`); an absent marker
                     proceeds unchanged (byte-identical pre-D1 behavior).
-      fix-distill-exit-blocks-jit-slices slice-01: a slice still in `missing`
-      after the numerator above is further split by per-slice JIT scope --
-      the feature's FIRST declared slice is never excusable (it is always
-      "in scope right now"); every OTHER still-missing slice is excused
-      (`excluded_slices`) when `feature_files_for_slice` finds NO `.feature`/
-      tagged-test evidence for it anywhere in the repo (absent-by-JIT), and
-      stays in `missing` when it IS present on disk (a genuine, authored-but-
-      unreviewed omission -- a scaffold-only `@skip` file counts as present).
-      - (planned - excluded_slices) subset-of (verdict-signed UNION
-        mechanical-seal-cleared) -> emit `WorkflowPhaseCompletedDistill`
-        (naming `validated_slices` + `excluded_slices`) + allow
-      - a planned, non-excluded slice neither signed nor mechanically sealed
-        -> block `DistillExitVerdictIncomplete`
+      - planned subset-of (verdict-signed UNION mechanical-seal-cleared) -> emit
+        `WorkflowPhaseCompletedDistill` + allow
+      - a planned slice neither signed nor mechanically sealed -> block
+        `DistillExitVerdictIncomplete`
       - unparseable slice-plan     -> fail-closed block `SlicePlanParseUnresolved`
         (never a vacuous "zero planned slices" pass, mirror of U4)
       - NO feature-delta.md at all (bugfix lane, ADR-025) AND the return is
@@ -2043,7 +2032,7 @@ def _handle_distill_exit_gate(
         _run_decision_table_traceability_gate(repo, feature_id)
 
         try:
-            slice_plan_rows = _parse_slice_plan_rows(repo, feature_id)
+            planned = _slice_plan_slice_ids(repo, feature_id)
         except FileNotFoundError:
             # fix-distill-exit-bugfix-lane-degrade: a bugfix lane carries NO
             # feature-delta.md BY DESIGN (ADR-025 SLIM-crafter discipline) --
@@ -2072,51 +2061,14 @@ def _handle_distill_exit_gate(
                 return 0
             raise
 
-        planned = frozenset(slice_id for slice_id, _status in slice_plan_rows)
         ledger = AtCompletionLedger(feature_id, repo)
         verdict_signed = ledger.review_verdict_slices()
 
         missing = planned - verdict_signed
-        mechanical_cleared: frozenset[str] = frozenset()
         if missing:
-            mechanical_cleared = _mechanical_seal_cleared_slices(
+            missing = missing - _mechanical_seal_cleared_slices(
                 repo, feature_id, missing, resolved.at_kind
             )
-            missing = missing - mechanical_cleared
-
-        # fix-distill-exit-blocks-jit-slices slice-01: per-slice JIT authoring
-        # (nw-distill Mandate 4) deliberately leaves slice-02+ absent from
-        # disk until their turn -- they can never carry a verdict, so
-        # `missing` above always contains them at every D_DISTILL return. The
-        # feature's FIRST declared slice is always "in scope right now" (the
-        # charter's own framing) and is never excused this way; every OTHER
-        # still-missing slice is excused ONLY when NO `.feature`/tagged-test
-        # evidence exists for it anywhere in the repo --
-        # `feature_files_for_slice` is the SAME discovery primitive already
-        # reused elsewhere in this exact call chain for the identical
-        # purpose (empty result == absent-by-JIT). A slice that IS present
-        # on disk (even a scaffold-only `@skip` file) but carries neither
-        # verdict nor seal is a genuine review omission and stays missing.
-        excluded_slices: frozenset[str] = frozenset()
-        if missing:
-            first_declared_slice = slice_plan_rows[0][0] if slice_plan_rows else None
-            jit_candidates = missing - (
-                frozenset({first_declared_slice})
-                if first_declared_slice is not None
-                else frozenset()
-            )
-            if jit_candidates:
-                from des.application.slice_at_completeness import (
-                    feature_files_for_slice,
-                )
-
-                excluded_slices = frozenset(
-                    slice_id
-                    for slice_id in jit_candidates
-                    if not feature_files_for_slice(repo, slice_id, feature_id)
-                )
-                missing = missing - excluded_slices
-
         if missing:
             return _emit_atdd_pure_block(
                 f"DISTILL exit refused for {feature_id}: the {sorted(missing)} "
@@ -2129,18 +2081,8 @@ def _handle_distill_exit_gate(
                 missing=sorted(missing),
             )
 
-        # Complete verdict set -- emit the symmetric success terminal and
-        # allow. validated_slices names ONLY what this pass actually
-        # certified (verdict-signed UNION mechanical-seal-cleared), never a
-        # blanket "all slices ok"; excluded_slices names the JIT-absent
-        # slices this evaluation deliberately left out of scope -- the
-        # durable audit trail the charter's oracle demands (a pass must
-        # never look identical whether the gate reasoned about scope or
-        # simply stopped looking).
-        ledger.append_workflow_phase_completed_distill(
-            validated_slices=sorted(verdict_signed | mechanical_cleared),
-            excluded_slices=sorted(excluded_slices),
-        )
+        # Complete verdict set -- emit the symmetric success terminal and allow.
+        ledger.append_workflow_phase_completed_distill()
         return 0
 
     except LedgerIntegrityViolation as exc:
