@@ -74,7 +74,14 @@ _ADAPTER = RunnerAdapter(name="cargo-test")
 _SCOPED_COMMAND = ("cargo", "nextest", "run", "--test", "ws_driver")
 # Non-empty nextest-list-shaped stdout so the list facet does not itself raise
 # an (unrelated) empty-scope INDETERMINATE -- see `cargo_runner._parse_nextest_list`.
-_LIST_STDOUT = "ws_driver:\n    it_works\n"
+# FLAT shape (matches the golden fixture in
+# tests/des/unit/adapters/driven/runner/test_cargo_nextest_flat_list_parse.py):
+# a single non-indented ``<binary-id> <test-path>`` line, space-separated, no
+# trailing ``:`` header, no indent -- the REAL `cargo nextest list` output
+# shape the current parser contracts for. The prior grouped/indented literal
+# (``"ws_driver:\n    it_works\n"``) parsed to ZERO identities under the flat
+# parser, masking the timeout=/TimeoutExpired assertion below it ever ran.
+_LIST_STDOUT = "ws_driver it_works\n"
 
 
 # --- fixture builders: plain filesystem, NO git required for these seams ---
