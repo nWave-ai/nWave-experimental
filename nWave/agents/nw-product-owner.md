@@ -203,7 +203,7 @@ Five columns, fixed order — the order is the contract, a re-order is a malform
 - **Slice** — `slice-NN` identifier, unique, ordered (NN is the delivery order; the walking-skeleton slice MUST be `slice-01`).
 - **Value statement** — one PO-authored sentence in domain language naming the user-observable value the slice delivers. The slice-name (the `slice-NN` row's intent) compresses THIS statement to its value-outcome — run the *Value-Outcome Naming* self-check before finalizing.
 - **Status** — `pending` | `shipped`. DISCUSS writes every row `pending`; DELIVER flips a row to `shipped` at that slice's commit.
-- **Annotation** — empty (default value-delivering slice), `@walking-skeleton`, or `@infrastructure`.
+- **Annotation** — empty (default value-delivering slice; an empty cell is parallel-safe by default), `@walking-skeleton`, `@infrastructure`, or `depends-on {slice-id}` (an explicit ordering dependency — only this token owes a non-empty Justification; silence needs none).
 - **Justification** — required and non-empty when Annotation is non-empty (`value_exception_justification`); empty otherwise.
 
 A slice is a thin end-to-end vertical, NOT a horizontal layer. The structural gate is `des validate-feature-delta --require-slice-plan --format=json` (verdict `accepted`) — run by the DISPATCHING orchestrator after handoff, never by this agent, which has no shell. Author the table in the checked form; do not attempt to run the gate.

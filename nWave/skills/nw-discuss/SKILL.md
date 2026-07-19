@@ -119,6 +119,7 @@ Provenance: evolution-plan P2.0/P2.1 (evidence-by-execution). For each Slice Pla
 `[REF] Slice Plan` — five fixed columns `Slice | Value statement | Status | Annotation | Justification` (`src/des/cli/validate_feature_delta.py:SLICE_PLAN_COLUMNS`). Annotation tokens:
 - `@walking_skeleton` / `@infrastructure` — govern ordering and slice composition (keystone-first, no infra-only slice), not size.
 - `@coupled` — the carpaccio ceiling-escape. Over-ceiling cohesive slice → put `@coupled` in the Annotation column + a non-empty Justification on that Slice Plan row. For a pytest-regression feature (no `.feature` scenario tags), this row annotation is the ONLY place the escape is read (not the test file).
+- `depends-on {slice-id}` — an explicit ordering dependency on another slice. An empty Annotation cell is parallel-safe by default; only a declared `depends-on {slice-id}` owes a non-empty Justification on that row — silence never needs one.
 
 ## Agent Invocation
 
