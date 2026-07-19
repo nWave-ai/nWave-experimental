@@ -123,6 +123,18 @@ def test_a_pile_line_that_fails_the_item_grammar_is_named_as_skipped(tmp_path, c
     stdout names that zero items parsed AND that a non-blank line was
     SKIPPED for failing the grammar -- never a silent exit 0 that looks
     identical to a genuinely empty pile.
+
+    CORRECTED (fix-refactor-pile-grammar-undocumented, slice-01): this AT
+    originally pinned `exit_code == 0` for this exact arrangement -- itself
+    the GDP-3/oracle-(c) defect class ("prints a failure, exits 0") the
+    fixing feature exists to close. An unparseable-content pile is a
+    REFUSAL (the operator's own input could not be understood), distinct
+    from a genuinely empty pile (still exit 0, see the sibling test above)
+    -- so the exit code must be non-zero here. The full grammar-teaching
+    contract (concrete example, named line, producing-tool-or-honesty) is
+    pinned in test_slice_01_pile_grammar_refusal.py; this test keeps its
+    narrower original mission (skipped-line naming) with the exit code
+    corrected to match.
     """
     composition = RefactorSwarmComposition(tmp_path)
     composition.init_git_repo()
@@ -133,21 +145,23 @@ def test_a_pile_line_that_fails_the_item_grammar_is_named_as_skipped(tmp_path, c
     exit_code = composition.call_refactor_main_in_process(agent_cmd="true")
     captured = capsys.readouterr()
 
-    assert exit_code == 0, (
-        f"an unparseable-only pile must exit 0; got exit_code={exit_code}, "
-        f"stderr={captured.err!r}"
+    assert exit_code != 0, (
+        "a pile whose only content is unparseable is a REFUSAL, not a "
+        f"quiet no-op -- got exit_code={exit_code} (expected non-zero), "
+        f"stdout={captured.out!r} stderr={captured.err!r}"
     )
-    assert captured.out.strip() != "", (
+    combined = captured.out + captured.err
+    assert combined.strip() != "", (
         "a pile whose only content line fails to parse must still report "
-        "on stdout -- got completely empty stdout"
+        "-- got completely empty stdout+stderr"
     )
-    assert "0" in captured.out, (
-        f"stdout must name that ZERO items were parsed; got: {captured.out!r}"
+    assert "0" in combined, (
+        f"the refusal must name that ZERO items were parsed; got: {combined!r}"
     )
-    lowered = captured.out.lower()
+    lowered = combined.lower()
     assert any(marker in lowered for marker in ("skip", "not match", "unparseable")), (
-        "stdout must name that a non-blank line was SKIPPED for failing the "
-        f"item grammar; got: {captured.out!r}"
+        "the refusal must name that a non-blank line was SKIPPED for failing the "
+        f"item grammar; got: {combined!r}"
     )
 
 

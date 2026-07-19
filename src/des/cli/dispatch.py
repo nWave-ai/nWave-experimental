@@ -38,7 +38,11 @@ from des.cli.validate_feature_delta import (
     VERDICT_STRUCTURALLY_ACCEPTED,
     validate_reuse_analysis_content,
 )
-from des.domain.atdd_pure_phases import FEATURE_END_PHASES, ATDDPurePhase
+from des.domain.atdd_pure_phases import (
+    FEATURE_END_PHASES,
+    FEATURE_END_RETURN_PHASE,
+    ATDDPurePhase,
+)
 from des.domain.des_marker_parser import dispatch_is_phaseless
 from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
 from des.domain.repo_path_resolver import resolve_repo_root
@@ -114,17 +118,25 @@ _DEFAULT_AGENT = "nw-software-crafter"
 #: fix-po-charter-dispatch-marker-lane, Face B).
 _EXAMINER_AGENT = "nw-user-examiner"
 
+#: The feature-end deep code review agent (ADR-027) -- the ONLY agent
+#: ``F_FINAL_REVIEW`` may resolve to: a code-reading reviewer, never the
+#: examiner (no source access by construction) and never the bare
+#: implementing crafter (fix-dispatch-cannot-generate-feature-end-phases).
+_FEATURE_END_REVIEWER_AGENT = "nw-software-crafter-reviewer"
+
 #: Phase -> agent override map (GDP-5, the producing tool derives the correct
 #: agent per phase instead of hardcoding one for every phase). ``D_DISTILL``
 #: is the AT-authoring phase -- ADR-025 reserves acceptance-test authorship to
 #: ``nw-acceptance-designer``; the SLIM crafter never authors tests.
 #: ``C_REVIEWER_AUDIT`` is the EXAMINE step -- routed to the examiner, never
 #: the crafter (Face B fix). ``F_FINAL_REVIEW`` (the feature-end LLM
-#: reviewer-audit return) is intentionally NOT overridden here -- it stays on
-#: ``_DEFAULT_AGENT`` (out of this fix's scope).
+#: reviewer-audit return, ``FEATURE_END_RETURN_PHASE``) routes to the
+#: code-reading reviewer -- its own frontmatter names ``F_FINAL_REVIEW`` as
+#: one of its two ATDD-pure review phases.
 _PHASE_AGENTS: dict[str, str] = {
     ATDDPurePhase.D_DISTILL.value: "nw-acceptance-designer",
     ATDDPurePhase.C_REVIEWER_AUDIT.value: _EXAMINER_AGENT,
+    FEATURE_END_RETURN_PHASE: _FEATURE_END_REVIEWER_AGENT,
 }
 
 #: Lane -> agent override map for a cross-wave-child lane whose dispatch is
@@ -163,9 +175,22 @@ _NON_CODE_FACING_AGENTS: frozenset[str] = frozenset(
 
 
 def _canonical_phase_values() -> tuple[str, ...]:
-    """The live ``ATDDPurePhase`` canonical member values (aliases excluded --
-    enum iteration already skips value-aliases like ``EXAMINE``)."""
-    return tuple(member.value for member in ATDDPurePhase)
+    """The live ``--phase`` choice set: the ``ATDDPurePhase`` canonical member
+    values (aliases excluded -- enum iteration already skips value-aliases
+    like ``EXAMINE``) UNIONED with every live ``FEATURE_END_PHASES`` member --
+    so a phase the guard's own SSOT already treats as feature-end-coherent
+    (e.g. ``F_FINAL_REVIEW``) is always generable too, with no second,
+    separately-maintained choices literal (fix-dispatch-cannot-generate-
+    feature-end-phases: one authority, two readers).
+
+    Reads ``FEATURE_END_PHASES`` via a bare module-global name lookup, so it
+    resolves LIVE at call time through this module's own namespace -- a
+    monkeypatch of ``dispatch.FEATURE_END_PHASES`` changes what this returns
+    immediately, with no other code change. This is what proves derivation
+    rather than two lists hand-synced to match today's values.
+    """
+    canonical = (member.value for member in ATDDPurePhase)
+    return tuple(dict.fromkeys((*canonical, *sorted(FEATURE_END_PHASES))))
 
 
 #: The wave-owning agent for each AUTHORING wave -- the third resolution axis,

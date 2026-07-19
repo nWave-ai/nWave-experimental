@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from des.adapters.driven.codefact.tree_scope import TreeScope
 from des.ports.code_fact_port import (
     CAPABILITY_ADR_SECTION,
     CAPABILITY_ATOMS_IN_FILE,
@@ -59,6 +60,16 @@ class TextSearchAdapter:
 
     def __init__(self, root: Path | str) -> None:
         self._root = Path(root)
+        self._scope = TreeScope(self._root)
+        self._read_cache: dict[Path, str] = {}
+
+    def scope_health_event(self) -> str | None:
+        """``"unfiltered"`` / ``"filtered"`` / ``None`` — see :class:`TreeScope`.
+
+        Read by :class:`CodeFactChain` after a query answered by this tier, to
+        emit the degrade-LOUD ``health.gate.code-fact.*`` scan-scope signal.
+        """
+        return self._scope.health_event()
 
     # -- the CodeFactPort surface ------------------------------------------
 
@@ -194,20 +205,27 @@ class TextSearchAdapter:
         return hits
 
     def _iter_files(self) -> list[Path]:
-        """Every file under the root (stdlib ``pathlib`` walk — NOT ``grep``)."""
-        if self._root.is_file():
-            return [self._root]
-        return [
-            path for path in sorted(self._root.rglob(_SOURCE_GLOB)) if path.is_file()
-        ]
+        """Every file under the root, ignore-derived-excluded and walked at
+        most once per instance (delegated to :class:`TreeScope`, the shared
+        floor-tier walk both ``TextSearchAdapter`` and ``AstAdapter`` use --
+        NOT ``grep``)."""
+        return self._scope.files(_SOURCE_GLOB)
 
-    @staticmethod
-    def _read(source_file: Path) -> str:
-        """Read a file's text, tolerating non-UTF-8 / binary content."""
+    def _read(self, source_file: Path) -> str:
+        """Read a file's text, tolerating non-UTF-8 / binary content.
+
+        Cached per instance (the no-reparse-per-symbol contract) -- a file is
+        read at most once across every capability query this adapter instance
+        answers, never once per queried symbol.
+        """
+        if source_file in self._read_cache:
+            return self._read_cache[source_file]
         try:
-            return source_file.read_text(encoding="utf-8")
+            text = source_file.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
-            return ""
+            text = ""
+        self._read_cache[source_file] = text
+        return text
 
     @staticmethod
     def _symbol_of(request: dict[str, object]) -> str:

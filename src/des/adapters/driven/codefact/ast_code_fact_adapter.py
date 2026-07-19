@@ -24,6 +24,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.codefact.tree_scope import TreeScope
 from des.ports.code_fact_port import (
     CAPABILITY_ADR_SECTION,
     CAPABILITY_ATOMS_IN_FILE,
@@ -79,6 +80,16 @@ class AstAdapter:
     ) -> None:
         self._root = Path(root)
         self._parser: TestSuiteAstAdapter = parser or PythonAstAdapter()
+        self._scope = TreeScope(self._root)
+        self._parse_cache: dict[Path, object | None] = {}
+
+    def scope_health_event(self) -> str | None:
+        """``"unfiltered"`` / ``"filtered"`` / ``None`` — see :class:`TreeScope`.
+
+        Read by :class:`CodeFactChain` after a query answered by this tier, to
+        emit the degrade-LOUD ``health.gate.code-fact.*`` scan-scope signal.
+        """
+        return self._scope.health_event()
 
     # -- the CodeFactPort surface ------------------------------------------
 
@@ -425,11 +436,19 @@ class AstAdapter:
         (WS-9b, F-fix-reuse-analysis-content-grounding). Every caller of
         ``_parse`` MUST treat ``None`` as "no structural fact here" and skip
         the file, never re-raise.
+
+        Cached per instance (the no-reparse-per-symbol contract) -- a file is
+        parsed at most once across every capability query this adapter
+        instance answers, never once per queried symbol.
         """
+        if source_file in self._parse_cache:
+            return self._parse_cache[source_file]
         try:
-            return self._parser.parse(self._read(source_file), str(source_file))
+            tree = self._parser.parse(self._read(source_file), str(source_file))
         except (SyntaxError, ValueError):
-            return None
+            tree = None
+        self._parse_cache[source_file] = tree
+        return tree
 
     @staticmethod
     def _callee_matches(callee: str, callable_name: str) -> bool:
@@ -442,14 +461,11 @@ class AstAdapter:
         return symbol.rsplit(".", maxsplit=1)[-1] if symbol else ""
 
     def _iter_files(self) -> list[Path]:
-        """Every Python source file under the root (stdlib ``pathlib`` walk)."""
-        if self._root.is_file():
-            return [self._root]
-        return [
-            path
-            for path in sorted(self._root.rglob(_PYTHON_SOURCE_GLOB))
-            if path.is_file()
-        ]
+        """Every Python source file under the root, ignore-derived-excluded and
+        walked at most once per instance (delegated to :class:`TreeScope`,
+        the shared floor-tier walk both ``AstAdapter`` and ``TextSearchAdapter``
+        use)."""
+        return self._scope.files(_PYTHON_SOURCE_GLOB)
 
     @staticmethod
     def _read(source_file: Path) -> str:

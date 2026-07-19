@@ -51,6 +51,11 @@ if TYPE_CHECKING:
 _HEALTH_SKIP_PREFIX = "health.gate.code-fact"
 # The specific LOUD-skip event the chain emits when it skips the absent paid tier.
 _TSUNAMI_ABSENT_SKIP = f"{_HEALTH_SKIP_PREFIX}.tsunami-absent"
+# The floor-tier scan-scope signals (fix-blast-radius-reparses-tree-per-symbol,
+# GDP-6): joins the SAME family so a gate reads every degrade-LOUD condition off
+# one vocabulary, never a second parallel signal surface.
+_UNFILTERED_SCAN_SKIP = f"{_HEALTH_SKIP_PREFIX}.unfiltered-no-ignore-file"
+_FILTERED_SCAN_SKIP = f"{_HEALTH_SKIP_PREFIX}.filtered"
 
 
 class CodeFactChain:
@@ -111,7 +116,9 @@ class CodeFactChain:
         """
         for tier in (self._ast, self._floor):
             if self._covers(tier, descriptor.id):
-                return tier.query(descriptor, request)
+                result = tier.query(descriptor, request)
+                self._record_scope_health(tier)
+                return result
         return None
 
     @staticmethod
@@ -127,3 +134,14 @@ class CodeFactChain:
     def _record_tsunami_skip(self) -> None:
         """Emit the LOUD skip event for the absent paid tier (degrade-LOUD)."""
         self._health_events.append(_TSUNAMI_ABSENT_SKIP)
+
+    def _record_scope_health(self, tier: AstAdapter | TextSearchAdapter) -> None:
+        """Emit the LOUD scan-scope signal (GDP-6) for the floor tier that
+        answered -- ``"unfiltered"`` (no ignore file, nothing COULD have been
+        excluded) or ``"filtered"`` (the walk actually dropped >=1 path, so an
+        empty answer must never read as an unqualified verified zero)."""
+        event = tier.scope_health_event()
+        if event == "unfiltered":
+            self._health_events.append(_UNFILTERED_SCAN_SKIP)
+        elif event == "filtered":
+            self._health_events.append(_FILTERED_SCAN_SKIP)

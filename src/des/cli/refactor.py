@@ -23,6 +23,21 @@ if TYPE_CHECKING:
     from des.application.refactor_drain_service import DrainResult
 
 
+#: The load-bearing shape of one pending pile item -- printed verbatim in the
+#: unparseable-pile refusal so an operator can copy a working line without
+#: reading source code or a separate doc (see `_ITEM_LINE_RE`,
+#: src/des/domain/refactor/pile.py -- this string mirrors it, kept in sync by
+#: hand since the regex itself is not renderable as prose).
+_GRAMMAR_SHAPE = (
+    '- [ ] <item_id>: paradigm=<paradigm> defect="<defect>" '
+    'proposed_solution="<solution>"'
+)
+_GRAMMAR_EXAMPLE = (
+    '- [ ] TD-001: paradigm=object-oriented defect="duplicate helper across '
+    'two modules" proposed_solution="extract a shared function"'
+)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Drain the single next pending pile item via the configured agent_cmd."""
     args = _parse_args(argv)
@@ -42,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         DEFAULT_INTEGRATION_BRANCH,
         RefactorDrainService,
     )
+    from des.domain.refactor.pile import parse_pile_report
 
     repo = Path.cwd()
     service = RefactorDrainService(
@@ -52,6 +68,10 @@ def main(argv: list[str] | None = None) -> int:
         ledger=AtCompletionLedger("des-refactor-fixer-swarm", repo),
     )
     paid_path = args.pile.parent / "paidtechdebt.md"
+    # Parsed BEFORE drain_one runs: a successful drain rewrites the pile file
+    # (move_item), which would otherwise erase the very skipped-line evidence
+    # the refusal/AT-6 notice needs to report.
+    skipped_lines = parse_pile_report(args.pile).skipped_lines
     result = service.drain_one(
         repo=repo,
         pile_path=args.pile,
@@ -59,10 +79,14 @@ def main(argv: list[str] | None = None) -> int:
         agent_cmd=args.agent_cmd,
         prompt_template_path=args.prompt_template,
     )
-    return _report(result, DEFAULT_INTEGRATION_BRANCH)
+    return _report(result, DEFAULT_INTEGRATION_BRANCH, skipped_lines)
 
 
-def _report(result: DrainResult, integration_branch: str) -> int:
+def _report(
+    result: DrainResult,
+    integration_branch: str,
+    skipped_lines: tuple[str, ...],
+) -> int:
     """Self-report the drain outcome on stdout/stderr -- never a silent exit
     (the standing what/why/how mandate + the Fixture-Theater/opacity flags
     this CLI is here to close)."""
@@ -71,20 +95,49 @@ def _report(result: DrainResult, integration_branch: str) -> int:
         return 1
     if result.drained:
         print(f"Drained 1 item: {result.item_id} -> merged into '{integration_branch}'")
+        if skipped_lines:
+            # A malformed sibling line must never be silently swallowed just
+            # because a real item in the same pile successfully drained.
+            print(_skipped_lines_notice(skipped_lines))
         return 0
     if result.item_id is None:
-        print(f"0 parsed -- {_no_items_reason(result.skipped_lines)}")
+        if skipped_lines:
+            # Zero items parsed AND at least one non-blank line failed the
+            # grammar: this is a REFUSAL (the operator's own input could not
+            # be understood), distinct from a genuinely empty pile.
+            print(_unparseable_pile_refusal(skipped_lines), file=sys.stderr)
+            return 1
+        print("0 parsed -- the pile is empty, nothing to drain")
         return 0
     return 0
 
 
-def _no_items_reason(skipped_lines: tuple[str, ...]) -> str:
-    if not skipped_lines:
-        return "the pile is empty, nothing to drain"
+def _unparseable_pile_refusal(skipped_lines: tuple[str, ...]) -> str:
+    """WHAT/WHY/HOW for a pile whose only content failed the item grammar:
+    shows the grammar's literal shape with a concrete example, names the
+    offending line(s) verbatim, and routes to a producing tool or states
+    honestly that none exists yet (GDP-3 self-explaining / GDP-4 HOW invokes
+    the producing tool)."""
+    offending = "\n".join(f"  {line}" for line in skipped_lines)
+    return (
+        "des refactor refused: 0 parsed -- the pile's only content did not "
+        "match the item grammar, so there is nothing to drain.\n"
+        f"Offending line(s):\n{offending}\n"
+        f"Expected item grammar: {_GRAMMAR_SHAPE}\n"
+        f"Concrete example: {_GRAMMAR_EXAMPLE}\n"
+        "Fix: hand-edit the offending line(s) above to match the grammar. "
+        "No scaffolding tool exists yet to generate a valid pile item for "
+        "you."
+    )
+
+
+def _skipped_lines_notice(skipped_lines: tuple[str, ...]) -> str:
+    """Names a line that failed the item grammar even when a sibling item in
+    the same pile successfully drained (never silently swallowed)."""
     skipped_desc = "; ".join(
         f"skipped {line!r} (does not match the item grammar)" for line in skipped_lines
     )
-    return f"{skipped_desc}"
+    return f"note: {skipped_desc}"
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:

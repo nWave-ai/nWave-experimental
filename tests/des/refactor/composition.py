@@ -180,6 +180,29 @@ proposed_solution="{proposed_solution}"
         self.pile_path.write_text(f"# Tech debt pile\n\n{line}\n", encoding="utf-8")
         self.paid_path.write_text("# Paid tech debt\n", encoding="utf-8")
 
+    def seed_pile_with_valid_item_and_unparseable_line(
+        self, item_id: str = "TD-001", bad_line: str = "- [ ] hand-typed, wrong shape"
+    ) -> None:
+        """Seed a real ``techdebt.md`` carrying ONE grammar-valid item AND one
+        line that fails the item grammar -- the 'mixed pile' arrangement
+        (fix-refactor-pile-grammar-undocumented): a real item still parses
+        and drains, but the malformed sibling line must not be silently
+        swallowed just because the pile as a whole was not empty."""
+        self.pile_path.write_text(
+            textwrap.dedent(
+                f"""\
+                # Tech debt pile
+
+                - [ ] {item_id}: paradigm={_DEFAULT_PARADIGM} defect="duplicate helper" \
+proposed_solution="extract a shared function"
+                {bad_line}
+                """
+            ),
+            encoding="utf-8",
+        )
+        if not self.paid_path.exists():
+            self.paid_path.write_text("# Paid tech debt\n", encoding="utf-8")
+
     # --- Given: the user-editable prompt template -------------------------
 
     def write_user_prompt_template(self, template_text: str) -> None:

@@ -327,15 +327,23 @@ COMMIT_GATE_PHASES: frozenset[str] = frozenset(
     {ATDDPurePhase.D_REFACTOR_COMMIT.value}
 ) | _legacy_words("G_COMMIT")
 
-# The feature-end-cycle phases (ADR-028 D6): the legacy E_BATCH_REFACTOR /
-# F_FINAL_REVIEW words plus the canonical per-feature D_DISTILL routing node
-# plus the per-feature FEATURE_END_EXAMINE routing node (feature-end-examine-
-# phase slice-01, DESIGN Decision D1). A dispatch in one of these phases is
-# per-FEATURE, so its only coherent scope is `feature-end`. The per-slice
-# commit phase D_REFACTOR_COMMIT is NOT here.
+# The feature-end-cycle phases (ADR-028 D6): the legacy F_FINAL_REVIEW word
+# plus the canonical per-feature D_DISTILL routing node plus the per-feature
+# FEATURE_END_EXAMINE routing node (feature-end-examine-phase slice-01,
+# DESIGN Decision D1). A dispatch in one of these phases is per-FEATURE, so
+# its only coherent scope is `feature-end`. The per-slice commit phase
+# D_REFACTOR_COMMIT is NOT here.
+#
+# E_BATCH_REFACTOR is DELIBERATELY ABSENT (fix-dispatch-cannot-generate-
+# feature-end-phases, Ale-ratified): the mandatory batch refactor is retired
+# from both the per-slice and feature-end cycles, superseded by the
+# prefactoring lane. It stays a valid LEGACY_PHASE_ALIASES replay key (a
+# pre-retirement ledger entry still resolves), but it is no longer a live
+# feature-end-coherent phase -- re-adding it here would resurrect a retired
+# phase.
 FEATURE_END_PHASES: frozenset[str] = frozenset(
     {ATDDPurePhase.D_DISTILL.value, ATDDPurePhase.FEATURE_END_EXAMINE.value}
-) | _legacy_words("E_BATCH_REFACTOR", "F_FINAL_REVIEW")
+) | _legacy_words("F_FINAL_REVIEW")
 
 # The single phase word that routes a returning agent to the U4 feature-end
 # terminal gate. The legacy F_FINAL_REVIEW word is the reviewer's feature-end
