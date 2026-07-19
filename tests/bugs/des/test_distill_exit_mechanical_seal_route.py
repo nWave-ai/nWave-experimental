@@ -558,6 +558,32 @@ def _seed_review_verdict(repo: Path, slice_id: str) -> None:
     ledger.append_review_verdict(slice_id=slice_id, verdict_fields=record)
 
 
+def _write_e1_unevidenced_feature_file(repo: Path) -> Path:
+    """Author a real, present-on-disk `.feature` file for
+    `_E1_UNEVIDENCED_SLICE` -- fixture repair for
+    fix-distill-exit-blocks-jit-slices (see the updated module docstring
+    paragraph and E1's own docstring below for why). Uses the SAME
+    `@feature-{feature_id}` / `@slice-NN` discovery convention
+    `des.application.slice_at_completeness.feature_files_for_slice` reads --
+    the JIT-scope fix's own discovery primitive -- so this slice registers as
+    PRESENT, never absent-by-JIT.
+    """
+    acceptance_dir = repo / "tests" / _FEATURE_ID / "acceptance"
+    acceptance_dir.mkdir(parents=True, exist_ok=True)
+    text = (
+        f"@feature-{_FEATURE_ID}\n"
+        "Feature: E1 unevidenced slice probe\n\n"
+        f"  @{_E1_UNEVIDENCED_SLICE}\n"
+        f"  Scenario: probe scenario for {_E1_UNEVIDENCED_SLICE}\n"
+        "    Given a planned slice with no verdict and no mechanical seal\n"
+        "    When the DISTILL exit gate runs\n"
+        "    Then the slice stays in the missing set\n"
+    )
+    path = acceptance_dir / f"{_E1_UNEVIDENCED_SLICE}.feature"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
 def test_mixed_slice_states_block_names_only_the_unevidenced_slice(
     tmp_path: Path,
 ) -> None:
@@ -571,6 +597,31 @@ def test_mixed_slice_states_block_names_only_the_unevidenced_slice(
     annotated+sealed) seal-cleared slice; D1's gap is orthogonal (a MISSING
     at_kind guard on the seal route, not a miscomputed `missing` set for a
     slice that legitimately qualifies for it either way).
+
+    FIXTURE REPAIR (fix-distill-exit-blocks-jit-slices, ratified by the team
+    lead after the crafter correctly refused to edit a DISTILL-authored AT
+    unilaterally): the JIT-scope fix excludes a still-missing, non-first
+    planned slice from `missing` ONLY when NO `.feature`/tagged-test evidence
+    exists for it anywhere in the repo (absent-by-JIT). This test's subject,
+    per its own docstring above, was always naming precision among evidence
+    STATES ("verdict-signed, seal-cleared, and neither") -- "neither" was
+    written before JIT-absence existed as a conceivable state, so it
+    implicitly meant a slice that EXISTS and lacks evidence (the only kind of
+    "neither" a gate blind to disk presence could ever observe). Leaving
+    slice-03 absent from disk now exercises a DIFFERENT state this test never
+    intended to guard (absent-by-JIT, correctly excluded post-fix) and would
+    silently invert the assertion below. `_write_e1_unevidenced_feature_file`
+    makes the originally-intended state explicit: a genuine, present,
+    unreviewed `.feature` file for slice-03. The assertions are unchanged --
+    only the fixture now says what the test always meant. The absent-slice
+    JIT-exclusion behavior itself is covered elsewhere, by
+    `tests/bugs/des/test_distill_exit_jit_slice_scope.py` (this same
+    feature's own AT). The "genuinely skipped slice" guard this repair might
+    seem to weaken is NOT lost: it is caught at feature-end by the truncation
+    oracle (`verify_deliver_integrity.py`, "any undelivered slice would have
+    FAILED the truncation check above") -- a different gate answering a
+    different question ("are ALL declared slices delivered?" vs this gate's
+    "is THIS dispatch's scope attested?").
     """
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -579,6 +630,7 @@ def test_mixed_slice_states_block_names_only_the_unevidenced_slice(
     _write_regression_file(repo)
     _write_red_seal(repo)
     _seed_review_verdict(repo, _E1_VERDICT_SLICE)
+    _write_e1_unevidenced_feature_file(repo)
     transcript = _write_distill_return_transcript(repo)
 
     outcome = _run_gate(repo, transcript)

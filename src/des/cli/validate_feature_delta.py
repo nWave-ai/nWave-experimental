@@ -26,7 +26,8 @@ CLI contract:
 - `--require-slice-plan --format=json` mode: emit a single JSON object to
   stdout carrying a stable `"verdict"` field whose value is exactly one of the
   closed token set {accepted, missing-slice-plan, malformed-slice-plan,
-  malformed-wave-heading}; exit 0 on `accepted`, non-zero on any rejection.
+  malformed-wave-heading, rejected-infra-only, unjustified-slice-dependency};
+  exit 0 on `accepted`, non-zero on any rejection.
 
 Architecture:
 - Pure functional core (`validate_feature_delta_content`,
@@ -92,6 +93,13 @@ VERDICT_MALFORMED_WAVE_HEADING = "malformed-wave-heading"
 #: carries no user-visible value and is vetoed. Non-zero exit flows through the
 #: existing CLI shell (exit 0 iff `accepted`).
 VERDICT_REJECTED_INFRA_ONLY = "rejected-infra-only"
+#: parallel-by-default-slice-plan slice-01 (D-1/D-2): a slice-plan row whose
+#: Annotation cell carries `depends-on {slice-id}` makes a real dependency
+#: claim and must carry a non-empty Justification cell, or the row is
+#: rejected. Closes the slice-plan-mode verdict set at SIX tokens. The
+#: feature-plan-mode closed set (five tokens) is UNCHANGED — this token never
+#: appears under `--require-feature-plan` (D-6).
+VERDICT_UNJUSTIFIED_SLICE_DEPENDENCY = "unjustified-slice-dependency"
 
 #: The two NEW closed `verdict` tokens emitted under --require-feature-plan
 #: --format=json (discuss-epic-mode slice-01). The verdict must name WHICH plan
@@ -236,6 +244,12 @@ _FEATURE_PLAN_HEADING_RE = re.compile(
     r"^##\s+Wave:\s+DISCUSS\s*/\s*\[REF\]\s+Feature\s+Plan\s*$"
 )
 
+#: Match the `depends-on {slice-id}` Annotation token (D-1, parallel-by-
+#: default-slice-plan slice-01) — the same shape EDC-6 establishes at feature
+#: granularity (`nw-discuss` SKILL.md line 191), brought down to slice
+#: granularity verbatim.
+_SLICE_DEPENDENCY_RE = re.compile(r"depends-on\s+\S+", re.IGNORECASE)
+
 
 def _exact_heading_regex(heading_literal: str) -> re.Pattern[str]:
     """Build an exact-form, whitespace-tolerant H2 heading regex from a
@@ -315,6 +329,7 @@ class _PlanSpec(NamedTuple):
     table_noun: str  # "slice-plan" | "feature-plan" (hyphenated)
     plan_noun: str  # "slice plan" | "feature plan" (spaced)
     row_noun: str  # "slice" | "feature"
+    enforce_dependency_justification: bool  # D-1/D-2: slice-plan mode only
 
 
 class ReuseAnalysisResult(NamedTuple):
@@ -441,6 +456,7 @@ _SLICE_PLAN_SPEC = _PlanSpec(
     table_noun="slice-plan",
     plan_noun="slice plan",
     row_noun="slice",
+    enforce_dependency_justification=True,
 )
 _FEATURE_PLAN_SPEC = _PlanSpec(
     heading_re=_FEATURE_PLAN_HEADING_RE,
@@ -452,6 +468,7 @@ _FEATURE_PLAN_SPEC = _PlanSpec(
     table_noun="feature-plan",
     plan_noun="feature plan",
     row_noun="feature",
+    enforce_dependency_justification=False,
 )
 
 
@@ -555,6 +572,49 @@ def _classify_slice_cohesion(
     )
 
 
+def _classify_slice_dependency_justification(
+    row_no: int, cells: list[str]
+) -> PlanValidationResult | None:
+    """Classify one slice-plan row's dependency-justification claim. Pure.
+
+    Direct sibling of `_classify_component_row` (Reuse Analysis,
+    :806-837) — the same "a row makes a claim that must carry a non-empty
+    Justification" shape, applied to the Annotation column (`cells[3]`)
+    instead of the Decision column: a row whose Annotation carries
+    `depends-on {slice-id}` makes a real dependency claim and must carry a
+    non-empty Justification (`cells[4]`), or the row is rejected (D-1/D-2). A
+    row missing its Justification column entirely (fewer than five cells)
+    fails loud as a malformed slice plan rather than silently slipping
+    through accepted.
+
+    Returns `None` when the row makes no dependency claim, or the claim is
+    justified — every other Annotation shape (empty, `@walking_skeleton`,
+    `@infrastructure`, `@coupled`) is untouched (D-2). Called only in
+    slice-plan mode (`_PlanSpec.enforce_dependency_justification`); the
+    malformed verdict is the slice-plan-mode token by construction — this
+    rule does not generalize to feature-plan mode (D-6).
+    """
+    if len(cells) < len(SLICE_PLAN_COLUMNS):
+        return PlanValidationResult(
+            verdict=VERDICT_MALFORMED_SLICE_PLAN,
+            detail=(
+                f"row {row_no} has {len(cells)} cells; expected "
+                f"{len(SLICE_PLAN_COLUMNS)} ({list(SLICE_PLAN_COLUMNS)})"
+            ),
+        )
+    if not _SLICE_DEPENDENCY_RE.search(cells[3]):
+        return None
+    if cells[4].strip():
+        return None
+    return PlanValidationResult(
+        verdict=VERDICT_UNJUSTIFIED_SLICE_DEPENDENCY,
+        detail=(
+            f"row {row_no} declares 'depends-on' with an empty Justification "
+            f"cell (D-1/D-2)"
+        ),
+    )
+
+
 def _validate_plan_content(content: str, spec: _PlanSpec) -> PlanValidationResult:
     """Structurally validate a plan section against `spec`. Pure function.
 
@@ -622,6 +682,14 @@ def _validate_plan_content(content: str, spec: _PlanSpec) -> PlanValidationResul
     cohesion_veto = _classify_slice_cohesion(data_rows, spec.row_noun)
     if cohesion_veto is not None:
         return cohesion_veto
+
+    if spec.enforce_dependency_justification:
+        for row_no, row in enumerate(data_rows, start=1):
+            dependency_veto = _classify_slice_dependency_justification(
+                row_no, _parse_table_cells(row)
+            )
+            if dependency_veto is not None:
+                return dependency_veto
 
     return PlanValidationResult(
         verdict=VERDICT_ACCEPTED,

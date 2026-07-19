@@ -583,7 +583,11 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         return self._append_record(extra, feature_id=feature_id)
 
     def append_workflow_phase_completed_distill(
-        self, *, feature_id: str | None = None
+        self,
+        *,
+        feature_id: str | None = None,
+        validated_slices: list[str] | None = None,
+        excluded_slices: list[str] | None = None,
     ) -> dict[str, Any]:
         """Append the `WorkflowPhaseCompletedDistill` success terminal record.
 
@@ -593,15 +597,27 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         that
         leaves the same kind of durable evidence a blocked feature does.
 
-        The phase is encoded in the event NAME, so the record carries only the
-        five `_HASHED_FIELDS` + `record_hash` -- it round-trips `read_records`
-        with no M7 read-contract change. Feature-scoped (`slice_id == ""`),
-        mirroring `append_feature_end_event`.
+        fix-distill-exit-blocks-jit-slices slice-01: the optional
+        ``validated_slices`` / ``excluded_slices`` kwargs carry the per-slice
+        scope this pass actually reasoned about -- the slices verdict-signed
+        or mechanical-seal-cleared, and the JIT-absent slices deliberately
+        left out of scope. Both default None (every pre-existing call site
+        stays byte-identical); when present, each is threaded into the record
+        and thereby hashed into `record_hash` like every other field, so a
+        pass can never look identical whether the gate reasoned about scope
+        or simply stopped looking (the charter's audit-trail oracle).
+
+        Feature-scoped (`slice_id == ""`), mirroring `append_feature_end_event`.
         """
-        return self._append_record(
-            {"event": WORKFLOW_PHASE_COMPLETED_DISTILL, "slice_id": ""},
-            feature_id=feature_id,
-        )
+        fields: dict[str, Any] = {
+            "event": WORKFLOW_PHASE_COMPLETED_DISTILL,
+            "slice_id": "",
+        }
+        if validated_slices is not None:
+            fields["validated_slices"] = validated_slices
+        if excluded_slices is not None:
+            fields["excluded_slices"] = excluded_slices
+        return self._append_record(fields, feature_id=feature_id)
 
     def append_workflow_phase_completed_g_commit(
         self, slice_id: str, *, feature_id: str | None = None
