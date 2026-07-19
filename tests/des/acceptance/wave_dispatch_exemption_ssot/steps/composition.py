@@ -301,9 +301,15 @@ class ExemptionReconcileComposition:
             wave_active_reader=WaveActiveFilesystemStore(),
         )
         wave_entering = self._floor is FloorState.ACTIVE_ENTERING
-        prev = Path.cwd()
+        prev_cwd = Path.cwd()
+        prev_env = os.environ.get("DES_PROJECT_DIR")
         try:
             os.chdir(self._root)
+            # Mirror the armed root into DES_PROJECT_DIR so `resolve_nwave_root()`
+            # (now consulted by `_read_active_wave()`) resolves the SAME root the
+            # floor was seeded at, not the per-test isolation root the autouse
+            # `_isolate_nwave_root` fixture set (tests/conftest.py).
+            os.environ["DES_PROJECT_DIR"] = str(self._root)
             decision = service.validate(
                 PreToolUseInput(
                     prompt=self._prompt_text(),
@@ -312,7 +318,11 @@ class ExemptionReconcileComposition:
                 )
             )
         finally:
-            os.chdir(prev)
+            os.chdir(prev_cwd)
+            if prev_env is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = prev_env
         # HookDecision exposes the verdict via ``action`` ("allow"|"block") /
         # ``exit_code`` (0 allow / 2 block) -- there is no ``is_allowed`` field.
         # Read the ALLOW/BLOCK binary off the canonical ``action`` token.

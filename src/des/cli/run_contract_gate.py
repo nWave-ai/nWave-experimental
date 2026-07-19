@@ -1665,9 +1665,15 @@ def _run_contract_suite(repo: Path, *, junit_xml_path: Path | None = None) -> in
     unmarked run that actually drives the refusal verdict), never from this
     marker-scoped parity call.
 
-    Parallel-by-default via pytest-xdist (``-n auto``) -- the perf fix that cuts
-    the serial ~30 min whole-suite RUN to ~6 min on 4 cores. Degrades LOUD to
-    serial when xdist is absent or when the operator sets ``NWAVE_GATE_JOBS``
+    Parallel-by-default via pytest-xdist (``-n auto``). MEASURED (not the
+    originally-claimed ~30min->~6min): at full-suite scale (8084 items) the
+    serialized ``real_repo_scan`` xdist_group holds 84.7% of total test weight
+    (1264s of 1491s), so ``-n auto`` buys only ~1x wall-clock at this scale
+    (25m15s wall, 4-core box) despite full xdist overhead -- unit-only runs get
+    the expected ~2x (89.4s serial -> 44.2s at -n4). See
+    ``tests/bugs/des/test_xdist_group_real_repo_scan_swallows_the_suite.py``
+    for the regression guard on the group's collected-item share. Degrades LOUD
+    to serial when xdist is absent or when the operator sets ``NWAVE_GATE_JOBS``
     to a serial token (see ``_parallel_pytest_args``).
     """
     interpreter = pytest_interpreter(repo_root=repo)

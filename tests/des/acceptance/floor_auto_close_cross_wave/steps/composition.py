@@ -296,9 +296,15 @@ class FloorAutoCloseComposition:
             time_provider=SystemTimeProvider(),
             wave_active_reader=WaveActiveFilesystemStore(),
         )
-        prev = Path.cwd()
+        prev_cwd = Path.cwd()
+        prev_env = os.environ.get("DES_PROJECT_DIR")
         try:
             os.chdir(self._root)
+            # Mirror the armed root into DES_PROJECT_DIR so `resolve_nwave_root()`
+            # (now consulted by `_read_active_wave()`) resolves the SAME root the
+            # floor was seeded at, not the per-test isolation root the autouse
+            # `_isolate_nwave_root` fixture set (tests/conftest.py).
+            os.environ["DES_PROJECT_DIR"] = str(self._root)
             self._decision = service.validate(
                 PreToolUseInput(
                     prompt=f"<!-- DES-WAVE: {self._wave} -->\nin-wave sub-dispatch",
@@ -307,7 +313,11 @@ class FloorAutoCloseComposition:
                 )
             )
         finally:
-            os.chdir(prev)
+            os.chdir(prev_cwd)
+            if prev_env is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = prev_env
 
     def when_owner_returns_with_review_veto(self) -> None:
         """Drive the REAL service over a DESIGN owner return that the gate-OUT VETOES."""
@@ -331,12 +341,20 @@ class FloorAutoCloseComposition:
             cwd=str(self._root),
             subagent_type=self._subagent,
         )
-        prev = Path.cwd()
+        prev_cwd = Path.cwd()
+        prev_env = os.environ.get("DES_PROJECT_DIR")
         try:
             os.chdir(self._root)
+            # Mirror the armed root into DES_PROJECT_DIR (see
+            # when_in_wave_sub_dispatch_is_evaluated above for the rationale).
+            os.environ["DES_PROJECT_DIR"] = str(self._root)
             return service.validate(context)
         finally:
-            os.chdir(prev)
+            os.chdir(prev_cwd)
+            if prev_env is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = prev_env
 
     # ---- THEN: observable-surface readers (the Universe = floor record state) ---
 

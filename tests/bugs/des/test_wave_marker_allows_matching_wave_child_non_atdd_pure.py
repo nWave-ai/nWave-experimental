@@ -93,9 +93,15 @@ def _dispatch(
         time_provider=SystemTimeProvider(),
         wave_active_reader=WaveActiveFilesystemStore(),
     )
-    prev = Path.cwd()
+    prev_cwd = Path.cwd()
+    prev_env = os.environ.get("DES_PROJECT_DIR")
     try:
         os.chdir(root)
+        # Mirror `root` into DES_PROJECT_DIR so `resolve_nwave_root()` (which the
+        # service's `_read_active_wave()` now calls) resolves the SAME root this
+        # helper armed the floor at, not the per-test isolation root the autouse
+        # `_isolate_nwave_root` fixture set (tests/conftest.py).
+        os.environ["DES_PROJECT_DIR"] = str(root)
         return service.validate(
             PreToolUseInput(
                 prompt=prompt,
@@ -104,7 +110,11 @@ def _dispatch(
             )
         )
     finally:
-        os.chdir(prev)
+        os.chdir(prev_cwd)
+        if prev_env is None:
+            os.environ.pop("DES_PROJECT_DIR", None)
+        else:
+            os.environ["DES_PROJECT_DIR"] = prev_env
 
 
 # ---------------------------------------------------------------------------

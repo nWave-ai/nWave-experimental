@@ -217,14 +217,23 @@ class TruthfulRecoveryComposition:
         from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
 
         prev_cwd = Path.cwd()
+        prev_env = os.environ.get("DES_PROJECT_DIR")
         try:
             os.chdir(self._project_root)
+            # Mirror the armed root into DES_PROJECT_DIR so `resolve_nwave_root()`
+            # resolves the SAME root the floor was seeded at, not the per-test
+            # isolation root the autouse `_isolate_nwave_root` fixture set.
+            os.environ["DES_PROJECT_DIR"] = str(self._project_root)
             service = service_factory.create_pre_tool_use_service()
             decision = service.validate(
                 PreToolUseInput(prompt=prompt, wave_entering=wave_entering)
             )
         finally:
             os.chdir(prev_cwd)
+            if prev_env is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = prev_env
         self._record(decision)
 
     # ---- follow-the-recovery simulators (still through REAL surfaces) --------
@@ -247,14 +256,22 @@ class TruthfulRecoveryComposition:
             "do the in-wave work (now carrying the wave's marker)"
         )
         prev_cwd = Path.cwd()
+        prev_env = os.environ.get("DES_PROJECT_DIR")
         try:
             os.chdir(self._project_root)
+            # Mirror the armed root into DES_PROJECT_DIR (see
+            # _run_pre_tool_use_gate above for the rationale).
+            os.environ["DES_PROJECT_DIR"] = str(self._project_root)
             service = service_factory.create_pre_tool_use_service()
             decision = service.validate(
                 PreToolUseInput(prompt=followed_prompt, wave_entering=False)
             )
         finally:
             os.chdir(prev_cwd)
+            if prev_env is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = prev_env
         # The observable proof that following item 1 worked: the markerless-bypass
         # veto is no longer the decision -- its reason no longer leads with the
         # WAVE_MARKER_BYPASS error-code (the dispatch now carries a real marker).
@@ -278,14 +295,22 @@ class TruthfulRecoveryComposition:
         from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
 
         prev_cwd = Path.cwd()
+        prev_env = os.environ.get("DES_PROJECT_DIR")
         try:
             os.chdir(self._project_root)
+            # Mirror the armed root into DES_PROJECT_DIR (see
+            # _run_pre_tool_use_gate above for the rationale).
+            os.environ["DES_PROJECT_DIR"] = str(self._project_root)
             service = service_factory.create_pre_tool_use_service()
             decision = service.validate(
                 PreToolUseInput(prompt=_MARKERLESS_PROMPT, wave_entering=False)
             )
         finally:
             os.chdir(prev_cwd)
+            if prev_env is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = prev_env
         reason = decision.reason or ""  # type: ignore[attr-defined]
         return not reason.startswith("WAVE_MARKER_BYPASS:")
 

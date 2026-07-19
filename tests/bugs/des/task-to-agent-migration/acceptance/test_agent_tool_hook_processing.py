@@ -285,17 +285,24 @@ def claude_code_hook_stdin(tmp_path):
 
         Runs WHILE chdir'd into the fixture's isolated ``tmp_path``: the
         production ``PreToolUseService`` sources its wave floor off
-        ``Path.cwd()`` (``WaveActiveReader.read(Path.cwd())``), so the hook's
-        decision must be a function of the floor in this injected root, NOT the
-        ambient working-tree floor armed by whatever branch the suite runs on.
-        Previous CWD is restored afterward.
+        ``resolve_nwave_root()`` (``DES_PROJECT_DIR`` env var if set, else
+        ``Path.cwd()``), so the hook's decision must be a function of the floor
+        in this injected root, NOT the ambient working-tree floor armed by
+        whatever branch the suite runs on. ``DES_PROJECT_DIR`` is mirrored to
+        ``tmp_path`` alongside the chdir so resolution honours the injected
+        root even under an autouse fixture (e.g. ``tests/conftest.py``'s
+        ``_isolate_nwave_root``) that has already pinned ``DES_PROJECT_DIR`` to
+        a different per-test isolation root. Previous CWD/env are restored
+        afterward.
         """
         from des.adapters.drivers.hooks.claude_code_hook_adapter import (
             handle_pre_tool_use,
         )
 
         prev_cwd = os.getcwd()
+        prev_env = os.environ.get("DES_PROJECT_DIR")
         os.chdir(tmp_path)
+        os.environ["DES_PROJECT_DIR"] = str(tmp_path)
         try:
             # Mock stdin with the input data
             with patch("sys.stdin", StringIO(stdin_data)):
@@ -306,6 +313,10 @@ def claude_code_hook_stdin(tmp_path):
                     stdout = mock_stdout.getvalue()
         finally:
             os.chdir(prev_cwd)
+            if prev_env is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = prev_env
 
         # No stderr in direct calls (only in subprocess)
         stderr = ""

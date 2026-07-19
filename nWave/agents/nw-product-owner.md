@@ -195,7 +195,7 @@ Used in place of the LeanUX User Story Template when `workflow.mode == atdd_pure
 |-------|-----------------|--------|------------|---------------|
 | slice-01 | Operator can preview an install plan without touching disk | pending | @walking-skeleton | first end-to-end vertical; thin value accepted |
 | slice-02 | Operator sees the install plan persisted across a restart | pending | | |
-| slice-03 | Operator can apply a previewed plan | pending | | |
+| slice-03 | Operator can apply a previewed plan | pending | depends-on slice-01 | applies the plan slice-01 produces; the preview format must settle before apply can consume it |
 ```
 
 Five columns, fixed order — the order is the contract, a re-order is a malformed slice plan:

@@ -1339,24 +1339,153 @@ def _file_drives_real_repo_cwd(path: Path) -> bool:
     return found
 
 
-def _iter_step_modules(test_dir: Path):
-    """Yield .py modules under any ``steps``-named subdirectory of ``test_dir``.
+# Placed HERE rather than at module top so it introduces no line shift above
+# line ~354 (see the note in `_local_imports`: a test pins subprocess.run
+# timeout sites in this file by absolute line number).
+from typing import TYPE_CHECKING
 
-    pytest-bdd suites name their step package ``steps/`` but also
-    ``<feature>_steps/`` / ``gate_steps/`` / ``acceptance/steps/`` etc., so
-    match any immediate subdirectory whose name contains ``steps`` plus a
-    nested ``acceptance/steps`` layout. One level deep is enough for the
-    conventions in this tree.
+
+if TYPE_CHECKING:
+    import ast
+
+
+def _resolve_import_targets(source_file: Path, node: ast.AST) -> list[Path]:
+    """Resolve one import statement to the local .py file(s) it can name.
+
+    Handles BOTH import forms and BOTH addressing modes:
+
+    * ``from . import x`` / ``from .steps.composition import y`` — RELATIVE:
+      resolved against the importing file's package directory, walking up
+      ``level - 1`` parents.
+    * ``import tests.des.acceptance.x.steps.y`` / ``from tests.... import z`` —
+      ABSOLUTE: resolved from the repo root (the ``tests`` package is
+      importable from there).
+
+    For a dotted tail ``a.b.c`` both ``a/b/c.py`` and ``a/b/c/__init__.py`` are
+    candidates, and so is ``a/b.py`` (the ``from a.b import c`` case where
+    ``c`` is a NAME inside module ``b``, not a submodule). Returning a
+    superset is the safe direction: an unresolvable or over-resolved import
+    can only ever ADD a pin, never drop one.
     """
-    for child in test_dir.iterdir():
-        if not child.is_dir():
-            continue
-        if "steps" in child.name:
-            yield from child.glob("*.py")
+    import ast  # function-local: see the note in `_local_imports`
+
+    repo_root = Path(__file__).resolve().parent.parent
+    bases: list[Path] = []
+    parts: list[str] = []
+
+    if isinstance(node, ast.ImportFrom):
+        if node.level:
+            base = source_file.parent
+            for _ in range(node.level - 1):
+                base = base.parent
+            bases = [base]
         else:
-            nested = child / "steps"
-            if nested.is_dir():
-                yield from nested.glob("*.py")
+            bases = [repo_root]
+        parts = (node.module or "").split(".") if node.module else []
+        # `from a.b import c` — `c` may itself be a submodule.
+        tails = [[*parts, alias.name.split(".")[0]] for alias in node.names]
+        tails.append(parts)
+    elif isinstance(node, ast.Import):
+        bases = [repo_root]
+        tails = [alias.name.split(".") for alias in node.names]
+    else:
+        return []
+
+    resolved: list[Path] = []
+    for base in bases:
+        for tail in tails:
+            tail = [p for p in tail if p]
+            if not tail:
+                continue
+            joined = base.joinpath(*tail)
+            resolved.append(joined.with_suffix(".py"))
+            resolved.append(joined / "__init__.py")
+            if len(tail) > 1:
+                resolved.append(base.joinpath(*tail[:-1]).with_suffix(".py"))
+    return resolved
+
+
+# Per-FILE cache of a module's resolved local imports (the AST parse + path
+# resolution is the expensive part and is a pure function of the file).
+_module_imports_cache: dict[Path, tuple[Path, ...]] = {}
+
+
+def _local_imports(path: Path) -> tuple[Path, ...]:
+    """Return the existing, in-repo .py files ``path`` imports.
+
+    Parse errors / unreadable files yield ``()`` — worst case a missed pin,
+    never a false abort (same failure posture as ``_file_drives_real_repo_cwd``).
+    """
+    # Imported function-locally, NOT at module scope, on purpose: a new
+    # top-level import here shifts every line below it by one, and
+    # `tests/bugs/installer/acceptance/steps/test_subprocess_timeout_calibration.py`
+    # pins subprocess.run timeout sites in this file by absolute LINE NUMBER.
+    # A module-level import would break that table (56 -> 57) for a pure
+    # bookkeeping reason. Keeping it local costs nothing (the cache below means
+    # this runs once per file) and leaves the line coordinates untouched.
+    import ast
+
+    cached = _module_imports_cache.get(path)
+    if cached is not None:
+        return cached
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, SyntaxError):
+        _module_imports_cache[path] = ()
+        return ()
+    # Confine the closure to the TEST tree. The detector's signal is a TEST
+    # pointing a subprocess at the real repo checkout -- production modules
+    # under `src/` legitimately spawn subprocesses with `cwd=Path.cwd()` as
+    # their normal behaviour, and following imports into them matches that
+    # production pattern instead, pinning nearly the whole suite (measured:
+    # 1221 of 1220 test files vs 254 under the old glob). The superseded glob
+    # likewise only ever scanned test-side siblings; this preserves that
+    # boundary while making reachability precise inside it.
+    tests_root = Path(__file__).resolve().parent
+    found: list[Path] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for candidate in _resolve_import_targets(path, node):
+                if not candidate.is_file():
+                    continue
+                resolved = candidate.resolve()
+                if tests_root in resolved.parents:
+                    found.append(resolved)
+    result = tuple(dict.fromkeys(found))
+    _module_imports_cache[path] = result
+    return result
+
+
+def _conftest_chain(test_file: Path) -> list[Path]:
+    """Every ``conftest.py`` pytest applies to ``test_file``, nearest-first.
+
+    A pytest-bdd suite frequently registers its step definitions by importing
+    the step package from the SUITE conftest rather than from the test module
+    (``scenarios()`` binds them by side effect). Those conftests are therefore
+    genuine roots of the import closure — omitting them would under-pin a test
+    that really does drive a ``cwd=<real repo>`` subprocess.
+
+    SUITE-LOCAL conftests only: this ROOT ``tests/conftest.py`` is deliberately
+    excluded. It applies to EVERY test, so including it carries zero
+    discriminating information -- and it does contain one real
+    ``cwd=str(_PROJECT_ROOT)`` call (the ``shared_wheel`` fixture), which would
+    therefore pin 100% of the suite into the serialized group, i.e. no
+    parallelism at all. That call is not the defect class this pin guards:
+    it is session-scoped, ``FileLock``-guarded, runs ``python -m build
+    --wheel`` and writes only to a shared tmp wheel dir -- it never touches
+    the per-test ``.nwave`` state the group exists to protect.
+    """
+    tests_root = Path(__file__).resolve().parent
+    chain: list[Path] = []
+    current = test_file.resolve().parent
+    while True:
+        candidate = current / "conftest.py"
+        if candidate.is_file() and candidate.parent != tests_root:
+            chain.append(candidate)
+        if current == tests_root or tests_root not in current.parents:
+            break
+        current = current.parent
+    return chain
 
 
 # Per-FILE cache for the item-level scan. `pytest_collection_modifyitems` calls
@@ -1400,18 +1529,40 @@ def _item_depends_on_real_repo(test_file: Path) -> bool:
 
 
 def _compute_item_depends_on_real_repo(test_file: Path) -> bool:
-    """Uncached body of :func:`_item_depends_on_real_repo` (memoized wrapper)."""
-    if _file_drives_real_repo_cwd(test_file):
-        return True
-    test_dir = test_file.parent
-    for path in sorted(test_dir.glob("*composition*.py")):
-        if _file_drives_real_repo_cwd(path):
+    """Uncached body of :func:`_item_depends_on_real_repo` (memoized wrapper).
+
+    Walks the test's REAL import closure — the test module itself, the
+    ``conftest.py`` chain pytest applies to it, and every in-repo module those
+    transitively import — and pins iff some module in that closure drives a
+    ``cwd=<real repo>`` subprocess.
+
+    This replaces the previous DIRECTORY-GLOB expansion (every
+    ``*composition*.py`` and ``steps/**`` sibling of the test's directory,
+    imported or not). That glob was an ~8x over-approximation: one matching
+    module pinned its entire directory, so 32 directly-matching files became
+    254 pinned files, and the serialized ``real_repo_scan`` group swallowed
+    17.2% of collected items (~84.7% of suite wall time — the group is ~27x
+    more expensive per item). Import-reachability is the load-bearing
+    property the glob was approximating: a test can only touch the shared
+    ``.nwave`` state through code it actually imports.
+
+    Safety posture is unchanged-or-tighter in the pin direction: unresolvable
+    imports, parse errors and dotted-tail ambiguity all resolve to a SUPERSET
+    of candidates (see ``_resolve_import_targets``), so the closure can
+    over-pin but never silently under-pin a genuine cwd=repo driver.
+    """
+    roots = [test_file.resolve(), *_conftest_chain(test_file)]
+    seen: set[Path] = set()
+    queue = list(roots)
+    while queue:
+        current = queue.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if _file_drives_real_repo_cwd(current):
             return True
-    try:
-        step_modules = sorted(_iter_step_modules(test_dir))
-    except OSError:
-        step_modules = []
-    return any(_file_drives_real_repo_cwd(path) for path in step_modules)
+        queue.extend(dep for dep in _local_imports(current) if dep not in seen)
+    return False
 
 
 def pytest_collection_modifyitems(config, items):

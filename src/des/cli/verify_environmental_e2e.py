@@ -27,7 +27,8 @@ section L1.4, v5) -- the SINGLE SSOT for this contract.
 Stdlib-only at import time (the `des.cli` bundle-scan contract, per F-11's
 fix); build / install / pytest are invoked as subprocesses, never imported.
 
-slice-01 scope: only `--mode run`. Other modes raise `NotImplementedError`
+slice-01 scope: only `--mode run` is implemented. Other advertised modes
+refuse honestly with verdict=misscoped / exit 3 via `_emit_unbuilt_mode`
 (slice-03 wires verify-authored + audit; slice-02 done-gate is separate code).
 """
 
@@ -520,6 +521,43 @@ def _try_write_deferral_marker(marker_arg: str | None, reason: str) -> None:
     write_deferral_marker(Path(marker_arg), reason)
 
 
+def _emit_unbuilt_mode(mode: str, feature_id: str) -> None:
+    """Print an honest refusal for an advertised `--mode` with no shipped
+    behavior yet; verdict=misscoped / exit 3 (GateExit.MISSCOPED) -- reuses
+    the frozen L1.4 capability-gap exit value, never a raw traceback.
+
+    Bugfix `fix-verify-authored-mode-not-implemented`: distinct cause from
+    `_emit_misscoped` (an absent `## Environmental E2E` block) and
+    `_emit_misscoped_facet` (an unregistered runner facet) -- here the MODE
+    itself has no shipped implementation yet. Names the mode (WHAT), states
+    plainly it is not implemented (WHY), and points at `--mode run` -- the
+    one mode this CLI ships today (HOW) -- so the refusal removes the wall
+    instead of just moving it (GDP-3).
+    """
+    token = StdoutToken(
+        mode=mode,
+        feature=feature_id,
+        authored=False,
+        genuine=False,
+        collected=0,
+        verdict=GateVerdict.MISSCOPED,
+        verdict_input_digest=None,
+        fresh=None,
+        xfail_present=None,
+    )
+    _emit_token(token)
+    print(
+        f"diagnostic: --mode {mode} is not implemented yet -- use "
+        "--mode run instead, the only mode this CLI ships today",
+        file=sys.stderr,
+    )
+    print_human_summary(
+        Verdict.DEGRADED,
+        f"environmental e2e --mode {mode} not yet implemented for "
+        f"{feature_id} -- use --mode run instead",
+    )
+
+
 def _verify_authored_mode(args: argparse.Namespace) -> int:
     """Execute `--mode verify-authored` (slice-03 scope: misscoped detector).
 
@@ -552,11 +590,10 @@ def _verify_authored_mode(args: argparse.Namespace) -> int:
         return int(GateExit.MISSCOPED)
     # Block present -- the verify-authored happy path (authored+genuine
     # verification) is out of slice-03 scope; the slice-03 contract here is
-    # the misscoped branch only.
-    raise NotImplementedError(
-        "--mode verify-authored authored+genuine checks not implemented in "
-        "slice-03 (slice-03 ships only the misscoped detector branch)"
-    )
+    # the misscoped branch only. Refuse honestly rather than crash (bugfix
+    # fix-verify-authored-mode-not-implemented).
+    _emit_unbuilt_mode("verify-authored", args.feature_id)
+    return int(GateExit.MISSCOPED)
 
 
 def _run_mode(args: argparse.Namespace) -> int:
@@ -695,10 +732,12 @@ def main(argv: list[str] | None = None) -> int:
         return _run_mode(args)
     if args.mode == "verify-authored":
         return _verify_authored_mode(args)
-    raise NotImplementedError(
-        f"--mode {args.mode!r} not implemented in slice-03 "
-        "(verify-present / verify-merge-ready / audit are out of scope here)"
-    )
+    # verify-present / verify-merge-ready / audit: no shipped behavior yet.
+    # Refuse honestly rather than crash (bugfix
+    # fix-verify-authored-mode-not-implemented) -- before any argument
+    # validation runs, per the frozen L1.4 exit-code grid.
+    _emit_unbuilt_mode(args.mode, args.feature_id or "?")
+    return int(GateExit.MISSCOPED)
 
 
 if __name__ == "__main__":  # pragma: no cover -- subprocess entry

@@ -350,14 +350,23 @@ class DeclarativeGateStackComposition:
             "begin the discuss wave"
         )
         prev_cwd = Path.cwd()
+        prev_env = os.environ.get("DES_PROJECT_DIR")
         try:
             os.chdir(self._project_root)
+            # Mirror the armed root into DES_PROJECT_DIR so `resolve_nwave_root()`
+            # resolves the SAME root the floor was seeded at, not the per-test
+            # isolation root the autouse `_isolate_nwave_root` fixture set.
+            os.environ["DES_PROJECT_DIR"] = str(self._project_root)
             service = service_factory.create_pre_tool_use_service()
             decision = service.validate(
                 PreToolUseInput(prompt=prompt, wave_entering=True)
             )
         finally:
             os.chdir(prev_cwd)
+            if prev_env is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = prev_env
         self._record(decision)
         self._capture_composed_order()
 
@@ -368,8 +377,12 @@ class DeclarativeGateStackComposition:
         from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
 
         prev_cwd = Path.cwd()
+        prev_env = os.environ.get("DES_PROJECT_DIR")
         try:
             os.chdir(self._project_root)
+            # Mirror the armed root into DES_PROJECT_DIR (see
+            # _run_pre_tool_use_gate above for the rationale).
+            os.environ["DES_PROJECT_DIR"] = str(self._project_root)
             service = service_factory.create_subagent_stop_service()
             decision = service.validate(
                 SubagentStopContext(
@@ -384,6 +397,10 @@ class DeclarativeGateStackComposition:
             )
         finally:
             os.chdir(prev_cwd)
+            if prev_env is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = prev_env
         self._record(decision)
 
     def _resolve_declared_stack(

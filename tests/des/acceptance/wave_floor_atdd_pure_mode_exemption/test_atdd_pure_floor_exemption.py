@@ -59,12 +59,21 @@ def _decide(root: Path, prompt: str):
     from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
 
     prev_cwd = Path.cwd()
+    prev_env = os.environ.get("DES_PROJECT_DIR")
     try:
         os.chdir(root)
+        # Mirror the armed root into DES_PROJECT_DIR so `resolve_nwave_root()`
+        # resolves the SAME root the floor was seeded at, not the per-test
+        # isolation root the autouse `_isolate_nwave_root` fixture set.
+        os.environ["DES_PROJECT_DIR"] = str(root)
         service = service_factory.create_pre_tool_use_service()
         return service.validate(PreToolUseInput(prompt=prompt, wave_entering=False))
     finally:
         os.chdir(prev_cwd)
+        if prev_env is None:
+            os.environ.pop("DES_PROJECT_DIR", None)
+        else:
+            os.environ["DES_PROJECT_DIR"] = prev_env
 
 
 def test_atdd_pure_dispatch_under_armed_floor_not_wave_bypass(tmp_path):

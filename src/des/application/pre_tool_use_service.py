@@ -500,12 +500,17 @@ class PreToolUseService(PreToolUsePort):
         No reader wired -> None (S1): the wave-aware hinge degrades to the legacy
         allow-ad-hoc behaviour. A record -> the armed wave name. Indeterminate ->
         propagated so the hinge degrades LOUD (never silent-pass).
+
+        Resolves the root via `resolve_nwave_root()` (DDD-14/15) rather than a
+        bare `Path.cwd()`, so a `DES_PROJECT_DIR` override (the per-test
+        isolation seam) redirects the read to an isolated root instead of the
+        shared process cwd.
         """
         if self._wave_active_reader is None:
             return None
-        from pathlib import Path
+        from des.domain.nwave_root import resolve_nwave_root
 
-        state = self._wave_active_reader.read(Path.cwd())
+        state = self._wave_active_reader.read(resolve_nwave_root())
         if isinstance(state, WaveActiveRecord):
             return state.wave
         if isinstance(state, NoWaveActive):
