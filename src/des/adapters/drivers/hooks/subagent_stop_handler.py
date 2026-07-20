@@ -518,12 +518,24 @@ def _resolve_wave_only_context(
         # strip fenced/quoted regions before the marker match so a fenced
         # example marker reads as documentation, not a directive.
         content = _strip_fenced_regions(content)
-        if "DES-WAVE" not in content:
+        # FR-6: gate on a WELL-FORMED `<!-- DES-WAVE : x -->` marker, not the
+        # bare substring. FR-5 stopped the fenced / user-role false-positive,
+        # but an UNFENCED prose mention of the token "DES-WAVE" in the agent's
+        # OWN (assistant) message -- e.g. an orchestrator narrating "the
+        # DES-WAVE marker" in plain English -- still matched the raw-substring
+        # gate, armed saw_des_wave_marker with no parseable declared_wave, and
+        # degraded LOUD (WAVE_GATEOUT_INDETERMINATE) for the rest of the
+        # session. Reuse the parser's marker detection (the same `_WAVE_PATTERN`
+        # the extraction below already uses) so presence-check and
+        # value-extraction share ONE notion of "is a DES-WAVE marker here":
+        # a well-formed marker sets declared_wave (an out-of-vocab value still
+        # matches `(\S+)` -> still arms -> still degrades LOUD), while a prose
+        # mention leaves it None -> not a directive.
+        markers = DesMarkerParser().parse(content)
+        if markers.declared_wave is None:
             continue
         saw_des_wave_marker = True
-        markers = DesMarkerParser().parse(content)
-        if markers.declared_wave is not None:
-            declared_wave = markers.declared_wave
+        declared_wave = markers.declared_wave
         if markers.project_id is not None:
             project_id = markers.project_id
         if markers.project_root is not None:
@@ -623,6 +635,62 @@ def _read_transcript_entries(transcript_path: str) -> list[dict]:
     except (OSError, PermissionError):
         return []
     return entries
+
+
+# autonomous-consolidation-and-bugfix-loops slice-01 (D-1/D-8): the DISTILL-
+# interim transcript-verdict-recovery parsing contract (Open Question 1, no
+# DESIGN wave ran for this feature). A line matching this marker inside an
+# ASSISTANT-role message is a stated verdict.
+_VERDICT_MARKER_RE = re.compile(r"VERDICT:\s*(PASS|FAIL|BLOCKED)", re.IGNORECASE)
+
+
+def _recover_verdict_from_transcript(
+    transcript_path: str | None,
+) -> tuple[str | None, str | None]:
+    """Scan a stale-closed agent's OWN transcript for its last-stated verdict.
+
+    DISTILL-interim parsing contract (feature-delta Open Question 1): a
+    ``VERDICT:\\s*(PASS|FAIL|BLOCKED)`` marker (case-insensitive) inside an
+    ASSISTANT-role message is a stated verdict -- never a user-role message
+    (mirrors the existing role-scoping precedent in
+    `_resolve_wave_only_context`, so a quoted/documented marker in
+    user-injected content is never mistaken for the agent's own statement).
+    Every assistant message is scanned (not only the last one -- a verdict
+    "buried under noise" must still resolve); the LAST matching marker found,
+    in transcript order, wins.
+
+    Returns ``(verdict, None)`` when a marker was found, or ``(None, reason)``
+    with a non-empty, honest ``reason`` when it was not -- absence of any
+    matching marker, zero assistant messages, or unparseable assistant-turn
+    content (silently dropped by `_read_transcript_entries`'s fail-open JSONL
+    parse) all resolve here, NEVER a fabricated guess (D-8 negative-oracle
+    mandate).
+    """
+    if not transcript_path:
+        return None, "no transcript path was provided for this agent"
+    saw_assistant_message = False
+    recovered: str | None = None
+    for entry in _read_transcript_entries(transcript_path):
+        message = entry.get("message", {})
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        saw_assistant_message = True
+        content = _normalize_message_content(message.get("content", ""))
+        matches_in_message = list(_VERDICT_MARKER_RE.finditer(content))
+        if matches_in_message:
+            recovered = matches_in_message[-1].group(1).upper()
+    if recovered is not None:
+        return recovered, None
+    if not saw_assistant_message:
+        return (
+            None,
+            "the transcript carries no assistant-role messages to recover "
+            "a verdict from",
+        )
+    return (
+        None,
+        "no assistant message in the transcript states a recognizable VERDICT marker",
+    )
 
 
 def _emit_token_usage_events(
@@ -731,6 +799,73 @@ def _run_gate_subprocess(
     return completed.returncode
 
 
+# oss-spine-watchdog downstream-logic test seam (bugfix-oss-spine-watchdog-in-memory):
+# a colon-separated "precheck:e1:e2" exit-code triple that, when set, REPLACES the
+# 3 real gate-subprocess forks below with the given codes. Sibling of
+# NWAVE_U2_FORCE_GATE_TIMEOUT / NWAVE_U2_FORCE_HANDLER_FAULT — env-gated, unset in
+# production, so a production run always forks the 3 real gate subprocesses. Exists
+# because a downstream-logic AT (bounded-block counting, terminal-coherence) asserts
+# on the COUNTING/TERMINAL state machine that CONSUMES precheck/E1/E2 codes, not on
+# the gate mechanism that PRODUCES them — that mechanism is slice-01/05 territory,
+# which still forks for real (faking THAT proof would defeat the feature).
+_FORCE_GATE_CODES_ENV = "NWAVE_U2_FORCE_GATE_CODES"
+
+
+def _resolve_g_commit_gate_codes(
+    repo: Path, pinned_sha: str, feature_id: str | None
+) -> tuple[int, int, int]:
+    """Resolve the precheck/E1/E2 exit codes — forced (test seam) or real (forked).
+
+    Returns `(precheck_code, e1_code, e2_code)`. When `_FORCE_GATE_CODES_ENV` is
+    unset (always true in production) this forks the 3 real gate subprocesses,
+    exactly as before this seam existed. A forced precheck code of 2 (collection
+    crash) short-circuits E1/E2 with sentinel `-1` codes, mirroring the real
+    precheck-crash short-circuit the caller applies below.
+    """
+    forced = os.environ.get(_FORCE_GATE_CODES_ENV)
+    if forced is not None:
+        precheck_str, e1_str, e2_str = forced.split(":")
+        return int(precheck_str), int(e1_str), int(e2_str)
+    precheck_code = _run_gate_subprocess(
+        "des.cli.run_contract_gate",
+        ["--repo", str(repo), "--collect-only"],
+        repo,
+        G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
+    )
+    if precheck_code == 2:
+        return precheck_code, -1, -1
+    e1_code = _run_gate_subprocess(
+        "des.cli.verify_slice_commit_completeness",
+        [
+            "--repo",
+            str(repo),
+            "--commit",
+            pinned_sha,
+            "--expected-head",
+            pinned_sha,
+            "--scope-feature-id",
+            str(feature_id),
+        ],
+        repo,
+        G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
+    )
+    e2_code = _run_gate_subprocess(
+        "des.cli.run_contract_gate",
+        [
+            "--repo",
+            str(repo),
+            "--commit",
+            pinned_sha,
+            "--verify-gate-scope",
+            "--expected-head",
+            pinned_sha,
+        ],
+        repo,
+        G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
+    )
+    return precheck_code, e1_code, e2_code
+
+
 def _emit_atdd_pure_block(reason: str, event: str, **extra: object) -> int:
     """Print a `{decision:block}` body and return exit 0 (handler block protocol).
 
@@ -779,6 +914,17 @@ _EVENT_COLLECTION_CRASH_TERMINAL = "CollectionCrashTerminal"
 # no-double-close recognized set, but NOT routed through the watchdog terminal
 # helper -- it is the verified-commit success record):
 _EVENT_SLICE_COMMIT_VERIFIED = "SliceCommitVerified"
+
+# autonomous-consolidation-and-bugfix-loops slice-01 (D-1/D-8): the paired
+# recovery record written alongside a `StaleAgentClosed` close, same tick,
+# never orphaned. Exactly one of the two fires per close -- the success kind
+# (a verdict was recovered) XOR the honest-failure kind (never a guess).
+_EVENT_STALE_AGENT_VERDICT_RECOVERED = "StaleAgentVerdictRecovered"
+_EVENT_STALE_AGENT_VERDICT_UNRECOVERABLE = "StaleAgentVerdictUnrecoverable"
+# Marks a recovery record as derived from the agent's own transcript --
+# distinguishable from an agent-reported completed terminal
+# (`SliceCommitVerified` / `WorkflowPhaseCompletedGCommit`, charter Positive-2).
+_SOURCE_TRANSCRIPT_RECOVERED = "transcript-recovered"
 
 
 def _emit_terminating_indeterminate(
@@ -1039,7 +1185,70 @@ _EXISTING_TERMINAL_EVENTS = frozenset(
 )
 
 
-def _maybe_emit_stale_agent_closed(resolved: _AtddPureResolvedContext) -> bool:
+def _emit_verdict_recovery_record(
+    project_id: str,
+    effective_cwd: str,
+    slice_id: str,
+    transcript_path: str | None,
+) -> None:
+    """Pair a `StaleAgentClosed` close with a recovered-verdict record (D-1/D-8).
+
+    autonomous-consolidation-and-bugfix-loops slice-01. Called immediately
+    after `_emit_terminating_indeterminate` writes the `StaleAgentClosed`
+    record, in the SAME hook invocation -- so a `StaleAgentClosed` record is
+    never orphaned (D-8 no-orphan pairing). Scans the closed agent's OWN
+    transcript (`_recover_verdict_from_transcript`, the DISTILL-interim
+    parsing contract) and appends EXACTLY ONE recovery record:
+
+      * `StaleAgentVerdictRecovered` (source="transcript-recovered",
+        recovered_verdict=<PASS|FAIL|BLOCKED>) when a marker was found; or
+      * `StaleAgentVerdictUnrecoverable` (source="transcript-recovered",
+        reason=<honest non-empty reason>) when it was not -- never a
+        fabricated guess (D-8 negative-oracle).
+
+    Both record kinds carry `source="transcript-recovered"` so either is
+    distinguishable from an agent-reported completed terminal
+    (`SliceCommitVerified` / `WorkflowPhaseCompletedGCommit`, charter
+    Positive-2) purely by field, independent of the recovery outcome.
+
+    Fail-open (mirror `_emit_terminating_indeterminate`): a ledger-write
+    failure here must not change the `StaleAgentClosed` terminal decision,
+    which already stands by the time this is called.
+    """
+    verdict, reason = _recover_verdict_from_transcript(transcript_path)
+    try:
+        from des.adapters.driven.logging.at_completion_ledger import (
+            AtCompletionLedger,
+        )
+
+        ledger = AtCompletionLedger(project_id, Path(effective_cwd or "."))
+        if verdict is not None:
+            ledger._append_record(
+                {
+                    "event": _EVENT_STALE_AGENT_VERDICT_RECOVERED,
+                    "slice_id": slice_id,
+                    "recovered_verdict": verdict,
+                    "source": _SOURCE_TRANSCRIPT_RECOVERED,
+                }
+            )
+        else:
+            ledger._append_record(
+                {
+                    "event": _EVENT_STALE_AGENT_VERDICT_UNRECOVERABLE,
+                    "slice_id": slice_id,
+                    "reason": reason,
+                    "source": _SOURCE_TRANSCRIPT_RECOVERED,
+                }
+            )
+    except Exception:
+        # Fail-open: the StaleAgentClosed terminal already stands; recovery
+        # emission is audit (mirror `_emit_terminating_indeterminate`).
+        pass
+
+
+def _maybe_emit_stale_agent_closed(
+    resolved: _AtddPureResolvedContext, transcript_path: str | None = None
+) -> bool:
     """Close a returning atdd_pure agent gone stale past the timeout (slice-03).
 
     On a returning atdd_pure agent the wall-clock gap between the agent's LAST
@@ -1060,6 +1269,12 @@ def _maybe_emit_stale_agent_closed(resolved: _AtddPureResolvedContext) -> bool:
     the terminal is loud via stderr + ledger, NEVER a non-zero exit). Returns
     True so the caller takes the terminal path; False so the caller takes the
     existing normal `service.validate` return UNCHANGED.
+
+    autonomous-consolidation-and-bugfix-loops slice-01 (D-1/D-8): the SAME
+    tick that emits `StaleAgentClosed` also pairs it with a recovered-verdict
+    record derived from `transcript_path` (the closed agent's OWN transcript)
+    via `_emit_verdict_recovery_record` -- so a `StaleAgentClosed` record is
+    never orphaned. Pure ADD: the close decision above is unchanged.
 
     FAIL-SAFE direction (the catastrophic-failure guard): a ledger-read error /
     corrupt ledger / missing-field / unparseable-timestamp / unidentified slice
@@ -1125,6 +1340,14 @@ def _maybe_emit_stale_agent_closed(resolved: _AtddPureResolvedContext) -> bool:
             f"minute stale threshold, with no completed/blocked terminal on record; "
             f"closing the agent (StaleAgentClosed) to break the silent hang instead "
             f"of leaving it to wait on a never-arriving notification.",
+        )
+        # D-1/D-8: pair the close, same tick, with a recovered-verdict record
+        # derived from the closed agent's own transcript -- never orphaned.
+        _emit_verdict_recovery_record(
+            resolved.project_id,
+            resolved.effective_cwd,
+            resolved.slice_id,
+            transcript_path,
         )
         return True
     except Exception:
@@ -1199,11 +1422,20 @@ def _handle_g_commit_exit_gate(
         # ordinary failure 1) proceeds to E1/E2 unchanged, so a working agent is
         # never spuriously collection-terminated (AT-03 discriminator). A timeout
         # raises and is caught by the outer handler -> fail-toward-block.
-        precheck_code = _run_gate_subprocess(
-            "des.cli.run_contract_gate",
-            ["--repo", str(repo), "--collect-only"],
-            repo,
-            G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
+        # M9 / F3: the pinned SHA is passed BOTH as `--commit` (the commit to
+        # inspect) and `--expected-head` (the SHA to race-check against). Each
+        # CLI re-reads HEAD and fails closed `CommitHeadRaced` if HEAD has moved
+        # off the pinned SHA during the exit gate (a concurrent amend/rebase).
+        # slice-03 (Seam A): scope E1's `.feature` completeness scan to the
+        # committing feature via `--scope-feature-id`, so a co-resident feature
+        # sharing this slice number on the tree is not cross-bound into this
+        # commit's check. `--scope-feature-id` keeps the legacy E1-only verdict
+        # shape and writes NO ledger record -- the hook stays the sole author of
+        # the SliceCommitVerified record below (E1 runs once, one record). This
+        # is deliberately NOT `--feature-id`, which would flip E1 into the
+        # verify-then-record seam (a second contract run + a duplicate record).
+        precheck_code, e1_code, e2_code = _resolve_g_commit_gate_codes(
+            repo, pinned_sha, resolved.project_id
         )
         if precheck_code == 2:
             slice_id = resolved.slice_id
@@ -1219,48 +1451,6 @@ def _handle_g_commit_exit_gate(
                 f"the walking skeleton exists to kill.",
             )
             return 0
-
-        # M9 / F3: the pinned SHA is passed BOTH as `--commit` (the commit to
-        # inspect) and `--expected-head` (the SHA to race-check against). Each
-        # CLI re-reads HEAD and fails closed `CommitHeadRaced` if HEAD has moved
-        # off the pinned SHA during the exit gate (a concurrent amend/rebase).
-        # slice-03 (Seam A): scope E1's `.feature` completeness scan to the
-        # committing feature via `--scope-feature-id`, so a co-resident feature
-        # sharing this slice number on the tree is not cross-bound into this
-        # commit's check. `--scope-feature-id` keeps the legacy E1-only verdict
-        # shape and writes NO ledger record -- the hook stays the sole author of
-        # the SliceCommitVerified record below (E1 runs once, one record). This
-        # is deliberately NOT `--feature-id`, which would flip E1 into the
-        # verify-then-record seam (a second contract run + a duplicate record).
-        e1_code = _run_gate_subprocess(
-            "des.cli.verify_slice_commit_completeness",
-            [
-                "--repo",
-                str(repo),
-                "--commit",
-                pinned_sha,
-                "--expected-head",
-                pinned_sha,
-                "--scope-feature-id",
-                resolved.project_id,
-            ],
-            repo,
-            G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
-        )
-        e2_code = _run_gate_subprocess(
-            "des.cli.run_contract_gate",
-            [
-                "--repo",
-                str(repo),
-                "--commit",
-                pinned_sha,
-                "--verify-gate-scope",
-                "--expected-head",
-                pinned_sha,
-            ],
-            repo,
-            G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
-        )
 
         if e1_code == 0 and e2_code == 0:
             _emit_g_commit_ledger_event(resolved, _EVENT_SLICE_COMMIT_VERIFIED)
@@ -2069,6 +2259,51 @@ def _handle_distill_exit_gate(
             missing = missing - _mechanical_seal_cleared_slices(
                 repo, feature_id, missing, resolved.at_kind
             )
+
+        # fix-distill-exit-jit-scope-probe: per-slice JIT authoring (atdd_pure
+        # canonical, nw-distill Mandate 4) deliberately leaves later slices
+        # absent from disk until their turn -- they can never carry a signed
+        # verdict, so a still-missing slice with NO discoverable `.feature`/
+        # pytest AT artifact anywhere (`feature_files_for_slice` empty) is
+        # JIT-not-yet-reached, not a review omission. The feature's FIRST
+        # planned slice is excluded from this carve-out: it is always the
+        # slice this DISTILL return is FOR, so it must carry direct evidence
+        # even when nothing was authored for it either (a genuinely empty
+        # return is never "not yet reached"). A slice that IS present on disk
+        # (even a scaffold-only `@skip` carrier) never qualifies -- a file's
+        # mere presence is not a review, and it must stay in `missing`.
+        excluded_slices: frozenset[str] = frozenset()
+        if missing:
+            from des.application.slice_at_completeness import (
+                feature_files_for_slice,
+            )
+
+            plan_rows = _parse_slice_plan_rows(repo, feature_id)
+            plan_order = [slice_id for slice_id, _status in plan_rows]
+            plan_status = {
+                slice_id: (status or "").strip().lower()
+                for slice_id, status in plan_rows
+            }
+            first_planned_slice = plan_order[0] if plan_order else None
+            # A slice is carved out of `missing` as JIT-not-yet-reached ONLY
+            # when its plan `Status` is `pending` -- a `shipped` slice claims
+            # delivery and so MUST carry a signed verdict (the
+            # oss-hook-side-phase-injection keystone: a planned slice missing
+            # its review keeps DISTILL open, regardless of disk presence).
+            # Disk-absence alone is ambiguous -- it cannot tell a legitimately
+            # deferred `pending` slice from a `shipped`-but-unreviewed omission
+            # -- so the `pending` status is the discriminating signal; the
+            # first planned slice and any slice with a discoverable artifact
+            # still never qualify.
+            excluded_slices = frozenset(
+                slice_id
+                for slice_id in missing
+                if slice_id != first_planned_slice
+                and plan_status.get(slice_id) == "pending"
+                and not feature_files_for_slice(repo, slice_id, feature_id)
+            )
+            missing = missing - excluded_slices
+
         if missing:
             return _emit_atdd_pure_block(
                 f"DISTILL exit refused for {feature_id}: the {sorted(missing)} "
@@ -2082,7 +2317,10 @@ def _handle_distill_exit_gate(
             )
 
         # Complete verdict set -- emit the symmetric success terminal and allow.
-        ledger.append_workflow_phase_completed_distill()
+        ledger.append_workflow_phase_completed_distill(
+            validated_slices=sorted(planned - excluded_slices),
+            excluded_slices=sorted(excluded_slices),
+        )
         return 0
 
     except LedgerIntegrityViolation as exc:
@@ -2152,7 +2390,12 @@ def _handle_atdd_pure_return(
     # key, close it loud (StaleAgentClosed) -- a terminating INDETERMINATE: exit
     # 0, NO {decision:block} body. Every non-stale / has-terminal / error path
     # falls through fail-open to the existing service.validate return UNCHANGED.
-    if _maybe_emit_stale_agent_closed(resolved):
+    # autonomous-consolidation-and-bugfix-loops slice-01 (D-1): the closed
+    # agent's own transcript path threads through so the SAME tick pairs the
+    # close with a recovered-verdict record.
+    if _maybe_emit_stale_agent_closed(
+        resolved, hook_input.get("agent_transcript_path")
+    ):
         return 0
 
     service = service_factory.create_subagent_stop_service()

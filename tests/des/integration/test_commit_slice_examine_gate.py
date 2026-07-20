@@ -24,6 +24,9 @@ from pathlib import Path
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli.commit_slice import main as commit_slice_main
 from des.cli.record_examine_verdict import main as record_examine_verdict_main
+from tests.des._helpers.commit_slice_git_template import (
+    provision_commit_slice_repo,
+)
 
 
 def _git(root: Path, *args: str) -> str:
@@ -37,35 +40,15 @@ def _git(root: Path, *args: str) -> str:
 
 
 def _init_repo(root: Path) -> None:
-    """Init a git work-tree with one committed base file (the slice's parent)."""
-    root.mkdir(parents=True, exist_ok=True)
-    _git(root, "init", "-q")
-    _git(root, "config", "user.email", "t@t")
-    _git(root, "config", "user.name", "t")
-    _git(root, "config", "--local", "core.hooksPath", ".git/hooks")
-    tests_dir = root / "tests" / "unit"
-    tests_dir.mkdir(parents=True)
-    (root / "tests" / "__init__.py").write_text("", encoding="utf-8")
-    (tests_dir / "__init__.py").write_text("", encoding="utf-8")
-    (root / "conftest.py").write_text(
-        "import pytest\n\n\n"
-        "def pytest_collection_modifyitems(items):\n"
-        "    for item in items:\n"
-        "        item.add_marker(pytest.mark.unit)\n",
-        encoding="utf-8",
-    )
-    (root / "pytest.ini").write_text(
-        "[pytest]\nmarkers =\n"
-        "    unit: unit tests\n"
-        "    integration: integration tests\n"
-        "    acceptance: acceptance tests\n",
-        encoding="utf-8",
-    )
-    (tests_dir / "test_base.py").write_text(
-        "def test_base():\n    assert True\n", encoding="utf-8"
-    )
-    _git(root, "add", "-A")
-    _git(root, "commit", "-q", "-m", "base: walking skeleton")
+    """Provision the git work-tree via the shared session-cached template.
+
+    See ``tests.des._helpers.commit_slice_git_template`` -- the base repo
+    (``git init`` + config + the "base: walking skeleton" commit, six real
+    ``git`` subprocess spawns) is built ONCE per test process and cached;
+    this call materializes an independent filesystem copy at ``root``, so
+    no test's later mutations can leak into another test's repo.
+    """
+    provision_commit_slice_repo(root)
 
 
 def _last_json_event(stdout: str) -> dict:

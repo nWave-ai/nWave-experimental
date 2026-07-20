@@ -4,12 +4,12 @@ D4 Phase 3 slice-03 (per `docs/analysis/d4-schema-spec-2026-05-26.md`
 § 5 Phase 3 slice-03 + DDD analysis `docs/analysis/ddd-workflow-change-difficulty-2026-05-26.md`
 D1 design direction).
 
-Single-invocation aggregate gate that checks all 7 cascading invariants
+Single-invocation aggregate gate that checks all 8 cascading invariants
 catalogued in `docs/product/backlog.md` friction #57 (`F-NEW-FEATURE-FIRST-DISPATCH-FRICTION-STACK`)
 BEFORE a NEW feature first crafter dispatches. Cascade-debug reduced from
 several friction roundtrips to 1 combined diagnostic.
 
-The 7 invariants verified:
+The 8 invariants verified:
   1. SLICE_PLAN_SECTION -- `## Wave: DISCUSS / [REF] Slice Plan` heading
      present in `docs/feature/{feature_id}/feature-delta.md`.
   2. SCENARIO_SLICE_TAGS -- every scenario in the feature's .feature files
@@ -25,7 +25,14 @@ The 7 invariants verified:
      rationale is present in `docs/feature/{feature_id}/feature-delta.md`. A
      feature that skips the optional DESIGN wave cannot slip past the
      reuse-first guarantee.
-  7. SUSTAINABILITY -- a well-formed Test Reuse & Consolidation Analysis section
+  7. PREFACTORING_ASSESSMENT -- a DESIGN-having feature-delta carries a
+     substantive `## Prefactoring Assessment` section (naming the
+     `@prefactoring` slice that does the reshaping work, or a justified
+     NONE). Wires the SHIPPED `validate_prefactoring_assessment_content`
+     parser (`--require-prefactoring-assessment`) into the aggregate so the
+     gate FIRES before dispatch instead of staying opt-in. Vacuously
+     satisfied when no `## Wave: DESIGN` section is present at all.
+  8. SUSTAINABILITY -- a well-formed Test Reuse & Consolidation Analysis section
      (or accepted exemption: methodology-exempt / no-new-tests) is present in
      `docs/feature/{feature_id}/feature-delta.md`. Wires the SHIPPED slice-03
      `validate_sustainability_content` parser into the aggregate so the
@@ -33,7 +40,7 @@ The 7 invariants verified:
      declared-but-missing or malformed section cannot slip past the gate.
 
 Exit codes:
-  0 -- all 7 invariants PASS; dispatcher proceeds to next gate.
+  0 -- all 8 invariants PASS; dispatcher proceeds to next gate.
   1 -- at least one invariant FAILS; diagnostic enumerates each invariant's
        status + remediation.
   2 -- malformed input (argparse failure on required --feature-id/--slice-id).
@@ -80,10 +87,15 @@ from des.cli.validate_feature_delta import (
     _SUSTAINABILITY_ACCEPTED_VERDICTS,
     VERDICT_MALFORMED_REUSE_ANALYSIS,
     VERDICT_METHODOLOGY_EXEMPT,
+    VERDICT_MISSING_PREFACTORING_ASSESSMENT,
     VERDICT_MISSING_REUSE_ANALYSIS,
     VERDICT_NO_OVERLAP_DECLARED,
+    VERDICT_PREFACTORING_ASSESSMENT_ACCEPTED,
+    VERDICT_PREFACTORING_NOT_REQUIRED,
     VERDICT_STRUCTURALLY_ACCEPTED,
     VERDICT_UNJUSTIFIED_CREATE_NEW,
+    VERDICT_UNMOTIVATED_PREFACTORING_ASSESSMENT,
+    validate_prefactoring_assessment_content,
     validate_reuse_analysis_content,
     validate_sustainability_content,
 )
@@ -111,6 +123,7 @@ _INV_AT_VERDICT = "at_review_verdict"
 _INV_GATE_OUTPUT = "gate_output_produceable"
 _INV_PRE_COMMIT = "pre_commit_scope"
 _INV_REUSE_FIRST = "reuse_first_or_design_skip"
+_INV_PREFACTORING = "prefactoring_assessment"
 _INV_SUSTAINABILITY = "sustainability"
 
 _ALL_INVARIANTS = (
@@ -120,6 +133,7 @@ _ALL_INVARIANTS = (
     _INV_GATE_OUTPUT,
     _INV_PRE_COMMIT,
     _INV_REUSE_FIRST,
+    _INV_PREFACTORING,
     _INV_SUSTAINABILITY,
 )
 
@@ -136,6 +150,7 @@ _BUGFIX_LANE_SKIPPED: tuple[str, ...] = (
     _INV_SCENARIO_TAGS,
     _INV_AT_VERDICT,
     _INV_REUSE_FIRST,
+    _INV_PREFACTORING,
     _INV_SUSTAINABILITY,
 )
 
@@ -188,6 +203,19 @@ _REMEDIATIONS: dict[str, str] = {
         "nw-design SKILL.md step 5). If DESIGN was "
         "deliberately skipped, a `## Wave: DESIGN / [REF] Design Skipped` witness "
         "with a non-empty rationale satisfies this invariant instead"
+    ),
+    _INV_PREFACTORING: (
+        "WHY: a real DESIGN can bend an existing component out of shape -- the "
+        "Prefactoring Assessment is the sibling of Reuse Analysis, assessing "
+        "the SAME risk on the refactor axis instead of the duplication axis. "
+        "HOW: run `des feature-delta-doctor <feature-delta.md>` to see this gap "
+        "alongside every other structural gap in one pass. The section itself is "
+        "authoring work: a well-formed `## Prefactoring Assessment` (nw-design "
+        "SKILL.md) naming the @prefactoring slice that reshapes the bent "
+        "component, OR a justified NONE (what was examined + why the shape "
+        "fits). If DESIGN was deliberately skipped, a `## Wave: DESIGN / [REF] "
+        "Design Skipped` witness with a non-empty rationale satisfies this "
+        "invariant instead -- there is no design to have bent anything"
     ),
     _INV_SUSTAINABILITY: (
         "Run `des feature-delta-doctor <feature-delta.md>` to see this gap "
@@ -657,6 +685,92 @@ def _check_reuse_first_or_design_skip(
     )
 
 
+#: Prefactoring Assessment verdicts that CLEAR the invariant (DDD-9-shaped):
+#: either the scoping no-op (no `## Wave: DESIGN` section -- nothing to
+#: assess) or a substantive, accepted assessment.
+_PREFACTORING_CLEAR_VERDICTS = frozenset(
+    {
+        VERDICT_PREFACTORING_NOT_REQUIRED,
+        VERDICT_PREFACTORING_ASSESSMENT_ACCEPTED,
+    }
+)
+
+
+#: Verdicts that mean "no substantive Prefactoring Assessment found" -- the
+#: two shapes a Design-Skipped witness can still rescue (DDD-9-shaped,
+#: mirrors `_check_reuse_first_or_design_skip`'s witness-fallback treatment
+#: of `VERDICT_MISSING_REUSE_ANALYSIS` / `VERDICT_MALFORMED_REUSE_ANALYSIS`).
+_PREFACTORING_WITNESS_RESCUABLE_VERDICTS = frozenset(
+    {
+        VERDICT_MISSING_PREFACTORING_ASSESSMENT,
+        VERDICT_UNMOTIVATED_PREFACTORING_ASSESSMENT,
+    }
+)
+
+
+def _check_prefactoring_assessment(
+    repo_root: Path, feature_id: str
+) -> _InvariantResult:
+    """Invariant 8: a DESIGN-having feature-delta carries a substantive
+    Prefactoring Assessment, OR an explicit DESIGN-skip witness.
+
+    Mirrors invariant 6 (`_check_reuse_first_or_design_skip`) EXACTLY,
+    including its Design-Skipped witness fallback: reuses the SHIPPED
+    `validate_prefactoring_assessment_content` -- catalogued
+    (`--require-prefactoring-assessment`) but never wired into any gate --
+    the "catalogued != wired" gap this invariant closes.
+
+    `_feature_delta_has_design_wave` (inside the pure validator) matches on
+    the `## Wave: DESIGN` SUBSTRING, which a Design-Skipped delta's
+    `## Wave: DESIGN / [REF] Design Skipped` heading also satisfies -- so the
+    pure validator alone would report `missing-prefactoring-assessment` for a
+    feature that deliberately skipped DESIGN (a false refusal: nothing was
+    designed, so nothing could have been bent out of shape). This invariant
+    layers the SAME `_design_skip_witness_present` helper
+    `_check_reuse_first_or_design_skip` already uses ON TOP of the pure
+    verdict -- never a second design-skip parser -- so a
+    `missing-prefactoring-assessment` or `unmotivated-prefactoring-assessment`
+    verdict still clears when a valid witness is present.
+
+    Satisfied iff the parser returns `prefactoring-not-required` (no
+    `## Wave: DESIGN` heading at all -- nothing to assess) or
+    `prefactoring-assessment-accepted`, OR a witness-rescuable verdict
+    (`missing-prefactoring-assessment` / `unmotivated-prefactoring-assessment`)
+    co-occurs with a valid Design-Skipped witness. Otherwise FAILS.
+
+    Reuses the SHIPPED parser -- no second prefactoring parser. Degrades LOUD
+    on an unreadable feature-delta: the diagnostic names the unreadable source
+    rather than silent-passing or crashing.
+    """
+    delta = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    try:
+        content = delta.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return _InvariantResult(
+            invariant_id=_INV_PREFACTORING,
+            satisfied=False,
+            remediation=(
+                f"feature-delta could not be read as UTF-8 text at {delta}; "
+                f"the prefactoring-assessment invariant cannot be evaluated "
+                f"(degrade-LOUD)"
+            ),
+        )
+
+    result = validate_prefactoring_assessment_content(content)
+    if result.verdict in _PREFACTORING_CLEAR_VERDICTS:
+        return _InvariantResult(invariant_id=_INV_PREFACTORING, satisfied=True)
+
+    if result.verdict in _PREFACTORING_WITNESS_RESCUABLE_VERDICTS:
+        if _design_skip_witness_present(content):
+            return _InvariantResult(invariant_id=_INV_PREFACTORING, satisfied=True)
+
+    return _InvariantResult(
+        invariant_id=_INV_PREFACTORING,
+        satisfied=False,
+        remediation=f"{result.detail} -- {_REMEDIATIONS[_INV_PREFACTORING]}",
+    )
+
+
 def _check_sustainability(repo_root: Path, feature_id: str) -> _InvariantResult:
     """Invariant 7: the feature carries a well-formed Test Reuse & Consolidation
     Analysis section (the sustainable-test-suite content gate FIRES here).
@@ -890,6 +1004,9 @@ def _run_lane_profile(
         _INV_REUSE_FIRST: lambda: _check_reuse_first_or_design_skip(
             repo_root, feature_id
         ),
+        _INV_PREFACTORING: lambda: _check_prefactoring_assessment(
+            repo_root, feature_id
+        ),
         _INV_SUSTAINABILITY: lambda: _check_sustainability(repo_root, feature_id),
     }
     skipped = set(profile.skipped_invariants)
@@ -913,7 +1030,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="des verify-readiness-pre-dispatch",
         description=(
-            "Verify the 6 first-dispatch invariants before a NEW feature "
+            "Verify the 8 first-dispatch invariants before a NEW feature "
             "first crafter dispatch (closes friction #57)."
         ),
     )
@@ -1098,6 +1215,7 @@ def main(argv: list[str] | None = None) -> int:
     report.invariants.append(_check_gate_output_produceable(repo_root))
     report.invariants.append(_check_pre_commit_scope(repo_root, feature_id))
     report.invariants.append(_check_reuse_first_or_design_skip(repo_root, feature_id))
+    report.invariants.append(_check_prefactoring_assessment(repo_root, feature_id))
     report.invariants.append(_check_sustainability(repo_root, feature_id))
 
     if getattr(args, "enforce_axis_b", False):

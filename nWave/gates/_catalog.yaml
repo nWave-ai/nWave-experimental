@@ -484,3 +484,48 @@ gates:
     module: des.cli.examine_fixture
     entry_function: main
     language_neutral_contract: true
+
+  # autonomous-consolidation-and-bugfix-loops slice-02 (D-2): the
+  # work-exhausted wall-clock escalation ladder tick -- 1:1 mirror of the new
+  # _REGISTRY row.
+  - gate_id: work-exhausted-tick
+    responsibility: "Evaluate one background loop tick's safe-work-tier exhaustion state against the ratified 20/30/45-minute wall-clock escalation ladder (FIRST WARNING / SECOND WARNING / STOP-ESCALATE), anchored to minutes-since-first-detected-exhausted so the guarantee holds regardless of tick cadence; appends each newly-crossed rung to the AT-completion ledger, never re-deriving state from anything but the ledger's own recorded content."
+    module: des.cli.work_exhausted_tick
+    entry_function: main
+    language_neutral_contract: true
+
+  # autonomous-consolidation-and-bugfix-loops slice-03 (D-4): the
+  # bugfix-pipeline two-lane drain tick -- 1:1 mirror of the new
+  # _REGISTRY row.
+  - gate_id: bugfix-pipeline-tick
+    responsibility: "Evaluate one bugfix-pipeline defect stage-transition tick against the D-4 two-lane invariant: cloud-lane stages fan out concurrently, always admitted; box-lane stages stay strictly serialized to exactly ONE in-flight item, a concurrent second entry DEFERRED (never silently admitted or dropped); a stage failure is recorded loudly and frees a box-lane slot; a claim-drained action is refused (D-8) unless the ledger already carries a commit-slice completion record. State is replayed from the AT-completion ledger's own recorded content only."
+    module: des.cli.bugfix_pipeline_tick
+    entry_function: main
+    language_neutral_contract: true
+
+  # autonomous-consolidation-and-bugfix-loops slice-04 (D-4/D-19): the
+  # trunk-health signal-to-queue-item intake tick -- 1:1 mirror of the new
+  # _REGISTRY row.
+  - gate_id: consolidation-signal-tick
+    responsibility: "Turn one already-detected trunk-health signal into exactly one queue item flowing through the shared bugfix pipeline: derives a stable defect_id from (signal_type, signal_key), enters the pipeline at its first cloud-lane stage (RCA) via a direct call into the same des.domain.bugfix_pipeline.evaluate_and_record seam, and recognizes an already-queued signal idempotently. An unsupported signal_type is refused loudly (ConsolidationSignalIntakeRejected, D-8), never silently absent from the queue."
+    module: des.cli.consolidation_signal_tick
+    entry_function: main
+    language_neutral_contract: true
+
+  # parallel-work-cleans-up-after-merge-back slice-01 (D-2/D-3,
+  # ADR-SWARM-002): the mechanical worktree-cleanup gate -- 1:1 mirror of the
+  # new _REGISTRY row.
+  - gate_id: verify-worktree-cleanup
+    responsibility: "Ties worktree removal to a CONFIRMED successful merge-back: ACT-by-default sweep removes any registered worktree whose branch is a confirmed ancestor of --target-branch (state-based via is_ancestor); --check-only is a pure DONE-check backstop that refuses (exit 1) while a CLEANUP_DUE entry lingers, naming WHAT/WHY/HOW."
+    module: des.cli.verify_worktree_cleanup
+    entry_function: main
+    language_neutral_contract: true
+
+  # measured-parallel-safety-report (row 3, swarm-parallel-delivery): the
+  # advisory measured cross-check of a plan's declared-parallel claims -- 1:1
+  # mirror of the new _REGISTRY row.
+  - gate_id: parallel-safety-report
+    responsibility: "Advisory POST-HOC measured cross-check of a Slice/Feature Plan's declared-parallel claims: reuses des blast-radius per declared-parallel pair and reports MEASURED-SAFE (disjoint touched files/boundary-crossings/consumers), DRIFT (overlap, naming it), or UNMEASURED (blast-radius timeout, naming the file) -- never coerced to a false verdict, never a refusal."
+    module: des.cli.parallel_safety_report
+    entry_function: main
+    language_neutral_contract: true

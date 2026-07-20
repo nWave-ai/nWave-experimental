@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from des.cli.commit_slice import check_examine_verdict
 from des.cli.record_examine_verdict import record_examine_verdict
 from des.domain.examine_verdict_signing import charter_seal
@@ -136,3 +138,54 @@ def test_record_then_examiner_append_does_not_stale_the_recorded_verdict(
     refusal = check_examine_verdict(repo, feature_id, slice_id)
 
     assert refusal is None
+
+
+# Real-world charters do NOT all use the exact ``## Session log (append-only)``
+# heading the scaffold emits -- 35 of 200 checked-in charters (2026-07-20) use a
+# variant (``## Session Log`` capital-L, ``## Session log`` without the
+# ``(append-only)`` suffix). A literal-string exclusion silently fails for those,
+# so the examiner's own append still stales a genuine PASS -- the exact
+# F-EXAMINE-SESSION-LOG-APPEND-INVALIDATES-CHARTER-SEAL symptom, still live.
+_SESSION_LOG_HEADING_VARIANTS = (
+    "## Session log (append-only)",  # canonical (scaffold/template)
+    "## Session Log",  # capital-L, no suffix (real charters)
+    "## Session log",  # lowercase, no suffix (real charters)
+    "## Session Log (append-only)",  # capital-L WITH suffix
+)
+
+
+@pytest.mark.parametrize("heading", _SESSION_LOG_HEADING_VARIANTS)
+def test_charter_seal_unchanged_after_append_across_heading_variants(heading: str):
+    """The append exemption must hold for every real Session-log heading spelling.
+
+    The exclusion keys on the heading text; if it hard-matches one exact string,
+    a case/suffix variant is not excluded and the examiner's own row stales the
+    seal. All spellings that appear in real charters must be exempted.
+    """
+    header = (
+        f"\n{heading}\n"
+        "| date | examiner | verdict | observations |\n"
+        "|------|----------|---------|--------------|\n"
+    )
+    before_bytes = (_CHARTER_SUBSTANCE + header).encode("utf-8")
+    after_bytes = (_CHARTER_SUBSTANCE + header + _SESSION_LOG_ROW).encode("utf-8")
+
+    assert charter_seal(before_bytes) == charter_seal(after_bytes)
+
+
+@pytest.mark.parametrize("heading", _SESSION_LOG_HEADING_VARIANTS)
+def test_charter_seal_still_stales_on_substance_edit_across_heading_variants(
+    heading: str,
+):
+    """Tolerating heading variants must NOT weaken the tamper-evidence: a real
+    edit to the SUBSTANCE (before the Session-log heading) still stales the seal.
+    """
+    header = f"\n{heading}\n| date | examiner | verdict | observations |\n"
+    original_bytes = (_CHARTER_SUBSTANCE + header).encode("utf-8")
+    edited_substance = _CHARTER_SUBSTANCE.replace(
+        "A visitor completes checkout and sees an order confirmation.",
+        "A visitor completes checkout and sees an order confirmation AND a receipt.",
+    )
+    edited_bytes = (edited_substance + header).encode("utf-8")
+
+    assert charter_seal(original_bytes) != charter_seal(edited_bytes)

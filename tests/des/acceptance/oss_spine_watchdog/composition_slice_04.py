@@ -97,16 +97,57 @@ Layer 3/4 (real git repo + real ledger JSONL + real hook subprocess against
 tmp_path): example-only (Mandate 9 v2 — @real-io: the driven set includes a real
 filesystem adapter + a real git subprocess + a real hook subprocess → NOT PBT;
 Mandate 11 — sad paths enumerated explicitly). No PBT machinery imported.
+
+── SPEED (bugfix-oss-spine-watchdog-in-memory) ──
+Only AT-01 (`run_bounded_block_terminal`) reaches the G_COMMIT gate-subprocess
+path (precheck/E1/E2) — the SAME downstream bounded-block COUNT state machine
+slice-02 exercises, never the gate mechanism itself (slice-01/05 territory,
+which stays real). It sets the production `NWAVE_U2_FORCE_GATE_CODES` seam
+(`subagent_stop_handler._resolve_g_commit_gate_codes`) so the hook still runs
+for real but the 3 nested gate-subprocess forks are replaced with the in-memory
+codes "0:1:0" (precheck proceeds, E1 fails — this fixture's E1-incomplete commit
+shape) the real fork would have produced. AT-02
+(`run_cross_invocation_stale_check`) never reaches this path (its `A_GREEN`
+transcript routes to the stale-check branch, not the commit gate) — untouched.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+
+
+# SPEED seam name (bugfix-oss-spine-watchdog-in-memory): mirrors the production
+# `_FORCE_GATE_CODES_ENV` constant in `subagent_stop_handler.py` without importing
+# it (Mandate-13 -- no direct production import at the test boundary beyond the
+# tolerable substrate/observable exceptions already documented above).
+_FORCE_GATE_CODES_ENV = "NWAVE_U2_FORCE_GATE_CODES"
+
+# precheck=0 (proceed) : e1=1 (fails -- `build_blocking_commit`'s E1-incomplete
+# shape) : e2=0 (irrelevant to the "failed" label once e1 != 0). Mirror of
+# composition_slice_02's `_FORCED_GATE_CODES`.
+_FORCED_GATE_CODES = "0:1:0"
+
+
+@contextmanager
+def _forced_gate_codes():
+    """Set/restore the production SPEED seam around one hook invocation."""
+    prior = os.environ.get(_FORCE_GATE_CODES_ENV)
+    os.environ[_FORCE_GATE_CODES_ENV] = _FORCED_GATE_CODES
+    try:
+        yield
+    finally:
+        if prior is None:
+            os.environ.pop(_FORCE_GATE_CODES_ENV, None)
+        else:
+            os.environ[_FORCE_GATE_CODES_ENV] = prior
+
 
 # Precondition-substrate writer + observable-record reader (NOT the SUT). Seeds the
 # prior SliceCommitBlocked / SliceCommitVerified / last-progress records and re-reads
@@ -352,7 +393,9 @@ class TerminalCoherenceFixture:
         self.seed_prior_identical_blocks()
         terminals_before = self._count_event(_BOUNDED_TERMINAL_EVENT)
         self._write_transcript(phase="G_COMMIT")
-        completed = self._fire_hook(session="watchdog-slice04-bounded")
+        completed = self._fire_hook(
+            session="watchdog-slice04-bounded", force_gate_codes=True
+        )
         terminals_after = self._count_event(_BOUNDED_TERMINAL_EVENT)
         return BoundedTerminalOutcome(
             terminal_recorded=terminals_after > terminals_before,
@@ -400,8 +443,20 @@ class TerminalCoherenceFixture:
         )
         self._transcript_path.write_text(line + "\n", encoding="utf-8")
 
-    def _fire_hook(self, *, session: str) -> subprocess.CompletedProcess[str]:
-        """Invoke the REAL `handle_subagent_stop` hook over its JSON protocol."""
+    def _fire_hook(
+        self, *, session: str, force_gate_codes: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        """Invoke the REAL `handle_subagent_stop` hook over its JSON protocol.
+
+        SPEED (bugfix-oss-spine-watchdog-in-memory): `force_gate_codes=True`
+        (AT-01, `run_bounded_block_terminal`) wraps the call in
+        `_forced_gate_codes()` so the handler's precheck/E1/E2 subprocess forks
+        are replaced with the in-memory codes this fixture's E1-incomplete commit
+        shape would have produced for real. AT-02
+        (`run_cross_invocation_stale_check`) leaves it `False` — it never reaches
+        the gate-subprocess path (its `A_GREEN` transcript routes to the
+        stale-check branch), so there is nothing to fake there.
+        """
         hook_input = json.dumps(
             {
                 "session_id": session,
@@ -415,11 +470,12 @@ class TerminalCoherenceFixture:
                 "permission_mode": "default",
             }
         )
-        exit_code, stdout, stderr = run_hook_in_process(
-            handle_subagent_stop,
-            stdin_text=hook_input,
-            cwd=str(self._repo),
-        )
+        with _forced_gate_codes() if force_gate_codes else nullcontext():
+            exit_code, stdout, stderr = run_hook_in_process(
+                handle_subagent_stop,
+                stdin_text=hook_input,
+                cwd=str(self._repo),
+            )
         return subprocess.CompletedProcess(
             args=[_HANDLER_MODULE],
             returncode=exit_code,

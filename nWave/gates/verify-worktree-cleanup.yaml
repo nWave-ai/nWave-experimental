@@ -1,0 +1,50 @@
+# Gate-contract: verify-worktree-cleanup (parallel-work-cleans-up-after-merge-back
+# slice-01, D-2/D-3, ADR-SWARM-002)
+#
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-worktree-cleanup.
+
+gate_id: verify-worktree-cleanup
+responsibility: |
+  Ties worktree removal to a CONFIRMED successful merge-back (D-2 enforcing
+  gate). ACT-by-default: sweeps every registered worktree (or the one named
+  via --worktree), removes any worktree whose branch is a confirmed ancestor
+  of --target-branch (state-based via `is_ancestor`, never signal-based), and
+  leaves everything else untouched. --check-only turns the sweep into a pure
+  read -- the DONE-check backstop that refuses (exit 1) while a CLEANUP_DUE
+  entry lingers, naming WHAT/WHY/HOW.
+module: des.cli.verify_worktree_cleanup
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --repo
+    required: false
+    type: path
+    help: "Repository root."
+    default: "."
+  - name: --target-branch
+    required: true
+    type: string
+    help: "The branch a worktree's own branch must be a confirmed ancestor of before its worktree is cleanup-due."
+  - name: --worktree
+    required: false
+    type: path
+    help: "Scope the sweep to ONE registered worktree path (default: all)."
+  - name: --check-only
+    required: false
+    type: bool
+    help: "Pure read -- report, never mutate (the DONE-check backstop)."
+
+log_events:
+  - WorktreeCleanupReport
+
+failure_modes:
+  - error_class: WorktreeCleanupReport
+    exit_code: 1
+    remediation: "A worktree confirmed merged into --target-branch still lingers registered: re-run without --check-only to remove it automatically, or run `git worktree remove` by hand if this repeats."
+
+idempotency: idempotent
+
+host_visibility:
+  - cli

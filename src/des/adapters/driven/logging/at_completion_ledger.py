@@ -477,6 +477,7 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         justification: str | None = None,
         attested_via: str | None = None,
         regression_test_file: str | None = None,
+        predecessor: str | None = None,
     ) -> dict[str, Any]:
         """Append one slice gate-boundary audit record under the M7 write contract.
 
@@ -517,6 +518,13 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         re-guessing a naming-convention glob against a non-convention-named
         file.
 
+        swarm-parallel-delivery signature delta: the optional ``predecessor``
+        kwarg carries the deferred predecessor slice id on a
+        ``CarpaccioOrderCheckDeferredToIntegration`` record (the M8 order check
+        exempted by a ``DES-SWARM-ISOLATED-DISPATCH`` marker). Defaults to None
+        (every existing call site stays byte-identical); when present, threaded
+        into ``fields`` and hashed into ``record_hash`` like every other field.
+
         Returns the appended record.
         """
         fields: dict[str, Any] = {"event": event, "slice_id": slice_id}
@@ -528,6 +536,8 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             fields["attested_via"] = attested_via
         if regression_test_file is not None:
             fields["regression_test_file"] = regression_test_file
+        if predecessor is not None:
+            fields["predecessor"] = predecessor
         return self._append_record(fields, feature_id=feature_id)
 
     def append_contract_frozen(
@@ -583,7 +593,11 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         return self._append_record(extra, feature_id=feature_id)
 
     def append_workflow_phase_completed_distill(
-        self, *, feature_id: str | None = None
+        self,
+        *,
+        feature_id: str | None = None,
+        validated_slices: list[str] | None = None,
+        excluded_slices: list[str] | None = None,
     ) -> dict[str, Any]:
         """Append the `WorkflowPhaseCompletedDistill` success terminal record.
 
@@ -597,9 +611,23 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         five `_HASHED_FIELDS` + `record_hash` -- it round-trips `read_records`
         with no M7 read-contract change. Feature-scoped (`slice_id == ""`),
         mirroring `append_feature_end_event`.
+
+        fix-distill-exit-jit-scope-probe: `validated_slices`/`excluded_slices`
+        are the durable per-slice detail the JIT-scope carve-out in
+        `_handle_distill_exit_gate` pins on the success record -- the slices
+        this evaluation actually certified vs. the JIT-not-yet-authored slices
+        it explicitly excluded (never a blanket "all ok"). Both default to
+        an empty list for callers that predate this scoping (e.g. a plain
+        single-slice feature, or a caller seeding the ledger with no scoping
+        detail) -- optional extras, not required `_HASHED_FIELDS`.
         """
         return self._append_record(
-            {"event": WORKFLOW_PHASE_COMPLETED_DISTILL, "slice_id": ""},
+            {
+                "event": WORKFLOW_PHASE_COMPLETED_DISTILL,
+                "slice_id": "",
+                "validated_slices": list(validated_slices or []),
+                "excluded_slices": list(excluded_slices or []),
+            },
             feature_id=feature_id,
         )
 
@@ -1378,6 +1406,92 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             },
             feature_id=feature_id,
         )
+
+    def append_work_exhausted_event(
+        self,
+        event: str,
+        *,
+        timestamp: str,
+        gap_minutes: float,
+        reason: str,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one work-exhausted-ladder record under the M7 write contract.
+
+        autonomous-consolidation-and-bugfix-loops slice-02 (D-2/D-8): the
+        single writer `des.domain.work_exhausted_ladder` funnels every ladder
+        record through -- `WorkExhaustedWindowOpened` /
+        `WorkExhaustedFirstWarning` / `WorkExhaustedSecondWarning` /
+        `WorkExhaustedStopEscalate` / `WorkExhaustedWindowResolved`, one call
+        per record.
+
+        The caller supplies an EXPLICIT ``timestamp`` (honoured by
+        `_append_record` in place of the real-clock default) rather than
+        letting this write stamp `datetime.now()`: a ladder rung's record is
+        timestamped at its ratified-threshold crossing instant
+        (`window_open + threshold_minutes`), not the tick's own wall-clock
+        `now` -- so the ledger alone proves no exhausted window ran past its
+        ceiling without a STOP/ESCALATE record, regardless of how late a
+        sparse-cadence tick discovers the crossing (D-2's wall-clock-anchored,
+        tick-cadence-invariant guarantee). `gap_minutes` and `reason` (never
+        empty -- charter Positive-2: "each record names WHY") are carried as
+        plain extra fields, hashed into `record_hash` like every other field.
+
+        Feature-scoped (`slice_id == ""` -- the escalation ladder observes one
+        window per feature, not per slice).
+        """
+        return self._append_record(
+            {
+                "event": event,
+                "slice_id": "",
+                "timestamp": timestamp,
+                "gap_minutes": gap_minutes,
+                "reason": reason,
+            },
+            feature_id=feature_id,
+        )
+
+    def append_bugfix_pipeline_event(
+        self,
+        event: str,
+        *,
+        defect_id: str,
+        timestamp: str,
+        stage: str | None = None,
+        reason: str | None = None,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one bugfix-pipeline stage-transition record under the M7
+        write contract.
+
+        autonomous-consolidation-and-bugfix-loops slice-03 (D-4/D-8): the
+        single writer `des.domain.bugfix_pipeline` funnels every pipeline
+        record through -- `PipelineStageStarted` / `PipelineStageCompleted`
+        / `PipelineStageFailed` / `BoxLaneEntryDeferred` /
+        `DrainClaimRejectedNoAttestation`, one call per record.
+
+        The caller supplies an EXPLICIT ``timestamp`` (honoured by
+        `_append_record` in place of the real-clock default), mirroring
+        `append_work_exhausted_event` (slice-02's sibling). ``stage`` is
+        omitted for `claim-drained`-derived records (the action names no
+        stage); ``reason`` is omitted for `PipelineStageStarted` /
+        `PipelineStageCompleted` (no reason to name). Both, when present,
+        are hashed into `record_hash` like every other field.
+
+        Feature-scoped (`slice_id == ""` -- the pipeline observes defects
+        across the whole feature, not a single slice).
+        """
+        fields: dict[str, Any] = {
+            "event": event,
+            "slice_id": "",
+            "defect_id": defect_id,
+            "timestamp": timestamp,
+        }
+        if stage is not None:
+            fields["stage"] = stage
+        if reason is not None:
+            fields["reason"] = reason
+        return self._append_record(fields, feature_id=feature_id)
 
     def _resolve_feature_id(self, call_feature_id: str | None) -> str:
         """Pick the effective feature_id for one append call.

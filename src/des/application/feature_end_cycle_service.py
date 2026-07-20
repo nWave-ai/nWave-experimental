@@ -511,7 +511,19 @@ def run_feature_end_cycle(
     reviewer_agent_id: str | None,
     verdict: str | None,
 ) -> CycleSuccess | CycleIndeterminate | CycleRefusal:
-    """Run the feature-end cycle: run the REAL gates, then sign + emit.
+    """Run the feature-end cycle: run the shared full-suite leg, then the REAL
+    per-feature gates, then sign + emit.
+
+    many-features-close-for-one-full-suite (D-D2, ADR-FEATURE-END-BATCH-001):
+    this is now a batch-of-ONE thin wrapper delegating to the SHARED use-case
+    :func:`des.application.feature_end_batch_service.run_feature_end_batch` --
+    the single-feature path and the batch path exercise IDENTICAL machinery,
+    closing the single/batch divergence risk by construction. Signature and
+    return-type union stay FROZEN (D-1): every one of this function's 8+
+    existing keyword-only call sites keeps working unchanged. Imported
+    locally to avoid a module-load-time circular import (the batch service
+    itself imports :func:`_run_full_suite_leg` /
+    :func:`_run_feature_end_member_cycle` from THIS module).
 
     Returns :class:`CycleSuccess` carrying the signed ``verdict_hash`` when both
     REAL gate runs passed and the deep-review verdict signed;
@@ -519,6 +531,58 @@ def run_feature_end_cycle(
     it could not certify (DDD-CERT-2/3 -- the epistemic gap is never resolved
     toward a fabricated pass); otherwise :class:`CycleRefusal` naming the
     violated precondition -- no record emitted.
+    """
+    from des.application.feature_end_batch_service import (
+        BatchIndeterminate,
+        BatchIneligible,
+        BatchRefused,
+        FeatureEndBatchSpec,
+        run_feature_end_batch,
+    )
+
+    spec = FeatureEndBatchSpec(
+        feature_id=feature_id,
+        feature_dir=feature_dir,
+        reviewer_agent_id=reviewer_agent_id,
+        verdict=verdict,
+    )
+    outcome = run_feature_end_batch(repo_root, [spec])
+    if isinstance(outcome, BatchIneligible):
+        return CycleRefusal(outcome.error)
+    if isinstance(outcome, BatchRefused):
+        return CycleRefusal(
+            outcome.error,
+            failing_tests=outcome.failing_tests,
+            failing_count=outcome.failing_count,
+            junit_artifact=outcome.junit_artifact,
+        )
+    if isinstance(outcome, BatchIndeterminate):
+        return CycleIndeterminate(outcome.reason, leg_census=LegCensus())
+    _, member_outcome = outcome.members[0]
+    return member_outcome
+
+
+def _run_feature_end_member_cycle(
+    *,
+    repo_root: Path,
+    feature_id: str,
+    feature_dir: Path,
+    reviewer_agent_id: str | None,
+    verdict: str | None,
+    shared_full_suite: FullSuiteLegRan | FullSuiteLegNotApplicable,
+) -> CycleSuccess | CycleIndeterminate | CycleRefusal:
+    """Run every per-feature leg EXCEPT the full-suite leg, then sign + emit.
+
+    many-features-close-for-one-full-suite @prefactoring (extracted from the
+    former monolithic ``run_feature_end_cycle`` body): consumes
+    ``shared_full_suite`` -- a full-suite outcome the CALLER already computed
+    (once, potentially shared across N batch members) -- at the exact point
+    the leg's own inline call used to sit, instead of computing it internally.
+    Every other leg (walking-skeleton, environmental-e2e, coverage-map,
+    doc-coherence, execution-reach, fresh-clone, feature-end-examine), the
+    truncated-Slice-Plan precondition, the leg census, and the sign/emit tail
+    are UNCHANGED from the pre-reshape body -- same order, same ledger-append
+    arguments.
 
     The two gate legs run the REAL gate CLIs (``des walking-skeleton-gate
     --feature-dir`` and ``des verify-environmental-e2e --mode run``) and the
@@ -593,27 +657,21 @@ def run_feature_end_cycle(
         # is_file()`) -- attest it too.
         census = _mark_attested_not_applicable(census)
 
-    full_suite = _run_full_suite_leg(repo_root=repo_root, feature_id=feature_id)
-    if isinstance(full_suite, CycleRefusal):
-        return full_suite
-    census = _fold_leg_census(census, full_suite)
-    if isinstance(full_suite, FullSuiteLegIndeterminate):
-        # DDD-CERT-2/3: the full-suite leg observed a real, runnable suite it
-        # could not certify -- the cycle escalates to CycleIndeterminate and
-        # refuses to sign/emit (anti-theater, mirrors CycleRefusal's
-        # fail-closed shape). Never a silent CycleSuccess over an unobserved
-        # leg (the exact #126/#179 false-green this feature closes).
-        return CycleIndeterminate(
-            "the feature-end full-suite leg is INDETERMINATE: " + full_suite.reason,
-            leg_census=census,
-        )
+    # many-features-close-for-one-full-suite @prefactoring: `shared_full_suite`
+    # is consumed HERE -- the exact point the leg's own inline
+    # `_run_full_suite_leg` call used to sit -- instead of computed inline.
+    # The caller (`run_feature_end_cycle`, or a future batch orchestrator) has
+    # already ruled out CycleRefusal/FullSuiteLegIndeterminate, so only the
+    # two PROCEED arms reach here.
+    census = _fold_leg_census(census, shared_full_suite)
     # FullSuiteLegRan / FullSuiteLegNotApplicable both PROCEED: a green suite and
     # a genuinely-absent suite are equally non-blocking (only a PRESENT-but-RED
-    # suite returns CycleRefusal above). f-nonbypassable-attestation slice-01
-    # (DDD-4): EMIT the leg's outcome as a feature-end ledger record so the
-    # done-gate can make it `required` and refuse on its ABSENCE -- the leg was
-    # a control-flow return type only, written by NO ledger call before.
-    if isinstance(full_suite, FullSuiteLegRan):
+    # suite fail-closes, handled by the caller before this leg is reached).
+    # f-nonbypassable-attestation slice-01 (DDD-4): EMIT the leg's outcome as a
+    # feature-end ledger record so the done-gate can make it `required` and
+    # refuse on its ABSENCE -- the leg was a control-flow return type only,
+    # written by NO ledger call before.
+    if isinstance(shared_full_suite, FullSuiteLegRan):
         ledger.append_full_suite_leg_ran(feature_id=feature_id)
     else:
         ledger.append_full_suite_leg_not_applicable(feature_id=feature_id)
@@ -716,8 +774,8 @@ def run_feature_end_cycle(
     # still fires exactly as Class A demands.
     if census.ran == 0 and census.attested_not_applicable == 0:
         if (
-            isinstance(full_suite, FullSuiteLegNotApplicable)
-            and full_suite.found_and_excluded
+            isinstance(shared_full_suite, FullSuiteLegNotApplicable)
+            and shared_full_suite.found_and_excluded
         ):
             # Found-and-excluded distinguishability (Vera real-surface
             # examine, 2026-07-13): a repo whose ONLY tests live under
@@ -728,7 +786,7 @@ def run_feature_end_cycle(
             # an absence of anything to verify -- the charter's own words).
             return CycleIndeterminate(
                 "the feature-end cycle observed zero legs genuinely run "
-                "(leg_census.ran == 0); the full-suite leg " + full_suite.reason,
+                "(leg_census.ran == 0); the full-suite leg " + shared_full_suite.reason,
                 leg_census=census,
             )
         return CycleIndeterminate(

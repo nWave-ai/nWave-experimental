@@ -145,11 +145,13 @@ def then_slice_plan_verdict(result_box: dict[str, object], verdict_phrase: str) 
     assert result.verdict is VERDICT_BY_PHRASE[verdict_phrase]
 
 
-@then("the feature plan is accepted")
-def then_feature_plan_accepted(result_box: dict[str, object]) -> None:
+@then(parsers.parse("the feature plan is {verdict_phrase}"))
+def then_feature_plan_verdict(
+    result_box: dict[str, object], verdict_phrase: str
+) -> None:
     result = result_box["result"]
     assert isinstance(result, ValidationResult)
-    assert result.verdict is VERDICT_BY_PHRASE["accepted"]
+    assert result.verdict is VERDICT_BY_PHRASE[verdict_phrase]
 
 
 @then("the rejection names the offending row")

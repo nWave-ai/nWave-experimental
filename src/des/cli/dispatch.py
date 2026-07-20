@@ -34,10 +34,16 @@ from des._internal import subset_parser
 from des.application.dispatch_lane_ssot import _DISPATCH_YAML_PARTS, _read_full_sections
 from des.cli.validate_feature_delta import (
     VERDICT_METHODOLOGY_EXEMPT,
+    VERDICT_MISSING_PREFACTORING_ASSESSMENT,
     VERDICT_NO_OVERLAP_DECLARED,
+    VERDICT_PREFACTORING_ASSESSMENT_ACCEPTED,
+    VERDICT_PREFACTORING_NOT_REQUIRED,
     VERDICT_STRUCTURALLY_ACCEPTED,
+    VERDICT_UNMOTIVATED_PREFACTORING_ASSESSMENT,
+    validate_prefactoring_assessment_content,
     validate_reuse_analysis_content,
 )
+from des.cli.verify_readiness_pre_dispatch import _design_skip_witness_present
 from des.domain.atdd_pure_phases import (
     FEATURE_END_PHASES,
     FEATURE_END_RETURN_PHASE,
@@ -65,6 +71,32 @@ _REUSE_READY_VERDICTS = frozenset(
         VERDICT_STRUCTURALLY_ACCEPTED,
         VERDICT_METHODOLOGY_EXEMPT,
         VERDICT_NO_OVERLAP_DECLARED,
+    }
+)
+
+#: Prefactoring Assessment verdicts that mean the feature-delta IS
+#: readiness-ready -- sibling of `_REUSE_READY_VERDICTS`, mirrors
+#: `verify_readiness_pre_dispatch._check_prefactoring_assessment`'s clear set
+#: (the scoping no-op when no `## Wave: DESIGN` section is present, plus a
+#: substantive accepted assessment).
+_PREFACTORING_READY_VERDICTS = frozenset(
+    {
+        VERDICT_PREFACTORING_NOT_REQUIRED,
+        VERDICT_PREFACTORING_ASSESSMENT_ACCEPTED,
+    }
+)
+
+#: Verdicts a Design-Skipped witness can still rescue -- mirrors
+#: `verify_readiness_pre_dispatch._PREFACTORING_WITNESS_RESCUABLE_VERDICTS`
+#: byte-for-byte: `_feature_delta_has_design_wave` matches the `## Wave:
+#: DESIGN` SUBSTRING, which a Design-Skipped delta's own
+#: `## Wave: DESIGN / [REF] Design Skipped` heading also satisfies, so these
+#: two verdicts alone would be a false positive for a feature that
+#: deliberately skipped DESIGN.
+_PREFACTORING_WITNESS_RESCUABLE_VERDICTS = frozenset(
+    {
+        VERDICT_MISSING_PREFACTORING_ASSESSMENT,
+        VERDICT_UNMOTIVATED_PREFACTORING_ASSESSMENT,
     }
 )
 
@@ -292,6 +324,59 @@ def _feature_delta_content_advisory(project_root: Path, feature_id: str) -> str 
         return None
     if result.verdict in _REUSE_READY_VERDICTS:
         return None
+    return (
+        f"advisory: the feature-delta for '{feature_id}' is not "
+        f"readiness-ready -- {result.detail}; fix it before dispatching the "
+        "crafter (the readiness gate will otherwise reject it)"
+    )
+
+
+def _feature_delta_prefactoring_advisory(
+    project_root: Path, feature_id: str
+) -> str | None:
+    """Return a proactive readiness ADVISORY string when an EXISTING
+    feature-delta.md's Prefactoring Assessment content is not
+    readiness-ready, or ``None`` when it is ready, not-required, exempted by
+    a Design-Skipped witness, absent, or unreadable/unparsable.
+
+    CONTENT-only leg of the readiness check, sibling of
+    ``_feature_delta_content_advisory`` -- gated at the SAME call site
+    (``_cites_design``, ``_LANES_REQUIRING_JUSTIFICATION`` bugfix-exempt): a
+    bugfix has no Prefactoring Assessment to validate either.
+
+    Layers the SAME ``_design_skip_witness_present`` helper
+    ``verify_readiness_pre_dispatch._check_prefactoring_assessment`` uses ON
+    TOP of the pure verdict -- never a second design-skip parser -- so a
+    Design-Skipped feature-delta (whose ``## Wave: DESIGN / [REF] Design
+    Skipped`` heading otherwise satisfies the pure validator's `## Wave:
+    DESIGN` substring match) does not get advised to author a section it has
+    no design to have bent.
+
+    ADVISORY-ONLY -- same contract as ``_feature_delta_missing_advisory``.
+
+    Degrade-loud-but-safe (GDP-6): a missing/unreadable file is not this
+    leg's concern (the existence leg owns that signal) -- swallowed to
+    ``None`` here rather than double-reporting; an unexpected error while
+    validating content is likewise swallowed (``None`` -- skip the advisory)
+    rather than crashing prompt generation.
+    """
+    delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    try:
+        content = delta_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        result = validate_prefactoring_assessment_content(content)
+    except Exception:
+        return None
+    if result.verdict in _PREFACTORING_READY_VERDICTS:
+        return None
+    if result.verdict in _PREFACTORING_WITNESS_RESCUABLE_VERDICTS:
+        try:
+            if _design_skip_witness_present(content):
+                return None
+        except Exception:
+            return None
     return (
         f"advisory: the feature-delta for '{feature_id}' is not "
         f"readiness-ready -- {result.detail}; fix it before dispatching the "
@@ -897,6 +982,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         if content_advisory is not None:
             print(content_advisory, file=sys.stderr)
+
+        prefactoring_advisory = _feature_delta_prefactoring_advisory(
+            project_root, args.project_id
+        )
+        if prefactoring_advisory is not None:
+            print(prefactoring_advisory, file=sys.stderr)
 
     prompt = _build_prompt(
         marker_syntax=_read_marker_syntax(ssot_dir),

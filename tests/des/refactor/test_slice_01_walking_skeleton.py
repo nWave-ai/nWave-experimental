@@ -1,3 +1,5 @@
+# @feature-des-refactor-fixer-swarm
+# @slice-01
 """Walking-skeleton AT -- `des refactor` drains ONE pile item end to end.
 
 @walking_skeleton @driving_port @contract-shape:bounded-change (slice-01,
@@ -32,6 +34,7 @@ from __future__ import annotations
 import pytest
 
 from .composition import RefactorSwarmComposition
+from .domain_types import EntryGateAgentVerdict
 
 
 pytestmark = pytest.mark.acceptance
@@ -49,7 +52,11 @@ def test_operator_drains_one_pile_item_end_to_end_with_a_single_command(tmp_path
     composition.init_git_repo()
     composition.seed_pile_item(item_id="TD-001")
 
-    result = composition.run_refactor_cli_subprocess(agent_cmd="true")
+    result = composition.run_refactor_cli_subprocess(
+        agent_cmd=composition.agent_cmd_emitting_verdict(
+            EntryGateAgentVerdict.REFACTOR_SAFE
+        )
+    )
 
     assert result.exit_code == 0, (
         "des refactor should drain TD-001 end to end and exit 0; got "

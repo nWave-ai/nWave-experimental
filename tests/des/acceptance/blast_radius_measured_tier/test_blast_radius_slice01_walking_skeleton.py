@@ -68,9 +68,12 @@ fabricated S): exit 2,
 Driving surface: the walking-skeleton scenario below is the ONE
 subprocess-E2E acceptance test for the WHOLE `blast-radius-measured-tier`
 feature (F-V5 test-pyramid default, ratified 2026-07-18) -- it invokes the
-REAL installed `des` console-script (resolved via `shutil.which`, the same
-production composition root `single_entry_point`'s acceptance suite already
-established) against a real git fixture repo. Every OTHER scenario in this
+REAL installed `des` console-script, resolved via the shared
+`tests.cli_resolve.resolve_des_cli_cmd` helper (venv-first, immune to a
+stale global `des` shadowing the active venv build on PATH -- see
+`docs/product/expectations/bugfix-shutil-which-des-fragility/`, mirrors the
+row5 fix in commit `1e05a7bda`/`c2d7f5e44`), against a real git fixture repo.
+Every OTHER scenario in this
 module drives `des.cli.blast_radius.main(argv)` IN-PROCESS (Mandate 13 /
 `nw-distill-port-treatment-policy` inverted driving default) -- no further
 subprocess forks.
@@ -92,11 +95,11 @@ test fails for a semantic reason once the module ships (P4).
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+from tests.cli_resolve import resolve_des_cli_cmd
 
 
 # Canonical default thresholds (feature-delta "Canonical default thresholds"
@@ -194,12 +197,10 @@ def test_blast_radius_reports_a_small_tier_from_real_git_measures(
     `consumer_counts == {}` honestly true post-slice-02 without touching the
     shared `_init_git_repo` every other slice-01/slice-02 test relies on.
     """
-    des_binary = shutil.which("des")
-    assert des_binary is not None, (
-        "the `des` console-script must be on PATH for the feature's single "
-        "walking-skeleton subprocess AT to run -- if this fails, the dev "
-        "environment install is the problem, not this AT"
-    )
+    # Venv-first resolution (row5 pattern, generalized): never bare
+    # `shutil.which("des")`, which is shadowable by a stale global `des`
+    # earlier on PATH -- see `tests/cli_resolve.py::resolve_des_cli_cmd`.
+    des_cmd = resolve_des_cli_cmd("des", "des.cli.__main__")
 
     repo = tmp_path / "repo"
     _init_git_repo_data_only(repo)
@@ -212,7 +213,7 @@ def test_blast_radius_reports_a_small_tier_from_real_git_measures(
 
     completed = subprocess.run(
         [
-            des_binary,
+            *des_cmd,
             "blast-radius",
             "--repo",
             str(repo),

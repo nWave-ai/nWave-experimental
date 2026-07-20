@@ -25,14 +25,16 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from des.adapters.drivers.hooks.substrate_probe import run_probe
 
 
 if TYPE_CHECKING:
     from des.adapters.driven.config.des_config import DESConfig
+    from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
     from des.application.update_check_service import UpdateCheckService
     from des.ports.driven_ports.package_manager_port import PackageManagerPort
 
@@ -466,6 +468,215 @@ def _build_orchestrator_affordance_output(affordance: str) -> dict[str, object]:
     }
 
 
+# ---------------------------------------------------------------------------
+# slice-05 (autonomous-consolidation-and-bugfix-loops) -- SessionStart wiring
+# for the three pending-loop-tick request files slices 02-04 shipped as
+# driving ports with zero production callers (OQ-3/DA-13). Each wrapper below
+# is its OWN independent fail-open trigger, appended to `handle_session_start`
+# exactly like the existing `_adopt_prior_use_if_warranted` /
+# `_apply_pending_update_if_any` triggers. None of them is named
+# `_stabilize_tick` -- that name is reserved by a DIFFERENT, not-yet-DELIVERed
+# feature (`background-loops-hybrid-c`) extending the SAME hook function; see
+# tests/des/acceptance/autonomous_consolidation_and_bugfix_loops/steps/
+# domain_types_slice_05.py Sec. "HOOK-POINT COEXISTENCE".
+# ---------------------------------------------------------------------------
+
+_LOOP_TICK_WORK_EXHAUSTED_FILENAME = "loop-tick-work-exhausted.json"
+_LOOP_TICK_BUGFIX_PIPELINE_FILENAME = "loop-tick-bugfix-pipeline.json"
+_LOOP_TICK_CONSOLIDATION_SIGNAL_FILENAME = "loop-tick-consolidation-signal.json"
+
+
+def _read_loop_tick_request(cwd: str | None, filename: str) -> dict[str, Any] | None:
+    """Read+parse one optional ``.nwave/{filename}`` pending loop-tick request.
+
+    Absence (no ``cwd``, or the file does not exist under it) is a safe no-op
+    -- returns ``None``, distinguishable from a parsed empty payload. Raises
+    ``ValueError``/``json.JSONDecodeError`` for an unparseable or non-object
+    payload -- the caller routes that through the D-8 class-2 (no derivable
+    feature_id) fail-open degrade, since a request that cannot even be
+    parsed can never yield a feature_id to target.
+    """
+    if not cwd:
+        return None
+    request_path = Path(cwd) / ".nwave" / filename
+    if not request_path.is_file():
+        return None
+    data = json.loads(request_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"loop-tick request {filename} is not a JSON object")
+    return data
+
+
+def _loop_tick_feature_id(payload: dict[str, Any]) -> str:
+    """Derive the request's ``feature_id``, or raise (D-8 class 2).
+
+    Raises ``ValueError`` when ``feature_id`` is absent, empty, or not a
+    string -- there is no feature ledger to target, so the caller's own
+    fail-open handling degrades to a labeled stderr diagnostic only, with no
+    ledger write attempted.
+    """
+    feature_id = payload.get("feature_id")
+    if not isinstance(feature_id, str) or not feature_id:
+        raise ValueError("loop-tick request names no derivable feature_id")
+    return feature_id
+
+
+def _build_loop_tick_ledger(feature_id: str, cwd: str | None) -> AtCompletionLedger:
+    from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+
+    return AtCompletionLedger(feature_id, Path(cwd) if cwd else Path())
+
+
+def _maybe_tick_work_exhausted(cwd: str | None) -> None:
+    """Fire the pending work-exhausted tick (slice-02 seam), fail-open (D-8).
+
+    A ``.nwave/loop-tick-work-exhausted.json`` request's absence is a safe
+    no-op. A known ``feature_id`` missing the domain-required
+    ``queue_state`` field is ledger-attested (``WorkExhaustedTickAttemptFailed``,
+    reusing ``append_work_exhausted_event``). No derivable ``feature_id``, or
+    any other unexpected error, degrades to a labeled stderr diagnostic only.
+    """
+    filename = _LOOP_TICK_WORK_EXHAUSTED_FILENAME
+    try:
+        payload = _read_loop_tick_request(cwd, filename)
+        if payload is None:
+            return
+        feature_id = _loop_tick_feature_id(payload)
+        now = datetime.now(timezone.utc)
+        ledger = _build_loop_tick_ledger(feature_id, cwd)
+        if "queue_state" not in payload:
+            ledger.append_work_exhausted_event(
+                "WorkExhaustedTickAttemptFailed",
+                timestamp=now.isoformat().replace("+00:00", "Z"),
+                gap_minutes=0,
+                reason="missing field: queue_state",
+                feature_id=feature_id,
+            )
+            return
+
+        from des.domain.work_exhausted_ladder import evaluate_and_record
+
+        evaluate_and_record(
+            ledger=ledger,
+            feature_id=feature_id,
+            queue_state=payload["queue_state"],
+            now=now,
+            gated_reasons=payload.get("gated_reasons"),
+        )
+    except Exception as e:
+        sys.stderr.write(f"[nwave] {filename} loop-tick error (fail-open): {e}\n")
+
+
+def _maybe_tick_bugfix_pipeline(cwd: str | None) -> None:
+    """Fire the pending bugfix-pipeline tick (slice-03 seam), fail-open (D-8).
+
+    A ``.nwave/loop-tick-bugfix-pipeline.json`` request's absence is a safe
+    no-op. A known ``feature_id`` missing a domain-required field
+    (``defect_id`` / ``action`` / ``stage`` when not ``claim-drained``) is
+    ledger-attested (``BugfixPipelineTickAttemptFailed``, reusing
+    ``append_bugfix_pipeline_event``). No derivable ``feature_id``, or any
+    other unexpected error, degrades to a labeled stderr diagnostic only.
+    """
+    filename = _LOOP_TICK_BUGFIX_PIPELINE_FILENAME
+    try:
+        payload = _read_loop_tick_request(cwd, filename)
+        if payload is None:
+            return
+        feature_id = _loop_tick_feature_id(payload)
+        now = datetime.now(timezone.utc)
+        ledger = _build_loop_tick_ledger(feature_id, cwd)
+
+        missing = _bugfix_pipeline_missing_field(payload)
+        if missing is not None:
+            ledger.append_bugfix_pipeline_event(
+                "BugfixPipelineTickAttemptFailed",
+                defect_id=payload.get("defect_id") or "<unknown>",
+                timestamp=now.isoformat().replace("+00:00", "Z"),
+                reason=f"missing field: {missing}",
+                feature_id=feature_id,
+            )
+            return
+
+        from des.domain.bugfix_pipeline import evaluate_and_record
+
+        evaluate_and_record(
+            ledger=ledger,
+            feature_id=feature_id,
+            defect_id=payload["defect_id"],
+            action=payload["action"],
+            stage=payload.get("stage"),
+            now=now,
+            reason=payload.get("reason"),
+        )
+    except Exception as e:
+        sys.stderr.write(f"[nwave] {filename} loop-tick error (fail-open): {e}\n")
+
+
+def _bugfix_pipeline_missing_field(payload: dict[str, Any]) -> str | None:
+    """The first domain-required bugfix-pipeline field absent from ``payload``.
+
+    ``defect_id`` and ``action`` are always required; ``stage`` is required
+    unless ``action == "claim-drained"`` (mirrors
+    ``des.cli.bugfix_pipeline_tick``'s own ``--stage`` requirement).
+    """
+    if "defect_id" not in payload:
+        return "defect_id"
+    if "action" not in payload:
+        return "action"
+    if payload.get("action") != "claim-drained" and "stage" not in payload:
+        return "stage"
+    return None
+
+
+def _maybe_tick_consolidation_intake(cwd: str | None) -> None:
+    """Fire the pending consolidation-signal tick (slice-04 seam), fail-open (D-8).
+
+    A ``.nwave/loop-tick-consolidation-signal.json`` request's absence is a
+    safe no-op. A known ``feature_id`` missing a domain-required field
+    (``signal_type`` / ``signal_key``) is ledger-attested
+    (``ConsolidationSignalTickAttemptFailed``, reusing
+    ``append_bugfix_pipeline_event`` -- the SAME shared pipeline write
+    surface slice-04's intake reuses for its success path). No derivable
+    ``feature_id``, or any other unexpected error, degrades to a labeled
+    stderr diagnostic only.
+    """
+    filename = _LOOP_TICK_CONSOLIDATION_SIGNAL_FILENAME
+    try:
+        payload = _read_loop_tick_request(cwd, filename)
+        if payload is None:
+            return
+        feature_id = _loop_tick_feature_id(payload)
+        now = datetime.now(timezone.utc)
+        ledger = _build_loop_tick_ledger(feature_id, cwd)
+
+        missing = next(
+            (f for f in ("signal_type", "signal_key") if f not in payload), None
+        )
+        if missing is not None:
+            signal_type = payload.get("signal_type") or "<unknown>"
+            signal_key = payload.get("signal_key") or "<unknown>"
+            ledger.append_bugfix_pipeline_event(
+                "ConsolidationSignalTickAttemptFailed",
+                defect_id=f"consolidation-{signal_type}-{signal_key}",
+                timestamp=now.isoformat().replace("+00:00", "Z"),
+                reason=f"missing field: {missing}",
+                feature_id=feature_id,
+            )
+            return
+
+        from des.domain.consolidation_queue_intake import intake_signal
+
+        intake_signal(
+            ledger=ledger,
+            feature_id=feature_id,
+            signal_type=payload["signal_type"],
+            signal_key=payload["signal_key"],
+            now=now,
+        )
+    except Exception as e:
+        sys.stderr.write(f"[nwave] {filename} loop-tick error (fail-open): {e}\n")
+
+
 def handle_session_start() -> int:
     """Handle session-start hook: run housekeeping then check for nWave updates.
 
@@ -564,5 +775,13 @@ def handle_session_start() -> int:
                 print(json.dumps(_build_orchestrator_affordance_output(affordance)))
     except Exception:
         pass
+
+    # slice-05 (autonomous-consolidation-and-bugfix-loops, OQ-3/DA-13): fire
+    # every pending autonomous-loop tick left from a prior iteration. Each
+    # wrapper is independently fail-open (its own internal try/except) so one
+    # tick's exception never blocks the other two or any trigger above.
+    _maybe_tick_work_exhausted(session_cwd)
+    _maybe_tick_bugfix_pipeline(session_cwd)
+    _maybe_tick_consolidation_intake(session_cwd)
 
     return 0

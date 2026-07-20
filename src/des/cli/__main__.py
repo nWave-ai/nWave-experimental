@@ -443,6 +443,41 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # the failure "drain not implemented" (MISSING_FUNCTIONALITY), never an
     # argparse `invalid choice` usage error, for the slice-01 walking-skeleton.
     _SubcommandRow("refactor", "des.cli.refactor", "main"),
+    # autonomous-consolidation-and-bugfix-loops slice-02 (D-2): the
+    # work-exhausted wall-clock escalation ladder tick. Real DELIVER wiring
+    # (`des.cli.work_exhausted_tick.main`) -- the acceptance corpus already
+    # drives this entry in-process; this row makes it reachable as the real
+    # `des work-exhausted-tick ...` subcommand a background loop's tick calls.
+    _SubcommandRow("work-exhausted-tick", "des.cli.work_exhausted_tick", "main"),
+    # autonomous-consolidation-and-bugfix-loops slice-03 (D-4): the
+    # bugfix-pipeline two-lane drain tick. Real DELIVER wiring
+    # (`des.cli.bugfix_pipeline_tick.main`) -- the acceptance corpus already
+    # drives this entry in-process; this row makes it reachable as the real
+    # `des bugfix-pipeline-tick ...` subcommand a bugfix loop's tick calls.
+    _SubcommandRow("bugfix-pipeline-tick", "des.cli.bugfix_pipeline_tick", "main"),
+    # autonomous-consolidation-and-bugfix-loops slice-04 (D-4/D-19): the
+    # trunk-health signal-to-queue-item intake tick. Real DELIVER wiring
+    # (`des.cli.consolidation_signal_tick.main`) -- the acceptance corpus
+    # already drives this entry in-process; this row makes it reachable as
+    # the real `des consolidation-signal-tick ...` subcommand a
+    # consolidation loop's tick calls.
+    _SubcommandRow(
+        "consolidation-signal-tick", "des.cli.consolidation_signal_tick", "main"
+    ),
+    # parallel-work-cleans-up-after-merge-back slice-01 (D-2/D-3,
+    # ADR-SWARM-002): the mechanical worktree-cleanup gate. ACT-by-default,
+    # ties `git worktree remove` to a CONFIRMED merge-back (state-based via
+    # `is_ancestor`); `--check-only` is the DONE-check backstop.
+    _SubcommandRow(
+        "verify-worktree-cleanup", "des.cli.verify_worktree_cleanup", "main"
+    ),
+    # measured-parallel-safety-report slice-01 (row 3, swarm-parallel-delivery):
+    # the advisory POST-HOC measured cross-check of a plan's declared-parallel
+    # claims -- reads the Slice Plan (reusing validate_feature_delta), measures
+    # each declared-parallel row's blast radius via the REAL `des blast-radius`
+    # subprocess, and emits MEASURED-SAFE / DRIFT per pair. Advisory (exit 0 on
+    # both verdicts, D-2); exit 2 only on a malformed --scope invocation.
+    _SubcommandRow("parallel-safety-report", "des.cli.parallel_safety_report", "main"),
 )
 
 

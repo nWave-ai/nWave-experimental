@@ -135,3 +135,70 @@ def _short_ref(ref: str) -> str:
         if ref.startswith(prefix):
             return ref[len(prefix) :]
     return ref
+
+
+def is_ancestor(repo: Path, ancestor_sha: str, descendant_sha: str) -> bool:
+    """True iff ``ancestor_sha`` is reachable from ``descendant_sha``.
+
+    Promoted verbatim (D-D7, parallel-work-cleans-up-after-merge-back) from
+    ``commit_slice.py``'s former private ``_is_ancestor`` -- byte-identical
+    logic, closing the AD-22 duplication this feature's Reuse Analysis
+    surfaced. Deliberately OUTSIDE ``git_text``'s ``check=True`` seam: exit 1
+    ("not yet merged") is a legitimate answer, not an error, so a checked
+    subprocess would wrongly turn it into a raised exception.
+    """
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor_sha, descendant_sha],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def is_merged_contribution(repo: Path, head_sha: str, target_ref: str) -> bool:
+    """True iff ``head_sha``'s OWN work genuinely merged onto ``target_ref``.
+
+    Stronger than bare ``is_ancestor`` -- the fix for the non-diverged-worktree
+    data-loss bug. ``is_ancestor(head, target)`` is TRUE in two structurally
+    different situations, and only the FIRST is a real merge:
+
+    1. ``head``'s own commits reached ``target`` (via a fast-forward that made
+       ``head`` the tip, or via a merge that brought ``head`` in off ``target``'s
+       mainline) -- the safe, genuinely-merged case.
+    2. ``head`` made NO commits of its own and ``target`` merely advanced PAST
+       it, on ``target``'s own first-parent mainline, via unrelated work -- so
+       ``head`` sits on ``target``'s mainline as a PROPER ancestor. Nothing of
+       ``head``'s own could have merged, because there was nothing to merge.
+
+    The two are told apart WITHOUT any recorded creation-base (worktrees here are
+    created by many surfaces, not one): ``head`` is a genuine contribution iff it
+    is reachable AND is NOT a proper ancestor lying on ``target``'s first-parent
+    mainline. Equivalently: ``head`` is the tip, or it joined ``target`` off the
+    first-parent spine (a merge). This is the SAFE-conservative direction -- when
+    in doubt it refuses cleanup (never a false removal), since deleting a live
+    worktree is data loss while leaving one is a cosmetic loose end.
+
+    Pure read (git + Python only, target-machine agnostic). Outside
+    ``git_text``'s ``check=True`` seam for the same reason ``is_ancestor`` is:
+    "not merged" is a legitimate answer, never an error.
+    """
+    if not is_ancestor(repo, head_sha, target_ref):
+        return False
+    first_parent_line = subprocess.run(
+        ["git", "rev-list", "--first-parent", target_ref],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    if first_parent_line.returncode != 0:
+        # Cannot read target's mainline -- degrade SAFE (refuse cleanup) rather
+        # than fall back to the bare-ancestor false-positive this guards against.
+        return False
+    mainline = first_parent_line.stdout.split()
+    if not mainline:
+        return True
+    tip, proper_ancestors = mainline[0], mainline[1:]
+    if head_sha == tip:
+        return True
+    return head_sha not in set(proper_ancestors)

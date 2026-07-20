@@ -416,8 +416,18 @@ def _restore_hooks_dir(hooks_dir: Path, snapshot: dict[str, bytes]) -> None:
     content + 0o755 permissions (hooks must be executable). Deletes any
     files that appeared during the session (and are not in the snapshot).
     Idempotent: calling twice with the same snapshot is a no-op.
+
+    Gated by ``_common_git_dir_is_shared``: when the common ``.git`` is shared
+    with live linked worktrees, the destructive restore is SKIPPED (WARN-ONLY)
+    — a sibling worktree's hooks live in this same dir and must not be
+    clobbered.
     """
     if not hooks_dir.is_dir():
+        return
+    if _common_git_dir_is_shared(hooks_dir.parent):
+        _warn_shared_common_dir_restore_skipped(
+            "hooks", sorted(snapshot), hooks_dir.parent
+        )
         return
     current_names = {entry.name for entry in hooks_dir.iterdir() if entry.is_file()}
     # Delete files that appeared during the session
@@ -483,11 +493,6 @@ def guard_git_hooks():
         name for name in set(before) & set(after) if before[name] != after[name]
     )
 
-    # UNCONDITIONAL RESTORE first — even on detection failure, the next
-    # commit must not be blocked by leftover corruption.
-    if created or deleted or modified:
-        _restore_hooks_dir(hooks_dir, before)
-
     violations: list[str] = []
     if created:
         violations.append(f"Created: {created}")
@@ -496,18 +501,32 @@ def guard_git_hooks():
     if modified:
         violations.append(f"Modified: {modified}")
 
-    if violations:
-        # Surface as a warning rather than a teardown failure: the unconditional
-        # restore above is the safety net — we do not want to block pre-commit
-        # runs when a test touches hooks, we want the hooks left intact.
-        import sys as _sys
+    if not violations:
+        return
 
-        _sys.stderr.write(
-            "\nHOOK-GUARD: test session corrupted .git/hooks/ — "
-            + "; ".join(violations)
-            + f"\n  hooks dir: {hooks_dir}"
-            + "\n  (hooks dir has been RESTORED to the pre-session snapshot)\n"
+    if _common_git_dir_is_shared(hooks_dir.parent):
+        # Shared common .git: sibling worktrees' hooks live in this same dir;
+        # a restore would clobber them. Degrade to WARN-ONLY — never touch the
+        # shared dir. (Guard already warns; no restore is performed.)
+        _warn_shared_common_dir_restore_skipped(
+            "hooks", "; ".join(violations), hooks_dir.parent
         )
+        return
+
+    # Exclusive common dir — unchanged single-writer behavior: UNCONDITIONAL
+    # RESTORE first so the next commit is never blocked by leftover
+    # corruption, then surface a warning (not a teardown failure — we want the
+    # hooks left intact, not pre-commit runs blocked).
+    _restore_hooks_dir(hooks_dir, before)
+
+    import sys as _sys
+
+    _sys.stderr.write(
+        "\nHOOK-GUARD: test session corrupted .git/hooks/ — "
+        + "; ".join(violations)
+        + f"\n  hooks dir: {hooks_dir}"
+        + "\n  (hooks dir has been RESTORED to the pre-session snapshot)\n"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -546,6 +565,64 @@ def _resolve_git_common_dir(project_root: Path) -> Path:
             # <common>/worktrees/<name> -> <common>
             return worktree_git.parent.parent
     return git_path
+
+
+def _common_git_dir_is_shared(common_dir: Path) -> bool:
+    """True when ``common_dir`` is shared with live linked worktrees.
+
+    A git common dir gains a ``worktrees/`` subdirectory the moment a linked
+    worktree is created; each live linked worktree owns one
+    ``worktrees/<name>/`` entry. The signal is symmetric: resolved from the
+    MAIN worktree its linked children appear there; resolved from a LINKED
+    worktree its own entry appears there. A standalone clone with no linked
+    worktrees has no ``worktrees/`` dir (or an empty one) and is therefore
+    exclusively owned by this process.
+
+    Pure filesystem, NO ``git`` subprocess — same discipline as
+    ``_resolve_git_common_dir`` (the guard runs per-test in worker scope and
+    must not shell out) and the Python-only / tool-agnostic gate mandate.
+
+    Biased toward reporting SHARED: a stale ``worktrees/<name>`` entry left by
+    a not-yet-pruned removed worktree reports shared, which only ever makes the
+    caller REFRAIN from a destructive restore — the safe direction. The
+    dangerous error (reporting exclusive while actually shared, then clobbering
+    a sibling worktree's refs) never arises from a stale entry.
+
+    Motivation: the detective guards below restore ``.git`` state by DIRECT
+    file write on the common dir, assuming they are its sole writer. Under the
+    swarm-parallel-delivery methodology many linked worktrees share one common
+    ``.git``; a restore would then clobber a sibling's legitimate new branch /
+    HEAD / config move (no reflog entry). This detector gates the destructive
+    restore so it degrades to WARN-ONLY when shared.
+    """
+    worktrees_dir = common_dir / "worktrees"
+    if not worktrees_dir.is_dir():
+        return False
+    return any(child.is_dir() for child in worktrees_dir.iterdir())
+
+
+def _warn_shared_common_dir_restore_skipped(
+    artifacts: str, diff: object, common_dir: Path
+) -> None:
+    """Emit a WHAT/WHY/HOW warning when a guard skips a destructive restore
+    because the common ``.git`` is shared with live linked worktrees."""
+    import sys as _sys
+
+    _sys.stderr.write(
+        f"\nGUARD (shared .git): {artifacts} change detected ({diff!r}) but "
+        "the common git dir is shared with live linked worktrees — "
+        "destructive restore SKIPPED.\n"
+        f"  common dir: {common_dir}\n"
+        "  WHAT: the detective guard saw a diff in the shared common .git.\n"
+        "  WHY : under multi-worktree parallel delivery another live worktree's "
+        "legitimate change (new branch, HEAD/config move) is indistinguishable "
+        "from this test's pollution; a direct-file restore would silently "
+        "clobber that sibling's work (no reflog entry).\n"
+        "  HOW : degraded to WARN-ONLY. If THIS test truly mutates git state, "
+        "isolate it into a throwaway repo under tmp_path "
+        "(GIT_CEILING_DIRECTORIES) so the guard can safely restore. Restore "
+        "re-enables automatically once the common dir is exclusively owned.\n"
+    )
 
 
 def _resolve_head_path(project_root: Path) -> Path:
@@ -931,6 +1008,15 @@ def _atomic_restore_git_state(project_root: Path, before: dict[str, object]) -> 
     _GUARD_RESTORE_IN_PROGRESS = True
     try:
         common_dir = _resolve_git_common_dir(project_root)
+        if _common_git_dir_is_shared(common_dir):
+            # Shared common .git: a sibling worktree's legitimate change is
+            # indistinguishable from pollution; a direct-file restore would
+            # clobber it. Degrade to WARN-ONLY. Detection stays; only the
+            # destructive action is gated.
+            _warn_shared_common_dir_restore_skipped(
+                "config/HEAD/refs", None, common_dir
+            )
+            return
         config_path = common_dir / "config"
         head_path = _resolve_head_path(project_root)
 
@@ -1020,14 +1106,24 @@ def _git_pollution_guard():
         after = _compute_git_state_snapshot(_PROJECT_ROOT)
         diff = _diff_git_state(before, after)
         if diff:
-            try:
-                _atomic_restore_git_state(_PROJECT_ROOT, before)
-            finally:
-                pytest.fail(
-                    f"Test corrupted host git state: {diff}. "
-                    "See docs/analysis/rca-test-git-pollution-2026-04-27.md "
-                    "for the failure-mode lineage."
+            common_dir = _resolve_git_common_dir(_PROJECT_ROOT)
+            if _common_git_dir_is_shared(common_dir):
+                # Shared common .git: cannot attribute the diff to THIS test
+                # vs a sibling worktree's legitimate change. Degrade to
+                # WARN-ONLY — never restore (would clobber the sibling) and
+                # never fail (the diff is most likely not ours).
+                _warn_shared_common_dir_restore_skipped(
+                    "config/HEAD/refs", diff, common_dir
                 )
+            else:
+                try:
+                    _atomic_restore_git_state(_PROJECT_ROOT, before)
+                finally:
+                    pytest.fail(
+                        f"Test corrupted host git state: {diff}. "
+                        "See docs/analysis/rca-test-git-pollution-2026-04-27.md "
+                        "for the failure-mode lineage."
+                    )
 
 
 # ---------------------------------------------------------------------------

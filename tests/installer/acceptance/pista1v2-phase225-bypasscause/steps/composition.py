@@ -1,6 +1,6 @@
 """Composition root for slice-01 (BypassCause StrEnum extraction).
 
-Wires three driving surfaces against the spine-ledger gate:
+Wires two driving surfaces against the spine-ledger gate:
 
   * AT-1 parity outline — drives the production gate script
     `python -m scripts.hooks.spine_ledger_gate` as a real subprocess (Layer 3
@@ -15,16 +15,11 @@ Wires three driving surfaces against the spine-ledger gate:
     an enum member to its expected string value IS the contract. The
     exemption is documented in `at-scaffold-notes-slice-01.md`.
 
-  * AT-3 regression-zero — invokes the predecessor-feature acceptance suite
-    via `pytest` as a real subprocess (Layer 3+). The SUT is the predecessor
-    suite directory; the contract is "every scenario in the suite still
-    passes under the refactored gate".
-
 Business logic — subprocess construction, target tree seeding, slice-trailer
-synthesis, ledger evidence seeding via the real `AtCompletionLedger` writer,
-pytest invocation — lives here as the single source of truth (Mandate-12
-criterion 3: step bodies ≤2 statements, final statement is a composition
-method call, zero control flow).
+synthesis, ledger evidence seeding via the real `AtCompletionLedger` writer
+— lives here as the single source of truth (Mandate-12 criterion 3: step
+bodies ≤2 statements, final statement is a composition method call, zero
+control flow).
 
 Standalone (NO inheritance from sibling features' fixtures): this is a fresh
 feature per the dispatch contract. The cause-branch wiring is intentionally
@@ -48,24 +43,29 @@ RED-for-the-right-reason:
     Gate snapshot classifies the test as RED (not BROKEN). DELIVER's
     extraction makes this test GREEN.
 
-  * AT-3 regression-zero — today the predecessor suite is GREEN (15/15).
-    The test runs a real pytest subprocess against the predecessor directory
-    and asserts a 15-pass outcome. PASSING today; RED fires only if DELIVER's
-    refactor regresses any predecessor scenario.
-
-Mandate-13 (driving-port-only): AT-1 and AT-3 are Layer 3 subprocess driving
-ports. AT-2 imports `BypassCause` directly — parity-unit exemption per
+Mandate-13 (driving-port-only): AT-1 is a Layer 3 subprocess driving port.
+AT-2 imports `BypassCause` directly — parity-unit exemption per
 fix-installer slice-01 precedent (comparing an enum extracted as a value
 object to its expected literal IS the contract; there is no driving-port
 surface that observes the enum's TYPE — only its VALUE through stdout, which
 AT-1 already covers).
+
+Note (test-optimizer removal, 2026-07-20): the former AT-3 "predecessor
+suite remains green" walking-skeleton scenario was removed — it re-ran the
+predecessor suite's own 15 tests via a nested `pytest` subprocess, which is
+strictly redundant with the native collection of
+`tests/installer/acceptance/atdd-spine-ledger-enforcement-gate-v2/` as a
+sibling directory under any `tests/installer/acceptance/`-scoped run (CI,
+pre-push, feature-end gate). Zero coverage lost: the predecessor suite's own
+15 tests still assert every cause branch natively in the same collection.
+`predecessor_at_count()` is retained — the Background step
+`given_predecessor_at_count` still documents/anchors the 15-AT provenance.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -83,9 +83,6 @@ _DISABLED_GATES_RELPATH = Path(".nwave") / "disabled-gates"
 _TELEMETRY_RELPATH = Path(".nwave") / "telemetry" / "atdd-pure"
 _AUDIT_LOG_DIR_RELPATH = Path(".nwave") / "des" / "logs"
 _GATE_NAME = "spine-ledger-gate"
-_PREDECESSOR_SUITE_RELPATH = Path(
-    "tests/installer/acceptance/atdd-spine-ledger-enforcement-gate-v2"
-)
 _PREDECESSOR_AT_COUNT = 15
 
 # Branch -> precondition recipe + expected (exit_code, cause) tuple. The
@@ -139,16 +136,6 @@ class ValueObjectInspection:
     import_error: str | None = None
 
 
-@dataclass(frozen=True)
-class PytestSubprocessResult:
-    """One captured pytest subprocess invocation."""
-
-    exit_code: int
-    stdout: str
-    stderr: str
-    passed_count: int
-
-
 def _audit_log_path(target_root: Path) -> Path:
     """Return today's UTC-dated audit log path under the target root."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -193,10 +180,6 @@ class BypassCauseFixture:
         its type + member values; `assert_*` helpers verify enum-shape +
         per-member value contracts.
 
-      * Predecessor-suite regression (AT-3) — `run_predecessor_suite()`
-        invokes pytest as a real subprocess against the predecessor feature's
-        acceptance directory; `assert_predecessor_suite_all_pass()` verifies
-        the documented 15-pass outcome.
     """
 
     def __init__(self, target_root: Path) -> None:
@@ -392,87 +375,7 @@ class BypassCauseFixture:
             f"Captured members: {inspection.member_values!r}"
         )
 
-    # ---- AT-3 predecessor-suite regression ----
-
-    def run_predecessor_suite(self) -> PytestSubprocessResult:
-        """Invoke pytest against the predecessor-feature acceptance directory.
-
-        Real subprocess (Layer 3+) — invokes the pipenv-installed pytest so
-        the predecessor suite's conftest + steps + composition load the way
-        they do on a developer's machine. Captures stdout for the trailing
-        passed-count line (`====== 15 passed in X.XXs ======`).
-        """
-        suite_dir = _REPO_ROOT / _PREDECESSOR_SUITE_RELPATH
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                str(suite_dir),
-                "-q",
-                "--no-header",
-                "-p",
-                "no:cacheprovider",
-            ],
-            cwd=str(_REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=300,
-            check=False,
-            env={**os.environ},
-        )
-        passed_count = _extract_pytest_passed_count(completed.stdout or "")
-        return PytestSubprocessResult(
-            exit_code=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
-            passed_count=passed_count,
-        )
-
-    def assert_predecessor_suite_all_pass(self, result: PytestSubprocessResult) -> None:
-        """Assert pytest exited 0 with every scenario passing."""
-        assert result.exit_code == 0, (
-            f"Expected predecessor suite to exit 0 (all-pass); got "
-            f"{result.exit_code}.\n"
-            f"stdout (tail): {result.stdout[-2000:]!r}\n"
-            f"stderr (tail): {result.stderr[-2000:]!r}"
-        )
-
-    def assert_predecessor_suite_count(
-        self, result: PytestSubprocessResult, expected_count: int
-    ) -> None:
-        """Assert pytest's summary line reports the expected pass count."""
-        assert result.passed_count == expected_count, (
-            f"Expected predecessor suite to report {expected_count} passing "
-            f"tests; got {result.passed_count}.\n"
-            f"stdout (tail): {result.stdout[-2000:]!r}"
-        )
-
     @staticmethod
     def predecessor_at_count() -> int:
         """Return the documented predecessor AT count (15 per feature-delta)."""
         return _PREDECESSOR_AT_COUNT
-
-
-def _extract_pytest_passed_count(stdout: str) -> int:
-    """Parse the passing-count from pytest stdout via the language-agnostic contract.
-
-    Primary surface: the repo's custom pytest plugin emits a single-line JSON
-    contract `NWAVE_TEST_RESULT:{"passed":N,"failed":...,...}` per
-    [[feedback_target_machine_language_not_python_2026_05_22]]. The contract
-    is the SSOT — never parse the human-readable summary when the contract is
-    present (the customised plugin in this repo suppresses the standard
-    `N passed in X.XXs` summary line in favour of a Rich-rendered table that
-    the legacy regex cannot read).
-
-    Fallback: standard pytest summary regex (`N passed`) for runners that
-    have not installed the contract emitter. Returns 0 if neither shape
-    matches (the test's assertion then surfaces a clean failure).
-    """
-    import re
-
-    contract_match = re.search(r'NWAVE_TEST_RESULT:\{[^}]*"passed":\s*(\d+)', stdout)
-    if contract_match:
-        return int(contract_match.group(1))
-    summary_match = re.search(r"(\d+)\s+passed", stdout)
-    return int(summary_match.group(1)) if summary_match else 0

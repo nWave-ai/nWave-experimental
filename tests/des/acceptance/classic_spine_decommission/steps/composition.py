@@ -496,6 +496,34 @@ class LedgerInterleaveComposition:
             "| slice-02 | the review verdict writer appends a record | done | | |\n",
             encoding="utf-8",
         )
+        # d28f75494 (fix-at-review-seal-coherence): the real `at_review_verdict`
+        # CLI's default `--at-kind gherkin` derivation now REFUSES an
+        # APPROVED verdict when zero scenarios are tagged `@{slice_id}` for
+        # this feature (GDP-6 -- it used to silently seal sha256("") as a
+        # legitimate empty AT set). Stage a minimal `.feature` file
+        # self-identifying with `@feature-{feature_id}` and carrying a
+        # `@slice-01` + `@slice-02` scenario each, so the review-verdict
+        # writer's Gherkin scan resolves for both slices this interleave
+        # drives -- mirroring the feature-delta staging above.
+        installed_feature = (
+            self._project_root / "tests" / "acceptance" / f"{feature_id}.feature"
+        )
+        installed_feature.parent.mkdir(parents=True, exist_ok=True)
+        installed_feature.write_text(
+            f"@feature-{feature_id}\n"
+            f"Feature: {feature_id} installed-feature synthetic scenarios\n\n"
+            "  @slice-01\n"
+            "  Scenario: slice-01 synthetic scenario\n"
+            "    Given a synthetic precondition\n"
+            "    When a synthetic action occurs\n"
+            "    Then a synthetic outcome is observed\n\n"
+            "  @slice-02\n"
+            "  Scenario: slice-02 synthetic scenario\n"
+            "    Given a synthetic precondition\n"
+            "    When a synthetic action occurs\n"
+            "    Then a synthetic outcome is observed\n",
+            encoding="utf-8",
+        )
 
     def writer_appends_record(self, writer: LedgerWriter, slice_id: str) -> None:
         """Have the named REAL writer append a record to the shared ledger.

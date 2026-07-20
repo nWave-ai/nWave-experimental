@@ -63,7 +63,6 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from .composition import (
     BypassCauseFixture,
     GateInvocation,
-    PytestSubprocessResult,
     ValueObjectInspection,
 )
 
@@ -245,44 +244,7 @@ def then_member_value(
     )
 
 
-# --- AT-3 regression-zero predecessor-suite -------------------------------
-
-
-@given(
-    "the predecessor feature ships its acceptance suite under "
-    '"tests/installer/acceptance/atdd-spine-ledger-enforcement-gate-v2/"'
-)
-def given_predecessor_suite_path(fixture: BypassCauseFixture) -> None:
-    # Documents the SUT location. The composition method consumes
-    # `_PREDECESSOR_SUITE_RELPATH` -- no business logic in the step body.
-    _ = fixture
-
-
-@when("the maintainer runs every scenario in that suite under the refactored gate")
-def when_run_predecessor_suite(
-    fixture: BypassCauseFixture, result_box: dict[str, object]
-) -> None:
-    result_box["pytest_result"] = fixture.run_predecessor_suite()
-
-
-@then("every scenario passes")
-def then_every_scenario_passes(
-    fixture: BypassCauseFixture, result_box: dict[str, object]
-) -> None:
-    fixture.assert_predecessor_suite_all_pass(result_box["pytest_result"])  # type: ignore[arg-type]
-
-
-@then("the suite reports fifteen passing acceptance tests")
-def then_fifteen_passing(
-    fixture: BypassCauseFixture, result_box: dict[str, object]
-) -> None:
-    fixture.assert_predecessor_suite_count(
-        result_box["pytest_result"],  # type: ignore[arg-type]
-        BypassCauseFixture.predecessor_at_count(),
-    )
-
-
 # --- Unused-imports guard (ruff F401) --------------------------------------
 
 # Type re-exports for downstream slice authors who extend this step set.
-_TYPE_REEXPORTS = (GateInvocation, ValueObjectInspection, PytestSubprocessResult)
+_TYPE_REEXPORTS = (GateInvocation, ValueObjectInspection)

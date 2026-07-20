@@ -26,9 +26,12 @@ stdlib + the resolved interpreter only.
 
 from __future__ import annotations
 
+import contextlib
 import os
+import signal
 import subprocess
-from typing import TYPE_CHECKING
+import tempfile
+from typing import IO, TYPE_CHECKING
 
 from des.ports.test_runner_port import (
     ListScope,
@@ -92,6 +95,94 @@ def run_timeout_seconds() -> float:
         return 2700.0
 
 
+def _reap_process_group(pid: int) -> None:
+    """SIGKILL the whole process group led by ``pid`` (best-effort, idempotent).
+
+    ``pid`` is the group leader (the pytest child was spawned with
+    ``start_new_session=True``, so its pgid == its pid). Signalling the GROUP --
+    not just the reaped leader -- is what tears down any grandchild the child
+    started (a target repo's durable-postgres/redis/docker fixture): those
+    grandchildren keep the leader's pgid even after the leader dies, so
+    ``killpg`` reaches them. ``ProcessLookupError`` (the group is already empty)
+    is the success case, swallowed.
+    """
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(pid, signal.SIGKILL)
+
+
+def _read_capture(handle: IO[bytes] | None, text: bool) -> str | bytes | None:
+    """Rewind and read a capture temp file; ``None`` when capture was off."""
+    if handle is None:
+        return None
+    handle.seek(0)
+    raw = handle.read()
+    return raw.decode(errors="replace") if text else raw
+
+
+def run_pytest_reaped(
+    argv: list[str],
+    *,
+    cwd: Path,
+    timeout: float | None = None,
+    capture_output: bool = False,
+    text: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """Run pytest as a session leader, reaping its WHOLE process group on exit.
+
+    The gate spawns pytest as a subprocess; the TARGET repo's conftest may spawn
+    a durable daemon fixture (a pgserver/postgres cluster) as a GRANDCHILD. A
+    plain ``subprocess.run`` leaves that grandchild orphaned when the pytest
+    child is killed on timeout (``run`` SIGKILLs only the DIRECT child) or when a
+    session-scoped fixture fails to tear it down -- ``atexit``/finalizers cannot
+    help under SIGKILL, so ONLY this supervisor can guarantee the reap.
+
+    ``start_new_session=True`` makes the child a process-group leader; the
+    ``finally`` ``killpg`` signals the whole group on EVERY exit path (timeout,
+    PASS, FAIL) so no grandchild survives the leg. ``subprocess.TimeoutExpired``
+    still propagates unchanged so existing callers' timeout handling is intact.
+
+    Capture goes to TEMP FILES, not pipes, and the direct child is awaited with
+    ``proc.wait`` (never ``communicate``): a leaked daemon that inherits the
+    child's stdio would hold a PIPE open and hang the gate forever (and a pipe
+    can dead-lock on a full buffer) -- a regular file never blocks the writer nor
+    the wait, so the group can be reaped promptly once the child itself exits.
+    """
+    out_handle: IO[bytes] | None = tempfile.TemporaryFile() if capture_output else None
+    err_handle: IO[bytes] | None = tempfile.TemporaryFile() if capture_output else None
+    try:
+        proc = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            stdout=out_handle,
+            stderr=err_handle,
+            start_new_session=True,
+        )
+        try:
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                _reap_process_group(proc.pid)
+                proc.wait()
+                raise subprocess.TimeoutExpired(
+                    argv,
+                    timeout if timeout is not None else 0.0,
+                    output=_read_capture(out_handle, text),
+                    stderr=_read_capture(err_handle, text),
+                ) from None
+        finally:
+            _reap_process_group(proc.pid)
+        return subprocess.CompletedProcess(
+            argv,
+            proc.returncode,
+            _read_capture(out_handle, text),  # type: ignore[arg-type]
+            _read_capture(err_handle, text),  # type: ignore[arg-type]
+        )
+    finally:
+        for handle in (out_handle, err_handle):
+            if handle is not None:
+                handle.close()
+
+
 def pytest_interpreter(repo_root: Path | None = None) -> str:
     """Resolve the python interpreter the pytest run-facet drives, behind the port.
 
@@ -140,7 +231,7 @@ def run_pytest_scope(
     """
     interpreter = pytest_interpreter(repo_root=target_root)
     try:
-        completed = subprocess.run(
+        completed = run_pytest_reaped(
             [interpreter, "-m", "pytest", "-p", "no:cacheprovider", *scoped_node_ids],
             capture_output=True,
             text=True,
@@ -188,4 +279,9 @@ def list_pytest_scope(
     )
 
 
-__all__ = ["list_pytest_scope", "pytest_interpreter", "run_pytest_scope"]
+__all__ = [
+    "list_pytest_scope",
+    "pytest_interpreter",
+    "run_pytest_reaped",
+    "run_pytest_scope",
+]

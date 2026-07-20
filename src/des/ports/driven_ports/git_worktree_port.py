@@ -27,10 +27,16 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class WorktreeHandle:
-    """Observable identity of a created worktree (D1's witness)."""
+    """Observable identity of a created worktree (D1's witness).
+
+    ``branch`` is ``None`` for a detached-HEAD worktree (``git worktree add
+    --detach``) -- it has no branch line to report (detached-worktree-
+    excluded-from-cleanup-sweep bugfix). ``create_worktree_from_tip`` always
+    creates a branched worktree, so its own return value's ``branch`` is
+    never ``None``; only a `list_worktrees`-enumerated entry can be."""
 
     path: Path
-    branch: str
+    branch: str | None
     head_sha: str
 
 
@@ -83,3 +89,58 @@ class GitWorktreePort(ABC):
         """Delete the item's branch. Caller invokes this ONLY after a CONFIRMED
         merge -- an unmerged branch is NEVER deleted (D5/D6)."""
         ...
+
+    @abstractmethod
+    def land_and_remove_integration(self, repo: Path, integration_branch: str) -> bool:
+        """Land the drained fix onto the operator's OWN branch, then remove the
+        now-redundant integration branch (D5/D6 'nothing is left behind').
+
+        The integration branch is the clean merge VEHICLE (D4), never the
+        deliverable: fast-forward the operator's currently checked-out branch
+        onto it so the fix becomes reachable from the maintainer's own
+        ``git log`` (charter positive oracle), then delete the integration
+        branch (charter negative oracle: no branch the run created survives it).
+
+        Returns ``True`` iff the fix was landed AND the integration branch
+        removed. Returns ``False`` WITHOUT deleting anything when there is no
+        operator branch to land onto (detached HEAD) or the operator tree is
+        dirty -- the integration branch then SURVIVES for human recovery,
+        never silently dropped and never force-merged into a dirty tree. Caller
+        invokes this ONLY after a CONFIRMED merge into the integration branch."""
+        ...
+
+    @abstractmethod
+    def has_uncommitted_changes(self, repo: Path, path: Path) -> bool:
+        """True iff the worktree at ``path`` has uncommitted work (modified,
+        staged, or untracked) in its working tree.
+
+        EXTEND (worktree-cleanup dirty-tree guard). The cleanup sweep consults
+        this BEFORE removing a confirmed-merged worktree: a worktree holding
+        uncommitted work must NEVER be force-removed, however merged its
+        committed history is -- removing it would discard that work (the
+        data-loss the guard prevents). Read LIVE, per-worktree."""
+        ...
+
+    @abstractmethod
+    def list_worktrees(self, repo: Path) -> tuple[WorktreeHandle, ...]:
+        """Enumerate every LINKED worktree registered against ``repo``.
+
+        EXTEND (parallel-work-cleans-up-after-merge-back, D-1 reuse, D-D1).
+        Excludes the main worktree itself. Each ``head_sha`` is read LIVE
+        (current HEAD, not a creation-time snapshot) -- the cleanup gate's
+        "confirmed merged" state-check depends on currency."""
+        ...
+
+    def is_linked_worktree(self, repo: Path) -> bool:
+        """True iff ``repo`` is a LINKED worktree -- one whose worktree/branch/
+        checkout mutations land in a ``.git`` SHARED with sibling worktrees
+        (``git rev-parse --git-common-dir`` != ``--git-dir``).
+
+        Concrete (NOT abstract) so it is a safe, additive extension: every
+        existing implementer -- including in-memory test doubles that never
+        touch a real shared ``.git`` -- inherits the ``False`` default
+        unchanged. Only a real git-backed adapter overrides it. The drain
+        service consults this BEFORE the startup worktree probe so a run
+        against a linked worktree is refused before it can corrupt the
+        operator's shared refs/HEAD."""
+        return False

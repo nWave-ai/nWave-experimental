@@ -41,10 +41,12 @@ class DependencyVerdict(str, Enum):
     mode's six-token closed set (D-1..D-6 DESIGN section) is:
     ``accepted | missing-slice-plan | malformed-slice-plan |
     malformed-wave-heading | rejected-infra-only |
-    unjustified-slice-dependency``; the feature-plan mode's FIVE-token set
-    (unchanged by this feature, D-6) is:
+    unjustified-slice-dependency``; the feature-plan mode's own SIX-token set
+    (grown by the sibling feature `parallel-by-default-feature-plan` slice-01,
+    row 4 -- generalizes this exact rule one granularity up) is:
     ``accepted | malformed-wave-heading | missing-feature-plan |
-    malformed-feature-plan | rejected-infra-only``. An off-contract or absent
+    malformed-feature-plan | rejected-infra-only |
+    unjustified-feature-dependency``. An off-contract or absent
     token raises rather than silently defaulting (see
     ``ValidationResult.verdict``), so a crafter that widens either set, or
     phrases a diagnostic outside it, fails loudly -- never a silent
@@ -53,6 +55,11 @@ class DependencyVerdict(str, Enum):
     UNJUSTIFIED_SLICE_DEPENDENCY -- token ``unjustified-slice-dependency``:
         THE new slice-01 verdict. A row's Annotation cell matches
         `depends-on {slice-id}` and its Justification cell is empty.
+    UNJUSTIFIED_FEATURE_DEPENDENCY -- token ``unjustified-feature-dependency``:
+        the feature-plan mode's OWN sibling verdict (row 4, NOT this feature's
+        rule leaking one granularity up -- the isolation scenario proves the
+        two tokens never conflate). A Feature Plan row's Annotation cell
+        matches `depends-on {feature-id}` and its Justification cell is empty.
     UNRECOGNISED_INVOCATION -- NO structured ``verdict`` token in stdout: the
         CLI did not produce JSON output for this invocation (never expected
         on either mode's shipped flags; a genuine contract break if seen).
@@ -66,6 +73,7 @@ class DependencyVerdict(str, Enum):
     UNJUSTIFIED_SLICE_DEPENDENCY = "unjustified_slice_dependency"
     MISSING_FEATURE_PLAN = "missing_feature_plan"
     MALFORMED_FEATURE_PLAN = "malformed_feature_plan"
+    UNJUSTIFIED_FEATURE_DEPENDENCY = "unjustified_feature_dependency"
     UNRECOGNISED_INVOCATION = "unrecognised_invocation"
 
 
@@ -127,6 +135,9 @@ VERDICT_BY_PHRASE: dict[str, DependencyVerdict] = {
         DependencyVerdict.UNJUSTIFIED_SLICE_DEPENDENCY
     ),
     "rejected for a malformed slice plan": DependencyVerdict.MALFORMED_SLICE_PLAN,
+    "rejected for an unjustified feature dependency": (
+        DependencyVerdict.UNJUSTIFIED_FEATURE_DEPENDENCY
+    ),
 }
 
 CHECK_MODE_BY_PHRASE: dict[str, CheckMode] = {

@@ -212,6 +212,18 @@ class DesMarkers:
     # prompt-parse output -- validated at the USE site via `classify_bootstrap`.
     bootstrap_gate: str | None = None
     bootstrap_justification: str | None = None
+    # --- DES-SWARM-ISOLATED-DISPATCH exemption marker (swarm-parallel-delivery) ---
+    # The free-text justification a swarm-isolated dispatch carries to exempt
+    # ONLY the M8 carpaccio-order check: a slice N>1 developed in an isolated
+    # parallel worktree does not see the predecessor's SliceCommitVerified
+    # record until a later in-order integration folds it onto the shared line,
+    # where the true ordering is still guaranteed. Distinct from DES-BOOTSTRAP:
+    # this marker names NO gate-id (it exempts exactly one gate) and carries NO
+    # reuse cap (it is ROUTINE for every slice N>1 of a swarmed feature, not a
+    # rare self-limiting exception). None when the dispatch carries no such
+    # marker (the ordinary case). Validated at the USE site by truthiness --
+    # an empty justification fails CLOSED (the order check blocks as before).
+    swarm_isolated_justification: str | None = None
     # --- DES-AT-KIND (fix-distill-exit-mechanical-seal-route slice-01) --------
     # Raw DES-AT-KIND marker value (e.g. "pytest-regression", "gherkin"), or
     # None when the marker is absent. Mirrors the grammar
@@ -293,6 +305,14 @@ class DesMarkerParser:
     # gate pattern -- after `DES-BOOTSTRAP` the gate pattern requires `\s*:`, but
     # the justification line has `-JUSTIFICATION` there instead.
     _BOOTSTRAP_PATTERN = re.compile(r"<!--\s*DES-BOOTSTRAP\s*:\s*(\S+)\s*-->")
+    # DES-SWARM-ISOLATED-DISPATCH carries ONLY a free-text justification (no
+    # gate-id): it exempts exactly the M8 order check. Same non-greedy capture
+    # shape as the bootstrap justification, so an embedded colon is unambiguous;
+    # a whitespace-only/empty value does not match (`.+?` requires >=1 char),
+    # surfacing as None -> the order check blocks (fail-closed).
+    _SWARM_ISOLATED_PATTERN = re.compile(
+        r"<!--\s*DES-SWARM-ISOLATED-DISPATCH\s*:\s*(.+?)\s*-->"
+    )
     _BOOTSTRAP_JUSTIFICATION_PATTERN = re.compile(
         r"<!--\s*DES-BOOTSTRAP-JUSTIFICATION\s*:\s*(.+?)\s*-->"
     )
@@ -349,6 +369,11 @@ class DesMarkerParser:
             else None
         )
 
+        swarm_isolated_match = self._SWARM_ISOLATED_PATTERN.search(prompt)
+        swarm_isolated_justification = (
+            swarm_isolated_match.group(1).strip() if swarm_isolated_match else None
+        )
+
         at_kind_match = self._AT_KIND_PATTERN.search(prompt)
         at_kind = at_kind_match.group(1) if at_kind_match else None
 
@@ -371,6 +396,7 @@ class DesMarkerParser:
             declared_wave=declared_wave,
             bootstrap_gate=bootstrap_gate,
             bootstrap_justification=bootstrap_justification,
+            swarm_isolated_justification=swarm_isolated_justification,
             at_kind=at_kind,
         )
 
@@ -509,6 +535,40 @@ def atdd_pure_missing_marker(markers: DesMarkers) -> str | None:
     if markers.slice_id is None:
         return "des-slice"
     return None
+
+
+# ---------------------------------------------------------------------------
+# refactor / find dispatch recognition (D8, slice-03 -- des-refactor-fixer-swarm)
+#
+# __SCAFFOLD__ (Mandate-7 RED-ready). The fixer/finder swarm WIDENS the
+# ALREADY-SHIPPED DES-MODE vocabulary with two sibling classifiers mirroring
+# ``classify_atdd_pure_dispatch`` -- ZERO new marker grammar (``_MODE_PATTERN``
+# already parses any mode value). A ``DES-MODE: refactor`` (resp. ``find``)
+# dispatch is spine-recognized by a non-``absent`` / non-``defective`` verdict,
+# so it is NOT forced through the classic-dispatch completeness check a
+# markerless crafter dispatch receives (feature-delta AT-11 / D8: no per-dispatch
+# ``DES-EXEMPT`` justification). The two-way rule A_GREEN must implement:
+#   * ``markers.mode == "refactor"``  -> 'valid'   (refactor classifier)
+#   * ``markers.mode == "find"``      -> 'valid'   (find classifier)
+#   * any other / absent mode         -> 'absent'
+# A well-formed fixer/finder dispatch is NEVER 'defective'.
+#
+# A_GREEN (slice-03, des-refactor-fixer-swarm) replaces the former raising
+# stubs with the real two-way rule mirroring ``classify_atdd_pure_dispatch``'s
+# mode check: a well-formed fixer/finder dispatch is NEVER 'defective', only
+# 'valid' (own mode matches) or 'absent' (any other/absent mode).
+
+
+def classify_refactor_dispatch(markers: DesMarkers) -> str:
+    """Classify a parsed marker set: 'valid' for a refactor-mode dispatch, else
+    'absent'."""
+    return "valid" if markers.mode == "refactor" else "absent"
+
+
+def classify_find_dispatch(markers: DesMarkers) -> str:
+    """Classify a parsed marker set: 'valid' for a find-mode dispatch, else
+    'absent'."""
+    return "valid" if markers.mode == "find" else "absent"
 
 
 def classify_bootstrap(markers: DesMarkers, firing_gate_id: str) -> str:

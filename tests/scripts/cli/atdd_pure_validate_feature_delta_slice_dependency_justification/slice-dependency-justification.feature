@@ -64,7 +64,13 @@ Feature: A slice plan reads parallel-safe by default; a declared dependency must
     And the check leaves the feature-delta unchanged
 
   @slice-01 @driving_port @contract-shape:pure-function
-  Scenario: The Feature Plan mode is unaffected by the new slice-dependency rule
+  Scenario: Feature Plan mode enforces its own dependency-justification rule, not the slice one
+    # parallel-by-default-feature-plan slice-01 (row 4) generalizes this exact rule one
+    # granularity up: the flip is real (D-1/D-2 of that feature), so this isolation scenario
+    # now proves the CROSS-MODE boundary a different way -- the rejection fires with the
+    # feature-plan mode's OWN token (`unjustified-feature-dependency`), never the slice
+    # token (`unjustified-slice-dependency`) this suite's own rule emits. The slice rule
+    # still does not leak; feature-plan mode simply grew its own sibling rule.
     Given an epic-delta whose feature plan carries a depends-on row with an empty Justification
     When the maintainer runs the feature-plan check on the epic-delta
-    Then the feature plan is accepted
+    Then the feature plan is rejected for an unjustified feature dependency

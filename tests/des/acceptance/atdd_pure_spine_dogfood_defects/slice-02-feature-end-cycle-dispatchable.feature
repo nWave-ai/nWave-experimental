@@ -44,7 +44,7 @@ Feature: A feature-end-cycle dispatch is accepted by the marker contract
 
     Examples: feature-end-cycle dispatches (RED until slice-02)
       | phase            | scope       |
-      | E_BATCH_REFACTOR | feature-end |
+      | D_DISTILL        | feature-end |
       | F_FINAL_REVIEW   | feature-end |
 
     Examples: per-slice dispatches (no regression)
@@ -76,5 +76,5 @@ Feature: A feature-end-cycle dispatch is accepted by the marker contract
 
     Examples: feature-end phase carrying a per-slice scope
       | phase            | scope    |
-      | E_BATCH_REFACTOR | slice-01 |
+      | D_DISTILL        | slice-01 |
       | F_FINAL_REVIEW   | slice-01 |

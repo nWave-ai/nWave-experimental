@@ -67,13 +67,15 @@ Source: plan v3 §7.2. Decision sequence:
 
 Sentinels map to `PhaseExit` enum in `src/des/domain/atdd_pure_phases.py` — use those names verbatim in audit-log events.
 
-## Separation Enforcement (A_GREEN vs D_REFACTOR_COMMIT)
+## Separation Enforcement — SUPERSEDED (D_REFACTOR_COMMIT is commit-only)
 
-The D_REFACTOR_COMMIT refactor dispatch MUST use a SEPARATE crafter instance from A_GREEN (Ale 2026-05-19 mandate). Enforcement:
+**No separate crafter instance is required for `D_REFACTOR_COMMIT`.** The Ale 2026-05-19 mandate below governed a `D_REFACTOR_COMMIT` that DID L1-L6 refactor + review; that per-slice refactor is now SUPERSEDED (not re-dropped — see `nw-deliver`'s `D_REFACTOR_COMMIT` table row and commit a91bf4f6b, 2026-07-04) by the mandatory per-feature Prefactoring Assessment upstream in DESIGN. With no refactor and no review happening inside `D_REFACTOR_COMMIT` — it is `des commit-slice` and nothing else — the rubber-stamp-your-own-bias risk this section guarded against does not arise: there is no review of the implementer's own work to rubber-stamp. The SAME crafter instance that ran `A_GREEN` runs the commit-only `D_REFACTOR_COMMIT`.
 
-1. Emit the D_REFACTOR_COMMIT dispatch event with `agent_instance_id` distinct from A_GREEN.
-2. Pre-flight: refuse a D_REFACTOR_COMMIT dispatch sharing `agent_instance_id` with the A_GREEN entry in `execution-log.json`.
-3. Rationale: review independence — refactor by original implementer rubber-stamps their own bias.
+Preserved for audit context (historical rationale, no longer enforced):
+
+1. ~~Emit the D_REFACTOR_COMMIT dispatch event with `agent_instance_id` distinct from A_GREEN.~~
+2. ~~Pre-flight: refuse a D_REFACTOR_COMMIT dispatch sharing `agent_instance_id` with the A_GREEN entry in `execution-log.json`.~~
+3. Original rationale (2026-05-19): review independence — refactor by original implementer rubber-stamps their own bias. No longer applicable once the phase carries no refactor/review.
 
 ## Verdict-Hash Trailer (D_REFACTOR_COMMIT review → commit)
 

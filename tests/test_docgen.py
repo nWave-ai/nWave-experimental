@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from scripts.docgen import (
     _infer_wave,
     check_links,
     check_pages,
+    check_registry_runtime_agreement,
     enrich,
     extract_agent,
     extract_all,
@@ -666,3 +668,79 @@ class TestPreservesUserAuthoredDocs:
 
         assert output_dir.is_dir()
         assert (output_dir / "index.md").read_text(encoding="utf-8") == "# fresh\n"
+
+
+# ---------------------------------------------------------------------------
+# Registry <-> runtime phase-vocabulary agreement
+# (F-DOCGEN-PHASE-VOCAB-COMPARATOR-ALIAS-BLIND regression coverage)
+# ---------------------------------------------------------------------------
+class TestRegistryRuntimePhaseVocabAgreement:
+    """`check_registry_runtime_agreement` must normalize display-vocabulary
+    phase tokens (EXAMINE/COMMIT) through the enum's own alias map
+    (`normalize_phase_token`) before comparing against `CANONICAL_PHASES`.
+
+    A literal, alias-blind string compare false-fails on every velocity-v2
+    EXAMINE/COMMIT display token -- this reddened 8 of the ~10 real
+    `mode_registry` acceptance tests on trunk (commits `58feae54b` +
+    `a91bf4f6b` renamed the display vocabulary; the enum's own value-alias
+    shielded Python call-sites but not this comparator).
+    """
+
+    def test_docgen_check_recognizes_examine_commit_aliases(self):
+        """The real, shipped default flavor's `deliver_phase_shape` speaks the
+        EXAMINE/COMMIT display vocabulary -- the comparator must normalize
+        both aliases and agree with `CANONICAL_PHASES`: zero disagreements on
+        the live repo tree. This is `docgen --check`'s own registry-agreement
+        leg, run directly (not just observed via CLI exit code)."""
+        root = Path(__file__).resolve().parent.parent
+        if not (root / "nWave" / "flavors").exists():
+            pytest.skip("nWave/flavors directory not found")
+
+        disagreements = check_registry_runtime_agreement(root)
+
+        assert disagreements == [], (
+            "docgen --check must recognize EXAMINE/COMMIT as display-vocab "
+            f"aliases of the canonical phase slots -- got: {disagreements}"
+        )
+
+    def test_normalize_phase_token_resolves_examine_and_commit_from_the_enum(self):
+        """DRY SSOT pin: the alias resolution is DERIVED from
+        `ATDDPurePhase` -- EXAMINE resolves to the enum's own
+        `C_REVIEWER_AUDIT`-sharing value, COMMIT resolves to
+        `D_REFACTOR_COMMIT`'s value. No second hand-authored alias table."""
+        from des.domain.atdd_pure_phases import ATDDPurePhase, normalize_phase_token
+
+        assert normalize_phase_token("EXAMINE") == ATDDPurePhase["EXAMINE"].value
+        assert normalize_phase_token("COMMIT") == ATDDPurePhase.D_REFACTOR_COMMIT.value
+
+    def test_unrecognized_phase_token_is_still_reported_as_disagreement(
+        self, tmp_path: Path
+    ):
+        """Negative oracle: a genuinely INCORRECT phase token (neither the
+        canonical name nor a recognized display-vocab alias) must still be
+        caught -- alias-awareness must not become a blanket pass-anything."""
+        from des.application.workflow_mode import resolve_workflow_mode
+
+        with tempfile.TemporaryDirectory() as empty:
+            resolver_default = resolve_workflow_mode(Path(empty))
+
+        flavors_dir = tmp_path / "nWave" / "flavors"
+        flavors_dir.mkdir(parents=True)
+        (flavors_dir / f"{resolver_default}.yaml").write_text(
+            textwrap.dedent(f"""\
+                flavor_id: {resolver_default}
+                default: true
+                deliver_phase_shape: "A_GREEN -> TOTALLY_BOGUS_PHASE -> COMMIT"
+            """),
+            encoding="utf-8",
+        )
+
+        disagreements = check_registry_runtime_agreement(tmp_path)
+
+        assert disagreements, (
+            "an incorrect (non-canonical, non-alias) phase token must still "
+            "produce a disagreement, never be silently accepted"
+        )
+        assert any("TOTALLY_BOGUS_PHASE" in entry for entry in disagreements), (
+            f"the disagreement must name the unrecognized token. got: {disagreements}"
+        )

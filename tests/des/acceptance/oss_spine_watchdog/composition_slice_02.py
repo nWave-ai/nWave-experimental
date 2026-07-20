@@ -45,15 +45,58 @@ Layer 3/4 (real git repo + real ledger JSONL + real hook subprocess against
 tmp_path): example-only (Mandate 9 v2 — @real-io because the driven set includes
 a real filesystem adapter + a real git subprocess + a real hook subprocess). No
 PBT machinery imported (Mandate 11 — sad paths enumerated explicitly).
+
+── SPEED (bugfix-oss-spine-watchdog-in-memory) ──
+All 3 scenarios drive the SAME downstream state machine: the bounded-block COUNT
+consuming an E1-failure decision, never the gate mechanism that PRODUCES that
+decision (the collection precheck / E1 / E2 subprocess forks are slice-01/05
+territory — that proof stays real there). `_fire_hook` sets the production
+`NWAVE_U2_FORCE_GATE_CODES` seam (`subagent_stop_handler._resolve_g_commit_gate_codes`)
+so the hook still runs for real (Mandate-13 driving port unchanged) but the 3
+gate-subprocess forks it would otherwise pay per invocation are replaced with the
+in-memory codes "0:1:0" (precheck proceeds, E1 fails => `failed="slice-commit-
+completeness"`, E2 irrelevant to that label) the real fork would have produced for
+this fixture's `build_blocking_commit` shape. Same assertions, same observable
+`InterceptOutcome`, no re-fork.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+
+
+# SPEED seam name (bugfix-oss-spine-watchdog-in-memory): mirrors the production
+# `_FORCE_GATE_CODES_ENV` constant in `subagent_stop_handler.py` without importing
+# it (Mandate-13 -- no direct production import at the test boundary beyond the
+# tolerable substrate/observable exceptions already documented above).
+_FORCE_GATE_CODES_ENV = "NWAVE_U2_FORCE_GATE_CODES"
+
+# precheck=0 (proceed) : e1=1 (fails -- `build_blocking_commit`'s E1-incomplete
+# shape) : e2=0 (irrelevant to the "failed" label once e1 != 0). The codes a real
+# fork would have produced for every scenario in this family (all 3 arrange an
+# E1-incomplete commit).
+_FORCED_GATE_CODES = "0:1:0"
+
+
+@contextmanager
+def _forced_gate_codes():
+    """Set/restore the production SPEED seam around one hook invocation."""
+    prior = os.environ.get(_FORCE_GATE_CODES_ENV)
+    os.environ[_FORCE_GATE_CODES_ENV] = _FORCED_GATE_CODES
+    try:
+        yield
+    finally:
+        if prior is None:
+            os.environ.pop(_FORCE_GATE_CODES_ENV, None)
+        else:
+            os.environ[_FORCE_GATE_CODES_ENV] = prior
+
 
 # Precondition-substrate writer (NOT the SUT). Seeds the prior SliceCommitBlocked
 # records the bounded-block count reads — the S2 tolerable-variant "seed
@@ -307,7 +350,15 @@ class BoundedBlockFixture:
         self._transcript_path.write_text(line + "\n", encoding="utf-8")
 
     def _fire_hook(self) -> subprocess.CompletedProcess[str]:
-        """Invoke the REAL `handle_subagent_stop` hook over its JSON protocol."""
+        """Invoke the REAL `handle_subagent_stop` hook over its JSON protocol.
+
+        SPEED (bugfix-oss-spine-watchdog-in-memory): wrapped in
+        `_forced_gate_codes()` so the handler's precheck/E1/E2 subprocess forks
+        are replaced with the in-memory codes this fixture's E1-incomplete commit
+        shape would have produced for real — the hook itself still runs (the
+        driving port is unchanged), only the 3 nested gate-subprocess forks it
+        would otherwise pay per invocation are skipped.
+        """
         hook_input = json.dumps(
             {
                 "session_id": "watchdog-slice02-session",
@@ -321,11 +372,12 @@ class BoundedBlockFixture:
                 "permission_mode": "default",
             }
         )
-        exit_code, stdout, stderr = run_hook_in_process(
-            handle_subagent_stop,
-            stdin_text=hook_input,
-            cwd=str(self._repo),
-        )
+        with _forced_gate_codes():
+            exit_code, stdout, stderr = run_hook_in_process(
+                handle_subagent_stop,
+                stdin_text=hook_input,
+                cwd=str(self._repo),
+            )
         return subprocess.CompletedProcess(
             args=[_HANDLER_MODULE],
             returncode=exit_code,

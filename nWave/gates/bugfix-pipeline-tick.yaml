@@ -1,0 +1,73 @@
+# Gate-contract: bugfix-pipeline-tick (autonomous-consolidation-and-bugfix-loops
+# feature, slice-03)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=bugfix-pipeline-tick.
+
+gate_id: bugfix-pipeline-tick
+responsibility: |
+  Evaluate one bugfix-pipeline defect stage-transition tick against the D-4
+  two-lane invariant: cloud-lane stages (RCA, charter authoring, AT
+  authoring) fan out concurrently, always admitted; box-lane stages (RED
+  seal, crafter's GREEN pass, Vera's examine, commit-slice) stay strictly
+  serialized to exactly ONE in-flight item -- a concurrent second entry is
+  DEFERRED (BoxLaneEntryDeferred, naming the current occupant), never
+  silently admitted or dropped. A stage failure is recorded loudly
+  (PipelineStageFailed, non-empty reason) and, for a box-lane stage, frees
+  the slot. A claim-drained action is refused
+  (DrainClaimRejectedNoAttestation, D-8) unless the ledger already carries a
+  PipelineStageCompleted record for the terminal commit-slice stage. State
+  is replayed from the AT-completion ledger's own recorded content only.
+module: des.cli.bugfix_pipeline_tick
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "The feature id whose bugfix pipeline this tick observes."
+  - name: --project-root
+    required: true
+    type: path
+    help: "Repo root the AT-completion ledger is resolved under."
+  - name: --defect-id
+    required: true
+    type: string
+    help: "The defect this tick's stage transition applies to."
+  - name: --action
+    required: true
+    type: choice
+    choices: ["stage-started", "stage-completed", "stage-failed", "claim-drained"]
+    help: "The pipeline action this tick performs."
+  - name: --stage
+    required: false
+    type: choice
+    choices: ["rca", "charter-authoring", "at-authoring", "red-seal", "crafter-green", "vera-examine", "commit-slice"]
+    help: "Required for every --action except claim-drained."
+  - name: --now
+    required: true
+    type: string
+    help: "ISO-8601 instant this tick observes (the controllable clock)."
+  - name: --reason
+    required: false
+    type: string
+    help: "Non-empty for stage-failed (charter: fail loud, never silent)."
+
+log_events:
+  - PipelineStageStarted
+  - PipelineStageCompleted
+  - PipelineStageFailed
+  - BoxLaneEntryDeferred
+  - DrainClaimRejectedNoAttestation
+
+failure_modes:
+  - error_class: UsageError
+    exit_code: 2
+    remediation: "Provide --feature-id, --project-root, --defect-id, --action and --now (plus --stage unless --action=claim-drained); see `des bugfix-pipeline-tick --help`."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - cli

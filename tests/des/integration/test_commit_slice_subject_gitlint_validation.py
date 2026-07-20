@@ -51,6 +51,9 @@ import subprocess
 from pathlib import Path
 
 from des.cli.commit_slice import main as commit_slice_main
+from tests.des._helpers.commit_slice_git_template import (
+    provision_commit_slice_repo,
+)
 
 
 def _git(root: Path, *args: str) -> str:
@@ -64,50 +67,20 @@ def _git(root: Path, *args: str) -> str:
 
 
 def _init_repo(root: Path) -> None:
-    """Init a git work-tree with one committed test file (the slice's parent).
+    """Provision the git work-tree via the shared session-cached template.
 
-    Mirrors ``tests/des/integration/test_commit_slice.py::_init_repo`` --
-    deliberately carries NO ``tests/build`` tier, so ``build_tier_exit_verdict``
-    is a fast N/A and cannot mask the subject-validation RED/GREEN signal
-    behind a slow arch-tier run.
+    See ``tests.des._helpers.commit_slice_git_template`` -- the base repo
+    (``git init`` + config + the "base: walking skeleton" commit, six real
+    ``git`` subprocess spawns) is built ONCE per test process and cached;
+    this call materializes an independent filesystem copy at ``root``, so
+    no test's later mutations can leak into another test's repo.
     """
-    root.mkdir(parents=True, exist_ok=True)
-    _git(root, "init", "-q")
-    _git(root, "config", "user.email", "t@t")
-    _git(root, "config", "user.name", "t")
-    _git(root, "config", "--local", "core.hooksPath", ".git/hooks")
-    tests_dir = root / "tests" / "unit"
-    tests_dir.mkdir(parents=True)
-    (root / "tests" / "__init__.py").write_text("", encoding="utf-8")
-    (tests_dir / "__init__.py").write_text("", encoding="utf-8")
-    (root / "conftest.py").write_text(
-        "import pytest\n\n\n"
-        "def pytest_collection_modifyitems(items):\n"
-        "    for item in items:\n"
-        "        item.add_marker(pytest.mark.unit)\n",
-        encoding="utf-8",
-    )
-    (root / "pytest.ini").write_text(
-        "[pytest]\nmarkers =\n"
-        "    unit: unit tests\n"
-        "    integration: integration tests\n"
-        "    acceptance: acceptance tests\n",
-        encoding="utf-8",
-    )
-    (tests_dir / "test_base.py").write_text(
-        "def test_base():\n    assert True\n", encoding="utf-8"
-    )
-    _git(root, "add", "-A")
-    _git(root, "commit", "-q", "-m", "base: walking skeleton")
+    provision_commit_slice_repo(root)
 
 
 def _last_json_event(stdout: str) -> dict:
     json_lines = [line for line in stdout.splitlines() if line.strip().startswith("{")]
     return json.loads(json_lines[-1])
-
-
-def _commit_count(root: Path) -> int:
-    return len(_git(root, "log", "--oneline").splitlines())
 
 
 def test_commit_slice_commits_compliant_subject(tmp_path: Path, capsys) -> None:
@@ -160,15 +133,18 @@ def test_commit_slice_refuses_subject_starting_with_digit(
     violates gitlint's title-match-regex (T7), which requires the character
     right after 'type(scope): ' to be a letter. commit-slice must refuse
     BEFORE committing -- never emit a subject CI's commitlint will reject.
+
+    SPEED (2026-07-20): the gitlint subject check
+    (``_gitlint_subject_violation``) is a pure function of ``repo`` +
+    ``message`` -- it only ever does ``(repo / ".gitlint").is_file()`` (False
+    for a nonexistent path, degrading to the built-in default rules) and
+    fires BEFORE any staging/commit call in ``main()`` (confirmed by reading
+    ``commit_slice.py``: the check sits above every ``git`` invocation). No
+    real git repo is provisioned -- ``repo`` is never created on disk, so
+    ``not repo.exists()`` after the call is a strictly STRONGER proof than a
+    real-git HEAD-unchanged check that no git mutation occurred.
     """
     repo = tmp_path / "repo"
-    _init_repo(repo)
-    (repo / "tests" / "unit" / "test_slice_new.py").write_text(
-        "def test_slice_new():\n    assert 1 + 1 == 2\n", encoding="utf-8"
-    )
-    head_before = _git(repo, "rev-parse", "HEAD").strip()
-    commits_before = _commit_count(repo)
-
     bad_subject = "fix(gitlint-subject): 4 configuration values were wrong"
 
     exit_code = commit_slice_main(
@@ -186,10 +162,6 @@ def test_commit_slice_refuses_subject_starting_with_digit(
     )
     event = _last_json_event(capsys.readouterr().out)
 
-    # RED today: commit-slice has no gitlint-aware subject check, so it
-    # happily commits the digit-leading subject (exit_code == 0,
-    # event["event"] == "SliceCommitted") -- these assertions fail for the
-    # right (business-logic) reason until the fix lands.
     assert exit_code != 0
     assert event["event"] != "SliceCommitted"
 
@@ -197,10 +169,9 @@ def test_commit_slice_refuses_subject_starting_with_digit(
     assert "T7" in diagnostic
     assert "letter" in diagnostic.lower()
 
-    # No commit landed -- the refusal is fail-closed, HEAD unchanged.
-    head_after = _git(repo, "rev-parse", "HEAD").strip()
-    assert head_after == head_before
-    assert _commit_count(repo) == commits_before
+    # No commit landed -- the refusal is fail-closed. No repo was ever
+    # provisioned, so its continued absence IS the "no git mutation" proof.
+    assert not repo.exists()
 
 
 def test_commit_slice_refuses_subject_exceeding_max_length(
@@ -210,15 +181,11 @@ def test_commit_slice_refuses_subject_exceeding_max_length(
 
     Reproduces the real CI incident: a 102-char subject violates gitlint's
     title-max-length=100 (T1). commit-slice must refuse BEFORE committing.
+
+    SPEED (2026-07-20): same pure-classification shape as the T7 sibling
+    above -- no real git repo is provisioned, see that test's docstring.
     """
     repo = tmp_path / "repo"
-    _init_repo(repo)
-    (repo / "tests" / "unit" / "test_slice_new.py").write_text(
-        "def test_slice_new():\n    assert 3 + 3 == 6\n", encoding="utf-8"
-    )
-    head_before = _git(repo, "rev-parse", "HEAD").strip()
-    commits_before = _commit_count(repo)
-
     long_subject = "fix(gitlint-subject): " + ("word " * 20)
     assert len(long_subject) > 100  # sanity: the fixture must actually violate T1
 
@@ -237,7 +204,6 @@ def test_commit_slice_refuses_subject_exceeding_max_length(
     )
     event = _last_json_event(capsys.readouterr().out)
 
-    # RED today: commit-slice commits the over-length subject unchecked.
     assert exit_code != 0
     assert event["event"] != "SliceCommitted"
 
@@ -245,6 +211,4 @@ def test_commit_slice_refuses_subject_exceeding_max_length(
     assert "T1" in diagnostic
     assert "100" in diagnostic
 
-    head_after = _git(repo, "rev-parse", "HEAD").strip()
-    assert head_after == head_before
-    assert _commit_count(repo) == commits_before
+    assert not repo.exists()

@@ -94,17 +94,37 @@ class PythonContractGateAdapter:
         when given, adds ``--junit-xml=<path>`` so THIS unmarked whole-suite
         run -- the one that drives the returned verdict -- persists a JUnit
         XML report a caller can parse for the failing node-ids.
+
+        Parallel worker count is resolved through the SAME config-driven seam
+        the CLI's own feature-end full-suite leg uses
+        (``run_contract_gate._parallel_pytest_args`` -- env ``NWAVE_GATE_JOBS`` >
+        ``.nwave/config.yaml`` ``gate.jobs`` > ``auto``, LOUD serial degrade when
+        pytest-xdist is absent). Reusing that ONE seam, rather than re-deriving a
+        second hardcoded serial invocation here, is what makes this generic across
+        EVERY Python target this facet serves -- including nwave-dev's own
+        dogfood repo, which was silently losing its parallel feature-end run to
+        this adapter's un-parallelised argv (the ``-m {marker}`` filter stays
+        OMITTED on purpose -- a customer repo has no reason to carry nwave-dev's
+        own dogfood marker convention; only the worker-count resolution is
+        shared). Imported locally to avoid a load-time import cycle (mirrors the
+        existing ``pytest_runner.list_pytest_scope`` -> ``run_contract_gate``
+        local-import precedent).
         """
+        from des.adapters.driven.runner.pytest_runner import run_pytest_reaped
+        from des.cli.run_contract_gate import _parallel_pytest_args
+
+        interpreter = python_for(None, repo_root=repo)
         argv = [
-            python_for(None, repo_root=repo),
+            interpreter,
             "-m",
             "pytest",
             "-p",
             "no:cacheprovider",
+            *_parallel_pytest_args(repo, interpreter),
         ]
         if junit_xml_path is not None:
             argv.append(f"--junit-xml={junit_xml_path}")
-        completed = subprocess.run(argv, cwd=repo, check=False)
+        completed = run_pytest_reaped(argv, cwd=repo)
         return ContractVerdict(passed=completed.returncode == 0, runner=_PYTEST_RUNNER)
 
 

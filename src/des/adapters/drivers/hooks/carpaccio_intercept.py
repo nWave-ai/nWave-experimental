@@ -575,6 +575,25 @@ def _carpaccio_order_block(
     if _predecessor_satisfies_in_order(ledger, predecessor):
         return None
 
+    # swarm-parallel-delivery exemption: a slice N>1 developed in an ISOLATED
+    # parallel worktree cannot see its predecessor's SliceCommitVerified record
+    # until a later, in-order integration folds it onto the shared line -- where
+    # the true ordering is still guaranteed. A `DES-SWARM-ISOLATED-DISPATCH:
+    # <justification>` marker declares exactly this, exempting ONLY the M8 order
+    # check and deferring the verification to the integrator. Unlike DES-BOOTSTRAP
+    # this is ROUTINE (every slice N>1 of a swarmed feature needs it), so it
+    # carries NO reuse cap. The truthiness check fails CLOSED on an empty/absent
+    # justification -- the order check blocks exactly as before.
+    if markers.swarm_isolated_justification:
+        _emit_swarm_isolated_deferral_event(
+            justification=markers.swarm_isolated_justification,
+            feature_id=feature_id,
+            slice_id=slice_id,
+            predecessor=predecessor,
+            project_root=project_root,
+        )
+        return None
+
     return InterceptDecision.block(
         event="CarpaccioSliceOutOfOrder",
         reason=(
@@ -597,6 +616,34 @@ def _carpaccio_order_block(
             f"re-verifies. Then retry this dispatch for {slice_id}."
         ),
     )
+
+
+def _emit_swarm_isolated_deferral_event(
+    *,
+    justification: str,
+    feature_id: str,
+    slice_id: str,
+    predecessor: str,
+    project_root: Path,
+) -> None:
+    """Append the `CarpaccioOrderCheckDeferredToIntegration` audit record (fail-OPEN).
+
+    Mirrors `_emit_bootstrap_exemption_event`: the exemption verdict already
+    stands, so a lost ledger line never changes the decision -- but the write is
+    best-effort, never silently omitted. Records the deferred predecessor so the
+    integrator's async review has the order-verification it now owns.
+    """
+    try:
+        AtCompletionLedger(feature_id, project_root).append_gate_event(
+            event="CarpaccioOrderCheckDeferredToIntegration",
+            slice_id=slice_id,
+            gate="carpaccio-order-gate",
+            justification=justification,
+            predecessor=predecessor,
+        )
+    except Exception:
+        # Fail-open: the deferral verdict already stands; ledger emission is audit.
+        pass
 
 
 def _predecessor_satisfies_in_order(
@@ -623,13 +670,64 @@ def _predecessor_satisfies_in_order(
     )
 
 
-def _predecessor_commit_sha(repo: Path, predecessor: str) -> str | None:
-    """The SHA of the most recent commit carrying ``predecessor``'s Slice-Id.
+def _predecessor_commit_sha(
+    repo: Path, predecessor: str, feature_id: str
+) -> str | None:
+    """The SHA of the most recent commit carrying ``predecessor``'s identity
+    AND belonging to ``feature_id``.
+
+    Two lookup strategies, EACH tried against ALL its candidates (most
+    recent first) before falling through to the next strategy:
+
+      1. The modern `Slice-Id: <predecessor>` trailer (the F-07 multi-trailer
+         shape lists each slice on its own line).
+      2. A pre-trailer-era fallback -- for a commit whose SUBJECT line
+         carries the legacy `(slice-NN)` / `[slice-NN]` parenthetical suffix
+         (the convention in use before the Slice-Id trailer shipped; e.g.
+         `1ad46e416`'s subject "...(slice-01)"). A slice-01 committed before
+         the trailer convention existed can never carry a trailer, so
+         without this fallback its successor is permanently blocked
+         out-of-order.
+
+    Cross-feature collision (F-CARPACCIO-PREDECESSOR-FEATURE-SCOPING): slice
+    IDs like `slice-01`/`slice-02` are reused across every feature in the
+    repo, so trusting git's single most-recent match can resolve to a
+    DIFFERENT feature's commit -- and that wrong commit does not have to be
+    newer than the real predecessor to cause harm: it is enough for it to be
+    the ONLY (or first) match a strategy finds, which happens whenever the
+    real predecessor's own commit predates the trailer convention (no
+    trailer at all, so strategy 1 never even sees it) while an unrelated
+    feature's commit happens to carry a genuine `Slice-Id: <predecessor>`
+    trailer. The OLD code returned strategy 1's first hit unconditionally,
+    which starves strategy 2 of ever running even when EVERY strategy-1
+    candidate fails E1. This function instead walks ALL of strategy 1's
+    candidates (most recent first) checking E1 (`missing_at_files`) per
+    candidate -- the same check `_attempt_predecessor_backfill` runs
+    afterward, applied here PER CANDIDATE instead of trusting the first
+    candidate blindly -- and falls through to strategy 2's candidates (same
+    per-candidate E1 walk) only if NONE of strategy 1's candidates satisfy
+    E1. E1 + E2 (verify-gate-scope digest) still feed the unmodified final
+    verification in `_attempt_predecessor_backfill`; this only widens HOW
+    the candidate commit is found and picked, never what is verified
+    against it. Returns None when no candidate from either strategy
+    satisfies E1 -- the backfill has no predecessor commit to verify against
+    and fails closed by leaving the record absent.
+    """
+    for sha in _predecessor_commit_shas_via_trailer(repo, predecessor):
+        if not missing_at_files(repo, sha, predecessor, feature_id):
+            return sha
+    for sha in _predecessor_commit_shas_via_subject_marker(repo, predecessor):
+        if not missing_at_files(repo, sha, predecessor, feature_id):
+            return sha
+    return None
+
+
+def _predecessor_commit_shas_via_trailer(repo: Path, predecessor: str) -> list[str]:
+    """All commit SHAs (most recent first) carrying ``predecessor``'s Slice-Id.
 
     Searches the commit log for a `Slice-Id: <predecessor>` trailer (the F-07
-    multi-trailer shape lists each slice on its own line). Returns None when no
-    such commit exists on disk -- the backfill has no predecessor commit to
-    verify against and fails closed by leaving the record absent.
+    multi-trailer shape lists each slice on its own line). Returns an empty
+    list when no such commit exists on disk.
     """
     try:
         completed = subprocess.run(
@@ -647,12 +745,47 @@ def _predecessor_commit_sha(repo: Path, predecessor: str) -> str | None:
             check=True,
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
+        return []
+    shas: list[str] = []
     for entry in completed.stdout.split("\x1e"):
         sha, _, message = entry.strip().partition("\x00")
         if sha and predecessor in extract_slice_ids(message):
-            return sha
-    return None
+            shas.append(sha)
+    return shas
+
+
+_SUBJECT_SLICE_MARKER_RE = re.compile(r"[(\[](slice-\d+(?:[a-z])?)[)\]]\s*$")
+
+
+def _predecessor_commit_shas_via_subject_marker(
+    repo: Path, predecessor: str
+) -> list[str]:
+    """All commit SHAs (most recent first) whose SUBJECT names ``predecessor``.
+
+    The pre-trailer-era convention: a commit subject ending in a `(slice-NN)`
+    or `[slice-NN]` parenthetical/bracket suffix (no `Slice-Id:` trailer
+    anywhere in the message). Returns an empty list when no such commit
+    exists on disk, or when `git` itself is unavailable.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "log", "--format=%H%x1f%s"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
+    shas: list[str] = []
+    for line in completed.stdout.splitlines():
+        sha, _, subject = line.partition("\x1f")
+        if not sha:
+            continue
+        match = _SUBJECT_SLICE_MARKER_RE.search(subject)
+        if match and match.group(1) == predecessor:
+            shas.append(sha)
+    return shas
 
 
 def _verify_gate_scope(repo: Path, commit: str) -> bool:
@@ -717,7 +850,7 @@ def _attempt_predecessor_backfill(
     `verified_slices()`, finds the predecessor still absent, and the block
     stands (no false-allow).
     """
-    commit_sha = _predecessor_commit_sha(project_root, predecessor)
+    commit_sha = _predecessor_commit_sha(project_root, predecessor, feature_id)
     if commit_sha is None:
         return
     if missing_at_files(project_root, commit_sha, predecessor, feature_id):

@@ -105,10 +105,20 @@ VERDICT_UNJUSTIFIED_SLICE_DEPENDENCY = "unjustified-slice-dependency"
 #: --format=json (discuss-epic-mode slice-01). The verdict must name WHICH plan
 #: contract failed; `accepted`, `malformed-wave-heading`, and
 #: `rejected-infra-only` are REUSED verbatim across both plan modes. The
-#: feature-plan-mode closed set (5) is: accepted · malformed-wave-heading ·
-#: missing-feature-plan · malformed-feature-plan · rejected-infra-only.
+#: feature-plan-mode closed set (6, widened by
+#: parallel-by-default-feature-plan slice-01) is: accepted ·
+#: malformed-wave-heading · missing-feature-plan · malformed-feature-plan ·
+#: rejected-infra-only · unjustified-feature-dependency.
 VERDICT_MISSING_FEATURE_PLAN = "missing-feature-plan"
 VERDICT_MALFORMED_FEATURE_PLAN = "malformed-feature-plan"
+
+#: parallel-by-default-feature-plan slice-01 (D-1/D-2, one granularity up from
+#: VERDICT_UNJUSTIFIED_SLICE_DEPENDENCY): a Feature Plan row whose Annotation
+#: cell carries `depends-on {feature-id}` makes a real dependency claim and
+#: must carry a non-empty Justification cell, or the row is rejected. Closes
+#: the feature-plan-mode verdict set at SIX tokens (D-6/CT-4: the slice-plan-
+#: mode closed set stays UNCHANGED at six tokens of its own).
+VERDICT_UNJUSTIFIED_FEATURE_DEPENDENCY = "unjustified-feature-dependency"
 
 #: The canonical Reuse Analysis heading (DDD-8 / R1 normative SSOT). Skill
 #: template at `nWave/skills/nw-design/SKILL.md` must emit this exact string.
@@ -329,7 +339,8 @@ class _PlanSpec(NamedTuple):
     table_noun: str  # "slice-plan" | "feature-plan" (hyphenated)
     plan_noun: str  # "slice plan" | "feature plan" (spaced)
     row_noun: str  # "slice" | "feature"
-    enforce_dependency_justification: bool  # D-1/D-2: slice-plan mode only
+    enforce_dependency_justification: bool  # D-1/D-2: both modes (row 2)
+    verdict_unjustified_dependency: str  # closed token: depends-on, no Justification
 
 
 class ReuseAnalysisResult(NamedTuple):
@@ -457,6 +468,7 @@ _SLICE_PLAN_SPEC = _PlanSpec(
     plan_noun="slice plan",
     row_noun="slice",
     enforce_dependency_justification=True,
+    verdict_unjustified_dependency=VERDICT_UNJUSTIFIED_SLICE_DEPENDENCY,
 )
 _FEATURE_PLAN_SPEC = _PlanSpec(
     heading_re=_FEATURE_PLAN_HEADING_RE,
@@ -468,7 +480,8 @@ _FEATURE_PLAN_SPEC = _PlanSpec(
     table_noun="feature-plan",
     plan_noun="feature plan",
     row_noun="feature",
-    enforce_dependency_justification=False,
+    enforce_dependency_justification=True,
+    verdict_unjustified_dependency=VERDICT_UNJUSTIFIED_FEATURE_DEPENDENCY,
 )
 
 
@@ -573,33 +586,35 @@ def _classify_slice_cohesion(
 
 
 def _classify_slice_dependency_justification(
-    row_no: int, cells: list[str]
+    row_no: int, cells: list[str], spec: _PlanSpec
 ) -> PlanValidationResult | None:
-    """Classify one slice-plan row's dependency-justification claim. Pure.
+    """Classify one plan row's dependency-justification claim. Pure.
 
     Direct sibling of `_classify_component_row` (Reuse Analysis,
     :806-837) — the same "a row makes a claim that must carry a non-empty
     Justification" shape, applied to the Annotation column (`cells[3]`)
     instead of the Decision column: a row whose Annotation carries
-    `depends-on {slice-id}` makes a real dependency claim and must carry a
+    `depends-on {row-id}` makes a real dependency claim and must carry a
     non-empty Justification (`cells[4]`), or the row is rejected (D-1/D-2). A
     row missing its Justification column entirely (fewer than five cells)
-    fails loud as a malformed slice plan rather than silently slipping
-    through accepted.
+    fails loud as a malformed plan rather than silently slipping through
+    accepted.
 
     Returns `None` when the row makes no dependency claim, or the claim is
     justified — every other Annotation shape (empty, `@walking_skeleton`,
-    `@infrastructure`, `@coupled`) is untouched (D-2). Called only in
-    slice-plan mode (`_PlanSpec.enforce_dependency_justification`); the
-    malformed verdict is the slice-plan-mode token by construction — this
-    rule does not generalize to feature-plan mode (D-6).
+    `@infrastructure`, `@coupled`) is untouched (D-2). Called from both plan
+    modes (`_PlanSpec.enforce_dependency_justification`); `spec` supplies the
+    plan-kind-specific column contract and the malformed/unjustified-
+    dependency verdict tokens, so the slice-plan and feature-plan modes share
+    this body while each renders its own closed-set token
+    (parallel-by-default-feature-plan slice-01, one granularity up from D-1/D-2).
     """
-    if len(cells) < len(SLICE_PLAN_COLUMNS):
+    if len(cells) < len(spec.columns):
         return PlanValidationResult(
-            verdict=VERDICT_MALFORMED_SLICE_PLAN,
+            verdict=spec.verdict_malformed,
             detail=(
                 f"row {row_no} has {len(cells)} cells; expected "
-                f"{len(SLICE_PLAN_COLUMNS)} ({list(SLICE_PLAN_COLUMNS)})"
+                f"{len(spec.columns)} ({list(spec.columns)})"
             ),
         )
     if not _SLICE_DEPENDENCY_RE.search(cells[3]):
@@ -607,7 +622,7 @@ def _classify_slice_dependency_justification(
     if cells[4].strip():
         return None
     return PlanValidationResult(
-        verdict=VERDICT_UNJUSTIFIED_SLICE_DEPENDENCY,
+        verdict=spec.verdict_unjustified_dependency,
         detail=(
             f"row {row_no} declares 'depends-on' with an empty Justification "
             f"cell (D-1/D-2)"
@@ -686,7 +701,7 @@ def _validate_plan_content(content: str, spec: _PlanSpec) -> PlanValidationResul
     if spec.enforce_dependency_justification:
         for row_no, row in enumerate(data_rows, start=1):
             dependency_veto = _classify_slice_dependency_justification(
-                row_no, _parse_table_cells(row)
+                row_no, _parse_table_cells(row), spec
             )
             if dependency_veto is not None:
                 return dependency_veto
@@ -706,6 +721,75 @@ def validate_slice_plan_content(content: str) -> PlanValidationResult:
     `--require-slice-plan` AT + unit suites staying green post-refactor.
     """
     return _validate_plan_content(content, _SLICE_PLAN_SPEC)
+
+
+def read_declared_parallel_slice_ids(content: str) -> tuple[str, ...]:
+    """Return the slice-ids of the Slice Plan's DECLARED-PARALLEL rows. Pure.
+
+    A declared-parallel row is a Slice Plan data row whose Annotation cell
+    (column 4) carries NO `depends-on {slice-id}` token (row-1 grammar,
+    `_SLICE_DEPENDENCY_RE`); a row with `depends-on` is declared-serial and is
+    EXCLUDED. Public accessor added ALONGSIDE the private Slice-Plan parsers
+    (composition, no signature change to any existing symbol) so a consumer --
+    `des parallel-safety-report` -- can classify declared-parallel rows without
+    importing `_`-private symbols.
+
+    Reads the SAME grammar the validator parses (one SSOT). Returns the ids in
+    document order; an absent/empty Slice Plan yields an empty tuple (the
+    caller is responsible for the well-formedness verdict via
+    `validate_slice_plan_content`).
+    """
+    rows = _plan_table_rows(content, _SLICE_PLAN_HEADING_RE)
+    if not rows:
+        return ()
+    data_rows = [row for row in rows if not _is_separator_row(row)][1:]
+    declared_parallel: list[str] = []
+    for row in data_rows:
+        cells = _parse_table_cells(row)
+        if len(cells) < len(SLICE_PLAN_COLUMNS):
+            continue
+        slice_id = cells[0].strip()
+        annotation = cells[3]
+        if _SLICE_DEPENDENCY_RE.search(annotation):
+            continue
+        declared_parallel.append(slice_id)
+    return tuple(declared_parallel)
+
+
+def read_declared_parallel_feature_ids(content: str) -> tuple[str, ...]:
+    """Return the feature-ids of the Feature Plan's DECLARED-PARALLEL rows.
+
+    Pure. Sibling of `read_declared_parallel_slice_ids` (row 3), one
+    granularity up (parallel-by-default-feature-plan slice-02, D-6/DC). A
+    declared-parallel row is a Feature Plan data row whose Annotation cell
+    (column 4) carries NO `depends-on {feature-id}` token (row-1-generalized
+    grammar, `_SLICE_DEPENDENCY_RE` — already granularity-agnostic); a row
+    with `depends-on` is declared-serial and is EXCLUDED.
+
+    Added as a SAME-FILE sibling (not a generalized/renamed accessor) to
+    avoid touching `read_declared_parallel_slice_ids`, a symbol row 3's own
+    shipped CLI already imports (DC, lower merge-conflict risk).
+
+    Reads the SAME grammar `validate_feature_plan_content` parses (one SSOT).
+    Returns the ids in document order; an absent/empty Feature Plan yields an
+    empty tuple (the caller is responsible for the well-formedness verdict
+    via `validate_feature_plan_content`).
+    """
+    rows = _plan_table_rows(content, _FEATURE_PLAN_HEADING_RE)
+    if not rows:
+        return ()
+    data_rows = [row for row in rows if not _is_separator_row(row)][1:]
+    declared_parallel: list[str] = []
+    for row in data_rows:
+        cells = _parse_table_cells(row)
+        if len(cells) < len(FEATURE_PLAN_COLUMNS):
+            continue
+        feature_id = cells[0].strip()
+        annotation = cells[3]
+        if _SLICE_DEPENDENCY_RE.search(annotation):
+            continue
+        declared_parallel.append(feature_id)
+    return tuple(declared_parallel)
 
 
 def validate_feature_plan_content(content: str) -> PlanValidationResult:
@@ -1125,6 +1209,171 @@ def validate_reuse_analysis_content(
             f"Reuse Analysis is structurally accepted; "
             f"{len(component_rows)} component rows"
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pure core — Prefactoring Assessment structural validation
+# (fix-slice-third-phase-commit-only CHANGE 2)
+#
+# WHY this gate exists: commit a91bf4f6b (2026-07-04) restored the per-slice
+# `D_REFACTOR_COMMIT` phase as a COMMIT step after a prior total drop left
+# slices uncommitted. The per-slice L1-L6 refactor a91bf4f6b ALSO restored at
+# that phase is now dropped again (see `nw-deliver`'s `D_REFACTOR_COMMIT` table
+# row) — but this time the drop does not recur a91bf4f6b's mistake, because a
+# substitute exists: the mandatory per-feature Prefactoring Assessment, authored
+# upstream at DESIGN time, moves the behaviour-preserving green-to-green
+# refactor EARLIER instead of skipping it. This gate is what makes that
+# substitute REAL (mechanically enforced) rather than prose-only.
+#
+# Scope: required ONLY for a feature-delta that carries a `## Wave: DESIGN`
+# section — a DESIGN-skipped feature-delta has no design output to assess, so
+# requiring the section there would reject work the gate has no basis to judge.
+# Semantics mirror the DDD-9 exemption-marker pattern the Reuse Analysis gate
+# established: a well-formed body is ACCEPTED whether it records a `@prefactoring`
+# slice doing the work OR a justified NONE (what was examined + why the shape
+# fits); an absent, empty, or unmotivated ("NONE" with no reasoning) body is
+# REJECTED, fail-closed.
+# ---------------------------------------------------------------------------
+
+#: The canonical Prefactoring Assessment heading. The DESIGN wave author writes
+#: this exact bare H2 heading (mirrors `REUSE_ANALYSIS_HEADING`'s bare-heading form).
+PREFACTORING_ASSESSMENT_HEADING = "## Prefactoring Assessment"
+
+#: Derived from the heading literal via `_exact_heading_regex` (the SSOT-derivation
+#: pattern `_REUSE_ANALYSIS_HEADING_RE` already established) — never an independent
+#: hardcoded regex for the same heading text.
+_PREFACTORING_ASSESSMENT_HEADING_RE = _exact_heading_regex(
+    PREFACTORING_ASSESSMENT_HEADING
+)
+
+#: Matches a `## Wave: DESIGN ...` heading regardless of its `[TYPE]`/section tail —
+#: broader than `_WAVE_HEADING_RE` (which requires the full schema separator) because
+#: the scoping question is only "does a DESIGN wave section exist at all", not whether
+#: that heading is itself well-formed (a malformed DESIGN heading is `validate_feature_
+#: delta_content`'s concern, not this gate's).
+_DESIGN_WAVE_PRESENT_RE = re.compile(r"^##\s+Wave:\s+DESIGN\b")
+
+#: The closed `verdict` token set emitted under --require-prefactoring-assessment
+#: --format=json. `prefactoring-not-required` is the scoping no-op (no DESIGN wave
+#: section present); the remaining three mirror the Reuse Analysis missing/malformed/
+#: accepted shape.
+VERDICT_PREFACTORING_NOT_REQUIRED = "prefactoring-not-required"
+VERDICT_MISSING_PREFACTORING_ASSESSMENT = "missing-prefactoring-assessment"
+VERDICT_UNMOTIVATED_PREFACTORING_ASSESSMENT = "unmotivated-prefactoring-assessment"
+VERDICT_PREFACTORING_ASSESSMENT_ACCEPTED = "prefactoring-assessment-accepted"
+
+#: A body that reduces (after stripping bold markers/whitespace/trailing
+#: punctuation) to a bare dismissal token and NOTHING else — "NONE.", "**N/A**",
+#: "Not applicable" — is an unmotivated skip. Any additional prose after the
+#: token (the real example: "**NONE -- justified.** This feature is a NET-NEW
+#: subsystem...") takes the body OUT of this pattern and into ACCEPTED.
+_TRIVIAL_PREFACTORING_BODY_RE = re.compile(
+    r"^(\*\*)?\s*(NONE|N/?A|NOT\s+APPLICABLE|TBD)\s*(\*\*)?\s*[.\-:]*\s*$",
+    re.IGNORECASE,
+)
+
+
+class PrefactoringAssessmentResult(NamedTuple):
+    """Outcome of the --require-prefactoring-assessment structural check.
+
+    `verdict` is one of the closed token set above; `detail` is a human-readable
+    diagnostic naming the cause (for the JSON payload + plain-text rendering).
+    Mirrors `ReuseAnalysisResult` shape.
+    """
+
+    verdict: str
+    detail: str
+
+
+def _feature_delta_has_design_wave(content: str) -> bool:
+    """True iff `content` carries at least one `## Wave: DESIGN ...` heading. Pure."""
+    return any(
+        _DESIGN_WAVE_PRESENT_RE.match(line.rstrip()) for line in content.splitlines()
+    )
+
+
+def _prefactoring_assessment_body(content: str) -> str | None:
+    """Return the Prefactoring Assessment section body (stripped), or None when
+    the heading is absent. Pure.
+
+    Collects every line after the canonical heading up to (not including) the
+    next `##` heading — mirrors `_reuse_section_body_lines`'s heading-to-next-
+    heading walk, but keeps the raw body text (this section is free prose, not
+    a table or marker line).
+    """
+    lines = content.splitlines()
+    start = None
+    for idx, line in enumerate(lines):
+        if _PREFACTORING_ASSESSMENT_HEADING_RE.match(line.rstrip()):
+            start = idx + 1
+            break
+    if start is None:
+        return None
+    body_lines: list[str] = []
+    for line in lines[start:]:
+        if line.strip().startswith("##"):
+            break
+        body_lines.append(line)
+    return "\n".join(body_lines).strip()
+
+
+def validate_prefactoring_assessment_content(
+    content: str,
+) -> PrefactoringAssessmentResult:
+    """Structurally validate the Prefactoring Assessment section. Pure function.
+
+    - no `## Wave: DESIGN` section present -> prefactoring-not-required (scoping
+      no-op; a DESIGN-skipped feature-delta has nothing to assess);
+    - no `## Prefactoring Assessment` heading -> missing-prefactoring-assessment;
+    - heading present, body empty or reduces to a bare dismissal token with no
+      further prose -> unmotivated-prefactoring-assessment;
+    - heading present, body substantive (a `@prefactoring` slice recorded as
+      doing the work, OR a NONE with 1-2 sentences of justification) ->
+      prefactoring-assessment-accepted.
+
+    Args:
+        content: feature-delta.md body (UTF-8 text).
+
+    Returns:
+        PrefactoringAssessmentResult carrying the closed-set verdict token + a
+        diagnostic.
+    """
+    if not _feature_delta_has_design_wave(content):
+        return PrefactoringAssessmentResult(
+            verdict=VERDICT_PREFACTORING_NOT_REQUIRED,
+            detail=(
+                "no '## Wave: DESIGN' section present; Prefactoring Assessment "
+                "is a DESIGN output and does not apply to a DESIGN-skipped "
+                "feature-delta"
+            ),
+        )
+
+    body = _prefactoring_assessment_body(content)
+    if body is None:
+        return PrefactoringAssessmentResult(
+            verdict=VERDICT_MISSING_PREFACTORING_ASSESSMENT,
+            detail=(
+                "no '## Prefactoring Assessment' section found; a DESIGN-having "
+                "feature-delta must assess whether the design bends an existing "
+                "component out of shape — record the @prefactoring slice that "
+                "does the work, or a justified NONE"
+            ),
+        )
+
+    if not body or _TRIVIAL_PREFACTORING_BODY_RE.match(body):
+        return PrefactoringAssessmentResult(
+            verdict=VERDICT_UNMOTIVATED_PREFACTORING_ASSESSMENT,
+            detail=(
+                "'## Prefactoring Assessment' is empty or an unmotivated NONE; "
+                "name what was examined and why the shape fits (1-2 sentences), "
+                "or record the @prefactoring slice that does the work"
+            ),
+        )
+
+    return PrefactoringAssessmentResult(
+        verdict=VERDICT_PREFACTORING_ASSESSMENT_ACCEPTED,
+        detail="Prefactoring Assessment is substantive",
     )
 
 
@@ -1610,6 +1859,7 @@ def validate_feature_delta(file_path: Path) -> ValidationResult:
 _USAGE = (
     "usage: des validate-feature-delta "
     "[--require-slice-plan] [--require-feature-plan] [--require-reuse-analysis] "
+    "[--require-prefactoring-assessment] "
     "[--require-sustainability] [--with-metrics] "
     "[--consolidate-on-add] [--add-only-baseline-loc <N>] "
     "[--existing-base-trend] [--prior-existing-base-ratio=<float>] "
@@ -1626,6 +1876,7 @@ class _ParsedArgs(NamedTuple):
     require_slice_plan: bool
     require_feature_plan: bool
     require_reuse_analysis: bool
+    require_prefactoring_assessment: bool
     require_sustainability: bool
     with_metrics: bool
     consolidate_on_add: bool
@@ -1659,6 +1910,7 @@ def _parse_args(args: list[str]) -> _ParsedArgs | None:
     require_slice_plan = False
     require_feature_plan = False
     require_reuse_analysis = False
+    require_prefactoring_assessment = False
     require_sustainability = False
     with_metrics = False
     consolidate_on_add = False
@@ -1681,6 +1933,8 @@ def _parse_args(args: list[str]) -> _ParsedArgs | None:
             require_feature_plan = True
         elif arg == "--require-reuse-analysis":
             require_reuse_analysis = True
+        elif arg == "--require-prefactoring-assessment":
+            require_prefactoring_assessment = True
         elif arg == "--require-sustainability":
             require_sustainability = True
         elif arg == "--with-metrics":
@@ -1724,6 +1978,7 @@ def _parse_args(args: list[str]) -> _ParsedArgs | None:
         require_slice_plan=require_slice_plan,
         require_feature_plan=require_feature_plan,
         require_reuse_analysis=require_reuse_analysis,
+        require_prefactoring_assessment=require_prefactoring_assessment,
         require_sustainability=require_sustainability,
         with_metrics=with_metrics,
         consolidate_on_add=consolidate_on_add,
@@ -1851,6 +2106,34 @@ def _run_require_reuse_analysis(target: Path, json_format: bool) -> int:
     _print_verdict_result(
         target, result.verdict, result.detail, json_format, accepted=accepted
     )
+    return 0 if accepted else 1
+
+
+def _run_require_prefactoring_assessment(target: Path, json_format: bool) -> int:
+    """Run the scoped Prefactoring Assessment check (fix-slice-third-phase-commit-only).
+
+    Emits a single JSON object carrying the closed-set `verdict` token (when
+    `--format=json` is set) and returns exit 0 on `prefactoring-not-required`
+    (no DESIGN wave section — scoped no-op) or `prefactoring-assessment-accepted`,
+    1 on rejection (`missing-prefactoring-assessment` /
+    `unmotivated-prefactoring-assessment`). Mirrors `_run_require_reuse_analysis`
+    in shape, but does NOT route through `_print_verdict_result`'s `des
+    feature-delta-doctor` remedy suffix on rejection — `feature-delta-doctor`
+    does not (yet) aggregate this check (out of scope for this change; wiring
+    it there requires a wider fixture/backfill pass than this scoped gate makes),
+    so pointing the author at "a one-pass report of every gap" would be a false
+    HOW. `result.detail` already carries the concrete fix on its own.
+    """
+    content = target.read_text(encoding="utf-8")
+    result = validate_prefactoring_assessment_content(content)
+    accepted = result.verdict in (
+        VERDICT_PREFACTORING_NOT_REQUIRED,
+        VERDICT_PREFACTORING_ASSESSMENT_ACCEPTED,
+    )
+    if json_format:
+        print(json.dumps({"verdict": result.verdict, "detail": result.detail}))
+    else:
+        print(f"{result.verdict}: {result.detail}")
     return 0 if accepted else 1
 
 
@@ -2355,6 +2638,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_require_feature_plan(target, parsed.json_format)
     if parsed.require_reuse_analysis:
         return _run_require_reuse_analysis(target, parsed.json_format)
+    if parsed.require_prefactoring_assessment:
+        return _run_require_prefactoring_assessment(target, parsed.json_format)
     if parsed.require_sustainability:
         if parsed.with_metrics:
             return _run_require_sustainability_with_metrics(

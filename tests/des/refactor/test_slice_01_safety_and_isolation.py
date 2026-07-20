@@ -1,3 +1,5 @@
+# @feature-des-refactor-fixer-swarm
+# @slice-01
 """Charter-reconciliation ATs -- slice-01 (des-refactor-fixer-swarm).
 
 Pins the remaining charter negative oracles
@@ -144,6 +146,11 @@ def test_the_merge_commit_never_contains_the_worktrees_venv_directory(tmp_path):
     commit's tracked paths never include the worktree's own ``.venv`` --
     the per-worktree environment is a local execution detail, never
     committed content.
+
+    Observed on the OPERATOR branch: a confirmed drain lands the integration
+    branch onto the operator's own branch and then removes it (D5/D6 'nothing
+    is left behind'), so the committed content is read where the fix now lives,
+    not on a surviving integration branch.
     """
     composition = RefactorSwarmComposition(tmp_path)
     composition.init_git_repo()
@@ -152,7 +159,7 @@ def test_the_merge_commit_never_contains_the_worktrees_venv_directory(tmp_path):
 
     composition.run_drain_one_item()
 
-    tracked = composition.integration_branch_tracked_paths()
+    tracked = composition.operator_branch_tracked_paths()
     assert not any(path == ".venv" or path.startswith(".venv/") for path in tracked), (
         f"the merge commit must never contain the worktree's own .venv "
         f"directory; tracked paths={tracked}"

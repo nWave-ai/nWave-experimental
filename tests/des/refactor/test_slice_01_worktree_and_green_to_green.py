@@ -1,3 +1,5 @@
+# @feature-des-refactor-fixer-swarm
+# @slice-01
 """AT-1 (worktree-from-tip, D1) + AT-3/AT-10 (green-to-green, D3) -- slice-01.
 
 Layer 3 composition (in-process, L2 default) -- drives

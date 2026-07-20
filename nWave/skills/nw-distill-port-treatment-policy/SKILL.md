@@ -68,6 +68,20 @@ Driven-internal ports default to an **in-memory fake** (fast, local). A config p
 
 This keeps the local loop fast (in-memory) while guaranteeing the prod-like path is reachable and exercised where the infrastructure exists.
 
+### Shared-provisioning default for `@real-io` — provision ONCE, isolate PER TEST
+
+**THE RULE: the real adapter's provisioning + teardown (container start/stop, real subprocess/repo/filesystem setup) happens ONCE per test session (or module, if the project's runner cannot share across modules) — never once per test, never once per test class.** Test independence is a SEPARATE, cheap concern layered on top of that one shared instance: a unique namespace/schema/branch/directory per test, or a transaction-and-rollback boundary, or an explicit reset-between-tests step — never re-provisioning the whole real resource per test.
+
+Motivating evidence (this codebase, measured 2026-07-19/20): subprocess-spawning `@real-io` tests that provisioned their own real git repo/subprocess PER TEST accounted for **519s = 35% of total CPU in 19% of tests** in the whole-tree suite, and a separate feature-end gate leaked orphaned real-postgres clusters because each test's teardown ran independently instead of one shared teardown at session end. Both are the SAME root cause — per-test provisioning of a real resource — with two different symptoms (slow, and leaked).
+
+Applying the rule:
+- **Author the fixture at session/module scope**, not function scope: the real container/repo/process comes up once, is handed to every test that needs it, and comes down once at the end (or is explicitly reaped on every exit path, including a killed run — never assume the happy-path teardown always runs).
+- **Isolate with the CHEAPEST mechanism that keeps tests independent** for that adapter: a fresh schema/table-prefix per test on one shared database, a fresh branch/worktree-relative-path per test on one shared repo clone, a fresh temp-subdirectory per test on one shared filesystem root. The Project Infrastructure Policy's `Note` column records which isolation mechanism was chosen, alongside the shared-provisioning mechanism — e.g. `Testcontainers.MongoDb, ONE instance per session, per-test db name` replaces the older per-test-class-fresh-instance framing.
+- **Never let one test's isolation leak into another's** — the isolation mechanism is the thing under scrutiny in review, not the provisioning (provisioning is deliberately NOT re-verified per test, since it is identical for all of them by construction).
+- **Degrade-LOUD on shared-instance failure**: if the ONE shared instance becomes unusable mid-session (killed, corrupted), every dependent test must fail informatively (what broke, which test broke it if determinable) — never silently skip or silently re-provision without saying so.
+
+This generalizes the git-pollution-guard fix (`tests/conftest.py:_common_git_dir_is_shared`, 2026-07-20): the failure mode there was the INVERSE of this rule violated on the CONSUMING side — a guard fixture assumed it was the sole writer of a real `.git`, when in fact many linked worktrees legitimately shared it, and its per-test "restore" clobbered siblings' real work. The lesson is symmetric: whichever side owns a SHARED real resource must know it is shared, and neither side may treat per-test churn on it as safe to no-questions-asked reset.
+
 ## Project Infrastructure Policy
 
 Architecture of Reference fixes **port class → test treatment** defaults. Project Infrastructure Policy specializes them with the **concrete mechanism** for THIS codebase. **Once per project, not per feature**.
@@ -88,7 +102,7 @@ Lives at `docs/architecture/atdd-infrastructure-policy.md` (project-local). Thre
 ## Driven internal (real)
 | Port | Mechanism | Note |
 |---|---|---|
-| IUserRepository (MongoDB) | Testcontainers.MongoDb, fresh db per test class | |
+| IUserRepository (MongoDB) | Testcontainers.MongoDb, ONE instance per session, per-test db name | |
 
 ## Driven external / non-deterministic (fake)
 | Port | Fake | Note |

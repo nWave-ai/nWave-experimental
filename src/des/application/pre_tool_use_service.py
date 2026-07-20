@@ -11,7 +11,11 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from des.domain.des_marker_parser import classify_atdd_pure_dispatch
+from des.domain.des_marker_parser import (
+    classify_atdd_pure_dispatch,
+    classify_find_dispatch,
+    classify_refactor_dispatch,
+)
 from des.domain.wave_active import NoWaveActive, WaveActiveRecord
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 from des.ports.driven_ports.committed_scope_port import Indeterminate
@@ -259,7 +263,29 @@ class PreToolUseService(PreToolUsePort):
             self._log_allowed(context="non_des_task", hook_id=hook_id)
             return HookDecision.allow()
 
-        # Step 3: Validate marker completeness
+        # Step 3: refactor/find dispatch routing (D8, des-refactor-fixer-swarm
+        # slice-03; reordered ahead of marker completeness by
+        # bugfix-refactor-dispatch-mode-recognition-order). A DES-MODE:refactor
+        # or DES-MODE:find dispatch is spine-recognized (allowed) rather than
+        # forced through marker completeness or the classic Step 5
+        # TemplateValidator -- mirrors how atdd_pure recognition (Step 2b
+        # above) already runs before completeness for the same reason. MUST
+        # run BEFORE the completeness check below: MarkerCompletenessPolicy
+        # treats any non-atdd_pure mode as "classic" and demands DES-STEP-ID,
+        # a marker a refactor/find dispatch never carries (D8: "no
+        # per-dispatch DES-EXEMPT hand-typed justification required") -- if
+        # completeness ran first it would refuse the exact dispatch this
+        # recognition exists to allow. A markerless classic dispatch (no
+        # DES-MODE) is unaffected -- both classifiers return 'absent' and
+        # completeness/Step 5 still fire.
+        if (
+            classify_refactor_dispatch(markers) == "valid"
+            or classify_find_dispatch(markers) == "valid"
+        ):
+            self._log_allowed(context="refactor_find_mode", hook_id=hook_id)
+            return HookDecision.allow()
+
+        # Step 4: Validate marker completeness
         if self._completeness_policy:
             completeness = self._completeness_policy.validate(markers)
             if not completeness.is_valid:
@@ -415,11 +441,15 @@ class PreToolUseService(PreToolUsePort):
         ``DiscussGateIn.evaluate`` for the declared ``validate-feature-delta``
         gate-id; an uncatalogued gate-id fails closed, named (reuse of the
         ``_gate_invoker_for`` fail-closed shape).
-        """
-        from pathlib import Path
 
+        The presence read resolves the root via ``resolve_nwave_root()``
+        (DDD-14/15) rather than a bare ``Path.cwd()``, so a ``DES_PROJECT_DIR``
+        override (the per-test isolation seam) redirects the read to an isolated
+        root instead of the shared process cwd -- mirroring ``_read_active_wave``.
+        """
         from des.application import wave_gate_stack_dispatch as wgs
         from des.domain.discuss_gate import DiscussGateIn, DiscussGateInToken
+        from des.domain.nwave_root import resolve_nwave_root
 
         assert self._product_ssot_reader is not None
         reader = self._product_ssot_reader
@@ -427,7 +457,7 @@ class PreToolUseService(PreToolUsePort):
         def invoke(gate_id: str, _context: dict[str, str]) -> tuple[int, str]:
             if gate_id != "validate-feature-delta":
                 return wgs.unknown_gate_stdout(gate_id)
-            presence = reader.ssot_present(Path.cwd())
+            presence = reader.ssot_present(resolve_nwave_root())
             gate_in = DiscussGateIn.evaluate(presence)
             if gate_in.token is DiscussGateInToken.PASS:
                 return wgs.pass_stdout(gate_id)

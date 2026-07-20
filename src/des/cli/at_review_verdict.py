@@ -280,6 +280,8 @@ def _slice_at_derivation(
     slice_id: str,
     at_kind: Literal["gherkin", "pytest-regression", "rust-regression"] = "gherkin",
     regression_test_file: Path | None = None,
+    *,
+    allow_empty_gherkin_scenarios: bool = False,
 ) -> tuple[list[str], str]:
     """Derive ``(at_ids, at_content_hash)`` for ``slice_id`` (ADR-001 producer mirror).
 
@@ -291,8 +293,12 @@ def _slice_at_derivation(
 
     ``at_kind="pytest-regression"`` (ADR-001, fix-pre-push-hook-dual-installer-
     collision) mirrors the consumer-side derivation in ``carpaccio_format``:
-    AST-counted ``test_*`` functions for ``at_ids`` + a sha256 over the
-    regression file's raw source text for the content hash.
+    NET-NEW-counted ``test_*`` functions (bugfix at-review-seal-coherence --
+    ``count_net_new_pytest_regression_ats``, the SAME function the gate's own
+    assertion-1/assertion-5 checks call, so a regression file SHARED across
+    slices can never seal an ``at_ids`` set the gate later disagrees with) for
+    ``at_ids`` + a sha256 over the regression file's raw source text for the
+    content hash.
 
     ``at_kind="rust-regression"`` (B-1 bugfix) mirrors ``pytest-regression`` for
     a Rust ``.rs`` regression-test file: ``#[test]``-attributed function names
@@ -302,6 +308,19 @@ def _slice_at_derivation(
     ``GateError``) when ``at_kind`` is ``"pytest-regression"`` or
     ``"rust-regression"`` and ``regression_test_file=None`` -- only the CLI's
     own arg-parsing can mis-wire this combination.
+
+    ``at_kind="gherkin"`` with ZERO scenarios tagged ``@{slice_id}`` (bugfix
+    at-review-seal-coherence, GDP-6): raises the gate's own
+    ``_no_scenarios_rejection`` -- the SAME self-explaining ``GateError`` the
+    gate's assertion-1 raises for this exact condition -- rather than sealing
+    a silent ``sha256("")`` as if an empty AT set were a legitimately-reviewed
+    one. ``allow_empty_gherkin_scenarios=True`` (keyword-only) suppresses this
+    refusal for callers whose approval authority is a DIFFERENT gate entirely
+    (e.g. ``main()`` sets it when ``--robustness-declaration`` +
+    ``--robustness-at-scope`` are both supplied -- the robustness density
+    gate, not carpaccio scenario tagging, is that call shape's authority; see
+    ``record_review_outcome``'s own ``robustness_declaration``/
+    ``robustness_at_scope`` gating).
     """
     if (
         at_kind in ("pytest-regression", "rust-regression")
@@ -314,7 +333,12 @@ def _slice_at_derivation(
         assert regression_test_file is not None  # guarded above
         from des.cli import carpaccio_format
 
-        at_count = carpaccio_format.count_pytest_regression_ats(regression_test_file)
+        at_count = carpaccio_format.count_net_new_pytest_regression_ats(
+            regression_test_file,
+            repo=repo_root,
+            feature_id=feature_id,
+            entering_slice=slice_id,
+        )
         at_ids = [f"AT-{n}" for n in range(1, at_count + 1)]
         at_content_hash = carpaccio_format.pytest_regression_content_hash(
             regression_test_file
@@ -332,6 +356,8 @@ def _slice_at_derivation(
         carpaccio_format.read_feature_files(repo_root, feature_id)
     )
     slice_scenarios = [s for s in scenarios if slice_id in s.slice_tags]
+    if not slice_scenarios and not allow_empty_gherkin_scenarios:
+        raise carpaccio_format._no_scenarios_rejection(repo_root, feature_id, slice_id)
     at_ids = [f"AT-{n}" for n in range(1, len(slice_scenarios) + 1)]
     at_content_hash = carpaccio_slice_gate._at_content_hash(slice_scenarios)
     return at_ids, at_content_hash
@@ -591,6 +617,16 @@ def main(argv: list[str] | None = None) -> int:
             args.slice_id,
             at_kind=at_kind,
             regression_test_file=regression_test_file,
+            # slice-05 robustness-density-gate wiring (fix-robustness-pbt-
+            # density-gate): when BOTH robustness flags are supplied, the
+            # robustness gate -- consulted below in `record_review_outcome`
+            # -- is THIS call shape's approval authority, not carpaccio
+            # scenario tagging. An empty gherkin scenario set must not
+            # preempt that gate's own (more specific) refusal.
+            allow_empty_gherkin_scenarios=(
+                args.robustness_declaration is not None
+                and args.robustness_at_scope is not None
+            ),
         )
     except GateError as gate_error:
         error_line = json.dumps(gate_error.payload, sort_keys=True) + "\n"

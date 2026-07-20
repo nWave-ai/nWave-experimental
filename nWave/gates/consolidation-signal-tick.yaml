@@ -1,0 +1,59 @@
+# Gate-contract: consolidation-signal-tick (autonomous-consolidation-and-bugfix-loops
+# feature, slice-04)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=consolidation-signal-tick.
+
+gate_id: consolidation-signal-tick
+responsibility: |
+  Turn one already-detected trunk-health signal (drift / un-merged work /
+  stale branch / failing gate) into exactly one queue item flowing through
+  the shared bugfix pipeline (D-4/D-19): derives a stable defect_id from
+  (signal_type, signal_key), enters the pipeline at its first cloud-lane
+  stage (RCA) via a direct call into the SAME
+  des.domain.bugfix_pipeline.evaluate_and_record seam, and recognizes an
+  already-queued signal idempotently (a re-detection appends nothing
+  further). An unsupported signal_type is refused loudly
+  (ConsolidationSignalIntakeRejected, carrying a non-empty reason), never
+  silently absent from the queue. State is replayed from the AT-completion
+  ledger's own recorded content only.
+module: des.cli.consolidation_signal_tick
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "The feature id whose consolidation queue this tick observes."
+  - name: --project-root
+    required: true
+    type: path
+    help: "Repo root the AT-completion ledger is resolved under."
+  - name: --signal-type
+    required: true
+    type: string
+    help: "One of drift / unmerged-work / stale-branch / failing-gate -- not argparse-constrained so an unsupported value reaches the domain seam and is refused loudly (D-8)."
+  - name: --signal-key
+    required: true
+    type: string
+    help: "The signal-instance identifier (a branch name, a gate name, or 'trunk' for drift)."
+  - name: --now
+    required: true
+    type: string
+    help: "ISO-8601 instant this tick observes (the controllable clock)."
+
+log_events:
+  - PipelineStageStarted
+  - ConsolidationSignalIntakeRejected
+
+failure_modes:
+  - error_class: UsageError
+    exit_code: 2
+    remediation: "Provide --feature-id, --project-root, --signal-type, --signal-key and --now; see `des consolidation-signal-tick --help`."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - cli

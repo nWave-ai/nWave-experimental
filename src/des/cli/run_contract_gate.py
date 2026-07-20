@@ -55,6 +55,7 @@ from des.adapters.driven.git.git_subprocess import git_text as _git
 from des.adapters.driven.output.stdout_output import StdoutOutput
 from des.adapters.driven.runner.pytest_runner import (
     pytest_interpreter,
+    run_pytest_reaped,
     run_timeout_seconds,
 )
 from des.adapters.driven.runner.reentrancy_guard import (
@@ -1681,7 +1682,7 @@ def _run_contract_suite(repo: Path, *, junit_xml_path: Path | None = None) -> in
     if junit_xml_path is not None:
         argv = [*argv, f"--junit-xml={junit_xml_path}"]
     try:
-        completed = subprocess.run(
+        completed = run_pytest_reaped(
             argv,
             cwd=repo,
             timeout=run_timeout_seconds(),

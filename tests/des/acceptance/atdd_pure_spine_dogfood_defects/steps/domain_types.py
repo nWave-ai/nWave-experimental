@@ -70,17 +70,20 @@ class DispatchPhase(str, Enum):
     """
 
     A_GREEN_ATS = "A_GREEN_ATS"  # a per-slice phase
-    E_BATCH_REFACTOR = "E_BATCH_REFACTOR"  # a feature-end-cycle phase (ADR-028 D6)
+    D_DISTILL = "D_DISTILL"  # a feature-end-cycle phase
     F_FINAL_REVIEW = "F_FINAL_REVIEW"  # a feature-end-cycle phase
     G_COMMIT = "G_COMMIT"  # the per-slice terminal phase (ADR-028 D6 runs it 3x)
 
 
-# The closed set of feature-end-cycle phases (ADR-028 D6). G_COMMIT is excluded
-# -- it is the per-slice terminal phase, run once per slice, so its coherent
-# scope is a `slice-NN` value, not `feature-end`.
+# The closed set of feature-end-cycle phases. G_COMMIT is excluded -- it is the
+# per-slice terminal phase, run once per slice, so its coherent scope is a
+# `slice-NN` value, not `feature-end`. E_BATCH_REFACTOR was retired
+# (commit 1ca40aedc, Ale-ratified, 2026-07-19) and replaced here by D_DISTILL,
+# a currently-valid member of the production `FEATURE_END_PHASES` SSOT
+# (`src/des/domain/atdd_pure_phases.py`).
 FEATURE_END_PHASES = frozenset(
     {
-        DispatchPhase.E_BATCH_REFACTOR,
+        DispatchPhase.D_DISTILL,
         DispatchPhase.F_FINAL_REVIEW,
     }
 )

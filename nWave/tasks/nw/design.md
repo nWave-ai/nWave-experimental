@@ -14,6 +14,8 @@ Execute DESIGN wave through discovery-driven architecture design. The command ro
 
 ## Interactive Decision Points
 
+> **Default: DESIGN RUNS. Skipping DESIGN for a feature requires explicit HUMAN authorization — ASK, never self-authorize.** (Ale 2026-07-19.) DESIGN being an "optional" wave does NOT make skip the default: for a feature, run DESIGN by default. Emitting a `## Wave: DESIGN / [REF] Design Skipped` witness is an authorization act — per asymmetric-authority (controls veto, only humans authorize), it must be granted by the human on ask, never written by the spine/agent on its own. If you believe DESIGN can be skipped for this feature, STOP and ask the human; do not author the skip witness unilaterally.
+
 ### Decision 0: Design Scope (MANDATORY — do NOT skip)
 
 **Question**: What are you designing?

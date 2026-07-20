@@ -91,6 +91,10 @@ _FEATURE_ID_ADDITIVITY = "commit-slice-at-kind-forward-additivity"
 # Shared fixture builders
 # ---------------------------------------------------------------------------
 
+from tests.des._helpers.commit_slice_git_template import (
+    provision_commit_slice_repo,
+)
+
 
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(
@@ -103,42 +107,15 @@ def _git(root: Path, *args: str) -> str:
 
 
 def _init_repo(root: Path) -> None:
-    """Init a real pytest-collectible git work-tree (mirrors
-    ``test_commit_slice_writes_verified_record.py``'s ``_init_repo``
-    verbatim -- the exact shape that already makes ``des commit-slice``'s
-    whole-tree committed-scope digest + ``run_contract_gate
-    --verify-gate-scope`` succeed today, independent of ``--at-kind``).
+    """Provision the git work-tree via the shared session-cached template.
+
+    See ``tests.des._helpers.commit_slice_git_template`` -- the base repo
+    (``git init`` + config + the "base: walking skeleton" commit, six real
+    ``git`` subprocess spawns) is built ONCE per test process and cached;
+    this call materializes an independent filesystem copy at ``root``, so
+    no test's later mutations can leak into another test's repo.
     """
-    root.mkdir(parents=True, exist_ok=True)
-    _git(root, "init", "-q")
-    _git(root, "config", "user.email", "t@t")
-    _git(root, "config", "user.name", "t")
-    # Pin the hooks dir to the repo's own .git/hooks so a global/user-level
-    # core.hooksPath in the environment cannot leak into the hook-count tests.
-    _git(root, "config", "--local", "core.hooksPath", ".git/hooks")
-    tests_dir = root / "tests" / "unit"
-    tests_dir.mkdir(parents=True)
-    (root / "tests" / "__init__.py").write_text("", encoding="utf-8")
-    (tests_dir / "__init__.py").write_text("", encoding="utf-8")
-    (root / "conftest.py").write_text(
-        "import pytest\n\n\n"
-        "def pytest_collection_modifyitems(items):\n"
-        "    for item in items:\n"
-        "        item.add_marker(pytest.mark.unit)\n",
-        encoding="utf-8",
-    )
-    (root / "pytest.ini").write_text(
-        "[pytest]\nmarkers =\n"
-        "    unit: unit tests\n"
-        "    integration: integration tests\n"
-        "    acceptance: acceptance tests\n",
-        encoding="utf-8",
-    )
-    (tests_dir / "test_base.py").write_text(
-        "def test_base():\n    assert True\n", encoding="utf-8"
-    )
-    _git(root, "add", "-A")
-    _git(root, "commit", "-q", "-m", "base: walking skeleton")
+    provision_commit_slice_repo(root)
 
 
 def _write_regression_test(

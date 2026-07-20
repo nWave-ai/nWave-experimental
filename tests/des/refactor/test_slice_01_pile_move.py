@@ -1,3 +1,5 @@
+# @feature-des-refactor-fixer-swarm
+# @slice-01
 """Pile-move -- slice-01 (Slice Plan Value statement: `techdebt.md` -> `paidtechdebt.md`).
 
 Layer 3 composition (in-process, L2 default). @driving_port

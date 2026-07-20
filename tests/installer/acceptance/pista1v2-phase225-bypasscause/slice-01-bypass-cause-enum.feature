@@ -41,10 +41,3 @@ Feature: BypassCause value object — eliminate Primitive Obsession on `_CAUSE_*
     And BypassCause carries a member "BLOCK_LEDGER_EVIDENCE_MISSING" whose value is "block-ledger-evidence-missing"
     And BypassCause carries a member "LEDGER_EVIDENCE_PRESENT" whose value is "ledger-evidence-present"
     And BypassCause carries a member "LEDGER_INTEGRITY_VIOLATION" whose value is "ledger-integrity-violation"
-
-  @slice-01 @walking_skeleton @driving_port @real-io @e2e_smoke @contract-shape:regression-preservation
-  Scenario: the full predecessor-feature acceptance suite remains green after the refactor
-    Given the predecessor feature ships its acceptance suite under "tests/installer/acceptance/atdd-spine-ledger-enforcement-gate-v2/"
-    When the maintainer runs every scenario in that suite under the refactored gate
-    Then every scenario passes
-    And the suite reports fifteen passing acceptance tests

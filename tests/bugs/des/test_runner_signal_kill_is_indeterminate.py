@@ -99,6 +99,11 @@ def _stub_subprocess_run(monkeypatch: pytest.MonkeyPatch, returncode: int) -> No
         )
 
     monkeypatch.setattr(subprocess, "run", _fake_run)
+    # `run_pytest_scope` shells through the process-group-reaping helper
+    # (`run_pytest_reaped`), not `subprocess.run` directly, so stub that seam too
+    # -- it returns the same `CompletedProcess` shape, exercising the exit-code
+    # map without a real process (the other 3 runners still call subprocess.run).
+    monkeypatch.setattr(pytest_runner, "run_pytest_reaped", _fake_run)
 
 
 def _setup_pytest(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -408,7 +408,7 @@ BULK_HASHES = {
     # Hash updated 2026-07-16: add the STANDING Closure obligations section
     # (COUNT->population / PARTITION->conservation / SILENCE->discriminator; methodology Cambio-1).
     "nw-test-design-mandates": "6d1b1fdeaff4eff7341bbf96be055742",
-    "nw-test-organization-conventions": "64778077de4b55a493e89cf0e06ce681",
+    "nw-test-organization-conventions": "b478170a1cccb0aac1811fa06daf0ba1",
     "nw-test-refactoring-catalog": "9dd4d17224b32058386f4413027253bd",
     "nw-tlaplus-verification": "39ba15e1845e237a9d2014c467aa56ff",
     "nw-tutorial-structure": "9cb0099f21b1190abf2ed2166c6e2d8f",

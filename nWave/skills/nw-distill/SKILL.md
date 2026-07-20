@@ -179,6 +179,18 @@ Reading the map:
   scaffolded per-slice per the Slice Plan enumeration, active-RED never skipped —
   the current slice's scenarios run and fail for the right reason; future-slice
   scenarios are absent, never `@skip`'d into dormancy.
+  - **Originating the Slice Plan itself in DISTILL — the `depends-on {slice-id}`
+    dependency token.** When no DISCUSS wave ran and the acceptance-designer is
+    the one first writing the `[REF] Slice Plan` rows, the grammar is the
+    IDENTICAL one a DISCUSS-authored plan would use: annotate an ordering
+    dependency on another slice with `depends-on {slice-id}` in the Annotation
+    column. Nothing declared there reads parallel-safe by default —
+    parallel-by-default is the rule; an empty Annotation cell does NOT owe a
+    Justification, and silence is NOT read as assume-serial. Only a row that
+    DECLARES `depends-on {slice-id}` owes a one-line Justification. This is the
+    same grammar `nw-discuss` SKILL.md's own **Slice Plan annotation vocabulary**
+    reference already documents in full (including `@coupled`) — point at that
+    section for the complete token list, never re-copy it here (SSOT/DRY).
 - **Example table → scenario (1:1).** every example-table row maps to exactly one
   Given-When-Then scenario. The bijection forbids both dropping a row (silent
   coverage loss) and fabricating a scenario the contract never authored.
@@ -426,7 +438,7 @@ Hard-won lessons from authoring ATs on a real feature through DISTILL.
 
 - **The `# covers: Rn` marker must be a REAL COMMENT inside a `test_*` function body — a marker at module level, or one that appears inside a STRING LITERAL, does not count.** The spec-coverage scanner is comment-aware (Python `tokenize`; TS/JS strips string content), so `x = "# covers: R1"` fixture data is correctly ignored — but a genuine marker placed in a module docstring / at file top is silently NOT scanned. Put the marker in the test body. (Two real bugs here: the string-literal false-positive was FIXED; the module-level silent-drop is a known open friction — if a checklist row reads uncovered but you "know" you marked it, check the marker is inside the function.)
 - **`carpaccio-slice-gate` is Gherkin-only — it is BLIND to pytest ATs.** If your feature's ATs are pytest unit tests driving the composition root (the established reuse-first precedent for infra/CLI features, e.g. `test_feature_end_cycle_examine_gate.py`), the DELIVER-entry carpaccio gate will reject them with `no-scenarios-for-slice` even though real active-RED ATs exist on disk. Today this class of feature is structurally invisible to that gate — plan the DELIVER-entry route accordingly (known open friction D3: extend carpaccio discovery to pytest, or document the pytest-AT readiness route).
-- **"DESIGN optional" silently pushes named decisions onto DISTILL.** If DESIGN was skipped, decisions the feature-delta explicitly deferred to DESIGN (e.g. an NA-vs-refuse split) land on DISTILL's desk by default-reading. Low-stakes when a strong precedent exists, but surface the specific dangling decision IDs rather than silently interim-resolving — a less obvious one would block silently-wrong instead of loud.
+- **"DESIGN optional" silently pushes named decisions onto DISTILL.** DESIGN skip is NOT a self-serve default — the default is DESIGN runs, and skipping it requires explicit HUMAN authorization (ask), never a self-authored `Design Skipped` witness (Ale 2026-07-19; asymmetric-authority). If you arrive at DISTILL and find a self-authored skip witness with no human authorization, treat it as a violation to surface, not a fait accompli. When a skip WAS human-authorized: decisions the feature-delta explicitly deferred to DESIGN (e.g. an NA-vs-refuse split) land on DISTILL's desk by default-reading. Low-stakes when a strong precedent exists, but surface the specific dangling decision IDs rather than silently interim-resolving — a less obvious one would block silently-wrong instead of loud.
 
 ## Outputs
 

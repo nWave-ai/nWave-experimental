@@ -23,6 +23,39 @@ slices or features — it is how you keep the pipeline full without tripping the
 
 **THE RULE: N cloud LLM lanes, ONE box lane, resource-aware.**
 
+## Move 0: one sub-orchestrator per worktree — don't BE the bottleneck (ratified 2026-07-19)
+
+Before the five moves below: the main orchestrator itself is a serial resource. Personally
+driving each worktree's slice-by-slice loop (reading files, dispatching one phase, waiting,
+dispatching the next) turns the orchestrator into exactly the bottleneck ToC says to route
+around. For EVERY active worktree carrying multi-slice feature work, dispatch ONE
+sub-orchestrator agent (`general-purpose`, full tool access including `Agent`/`SendMessage`) that
+owns the ENTIRE per-slice spine for its feature (DISTILL → entry-gate → A_GREEN → EXAMINE →
+COMMIT, repeated per slice) PLUS its worktree's mechanical cleanup once merge-back succeeds —
+dispatching its OWN crafter/acceptance-designer/examiner agents via `des dispatch`, never a
+passthrough. **It does NOT run its own feature-end cycle.** Per `parallel-work-cleans-up-after-
+merge-back`'s own design: a slice's cleanup ends at merge-back; feature-end is decided
+SEPARATELY, LATER, POSSIBLY BATCHED across several ready features
+(`many-features-close-for-one-full-suite`, epic-delta.md row 6 — status `pending`, the
+N-feature-id batched CLI does not exist yet). Paying the full-suite/deep-review/env-e2e cost once
+per sub-orchestrator instead of once per BATCH is exactly the waste row 6 exists to eliminate. A
+sub-orchestrator finishes at "all slices SliceCommitVerified, worktree cleaned" and reports that —
+the main orchestrator decides WHEN to close the feature-end for one feature or a batch of several
+together (today: N separate `des feature-end run` calls, run back-to-back in the SAME decided
+window since the batched CLI isn't built — still one deliberate closing decision, not N
+independent ones). It reports back only at genuine decision points (ambiguous design call, gate
+refusal needing human judgment, a defect in a DISTILL-owned artifact), not after every mechanical
+step. **Trunk-writing
+is consolidated under exactly ONE sub-orchestrator at a time** — two peers independently mutating
+the same shared tree race each other and can corrupt an in-flight whole-tree gate; when several
+features' remaining work all lands on trunk, bundle them under one trunk-completion
+sub-orchestrator instead of one per feature. Features with their own isolated worktree (no trunk
+dependency yet) get independent sub-orchestrators freely — dispatched BATCHED in one message when
+independent (true parallel fan-out), never dispatch-then-wait-then-dispatch-next. The main
+orchestrator's job narrows to: identify which worktrees need a sub-orchestrator, fan them out, and
+synthesize/triage what they escalate. Full canonical writeup:
+`docs/epic/swarm-parallel-delivery/epic-delta.md` §Operating model.
+
 ## The five moves (ordered by ToC leverage)
 
 1. **Serialize the box, fan out the cloud.** At most ONE box-bound gate runs at a time.
@@ -63,6 +96,34 @@ Surface the affordance (accepted tokens, WHERE an annotation goes) INLINE at the
 surface (GDP-2), not only in the gate's rejection message. GENERATE the checked artifact with
 its producing tool (`des dispatch` for the crafter envelope, `des feature-delta-doctor` before
 DISTILL) — never hand-assemble what a gate will check (GDP-5, cost on the system).
+
+## Tool-output discipline in dispatch prompts (C7)
+
+A dispatched agent defaults to reading whatever a command prints straight into its own
+context — a 33-minute whole-tree suite, a large file, a wide grep — unless its dispatch
+prompt explicitly tells it otherwise. Measured on a live orchestration (2026-07-20): one
+long-running gate-owning agent's transcript held 275KB of raw `tool_result` content across
+123 calls, median 745 bytes but a ~20-item tail of 5-45KB dumps — the same information a
+`tail -N` / `grep` pass would have delivered in a fraction of the size, carried forward and
+re-billed on every subsequent turn once it enters context (conversation length compounds
+this — it is not a one-time cost).
+
+**THE RULE: never let a dispatched agent `cat`/read a large or long-running command's raw
+output. Redirect to a file, read back only the tail/grep/summary.** This is GDP-2 (inline
+guidance at the authoring surface, not a reactive fix after the fact) applied to dispatch
+prompts specifically — the orchestrator states the redirect-and-tail pattern IN the prompt,
+every time it hands off a command that could produce more than a screenful:
+
+```
+NWAVE_GATE_JOBS=serial uv run des run-contract-gate --repo . >> gate.out 2>&1 &
+# then poll with: tail -30 gate.out   (never `cat gate.out`)
+```
+
+Applies to: whole-tree/full-suite gate output, `pytest`/build logs, `find`/`grep` over a
+large tree, reading an entire source file when only one function is relevant (use
+line-ranged Read or a targeted grep instead). Does not apply to short, bounded outputs
+(`--help`, a single ledger record, a small diff) — the rule is about UNBOUNDED or
+LARGE-BY-CONSTRUCTION output, not every tool call.
 
 ## The measure (re-runnable, identical)
 

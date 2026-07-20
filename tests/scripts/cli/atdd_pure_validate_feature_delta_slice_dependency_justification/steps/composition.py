@@ -25,12 +25,19 @@ this feature introduces:
              | malformed-wave-heading | rejected-infra-only
              | unjustified-slice-dependency
 
-Under ``--require-feature-plan --format=json`` the closed set is UNCHANGED
-(D-6 -- this feature's isolation scenario proves ``unjustified-slice-
-dependency`` never appears there):
+Under ``--require-feature-plan --format=json`` the closed set is UNCHANGED BY
+THIS FEATURE (D-6 -- this suite's isolation scenario proves ``unjustified-
+slice-dependency`` never appears there). It DID grow one token since this
+suite was first authored -- the sibling feature `parallel-by-default-
+feature-plan` slice-01 (row 4) generalizes the identical D-1/D-2 rule to
+feature granularity, adding its OWN ``unjustified-feature-dependency`` token.
+The isolation scenario below was updated to assert THAT token fires (not
+``unjustified-slice-dependency``) -- still proving the cross-mode boundary,
+now against feature-plan mode's own six-token set:
 
     accepted | missing-feature-plan | malformed-feature-plan
              | malformed-wave-heading | rejected-infra-only
+             | unjustified-feature-dependency
 
 Active-RED note (atdd_pure, incremental-extension shape). Unlike a
 brand-new-flag slice, ``--require-slice-plan --format=json`` already ships
@@ -92,6 +99,7 @@ _VERDICT_TOKEN: dict[str, DependencyVerdict] = {
     "unjustified-slice-dependency": DependencyVerdict.UNJUSTIFIED_SLICE_DEPENDENCY,
     "missing-feature-plan": DependencyVerdict.MISSING_FEATURE_PLAN,
     "malformed-feature-plan": DependencyVerdict.MALFORMED_FEATURE_PLAN,
+    "unjustified-feature-dependency": DependencyVerdict.UNJUSTIFIED_FEATURE_DEPENDENCY,
 }
 
 # The fixed first row every slice-plan fixture carries -- keeps the

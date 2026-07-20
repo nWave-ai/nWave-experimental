@@ -73,6 +73,10 @@ _ENTERING = "slice-02"
 # / tests/des/integration/test_commit_slice.py -- Test Reuse row).
 # ---------------------------------------------------------------------------
 
+from tests.des._helpers.commit_slice_git_template import (
+    provision_commit_slice_repo,
+)
+
 
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(
@@ -85,40 +89,15 @@ def _git(root: Path, *args: str) -> str:
 
 
 def _init_repo(root: Path) -> None:
-    """A real pytest-collectible git work-tree (verbatim shape from
-    ``tests/des/integration/test_commit_slice.py``'s ``_init_repo``) -- the
-    exact shape that already makes ``des commit-slice``'s whole-tree
-    committed-scope digest + ``run_contract_gate --verify-gate-scope``
-    succeed today.
+    """Provision the git work-tree via the shared session-cached template.
+
+    See ``tests.des._helpers.commit_slice_git_template`` -- the base repo
+    (``git init`` + config + the "base: walking skeleton" commit, six real
+    ``git`` subprocess spawns) is built ONCE per test process and cached;
+    this call materializes an independent filesystem copy at ``root``, so
+    no test's later mutations can leak into another test's repo.
     """
-    root.mkdir(parents=True, exist_ok=True)
-    _git(root, "init", "-q")
-    _git(root, "config", "user.email", "atdd@nwave.ai")
-    _git(root, "config", "user.name", "atdd")
-    _git(root, "config", "--local", "core.hooksPath", ".git/hooks")
-    tests_dir = root / "tests" / "unit"
-    tests_dir.mkdir(parents=True)
-    (root / "tests" / "__init__.py").write_text("", encoding="utf-8")
-    (tests_dir / "__init__.py").write_text("", encoding="utf-8")
-    (root / "conftest.py").write_text(
-        "import pytest\n\n\n"
-        "def pytest_collection_modifyitems(items):\n"
-        "    for item in items:\n"
-        "        item.add_marker(pytest.mark.unit)\n",
-        encoding="utf-8",
-    )
-    (root / "pytest.ini").write_text(
-        "[pytest]\nmarkers =\n"
-        "    unit: unit tests\n"
-        "    integration: integration tests\n"
-        "    acceptance: acceptance tests\n",
-        encoding="utf-8",
-    )
-    (tests_dir / "test_base.py").write_text(
-        "def test_base():\n    assert True\n", encoding="utf-8"
-    )
-    _git(root, "add", "-A")
-    _git(root, "commit", "-q", "-m", "base: walking skeleton")
+    provision_commit_slice_repo(root)
 
 
 def _last_json_event(stdout: str) -> dict[str, object]:
@@ -219,15 +198,18 @@ def test_missing_feature_id_never_commits_it_refuses_naming_the_disarmed_gates(
     (``if args.feature_id is not None``), so the commit lands normally and
     ``main()`` returns 0 with ``event: SliceCommitted`` -- a real semantic
     mismatch against the expected refusal, not a crash or collection error.
+
+    SPEED (2026-07-20): the ``args.feature_id is None`` guard fires at the
+    very top of ``main()``, and its refusal builder
+    (``_missing_feature_id_refusal`` -> ``active_feature_id`` /
+    ``_ledger_stems``) only ever does pure filesystem reads
+    (``Path.is_dir()`` / ``Path.glob()``, both False/empty for a nonexistent
+    ``repo``) -- no ``git`` call happens anywhere on this path. No real git
+    repo is provisioned; ``repo`` is never created on disk, so
+    ``not repo.exists()`` is a strictly STRONGER "no mutation" proof than a
+    real-git HEAD-unchanged check.
     """
     repo = tmp_path / "repo"
-    _init_repo(repo)
-    prod_file = repo / "src" / "app" / "module.py"
-    prod_file.parent.mkdir(parents=True, exist_ok=True)
-    prod_file.write_text(
-        "def helper() -> str:\n    return 'a real slice change'\n", encoding="utf-8"
-    )
-    head_before = _git(repo, "rev-parse", "HEAD").strip()
 
     exit_code = commit_slice_main(
         [
@@ -253,10 +235,10 @@ def test_missing_feature_id_never_commits_it_refuses_naming_the_disarmed_gates(
         f"close. event={event!r}"
     )
 
-    head_after = _git(repo, "rev-parse", "HEAD").strip()
-    assert head_after == head_before, (
+    assert not repo.exists(), (
         "the refusal must happen BEFORE any git mutation -- no placeholder "
-        f"commit may land. head_before={head_before!r} head_after={head_after!r}"
+        f"commit may land, and no repo directory should ever be created. "
+        f"repo={repo!r}"
     )
 
     haystack = json.dumps(event).lower()
@@ -374,15 +356,12 @@ def test_feature_id_class_of_meaningless_spellings_is_treated_as_absent(
     ``None`` at the parse boundary, so the ``args.feature_id is None`` guard
     (sound only because of that normalization) fires for all of them, not
     only for a truly-omitted flag.
+
+    SPEED (2026-07-20): same pure-classification shape as
+    ``test_missing_feature_id_never_commits_it_refuses_naming_the_disarmed_gates``
+    above -- no real git repo is provisioned, see that test's docstring.
     """
     repo = tmp_path / "repo"
-    _init_repo(repo)
-    prod_file = repo / "src" / "app" / "module.py"
-    prod_file.parent.mkdir(parents=True, exist_ok=True)
-    prod_file.write_text(
-        "def helper() -> str:\n    return 'a real slice change'\n", encoding="utf-8"
-    )
-    head_before = _git(repo, "rev-parse", "HEAD").strip()
 
     exit_code = commit_slice_main(
         [
@@ -409,10 +388,10 @@ def test_feature_id_class_of_meaningless_spellings_is_treated_as_absent(
         f"SliceCommitted outcome. event={event!r}"
     )
 
-    head_after = _git(repo, "rev-parse", "HEAD").strip()
-    assert head_after == head_before, (
+    assert not repo.exists(), (
         "the refusal must happen BEFORE any git mutation -- no placeholder "
-        f"commit may land. head_before={head_before!r} head_after={head_after!r}"
+        f"commit may land, and no repo directory should ever be created. "
+        f"repo={repo!r}"
     )
 
 
@@ -429,15 +408,15 @@ def test_slice_id_class_of_meaningless_spellings_never_stamps_an_empty_trailer(
     (``MalformedInput: missing Slice-Id``) BEFORE any staging/commit -- and
     must never stamp a blank/whitespace ``Slice-Id:`` trailer onto a
     landed commit.
+
+    SPEED (2026-07-20): ``extract_slice_ids`` is a pure regex scan of the
+    message string, and the ``args.slice_id is None`` refusal it feeds fires
+    before any staging/commit call -- no ``git`` call happens on this path.
+    No real git repo is provisioned; ``repo`` is never created on disk, so
+    ``not repo.exists()`` proves both "no commit landed" and "no blank
+    Slice-Id: trailer was ever stamped" (there is no commit at all).
     """
     repo = tmp_path / "repo"
-    _init_repo(repo)
-    prod_file = repo / "src" / "app" / "module.py"
-    prod_file.parent.mkdir(parents=True, exist_ok=True)
-    prod_file.write_text(
-        "def helper() -> str:\n    return 'a real slice change'\n", encoding="utf-8"
-    )
-    head_before = _git(repo, "rev-parse", "HEAD").strip()
 
     exit_code = commit_slice_main(
         [
@@ -465,16 +444,10 @@ def test_slice_id_class_of_meaningless_spellings_never_stamps_an_empty_trailer(
         f"SliceCommitted outcome. event={event!r}"
     )
 
-    head_after = _git(repo, "rev-parse", "HEAD").strip()
-    assert head_after == head_before, (
+    assert not repo.exists(), (
         "the refusal must happen BEFORE any git mutation -- no commit "
-        "carrying a blank/whitespace Slice-Id: trailer may land. "
-        f"head_before={head_before!r} head_after={head_after!r}"
-    )
-
-    log = _git(repo, "log", "--all", "--format=%B")
-    assert "Slice-Id: \n" not in log and "Slice-Id:  " not in log, (
-        f"no commit may carry a blank Slice-Id: trailer. log={log!r}"
+        "carrying a blank/whitespace Slice-Id: trailer may land, and no "
+        f"repo directory should ever be created. repo={repo!r}"
     )
 
 

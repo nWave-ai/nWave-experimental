@@ -1,3 +1,5 @@
+# @feature-des-refactor-fixer-swarm
+# @slice-01
 """Observability ATs -- slice-01 (des-refactor-fixer-swarm), closing the 3
 real-CLI EXAMINE opacity flags.
 
@@ -43,6 +45,7 @@ import pytest
 from des.cli.refactor import main as _preimport_refactor_main  # noqa: F401
 
 from .composition import RefactorSwarmComposition
+from .domain_types import EntryGateAgentVerdict
 
 
 pytestmark = pytest.mark.acceptance
@@ -64,7 +67,11 @@ def test_a_successful_drain_reports_the_count_the_item_id_and_the_integration_br
     composition.prepare_clean_integration_branch()
     composition.seed_pile_item(item_id="TD-001")
 
-    exit_code = composition.call_refactor_main_in_process(agent_cmd="true")
+    exit_code = composition.call_refactor_main_in_process(
+        agent_cmd=composition.agent_cmd_emitting_verdict(
+            EntryGateAgentVerdict.REFACTOR_SAFE
+        )
+    )
     captured = capsys.readouterr()
 
     assert exit_code == 0, (

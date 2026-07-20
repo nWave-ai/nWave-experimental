@@ -36,11 +36,18 @@ See `docs/feature/fix-des-self-hosted-gate-sync/feature-delta.md` §1.8 / §6.
 ### Prerequisite: `flock`
 
 The pre-commit and pre-push hooks wrap every pytest run in `flock` so concurrent
-runs (e.g. an overlapping commit and push) can't corrupt `.git/` — the suite
-serialises on a single lock (`flock -w 1800 /tmp/nwave-pytest.lock …`, see
-`.pre-commit-config.yaml`). If `flock` isn't on your `PATH`, the hooks fail
-immediately with `flock: command not found`, so install it up front — don't
-leave it to be discovered after a long test wait.
+runs can't race each other. Lock scope differs by tier (see `.pre-commit-config.yaml`):
+the fast source-guard tier (`pytest-fast-gate`, the one that fires on every
+`git commit`) locks `.nwave/pytest-fast-gate.lock` — a path relative to each
+worktree's own checkout, so two DIFFERENT worktrees committing at the same time
+never contend, while two commits in the SAME worktree still serialize. The
+heavier tiers (`pytest-quick-tiers`, `pytest-e2e`) still lock the shared
+`flock -w 1800 /tmp/nwave-pytest.lock …` — a genuine cross-worktree/box
+invariant, since their `-n`-parallel test runs can saturate the box's RAM and
+corrupt `.git/` regardless of which worktree they were launched from. If
+`flock` isn't on your `PATH`, the hooks fail immediately with `flock: command
+not found`, so install it up front — don't leave it to be discovered after a
+long test wait.
 
 | OS | Install |
 |----|---------|

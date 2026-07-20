@@ -110,6 +110,26 @@ def move_item(pile_path: Path, paid_path: Path, item_id: str) -> None:
         _append_paid(paid_path, moved)
 
 
+def annotate_item_escalated(pile_path: Path, item_id: str) -> None:
+    """Rewrite ``item_id``'s pending line in place to carry an ``escalated``
+    marker, keeping the item in the pending pile (``techdebt.md``) -- never
+    moved to ``paidtechdebt.md`` (D9, AT-8). Item-specific: only the one
+    matching line is touched, every sibling line is left byte-identical --
+    the escalation signal must never be a pile-wide side effect.
+    """
+    if not pile_path.is_file():
+        return
+    item_prefix_re = re.compile(rf"^- \[ \] {re.escape(item_id)}:")
+    lines = pile_path.read_text(encoding="utf-8").splitlines()
+    updated_lines = [
+        f"{line} [escalated]"
+        if item_prefix_re.match(line) and "escalated" not in line.lower()
+        else line
+        for line in lines
+    ]
+    pile_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+
+
 def _write_pending(pile_path: Path, items: tuple[PileItem, ...]) -> None:
     lines = [_PENDING_HEADER, ""]
     lines.extend(_render_line("[ ]", item) for item in items)

@@ -47,6 +47,8 @@ from des.adapters.driven.refactor.uv_env_provision_adapter import (
 )
 from des.application.refactor_drain_service import RefactorDrainService
 
+from .domain_types import EntryGateAgentVerdict
+
 
 # Repo root -- three-level-up parent of this file
 # (tests/des/refactor/composition.py).
@@ -81,7 +83,18 @@ class RefactorSwarmComposition:
         self.pile_path = project_root / "techdebt.md"
         self.paid_path = project_root / "paidtechdebt.md"
         self.integration_branch = "refactor-integration"
-        self._observed_agent_input = project_root / "observed_agent_input.txt"
+        # SIBLING to project_root (mirrors the worktree-placement convention
+        # `RefactorDrainService.drain_one` itself uses -- `repo.parent /
+        # f"{repo.name}-refactor-{item_id}"`), never INSIDE it: a path
+        # inside project_root would show up as untracked content the next
+        # time `git status --porcelain` runs there (`GitWorktreeAdapter.
+        # _is_dirty`), spuriously tripping the D4 dirty-tree merge refusal
+        # for any AT that both captures agent input AND expects the drain
+        # to actually merge (fix-slice-05-agent-cmd-observation-marker-
+        # pollutes-repo-tree, caught by the slice-05 AT review).
+        self._observed_agent_input = (
+            project_root.parent / f"{project_root.name}-observed-agent-input.txt"
+        )
 
     # --- Given: hermetic real git repo ---------------------------------------
 
@@ -172,6 +185,21 @@ proposed_solution="{proposed_solution}"
         self.pile_path.write_text("# Tech debt pile\n", encoding="utf-8")
         self.paid_path.write_text("# Paid tech debt\n", encoding="utf-8")
 
+    def seed_disjoint_pile_items(self, item_ids: tuple[str, ...]) -> None:
+        """Seed N pending items into a real ``techdebt.md`` -- the slice-02
+        DISJOINT-items arrangement (design doc §9): each item is a distinct,
+        independently-fixable defect, never sharing a file with a sibling."""
+        lines = [
+            f"- [ ] {item_id}: paradigm={_DEFAULT_PARADIGM} "
+            f'defect="isolated defect for {item_id}" '
+            f'proposed_solution="fix {item_id} in its own file"'
+            for item_id in item_ids
+        ]
+        self.pile_path.write_text(
+            "# Tech debt pile\n\n" + "\n".join(lines) + "\n", encoding="utf-8"
+        )
+        self.paid_path.write_text("# Paid tech debt\n", encoding="utf-8")
+
     def seed_pile_with_unparseable_line(self, line: str) -> None:
         """Seed a real ``techdebt.md`` whose only content line does NOT match
         the item grammar (``_ITEM_LINE_RE``) -- the 'unparseable pile line'
@@ -228,12 +256,26 @@ proposed_solution="extract a shared function"
         assert on what the agent actually received (a real captured effect,
         never a harness internal). Absolute paths only: the real adapter runs
         this command with ``cwd=<worktree>``, not ``project_root``.
+
+        Emits REFACTOR_SAFE on stdout after the capture so slice-04's entry
+        gate permits a proceeding drain -- the capture (a file copy) leaves
+        stdout free for the verdict token.
         """
-        return f"cp {{prompt}} {self._observed_agent_input}"
+        return f"cp {{prompt}} {self._observed_agent_input} && echo REFACTOR_SAFE"
 
     def observed_agent_cmd_input(self) -> str:
         """The content the configured ``agent_cmd`` actually received."""
         return self._observed_agent_input.read_text(encoding="utf-8")
+
+    def agent_was_never_invoked(self) -> bool:
+        """True iff the configured ``agent_cmd`` never ran -- the observable
+        surface for 'refused BEFORE dispatch, never silently guessed'
+        (slice-05, D10). Reuses the SAME observation marker
+        ``capturing_agent_cmd`` writes to (see ``observed_agent_cmd_input``);
+        absence of that file is proof the harness never invoked the agent for
+        this item.
+        """
+        return not self._observed_agent_input.exists()
 
     # --- Given: misbehaving-agent stand-ins (the harness's own safety nets) -
 
@@ -243,6 +285,22 @@ proposed_solution="extract a shared function"
         oracle's arrangement (the toy passing test must already exist, see
         ``seed_toy_passing_test``)."""
         return "sh -c \"printf '\\ndef test_broken():\\n    assert False\\n' >> test_toy.py\""
+
+    def agent_cmd_that_makes_a_benign_real_change(self) -> str:
+        """A stand-in for an agent that makes a REAL, suite-green-preserving
+        code change (appends a no-behaviour comment to the already-committed
+        toy test) -- so a genuine fix commit exists to land on the operator's
+        branch, distinguishable from a no-op drain. Requires
+        ``seed_toy_passing_test`` first (the file this appends to must be
+        tracked so the change produces a real commit).
+
+        Emits REFACTOR_SAFE on stdout so slice-04's entry gate permits the
+        merge -- a well-behaved agent self-reports its verdict; the comment
+        is appended to a file, so stdout carries only the verdict token."""
+        return (
+            "sh -c \"printf '\\n# refactored: benign no-behaviour note\\n' "
+            ">> test_toy.py && printf 'REFACTOR_SAFE\\n'\""
+        )
 
     def agent_cmd_that_stages_the_venv_directory(self) -> str:
         """A shell command standing in for a MISBEHAVING agent that
@@ -256,6 +314,34 @@ proposed_solution="extract a shared function"
         probe-contract (AT-12) arrangement: a startup refusal must fire
         BEFORE any worktree is created for the first real item."""
         return "this-executable-does-not-exist-xyz123 {prompt}"
+
+    # --- Given: entry-gate verdict stand-ins (slice-04, AT-7/AT-8) ---------
+
+    def agent_cmd_emitting_verdict(self, verdict: EntryGateAgentVerdict) -> str:
+        """A shell command standing in for an agent that emits ``verdict``
+        as the ONLY line on stdout -- the entry-gate Given-arrangement
+        (feature-delta D9, AT-7/AT-8). ``AgentInvocationResult.stdout`` is
+        the seam slice-04 wires into ``classify_entry_gate``."""
+        return f"sh -c \"printf '{verdict.value}\\n'\""
+
+    def agent_cmd_emitting_no_recognized_verdict(self) -> str:
+        """A shell command standing in for an agent whose stdout carries
+        free-form commentary but NO recognized entry-gate verdict token
+        (AT-7) -- the ``EntryGateVerdictMissing`` Given-arrangement."""
+        return "sh -c \"printf 'Investigated the item, looks fine to me.\\n'\""
+
+    def techdebt_item_annotated_escalated(self, item_id: str) -> bool:
+        """Whether ``item_id`` is STILL present in ``techdebt.md`` AND its
+        own line carries an ``escalated`` annotation -- the Mikado-escalation
+        observable (AT-8): NOT merged, NOT moved to ``paidtechdebt.md``, but
+        flagged in place for human follow-up. Port-exposed (file content),
+        never an internal struct field (Mandate 8 universe)."""
+        if not self.pile_path.exists():
+            return False
+        for line in self.pile_path.read_text(encoding="utf-8").splitlines():
+            if item_id in line:
+                return "escalated" in line.lower()
+        return False
 
     def prepare_colliding_branch_for_item(self, item_id: str) -> None:
         """Pre-create the branch name `des refactor` will try to create for
@@ -279,7 +365,9 @@ proposed_solution="extract a shared function"
             ledger=AtCompletionLedger(self.feature_id, self.project_root),
         )
 
-    def run_drain_one_item(self, agent_cmd: str = "true") -> object:
+    def run_drain_one_item(
+        self, agent_cmd: str = "sh -c \"printf 'REFACTOR_SAFE\\n'\""
+    ) -> object:
         """Layer 3 composition: drive ``RefactorDrainService.drain_one`` in-process."""
         return self.drain_service().drain_one(
             repo=self.project_root,
@@ -287,6 +375,82 @@ proposed_solution="extract a shared function"
             paid_path=self.paid_path,
             agent_cmd=agent_cmd,
             integration_branch=self.integration_branch,
+        )
+
+    # --- Given/When: slice-02 concurrent-drain doubles + driving surface ----
+
+    def agent_cmd_that_fixes_the_items_own_file(self) -> str:
+        """A shell command standing in for a well-behaved agent: reads the
+        item id out of the rendered prompt FILE it was handed (never a
+        harness internal -- the prompt content IS the item's own identity,
+        per D6/D7) and creates a file scoped to THAT item only. Two
+        concurrently-drained items therefore produce genuinely DISJOINT
+        diffs without the harness ever passing an item id on the command
+        line -- the same ``agent_cmd`` template runs unmodified for every
+        item, exactly as D6 (one shared shell-command knob) requires.
+
+        Emits REFACTOR_SAFE on stdout so slice-04's entry gate permits the
+        merge: the file-fix output is redirected to a file, so stdout carries
+        only the verdict token the gate classifies."""
+        return (
+            'sh -c \'ITEM=$(grep -oE "TD-[0-9]+" {prompt} | head -1); '
+            "echo fixed >> fixed-$ITEM.txt && git add fixed-$ITEM.txt "
+            "&& echo REFACTOR_SAFE'"
+        )
+
+    def drain_service_for_batch(
+        self,
+        *,
+        merge_lock,
+        env_provision,
+        barrier_parties: int,
+    ) -> RefactorDrainService:
+        """The slice-02 composition root: REAL ``GitWorktreeAdapter`` (the
+        worktree/venv isolation claim needs a real git tree to mean
+        anything) + a REAL ``ShellAgentInvocationAdapter`` wrapped in the
+        barrier-gated double (deterministic reasoning-lane-concurrency
+        proof) + the injected fake env-provisioning + merge-lock doubles
+        (deterministic serialization proof, Architecture of Reference:
+        driven-external ports default to a fake with output capture)."""
+        from .doubles import BarrierGatedAgentInvocationPort
+
+        return RefactorDrainService(
+            git_worktree=GitWorktreeAdapter(),
+            agent_invocation=BarrierGatedAgentInvocationPort(
+                delegate=ShellAgentInvocationAdapter(), parties=barrier_parties
+            ),
+            env_provision=env_provision,
+            impacted_test_selector=HeuristicImpactedTestSelectorAdapter(),
+            ledger=AtCompletionLedger(self.feature_id, self.project_root),
+        )
+
+    def run_drain_batch(
+        self,
+        *,
+        merge_lock,
+        env_provision,
+        item_count: int,
+        max_parallel: int | None = None,
+        agent_cmd: str | None = None,
+    ) -> object:
+        """Layer 3 composition: drive ``RefactorDrainService.drain_batch``
+        in-process -- the slice-02 driving surface every non-walking-skeleton
+        AT in this file uses (slice-02 has no NEW walking-skeleton of its
+        own; the feature's single WS is slice-01's, per the one-per-FEATURE
+        rule)."""
+        service = self.drain_service_for_batch(
+            merge_lock=merge_lock,
+            env_provision=env_provision,
+            barrier_parties=item_count,
+        )
+        return service.drain_batch(
+            repo=self.project_root,
+            pile_path=self.pile_path,
+            paid_path=self.paid_path,
+            agent_cmd=agent_cmd or self.agent_cmd_that_fixes_the_items_own_file(),
+            integration_branch=self.integration_branch,
+            max_parallel=max_parallel or item_count,
+            merge_lock=merge_lock,
         )
 
     # --- When: drive the real CLI entry in-process (Layer 2, L2 default) ---
@@ -310,6 +474,32 @@ proposed_solution="extract a shared function"
         try:
             return refactor_main(
                 ["--pile", str(self.pile_path), "--agent-cmd", agent_cmd]
+            )
+        finally:
+            os.chdir(previous_cwd)
+
+    def call_refactor_main_in_process_with_max_parallel(
+        self, *, max_parallel: int, agent_cmd: str
+    ) -> int:
+        """Layer 2 in-process: call the REAL ``des refactor`` CLI entry with
+        ``--max-parallel`` > 1 -- the CLI-to-``drain_batch`` wiring surface
+        (bugfix-refactor-cli-max-parallel-unwired). Mirrors
+        ``call_refactor_main_in_process`` exactly, only adding the
+        ``--max-parallel`` argv token."""
+        from des.cli.refactor import main as refactor_main
+
+        previous_cwd = Path.cwd()
+        os.chdir(self.project_root)
+        try:
+            return refactor_main(
+                [
+                    "--pile",
+                    str(self.pile_path),
+                    "--agent-cmd",
+                    agent_cmd,
+                    "--max-parallel",
+                    str(max_parallel),
+                ]
             )
         finally:
             os.chdir(previous_cwd)
@@ -359,6 +549,20 @@ proposed_solution="extract a shared function"
             text=True,
         )
         return bool(proc.stdout.strip())
+
+    def operator_branch(self) -> str:
+        """The operator's currently checked-out branch -- where a maintainer's
+        own ``git log`` looks and where a landed fix must become reachable."""
+        return self._git("branch", "--show-current").strip()
+
+    def operator_branch_tracked_paths(self) -> set[str]:
+        """Every path git tracks at the operator branch's tip -- the observable
+        surface for '.venv never committed' once the fix is landed onto the
+        operator's own branch (the integration branch is landed-then-removed,
+        so the committed content is read HERE, not on a surviving integration
+        branch)."""
+        output = self._git("ls-tree", "-r", "--name-only", self.operator_branch())
+        return {line.strip() for line in output.splitlines() if line.strip()}
 
     def integration_branch_head_sha(self) -> str:
         """The integration branch's current tip sha (before/after witness for

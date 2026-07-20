@@ -39,9 +39,18 @@ import json
 import sys
 from pathlib import Path
 
+from des.application.feature_end_batch_service import (
+    BatchIndeterminate,
+    BatchIneligible,
+    BatchManifestRefused,
+    BatchRefused,
+    parse_batch_manifest,
+    run_feature_end_batch,
+)
 from des.application.feature_end_cycle_service import (
     CycleIndeterminate,
     CycleRefusal,
+    CycleSuccess,
     run_feature_end_cycle,
 )
 from des.application.feature_end_sign_service import (
@@ -66,30 +75,33 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "KNOWN GAP, measured 2026-07-18 -- the feature-end EXAMINE cannot "
-            "be dispatched yet:\n"
-            "  The feature-end cycle prescribes an EXAMINE at step 2 of 5 (an\n"
-            "  independent, execution-observing walk of the FINISHED feature),\n"
-            "  but the DES phase vocabulary has NO word for a feature-SCOPE\n"
-            "  examine, so that dispatch is refused. Six refused dispatches,\n"
-            "  three legal paths tried, all rejected for different reasons.\n"
+            "FEATURE-END EXAMINE, resolved 2026-07-20 (feature "
+            "feature-end-examine-phase) -- the gap this epilog described "
+            "until today (the DES phase vocabulary had no word for a "
+            "feature-SCOPE examine) is closed:\n"
+            "  Dispatch `DES-PHASE: FEATURE_END_EXAMINE` + `DES-SLICE: "
+            "feature-end` -- `classify_atdd_pure_dispatch` accepts it "
+            "(regression-sealed: tests/des/unit/domain/test_des_marker_parser.py"
+            "::test_feature_end_examine_phase_with_feature_end_scope_is_valid). "
+            "The canonical per-slice `EXAMINE` at a `slice-NN` scope is "
+            "UNCHANGED and stays legal (the anti-regression twin in the same "
+            "file) -- the trap of widening FEATURE_END_PHASES with that word "
+            "was avoided by using a distinct one.\n"
             "\n"
-            "  DO NOT route around it with F_FINAL_REVIEW. That pair IS legal\n"
-            "  (it is a feature-end phase), but the word means the deep code\n"
-            "  REVIEW, not the examine -- using it writes the wrong step into\n"
-            "  the audit trail to satisfy a gate, which is the falsification\n"
-            "  these ledgers exist to prevent.\n"
+            "  This `run` verb already enforces it: for every charter under "
+            "docs/product/expectations/<feature-id>/ it requires a fresh "
+            "PASS `ExamineVerdict` recorded at `--slice feature-end` "
+            "(see `_check_feature_end_examine`); a missing/failed/stale "
+            "verdict refuses LOUD with the exact `des record-examine-verdict "
+            "--slice feature-end ...` remediation.\n"
             "\n"
-            "  CONSEQUENCE for planning: slice-level delivery is UNAFFECTED --\n"
-            "  a swarm can grind slices in parallel today. Only the feature-END\n"
-            "  seal waits. Plan the swarm on slices; hold feature-end until the\n"
-            "  phase word lands.\n"
-            "\n"
-            "  Fix in flight: feature `feature-end-examine-phase` adds the\n"
-            "  DISTINCT word FEATURE_END_EXAMINE. If you touch that code, note\n"
-            "  the trap: the canonical middle slot is ALREADY named EXAMINE and\n"
-            "  is used PER-SLICE -- widening FEATURE_END_PHASES with that word\n"
-            "  makes every per-slice examine illegal everywhere."
+            "  Known ceremony lag (not a functional gap): the "
+            "`feature-end-examine-phase` feature-delta's own Slice Plan row "
+            "still reads `pending` and has no SliceCommitVerified record, "
+            "even though its code is merged and its regression tests are "
+            "green on this branch -- close that bookkeeping via the normal "
+            "commit-slice flow when convenient, it does not block using the "
+            "phase word today."
         ),
     )
     verbs = parser.add_subparsers(dest="verb", required=True)
@@ -173,6 +185,36 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="The deep-review decision: APPROVED or REJECTED.",
     )
+
+    run_batch = verbs.add_parser(
+        "run-batch",
+        help=(
+            "Run the feature-end cycle over a SET of features, paying the "
+            "whole-tree full-suite cost ONCE for the whole batch."
+        ),
+        description=(
+            "Run the feature-end cycle over a manifest-declared SET of "
+            "features. The whole-tree full-suite leg runs EXACTLY ONCE for "
+            "the whole batch (D-3); every other leg, sign, and emit still "
+            "run PER FEATURE, and each feature still emits its OWN "
+            "FeatureEnd records. A malformed manifest refuses before any "
+            "gate is dispatched (GDP-1). A RED shared suite refuses the "
+            "WHOLE batch with zero member cycles run and zero FeatureEnd "
+            "records for any feature (D-4) -- never bisected."
+        ),
+    )
+    run_batch.add_argument(
+        "manifest",
+        help=(
+            "Path to a JSON array of {feature_id, feature_dir, "
+            "reviewer_agent_id, verdict} entries (>=1)."
+        ),
+    )
+    run_batch.add_argument(
+        "--repo",
+        required=True,
+        help="Path to the project root holding the .nwave/ ledger substrate.",
+    )
     return parser
 
 
@@ -199,20 +241,25 @@ def _run_sign(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_cycle(args: argparse.Namespace) -> int:
-    """Marshal args into the cycle use-case, print the result, return the exit code."""
-    outcome = run_feature_end_cycle(
-        repo_root=Path(args.repo),
-        feature_id=args.feature_id,
-        feature_dir=Path(args.feature_dir),
-        reviewer_agent_id=args.reviewer_agent_id,
-        verdict=args.verdict,
-    )
+def _member_cycle_payload(
+    feature_id: str,
+    outcome: CycleRefusal | CycleIndeterminate,
+    *,
+    verb: str,
+) -> dict[str, object]:
+    """The `FeatureEndCycleRefused` / `FeatureEndCycleIndeterminate` payload
+    shape for one member's cycle outcome, parameterized by `verb`.
+
+    SSOT for the payload SHAPE both `_run_cycle` (verb "run") and `_run_batch`
+    (verb "run-batch", per member line) emit -- extracting the shared shape
+    guarantees the two verbs stay byte-identical on every field beyond `verb`
+    itself (D-1: `run-batch` over a single-entry manifest is indistinguishable
+    from the classic `run` close)."""
     if isinstance(outcome, CycleRefusal):
         payload: dict[str, object] = {
             "event": "FeatureEndCycleRefused",
-            "verb": "run",
-            "feature_id": args.feature_id,
+            "verb": verb,
+            "feature_id": feature_id,
             "error": outcome.error,
         }
         # fix-feature-end-refusal-names-failing-tests (GDP-3): the full-suite
@@ -226,43 +273,155 @@ def _run_cycle(args: argparse.Namespace) -> int:
             payload["failing_count"] = outcome.failing_count
         if outcome.junit_artifact is not None:
             payload["junit_artifact"] = outcome.junit_artifact
-        _emit(payload)
+        return payload
+
+    # ADR-GV-002 D4: exit 3, mirroring run_contract_gate.py's existing
+    # local `_GATE_INDETERMINATE_EXIT_CODE` pattern -- a LOUD refusal to
+    # decide, never a fabricated FeatureEndCycleComplete over a leg the
+    # cycle never actually observed (DDD-CERT-2).
+    return {
+        "event": "FeatureEndCycleIndeterminate",
+        "verb": verb,
+        "feature_id": feature_id,
+        "error": outcome.reason,
+        "leg_census": {
+            "ran": outcome.leg_census.ran,
+            "not_applicable": outcome.leg_census.not_applicable,
+            "indeterminate": outcome.leg_census.indeterminate,
+        },
+    }
+
+
+def _member_cycle_success_payload(
+    feature_id: str, outcome: CycleSuccess, *, verb: str
+) -> dict[str, object]:
+    """The `FeatureEndCycleComplete` payload shape for one member's
+    successful cycle outcome (SSOT, mirrors :func:`_member_cycle_payload`)."""
+    return {
+        "event": "FeatureEndCycleComplete",
+        "verb": verb,
+        "feature_id": feature_id,
+        "verdict_hash": outcome.verdict_hash,
+        "leg_census": {
+            "ran": outcome.leg_census.ran,
+            "not_applicable": outcome.leg_census.not_applicable,
+            "indeterminate": outcome.leg_census.indeterminate,
+        },
+    }
+
+
+def _run_cycle(args: argparse.Namespace) -> int:
+    """Marshal args into the cycle use-case, print the result, return the exit code."""
+    outcome = run_feature_end_cycle(
+        repo_root=Path(args.repo),
+        feature_id=args.feature_id,
+        feature_dir=Path(args.feature_dir),
+        reviewer_agent_id=args.reviewer_agent_id,
+        verdict=args.verdict,
+    )
+    if isinstance(outcome, CycleRefusal):
+        _emit(_member_cycle_payload(args.feature_id, outcome, verb="run"))
         return 2
 
     if isinstance(outcome, CycleIndeterminate):
-        # ADR-GV-002 D4: exit 3, mirroring run_contract_gate.py's existing
-        # local `_GATE_INDETERMINATE_EXIT_CODE` pattern -- a LOUD refusal to
-        # decide, never a fabricated FeatureEndCycleComplete over a leg the
-        # cycle never actually observed (DDD-CERT-2).
+        _emit(_member_cycle_payload(args.feature_id, outcome, verb="run"))
+        return 3
+
+    _emit(_member_cycle_success_payload(args.feature_id, outcome, verb="run"))
+    return 0
+
+
+_MEMBER_EXIT_CODES = {
+    "FeatureEndCycleComplete": 0,
+    "FeatureEndCycleRefused": 2,
+    "FeatureEndCycleIndeterminate": 3,
+}
+
+
+def _run_batch(args: argparse.Namespace) -> int:
+    """Marshal args into the batch use-case, print JSON-lines, return the
+    worst-outcome-wins exit code (D-D9)."""
+    repo_root = Path(args.repo)
+    specs = parse_batch_manifest(Path(args.manifest))
+    if isinstance(specs, BatchManifestRefused):
         _emit(
             {
-                "event": "FeatureEndCycleIndeterminate",
-                "verb": "run",
-                "feature_id": args.feature_id,
+                "event": "FeatureEndBatchManifestRefused",
+                "verb": "run-batch",
+                "error": specs.error,
+            }
+        )
+        return 2
+
+    outcome = run_feature_end_batch(repo_root, specs)
+    if isinstance(outcome, BatchIneligible):
+        _emit(
+            {
+                "event": "FeatureEndBatchIneligible",
+                "verb": "run-batch",
+                "feature_id": outcome.feature_id,
+                "error": outcome.error,
+            }
+        )
+        return 2
+
+    if isinstance(outcome, BatchRefused):
+        payload: dict[str, object] = {
+            "event": "FeatureEndBatchRefused",
+            "verb": "run-batch",
+            "error": outcome.error,
+        }
+        if outcome.failing_tests is not None:
+            payload["failing_tests"] = list(outcome.failing_tests)
+        if outcome.failing_count is not None:
+            payload["failing_count"] = outcome.failing_count
+        if outcome.junit_artifact is not None:
+            payload["junit_artifact"] = outcome.junit_artifact
+        _emit(payload)
+        return 2
+
+    if isinstance(outcome, BatchIndeterminate):
+        _emit(
+            {
+                "event": "FeatureEndBatchIndeterminate",
+                "verb": "run-batch",
                 "error": outcome.reason,
-                "leg_census": {
-                    "ran": outcome.leg_census.ran,
-                    "not_applicable": outcome.leg_census.not_applicable,
-                    "indeterminate": outcome.leg_census.indeterminate,
-                },
             }
         )
         return 3
 
+    worst_exit = 0
+    succeeded = refused = indeterminate = 0
+    for feature_id, member_outcome in outcome.members:
+        if isinstance(member_outcome, (CycleRefusal, CycleIndeterminate)):
+            payload = _member_cycle_payload(
+                feature_id, member_outcome, verb="run-batch"
+            )
+        else:
+            payload = _member_cycle_success_payload(
+                feature_id, member_outcome, verb="run-batch"
+            )
+        _emit(payload)
+        member_exit = _MEMBER_EXIT_CODES[str(payload["event"])]
+        worst_exit = max(worst_exit, member_exit)
+        if payload["event"] == "FeatureEndCycleComplete":
+            succeeded += 1
+        elif payload["event"] == "FeatureEndCycleRefused":
+            refused += 1
+        else:
+            indeterminate += 1
+
     _emit(
         {
-            "event": "FeatureEndCycleComplete",
-            "verb": "run",
-            "feature_id": args.feature_id,
-            "verdict_hash": outcome.verdict_hash,
-            "leg_census": {
-                "ran": outcome.leg_census.ran,
-                "not_applicable": outcome.leg_census.not_applicable,
-                "indeterminate": outcome.leg_census.indeterminate,
-            },
+            "event": "FeatureEndBatchComplete",
+            "verb": "run-batch",
+            "members": len(outcome.members),
+            "succeeded": succeeded,
+            "refused": refused,
+            "indeterminate": indeterminate,
         }
     )
-    return 0
+    return worst_exit
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -270,6 +429,8 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.verb == "run":
         return _run_cycle(args)
+    if args.verb == "run-batch":
+        return _run_batch(args)
     return _run_sign(args)
 
 

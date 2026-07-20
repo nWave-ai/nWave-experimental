@@ -141,6 +141,31 @@ def _write_slice_plan(repo: Path, slice_ids: list[str]) -> None:
     (feature_dir / "feature-delta.md").write_text(text, encoding="utf-8")
 
 
+def _write_slice_plan_with_statuses(repo: Path, rows: list[tuple[str, str]]) -> None:
+    """Write a `[REF] Slice Plan` where each slice carries an EXPLICIT `Status`.
+
+    ``rows`` is ``[(slice_id, status), ...]``. The JIT carve-out that excludes
+    a not-yet-reached later slice from `missing` keys on this `Status` cell:
+    only a `pending` slice is JIT-deferrable; a `shipped` slice claims to be
+    delivered and so MUST carry a signed verdict (the keystone invariant of
+    `oss-hook-side-phase-injection` slice-01).
+    """
+    feature_dir = repo / "docs" / "feature" / _FEATURE_ID
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    body = "\n".join(
+        f"| {slice_id} | probe row for {slice_id} | {status} | | |"
+        for slice_id, status in rows
+    )
+    text = (
+        f"# Feature Delta: {_FEATURE_ID}\n\n"
+        "## Wave: DISCUSS / [REF] Slice Plan\n\n"
+        "| Slice | Value statement | Status | Annotation | Justification |\n"
+        "|-------|-----------------|--------|------------|---------------|\n"
+        f"{body}\n"
+    )
+    (feature_dir / "feature-delta.md").write_text(text, encoding="utf-8")
+
+
 def _write_feature_file(
     repo: Path, *, slice_id: str, skip: bool = False, filename: str | None = None
 ) -> Path:
@@ -454,4 +479,48 @@ def test_scaffold_only_feature_file_is_not_mistaken_for_a_reviewed_slice(
         f"expected DistillExitVerdictIncomplete -- got {outcome.decision_event!r}"
     )
     assert set(outcome.missing) == {_SLICE_01}
+    assert outcome.phase_record is None
+
+
+# ---------------------------------------------------------------------------
+# 5. NEGATIVE (`_shipped_`) -- a non-first slice whose `Status` is `shipped`
+#    but which carries NO signed verdict and NO `.feature` on disk must STILL
+#    BLOCK. `shipped` claims delivery, so it MUST be reviewed -- absence of a
+#    disk artifact is NOT the JIT signal here (the `pending` status is). This
+#    is the exact profile of the `oss-hook-side-phase-injection` slice-01
+#    keystone AT ("a planned slice missing its signed review keeps DISTILL
+#    open"): a carve-out keyed on disk-presence alone wrongly excludes it.
+# ---------------------------------------------------------------------------
+
+
+def test_shipped_non_first_slice_without_verdict_still_blocks(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    _write_slice_plan_with_statuses(
+        repo, [(_SLICE_01, "shipped"), (_SLICE_02, "shipped")]
+    )
+    _write_feature_file(repo, slice_id=_SLICE_01)
+    _seed_review_verdict(repo, _SLICE_01)
+    # slice-02: Status `shipped` but NO verdict and NO .feature on disk. A
+    # `shipped` slice claims delivery -- it must carry a signed review; its
+    # missing verdict is a real omission, never a JIT-not-yet-reached absence.
+
+    outcome = _run_gate(repo)
+
+    assert not outcome.allowed, (
+        "slice-02 is declared `shipped` in the plan but has no signed verdict "
+        "-- the gate must REFUSE, exactly as the keystone requires. A JIT "
+        "carve-out that keys on disk-absence alone wrongly clears it. Got "
+        f"allowed (exit_code={outcome.exit_code})"
+    )
+    assert outcome.decision_event == "DistillExitVerdictIncomplete", (
+        f"expected DistillExitVerdictIncomplete -- got {outcome.decision_event!r}"
+    )
+    assert set(outcome.missing) == {_SLICE_02}, (
+        "the block must name the shipped-but-unreviewed slice-02 -- only a "
+        f"`pending` later slice is JIT-deferrable. Got missing={outcome.missing!r}"
+    )
     assert outcome.phase_record is None

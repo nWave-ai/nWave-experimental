@@ -176,3 +176,94 @@ def test_real_wave_dispatch_missing_project_id_stays_unresolved(tmp_path: Path) 
     assert "missing project identity" in result.reason, (
         f"expected the missing-project-identity reason, got {result.reason!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# (c) THE BUG (3rd occurrence, unfenced-prose class) — the ASSISTANT's OWN
+#     message narrates the bare token "DES-WAVE" in plain English, with NO
+#     `<!-- DES-WAVE : x -->` marker syntax anywhere. FR-5 does not cover this:
+#     the message IS assistant-role (so role-scoping does not skip it) and the
+#     mention is UNFENCED (so `_strip_fenced_regions` does not remove it). At
+#     HEAD the bare-substring gate (`if "DES-WAVE" not in content`) matches the
+#     prose token, arms `saw_des_wave_marker`, and — no well-formed marker → no
+#     `declared_wave` → resolves to `_WaveOnlyUnresolved`, surfacing a false
+#     `WAVE_GATEOUT_INDETERMINATE` for the rest of the session.
+# ---------------------------------------------------------------------------
+
+
+def test_unfenced_prose_mention_of_bare_token_is_not_a_declaration(
+    tmp_path: Path,
+) -> None:
+    """An assistant narrating the words "DES-WAVE" in prose is not a declaration.
+
+    No `<!-- DES-WAVE : x -->` marker syntax appears anywhere — only the bare
+    token embedded in an ordinary English sentence (e.g. an orchestrator
+    explaining a gate to the human). `_resolve_wave_only_context` must resolve
+    ``None`` (genuine non-DES passthrough-allow), NOT a false-positive
+    ``_WaveOnlyUnresolved`` / ``WAVE_GATEOUT_INDETERMINATE``. The presence-check
+    must key on a WELL-FORMED marker (the same `<!-- DES-WAVE : x -->` pattern
+    the extraction logic uses), not the raw substring.
+    """
+    prose_only = (
+        "I looked into why the DES-WAVE gate-out fired earlier tonight. The "
+        "root cause is that the DES-WAVE substring guard matches any assistant "
+        "prose that merely mentions the token, even with no marker syntax at "
+        "all — so narrating the phrase 'DES-WAVE marker' in English trips it. "
+        "I have not dispatched any sub-agent and emitted no marker."
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [{"message": {"role": "assistant", "content": prose_only}}],
+    )
+
+    result = _resolve_wave_only_context(transcript, str(tmp_path), "nw-troubleshooter")
+
+    assert result is None, (
+        "an assistant message that mentions the bare token 'DES-WAVE' ONLY as "
+        "unfenced prose (no `<!-- DES-WAVE : x -->` marker syntax anywhere) "
+        "must NOT be treated as a wave-only self-declaration -- expected None "
+        f"(genuine non-DES passthrough-allow), got {result!r}. At HEAD the "
+        "presence gate keys on the RAW substring 'DES-WAVE' instead of a "
+        "well-formed marker, so the prose mention arms saw_des_wave_marker and "
+        "-- with no parseable declared_wave -- resolves to _WaveOnlyUnresolved, "
+        "a false-positive WAVE_GATEOUT_INDETERMINATE for an agent that never "
+        "emitted a marker (FR-6)."
+    )
+
+
+# ---------------------------------------------------------------------------
+# (d) PRESERVE THE OTHER GENUINE CASE — a real, well-formed DES-WAVE marker
+#     whose value is OUT-OF-VOCABULARY must still degrade LOUD. The fix keys
+#     the presence-check on the well-formed marker pattern; an out-of-vocab
+#     value still matches that pattern (`(\\S+)`), so it must still arm and
+#     resolve to _WaveOnlyUnresolved with the out-of-vocabulary reason.
+# ---------------------------------------------------------------------------
+
+
+def test_real_out_of_vocabulary_wave_marker_stays_unresolved(
+    tmp_path: Path,
+) -> None:
+    """A well-formed DES-WAVE marker with a non-governed value stays INDETERMINATE."""
+    dispatch_declaration = (
+        "<!-- DES-VALIDATION : required -->\n<!-- DES-WAVE : not-a-real-wave -->\n"
+        "<!-- DES-PROJECT-ID : some-project -->\n"
+    )
+    transcript = _write_transcript(
+        tmp_path,
+        [{"message": {"role": "assistant", "content": dispatch_declaration}}],
+    )
+
+    result = _resolve_wave_only_context(
+        transcript, str(tmp_path), "nw-solution-architect"
+    )
+
+    assert isinstance(result, _WaveOnlyUnresolved), (
+        "a real well-formed DES-WAVE marker with an out-of-vocabulary value "
+        f"must resolve to _WaveOnlyUnresolved (degrade LOUD) -- got {result!r}."
+    )
+    assert result.declared_wave == "not-a-real-wave", (
+        f"expected the raw out-of-vocab wave captured, got {result.declared_wave!r}"
+    )
+    assert "out-of-vocabulary" in result.reason, (
+        f"expected the out-of-vocabulary reason, got {result.reason!r}"
+    )

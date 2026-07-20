@@ -127,17 +127,26 @@ from pathlib import Path
 
 from des.adapters.driven.git.git_mutate import git_run
 from des.adapters.driven.git.git_subprocess import git_text as _git
+from des.adapters.driven.git.git_subprocess import is_ancestor as _is_ancestor
+from des.adapters.driven.git.git_subprocess import (
+    is_merged_contribution as _is_merged_contribution,
+)
+from des.adapters.driven.git.git_subprocess import (
+    resolve_default_base_ref as _resolve_default_base_ref,
+)
 from des.adapters.driven.logging.at_completion_ledger import (
     TELEMETRY_DIR_RELPATH,
     AtCompletionLedger,
     LedgerIntegrityViolation,
     active_feature_id,
 )
+from des.adapters.driven.refactor.git_worktree_adapter import GitWorktreeAdapter
 from des.application.blast_radius_measurement import (
     BlastRadiusInputRejected,
     BlastRadiusVerdict,
     measure_blast_radius,
 )
+from des.application.worktree_cleanup_service import WorktreeCleanupService
 from des.cli._identity_args import meaningful_identity
 from des.cli.carpaccio_format import GateError as _CarpaccioGateError
 from des.cli.carpaccio_format import is_slice_coupled as _is_slice_coupled
@@ -164,6 +173,92 @@ from des.domain.blast_radius import BlastRadiusConfigRejected
 from des.domain.examine_verdict_signing import charter_seal as _charter_seal
 from des.domain.repo_path_resolver import feature_delta_path as _feature_delta_path
 from des.domain.slice_id_trailer import extract_slice_ids
+
+
+# ---------------------------------------------------------------------------
+# Worktree-cleanup auto-trigger (parallel-work-cleans-up-after-merge-back
+# slice-01, D-2/D-3, ADR-SWARM-002; Ale 2026-07-19 ratified scope: the
+# auto-trigger ships INSIDE slice-01, not deferred to Open Question #1).
+# PURELY ADDITIVE post-commit side-effect, mirroring `_notify_feature_end_
+# unmissable`'s shape (best-effort-loud, never blocks/crashes an already-
+# landed commit) -- NOT a refusal gate like `_examine_gate_armed`, since
+# removing a worktree is a mechanical CONSEQUENCE of a commit succeeding,
+# never a precondition for it.
+# ---------------------------------------------------------------------------
+
+
+def _is_main_worktree(repo: Path) -> bool:
+    """True iff ``repo`` is its OWN repository's MAIN worktree.
+
+    Derived from git's own ``--git-dir``/``--git-common-dir`` (equal only
+    for the main worktree or a non-worktree repo; a LINKED worktree's
+    ``--git-dir`` is a subdirectory of the common dir). Fail-closed to
+    ``False`` on any git-state ambiguity -- disarming the sweep below is
+    always the safe default.
+
+    SAFETY (why this check exists at all): `des commit-slice --repo .` is
+    routinely invoked FROM INSIDE an ephemeral worktree for every ordinary
+    per-slice commit (see `nw-crafter-discipline-atdd-pure`). Without this
+    check, an auto-sweep could see SIBLING parallel worktrees sharing the
+    same `.git` and attempt to remove them from an unrelated commit inside
+    a completely different worktree -- armed ONLY on the main worktree
+    confines the sweep to the one place a "merge-back landed" is a
+    meaningful, safe signal.
+    """
+    try:
+        git_dir = _git(repo, "rev-parse", "--git-dir").strip()
+        common_dir = _git(repo, "rev-parse", "--git-common-dir").strip()
+    except subprocess.CalledProcessError:
+        return False
+    if not git_dir or not common_dir:
+        return False
+    return (repo / git_dir).resolve() == (repo / common_dir).resolve()
+
+
+def _worktree_cleanup_armed(repo: Path) -> bool:
+    """Whether the auto-cleanup sweep applies to this commit.
+
+    Armed ONLY when ``repo`` is the repository's own MAIN worktree (never a
+    linked worktree, see `_is_main_worktree`) AND at least one linked
+    worktree is currently registered. Fail-open-to-no-op, never fail-open-
+    to-mutate.
+    """
+    if not _is_main_worktree(repo):
+        return False
+    return bool(GitWorktreeAdapter().list_worktrees(repo))
+
+
+def _run_worktree_cleanup_sweep(repo: Path) -> None:
+    """Best-effort-loud (GDP-6): sweep for any registered LINKED worktree
+    whose branch is now a CONFIRMED ancestor of the resolved target branch
+    and remove it -- the worktree "disappears on its own" (the slice-01
+    charter promise) without a separate manual
+    `des verify-worktree-cleanup` call.
+
+    NEVER raises, NEVER blocks/affects the exit code above: the commit has
+    already landed by the time this runs. An unresolvable target branch
+    (`resolve_default_base_ref` returns `None` -- this repo's own de-facto
+    trunk is not always in its candidate list, DESIGN Open Question #2) is
+    a silent no-op: NOT guessing a target branch is safer than a false
+    removal. A git failure mid-sweep (e.g. `git worktree remove` refused)
+    is caught and printed as a diagnostic, matching
+    `_notify_feature_end_unmissable`'s own error-handling shape.
+    """
+    try:
+        if not _worktree_cleanup_armed(repo):
+            return
+        target_branch = _resolve_default_base_ref(repo)
+        if target_branch is None:
+            return
+        service = WorktreeCleanupService(
+            git_worktree=GitWorktreeAdapter(), merge_check=_is_merged_contribution
+        )
+        service.sweep(repo=repo, target_branch=target_branch, check_only=False)
+    except Exception as exc:
+        print(
+            "WARNING: des commit-slice could not run the worktree-cleanup "
+            f"auto-sweep for {repo}: {exc}"
+        )
 
 
 # The honest free-text degrade reason the committed-scope-digest step records
@@ -426,17 +521,6 @@ def _remote_tracking_ref(repo: Path) -> str | None:
         if candidate and not candidate.endswith("/HEAD"):
             return candidate
     return None
-
-
-def _is_ancestor(repo: Path, ancestor_sha: str, descendant_sha: str) -> bool:
-    """True iff ``ancestor_sha`` is reachable from ``descendant_sha``."""
-    result = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", ancestor_sha, descendant_sha],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0
 
 
 def _guard_head_not_behind_remote(repo: Path) -> dict[str, object] | None:
@@ -2149,6 +2233,14 @@ def main(argv: list[str] | None = None) -> int:
     # already succeeded and verified -- never affects the exit code above.
     if args.feature_id is not None:
         _notify_feature_end_unmissable(repo, args.feature_id)
+
+    # Step 8 (parallel-work-cleans-up-after-merge-back slice-01, D-2/D-3,
+    # ADR-SWARM-002): PURELY ADDITIVE worktree-cleanup auto-trigger. Never
+    # gated on --feature-id (unlike Step 7 above) -- a merge-back's worktree
+    # cleanup is not a feature-scoped concern. Armed only on the repo's own
+    # MAIN worktree (`_worktree_cleanup_armed`); a no-op everywhere else,
+    # including the ordinary in-worktree per-slice commit.
+    _run_worktree_cleanup_sweep(repo)
 
     verified = fold_in_exit_code == 0
     _emit(

@@ -78,6 +78,11 @@ LANE_PROFILES: dict[str, LaneProfile] = {
             "scenario_slice_tags",
             "at_review_verdict",
             "reuse_first_or_design_skip",
+            # A prefactoring-lane dispatch IS the recorded @prefactoring slice
+            # doing the assessed reshaping work -- checking its OWN
+            # feature-delta for a Prefactoring Assessment naming itself at
+            # dispatch time is circular (prefactoring-enforcement-wiring).
+            "prefactoring_assessment",
             "sustainability",
         ),
         annotation_token="prefactoring",
@@ -137,6 +142,10 @@ LANE_PROFILES: dict[str, LaneProfile] = {
             "scenario_slice_tags",
             "at_review_verdict",
             "reuse_first_or_design_skip",
+            # Mirrors the prefactoring lane: a charter dispatch is phaseless,
+            # non-code-facing, and writes no design -- it has no Prefactoring
+            # Assessment to be held to either (prefactoring-enforcement-wiring).
+            "prefactoring_assessment",
             "sustainability",
         ),
         annotation_token="charter",

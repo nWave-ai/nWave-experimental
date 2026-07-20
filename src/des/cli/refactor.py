@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from des.application.refactor_drain_service import DrainResult
+    from des.application.refactor_drain_service import BatchDrainResult, DrainResult
 
 
 #: The load-bearing shape of one pending pile item -- printed verbatim in the
@@ -39,7 +39,15 @@ _GRAMMAR_EXAMPLE = (
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Drain the single next pending pile item via the configured agent_cmd."""
+    """Drain pending pile item(s) via the configured agent_cmd.
+
+    ``--max-parallel 1`` (the default) drains exactly ONE item through
+    ``drain_one``, unchanged from before this fix. ``--max-parallel N`` for
+    N>1 routes to ``drain_batch`` instead -- previously `args.max_parallel`
+    was parsed but never consulted here, so the CLI always called
+    ``drain_one`` regardless of the flag (bugfix-refactor-cli-max-parallel-
+    unwired).
+    """
     args = _parse_args(argv)
 
     from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
@@ -68,10 +76,19 @@ def main(argv: list[str] | None = None) -> int:
         ledger=AtCompletionLedger("des-refactor-fixer-swarm", repo),
     )
     paid_path = args.pile.parent / "paidtechdebt.md"
-    # Parsed BEFORE drain_one runs: a successful drain rewrites the pile file
-    # (move_item), which would otherwise erase the very skipped-line evidence
-    # the refusal/AT-6 notice needs to report.
+    # Parsed BEFORE drain_one/drain_batch runs: a successful drain rewrites
+    # the pile file (move_item), which would otherwise erase the very
+    # skipped-line evidence the refusal/AT-6 notice needs to report.
     skipped_lines = parse_pile_report(args.pile).skipped_lines
+    if args.max_parallel > 1:
+        batch_result = service.drain_batch(
+            repo=repo,
+            pile_path=args.pile,
+            paid_path=paid_path,
+            agent_cmd=args.agent_cmd,
+            max_parallel=args.max_parallel,
+        )
+        return _report_batch(batch_result, DEFAULT_INTEGRATION_BRANCH, skipped_lines)
     result = service.drain_one(
         repo=repo,
         pile_path=args.pile,
@@ -110,6 +127,39 @@ def _report(
         print("0 parsed -- the pile is empty, nothing to drain")
         return 0
     return 0
+
+
+def _report_batch(
+    batch_result: BatchDrainResult,
+    integration_branch: str,
+    skipped_lines: tuple[str, ...],
+) -> int:
+    """Self-report a ``--max-parallel`` > 1 drain outcome on stdout/stderr --
+    one line per seeded item, mirroring ``_report``'s single-item shape so an
+    operator sees the same vocabulary regardless of which path ran."""
+    if not batch_result.results:
+        if skipped_lines:
+            print(_unparseable_pile_refusal(skipped_lines), file=sys.stderr)
+            return 1
+        print("0 parsed -- the pile is empty, nothing to drain")
+        return 0
+    exit_code = 0
+    for result in batch_result.results:
+        if result.drained:
+            print(
+                f"Drained 1 item: {result.item_id} -> "
+                f"merged into '{integration_branch}'"
+            )
+        else:
+            reason = result.reason or result.merge_blocked_reason
+            print(f"des refactor refused: {result.item_id}: {reason}", file=sys.stderr)
+            exit_code = 1
+    if skipped_lines:
+        # A malformed sibling line must never be silently swallowed just
+        # because at least one real item in the same pile successfully
+        # drained.
+        print(_skipped_lines_notice(skipped_lines))
+    return exit_code
 
 
 def _unparseable_pile_refusal(skipped_lines: tuple[str, ...]) -> str:

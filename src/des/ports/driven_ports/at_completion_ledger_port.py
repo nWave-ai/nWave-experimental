@@ -66,6 +66,57 @@ class AtCompletionLedgerPort(ABC):
         """Append one slice gate-boundary audit record. Returns the record."""
         ...
 
+    @abstractmethod
+    def read_records(
+        self,
+        *,
+        feature_id: str | None = None,
+        slice_id: str | None = None,
+        event_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Read every ledger record under the M7 fail-closed integrity contract."""
+        ...
+
+    @abstractmethod
+    def append_work_exhausted_event(
+        self,
+        event: str,
+        *,
+        timestamp: str,
+        gap_minutes: float,
+        reason: str,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one work-exhausted-ladder record. Returns the record.
+
+        autonomous-consolidation-and-bugfix-loops slice-02 (D-2/D-8): the
+        domain seam this port serves (`des.domain.work_exhausted_ladder`)
+        consumes exactly this write surface -- kept minimal to what the
+        domain invokes, per this port's own stated design intent.
+        """
+        ...
+
+    @abstractmethod
+    def append_bugfix_pipeline_event(
+        self,
+        event: str,
+        *,
+        defect_id: str,
+        timestamp: str,
+        stage: str | None = None,
+        reason: str | None = None,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one bugfix-pipeline stage-transition record. Returns the record.
+
+        autonomous-consolidation-and-bugfix-loops slice-03 (D-4/D-8): the
+        domain seam this port serves (`des.domain.bugfix_pipeline`) consumes
+        exactly this write surface -- kept minimal to what the domain
+        invokes, mirroring `append_work_exhausted_event` (slice-02's
+        sibling).
+        """
+        ...
+
 
 class LedgerFactoryPort(ABC):
     """Driven port: builds an ``AtCompletionLedgerPort`` for a feature/root.

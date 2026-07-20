@@ -373,6 +373,8 @@ DISCOVER(opt) → DIVERGE(opt) → DISCUSS(opt) → DESIGN(opt) → DEVOPS(opt) 
 | DISTILL | `/nw-distill` | acceptance-designer | BDD test scenarios (Given-When-Then) | **Mandatory** |
 | DELIVER | `/nw-deliver` | software-crafter | Working code via Outside-In TDD | **Mandatory** |
 
+> **DESIGN skip is NOT a self-serve default — the default is DESIGN RUNS; skipping requires explicit HUMAN authorization (ask).** (Ale 2026-07-19.) "Optional" means a human MAY authorize skipping the wave for a given feature — it does not license the spine/agent to skip it unilaterally. For a FEATURE, DESIGN runs by default; emitting a `## Wave: DESIGN / [REF] Design Skipped` witness is an AUTHORIZATION act, and per asymmetric-authority (controls veto, only humans authorize) it must be human-granted on ask, NEVER self-authored by the agent. A self-written skip witness is a violation — ASK before skipping. (Same discipline applies to any upstream-wave skip that pushes named decisions downstream.)
+
 **Cross-wave agents**: researcher, troubleshooter, documentarist, test-optimizer, security-analyst, agent-builder, workshopper (diagrams are produced via the `/nw-diagram` command, owned by the solution-architect — there is no separate visual-architect agent)
 **Reviewers**: 11 peer review agents (one per specialist + specialized reviewers)
 
