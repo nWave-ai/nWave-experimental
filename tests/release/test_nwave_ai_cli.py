@@ -41,9 +41,16 @@ class TestVersionResolution:
         """
         from importlib.metadata import PackageNotFoundError
 
+        import nwave_ai
+
         with patch("importlib.metadata.version", side_effect=PackageNotFoundError):
             result = _get_version()
-        assert result == "0.0.0-dev"
+        # Assert the FALLBACK MECHANISM, not the constant's current value: pinning
+        # the literal here duplicates the very constant under test, so a legitimate
+        # version bump breaks a test whose stated intent ("falls back to
+        # nwave_ai.__version__") is unaffected. Measured 2026-07-22: stamping 4.0.0
+        # for the beta turned this into the only CI-red shard.
+        assert result == nwave_ai.__version__
 
     def test_never_falls_back_to_nwave_package(self):
         """Given 'nwave-ai' lookup fails but 'nwave' is installed,

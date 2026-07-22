@@ -163,8 +163,37 @@ spine lane, not a bespoke convention: `des-refactor-fixer-swarm` slice-03 ships 
 `DES-MODE: find` classifier (`classify_find_dispatch`, `des_marker_parser.py`) that spine-
 recognizes a finder dispatch — exempt from the classic TDD-dispatch completeness check,
 same as `DES-MODE: refactor` — but nothing yet fires it periodically. THIS loop is that
-missing trigger. Dispatch an agent carrying `<!-- DES-MODE: find -->`, budgeted to run for
-~30 minutes, whose job is to actively scan for: SSOT/DRY violations, code smells,
+missing trigger. **DISPATCH THE CRAFTER REVIEWER (`@nw-software-crafter-reviewer`), NEVER A
+GENERIC AGENT.** WHY the reviewer specifically, and not a general-purpose agent nor the
+crafter itself: (1) finding tech debt is a CODE-VALIDATION act, and the reviewer already
+carries that prompt — the smell taxonomy, the quality lenses, the AT-completeness audit — as
+its own working knowledge, so it recognises a boundary violation or a shotgun-surgery
+cluster AS SUCH; (2) it is READ-ONLY by construction (no Write/Edit in its toolset), which
+is exactly the guarantee a finder needs — a finder reports, the DRAIN fixes, and a scanner
+that can edit will eventually edit; (3) it runs on a cheap model, which is what makes a
+30-minute exhaustive sweep affordable on a recurring cadence. The crafter is an
+IMPLEMENTATION role — dispatching it for a read-only sweep is a role mismatch and buys
+nothing the reviewer lacks. A generic agent has neither the taxonomy nor the architecture,
+so it reports what is VISIBLE (a long function, a duplicated literal) instead of what is
+COSTLY (a leaked abstraction, an invariant restated in two places that can drift apart) —
+and its rows read plausible while missing the debt that actually hurts, which is worse than
+an empty pile because it LOOKS like coverage.
+
+**MAKE IT READ THE ARCHITECTURE FIRST — explicitly, as step zero of the dispatch.** A
+boundary violation is only nameable against a DECLARED boundary; without one the agent
+invents a standard and reports style opinions. Instruct it, in the dispatch prompt, to read
+before scanning: the project's architecture SSOT (its ADR folder and architecture brief),
+the layering/structure declaration in the project's own instructions file, and the port and
+adapter definitions that name which direction a dependency is allowed to point. Then have it
+judge every structural finding AGAINST that declaration and CITE the rule it violates —
+"domain imports an adapter, forbidden by <the declared layering>" — never a bare "this looks
+coupled". A structural finding with no cited rule is an opinion, and opinions do not belong
+in the pile. Also have it load its own methodology skills at dispatch (`nw-quality-framework`
+plus whatever its spec names) — loading them is what arms the taxonomy.
+
+Have it carry `<!-- DES-MODE: find -->`, budgeted to run for
+~30 minutes, and scan READ-ONLY for:
+SSOT/DRY violations, code smells,
 architectural drift, performance issues, architectural-boundary violations, test-naming
 problems, test-performance issues, and test mistakes — the full checklist, exhaustive,
 not a subset. Resolve code facts (callers, dead code, duplication, structural smells)

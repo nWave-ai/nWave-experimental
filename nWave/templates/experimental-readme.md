@@ -2,9 +2,10 @@
 
 > ⚠️ **EXPERIMENTAL — NOT RECOMMENDED FOR PRODUCTION**
 >
-> This is an active development preview of nWave. Breaking changes are expected. The API, wave structure, and command behavior may change without notice. Use only for evaluation and feedback, not in production systems or critical projects.
->
-> This repository is **private and access-controlled** — published for preview only to collaborators. There is **no PyPI package** for this channel. You install **locally from this clone**.
+> - **Breaking changes are expected.** The API, wave structure, and command behavior may change without notice. Use only for evaluation and feedback, not in production systems or critical projects.
+> - **Private, no PyPI.** This repository is access-controlled — published for preview only to collaborators. You install **locally from this clone**.
+> - **Token usage is materially higher than a plain coding session.** This preview runs delivery in parallel (see *Parallel delivery*, below) — concurrent lanes mean concurrent contexts, each reasoning independently. Parallelism buys wall-clock time; it costs tokens.
+> - **Standing loops don't survive a restart.** A restart, a crash, or a killed session disarms nWave's background disciplines (see *Standing loops*, below) silently — nothing will tell you they stopped. If a session starts and nobody asks you about them, ask: *"check the standing loops and tell me which are active."* That one sentence is the whole recovery.
 
 **Build:** atdd-pure preview @ `{sha}` (source `feature/atdd-pure-staging` `{full_sha}`)
 
@@ -31,6 +32,61 @@ The seven waves form a methodology graph (entry point depends on your context):
 | **DELIVER** (`/nw-deliver`) | TDD implementation (red → green → refactor) |
 
 **Mandatory floor**: DISTILL → DELIVER. Every feature ends with acceptance tests and test-driven code. The five upstream waves (DISCOVER through DEVOPS) are optional; entry point depends on your context (greenfield, brownfield, bug fix, refactoring).
+
+---
+
+## What's New — Standing Loops, Parallel Delivery, DES Across the Waves
+
+### Standing loops
+
+The orchestrator can run recurring background disciplines while it works — standing checks it applies to its own behaviour:
+
+- routes feature work through the full methodology instead of firing off a lone agent
+- reconciles worktrees left behind by a task that stopped mid-way
+- never leaves a single in-flight task idling
+- checks delivery throughput before a heavy stage
+- makes every failure explain what went wrong, why, and how to fix it
+- drains two queues — one for tech debt, one for bugs — instead of letting them pile up
+
+They're session-scoped (see the warning at the top of this page): the orchestrator checks which loops are active at the start of a session and asks before arming any — starting background work is your call, not its own.
+
+### Parallel delivery — the worktree is the mechanism
+
+Delivery now runs in parallel, under one rule: **many cloud lanes, one lane on your box.** Reasoning work — investigating root causes, writing acceptance tests, reviewing — fans out across concurrent lanes, because it costs almost nothing on your machine. What stays serialized is the work that touches your machine directly: committing, running the full test suite, merging back.
+
+The mechanism that makes the fan-out safe is the **isolated worktree**: each unit of work gets its own checkout and its own environment, so concurrent agents never step on each other's files or share a test run. A unit's life cycle is create → author → implement → examine (an independent check that the result behaves as promised) → merge back (serially) → remove the worktree as soon as the merge succeeds.
+
+This also protects anything you have running. A build against your main checkout can restart a live service repeatedly while a fix is in progress; a build in an isolated worktree can't touch it.
+
+### Consolidation and bugfix loops
+
+Two of those loops turn what gets discovered mid-work into work that actually gets fixed, instead of a list that only grows.
+
+The **consolidation** loop watches the health of your main branch — drift, unmerged work, stale branches, failing gates — and files each real problem it finds as one queue item. The **bugfix** loop catches a defect the moment you hit it and works it through the full fix process, one bug per isolated worktree. A matching pair does the same for tech debt.
+
+Both loops are honest about what "done" means: an item counts as fixed when a ledger entry — a system record — says so, never just when a summary says so.
+
+### DES now spans the waves, not just delivery
+
+The Deterministic Execution System (DES) is nWave's enforcement layer. It guards every wave, not just DELIVER: DISCUSS, DESIGN, DEVOPS, DISTILL, DELIVER, and the feature-end cycle each get a generated dispatch envelope — the instructions and guardrails DES hands the wave — and every wave gate records its verdict to a ledger.
+
+The feature-end cycle is itself a phase you can invoke, rather than an informal habit: deep review, an end-to-end check against a real environment, a full test-suite run, and a signed, recorded result.
+
+That cycle is what catches *false-done* — work that looks finished piece by piece but doesn't hold together as a whole feature.
+
+### A CLI built for the assistant, not just for you
+
+`des`, nWave's CLI, is built so an LLM can drive it directly: every command either produces an artifact or fails with what went wrong, why, and exactly how to fix it — including which command to run next. The idea is that the orchestrating agent reaches for the tool that produces the right thing, instead of hand-assembling what a gate is checking for. For you, that mostly shows up as fewer dead ends: when a gate rejects something, the rejection carries its own fix.
+
+A few worth knowing:
+
+```bash
+des next                  # read-only: what the delivery loop says to do next
+des blast-radius          # how big a change really is, measured, not guessed
+des feature-end run       # close one feature (run-batch closes several on one full-suite run)
+des refactor --pile       # work through a tech-debt pile, one item per worktree
+des --help                # the full command list
+```
 
 ---
 
@@ -87,7 +143,9 @@ cd nWave-experimental
 uv run python -m nwave_ai.cli install
 ```
 
-**Then restart Claude Code.** The installer wires nWave into your global Claude Code configuration in `~/.claude/`.
+**Then restart Claude Code.** The installer wires nWave into your global Claude Code configuration in `~/.claude/`. Agents, skills, and commands are read once at startup, so a running session keeps the old versions until you reopen it.
+
+Restarting also disarms the standing loops. In the new session, ask: *"check the standing loops and tell me which are active."*
 
 **pip alternative** (Python 3.10+): `pip install -e . && nwave-ai install`
 
