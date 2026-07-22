@@ -168,8 +168,22 @@ _FEATURE_END_REVIEWER_AGENT = "nw-software-crafter-reviewer"
 _PHASE_AGENTS: dict[str, str] = {
     ATDDPurePhase.D_DISTILL.value: "nw-acceptance-designer",
     ATDDPurePhase.C_REVIEWER_AUDIT.value: _EXAMINER_AGENT,
+    ATDDPurePhase.FEATURE_END_EXAMINE.value: _EXAMINER_AGENT,
     FEATURE_END_RETURN_PHASE: _FEATURE_END_REVIEWER_AGENT,
 }
+
+#: The ONLY phases that legitimately fall back to the crafter default when
+#: absent from ``_PHASE_AGENTS`` (bugfix fix-feature-end-examine-agent, Cause
+#: C): the two code-facing DELIVER phases the SLIM crafter itself runs. Any
+#: OTHER phase absent from both this set and ``_PHASE_AGENTS`` is a routing
+#: gap, not a legitimate default -- ``_resolve_agent`` refuses it loudly
+#: instead of silently handing it to the crafter (a phase absent from
+#: ``_PHASE_AGENTS`` used to degrade SILENTLY toward the PERMISSIVE default,
+#: which is exactly how ``FEATURE_END_EXAMINE`` reached the crafter before
+#: this fix).
+_PHASES_DEFAULT_TO_CRAFTER: frozenset[str] = frozenset(
+    {ATDDPurePhase.A_GREEN.value, ATDDPurePhase.D_REFACTOR_COMMIT.value}
+)
 
 #: Lane -> agent override map for a cross-wave-child lane whose dispatch is
 #: NOT one of the 3 canonical DELIVER phases (RCA fix-po-charter-dispatch-
@@ -253,7 +267,32 @@ def _resolve_agent(phase: str | None, lane: str | None, wave: str | None = None)
     if lane is not None and lane in _LANE_AGENTS:
         return _LANE_AGENTS[lane]
     if phase is not None:
-        return _PHASE_AGENTS.get(phase, _DEFAULT_AGENT)
+        if phase in _PHASE_AGENTS:
+            return _PHASE_AGENTS[phase]
+        if phase in _PHASES_DEFAULT_TO_CRAFTER:
+            return _DEFAULT_AGENT
+        # FEATURE_END_PHASES (bare module-global, referenced live -- not
+        # snapshotted at import) is the feature-end-cycle's OWN closed-world
+        # SSOT (ADR-028 D6): a phase this generator's own --phase choices
+        # already treat as feature-end-coherent (_canonical_phase_values())
+        # is a legitimate crafter-default fallback too, never a routing gap
+        # -- this is what keeps `test_generator_phase_choices_derive_live_
+        # from_feature_end_phases_ssot`'s live-SSOT-propagation proof
+        # (patching this binding must widen what is generable) true after
+        # the closed-world refusal below is introduced.
+        if phase in FEATURE_END_PHASES:
+            return _DEFAULT_AGENT
+        raise ValueError(
+            f"phase {phase!r} is unmapped -- no agent is registered for it "
+            "in _PHASE_AGENTS, it is not in _PHASES_DEFAULT_TO_CRAFTER, and "
+            "it is not a FEATURE_END_PHASES member (the only phases that "
+            "legitimately default to the crafter). WHY: an unmapped phase "
+            "used to silently resolve to the crafter default, which is "
+            "unsafe for a non-code-facing phase. HOW: add phase "
+            f"{phase!r} to _PHASE_AGENTS in src/des/cli/dispatch.py naming "
+            "its correct agent, or to _PHASES_DEFAULT_TO_CRAFTER if it is "
+            "genuinely crafter-run."
+        )
     if wave is not None and wave in _WAVE_AGENTS:
         return _WAVE_AGENTS[wave]
     return _DEFAULT_AGENT
@@ -482,6 +521,31 @@ _BUGFIX_MISSING_FEATURE_DELTA_DESIGN_CONTEXT = (
 )
 
 
+#: QUALITY_GATES / TERMINATING_RUN / TIMEOUT_INSTRUCTION bodies for every
+#: NON-CODE-FACING agent (bugfix fix-feature-end-examine-agent, Cause B):
+#: these three sections used to branch ONLY on ``runs_tests``, so a
+#: non-code-facing dispatch (e.g. the examiner) still received crafter-shaped
+#: prose ("No new tests authored by the crafter", "STOP after the ATs are
+#: green") regardless of who was actually named -- the examiner's whole
+#: epistemic value is that she EXERCISES the real product surface and
+#: reports a VERDICT on what she OBSERVED, never runs/authors tests. Mirrors
+#: the SAME ``_NON_CODE_FACING_AGENTS`` SSOT set ``_skill_loading_body`` and
+#: ``_design_context_body`` already key on.
+_NON_CODE_FACING_QUALITY_GATES = (
+    "There are no tests to run and no ATs to author. Exercise the real "
+    "product surface directly and form a verdict on what you observed.\n"
+)
+_NON_CODE_FACING_TERMINATING_RUN = (
+    "Report your verdict on what you observed while exercising the real "
+    "product surface -- what worked, what did not, and any discrepancy "
+    "from the expected behavior.\n"
+)
+_NON_CODE_FACING_TIMEOUT_INSTRUCTION = (
+    "Target ~60 turns. STOP once you have exercised the real product "
+    "surface end to end and can report your verdict on what you observed.\n"
+)
+
+
 def _design_context_body(
     agent: str, feature_id: str, lane: str | None, project_root: Path
 ) -> str:
@@ -555,16 +619,20 @@ def _section_body(
             + (f"{intent}\n" if intent else "")
         ),
         "QUALITY_GATES": (
-            (
-                "All the slice's ATs pass before commit. No new tests authored "
-                "by the crafter.\n"
-            )
-            if runs_tests
+            _NON_CODE_FACING_QUALITY_GATES
+            if agent in _NON_CODE_FACING_AGENTS
             else (
-                f"The {wave} wave's own gate stack decides this dispatch "
-                f"(see nWave/waves/{wave}.yaml for the authoritative gate-ids "
-                "and the output contract). Author the wave's [REF] sections; "
-                "run no tests and write no production code.\n"
+                (
+                    "All the slice's ATs pass before commit. No new tests authored "
+                    "by the crafter.\n"
+                )
+                if runs_tests
+                else (
+                    f"The {wave} wave's own gate stack decides this dispatch "
+                    f"(see nWave/waves/{wave}.yaml for the authoritative gate-ids "
+                    "and the output contract). Author the wave's [REF] sections; "
+                    "run no tests and write no production code.\n"
+                )
             )
         ),
         "AT_COMPLETION_LEDGER": (
@@ -582,18 +650,24 @@ def _section_body(
             )
         ),
         "TERMINATING_RUN": (
-            "Report files created/modified; RAW pass/fail of the slice's ATs.\n"
+            _NON_CODE_FACING_TERMINATING_RUN
+            if agent in _NON_CODE_FACING_AGENTS
+            else "Report files created/modified; RAW pass/fail of the slice's ATs.\n"
         ),
         "TIMEOUT_INSTRUCTION": (
-            "Target ~60 turns -- a crafter/AT run needs room to seal, run static "
-            "checks, and REPORT after the last command; too small a budget kills "
-            "the agent between the work and its confirmation. STOP after the ATs "
-            "are green.\n"
-            if runs_tests
+            _NON_CODE_FACING_TIMEOUT_INSTRUCTION
+            if agent in _NON_CODE_FACING_AGENTS
             else (
-                f"Target ~60 turns. STOP once the {wave} wave's artifacts are "
-                "authored and their gate has been RUN -- report its raw verdict. "
-                "Do not continue into a downstream wave.\n"
+                "Target ~60 turns -- a crafter/AT run needs room to seal, run static "
+                "checks, and REPORT after the last command; too small a budget kills "
+                "the agent between the work and its confirmation. STOP after the ATs "
+                "are green.\n"
+                if runs_tests
+                else (
+                    f"Target ~60 turns. STOP once the {wave} wave's artifacts are "
+                    "authored and their gate has been RUN -- report its raw verdict. "
+                    "Do not continue into a downstream wave.\n"
+                )
             )
         ),
     }

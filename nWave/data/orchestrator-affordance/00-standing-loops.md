@@ -241,8 +241,17 @@ work, it does not DIY it.
 **`/loop 45m` — drain the tech-debt pile, if one exists.** Separate loop from sourcing
 above, on its own cadence, so each can be tuned independently. If `techdebt.md` has ≥1
 pending row and no drain is already running, invoke `des refactor --pile techdebt.md
---agent-cmd '<path>/refactor_agent.py {prompt}' --max-parallel N < /dev/null` (N is a
-CONFIGURABLE number of agents). **The `< /dev/null` is not optional and not cosmetic** — measured
+--agent-cmd '<path>/refactor_agent.py {prompt}' --max-parallel 1 < /dev/null` (ONE, not N -- see
+the safety note below; N is a
+CONFIGURABLE number of agents). **`--max-parallel` MUST be 1 until the batch path is gated.** Measured 2026-07-22: the batch
+lifecycle is a COPY of the single-item one, not a loop over it, and the copy never calls the
+entry gate at all -- `_entry_gate_refusal` has exactly one caller, on the single-item path. So
+`--max-parallel 1` refuses an unattested fix (fail-CLOSED, safe) while `--max-parallel N` MERGES
+unattested agent output, N at a time, onto an integration branch it then abandons. That is
+fail-OPEN: AI-authored changes land on the operator's branch with no safety verdict consulted.
+The parallelism is not worth it until the gate is wired on that path.
+
+**The `< /dev/null` is not optional and not cosmetic** — measured
 2026-07-22: every process in the drain's chain inherits the invoking stdin, and the headless agent
 at the end of it blocks forever reading a descriptor that delivers data and never reaches EOF,
 while the drain blocks draining the capture pipe that same blocked process holds open. Four levels,
