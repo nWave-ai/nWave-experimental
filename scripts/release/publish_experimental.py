@@ -123,6 +123,33 @@ RSYNC_FILTER: tuple[str, ...] = (
     "--exclude=.pre-commit-config.yaml",
     "--exclude=.mcp.json",
     "--exclude=uv.lock",
+    "--exclude=.tla-swarm-model/",
+    "--exclude=.claude/",
+    "--exclude=.test_durations",
+    "--exclude=.mailmap",
+    "--exclude=ARCH_TECH_DEBT.md",
+    "--exclude=CLAUDE.md",
+)
+
+#: Rsync deletes what is absent from the source -- but by default it PROTECTS what it
+#: was told to EXCLUDE, so a path published once before an exclude existed stays on the
+#: target forever and tightening the filter FREEZES it rather than removing it. Measured
+#: 2026-07-22: `.github/` was excluded and still published, and eleven `docs/`
+#: subdirectories the filter already excluded (analysis, internal, archive, feature,
+#: research, evolution, ux, adrs, architecture, marketplace, reports) were all live on
+#: the public target. The publish could never UN-publish anything. `--delete-excluded`
+#: is what makes an exclude retroactive.
+#: `--delete-excluded` is DANGEROUS without the protect rules below: it deletes what the
+#: filter excludes, and the filter excludes `.git` PRECISELY so the target's own git
+#: directory survives the sync. A blanket `--delete-excluded` therefore destroys the target
+#: repository -- caught in a dry run 2026-07-22 with `.git/`, `.git/objects`, `.git/refs`
+#: and `.git/HEAD` all listed for deletion. `P` (protect) is the rule that keeps a path on
+#: the receiver regardless of exclusion, and it must precede the delete flags.
+DELETE_MODE: tuple[str, ...] = (
+    "--filter=P /.git/",
+    "--filter=P /.git/**",
+    "--delete",
+    "--delete-excluded",
 )
 
 
@@ -287,12 +314,12 @@ def main() -> int:
         run(["gh", "repo", "clone", TARGET_SLUG, str(target), "--", "--depth", "1"])
 
         # 4) rsync the public surface + strip private agents (fail-closed) -
-        print("\n[3/5] rsync public surface (prod filter) + --delete")
+        print("\n[3/5] rsync public surface (prod filter) + --delete --delete-excluded")
         rsync_exit = run(
             [
                 "rsync",
                 "-a",
-                "--delete",
+                *DELETE_MODE,
                 *RSYNC_FILTER,
                 f"{export}/",
                 f"{target}/",
