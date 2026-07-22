@@ -70,6 +70,7 @@ from des.cli.carpaccio_format import (
     check_carpaccio,
     count_net_new_pytest_regression_ats,
     count_pytest_regression_ats,
+    native_regression_at_discovery,
     parse_scenarios,
     parse_slice_plan,
     pytest_regression_content_hash,
@@ -422,7 +423,7 @@ def check_at_review(
     feature_id: str,
     entering_slice: str,
     scenarios: list[Scenario],
-    at_kind: Literal["gherkin", "pytest-regression"] = "gherkin",
+    at_kind: Literal["gherkin", "pytest-regression", "native-regression"] = "gherkin",
     regression_test_file: Path | None = None,
     *,
     plan: SlicePlan | None = None,
@@ -592,7 +593,7 @@ def _check_verdict_record(
     feature_id: str,
     entering_slice: str,
     scenarios: list[Scenario],
-    at_kind: Literal["gherkin", "pytest-regression"],
+    at_kind: Literal["gherkin", "pytest-regression", "native-regression"],
     regression_test_file: Path | None,
 ) -> None:
     """The legacy ``ATReviewVerdict`` record check -- extracted verbatim.
@@ -617,6 +618,10 @@ def _check_verdict_record(
             entering_slice=entering_slice,
         )
         expected_hash = pytest_regression_content_hash(regression_test_file)
+    elif at_kind == "native-regression":
+        assert regression_test_file is not None  # guarded by check_at_review
+        at_ids, expected_hash = native_regression_at_discovery(regression_test_file)
+        at_count = len(at_ids)
     else:
         slice_scenarios = _slice_scenarios(scenarios, entering_slice)
         at_count = len(slice_scenarios)
@@ -809,14 +814,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--at-kind",
-        choices=["gherkin", "pytest-regression"],
+        choices=["gherkin", "pytest-regression", "native-regression"],
         default="gherkin",
         help=(
             "AT-discovery mode (ADR-001, fix-pre-push-hook-dual-installer-"
-            "collision). 'gherkin' (default) discovers ATs from .feature "
+            "collision; 'native-regression' added fix-rust-regression-at-"
+            "kind-wiring). 'gherkin' (default) discovers ATs from .feature "
             "Scenario blocks -- existing callers see byte-identical behavior. "
             "'pytest-regression' AST-counts module-level test_* functions in "
-            "--regression-test-file."
+            "--regression-test-file. 'native-regression' resolves the "
+            "AT-discovery facet from --regression-test-file's own suffix via "
+            "the unified runner port (pytest .py / cargo-test .rs)."
         ),
     )
     parser.add_argument(
@@ -876,9 +884,13 @@ def main(argv: list[str] | None = None) -> int:
         _emit_sad_path_floor(repo, feature_id, entering_slice)
 
     try:
-        if at_kind == "pytest-regression" and regression_test_file is None:
+        if (
+            at_kind in ("pytest-regression", "native-regression")
+            and regression_test_file is None
+        ):
             # Only the CLI's own arg-parsing can mis-wire this combination
-            # (ADR-001 DD-7): `check_carpaccio`/`check_at_review` raise
+            # (ADR-001 DD-7; extended fix-rust-regression-at-kind-wiring for
+            # native-regression): `check_carpaccio`/`check_at_review` raise
             # `ValueError` on it (a programming-contract violation), so the
             # CLI shell enforces it itself as a `GateError` diagnostic before
             # either function is ever called with `regression_test_file=None`.
@@ -886,10 +898,8 @@ def main(argv: list[str] | None = None) -> int:
                 2,
                 {
                     "event": "MalformedInput",
-                    "cause": "the pytest regression-test file",
-                    "error": (
-                        "--at-kind=pytest-regression requires --regression-test-file"
-                    ),
+                    "cause": "the regression-test file",
+                    "error": (f"--at-kind={at_kind} requires --regression-test-file"),
                 },
             )
         delta_path = _feature_delta_path(repo, feature_id)

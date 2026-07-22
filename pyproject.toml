@@ -27,7 +27,7 @@ packages = ["src/des", "nwave_ai"]
 
 [project]
 name = "nwave"
-version = "3.21.0+atddpure.4cd1e5a28"
+version = "4.0.0+atddpure.19e0dae03"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -104,6 +104,7 @@ dev = [
     "pytest-describe>=3.2.0",
     "pytest-watch>=4.2.0",
     "pytest-timeout>=2.3.1",
+    "pytest-split>=0.11.0",
     "allure-pytest>=2.13.0",
     "respx>=0.20.0",
     "hypothesis>=6.155.7",
@@ -118,7 +119,18 @@ dev = [
     # Git & release
     "pre-commit>=3.6.0",
     "commitizen>=4.16.4",
-    "gitlint>=0.19.0",
+    # `gitlint-core` (not the `gitlint` meta-package) — the meta-package forces the
+    # `trusted-deps` extra, which exact-pins `sh==1.14.3` (CVE-2026-54552 /
+    # GHSA-q38v-wp89-2w55, incomplete privilege drop in `sh`'s `_uid` option).
+    # gitlint-core provides the same `gitlint` console script via its own
+    # [project.scripts] entry point, so nothing is lost. Explicit `sh` floor
+    # below picks the patched release; gitlint-core 0.19.1's actual `sh` usage
+    # (see gitlint/git.py) is limited to `sh.git(...)` with `_tty_out`/`_cwd`/
+    # `_ok_code` — never `_uid` — and was verified empirically against sh 2.3.0
+    # (identical gitlint output/exit codes vs. sh 1.14.3 for --staged/--msg-filename
+    # and CT1/T7 rule enforcement) before this pin was raised.
+    "gitlint-core>=0.19.0",
+    "sh>=2.2.4; sys_platform != 'win32'",
     # Task runner (replaces Pipfile [scripts]; run via `uv run poe <task>`)
     "poethepoet>=0.47.0",
     # Utilities
@@ -179,7 +191,7 @@ nwave-lang-typescript = "scripts.install.plugins.nwave_lang_typescript:NwaveLang
 # The pipeline auto-bumps from the public repo's current version.
 # Only set this higher to force a version jump (e.g., 1.1.0 → 2.0.0).
 # Leave unchanged for normal patch releases.
-public_version = "1.1.0"
+public_version = "4.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

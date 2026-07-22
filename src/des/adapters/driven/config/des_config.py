@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from des.domain.blast_radius import BlastRadiusConfigRejected, BlastRadiusThresholds
 from des.domain.nwave_dir_gitignore import ensure_nwave_gitignore
+from des.domain.nwave_root import resolve_nwave_root
 from des.domain.rigor.review_step_registry import (
     REVIEW_STEP_CATALOG,
     ResolvedReviewStepSet,
@@ -74,7 +75,7 @@ class DESConfig:
                 (keyword-only; defaults to ~/.nwave/global-config.json)
         """
         if config_path is None:
-            effective_cwd = cwd or Path.cwd()
+            effective_cwd = cwd or resolve_nwave_root()
             config_path = effective_cwd / ".nwave" / "des-config.json"
 
         self._config_path = config_path

@@ -26,7 +26,9 @@ stdlib + the resolved interpreter only.
 
 from __future__ import annotations
 
+import ast
 import contextlib
+import hashlib
 import os
 import signal
 import subprocess
@@ -34,6 +36,7 @@ import tempfile
 from typing import IO, TYPE_CHECKING
 
 from des.ports.test_runner_port import (
+    AtDiscoveryResult,
     ListScope,
     RunnerAdapterUnavailable,
     RunVerdict,
@@ -279,7 +282,92 @@ def list_pytest_scope(
     )
 
 
+# ---------------------------------------------------------------------------
+# pytest at-discovery facet (fix-rust-regression-at-kind-wiring) -- a
+# hardened relocation of ``carpaccio_format.count_pytest_regression_ats`` /
+# ``pytest_regression_content_hash``, widened to ALSO walk class-nested
+# ``Test*.test_*`` methods (F-AT-DETECTION-IS-LANGUAGE-BOUND: the original
+# walked ``tree.body`` only, never recursing into a class body).
+# ---------------------------------------------------------------------------
+
+
+def _collect_pytest_test_names(tree: ast.Module) -> list[str]:
+    """Module-level ``test_*`` function names PLUS class-nested ``test_*``
+    method names (one level deep -- ``class Test*: def test_*``), excluding
+    any ``@pytest.fixture``/``@fixture``-decorated ``test_*``-named def.
+    """
+    from des.cli.carpaccio_format import _has_fixture_decorator
+
+    names: list[str] = []
+    for node in tree.body:
+        if (
+            isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name.startswith("test_")
+            and not _has_fixture_decorator(node)
+        ):
+            names.append(node.name)
+        elif isinstance(node, ast.ClassDef):
+            for member in node.body:
+                if (
+                    isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef)
+                    and member.name.startswith("test_")
+                    and not _has_fixture_decorator(member)
+                ):
+                    names.append(member.name)
+    return names
+
+
+def discover_pytest_ats(
+    adapter: RunnerAdapter,
+    target_root: Path,
+    regression_test_file: Path,
+) -> AtDiscoveryResult:
+    """Discover the ``test_*`` AT identities a pytest regression file carries.
+
+    Reads the raw bytes ONCE (both the AST scan and the content-hash seal
+    the SAME bytes -- no read-time-of-check/read-time-of-use gap), counts
+    module-level AND class-nested ``test_*``/``async def test_*`` functions,
+    and returns their names as ``at_ids`` alongside a sha256 content seal.
+    Degrade-LOUD (``RunnerAdapterUnavailable``, never a silent empty
+    discovery) on an unreadable file, a parse failure, or zero discovered
+    tests.
+    """
+    del target_root  # unused: AT-discovery scopes to the ONE declared file
+    try:
+        source = regression_test_file.read_bytes()
+    except OSError as exc:
+        raise RunnerAdapterUnavailable(
+            adapter.name, reason=f"cannot read {regression_test_file}: {exc}"
+        ) from exc
+    try:
+        text = source.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=f"cannot decode {regression_test_file} as UTF-8: {exc}",
+        ) from exc
+    try:
+        tree = ast.parse(text, filename=str(regression_test_file))
+    except SyntaxError as exc:
+        raise RunnerAdapterUnavailable(
+            adapter.name, reason=f"cannot parse {regression_test_file}: {exc}"
+        ) from exc
+    at_ids = _collect_pytest_test_names(tree)
+    if not at_ids:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                f"zero test_* functions found in {regression_test_file} "
+                "(malformed regression file)"
+            ),
+        )
+    return AtDiscoveryResult(
+        at_ids=tuple(at_ids), content_hash=hashlib.sha256(source).hexdigest()
+    )
+
+
 __all__ = [
+    "discover_pytest_ats",
     "list_pytest_scope",
     "pytest_interpreter",
     "run_pytest_reaped",

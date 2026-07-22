@@ -61,22 +61,61 @@ INPUT: "{bug-description}"
       └─ Record the verdict via `des record-examine-verdict` BEFORE COMMIT; PASS gates the commit
       └─ A_GREEN → EXAMINE → COMMIT — the same DoD as /nw-execute; examine is NEVER skipped
 
-LANE MAP — so the orchestrator parallelizes BY CONSTRUCTION, not by deduction:
-  ☁️ cloud  (fan-out over N defects, ~0 box cost): Phase 1 RCA · Phase 0-charter · Phase 3a AT authoring
-  🔒 box    (ONE box, serialized — one defect at a time): RED seal (verify-red-green) · Phase 3b crafter
-            GREEN · Vera EXAMINE · commit-slice
-  Across N defects it is a PIPELINE, not a swarm: fan the cloud lanes out, then feed defects through the
-  single box lane one at a time — almost all the speedup, zero disk, zero lock, zero merge conflicts.
-  NO worktree as a parallelism mechanism (cargo does not share target/: either N×20GB + N cold builds,
-  or serialize on the lock — exactly what a swarm was meant to avoid). A swarm does not multiply the box.
+LANE MAP — the throughput doctrine is NOT restated here. Its SSOT is the `nw-throughput` skill
+  (`~/.claude/skills/nw-throughput/SKILL.md`) — LOAD IT; this map only names where THIS workflow's
+  phases fall inside it. (A previous restatement here DRIFTED from that SSOT and taught the opposite:
+  it put the crafter inside the serialized lane and banned worktrees outright. Point, never restate.)
+  ☁️ cloud  (fan out over N defects, ~0 box cost — the SSOT's "run every LLM stage concurrently"):
+            Phase 1 RCA · Phase 0-charter · Phase 3a AT authoring · Phase 3b crafter GREEN · Vera EXAMINE
+  🔒 box    (ONE at a time — the SSOT's "at most ONE box-bound GATE"): the RED seal (verify-red-green),
+            the whole-tree/scoped verification legs, and commit-slice's seal + the merge-back write
+  WORKTREES ARE THE PARALLELISM MECHANISM, not an anti-pattern: the SSOT's Move 0 is "one sub-orchestrator
+  per worktree", and the shipped machinery does exactly this (`des refactor --pile --max-parallel N`, each
+  item isolated in its OWN worktree+venv; feature `parallel-work-cleans-up-after-merge-back`). N crafters in
+  N isolated worktrees do NOT contend: a crafter runs only its own SCOPED tests, not the whole tree.
+  What a swarm never multiplies is the BOX — so the SEAL/verification legs and the merge-back serialize
+  behind one lock, while the reasoning lanes fan out. Size N from the TARGET's own measured per-worktree
+  provisioning cost (disk + build warm-up, whatever its toolchain charges) — measure it, never assume it,
+  and never let one ecosystem's cost model become a universal ban.
 ```
 
 ## Execution Steps
 
+### Phase 0-worktree: create the isolated worktree BEFORE anything touches the tree
+
+**This is step ZERO of every bugfix, and it is not optional.** Before the first phase that
+writes a file — that is, before Phase 3a authors a test and long before Phase 3b touches
+production — create an isolated worktree and do ALL tree-touching work inside it:
+
+```
+git worktree add -b bugfix/<name> <worktrees-root>/<name> <trunk-branch>
+```
+
+then provision its environment the way the target project does (its own venv / module dir /
+build dir — never share the trunk's). NEVER run the fix in the current or trunk working tree.
+On success: merge the branch back into trunk, then REMOVE the worktree — cleanup is part of
+finishing the fix, not something left for the hygiene sweep.
+
+Three reasons, and each one alone is sufficient:
+1. **Concurrent writers.** The standing loops dispatch agents that write to the tree (tech-debt
+   find/drain, bugfix drain). The moment any of them is armed, "mine is the only quiet lane" is
+   false — two agents writing one working tree is exactly the race the worktree prevents.
+2. **A red trunk is not yours to cause.** A fix that breaks mid-flight leaves trunk broken for
+   every other lane; in a worktree it breaks only itself.
+3. **A LIVE system must not be rebuilt under the operator's feet** (measured 2026-07-22): where
+   the running product hot-reloads on binary/artifact mtime, a crafter building on trunk restarts
+   the LIVE instance on every build, repeatedly, mid-fix. The worktree is what isolates a running
+   daemon from the crafter's build churn — this reason is invisible until it bites, so treat the
+   worktree as mandatory rather than deciding case by case.
+
+Gate: the worktree exists and every subsequent phase runs inside it. If you find yourself in
+Phase 3a or 3b having never created one, STOP and create it before the next write.
+
 > **Phase 1 (RCA) and Phase 0-charter both start at t=0, in parallel.** They are two
 > INDEPENDENT derivations of the same bug — Phase 1 from the CODE, Phase 0-charter from the
 > OBSERVABLE — and neither depends on the other. Dispatch them together; do NOT serialize the
-> charter after the RCA. Both are ☁️ cloud lanes (fan out over N defects at ~0 box cost).
+> charter after the RCA. Both are ☁️ cloud lanes (fan out over N defects at ~0 box cost) and
+> are the ONLY phases that may start before the worktree exists, since neither writes to the tree.
 
 ### Phase 0-charter: Expectation Charter (t=0, parallel with RCA)
 

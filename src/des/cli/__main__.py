@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import inspect
 import sys
 from dataclasses import dataclass
 
@@ -481,13 +482,45 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
 )
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _describe(row: _SubcommandRow) -> str:
+    """Derive a one-line description for ``row`` from its module docstring.
+
+    Reuses each subcommand module's own docstring first line as the
+    canonical description (SSOT-safe: the description cannot drift out of
+    sync with the module's real behavior the way a hand-duplicated string
+    could). Only called when building the top-level ``des --help`` listing
+    (see ``with_descriptions`` in ``_build_parser``) — never on normal
+    subcommand dispatch, so this import cost is paid only for ``--help``
+    invocations, not for every ``des`` call.
+
+    Falls back to the bare subcommand name (today's behavior) if the module
+    fails to import or carries no docstring — a broken/optional module must
+    not take down the top-level ``--help`` listing for every OTHER
+    subcommand.
+    """
+    try:
+        module = importlib.import_module(row.module_path)
+    except Exception:
+        return row.name
+    doc = inspect.getdoc(module)
+    if not doc:
+        return row.name
+    first_line = doc.strip().splitlines()[0].strip()
+    return first_line or row.name
+
+
+def _build_parser(*, with_descriptions: bool = False) -> argparse.ArgumentParser:
     """Build the top-level parser with one subparser per registry row.
 
     Subparsers are registered with ``add_help=False`` so per-subcommand
     ``--help`` flows to the underlying module's argparse instead of being
     intercepted here (DDD-5). The dispatcher's own ``--help`` lists every
-    registered subcommand name (DDD-4).
+    registered subcommand name (DDD-4) together with a real one-line
+    description (derived from the module docstring, see ``_describe``) when
+    ``with_descriptions=True`` — the top-level-``--help``-only path. Normal
+    subcommand dispatch builds with ``with_descriptions=False`` (the
+    default) so it never pays the per-module import cost for a help string
+    nobody renders on that invocation.
     """
     parser = argparse.ArgumentParser(
         prog="des",
@@ -495,7 +528,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
     for row in _REGISTRY:
-        subparsers.add_parser(row.name, add_help=False, help=row.name)
+        help_text = _describe(row) if with_descriptions else row.name
+        subparsers.add_parser(row.name, add_help=False, help=help_text)
     return parser
 
 
@@ -506,9 +540,16 @@ def main(argv: list[str] | None = None) -> int:
     its registry row, lazily imports the module, and delegates the
     remaining ``argv`` to that module's ``main`` function. The subcommand's
     return value becomes this process's exit code unchanged (DDD-6).
+
+    The top-level parser is built with real per-subcommand descriptions
+    only when this invocation IS the top-level ``des --help``/``-h`` (no
+    subcommand token consumed yet) — every other invocation (including
+    ``des <sub> --help``, forwarded to the subcommand's own argparse
+    unconsumed per DDD-5) builds the cheap, import-free parser.
     """
     raw_argv = sys.argv[1:] if argv is None else argv
-    parser = _build_parser()
+    wants_top_level_help = bool(raw_argv) and raw_argv[0] in ("-h", "--help")
+    parser = _build_parser(with_descriptions=wants_top_level_help)
     parsed, remaining = parser.parse_known_args(raw_argv)
     row = next(r for r in _REGISTRY if r.name == parsed.subcommand)
     module = importlib.import_module(row.module_path)

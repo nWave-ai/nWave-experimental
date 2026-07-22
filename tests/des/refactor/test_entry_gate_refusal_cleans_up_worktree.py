@@ -1,5 +1,3 @@
-# @feature-des-refactor-fixer-swarm
-# @slice-01
 """Regression test -- bugfix-refactor-entry-gate-worktree-leak.
 
 RCA (feature-end EXAMINE, ``nw-user-examiner`` black-box CLI run):

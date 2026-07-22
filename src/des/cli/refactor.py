@@ -47,8 +47,18 @@ def main(argv: list[str] | None = None) -> int:
     was parsed but never consulted here, so the CLI always called
     ``drain_one`` regardless of the flag (bugfix-refactor-cli-max-parallel-
     unwired).
+
+    ``--driver loop`` refuses immediately, before any import, agent
+    dispatch, or pile access -- `args.driver` was parsed but never consulted
+    anywhere, so `--driver loop` silently behaved identically to the
+    `python` default (bugfix-refactor-driver-loop-dead-code, GDP-6
+    silent-wrong). `--driver python` and the bare default are unaffected.
     """
     args = _parse_args(argv)
+
+    if args.driver == "loop":
+        print(_driver_loop_refusal(), file=sys.stderr)
+        return 1
 
     from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
     from des.adapters.driven.refactor.git_worktree_adapter import GitWorktreeAdapter
@@ -160,6 +170,17 @@ def _report_batch(
         # drained.
         print(_skipped_lines_notice(skipped_lines))
     return exit_code
+
+
+def _driver_loop_refusal() -> str:
+    """WHAT/WHY/HOW for `--driver loop`: names the requested driver, states
+    it is not implemented yet, and points at `python` (the working default)
+    as the concrete next step."""
+    return (
+        "des refactor refused: --driver loop is not implemented yet -- "
+        "use --driver python (the working default) or omit --driver "
+        "entirely."
+    )
 
 
 def _unparseable_pile_refusal(skipped_lines: tuple[str, ...]) -> str:

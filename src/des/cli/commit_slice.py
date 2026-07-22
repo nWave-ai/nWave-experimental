@@ -117,6 +117,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import inspect
 import json
 import os
 import re
@@ -150,6 +151,9 @@ from des.application.worktree_cleanup_service import WorktreeCleanupService
 from des.cli._identity_args import meaningful_identity
 from des.cli.carpaccio_format import GateError as _CarpaccioGateError
 from des.cli.carpaccio_format import is_slice_coupled as _is_slice_coupled
+from des.cli.carpaccio_format import (
+    mark_slice_status_shipped as _mark_slice_status_shipped,
+)
 from des.cli.carpaccio_format import parse_slice_plan as _parse_slice_plan
 from des.cli.record_examine_verdict import examine_ledger_path as _examine_ledger_path
 from des.cli.run_contract_gate import (
@@ -296,6 +300,56 @@ _REVIEWED_BY_LINE_RE = re.compile(r"^Reviewed-by:.*$", re.MULTILINE)
 # ``des record-at-review-verdict`` records the acceptance-designer's approval.
 _AT_REVIEW_VERDICT_EVENT = "ATReviewVerdict"
 _VERDICT_APPROVED = "APPROVED"
+
+
+# ---------------------------------------------------------------------------
+# Slice-Plan Status column sync (F-SLICE-PLAN-STATUS-COLUMN-NEVER-SYNCED,
+# GDP-1/4/6): `des commit-slice` already APPENDS a `SliceCommitVerified`
+# ledger record on success but never wrote back to the feature-delta.md
+# `[REF] Slice Plan` markdown table -- so a genuinely-shipped slice could
+# sit on disk with a stale `pending` row indefinitely, and every consumer
+# that reads the table (an orchestrator, `des next`, a human, another
+# instance) inherited the lie. PURELY ADDITIVE: runs strictly AFTER the
+# fold-in above has genuinely written the ledger record; never affects the
+# exit code. Best-effort-loud (GDP-6), mirrors `_notify_feature_end_
+# unmissable`'s shape.
+# ---------------------------------------------------------------------------
+
+
+def _sync_slice_plan_status(repo: Path, feature_id: str, slice_ids: list[str]) -> None:
+    """Best-effort-loud (GDP-6): flip each verified slice's Slice-Plan
+    ``Status`` cell from ``pending`` to ``shipped`` in the feature's
+    ``feature-delta.md``.
+
+    PURELY ADDITIVE post-commit side effect: NEVER raises, NEVER blocks or
+    affects the exit code -- the ``SliceCommitVerified`` record has already
+    been written by the time this runs. A missing ``feature-delta.md``
+    (e.g. a bugfix with no Slice Plan) is a silent no-op -- this sync is
+    additive-only, never a second oracle the commit depends on. A malformed
+    table, an absent row, or a row whose ``Status`` is already something
+    other than the literal ``pending`` are ALL no-ops too
+    (:func:`_mark_slice_status_shipped`'s own degrade-quiet contract) --
+    this function's own ``try``/``except`` only guards against an
+    unexpected exception (e.g. a permission error on write), never invents
+    a diagnosis for an expected no-rewrite outcome.
+    """
+    try:
+        delta_path = _feature_delta_path(repo, feature_id)
+        if not delta_path.is_file():
+            return
+        original = delta_path.read_text(encoding="utf-8")
+        text = original
+        for slice_id in slice_ids:
+            rewritten = _mark_slice_status_shipped(text, slice_id)
+            if rewritten is not None:
+                text = rewritten
+        if text != original:
+            delta_path.write_text(text, encoding="utf-8")
+    except Exception as exc:
+        print(
+            "WARNING: des commit-slice could not sync the Slice-Plan Status "
+            f"column for feature {feature_id!r}: {exc}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -942,14 +996,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--at-kind",
         dest="at_kind",
         default="gherkin",
-        choices=("gherkin", "pytest-regression"),
+        choices=("gherkin", "pytest-regression", "native-regression"),
         help=(
             "The acceptance-test kind the slice's E2 leg attests (default: "
             "gherkin, byte-identical for every existing caller). Forwarded "
             "into the Step-6 verify_slice_commit_completeness fold-in so a "
             "real pytest-regression commit runs the BEHAVIORAL (not gherkin/ "
             "feature-scoped-contract) E2 path -- see "
-            "verify_slice_commit_completeness.py for the attestation itself."
+            "verify_slice_commit_completeness.py for the attestation itself. "
+            "'native-regression' (fix-rust-regression-at-kind-wiring) routes "
+            "the Step-3 digest through the runner seam keyed on --regression-"
+            "test-file's OWN suffix, agreeing with E2's execution routing."
         ),
     )
     parser.add_argument(
@@ -1420,7 +1477,9 @@ def _mint_shadow_commit(repo: Path, message: str) -> str:
 
 
 def _committed_scope_digest_or_degrade_reason(
-    repo: Path, at_kind: str | None = None
+    repo: Path,
+    at_kind: str | None = None,
+    regression_test_file: Path | None = None,
 ) -> tuple[str, None] | tuple[None, str]:
     """Step 3's committed-scope digest, routed through the runner seam FIRST.
 
@@ -1438,9 +1497,19 @@ def _committed_scope_digest_or_degrade_reason(
     OTHER lockfile-resolved runner (e.g. cargo on a Rust-primary repo) is
     never correct -- that repo-root lockfile scan has no awareness of which
     language THIS slice actually touched, and an empty cargo scope would
-    degrade a genuinely-passing Python slice to indeterminate. Every other
-    ``--at-kind`` (default ``gherkin``) keeps the EXISTING runner-routed
-    behavior unchanged.
+    degrade a genuinely-passing Python slice to indeterminate.
+
+    ``at_kind == "native-regression"`` (fix-rust-regression-at-kind-wiring,
+    Branch C closure) routes on ``regression_test_file``'s OWN suffix --
+    mirroring ``verify_slice_commit_completeness._routes_through_runner_
+    port``'s execution-leg decision, so the digest leg can never contradict
+    what E2 actually ran: a non-``.py`` file ALWAYS routes through the
+    runner seam (never falls through to the Python-native path, even on a
+    ``None``/pytest resolution -- a Rust file earning a Python digest is
+    the exact defect this closes); a genuine ``.py`` file keeps the EXISTING
+    marker-agnostic Python-native path, the runner seam never consulted.
+    Every other ``--at-kind`` (default ``gherkin``) keeps the EXISTING
+    runner-routed behavior unchanged.
 
     * pytest / lockfile-less target -- the runner seam returns ``None`` (its
       OWN unchanged fall-through contract): falls through to the EXISTING
@@ -1452,7 +1521,14 @@ def _committed_scope_digest_or_degrade_reason(
       caller mints the honest ``SliceCommitIndeterminate`` record, never a
       fabricated digest.
     """
-    if at_kind != "pytest-regression":
+    if at_kind == "native-regression" and regression_test_file is not None:
+        if regression_test_file.suffix != ".py":
+            route = _maybe_route_digest_through_runner(repo)
+            if isinstance(route, _DigestRouteResult):
+                return route.digest, None
+            return None, _DEGRADE_REASON_RUNNER_UNAVAILABLE
+        digest_result = _committed_scope_digest_value(repo, "HEAD", markers=None)
+    elif at_kind != "pytest-regression":
         route = _maybe_route_digest_through_runner(repo)
         if isinstance(route, _DigestRouteResult):
             return route.digest, None
@@ -1472,6 +1548,38 @@ def _committed_scope_digest_or_degrade_reason(
     if isinstance(digest_result, _CommittedScopeDigest):
         return digest_result.digest, None
     return None, _DEGRADE_REASON_INTERPRETER_UNAVAILABLE
+
+
+def _call_committed_scope_digest_or_degrade_reason(
+    repo: Path, at_kind: str | None, regression_test_file: Path | None
+) -> tuple[str, None] | tuple[None, str]:
+    """Call the (possibly monkeypatched) Step-3 digest/degrade seam.
+
+    Compatibility normalization (mirrors ``verify_slice_commit_completeness
+    .py``'s documented bare-int ``_run_contract_gate`` stub normalization,
+    "single-locus constraint"): several PRE-EXISTING regression ATs (e.g.
+    ``test_indeterminate_seal_affordance_how_key.py``'s Site B) monkeypatch
+    ``_committed_scope_digest_or_degrade_reason`` with the LEGACY 2-positional
+    -argument stub shape that predates the ``regression_test_file`` parameter
+    (fix-rust-regression-at-kind-wiring). Calling a 2-arg stub with 3
+    positional arguments raises ``TypeError`` -- introspect the CURRENTLY
+    bound callable's arity (picks up a monkeypatch, since the module-level
+    name is resolved at call time) and fall back to the legacy 2-arg call
+    shape when the bound callable cannot accept a third parameter. Keeps both
+    call shapes working without touching those pre-existing tests.
+    """
+    try:
+        accepts_three = (
+            len(inspect.signature(_committed_scope_digest_or_degrade_reason).parameters)
+            >= 3
+        )
+    except (TypeError, ValueError):
+        accepts_three = True
+    if accepts_three:
+        return _committed_scope_digest_or_degrade_reason(
+            repo, at_kind, regression_test_file
+        )
+    return _committed_scope_digest_or_degrade_reason(repo, at_kind)
 
 
 def _verify(repo: Path, at_kind: str | None = None) -> int:
@@ -2003,11 +2111,11 @@ def main(argv: list[str] | None = None) -> int:
             "--commit",
             shadow_sha,
         ]
-        if args.at_kind == "pytest-regression":
+        if args.at_kind in ("pytest-regression", "native-regression"):
             preflight_argv.extend(
                 [
                     "--at-kind",
-                    "pytest-regression",
+                    args.at_kind,
                     "--regression-test-file",
                     args.regression_test_file,
                 ]
@@ -2053,8 +2161,8 @@ def main(argv: list[str] | None = None) -> int:
             _prev_dont_write_bytecode = os.environ.get("PYTHONDONTWRITEBYTECODE")
             os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
             try:
-                _, rescue_reason = _committed_scope_digest_or_degrade_reason(
-                    repo, args.at_kind
+                _, rescue_reason = _call_committed_scope_digest_or_degrade_reason(
+                    repo, args.at_kind, regression_test_file
                 )
             finally:
                 if _prev_dont_write_bytecode is None:
@@ -2098,8 +2206,8 @@ def main(argv: list[str] | None = None) -> int:
     # one); git absent / not a work-tree / an un-enumerable runner scope emits
     # the LOUD INDETERMINATE event (exit 2 propagated as 1 -- the commit
     # landed but is un-verifiable).
-    digest, degrade_reason = _committed_scope_digest_or_degrade_reason(
-        repo, args.at_kind
+    digest, degrade_reason = _call_committed_scope_digest_or_degrade_reason(
+        repo, args.at_kind, regression_test_file
     )
     if digest is None:
         assert degrade_reason is not None  # the tuple contract: exactly one is set
@@ -2217,16 +2325,24 @@ def main(argv: list[str] | None = None) -> int:
             "--commit",
             "HEAD",
         ]
-        if args.at_kind == "pytest-regression":
+        if args.at_kind in ("pytest-regression", "native-regression"):
             fold_in_argv.extend(
                 [
                     "--at-kind",
-                    "pytest-regression",
+                    args.at_kind,
                     "--regression-test-file",
                     args.regression_test_file,
                 ]
             )
         fold_in_exit_code = _verify_then_record_main(fold_in_argv)
+
+    # Step 6.5 (F-SLICE-PLAN-STATUS-COLUMN-NEVER-SYNCED): PURELY ADDITIVE,
+    # best-effort-loud markdown sync. Runs ONLY when the fold-in above
+    # genuinely wrote a `SliceCommitVerified` record (`fold_in_exit_code ==
+    # 0`) -- never on a degrade, so the Status column is never flipped on
+    # the strength of an unverified commit. Never affects the exit code.
+    if args.feature_id is not None and fold_in_exit_code == 0:
+        _sync_slice_plan_status(repo, args.feature_id, extract_slice_ids(message))
 
     # Step 7 (deliver-finalize-unmissable slice-01, FIX-A): PURELY ADDITIVE,
     # best-effort-loud last-slice notice. Runs strictly AFTER the commit has

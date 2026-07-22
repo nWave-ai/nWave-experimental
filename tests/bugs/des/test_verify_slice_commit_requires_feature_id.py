@@ -40,12 +40,14 @@ observable is the emitted JSON verdict + exit code -- never internals.
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from des.cli import verify_slice_commit_completeness as _vscc
 from des.cli.verify_slice_commit_completeness import (
     _GATE_INDETERMINATE_EXIT_CODE,
     main,
@@ -145,12 +147,18 @@ class TestVerifySliceCommitRequiresFeatureId:
     ) -> None:
         """NEGATIVE AT (`_never_`): the fix must NOT overcorrect. The SAME
         bare repo/commit, but WITH `--feature-id` supplied, must still reach
-        its REAL verdict (here: `SliceCommitRefused` -- E2's contract gate
-        has nothing to resolve for a non-existent feature) -- it must NOT be
-        forced into the missing-feature-id `SliceCommitIndeterminate` path.
-        Pins that only the MISSING-`--feature-id` case changes: the two
-        absences (no --feature-id at all vs. a --feature-id that legitimately
-        can't verify) stay distinguishable.
+        its OWN real verdict (here: `SliceCommitRefused` -- a nonexistent
+        feature owns zero recognized AT candidates, so E1's taxonomy-blind
+        guard refuses it, per RCA fix-carpaccio-e1-vacuous-taxonomy-gap --
+        see the sibling
+        `TestRunVerifyChecksAtomicPathTaxonomyBlindGuard.test_taxonomy_blind_non_exempt_slice_refuses_before_reaching_e2`,
+        the identical fixture shape) -- it must NOT be forced into the
+        missing-feature-id `SliceCommitIndeterminate` path (Bug #126's
+        DISTINCT legacy-completeness codepath, `_run_legacy_completeness`,
+        never entered when `--feature-id` is present). Pins that only the
+        MISSING-`--feature-id` case enters that INDETERMINATE codepath -- a
+        PRESENT-but-unresolvable `--feature-id` reaches the atomic
+        verify-then-record gate's own refusal instead.
         """
         repo = tmp_path / "repo"
         _init_bare_slice_repo(repo)
@@ -169,11 +177,12 @@ class TestVerifySliceCommitRequiresFeatureId:
         event = _last_json_event(capsys)
         assert event.get("event") == "SliceCommitRefused", (
             "a present --feature-id must reach its OWN real verdict "
-            f"(SliceCommitRefused via E2) -- got: {event!r}"
+            f"(SliceCommitRefused) -- got: {event!r}"
         )
-        assert event.get("refused_half") == "E2", (
-            "the refusal must come from E2 (the contract gate resolving "
-            f"nothing for the feature) -- got: {event!r}"
+        assert event.get("refused_half") == "E1", (
+            "a nonexistent feature owns zero recognized AT candidates, so "
+            "the refusal must come from E1's taxonomy-blind guard -- got: "
+            f"{event!r}"
         )
         assert exit_code == 1, (
             f"a present --feature-id refusal must exit 1 -- got {exit_code}"
@@ -222,3 +231,155 @@ class TestVerifySliceCommitRequiresFeatureId:
             f"-- got the same code for both: {indeterminate_event!r}"
         )
         assert indeterminate_event.get("event") != "MalformedInput"
+
+
+def _write_prefactoring_exempt_slice_plan(
+    repo: Path, feature_id: str, slice_id: str
+) -> None:
+    """A minimal feature-delta `[REF] Slice Plan` declaring ``slice_id``
+    `@prefactoring` (``AtRequirement.EXEMPT``) -- the SAME precedent shape
+    ``tests/bugs/des/test_commit_slice_writes_verified_record.py`` and
+    ``tests/des/cli/f_prefactoring_dispatch_clears_honestly/
+    test_bugfix_exit_gate_honors_prefactoring_lane.py`` build, read by
+    `_is_at_exempt_lane` (`verify_slice_commit_completeness.py:428-446`) via
+    `parse_slice_plan` + `_lane_profile_for_slice`.
+    """
+    delta_dir = repo / "docs" / "feature" / feature_id
+    delta_dir.mkdir(parents=True, exist_ok=True)
+    (delta_dir / "feature-delta.md").write_text(
+        f"# Feature Delta: {feature_id}\n\n"
+        "## Wave: DISCUSS / [REF] Slice Plan\n\n"
+        "| Slice | Value statement | Status | Annotation | Justification |\n"
+        "|-------|-----------------|--------|------------|---------------|\n"
+        f"| {slice_id} | a behavior-preserving refactor introduces the seam | "
+        "pending | @prefactoring | a green-to-green prefactoring, genuinely "
+        "zero AT by design |\n",
+        encoding="utf-8",
+    )
+
+
+def _run_verify_checks_namespace(
+    repo: Path,
+    feature_id: str,
+    *,
+    commit: str = "HEAD",
+    at_kind: str = "gherkin",
+    regression_test_file: str | None = None,
+    slice_id: str | None = None,
+) -> argparse.Namespace:
+    """The `argparse.Namespace` shape `_build_parser().parse_args(...)`
+    would produce for the atomic `--feature-id`-present CLI path -- built
+    directly (no real argv parse) so `_run_verify_checks` can be driven in
+    isolation from `main()`'s HEAD-race + dispatch wiring.
+    """
+    return argparse.Namespace(
+        repo=str(repo),
+        commit=commit,
+        feature_id=feature_id,
+        expected_head=None,
+        scope_feature_id=None,
+        at_kind=at_kind,
+        regression_test_file=regression_test_file,
+        slice_id=slice_id,
+    )
+
+
+class TestRunVerifyChecksAtomicPathTaxonomyBlindGuard:
+    """RCA fix-carpaccio-e1-vacuous-taxonomy-gap: the atomic `--feature-id`-
+    present path (`_run_verify_checks`, feeding `des commit-slice` / `des
+    verify-slice-commit --feature-id`) is named by the RCA as the MOST
+    load-bearing UNGUARDED consumer of `missing_at_files` -- unlike its
+    sibling `_run_legacy_completeness` (Bug #126, already fixed), this path
+    has NO guard at all for the vacuous-empty case: `deficient == {}`
+    (whether genuinely verified-complete OR taxonomy-blind with zero
+    candidates) falls straight through to E2 as if genuinely verified.
+    """
+
+    def test_taxonomy_blind_non_exempt_slice_refuses_before_reaching_e2(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """RED: a slice whose AT layout matches NEITHER the .feature nor the
+        pytest-tagged taxonomy (zero candidates anywhere), carrying NO
+        `@prefactoring` exemption, must be REFUSED at E1 -- `_run_verify_
+        checks` must never even invoke E2 (`_run_contract_gate`) for it.
+        Today E1's `deficient` dict is vacuously empty (nothing to check,
+        not nothing missing), so the atomic gate falls straight through to
+        E2 unguarded.
+        """
+        repo = tmp_path / "repo"
+        _init_bare_slice_repo(repo, slice_id="slice-01")
+        # No feature-delta at all -- `_is_at_exempt_lane` fails closed to
+        # False (not exempt), matching the RCA's non-exempt negative case.
+
+        e2_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+        def _record_and_fail_e2(*args: object, **kwargs: object) -> tuple[int, None]:
+            e2_calls.append((args, kwargs))
+            return 99, None
+
+        monkeypatch.setattr(_vscc, "_run_contract_gate", _record_and_fail_e2)
+
+        args = _run_verify_checks_namespace(repo, "taxonomy-blind-nonexempt-feature")
+        exit_code, verified_context = _vscc._run_verify_checks(repo, args)
+
+        captured = capsys.readouterr()
+        json_lines = [
+            ln for ln in captured.out.splitlines() if ln.strip().startswith("{")
+        ]
+        event = json.loads(json_lines[-1]) if json_lines else {}
+
+        assert not e2_calls, (
+            "BUG: E1 vacuously cleared (zero AT candidates found, not zero "
+            "missing) for a taxonomy-blind, non-exempt slice, so "
+            "_run_verify_checks fell through to E2 -- _run_contract_gate "
+            f"was invoked: calls={e2_calls!r}"
+        )
+        assert verified_context is None, (
+            f"a taxonomy-blind, non-exempt slice must never earn a "
+            f"_VerifiedSliceContext -- got {verified_context!r}"
+        )
+        assert exit_code == 1, (
+            f"a taxonomy-blind, non-exempt slice must be REFUSED (exit 1) "
+            f"at E1 -- got exit_code={exit_code!r}, event={event!r}"
+        )
+        assert event.get("event") == "SliceCommitRefused", event
+        assert event.get("refused_half") == "E1", (
+            "the refusal must be attributed to E1 (zero AT candidates "
+            f"found), not E2 -- got: {event!r}"
+        )
+
+    def test_prefactoring_exempt_taxonomy_blind_slice_still_clears(
+        self, tmp_path: Path
+    ) -> None:
+        """NON-REGRESSION (the RCA's single highest-risk edge, "Legitimate-
+        Zero-AT Non-Regression Note"): a slice DECLARED `@prefactoring`
+        (`AtRequirement.EXEMPT`) in the feature-delta's `[REF] Slice Plan`
+        is ALSO taxonomy-blind (zero AT candidates by design) -- it must
+        STILL clear `_run_verify_checks`, exactly as it does today. The
+        fix's new non-verifiable refusal MUST be gated on
+        `not _is_at_exempt_lane(...)`, or this legitimate lane regresses
+        into a false refusal. Must stay GREEN both BEFORE and AFTER the fix.
+        """
+        repo = tmp_path / "repo"
+        feature_id = "taxonomy-blind-exempt-feature"
+        slice_id = "slice-02"
+        _init_bare_slice_repo(repo, slice_id=slice_id)
+        _write_prefactoring_exempt_slice_plan(repo, feature_id, slice_id)
+
+        args = _run_verify_checks_namespace(repo, feature_id)
+        exit_code, verified_context = _vscc._run_verify_checks(repo, args)
+
+        assert exit_code == 0, (
+            "a genuinely zero-AT, @prefactoring-exempt slice must clear "
+            f"_run_verify_checks (exit 0) -- got exit_code={exit_code!r}, "
+            f"verified_context={verified_context!r}"
+        )
+        assert verified_context is not None, (
+            "expected a _VerifiedSliceContext for the exempt lane's clear "
+            "verdict -- got None (refused/indeterminate instead)"
+        )
+        assert verified_context.feature_id == feature_id
+        assert verified_context.slice_ids == [slice_id]

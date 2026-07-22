@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
+
 from tests.common.state_delta import assert_state_delta, unchanged
 
 from .composition import ParityResult, SlicePlanAuthorshipParityComposition

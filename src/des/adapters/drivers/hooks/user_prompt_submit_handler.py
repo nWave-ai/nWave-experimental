@@ -45,6 +45,7 @@ from des.adapters.drivers.hooks.session_start_handler import (
     load_orchestrator_affordance,
 )
 from des.application.wave_active_anchor import CommandLiteralWaveActiveAnchor
+from des.domain.nwave_root import resolve_nwave_root
 from des.ports.driver_ports.wave_active_anchor_port import PromptSubmission
 
 
@@ -137,7 +138,7 @@ def handle_user_prompt_submit() -> int:
     except json.JSONDecodeError:
         payload = {}
     prompt = payload.get("prompt", "")
-    project_root = Path(payload.get("cwd") or Path.cwd())
+    project_root = Path(payload.get("cwd") or resolve_nwave_root())
 
     anchor = CommandLiteralWaveActiveAnchor(writer=WaveActiveFilesystemStore())
     anchor.on_prompt_submitted(

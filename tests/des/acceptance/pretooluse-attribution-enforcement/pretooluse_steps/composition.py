@@ -260,10 +260,24 @@ class HookAdapterComposition:
         """
         tool_input = {"command": str(command), **self.extra_tool_input}
         payload = json.dumps({"tool_name": "Bash", "tool_input": tool_input})
-        exit_code, stdout, _stderr = run_hook_in_process(
-            _hook_router_main,
-            stdin_text=payload,
-            cwd=os.getcwd(),
-            argv=["claude_code_hook_adapter", "pre-tool-use"],
-        )
+        # Mirror the dispatch cwd into DES_PROJECT_DIR so `resolve_nwave_root()`
+        # (now consulted by activation_gate.apply_gate) resolves the SAME
+        # ambient cwd this call runs under, not the per-test isolation root the
+        # autouse `_isolate_nwave_root` fixture sets (tests/conftest.py) --
+        # otherwise the gate resolves an unconfigured isolated root as
+        # inactive and exits 0 before `handle_pre_tool_use` is ever reached.
+        prior_des_project_dir = os.environ.get("DES_PROJECT_DIR")
+        os.environ["DES_PROJECT_DIR"] = os.getcwd()
+        try:
+            exit_code, stdout, _stderr = run_hook_in_process(
+                _hook_router_main,
+                stdin_text=payload,
+                cwd=os.getcwd(),
+                argv=["claude_code_hook_adapter", "pre-tool-use"],
+            )
+        finally:
+            if prior_des_project_dir is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = prior_des_project_dir
         return HookResult(exit_code=exit_code, stdout=stdout)

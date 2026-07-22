@@ -216,12 +216,9 @@ class BatchFixture:
         monkeypatch.setattr(
             svc,
             "_run_environmental_e2e_gate",
-            lambda *,
-            ledger,
-            repo_root,
-            feature_id,
-            feature_dir,
-            walking_skeleton: None,
+            lambda *, ledger, repo_root, feature_id, feature_dir, walking_skeleton: (
+                None
+            ),
         )
         monkeypatch.setattr(
             svc,

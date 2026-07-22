@@ -20,6 +20,14 @@ from filelock import FileLock
 _PROJECT_ROOT = Path(__file__).parent.parent
 
 
+# velocity-v2 (<5min goal G-143): memoize the real-repo whole-tree collect across the
+# session (run_contract_gate honors NWAVE_COLLECT_MEMO; only the immutable real repo
+# is cached — verified in tests/des/unit/cli/test_run_contract_gate_collect_memo.py).
+# Set at the ROOT so every test directory shares one collection, not just
+# tests/des/acceptance/.
+os.environ.setdefault("NWAVE_COLLECT_MEMO", "1")
+
+
 # ---------------------------------------------------------------------------
 # Build-once-share: the project's dev wheel is IDENTICAL across the whole
 # session (the source tree is immutable within a run), yet ~15 test sites each
@@ -1395,7 +1403,8 @@ def _is_offending_top_level_test(rel_path: str) -> bool:
 # ``cwd=tmp_repo`` etc. deliberately do NOT match: those subprocesses run in
 # an isolated tmp dir and never touch the shared .nwave state.
 _REAL_REPO_CWD_RE = re.compile(
-    r"""cwd \s* = \s*                # the cwd keyword argument
+    r"""\b cwd \s* = \s*             # the cwd keyword argument (word-boundary:
+                                      # excludes prev_cwd=/original_cwd=/etc.)
         (?: str \s* \( \s* )?        # optional str( wrapper
         (?:
             _? REPO_ROOT             # _REPO_ROOT / REPO_ROOT

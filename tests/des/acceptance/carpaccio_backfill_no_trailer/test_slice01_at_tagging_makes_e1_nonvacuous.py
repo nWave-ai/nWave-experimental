@@ -91,30 +91,40 @@ def test_tagged_slice01_at_files_are_discovered_nonvacuously() -> None:
 
 
 def test_missing_at_files_discriminates_a_commit_that_predates_every_at_file() -> None:
-    missing = missing_at_files(REPO_ROOT, _PRE_SLICE01_ANCESTOR, _SLICE_ID, _FEATURE_ID)
+    outcome = missing_at_files(REPO_ROOT, _PRE_SLICE01_ANCESTOR, _SLICE_ID, _FEATURE_ID)
 
-    assert set(missing) == _ALL_SEVEN, (
+    assert set(outcome.missing) == _ALL_SEVEN, (
         f"a commit ({_PRE_SLICE01_ANCESTOR}) that predates every slice-01 AT "
         "file must report ALL 7 as missing -- a vacuous E1 would have "
-        f"returned [] here regardless of input. got missing={missing!r}"
+        f"returned [] here regardless of input. got missing={outcome.missing!r}"
+    )
+    assert outcome.verifiable is True, (
+        "7 genuine AT candidates exist for this feature/slice -- E1 must "
+        f"report verifiable=True, never the vacuous-empty sentinel. "
+        f"outcome={outcome!r}"
     )
 
 
 def test_missing_at_files_discriminates_the_walking_skeleton_commit_granularly() -> (
     None
 ):
-    missing = missing_at_files(
+    outcome = missing_at_files(
         REPO_ROOT, _SLICE01_WALKING_SKELETON_COMMIT, _SLICE_ID, _FEATURE_ID
     )
 
-    assert set(missing) == {
+    assert set(outcome.missing) == {
         "tests/des/refactor/test_slice_01_pile_grammar_refusal.py"
     }, (
         f"{_SLICE01_WALKING_SKELETON_COMMIT} delivers 6 of the 7 files "
         "directly and none of the 7th (a later bugfix commit) -- E1 must "
-        f"report exactly that one file missing. got missing={missing!r}"
+        f"report exactly that one file missing. got missing={outcome.missing!r}"
     )
-    assert not (_SIX_DELIVERED_BY_WALKING_SKELETON & set(missing)), (
+    assert not (_SIX_DELIVERED_BY_WALKING_SKELETON & set(outcome.missing)), (
         "the 6 files genuinely delivered by the walking-skeleton commit "
-        f"must never be reported missing. got missing={missing!r}"
+        f"must never be reported missing. got missing={outcome.missing!r}"
+    )
+    assert outcome.verifiable is True, (
+        "6 of the 7 genuine AT candidates are present at this commit -- E1 "
+        f"must report verifiable=True, never the vacuous-empty sentinel. "
+        f"outcome={outcome!r}"
     )

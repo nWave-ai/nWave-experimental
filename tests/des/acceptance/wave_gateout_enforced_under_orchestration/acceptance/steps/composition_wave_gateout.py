@@ -189,12 +189,21 @@ def _run_module(
     import-resolution concern only (``des`` is already importable in-process) -- a
     no-op here. The process is still exercised as a black box: exit code + stdout
     (+ stderr) are the only observables (Mandate-13 Layer 3 composition).
+
+    ``DES_PROJECT_DIR`` is ALSO mirrored to ``cwd`` here: `resolve_nwave_root()`
+    (now consulted by `activation_gate.apply_gate` and `pre_tool_use_handler`'s
+    peek_entry/arm_inferred/clear_entry) must resolve the SAME root this call
+    chdir's to (where `activate_des_governance`/`arm_design_floor` seeded state),
+    not the per-test isolation root the autouse `_isolate_nwave_root` fixture sets
+    (tests/conftest.py).
     """
     prior_env = {
-        key: os.environ.get(key) for key in ("NWAVE_FRESHNESS", "PIPENV_DONT_LOAD_ENV")
+        key: os.environ.get(key)
+        for key in ("NWAVE_FRESHNESS", "PIPENV_DONT_LOAD_ENV", "DES_PROJECT_DIR")
     }
     os.environ["NWAVE_FRESHNESS"] = "skip"
     os.environ["PIPENV_DONT_LOAD_ENV"] = "1"
+    os.environ["DES_PROJECT_DIR"] = str(cwd)
     try:
         if module == _HOOK_ADAPTER_MODULE:
             exit_code, stdout, stderr = run_hook_in_process(

@@ -37,8 +37,10 @@ a pytest fallback, NEVER a silent pass.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -50,6 +52,7 @@ from des.adapters.driven.runner.pytest_runner import (
 )
 from des.adapters.driven.runner.tool_discovery import resolve_tool
 from des.ports.test_runner_port import (
+    AtDiscoveryResult,
     ListScope,
     RunnerAdapterUnavailable,
     RunVerdict,
@@ -354,4 +357,80 @@ def _worktree_target_dir(target_root: Path) -> Path | None:
     return main_checkout_root / "target"
 
 
-__all__ = ["CARGO_KNOWN_LOCATIONS", "list_cargo_scope", "run_cargo_scope"]
+# ---------------------------------------------------------------------------
+# cargo at-discovery facet (fix-rust-regression-at-kind-wiring) -- relocates
+# ``at_review_verdict._count_rust_regression_ats`` /
+# ``_rust_regression_content_hash`` VERBATIM (including the already-fixed
+# comment-blindness + ``UnicodeDecodeError`` hardening), the Rust mirror of
+# ``pytest_runner.discover_pytest_ats``.
+# ---------------------------------------------------------------------------
+
+_RUST_TEST_FN_RE = re.compile(
+    r"#\[test\]\s*(?:#\[[^\]]*\]\s*)*"
+    r"(?:pub\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)"
+)
+
+
+def _strip_rust_line_comments(source: str) -> str:
+    """Strip ``//``-to-EOL line comments before attribute matching.
+
+    Minimal robust line-scan (no Rust parser, no block-comment / string-
+    literal awareness -- deliberately out of scope): a ``#[test]`` occurring
+    only inside a ``//`` line comment is text, never a real Rust attribute,
+    and must never satisfy ``_RUST_TEST_FN_RE``. Newlines are preserved so
+    multi-line attribute-then-``fn`` matching is unaffected.
+    """
+    return "\n".join(line.split("//", 1)[0] for line in source.splitlines())
+
+
+def discover_cargo_ats(
+    adapter: RunnerAdapter,
+    target_root: Path,
+    regression_test_file: Path,
+) -> AtDiscoveryResult:
+    """Discover the ``#[test]``-attributed AT identities a ``.rs`` regression
+    file carries.
+
+    Line/regex scan (no Rust parser, no Python ``ast`` on ``.rs`` source) for
+    ``#[test]``-attributed function names -- the Rust community idiom
+    (descriptive names, not ``test_``-prefixed). Degrade-LOUD
+    (``RunnerAdapterUnavailable``, never a silently-empty discovery) when the
+    file cannot be read/decoded or has zero ``#[test]`` functions.
+    """
+    del target_root  # unused: AT-discovery scopes to the ONE declared file
+    try:
+        source = regression_test_file.read_bytes()
+    except OSError as exc:
+        raise RunnerAdapterUnavailable(
+            adapter.name, reason=f"cannot read {regression_test_file}: {exc}"
+        ) from exc
+    try:
+        text = source.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                f"cannot read/decode {regression_test_file}: malformed "
+                f"(not valid UTF-8): {exc}"
+            ),
+        ) from exc
+    at_ids = _RUST_TEST_FN_RE.findall(_strip_rust_line_comments(text))
+    if not at_ids:
+        raise RunnerAdapterUnavailable(
+            adapter.name,
+            reason=(
+                f"zero #[test] functions found in {regression_test_file} "
+                "(malformed regression file)"
+            ),
+        )
+    return AtDiscoveryResult(
+        at_ids=tuple(at_ids), content_hash=hashlib.sha256(source).hexdigest()
+    )
+
+
+__all__ = [
+    "CARGO_KNOWN_LOCATIONS",
+    "discover_cargo_ats",
+    "list_cargo_scope",
+    "run_cargo_scope",
+]

@@ -33,7 +33,12 @@ if TYPE_CHECKING:
     from des.ports.driven_ports.contract_gate_port import ContractGatePort
     from des.ports.driven_ports.environmental_e2e_port import EnvironmentalE2EPort
     from des.ports.driven_ports.robustness_density_port import RobustnessDensityPort
-    from des.ports.test_runner_port import ListScope, RunnerAdapter, RunVerdict
+    from des.ports.test_runner_port import (
+        AtDiscoveryResult,
+        ListScope,
+        RunnerAdapter,
+        RunVerdict,
+    )
 
 
 class RunFacet(Protocol):
@@ -51,6 +56,26 @@ class RunFacet(Protocol):
         target_root: Path,
         scoped_node_ids: tuple[str, ...],
     ) -> RunVerdict: ...
+
+
+class AtDiscoveryFacet(Protocol):
+    """The concrete at-discovery-facet callable shape a plugin registers per runner.
+
+    The 4th slot-pair (fix-rust-regression-at-kind-wiring, mirrors ``RunFacet``/
+    ``ListFacet``): discover the acceptance tests carried by a single regression-
+    test file in the runner's own idiom (``discover_pytest_ats`` /
+    ``discover_cargo_ats``) and return the ``AtDiscoveryResult`` (at_ids +
+    content_hash) that unifies "AT-discovery evidence kind" across languages.
+    ``adapter`` is the ``RunnerAdapter`` ``RunnerAdapter.discover_ats`` passes
+    (``self``).
+    """
+
+    def __call__(
+        self,
+        adapter: RunnerAdapter,
+        target_root: Path,
+        regression_test_file: Path,
+    ) -> AtDiscoveryResult: ...
 
 
 class ListFacet(Protocol):
@@ -119,6 +144,11 @@ class LanguageAdapterRegistry(RunnerRegistry):
     RESOLVED TOOL-NAME string (``RunnerAdapter.name``, e.g. ``"pytest"`` /
     ``"vitest"``) -- the SAME key ``lookup``/``lookup_list`` already use
     (DDD-U5) -- NEVER on ``target_language``.
+
+    A 4th slot-pair, ``at_discovery`` (fix-rust-regression-at-kind-wiring),
+    unifies "AT-discovery evidence kind" across languages: ``register_at_
+    discovery``/``lookup_at_discovery``, keyed the SAME way, dispatched by
+    ``RunnerAdapter.discover_ats``.
     """
 
     def __init__(self) -> None:
@@ -126,6 +156,7 @@ class LanguageAdapterRegistry(RunnerRegistry):
         self._contract_gate_facets: dict[str, ContractGatePort] = {}
         self._e2e_facets: dict[str, EnvironmentalE2EPort] = {}
         self._robustness_facets: dict[str, RobustnessDensityPort] = {}
+        self._at_discovery_facets: dict[str, AtDiscoveryFacet] = {}
 
     def register_contract_gate(self, name: str, facet: ContractGatePort) -> None:
         """Register a ``ContractGatePort`` facet under ``name`` (idempotent)."""
@@ -155,6 +186,14 @@ class LanguageAdapterRegistry(RunnerRegistry):
         """Return the robustness-density facet registered under ``name``, or ``None``."""
         return self._robustness_facets.get(name)
 
+    def register_at_discovery(self, name: str, facet: AtDiscoveryFacet) -> None:
+        """Register an ``AtDiscoveryFacet`` under ``name`` (idempotent overwrite)."""
+        self._at_discovery_facets[name] = facet
+
+    def lookup_at_discovery(self, name: str) -> AtDiscoveryFacet | None:
+        """Return the at-discovery facet registered under ``name``, or ``None``."""
+        return self._at_discovery_facets.get(name)
+
 
 # ADR-ULAR-001: GLOBAL_REGISTRY's runtime type is the LanguageAdapterRegistry
 # subclass (a strict superset of RunnerRegistry) -- every existing caller that
@@ -182,11 +221,22 @@ def seed_runner_registry() -> None:
     Idempotent: re-seeding re-registers the same tokens (a no-op overwrite).
     """
     from des.adapters.driven.runner.cargo_runner import (
+        discover_cargo_ats,
         list_cargo_scope,
         run_cargo_scope,
     )
+    from des.adapters.driven.runner.csharp_runner import (
+        discover_csharp_ats,
+        run_csharp_scope,
+    )
     from des.adapters.driven.runner.go_runner import run_go_scope
+    from des.adapters.driven.runner.java_runner import discover_java_ats, run_java_scope
+    from des.adapters.driven.runner.kotlin_runner import (
+        discover_kotlin_ats,
+        run_kotlin_scope,
+    )
     from des.adapters.driven.runner.pytest_runner import (
+        discover_pytest_ats,
         list_pytest_scope,
         run_pytest_scope,
     )
@@ -202,12 +252,24 @@ def seed_runner_registry() -> None:
     GLOBAL_REGISTRY.register("cargo-test", run_cargo_scope)
     GLOBAL_REGISTRY.register("go-test", run_go_scope)
     GLOBAL_REGISTRY.register("vitest", run_vitest_scope)
+    GLOBAL_REGISTRY.register("gradle-test", run_kotlin_scope)
+    GLOBAL_REGISTRY.register("dotnet-test", run_csharp_scope)
+    GLOBAL_REGISTRY.register("maven-test", run_java_scope)
     # The enumerate (list) facets (ADR-FLOW-011 D5 -- the digest's read counterpart):
     # only the pytest dogfood + cargo enumerate facets are built in this slice
     # (slice-03 wires go/vitest). pytest is registered as one row among equals so
     # `list_scope` dispatches uniformly, never a hardcoded pytest enumerate.
     GLOBAL_REGISTRY.register_list("pytest", list_pytest_scope)
     GLOBAL_REGISTRY.register_list("cargo-test", list_cargo_scope)
+    # AT-discovery facets (fix-rust-regression-at-kind-wiring, extended by
+    # feat-csharp-runner-adapter): pytest + cargo-test + dotnet-test are wired
+    # in this slice -- an unresolved language (e.g. go-test) degrades LOUD via
+    # RunnerAdapterUnavailable, never a silent pass/Python fallback.
+    GLOBAL_REGISTRY.register_at_discovery("pytest", discover_pytest_ats)
+    GLOBAL_REGISTRY.register_at_discovery("cargo-test", discover_cargo_ats)
+    GLOBAL_REGISTRY.register_at_discovery("gradle-test", discover_kotlin_ats)
+    GLOBAL_REGISTRY.register_at_discovery("dotnet-test", discover_csharp_ats)
+    GLOBAL_REGISTRY.register_at_discovery("maven-test", discover_java_ats)
     for entry_point in metadata.entry_points(group=_ENTRY_POINTS_GROUP):
         plugin_cls = entry_point.load()
         plugin_cls().register_adapters(GLOBAL_REGISTRY)
@@ -215,6 +277,7 @@ def seed_runner_registry() -> None:
 
 __all__ = [
     "GLOBAL_REGISTRY",
+    "AtDiscoveryFacet",
     "LanguageAdapterRegistry",
     "ListFacet",
     "RunFacet",

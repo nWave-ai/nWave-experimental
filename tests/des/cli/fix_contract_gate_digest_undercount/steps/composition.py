@@ -385,8 +385,17 @@ class ContractGateDigestComposition:
 
         --print-digest must NOT write trailers, run the suite, or mutate the
         tree. For the live repo, fingerprint a small stable anchor set; for the
-        tmp project, walk it whole.
+        tmp project, walk it whole -- excluding pytest's OWN collection-cache
+        byproducts (``__pycache__``, ``.pytest_cache``, ``.hypothesis``), which
+        the digest CLI's in-process collection worker incidentally writes on
+        ANY invocation regardless of target (fix-contract-gate-slow-tests-
+        synthetic-fixture: surfaced once the COLLAPSE_PRONE synthetic project
+        replaced the live repo here, since a bare interpreter-cache write is
+        not the repo mutation this read-only contract guards against -- the
+        live-repo branch above never saw this noise because it only ever
+        fingerprints two named source files).
         """
+        _CACHE_DIR_NAMES = {"__pycache__", ".pytest_cache", ".hypothesis"}
         if repo == _LIVE_REPO:
             anchors = [
                 repo / "pyproject.toml",
@@ -397,7 +406,7 @@ class ContractGateDigestComposition:
             parts = [
                 f"{p.relative_to(repo)}:{p.stat().st_mtime_ns}"
                 for p in sorted(repo.rglob("*"))
-                if p.is_file()
+                if p.is_file() and not _CACHE_DIR_NAMES & set(p.relative_to(repo).parts)
             ]
         return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 

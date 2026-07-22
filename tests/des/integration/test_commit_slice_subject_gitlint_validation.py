@@ -88,7 +88,10 @@ def test_commit_slice_commits_compliant_subject(tmp_path: Path, capsys) -> None:
     repo = tmp_path / "repo"
     _init_repo(repo)
     (repo / "tests" / "unit" / "test_slice_new.py").write_text(
-        "def test_slice_new():\n    assert 2 + 2 == 4\n", encoding="utf-8"
+        "# @feature-commit-slice-subject-gitlint-validation\n"
+        "# @slice-01\n"
+        "def test_slice_new():\n    assert 2 + 2 == 4\n",
+        encoding="utf-8",
     )
     head_before = _git(repo, "rev-parse", "HEAD").strip()
 

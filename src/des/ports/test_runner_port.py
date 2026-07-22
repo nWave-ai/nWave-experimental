@@ -59,6 +59,22 @@ class RunVerdict:
 
 
 @dataclass(frozen=True)
+class AtDiscoveryResult:
+    """The observable outcome of DISCOVERING a regression-test-file's ATs.
+
+    Port-exposed observable of ``RunnerAdapter.discover_ats`` (fix-rust-
+    regression-at-kind-wiring, the 4th facet-slot-pair): the unified
+    "AT-discovery evidence kind" result across languages -- the discovered
+    AT identities plus a content seal over the regression file's raw source
+    bytes, mirroring ``RunVerdict``/``ListScope``'s "abstract observable,
+    concrete HOW behind the per-runner adapter" shape.
+    """
+
+    at_ids: tuple[str, ...]
+    content_hash: str
+
+
+@dataclass(frozen=True)
 class ListScope:
     """The observable outcome of ENUMERATING a resolved runner's test scope.
 
@@ -150,6 +166,37 @@ class RunnerAdapter:
             raise RunnerAdapterUnavailable(self.name)
         return list_facet(self, target_root)
 
+    def discover_ats(
+        self, target_root: Path, regression_test_file: Path
+    ) -> AtDiscoveryResult:
+        """DISCOVER the acceptance tests carried by a regression-test file.
+
+        The AT-discovery counterpart of ``run``/``list_scope`` (fix-rust-
+        regression-at-kind-wiring, the 4th facet-slot-pair): the abstract
+        contract is "discover the AT identities + content seal a single
+        regression-test file carries, in the runner this adapter resolved
+        to". Dispatch is REGISTRY-based exactly like ``run``/``list_scope``
+        -- the at-discovery facet is looked up in the SAME ``GLOBAL_REGISTRY``
+        by this adapter's ``name`` (``discover_pytest_ats`` /
+        ``discover_cargo_ats``), NOT a hardcoded ``if name == "pytest"``
+        branch. A miss self-heals by seeding once; a runner still absent
+        after seeding raises ``RunnerAdapterUnavailable`` (degrade-LOUD,
+        never a silent pass and never a Python-native discovery pretending
+        to have read a non-Python file).
+        """
+        from des.adapters.driven.runner.runner_registry import (
+            GLOBAL_REGISTRY,
+            seed_runner_registry,
+        )
+
+        at_discovery_facet = GLOBAL_REGISTRY.lookup_at_discovery(self.name)
+        if at_discovery_facet is None:
+            seed_runner_registry()
+            at_discovery_facet = GLOBAL_REGISTRY.lookup_at_discovery(self.name)
+        if at_discovery_facet is None:
+            raise RunnerAdapterUnavailable(self.name)
+        return at_discovery_facet(self, target_root, regression_test_file)
+
 
 class RunnerAdapterUnavailable(RuntimeError):
     """The resolved runner has no production-ready concrete adapter (DDD-7).
@@ -200,7 +247,16 @@ class UnrecognizedRunner(Indeterminate):
 
 @dataclass(frozen=True)
 class _RegistryRow:
-    """One ``(lockfile, predicate) -> runner`` row of the resolution registry."""
+    """One ``(lockfile, predicate) -> runner`` row of the resolution registry.
+
+    ``filename`` is either an EXACT filename (``pyproject.toml``, ``go.mod`` --
+    matched via ``.is_file()``) or a GLOB PATTERN (``*.csproj``, ``*.sln`` -- a
+    C#/.NET manifest is not a fixed name, it is the project's own name) resolved
+    via ``target_root.glob(filename)``. ``_matched_manifest_path`` is the ONE
+    place that distinguishes the two -- exact names are NEVER glob-interpreted
+    (no wildcard metacharacters), so every pre-existing row's behavior is
+    byte-unchanged.
+    """
 
     filename: str
     runner: str
@@ -218,6 +274,14 @@ _REGISTRY: tuple[_RegistryRow, ...] = (
     _RegistryRow(filename="package.json", runner="vitest", requires_substring="vitest"),
     _RegistryRow(filename="go.mod", runner="go-test"),
     _RegistryRow(filename="Cargo.toml", runner="cargo-test"),
+    _RegistryRow(filename="pom.xml", runner="maven-test"),
+    _RegistryRow(filename="build.gradle.kts", runner="gradle-test"),
+    _RegistryRow(filename="build.gradle", runner="gradle-test"),
+    # C#/.NET manifests are NOT fixed filenames (a project's own name, e.g.
+    # ``MyApp.csproj`` / ``MyApp.sln``) -- ``filename`` carries a glob pattern
+    # here; ``_matched_manifest_path`` resolves it against the target root.
+    _RegistryRow(filename="*.csproj", runner="dotnet-test"),
+    _RegistryRow(filename="*.sln", runner="dotnet-test"),
 )
 
 
@@ -265,12 +329,13 @@ def resolve(
         override = _repo_runner_override(target_root)
         if override is not None:
             return override
-    matched = [
-        row
-        for row in _REGISTRY
-        if (target_root / row.filename).is_file()
-        and _manifest_satisfies(target_root / row.filename, row.requires_substring)
-    ]
+    matched = []
+    for row in _REGISTRY:
+        manifest_path = _matched_manifest_path(target_root, row.filename)
+        if manifest_path is not None and _manifest_satisfies(
+            manifest_path, row.requires_substring
+        ):
+            matched.append(row)
     if not matched:
         return UnrecognizedRunner(reason=_unrecognized_reason(target_root))
     if len(matched) == 1:
@@ -382,6 +447,26 @@ def _ambiguous_reason(matched: list[_RegistryRow]) -> str:
     )
 
 
+_GLOB_METACHARACTERS = ("*", "?", "[")
+
+
+def _matched_manifest_path(target_root: Path, filename: str) -> Path | None:
+    """Resolve a registry row's ``filename`` against ``target_root``.
+
+    An EXACT filename (no glob metacharacters) is checked with ``.is_file()``,
+    byte-identical to the pre-glob-support behavior. A GLOB PATTERN (``*.csproj``
+    / ``*.sln``) is resolved via ``target_root.glob(filename)``; the first
+    matching regular file wins (sorted for determinism) -- a project directory
+    with two ``.csproj`` files matches on the alphabetically-first one, never a
+    filesystem-order-dependent pick. Returns ``None`` when nothing matches.
+    """
+    if any(char in filename for char in _GLOB_METACHARACTERS):
+        candidates = sorted(p for p in target_root.glob(filename) if p.is_file())
+        return candidates[0] if candidates else None
+    candidate = target_root / filename
+    return candidate if candidate.is_file() else None
+
+
 def _manifest_satisfies(manifest: Path, requires_substring: str | None) -> bool:
     """Whether ``manifest`` satisfies a row's content predicate (if any)."""
     if requires_substring is None:
@@ -403,6 +488,7 @@ def _unrecognized_reason(target_root: Path) -> str:
 
 
 __all__ = [
+    "AtDiscoveryResult",
     "Indeterminate",
     "ListScope",
     "RunVerdict",

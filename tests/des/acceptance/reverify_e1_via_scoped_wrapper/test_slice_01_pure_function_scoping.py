@@ -105,8 +105,14 @@ def test_feature_scoped_missing_at_files_returns_empty_for_primary(
     """
     repo = tmp_path_factory.mktemp("repo")
     commit = _build_repo_with_n_features(repo, n_features)
-    missing = missing_at_files(repo, commit, _SLICE_ID, feature_id=_FEATURE_ID_PRIMARY)
-    assert missing == [], (
+    outcome = missing_at_files(repo, commit, _SLICE_ID, feature_id=_FEATURE_ID_PRIMARY)
+    assert outcome.missing == [], (
         f"feature-scoped E1 leaked collider files into verdict for n={n_features}: "
-        f"{missing!r}"
+        f"{outcome.missing!r}"
+    )
+    assert outcome.verifiable is True, (
+        "this fixture builds real, genuine .feature AT candidates for the "
+        "primary feature -- E1 must report verifiable=True (genuinely "
+        "checked, nothing missing), never the vacuous-empty sentinel. "
+        f"outcome={outcome!r}"
     )

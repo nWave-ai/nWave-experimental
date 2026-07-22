@@ -29,6 +29,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from des.domain.nwave_root import resolve_nwave_root
+
 
 class GateOutcome(Enum):
     """What the gate did with a hook invocation (production-side)."""
@@ -114,7 +116,7 @@ def apply_gate(command: str, stdin_text: str) -> str | None:
     # Missing/invalid cwd in the envelope falls back to the process cwd (Claude
     # Code always invokes hooks inside the project dir); resolution then runs
     # normally and only silences genuinely inactive projects.
-    project_root = _parse_cwd(stdin_text) or Path.cwd()
+    project_root = _parse_cwd(stdin_text) or resolve_nwave_root()
     if _is_active_failopen(project_root):
         return stdin_text
 

@@ -21,7 +21,16 @@ scenarios("../slice-01-canonical-count-parity.feature")
 
 @given("the contract gate is pointed at the canonical-live contract suite")
 def given_canonical_live_suite(composition: ContractGateDigestComposition):
-    composition.use_suite(SuiteShape.CANONICAL_LIVE)
+    # fix-contract-gate-slow-tests-synthetic-fixture: this scenario's counting
+    # property (digest node_id_count parity vs pytest's own collected_count)
+    # is scale-invariant -- it holds identically on a small synthetic project
+    # as on this repo's live multi-thousand-item tree. Bound to the existing
+    # COLLAPSE_PRONE synthetic fixture (composition.py:404-439) instead of
+    # CANONICAL_LIVE so the walking skeleton no longer pays the ~130.65s
+    # real-repo subprocess cost. See docs/product/expectations/
+    # fix-contract-gate-slow-tests-synthetic-fixture/
+    # two-slow-gate-self-tests-swap-to-synthetic-fixture.md.
+    composition.use_suite(SuiteShape.COLLAPSE_PRONE)
 
 
 @when("the operator runs the print-digest CLI twice over the suite")

@@ -24,8 +24,18 @@ class TestAuditLogPathResolver:
         assert resolver.resolve() == env_dir
 
     def test_project_local_default(self, tmp_path, monkeypatch):
-        """Without env var, should use project-local .nwave/des/logs/."""
+        """Without env var, should use project-local .nwave/des/logs/.
+
+        ``DES_PROJECT_DIR`` is also delenv'd (not just ``DES_AUDIT_LOG_DIR``):
+        the autouse ``_isolate_nwave_root`` fixture (tests/conftest.py) sets it
+        for every test, and since Priority 4's ``Path.cwd()`` fallback now
+        resolves through ``resolve_nwave_root()`` (which prefers
+        ``DES_PROJECT_DIR`` over ``Path.cwd()``), a genuine "no override" case
+        must also clear it -- otherwise this test would resolve the autouse
+        fixture's unrelated per-test root instead of the ``chdir``'d ``tmp_path``.
+        """
         monkeypatch.delenv("DES_AUDIT_LOG_DIR", raising=False)
+        monkeypatch.delenv("DES_PROJECT_DIR", raising=False)
         monkeypatch.chdir(tmp_path)
         resolver = AuditLogPathResolver()
         assert resolver.resolve() == tmp_path / ".nwave" / "des" / "logs"

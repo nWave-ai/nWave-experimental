@@ -79,11 +79,15 @@ def in_project_directory(project_path: str, tmp_path: Path, test_context: dict):
 def no_audit_config(clean_env, test_context: dict):
     """
     Ensure no audit log configuration environment variables are set.
+
+    Narrowed to the audit-log-specific variables only (not a blanket DES_*
+    wipe): a blanket delete also removes DES_PROJECT_DIR, which the xdist-
+    isolation autouse fixture (tests/conftest.py) relies on for per-test
+    .nwave/ isolation -- deleting it here masked a project-dir resolution
+    bug in this same file's `in_project_directory` step by accident.
     """
-    # Remove any DES-related environment variables
-    for key in list(clean_env.keys()):
-        if key.startswith("DES_"):
-            del clean_env[key]
+    for key in ("DES_AUDIT_LOG_DIR", "DES_AUDIT_LOG_MIGRATION"):
+        clean_env.pop(key, None)
 
     test_context["env_cleared"] = True
 
@@ -206,7 +210,7 @@ def _write_test_audit_event(test_context: dict, project_name: str):
 
     project_dir = test_context.get("project_dir")
     if project_dir:
-        writer = JsonlAuditLogWriter()
+        writer = JsonlAuditLogWriter(cwd=project_dir)
         ts = datetime.now(timezone.utc).isoformat()
         writer.log_event(
             AuditEvent(
@@ -235,8 +239,11 @@ def initialize_audit_logger(test_context: dict):
         JsonlAuditLogWriter,
     )
 
-    # Initialize with no arguments - should use defaults
-    writer = JsonlAuditLogWriter()
+    # Deterministic cwd override -- the xdist-isolation autouse fixture sets
+    # DES_PROJECT_DIR per-test, which would otherwise outrank this step's
+    # own os.chdir(project_dir) simulation (AuditLogPathResolver priority).
+    project_dir = test_context.get("project_dir")
+    writer = JsonlAuditLogWriter(cwd=project_dir)
     test_context["audit_logger"] = writer
     test_context["audit_log_dir"] = writer._log_dir
     test_context["audit_log_file"] = writer._get_log_file()

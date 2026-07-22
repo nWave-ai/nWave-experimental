@@ -69,6 +69,8 @@ from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.driven.runner.runner_json import read_runner_json
 from des.adapters.driven.runner.runner_registry import seed_runner_registry
 from des.application.slice_at_completeness import (
+    _regression_file_glob_candidates,
+    canonical_regression_test_path,
     feature_files_for_slice,
     files_in_commit,
     missing_at_files,
@@ -292,7 +294,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--at-kind",
         dest="at_kind",
         default="gherkin",
-        choices=("gherkin", "pytest-regression"),
+        choices=("gherkin", "pytest-regression", "native-regression"),
         help=(
             "The acceptance-test kind the slice's E2 leg attests (default: "
             "gherkin, byte-identical for every existing caller). "
@@ -300,7 +302,12 @@ def _build_parser() -> argparse.ArgumentParser:
             "gate -- which cannot resolve a pytest-regression bugfix's "
             "structure -- with a BEHAVIORAL attestation: it actually runs "
             "--regression-test-file on the committed tree and uses its exit "
-            "code as the E2 verdict."
+            "code as the E2 verdict. 'native-regression' "
+            "(fix-rust-regression-at-kind-wiring) is the SAME behavioral "
+            "attestation for a non-Python regression file (e.g. `.rs`) -- "
+            "it routes through the SAME runner-port seam "
+            "`_routes_through_runner_port` already resolves for a "
+            "pytest-regression file whose suffix is not `.py`."
         ),
     )
     parser.add_argument(
@@ -444,6 +451,30 @@ def _is_at_exempt_lane(repo: Path, feature_id: str, slice_id: str) -> bool:
     plan = parse_slice_plan(delta_path.read_text(encoding="utf-8"))
     profile = _lane_profile_for_slice(plan, slice_id)
     return profile is not None and profile.at_requirement is AtRequirement.EXEMPT
+
+
+def _examine_verdict_clears_slice(repo: Path, feature_id: str, slice_id: str) -> bool:
+    """Resolve whether an armed examine-verdict PASS clears ``slice_id`` at E1.
+
+    RCA fix-carpaccio-e1-vacuous-taxonomy-gap: E1's zero-recognized-AT-
+    candidates refusal previously only exempted `@prefactoring` lanes
+    (`_is_at_exempt_lane` above), leaving no carve-out for a slice that
+    genuinely owns zero executable AT candidates by nature (a prose/
+    documentation slice) but WAS examined and cleared by a human observer.
+    Mirrors E2's OWN examine-verdict carve-out (ADR-DES-001 addendum Rule 1,
+    below) at the earlier E1 gate: an ARMED gate (a charter exists for this
+    feature) with `check_examine_verdict` returning ``None`` (fresh,
+    matching-seal PASS) is the same legitimate "examined and passed" signal
+    E2 already trusts -- E1 must not refuse a slice E2 would go on to clear
+    anyway. `_examine_gate_armed` and `check_examine_verdict` are imported
+    LOCALLY (not at module scope) to avoid a circular import with
+    `des.cli.commit_slice`, exactly as E2's own rescue does.
+    """
+    from des.cli.commit_slice import _examine_gate_armed, check_examine_verdict
+
+    return _examine_gate_armed(repo, feature_id) and (
+        check_examine_verdict(repo, feature_id, slice_id) is None
+    )
 
 
 def _parse_single_line_json_payload(stdout: str) -> dict[str, object] | None:
@@ -599,72 +630,6 @@ def _run_regression_gate(
             ),
         )
     return completed.returncode, None, None
-
-
-def _regression_file_naming_components(
-    feature_id: str, slice_id: str
-) -> tuple[str, str]:
-    """The two normalized components (``feature_dir``, ``slice_us``) the
-    regression-file naming convention is built from -- hyphens replaced by
-    underscores. Pure.
-
-    SINGLE SOURCE for both ``_regression_file_glob_candidates`` below and
-    ``canonical_regression_test_path`` (the seam a producer like
-    ``des examine-fixture`` consumes to WRITE a new regression file this gate
-    will later recognize) -- widening the naming convention into one shared
-    private helper instead of letting a producer re-derive/guess it is what
-    makes the produced fixture correct BY CONSTRUCTION (examinable-gate-
-    surface feature, arch invariant: never re-declare this convention).
-    """
-    return feature_id.replace("-", "_"), slice_id.replace("-", "_")
-
-
-def canonical_regression_test_path(
-    feature_id: str,
-    slice_id: str,
-    *,
-    parent: str = "fixture",
-    suffix: str = "behaviour",
-) -> str:
-    """A repo-relative pytest-regression file path this gate's OWN naming
-    convention (``_regression_file_glob_candidates``) resolves for
-    ``slice_id``. Pure.
-
-    The examinable-gate-surface feature's arch invariant: any producer that
-    needs to WRITE a new regression file the gate will later recognize (e.g.
-    ``des examine-fixture``) MUST derive its filename through this function,
-    never by hand-matching the glob pattern below (a private implementation
-    detail) -- a second copy of the convention would reintroduce the exact
-    naming drift this feature exists to end. ``parent``/``suffix`` select
-    WHERE under ``tests/**/{feature_dir}/`` and WHAT filename-tail the file
-    gets; the returned path always satisfies ``test_{slice_us}_*.py`` for the
-    SAME ``slice_us`` normalization ``_regression_file_glob_candidates``
-    applies, so a file written at this path is guaranteed to resolve as
-    exactly one candidate.
-    """
-    feature_dir, slice_us = _regression_file_naming_components(feature_id, slice_id)
-    return f"tests/{parent}/{feature_dir}/test_{slice_us}_{suffix}.py"
-
-
-def _regression_file_glob_candidates(
-    repo: Path, feature_id: str, slice_id: str
-) -> list[Path]:
-    """Every file matching ``slice_id``'s regression-file naming convention.
-
-    Glob ``tests/**/{feature_dir}/test_{slice_us}_*.py``, where
-    ``feature_dir``/``slice_us`` are ``feature_id``/``slice_id`` with hyphens
-    replaced by underscores (``_regression_file_naming_components``) -- the
-    SAME convention this feature's own fixtures follow
-    (``tests/fixture/{feature_id}/test_{slice_id}_*.py``) and the SAME shape
-    already load-bearing on disk (e.g.
-    ``tests/des/acceptance/{feature_id}/test_slice_NN_*.py``). Mirrors
-    ``_slice_feature_dir``'s glob-and-match shape (``run_contract_gate.py``)
-    keyed on filename prefix instead of a Gherkin ``@slice-NN`` tag -- the
-    pytest-native equivalent. Zero or multiple matches are NEVER silently
-    resolved by the caller (RC1 Fix B / RC2 Fix A conservative-keep).
-    """
-    feature_dir, slice_us = _regression_file_naming_components(feature_id, slice_id)
-    return sorted(repo.glob(f"tests/**/{feature_dir}/test_{slice_us}_*.py"))
 
 
 def _declared_regression_test_file(
@@ -1103,17 +1068,43 @@ def _resolve_slice_ids(
 
 
 def _missing_by_slice(
-    repo: Path, commit: str, slice_ids: list[str], feature_id: str | None
-) -> tuple[dict[str, list[str]], int | None]:
+    repo: Path,
+    commit: str,
+    slice_ids: list[str],
+    feature_id: str | None,
+    *,
+    at_kind: str | None = None,
+    regression_test_file: str | None = None,
+) -> tuple[dict[str, list[str]], dict[str, bool], int | None]:
     """Run E1 completeness for every listed slice.
 
-    Returns ``(deficient, error_code)``: ``deficient`` maps each slice with
-    missing `.feature` files to that list; ``error_code`` is 2 (and the
-    malformed verdict already emitted) when the repository is unreadable.
+    Returns ``(deficient, verifiable, error_code)``: ``deficient`` maps each
+    slice with missing `.feature` files to that list; ``verifiable`` maps
+    each slice to whether >=1 AT candidate was found for it at all (Bug #126
+    / F-CARPACCIO-E1-VACUOUS-BLOCKS-PREDECESSOR-DISCRIMINATION -- "verified
+    everything" and "verified nothing" must not collapse into the same
+    empty ``deficient`` dict); ``error_code`` is 2 (and the malformed
+    verdict already emitted) when the repository is unreadable.
+
+    ``at_kind``/``regression_test_file`` (fix-e1-explicit-regression-test-file)
+    are forwarded to ``missing_at_files`` as the FOURTH evidence source ONLY
+    when exactly one slice is listed -- an unambiguous "this declaration is
+    for THIS slice" reading. A multi-slice commit does not get the override
+    (conservative-keep, same ambiguity discipline as the path-naming-
+    convention fix): granting it to every listed slice from one declared
+    file would be a false pass, not a fix.
     """
+    single_slice = len(slice_ids) == 1
     try:
-        missing = {
-            slice_id: missing_at_files(repo, commit, slice_id, feature_id)
+        outcomes = {
+            slice_id: missing_at_files(
+                repo,
+                commit,
+                slice_id,
+                feature_id,
+                at_kind=at_kind if single_slice else None,
+                regression_test_file=(regression_test_file if single_slice else None),
+            )
             for slice_id in slice_ids
         }
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
@@ -1123,8 +1114,10 @@ def _missing_by_slice(
                 "error": f"cannot inspect repository: {exc}",
             }
         )
-        return {}, 2
-    return {sid: m for sid, m in missing.items() if m}, None
+        return {}, {}, 2
+    deficient = {sid: o.missing for sid, o in outcomes.items() if o.missing}
+    verifiable = {sid: o.verifiable for sid, o in outcomes.items()}
+    return deficient, verifiable, None
 
 
 def _effective_scope(
@@ -1150,22 +1143,6 @@ def _effective_scope(
         for slice_id in slice_ids
     )
     return scope_feature_id if has_scoped_candidate else None
-
-
-def _has_verifiable_at_candidates(
-    repo: Path, slice_ids: list[str], scope: str | None
-) -> bool:
-    """True iff at least one `.feature` AT candidate exists for any listed slice.
-
-    Bug #126 (false-green regression): ``missing_at_files`` reports "nothing
-    missing" both when every candidate `.feature` file is present AND when
-    ZERO candidates exist to check in the first place -- the two meanings
-    ("verified everything" vs "verified nothing") collapse into the same
-    empty ``deficient`` dict. This probe re-derives the candidate set (the
-    SAME resolver + scope ``_missing_by_slice`` used) so the caller can tell
-    the two apart before minting a verdict.
-    """
-    return any(feature_files_for_slice(repo, slice_id, scope) for slice_id in slice_ids)
 
 
 def _run_legacy_completeness(repo: Path, args: argparse.Namespace) -> int:
@@ -1198,7 +1175,9 @@ def _run_legacy_completeness(repo: Path, args: argparse.Namespace) -> int:
         return error_code
 
     scope = _effective_scope(repo, slice_ids, args.scope_feature_id)
-    deficient, error_code = _missing_by_slice(repo, args.commit, slice_ids, scope)
+    deficient, verifiable, error_code = _missing_by_slice(
+        repo, args.commit, slice_ids, scope
+    )
     if error_code is not None:
         return error_code
 
@@ -1218,7 +1197,7 @@ def _run_legacy_completeness(repo: Path, args: argparse.Namespace) -> int:
         )
         return 1
 
-    if not _has_verifiable_at_candidates(repo, slice_ids, scope):
+    if not any(verifiable.values()):
         _emit_with_human_surface(
             {
                 "event": "SliceCommitIndeterminate",
@@ -1333,7 +1312,14 @@ def _run_verify_checks(
         return error_code, None
 
     # E1 -- completeness. A deficient slice refuses before E2 is reached.
-    deficient, error_code = _missing_by_slice(repo, args.commit, slice_ids, feature_id)
+    deficient, verifiable, error_code = _missing_by_slice(
+        repo,
+        args.commit,
+        slice_ids,
+        feature_id,
+        at_kind=args.at_kind,
+        regression_test_file=args.regression_test_file,
+    )
     if error_code is not None:
         return error_code, None
     if deficient:
@@ -1357,6 +1343,44 @@ def _run_verify_checks(
         )
         return 1, None
 
+    # RCA fix-carpaccio-e1-vacuous-taxonomy-gap: a slice with ZERO recognized
+    # AT candidates anywhere (not "verified complete", "nothing to verify")
+    # must never fall through to E2 as if genuinely cleared -- UNLESS it is
+    # explicitly declared @prefactoring-exempt in the Slice Plan (the
+    # legitimate zero-AT lane, RCA "Legitimate-Zero-AT Non-Regression Note").
+    # This carve-out is MANDATORY: omitting it regresses that lane into a
+    # false refusal.
+    non_verifiable = [
+        sid
+        for sid in slice_ids
+        if not verifiable.get(sid, False)
+        and not _is_at_exempt_lane(repo, feature_id, sid)
+        and not _examine_verdict_clears_slice(repo, feature_id, sid)
+    ]
+    if non_verifiable:
+        _emit_with_human_surface(
+            {
+                "event": "SliceCommitRefused",
+                "refused_half": "E1",
+                "slice_ids": non_verifiable,
+                "commit": args.commit,
+                "error": (
+                    f"feature {feature_id!r} owns no recognized AT "
+                    f"candidates for slice(s) {non_verifiable!r} -- "
+                    "nothing was verified, this is not a pass"
+                ),
+                "how": (
+                    "author a recognized AT for the listed slice(s), or if "
+                    "genuinely zero-AT by design mark the slice "
+                    "@prefactoring in the feature-delta Slice Plan "
+                    "(AtRequirement.EXEMPT) or route it through `des "
+                    "record-prose-delivered`, or clear it via an armed "
+                    "examine-verdict PASS (`des record-examine-verdict`)"
+                ),
+            }
+        )
+        return 1, None
+
     # E2 -- one run per listed slice. Default (`gherkin`): the feature-scoped
     # contract gate, unchanged. `--at-kind pytest-regression` (#13): a
     # BEHAVIORAL attestation -- actually runs the {shipped} UNION {entering}
@@ -1368,9 +1392,18 @@ def _run_verify_checks(
     # introspection (zero .feature files) instead of unconditionally routing
     # into the gherkin scope resolver, which would refuse `zero-collected`
     # for a reason unrelated to the operator's code.
+    # native-regression (fix-rust-regression-at-kind-wiring): the SAME
+    # behavioral-attestation dispatch as pytest-regression, for a non-Python
+    # regression file. Never inferred (unlike pytest-regression's RC1 Fix B
+    # below) -- native-regression is always an explicit operator declaration,
+    # so an operator who declares it without --regression-test-file gets the
+    # clean "requires --regression-test-file" refusal further down, never a
+    # guessed Python file.
     is_pytest_regression = args.at_kind == "pytest-regression"
+    is_native_regression = args.at_kind == "native-regression"
+    is_regression_attestation = is_pytest_regression or is_native_regression
     regression_test_file = args.regression_test_file
-    if not is_pytest_regression and regression_test_file is None:
+    if not is_regression_attestation and regression_test_file is None:
         inferred_file, refusal_payload = _infer_pytest_regression_at_kind(
             repo, feature_id, slice_ids
         )
@@ -1382,6 +1415,7 @@ def _run_verify_checks(
             return inferred_exit_code, None
         if inferred_file is not None:
             is_pytest_regression = True
+            is_regression_attestation = True
             regression_test_file = inferred_file
 
     pytest_regression_checked = False
@@ -1398,7 +1432,7 @@ def _run_verify_checks(
             # short-circuit E2 to an honest clear instead of spawning the
             # vacuous feature-scoped contract-gate subprocess.
             continue
-        if is_pytest_regression:
+        if is_regression_attestation:
             if not regression_test_file:
                 _emit_with_human_surface(
                     {
@@ -1408,12 +1442,11 @@ def _run_verify_checks(
                         "commit": args.commit,
                         "failed_slice": slice_id,
                         "error": (
-                            "--at-kind pytest-regression requires "
-                            "--regression-test-file"
+                            f"--at-kind {args.at_kind} requires --regression-test-file"
                         ),
                         "how": (
                             "pass --regression-test-file <repo-relative-path> "
-                            "alongside --at-kind pytest-regression"
+                            f"alongside --at-kind {args.at_kind}"
                         ),
                     }
                 )
@@ -1460,7 +1493,7 @@ def _run_verify_checks(
         # a genuine refusal. A runnable-but-failing gate returns its own
         # non-zero code and refuses.
         if contract_code == _GATE_INDETERMINATE_EXIT_CODE:
-            if is_pytest_regression:
+            if is_regression_attestation:
                 return (
                     _record_indeterminate_outcome(
                         repo,
@@ -1486,7 +1519,7 @@ def _run_verify_checks(
                 None,
             )
         if contract_code != 0:
-            if is_pytest_regression:
+            if is_regression_attestation:
                 _emit_with_human_surface(
                     {
                         "event": "SliceCommitRefused",

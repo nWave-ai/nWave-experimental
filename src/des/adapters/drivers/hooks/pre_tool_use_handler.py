@@ -43,6 +43,7 @@ from des.application.commit_attribution_service import CommitAttributionService
 from des.application.wave_activation_service import WaveActivationService
 from des.domain.atdd_pure_phases import ATDDPurePhase
 from des.domain.des_marker_parser import DesMarkerParser
+from des.domain.nwave_root import resolve_nwave_root
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 from des.ports.driven_ports.committed_scope_port import Indeterminate
 from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
@@ -177,7 +178,7 @@ def _evaluate_u1_intercept(
                 ),
             }
 
-        project_root = Path.cwd()
+        project_root = resolve_nwave_root()
         if markers.project_root:
             validated = validate_project_root(markers.project_root, str(Path.cwd()))
             if validated is not None:
@@ -215,7 +216,7 @@ def _peek_wave_entering(
     """
     if hook_input.get("tool_name") not in _DISPATCH_TOOL_NAMES:
         return (False, None)
-    peeked = activation.peek_entry(Path.cwd())
+    peeked = activation.peek_entry(resolve_nwave_root())
     if isinstance(peeked, Indeterminate):
         return (
             False,
@@ -254,7 +255,7 @@ def _arm_inferred_fallback(
     declared_wave = DesMarkerParser().parse(prompt).declared_wave
     if declared_wave is None:
         return (False, None)
-    armed = activation.arm_inferred(Path.cwd(), declared_wave)
+    armed = activation.arm_inferred(resolve_nwave_root(), declared_wave)
     if isinstance(armed, Indeterminate):
         return (
             False,
@@ -516,7 +517,7 @@ def handle_pre_tool_use() -> int:
                     # Clear-on-allow (NORMATIVE): the entry check ran and the
                     # gate allowed -- the flag clears, the wave stays armed.
                     try:
-                        activation.clear_entry(Path.cwd())
+                        activation.clear_entry(resolve_nwave_root())
                     except Exception as clear_exc:
                         _log_wave_entry_clear_failed(clear_exc, hook_id)
                 # Create DES task signal if this is a DES-validated task

@@ -55,9 +55,13 @@ if TYPE_CHECKING:
 # / ``at_review_verdict`` -- a function used by four modules is a declared part
 # of this module's surface, never a smuggled cross-module private.
 __all__ = [
+    "FEATURE_END_SEALED_MARKER",
     "_feature_tag_files",
     "_legacy_acceptance_dir",
     "is_slice_coupled",
+    "mark_feature_end_sealed",
+    "mark_slice_status_shipped",
+    "native_regression_at_discovery",
     "read_feature_files",
 ]
 
@@ -511,6 +515,137 @@ def slice_plan_header_deviation(feature_delta_text: str) -> str | None:
     return header_line.strip()
 
 
+# ---------------------------------------------------------------------------
+# Slice-plan table WRITE (F-SLICE-PLAN-STATUS-COLUMN-NEVER-SYNCED)
+# ---------------------------------------------------------------------------
+#
+# Mechanical, pure text-surgery counterparts to the parse-only machinery
+# above. Neither function performs any I/O -- both take the feature-delta's
+# text and return either the rewritten text or ``None`` (a no-op: nothing to
+# change, or the input is not safely rewritable). The CALLER (``commit_slice
+# .py`` / ``feature_end.py``, both hexagonal adapters that already own
+# filesystem I/O) is responsible for reading/writing the file and for
+# catching any unexpected exception -- this module's own promise stays
+# "reads nothing, mutates nothing" at the FILESYSTEM level; these functions
+# only transform an in-memory string.
+
+
+def _replace_table_cell(line: str, cell_index: int, new_value: str) -> str | None:
+    """Replace the ``cell_index``-th GFM cell's content in one table ``line``.
+
+    Locates the un-escaped pipe boundaries (the SAME ``_UNESCAPED_PIPE_RE``
+    scan :func:`_split_table_cells` uses) and rewrites ONLY the target
+    cell's span to `` {new_value} `` (single-space padding, matching this
+    repo's own Slice Plan authoring convention), leaving every other cell's
+    original text -- including whatever whitespace/escaping the author
+    used -- untouched. Returns ``None`` when ``cell_index`` is out of range
+    for this row (fewer pipe boundaries than the requested cell needs)
+    instead of guessing.
+    """
+    leading_ws = line[: len(line) - len(line.lstrip())]
+    trailing_ws = line[len(line.rstrip()) :]
+    stripped = line.strip()
+    positions = [m.start() for m in _UNESCAPED_PIPE_RE.finditer(stripped)]
+    if cell_index + 1 >= len(positions):
+        return None
+    start = positions[cell_index] + 1
+    end = positions[cell_index + 1]
+    new_stripped = f"{stripped[:start]} {new_value} {stripped[end:]}"
+    return f"{leading_ws}{new_stripped}{trailing_ws}"
+
+
+def mark_slice_status_shipped(feature_delta_text: str, slice_id: str) -> str | None:
+    """Mechanically flip ``slice_id``'s Slice-Plan ``Status`` cell to ``shipped``.
+
+    Pure text transform, idempotent and degrade-quiet-to-``None`` (the
+    caller decides whether/how to report the no-op): returns the rewritten
+    text on a genuine ``pending`` -> ``shipped`` flip, or ``None`` when NO
+    rewrite happened -- any of: the ``[REF] Slice Plan`` section is absent,
+    the table is malformed (the SAME ``GateError`` :func:`parse_slice_plan`
+    raises), ``slice_id`` has no row, or the row's ``Status`` is anything
+    OTHER than the literal ``pending`` (already ``shipped``, or a
+    hand-authored value like ``blocked``/``in-progress`` this mechanical
+    sync must NEVER clobber -- GDP-6, never invent a diagnosis for an
+    unexpected value, just decline to touch it).
+
+    F-SLICE-PLAN-STATUS-COLUMN-NEVER-SYNCED: this is the producing-tool
+    side of the fix -- ``des commit-slice`` calls this right after a
+    genuine ``SliceCommitVerified`` ledger append so the human-readable
+    Slice Plan table never drifts from the ledger it is supposed to
+    summarize.
+    """
+    try:
+        plan = parse_slice_plan(feature_delta_text)
+    except GateError:
+        return None
+    row = plan.row_for(slice_id)
+    if row is None or row.status.strip().lower() != "pending":
+        return None
+
+    lines = feature_delta_text.splitlines()
+    heading_index = next(
+        (i for i, ln in enumerate(lines) if _SLICE_PLAN_HEADING_RE.match(ln)),
+        None,
+    )
+    if heading_index is None:
+        return None
+
+    data_rows_seen = 0
+    for i in range(heading_index + 1, len(lines)):
+        line = lines[i]
+        if not _TABLE_ROW_RE.match(line):
+            if data_rows_seen >= 2:
+                break
+            continue
+        data_rows_seen += 1
+        if data_rows_seen <= 2:
+            # Row 1 = header, row 2 = the `|---|---|` separator.
+            continue
+        cells = _split_table_cells(line)
+        slice_index = next(
+            (j for j, cell in enumerate(cells) if _SLICE_ID_RE.match(cell)), None
+        )
+        if slice_index is None or cells[slice_index] != slice_id:
+            continue
+        new_line = _replace_table_cell(line, slice_index + 2, "shipped")
+        if new_line is None:
+            return None
+        lines[i] = new_line
+        rewritten = "\n".join(lines)
+        if feature_delta_text.endswith("\n"):
+            rewritten += "\n"
+        return rewritten
+    return None
+
+
+#: The mechanical feature-end-sealed marker, appended once by
+#: :func:`mark_feature_end_sealed` -- the SAME `<!-- DES-... -->` HTML-comment
+#: marker grammar this repo already uses (``des_enforcement_policy.py``,
+#: ``marker_completeness_policy.py``, ``validator.py``), so a Slice Plan
+#: reader (human or tool) sees a feature-end attestation the same way it
+#: already recognizes other DES markers.
+FEATURE_END_SEALED_MARKER = "<!-- DES-FEATURE-END: sealed -->"
+
+
+def mark_feature_end_sealed(feature_delta_text: str) -> str | None:
+    """Append the feature-end-sealed marker once. Pure text transform.
+
+    Idempotent: returns ``None`` when the marker is ALREADY present (no
+    rewrite), else the text with :data:`FEATURE_END_SEALED_MARKER`
+    appended on its own line at the end of the file (a blank line first,
+    unless the file already ends in one). Never requires a Slice Plan
+    section -- a feature-delta with no Slice Plan still gets sealed.
+    """
+    if FEATURE_END_SEALED_MARKER in feature_delta_text:
+        return None
+    text = feature_delta_text
+    if not text.endswith("\n"):
+        text += "\n"
+    if not text.endswith("\n\n"):
+        text += "\n"
+    return text + FEATURE_END_SEALED_MARKER + "\n"
+
+
 def _malformed_table(detail: str) -> GateError:
     return GateError(
         2,
@@ -733,6 +868,73 @@ def pytest_regression_content_hash(regression_test_file: Path) -> str:
     return hashlib.sha256(source).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# native-regression AT-discovery mode (fix-rust-regression-at-kind-wiring) --
+# resolves (at_ids, content_hash) through the unified AT-discovery port
+# facet-pair (``des.ports.test_runner_port.RunnerAdapter.discover_ats``)
+# instead of a per-language hand-rolled scanner. The runner is resolved from
+# the regression file's OWN suffix -- mirrors ``verify_slice_commit_
+# completeness._routes_through_runner_port``'s suffix-keyed decision -- NEVER
+# an operator-declared per-language flag.
+# ---------------------------------------------------------------------------
+
+_AT_DISCOVERY_SUFFIX_RUNNER: dict[str, str] = {
+    ".py": "pytest",
+    ".rs": "cargo-test",
+}
+
+
+def _no_at_detector_for_language(regression_test_file: Path, detail: str) -> GateError:
+    return GateError(
+        2,
+        {
+            "event": "MalformedInput",
+            "cause": "the regression-test file",
+            "error": f"no AT detector for this language -- {detail}",
+            "how": (
+                f"{regression_test_file} has no wired AT-discovery facet; "
+                f"recognized suffixes: {sorted(_AT_DISCOVERY_SUFFIX_RUNNER)!r}"
+            ),
+        },
+    )
+
+
+def native_regression_at_discovery(regression_test_file: Path) -> tuple[list[str], str]:
+    """Derive ``(at_ids, at_content_hash)`` for ``at_kind="native-regression"``.
+
+    Resolves the at-discovery runner from ``regression_test_file``'s suffix,
+    seeds the runner registry, and dispatches through ``RunnerAdapter.
+    discover_ats`` -- the SAME unified port facet-pair
+    ``discover_pytest_ats``/``discover_cargo_ats`` register under
+    (fix-rust-regression-at-kind-wiring). An unrecognized suffix, or a
+    ``RunnerAdapterUnavailable`` degrade from the facet itself (unreadable/
+    malformed/zero-AT file), raises ``GateError`` exit 2 naming "no AT
+    detector for this language" -- degrade-LOUD, never a silent pytest
+    fallback on a non-Python target.
+    """
+    from des.adapters.driven.runner.runner_registry import seed_runner_registry
+    from des.ports.test_runner_port import RunnerAdapter, RunnerAdapterUnavailable
+
+    runner_name = _AT_DISCOVERY_SUFFIX_RUNNER.get(regression_test_file.suffix)
+    if runner_name is None:
+        raise _no_at_detector_for_language(
+            regression_test_file,
+            f"unrecognized suffix {regression_test_file.suffix!r}",
+        )
+    seed_runner_registry()
+    adapter = RunnerAdapter(name=runner_name)
+    try:
+        discovery = adapter.discover_ats(
+            regression_test_file.parent, regression_test_file
+        )
+    except RunnerAdapterUnavailable as exc:
+        raise _no_at_detector_for_language(
+            regression_test_file,
+            f"the {runner_name!r} at-discovery facet refused: {exc}",
+        ) from exc
+    return list(discovery.at_ids), discovery.content_hash
+
+
 def _has_fixture_decorator(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return any(
         _decorator_name(dec) in ("fixture", "pytest.fixture")
@@ -845,7 +1047,7 @@ def check_carpaccio(
     scenarios: list[Scenario],
     entering_slice: str,
     slice_max: int,
-    at_kind: Literal["gherkin", "pytest-regression"] = "gherkin",
+    at_kind: Literal["gherkin", "pytest-regression", "native-regression"] = "gherkin",
     regression_test_file: Path | None = None,
     *,
     repo: Path | None = None,
@@ -888,11 +1090,14 @@ def check_carpaccio(
     (gherkin mode only -- a pytest-regression AT carries no ``@coupled``-tag
     vocabulary, so the escape never applies in that mode).
     """
-    if at_kind == "pytest-regression" and regression_test_file is None:
+    if (
+        at_kind in ("pytest-regression", "native-regression")
+        and regression_test_file is None
+    ):
         raise ValueError(
-            "check_carpaccio: at_kind='pytest-regression' requires regression_test_file"
+            f"check_carpaccio: at_kind={at_kind!r} requires regression_test_file"
         )
-    if at_kind == "pytest-regression" and scenarios:
+    if at_kind in ("pytest-regression", "native-regression") and scenarios:
         # Mixed-mode guard (ADR-001 HIGH-3): the caller always parses
         # `scenarios` from `_feature_tag_files(repo, feature_id)`, so a
         # non-empty list here IS "the feature owns .feature files" -- the two
@@ -904,7 +1109,7 @@ def check_carpaccio(
                 "event": "MalformedInput",
                 "cause": "mixed AT-discovery mode",
                 "error": (
-                    "at_kind='pytest-regression' but the feature also owns "
+                    f"at_kind={at_kind!r} but the feature also owns "
                     ".feature scenarios; the two AT-discovery modes are "
                     "mutually exclusive"
                 ),
@@ -940,6 +1145,20 @@ def check_carpaccio(
             entering_slice,
             slice_max,
             at_count,
+            all_coupled=all_coupled,
+            slice_max_source=slice_max_source,
+        )
+    if at_kind == "native-regression":
+        assert regression_test_file is not None  # guarded above
+        at_ids, _content_hash = native_regression_at_discovery(regression_test_file)
+        _check_walking_skeleton_first(plan)
+        _check_value_annotation(plan)
+        all_coupled = bool(_COUPLED_TAG_RE.search(entering_row.annotation))
+        return _check_slice_size_count(
+            plan,
+            entering_slice,
+            slice_max,
+            len(at_ids),
             all_coupled=all_coupled,
             slice_max_source=slice_max_source,
         )

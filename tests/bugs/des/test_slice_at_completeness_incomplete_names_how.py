@@ -184,6 +184,52 @@ def test_incomplete_verdict_names_a_how_routing_to_the_producing_tool(
     )
 
 
+def _make_repo_taxonomy_blind(tmp_path: Path) -> tuple[Path, str]:
+    """A commit carrying ZERO `.feature`/pytest-tagged AT candidates anywhere
+    on the tree for this feature/slice -- taxonomy-blind (RCA
+    fix-carpaccio-e1-vacuous-taxonomy-gap). Distinct from
+    ``_make_repo_missing_feature_file``: that fixture authors a real
+    candidate the check DISCOVERS but the commit fails to carry
+    (``incomplete``, exit 1); this fixture has NO candidate to discover in
+    the first place -- "nothing was checked", not "something was checked and
+    found missing".
+    """
+    repo = tmp_path / "taxonomy_blind_repo"
+    _git_init(repo)
+    (repo / "README.md").write_text(
+        "fixture repo, zero AT files anywhere\n", encoding="utf-8"
+    )
+    commit = _commit_all(repo, "initial commit, taxonomy-blind")
+    return repo, commit
+
+
+def test_indeterminate_verdict_when_taxonomy_finds_zero_at_candidates(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """RED (fix-carpaccio-e1-vacuous-taxonomy-gap): zero AT candidates found
+    anywhere for the slice/feature under EITHER taxonomy (Gherkin
+    ``@slice-NN`` or pytest ``@feature-{id}``/``@slice-NN``) must be reported
+    INDETERMINATE (exit 3, ``verdict='indeterminate'``,
+    ``event='SliceAtCompletenessIndeterminate'``) -- distinct from BOTH
+    ``incomplete`` (exit 1, a real candidate the commit fails to carry) and
+    ``MalformedInput`` (exit 2, repo/commit unreadable). Today the check
+    conflates "nothing to verify" with "verified, nothing missing" and
+    silently returns the SAME ``complete`` (exit 0) verdict as a genuinely
+    complete slice.
+    """
+    repo, commit = _make_repo_taxonomy_blind(tmp_path)
+
+    exit_code, payload = _run_check(repo, commit, capsys)
+
+    assert exit_code == 3, (
+        "zero recognized AT candidates anywhere must be reported "
+        "INDETERMINATE (exit 3), never the silent false-green 'complete' "
+        f"(exit 0) -- got exit_code={exit_code!r}; payload={payload!r}"
+    )
+    assert payload.get("verdict") == "indeterminate", payload
+    assert payload.get("event") == "SliceAtCompletenessIndeterminate", payload
+
+
 # ===========================================================================
 # NEGATIVE AT -- control, green today AND after the fix
 # ===========================================================================

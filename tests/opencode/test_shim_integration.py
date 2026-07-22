@@ -134,6 +134,18 @@ class TestWalkingSkeletonMissingMarkers:
 
     def test_missing_markers_blocked(self, tmp_path):
         """Adapter blocks dispatch when step-id referenced without DES markers."""
+        # Isolated tmp_path has no `.nwave/local-config.json`, so the
+        # activation gate's fresh-install default ("opt-in", inactive) would
+        # fail this test open before the marker-completeness check ever runs.
+        # Declare the project active, mirroring the real repo's own config
+        # that this test used to read by accident via the pre-isolation-fix
+        # Path.cwd() fallback.
+        config_dir = tmp_path / ".nwave"
+        config_dir.mkdir()
+        (config_dir / "local-config.json").write_text(
+            json.dumps({"enabled_for_repo": True}), encoding="utf-8"
+        )
+
         # Prompt references step 01-01 but has NO DES markers
         cc_json = {
             "tool_name": "Agent",

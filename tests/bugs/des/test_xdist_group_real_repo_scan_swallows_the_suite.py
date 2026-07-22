@@ -1,112 +1,124 @@
-"""Regression AT -- the `real_repo_scan` xdist_group swallows the majority of
-the full-suite wall-clock budget, AND the isolation it substitutes for is not
-actually wired where it matters.
+"""Regression AT -- the `real_repo_scan` xdist_group must not swallow the
+majority of the full-suite wall-clock budget, the isolation it substitutes
+for must stay wired, and its detector must not false-positive on ordinary
+`cwd`-bookkeeping code that never touches the real repo.
 
-RCA (measured, not re-derived here -- see the feature ticket for the full
-timing pass):
+CURRENT DETECTOR MECHANIC (`tests/conftest.py`, read live before editing this
+docstring -- do not let these line numbers go stale again):
 
-    `tests/conftest.py:1495-1501` pins every test whose module (or sibling
-    `*composition*.py` / `*steps*/` module) drives a `cwd=<real repo>`
-    subprocess onto `pytest.mark.xdist_group("real_repo_scan")`. Under
-    `--dist loadgroup` every member of a group runs on ONE worker, serialized.
-    Measured: that group holds 1264s of a 1491s pass = 84.7% of total test
-    weight -- so `-n auto` buys ~1x at full-suite scale (8084 items, 25m15s
-    wall, 4-core box, target 5min / ceiling 10min) while paying full xdist
-    overhead, even though unit-only runs get the expected ~2x (89.4s serial
-    -> 44.2s at -n4).
+    `pytest_collection_modifyitems` (`tests/conftest.py:1664`) pins every
+    collected item for which `_item_depends_on_real_repo()`
+    (`tests/conftest.py:1599`) returns `True` onto
+    `pytest.mark.xdist_group("real_repo_scan")` (the `add_marker` call at
+    `tests/conftest.py:1748`). Under `--dist loadgroup` every member of a
+    group runs on ONE worker, serialized.
 
-    The detector (`tests/conftest.py:1301-1414`) is a regex over SOURCE TEXT
-    matching `cwd=REPO_ROOT|PROJECT_ROOT|_repo_root()|Path.cwd()`, scanned
-    against the test's own module PLUS its directory's `*composition*.py` and
-    `*steps*/` siblings -- BDD suites keep the actual subprocess call in a
-    shared composition/step module, so ONE matching module pins the WHOLE
-    directory. Reproduced here (deterministic, static, no timing needed):
-    249 of 1220 `test_*.py` files (20.4%) match the sibling-expanded detector,
-    versus only 30 of 1220 (2.5%) matching a DIRECT `cwd=<real repo>` call in
-    their own module -- an ~8.3x over-approximation from the directory-wide
-    expansion.
+    `_item_depends_on_real_repo()` / `_compute_item_depends_on_real_repo()`
+    (`tests/conftest.py:1627`) walk an IMPORT-GRAPH CLOSURE: the item's own
+    test module, the `conftest.py` chain pytest applies to it, and every
+    local module transitively imported from those roots -- confined to the
+    `tests/` tree (never following into `src/`, where a real subprocess
+    `cwd=Path.cwd()` call is normal production behaviour, not a signal). This
+    REPLACED an earlier directory-glob expansion (one matching
+    `*composition*.py`/`*steps*/` sibling pinned its whole directory,
+    ~8.3x over-pinning) -- see git history around commit range
+    `d99b7ab9b`..`7cbcdbc16` for the migration. Import-reachability is the
+    load-bearing property: a test can only touch the shared `.nwave` state
+    through code it actually imports.
 
-    The marker exists for a REAL reason (commit 25bc00d35, 2026-06-21): these
-    tests drive actual `des` CLI subprocesses against the repo root, sharing
-    mutable `.nwave` state (`.nwave/wave-active/active.json`, the wave floor
-    `PreToolUseService._read_active_wave()` reads via `Path.cwd()` --
-    `src/des/application/pre_tool_use_service.py:508`). Two such tests landing
-    on the same xdist worker collide on that shared on-disk state; the fix
-    at the time was correct (serialize them) and its commit message recorded
-    "No slowdown (466s -> 458s)" -- true at 5630 items, false at 8084. The
-    safety measure was never re-measured as the suite grew.
+    The leaf-level test is `_file_drives_real_repo_cwd()`
+    (`tests/conftest.py:1421`), a regex (`_REAL_REPO_CWD_RE`,
+    `tests/conftest.py:1397-1408`) over SOURCE TEXT matching the `cwd=`
+    keyword argument immediately followed by `REPO_ROOT` / `PROJECT_ROOT` /
+    `_repo_root()` / `Path.cwd()` (optionally through `str(...)`).
 
-WHAT THIS FILE GUARDS -- both halves, deliberately in ONE module so neither
-gets "fixed" without the other:
+    The marker exists for a REAL reason (commit 25bc00d35, 2026-06-21): tests
+    that drive actual `des` CLI subprocesses with `cwd=<real repo>` share
+    mutable `.nwave` state (`.nwave/wave-active/active.json`) across the
+    subprocess boundary. Two such tests landing on the same xdist worker can
+    collide on that shared on-disk state; serializing them was, and remains,
+    correct -- the failure modes below are about the detector's PRECISION
+    (over- and under-pinning), never about removing the safety measure
+    itself.
+
+WHAT THIS FILE GUARDS -- three parts, deliberately in ONE module so none
+gets "fixed" in isolation from the others:
 
   (a) `test_real_repo_scan_group_does_not_dominate_collected_items` --
       the serialized lane must not silently swallow the majority of the
-      suite AGAIN. Deterministic observable: the FRACTION OF COLLECTED ITEMS
+      suite. Deterministic observable: the FRACTION OF COLLECTED ITEMS
       pinned to the `real_repo_scan` xdist_group (never wall-clock seconds --
       machine-dependent and would itself become a source of flakiness). This
       mirrors exactly what `--dist loadgroup` schedules on: item membership,
       not file count or timing.
 
       THRESHOLD: 10% of collected items (`unit or integration or acceptance`
-      selection). CURRENT measured value: 1339 of 7809 items = 17.15% --
-      reproduced live by this test on every run, not a hardcoded snapshot.
-      JUSTIFICATION: the RCA's own timing pass gives an empirical per-item
-      cost ratio between group and non-group items:
-        group:      1264s / 1339 items = 0.944s/item
-        non-group:   227s / 6470 items = 0.0351s/item
-        ratio:      0.944 / 0.0351 ~= 26.9x
-      i.e. group items are ~27x more expensive on average (subprocess spawns
-      vs in-memory calls) -- which is EXACTLY why 17.15% of items already
-      costs 84.7% of wall time (0.1715*26.9 / (0.1715*26.9 + 0.8285) = 84.7%,
-      matching the measurement). At the chosen 10% ceiling, the SAME cost
-      ratio still implies ~75% of wall time is serialized -- so 10% is
-      explicitly a NECESSARY-not-sufficient floor: it catches "the group grew
-      back to (or past) today's size," it does NOT certify the suite hits its
-      5-10min target. It is set comfortably below today's 17.15% (a ~42%
-      required reduction) so the test is RED now, for the measured reason,
-      and gives the fix a concrete, non-hand-wavy number to beat. Achieving
-      the actual wall-clock target requires shrinking the GROUP (tighter
-      detection than "one matching sibling pins the whole directory" -- see
-      the 249-vs-30-file gap above) and/or removing the need for serialization
-      (isolating the shared `.nwave` state the group protects) -- that is the
-      fix's job, not this test's.
+      selection). LIVE VALUE AT LAST VERIFICATION (2026-07-20, this bugfix's
+      Phase 3a, re-run against the unmodified tree immediately before writing
+      this docstring): 826 of 8117 items = 10.18% -- RED against the ceiling
+      by a hair, reproduced live by this test on every run, never a
+      hardcoded snapshot. The per-item cost-ratio rationale for the 10%
+      figure (group items are markedly more expensive than non-group items
+      because they spawn subprocesses instead of running in-memory) predates
+      the import-graph-closure migration and has not been re-measured since
+      -- treat it as the historical justification for WHY 10% and not a
+      currently-reproduced number. Bringing the fraction back under ceiling
+      is this bugfix's target: tightening `_REAL_REPO_CWD_RE` with a `\\b`
+      word-boundary (see part (c)) removes 193 false-positive items,
+      independently verified (RCA) to take the fraction to 633/8117 = 7.80%.
 
   (b) `test_pre_tool_use_service_does_not_honor_des_project_dir_override` --
-      whatever REPLACES the serialization must PRESERVE isolation. A fix that
-      dissolves/shrinks the group without isolating `.nwave` state per-test
-      re-opens the EXACT order-dependent corruption 25bc00d35 fixed -- and the
-      symptom is flakiness: false reds indistinguishable from real
-      regressions, false greens that ship defects. A suite that is fast and
-      untrustworthy is worse than one that is slow and honest, so a
-      regression test that only asserts speed would invite exactly that.
+      whatever bounds or shrinks the group must not silently drop the
+      isolation it substitutes for. A change that shrinks the group without
+      the underlying `.nwave` state being isolated per-test re-opens the
+      EXACT order-dependent corruption 25bc00d35 fixed -- and the symptom is
+      flakiness: false reds indistinguishable from real regressions, false
+      greens that ship defects.
 
-      This test proves, behaviourally (through the real driving port
+      NAME IS NOW A MISNOMER -- READ BEFORE "FIXING" IT: this test proves,
+      behaviourally (through the real driving port
       `PreToolUseService.validate()`, real `WaveActiveFilesystemStore`, no
       fakes on the seam under test), that the per-test isolation mechanism
-      ALREADY BUILT for this (`DES_PROJECT_DIR` / `resolve_nwave_root()` --
-      DDD-14/DDD-15, `src/des/domain/nwave_root.py`) is NOT wired into the one
-      production call site the group-pin's own comment names:
-      `PreToolUseService._read_active_wave()` calls
-      `self._wave_active_reader.read(Path.cwd())` directly
-      (`pre_tool_use_service.py:508`), never consulting `DES_PROJECT_DIR`.
-      Confirmed via the code-fact port (`callers_of resolve_nwave_root`):
-      the resolver has exactly TWO callers, both inside its OWN acceptance
-      test (`tests/des/acceptance/sustainable-test-suite/.../slice_05_composition.py`)
-      -- it is a dormant seam, never consumed by the hinge it was built to fix.
+      `DES_PROJECT_DIR` / `resolve_nwave_root()` (DDD-14/DDD-15,
+      `src/des/domain/nwave_root.py`) IS honoured by
+      `PreToolUseService._read_active_wave()`
+      (`src/des/application/pre_tool_use_service.py:543` calls
+      `resolve_nwave_root()`, not a bare `Path.cwd()`). This was a genuine
+      gap when this file was first authored (the docstring at the time
+      described it as RED); it was closed by a separate bugfix that wired
+      `DES_PROJECT_DIR` isolation into five Tier-1 `.nwave`-root call sites
+      (confirmed live: `callers_of resolve_nwave_root` now returns 10
+      production call sites, up from the original 2 test-only callers). The
+      test now asserts `action == "allow"` and PASSES -- it is a REGRESSION
+      GUARD holding that wiring in place, not a proof of an open gap. Do not
+      "fix" it by flipping the assertion; if it ever goes red again, the
+      isolation wiring regressed and that is the bug to chase.
 
-      So TODAY, isolation for this floor is achieved SOLELY by the
-      `real_repo_scan` serialization -- there is no fallback. Any fix that
-      relaxes the group before wiring this call site through a per-test
-      overridable root regresses correctness, not just speed. This test
-      documents that dependency as an executable assertion so it cannot be
-      silently dropped: it is RED now (the call site ignores the isolation
-      override), and it must go GREEN (the call site honours it) BEFORE
-      (a)'s ceiling can be safely lowered further or the group removed.
+  (c) `test_cwd_bookkeeping_idiom_does_not_pin_real_repo_scan_group` --
+      the detector must not false-positive on the ordinary
+      "save cwd, chdir into a hermetic tmp dir, restore after" bookkeeping
+      idiom (`prev_cwd = Path.cwd()` / `original_cwd = Path.cwd()` /
+      `previous_cwd = Path.cwd()`), which spawns no subprocess and never
+      touches the real repo's shared `.nwave` state. `_REAL_REPO_CWD_RE`
+      matches the LITERAL substring `cwd` immediately before `=` with no
+      left-hand word boundary, so it matches the `cwd` inside `prev_cwd`
+      followed by ` = Path.cwd(` -- the RHS `Path.cwd()` call itself
+      satisfies one of the regex's own anchor alternatives, so the whole
+      idiom self-matches. RCA (2026-07-20) found 43 files carrying this
+      false-positive pattern, together responsible for 193 of the 826
+      currently-pinned items. This test pins ONE representative case as an
+      executable regression guard: RED today (falsely detected as
+      real-repo-dependent), and must go GREEN once the detector gains a
+      left-hand `\\b` word boundary -- without that fix ever weakening the
+      TRUE-positive case (a companion assertion in the same test pins that a
+      genuine `cwd=REPO_ROOT`-style call must still be detected).
 
-Neither test drives a `cwd=<real repo>` subprocess itself (test (a) collects
-in-process via a nested `pytest.main()`; test (b) drives the real filesystem
-adapter directly and only `chdir`s) -- this file legitimately does not match
-the detector it exercises, and is not itself pinned to `real_repo_scan`.
+Neither (a) nor (b) drives a `cwd=<real repo>` subprocess itself (test (a)
+collects in-process via a nested `pytest.main()`; test (b) drives the real
+filesystem adapter directly and only `chdir`s), and (c) calls the detector
+function directly on synthetic source text with no subprocess anywhere --
+this file legitimately does not match the detector it exercises, and is not
+itself pinned to `real_repo_scan`.
 """
 
 from __future__ import annotations
@@ -290,14 +302,105 @@ def test_pre_tool_use_service_does_not_honor_des_project_dir_override(
         "(the per-test isolation override) and read the UNARMED isolated "
         "root -- expected action='allow' (S1: no wave active). Observed "
         f"action={decision.action!r} reason={decision.reason!r}: the service "
-        "read the ARMED shared cwd floor instead of the isolated root, "
-        "proving `_read_active_wave()` still calls bare `Path.cwd()` "
-        "(pre_tool_use_service.py:508) rather than an isolation-aware "
-        "resolver. Until this is fixed, the `real_repo_scan` xdist_group's "
-        "SERIALIZATION is the ONLY thing preventing this exact "
-        "order-dependent collision across xdist workers -- do not relax or "
-        "remove that group without wiring this call site through a "
-        "per-test-overridable root first (see module docstring '(b)')."
+        "read the ARMED shared cwd floor instead of the isolated root -- "
+        "this means `_read_active_wave()` (pre_tool_use_service.py:543) has "
+        "REGRESSED to a bare `Path.cwd()` instead of "
+        "`resolve_nwave_root()` (it honoured DES_PROJECT_DIR when this test "
+        "was last verified GREEN). Until this is re-fixed, the "
+        "`real_repo_scan` xdist_group's SERIALIZATION is the ONLY thing "
+        "preventing this exact order-dependent collision across xdist "
+        "workers -- do not relax or remove that group without restoring "
+        "this call site's isolation wiring first (see module docstring "
+        "'(b)')."
+    )
+
+
+# ---------------------------------------------------------------------------
+# (c) detector-precision guard -- the cwd-bookkeeping idiom must not
+# false-positive into the real_repo_scan pin.
+# ---------------------------------------------------------------------------
+
+_CWD_BOOKKEEPING_SNIPPET = """
+from pathlib import Path
+
+
+def some_test_helper():
+    {var} = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        do_work()
+    finally:
+        os.chdir({var})
+"""
+
+_GENUINE_REAL_REPO_SUBPROCESS_SNIPPET = """
+import subprocess
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def some_test():
+    subprocess.run(["des", "status"], cwd=REPO_ROOT, check=True)
+"""
+
+
+@pytest.mark.parametrize(
+    "var",
+    ["prev_cwd", "original_cwd", "previous_cwd"],
+)
+def test_cwd_bookkeeping_idiom_does_not_pin_real_repo_scan_group(
+    tmp_path: Path, var: str
+) -> None:
+    """The `real_repo_scan` detector must not false-positive on the ordinary
+    save-cwd/chdir/restore bookkeeping idiom -- see module docstring '(c)'.
+
+    Drives the SAME function `pytest_collection_modifyitems`
+    (`tests/conftest.py:1664`) calls at its pin site
+    (`tests/conftest.py:1747-1748`) -- `_item_depends_on_real_repo()` --
+    directly on a synthetic source file containing ONLY the bookkeeping
+    idiom (no subprocess `cwd=` call anywhere). If this returns `True`, the
+    collection hook pins the item; the assertion below proves it must not.
+    """
+    import tests.conftest as suite_conftest
+
+    probe_file = tmp_path / f"probe_{var}.py"
+    probe_file.write_text(_CWD_BOOKKEEPING_SNIPPET.format(var=var), encoding="utf-8")
+
+    assert suite_conftest._item_depends_on_real_repo(probe_file) is False, (
+        f"a file containing only `{var} = Path.cwd()` bookkeeping (save cwd "
+        "before chdir-ing into a hermetic tmp dir, restore after) was "
+        "detected as driving a `cwd=<real repo>` subprocess and would be "
+        "pinned to xdist_group('real_repo_scan'). `_REAL_REPO_CWD_RE` "
+        f"(tests/conftest.py:1397-1408) matched the `cwd` inside `{var}` "
+        "followed by ` = Path.cwd(` -- the RHS `Path.cwd()` call satisfies "
+        "the regex's own `Path.cwd()` anchor alternative, so the idiom "
+        "self-matches. Fix: add a left-hand `\\b` word boundary before the "
+        "`cwd` literal in `_REAL_REPO_CWD_RE` so it only matches when `cwd` "
+        "is a keyword-argument NAME, not a substring of a longer identifier."
+    )
+
+
+def test_genuine_real_repo_subprocess_call_still_pins_real_repo_scan_group(
+    tmp_path: Path,
+) -> None:
+    """Companion to the false-positive guard above -- the fix for (c) must
+    not overcorrect into a false NEGATIVE. A genuine
+    `subprocess.run(..., cwd=REPO_ROOT)` call must still be detected and
+    pinned; this is the exact defect class the group exists to serialize
+    (see module docstring's "The marker exists for a REAL reason" section).
+    """
+    import tests.conftest as suite_conftest
+
+    probe_file = tmp_path / "probe_genuine_subprocess.py"
+    probe_file.write_text(_GENUINE_REAL_REPO_SUBPROCESS_SNIPPET, encoding="utf-8")
+
+    assert suite_conftest._item_depends_on_real_repo(probe_file) is True, (
+        "a file containing a genuine `subprocess.run(..., cwd=REPO_ROOT)` "
+        "call was NOT detected as driving a `cwd=<real repo>` subprocess "
+        "and would NOT be pinned to xdist_group('real_repo_scan') -- this "
+        "would silently drop the isolation the group exists to provide "
+        "(see the '25bc00d35' rationale in the module docstring)."
     )
 
 

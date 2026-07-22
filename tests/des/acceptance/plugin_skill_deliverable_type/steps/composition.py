@@ -223,7 +223,15 @@ class PluginSkillComposition:
         )
         self.recorded["prompt"] = prompt
         previous_cwd = os.getcwd()
+        previous_des_project_dir = os.environ.get("DES_PROJECT_DIR")
         os.chdir(self.project_root)
+        # Mirror the chdir target into DES_PROJECT_DIR so `resolve_nwave_root()`
+        # (now consulted by the handler's peek_entry/arm_inferred/clear_entry and
+        # U1-intercept default project_root) resolves the SAME root this step
+        # dispatched against, not the per-test isolation root the autouse
+        # `_isolate_nwave_root` fixture set (tests/conftest.py). Mirrors the
+        # established pattern in composition_slice_07.py.
+        os.environ["DES_PROJECT_DIR"] = str(self.project_root)
         previous_stdin = self._stdin_swap(io.StringIO(stdin_payload))
         previous_print = self._silence_print()
         try:
@@ -232,6 +240,10 @@ class PluginSkillComposition:
             self._restore_stdin(previous_stdin)
             self._restore_print(previous_print)
             os.chdir(previous_cwd)
+            if previous_des_project_dir is None:
+                os.environ.pop("DES_PROJECT_DIR", None)
+            else:
+                os.environ["DES_PROJECT_DIR"] = previous_des_project_dir
         self.last_gate_outcome = (
             GateOutcome.EXEMPT
             if self.last_handler_exit_code == 0

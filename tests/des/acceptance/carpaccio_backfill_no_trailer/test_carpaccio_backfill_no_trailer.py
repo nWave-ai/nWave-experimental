@@ -246,3 +246,71 @@ def test_predecessor_backfill_trailer_path_unchanged(tmp_path: Path) -> None:
         f"unchanged (no regression from adding the fallback). decision={decision!r}"
     )
     assert _predecessor_verified(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Scenario (d): RCA fix-carpaccio-e1-vacuous-taxonomy-gap -- a candidate
+# commit found by the trailer scan for a feature/slice whose AT layout
+# matches NEITHER the .feature nor the pytest-tagged taxonomy (zero
+# candidates anywhere -- taxonomy-blind, e.g. the real des-refactor-fixer-
+# swarm shape of tests/des/refactor/*.py before it was tagged) must be
+# REFUSED, never silently accepted as "E1 satisfied". This reproduces the
+# real incident (backlog.md:347): `missing_at_files` returns `[]` both when
+# genuinely verified-complete AND when it found ZERO AT candidates to check
+# in the first place -- the trailer-scan loop in `_predecessor_commit_sha`
+# reads either `[]` as "this candidate satisfies E1" and accepts the FIRST
+# trailer-matching commit with zero real discrimination, even though the
+# commit itself carries no relation whatsoever to this feature's slice-01.
+# ---------------------------------------------------------------------------
+
+
+def _seed_predecessor_commit_taxonomy_blind(repo: Path) -> None:
+    """A predecessor commit carrying a genuine `Slice-Id:` trailer AND a
+    verifiable Gate-Scope digest (E2 would clear), but the feature owns
+    ZERO `.feature`/pytest-tagged AT candidates anywhere on the tree --
+    taxonomy-blind. E1 has nothing to check this candidate against; the fix
+    must refuse rather than read that absence as "nothing missing".
+    """
+    (repo / "UNRELATED.md").write_text("unrelated content\n", encoding="utf-8")
+    _git(repo, "add", "UNRELATED.md")
+    _git(repo, "commit", "-m", f"feat: unrelated work\n\nSlice-Id: {_PREDECESSOR}")
+    digest = _fresh_gate_scope_digest(repo)
+    _git(
+        repo,
+        "commit",
+        "--amend",
+        "-m",
+        f"feat: unrelated work\n\nSlice-Id: {_PREDECESSOR}\nGate-Scope: {digest}",
+    )
+
+
+def test_predecessor_backfill_refuses_when_taxonomy_finds_zero_candidates(
+    tmp_path: Path,
+) -> None:
+    """RED (fix-carpaccio-e1-vacuous-taxonomy-gap): a taxonomy-blind
+    feature/slice (zero .feature/pytest-tagged AT candidates anywhere) must
+    cause the backfill to REFUSE, never silently accept a trailer-matching
+    commit as a verified predecessor -- regardless of that commit's Gate-
+    Scope digest being genuinely fresh. Today `missing_at_files` returns
+    `[]` for "found nothing to check" identically to "checked everything,
+    nothing missing", so this candidate is wrongly accepted as E1-satisfied.
+    """
+    _init_repo(tmp_path)
+    _seed_predecessor_commit_taxonomy_blind(tmp_path)
+
+    decision = _evaluate_entry_gate(tmp_path)
+
+    assert decision.is_block, (
+        "a predecessor commit whose feature/slice AT layout matches NEITHER "
+        "the .feature nor the pytest-tagged taxonomy (zero candidates "
+        "anywhere) must be REFUSED -- E1 found nothing to verify, which is "
+        "not the same as verifying nothing is missing. Silently accepting "
+        "it is exactly the incident this fix closes: a commit belonging to "
+        "an unrelated feature was accepted as the true predecessor because "
+        f"E1 vacuously reported [] regardless of input. decision={decision!r}"
+    )
+    assert not _predecessor_verified(tmp_path), (
+        "no SliceCommitVerified record may be minted for a taxonomy-blind "
+        "predecessor candidate -- doing so mints a false-positive ledger "
+        "record for a commit that was never actually verified."
+    )

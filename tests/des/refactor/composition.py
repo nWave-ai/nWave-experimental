@@ -504,6 +504,32 @@ proposed_solution="extract a shared function"
         finally:
             os.chdir(previous_cwd)
 
+    def call_refactor_main_in_process_with_driver(
+        self, *, driver: str, agent_cmd: str
+    ) -> int:
+        """Layer 2 in-process: call the REAL ``des refactor`` CLI entry with an
+        explicit ``--driver`` value -- the CLI-to-driver wiring surface
+        (bugfix-refactor-driver-loop-dead-code). Mirrors
+        ``call_refactor_main_in_process_with_max_parallel`` exactly, only
+        swapping the ``--max-parallel`` argv token for ``--driver``."""
+        from des.cli.refactor import main as refactor_main
+
+        previous_cwd = Path.cwd()
+        os.chdir(self.project_root)
+        try:
+            return refactor_main(
+                [
+                    "--pile",
+                    str(self.pile_path),
+                    "--agent-cmd",
+                    agent_cmd,
+                    "--driver",
+                    driver,
+                ]
+            )
+        finally:
+            os.chdir(previous_cwd)
+
     # --- When: drive the CLI (Layer 1 subprocess, walking-skeleton ONLY) ---
 
     def run_refactor_cli_subprocess(self, agent_cmd: str = "true") -> CliResult:

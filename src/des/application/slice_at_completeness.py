@@ -11,8 +11,8 @@ symbols (DDD-3 identity guarantee) and ``check_slice_at_completeness`` imports
 them directly (DDD-2).
 
 Contract shape: pure-function (return-only). Inputs: ``(repo, commit, slice_id,
-feature_id)``. Outputs: ``list[str]``. No filesystem mutation beyond git's read
-cache. The driving-port wrapper (``des.cli.check_slice_at_completeness``)
+feature_id)``. Outputs: ``AtCompletenessOutcome``. No filesystem mutation beyond
+git's read cache. The driving-port wrapper (``des.cli.check_slice_at_completeness``)
 inherits this read-only contract by construction (principle 12 effect-isolation
 -- arch-test enforced via the no-``AtCompletionLedger``-import rule).
 
@@ -23,12 +23,29 @@ plus ``feature_tagged_test_files`` / ``resolve_test_file_attribution`` (the
 pytest-side mirror, WTBD-168) added to close
 F-FEATURE-END-COMPLETENESS-ORACLE-PYTEST-BLIND -- a slice delivered only by a
 head-comment-tagged pytest AT file was invisible to this oracle.
+
+``_regression_file_naming_components`` / ``canonical_regression_test_path`` /
+``_regression_file_glob_candidates`` (moved here from
+``des.cli.verify_slice_commit_completeness``, same DDD-1/DDD-9 promotion this
+module's docstring already describes for ``feature_files_for_slice`` /
+``missing_at_files`` -- fix-e1-pytest-regression-path-convention) are the
+THIRD AT taxonomy ``feature_files_for_slice`` recognizes: a pytest-regression
+file named by convention (``tests/**/{feature_dir}/test_{slice_us}_*.py``, no
+``@feature-``/``@slice-NN`` head-comment tag required) is the same positive
+evidence ``_infer_pytest_regression_at_kind``
+(``verify_slice_commit_completeness.py``, RC1 Fix B) already trusts to route
+E2 to the pytest-regression path -- E1's completeness/verifiability check now
+recognizes the identical convention instead of reading it as taxonomy-blind
+(F-E1-VACUOUS-MISSES-PYTEST-REGRESSION-PATH-CONVENTION).
+``verify_slice_commit_completeness.py`` re-exports all three names unchanged
+(``__all__``) so its 18 pre-existing callers keep importing from there.
 """
 
 from __future__ import annotations
 
 import fnmatch
 import subprocess
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.git_subprocess import git_text as _git
@@ -49,6 +66,72 @@ if TYPE_CHECKING:
 _SLICE_TAG_RE = SLICE_TAG_RE
 
 _PYTEST_COLLECTIBLE_PATTERNS = ("test_*.py", "*_test.py")
+
+
+def _regression_file_naming_components(
+    feature_id: str, slice_id: str
+) -> tuple[str, str]:
+    """The two normalized components (``feature_dir``, ``slice_us``) the
+    regression-file naming convention is built from -- hyphens replaced by
+    underscores. Pure.
+
+    SINGLE SOURCE for both ``_regression_file_glob_candidates`` below and
+    ``canonical_regression_test_path`` (the seam a producer like
+    ``des examine-fixture`` consumes to WRITE a new regression file this gate
+    will later recognize) -- widening the naming convention into one shared
+    private helper instead of letting a producer re-derive/guess it is what
+    makes the produced fixture correct BY CONSTRUCTION (examinable-gate-
+    surface feature, arch invariant: never re-declare this convention).
+    """
+    return feature_id.replace("-", "_"), slice_id.replace("-", "_")
+
+
+def canonical_regression_test_path(
+    feature_id: str,
+    slice_id: str,
+    *,
+    parent: str = "fixture",
+    suffix: str = "behaviour",
+) -> str:
+    """A repo-relative pytest-regression file path this gate's OWN naming
+    convention (``_regression_file_glob_candidates``) resolves for
+    ``slice_id``. Pure.
+
+    The examinable-gate-surface feature's arch invariant: any producer that
+    needs to WRITE a new regression file the gate will later recognize (e.g.
+    ``des examine-fixture``) MUST derive its filename through this function,
+    never by hand-matching the glob pattern below (a private implementation
+    detail) -- a second copy of the convention would reintroduce the exact
+    naming drift this feature exists to end. ``parent``/``suffix`` select
+    WHERE under ``tests/**/{feature_dir}/`` and WHAT filename-tail the file
+    gets; the returned path always satisfies ``test_{slice_us}_*.py`` for the
+    SAME ``slice_us`` normalization ``_regression_file_glob_candidates``
+    applies, so a file written at this path is guaranteed to resolve as
+    exactly one candidate.
+    """
+    feature_dir, slice_us = _regression_file_naming_components(feature_id, slice_id)
+    return f"tests/{parent}/{feature_dir}/test_{slice_us}_{suffix}.py"
+
+
+def _regression_file_glob_candidates(
+    repo: Path, feature_id: str, slice_id: str
+) -> list[Path]:
+    """Every file matching ``slice_id``'s regression-file naming convention.
+
+    Glob ``tests/**/{feature_dir}/test_{slice_us}_*.py``, where
+    ``feature_dir``/``slice_us`` are ``feature_id``/``slice_id`` with hyphens
+    replaced by underscores (``_regression_file_naming_components``) -- the
+    SAME convention this feature's own fixtures follow
+    (``tests/fixture/{feature_id}/test_{slice_id}_*.py``) and the SAME shape
+    already load-bearing on disk (e.g.
+    ``tests/des/acceptance/{feature_id}/test_slice_NN_*.py``). Mirrors
+    ``_slice_feature_dir``'s glob-and-match shape (``run_contract_gate.py``)
+    keyed on filename prefix instead of a Gherkin ``@slice-NN`` tag -- the
+    pytest-native equivalent. Zero or multiple matches are NEVER silently
+    resolved by the caller (RC1 Fix B / RC2 Fix A conservative-keep).
+    """
+    feature_dir, slice_us = _regression_file_naming_components(feature_id, slice_id)
+    return sorted(repo.glob(f"tests/**/{feature_dir}/test_{slice_us}_*.py"))
 
 
 def _is_pytest_collectible(path: Path) -> bool:
@@ -73,7 +156,7 @@ def feature_files_for_slice(
 ) -> list[str]:
     """Return repo-relative paths of the AT files delivering the slice.
 
-    Two discovery paths, UNIONed:
+    Three discovery paths, UNIONed:
 
     1. Gherkin -- `.feature` files tagging the slice. A `.feature` file
        belongs to the slice when any of its scenarios carry the
@@ -99,6 +182,23 @@ def feature_files_for_slice(
        ``_is_pytest_collectible``) -- a doc, an ADR, or a non-test module that
        merely *mentions* the tag convention in its head must never count as a
        delivered AT (the un-gameable truncation guard).
+
+    3. pytest-regression PATH CONVENTION -- a file matching
+       ``_regression_file_glob_candidates``'s naming convention
+       (``tests/**/{feature_dir}/test_{slice_us}_*.py``, no head-comment tag
+       required) counts as a delivered AT for ``slice_id`` when EXACTLY ONE
+       file matches. This is the SAME positive evidence
+       ``_infer_pytest_regression_at_kind``
+       (``des.cli.verify_slice_commit_completeness``, RC1 Fix B) already
+       trusts to route E2 to the pytest-regression path -- closes
+       F-E1-VACUOUS-MISSES-PYTEST-REGRESSION-PATH-CONVENTION, where E1 read a
+       slice using this established convention as taxonomy-blind. Only
+       active when ``feature_id`` is given (the convention is keyed on
+       ``feature_dir``, mirroring taxonomy 2's wall-W5 scoping). Zero matches
+       add no signal (conservative-keep, unchanged); >=2 matches add no
+       signal either -- an ambiguous convention match is never silently
+       resolved here, left for E2's own dedicated ambiguity refusal
+       (``_infer_pytest_regression_at_kind``) to surface.
 
     The unioned candidate set is deduplicated before returning: a `.feature`
     file can legitimately be matched by BOTH paths (Gherkin tags precede
@@ -127,6 +227,11 @@ def feature_files_for_slice(
             attribution = resolve_test_file_attribution(test_path)
             if attribution.slice_id == slice_id:
                 matched.append(str(test_path.relative_to(repo)))
+        convention_candidates = _regression_file_glob_candidates(
+            repo, feature_id, slice_id
+        )
+        if len(convention_candidates) == 1:
+            matched.append(str(convention_candidates[0].relative_to(repo)))
     return sorted(set(matched))
 
 
@@ -136,9 +241,77 @@ def files_in_commit(repo: Path, commit: str) -> set[str]:
     return {line for line in output.splitlines() if line}
 
 
+@dataclass(frozen=True)
+class AtCompletenessOutcome:
+    """E1 verdict for one (repo, commit, slice_id, feature_id) query.
+
+    ``verifiable`` is False iff ``feature_files_for_slice`` matched ZERO AT
+    candidates under EITHER taxonomy (Gherkin @slice-NN or pytest
+    @feature-{id}/@slice-NN) -- "nothing was checked", distinct from
+    ``missing == []`` meaning "everything checked, nothing missing". A
+    consumer MUST treat ``verifiable is False`` as "cannot verify", never as
+    a pass -- collapsing the two is exactly Bug #126 / the
+    F-CARPACCIO-E1-VACUOUS-BLOCKS-PREDECESSOR-DISCRIMINATION defect class.
+    """
+
+    missing: list[str]
+    verifiable: bool
+
+
+#: Suffix -> runner name for the native-regression fourth evidence source.
+#: Mirrors ``des.cli.carpaccio_format._AT_DISCOVERY_SUFFIX_RUNNER`` (the SAME
+#: suffix-keyed resolution ``_routes_through_runner_port`` and
+#: ``commit_slice._committed_scope_digest_or_degrade_reason`` already use) --
+#: kept as a private local copy rather than importing ``des.cli.carpaccio_
+#: format`` here, since this module's own contract stays behind the CLI layer
+#: (DDD-1/DDD-9, this module's docstring).
+_NATIVE_REGRESSION_SUFFIX_RUNNER: dict[str, str] = {
+    ".py": "pytest",
+    ".rs": "cargo-test",
+}
+
+
+def _native_regression_at_evidence_exists(
+    repo: Path, regression_test_file: str
+) -> bool:
+    """True iff the declared native-regression file yields >=1 REAL discovered
+    AT via the unified ``RunnerAdapter.discover_ats`` facet-pair
+    (fix-rust-regression-at-kind-wiring).
+
+    NEVER a blind accept-without-verify (the charter oracle: "no tool may
+    accept the flag while being structurally unable to read/verify
+    underlying tests") -- an unresolvable suffix, a missing file, or a
+    ``RunnerAdapterUnavailable`` degrade from the facet itself (unreadable,
+    malformed, zero discovered ATs) all return ``False``: this is evidence
+    the caller MAY add, never evidence it fabricates.
+    """
+    file_path = repo / regression_test_file
+    if not file_path.is_file():
+        return False
+    runner_name = _NATIVE_REGRESSION_SUFFIX_RUNNER.get(file_path.suffix)
+    if runner_name is None:
+        return False
+    from des.adapters.driven.runner.runner_registry import seed_runner_registry
+    from des.ports.test_runner_port import RunnerAdapter, RunnerAdapterUnavailable
+
+    seed_runner_registry()
+    adapter = RunnerAdapter(name=runner_name)
+    try:
+        discovery = adapter.discover_ats(file_path.parent, file_path)
+    except RunnerAdapterUnavailable:
+        return False
+    return bool(discovery.at_ids)
+
+
 def missing_at_files(
-    repo: Path, commit: str, slice_id: str, feature_id: str | None = None
-) -> list[str]:
+    repo: Path,
+    commit: str,
+    slice_id: str,
+    feature_id: str | None = None,
+    *,
+    at_kind: str | None = None,
+    regression_test_file: str | None = None,
+) -> AtCompletenessOutcome:
     """Return `.feature` AT files for the slice that the commit fails to carry.
 
     A file is complete when it is present in this commit. A file already
@@ -149,9 +322,78 @@ def missing_at_files(
 
     When ``feature_id`` is given the slice's `.feature` candidate set is
     scoped to that feature (wall W5 -- see ``feature_files_for_slice``).
+
+    A FOURTH evidence source, additive to ``feature_files_for_slice``'s three
+    scan-based taxonomies (fix-e1-explicit-regression-test-file): when
+    ``at_kind == "pytest-regression"`` and ``regression_test_file`` is given
+    AND that path is actually present in ``files_in_commit``, the CLI-declared
+    path is itself positive AT evidence for this slice -- the caller's own
+    affirmative declaration, exactly as ``_infer_pytest_regression_at_kind``
+    (``verify_slice_commit_completeness``) already trusts it to route E2. A
+    slice delivered via an arbitrarily-named pytest-regression file (no
+    `.feature` tag, no head-comment tag, no naming-convention match) was
+    previously invisible to E1 and refused as owning no recognized AT
+    candidates -- the canonical `/nw-bugfix` mechanical-seal path
+    (`verify-red-green` + `verify-negative-at`, no AT-review LLM dispatch)
+    that only an armed examine-verdict PASS could route around.
+
+    A DECLARED-but-ABSENT ``regression_test_file`` (named on the CLI but not
+    actually present in this commit) is deliberately NOT unioned into
+    ``at_files`` and therefore never hard-flagged as ``missing`` here --
+    E1 (this function) collides with E2/CT8 if it does: E1 would hard-fail a
+    case E2's own dedicated regression-file gate
+    (``verify_slice_commit_completeness.py::_run_regression_gate``) already
+    handles by degrading to ``_GATE_INDETERMINATE_EXIT_CODE`` (3), which
+    ``commit_slice.main``'s preflight proceed-on-3 contract honors (ADR-DES-001
+    addendum Rule 3 / CT8). This function's structural presence check defers
+    entirely to E2 for that path -- it never marks it ``missing``.
+
+    ``verifiable`` still flips True on the bare fact of the declaration
+    itself (``at_kind == "pytest-regression"`` with a non-empty
+    ``regression_test_file``), independent of whether the declared file is
+    actually present in this commit. Collapsing "declared" into
+    "verifiable=False, defer silently" would re-introduce the exact E1/E2
+    collision this fix closes one layer up: ``verify_slice_commit_completeness
+    ._run_verify_then_record``'s ``non_verifiable`` guard
+    (RCA fix-carpaccio-e1-vacuous-taxonomy-gap) treats ANY
+    ``verifiable=False`` slice as "zero recognized AT candidates" and hard-
+    refuses it at E1, before E2 is ever reached -- so a declared-but-absent
+    regression file would still never make it to E2's INDETERMINATE path.
+    The caller's own affirmative ``--at-kind pytest-regression
+    --regression-test-file <path>`` declaration IS the AT candidate (E1's
+    job is only to say "something was declared for this slice", not to
+    pre-empt E2's own presence/execution verdict) -- so ``verifiable=True,
+    missing=[]`` for the declared-but-absent case, letting control flow
+    reach E2, which is the sole authority on presence/pass/fail/indeterminate
+    for that file.
+
+    ``at_kind == "native-regression"`` (fix-rust-regression-at-kind-wiring)
+    is the SAME fourth evidence source for a non-Python regression file (e.g.
+    a Rust ``.rs`` file) -- but unlike pytest-regression's blind path-trust,
+    this is NEVER accepted on the declared path alone: the charter oracle
+    ("no tool may accept the flag while being structurally unable to
+    read/verify underlying tests") requires ACTUALLY extracting AT evidence
+    through the unified ``RunnerAdapter.discover_ats`` facet-pair
+    (``register_at_discovery``/``lookup_at_discovery``,
+    ``runner_registry.py``) before counting the file as evidence. A declared
+    file that cannot be read, or that genuinely carries zero discoverable
+    ATs, contributes NO evidence here -- ``verifiable`` stays keyed on
+    whatever ``feature_files_for_slice`` found, never inflated by an
+    unverified declaration.
+
+    ``verifiable`` is False when zero AT candidates were found for this
+    (slice_id, feature_id) at all AND no pytest-regression file was declared
+    -- distinct from a genuine "verified everything, nothing missing" pass.
+    See ``AtCompletenessOutcome``.
     """
     at_files = feature_files_for_slice(repo, slice_id, feature_id)
+    if at_kind == "native-regression" and regression_test_file:
+        if _native_regression_at_evidence_exists(repo, regression_test_file):
+            at_files = sorted({*at_files, regression_test_file})
     in_commit = files_in_commit(repo, commit)
+    declared_regression = at_kind == "pytest-regression" and bool(regression_test_file)
+    if declared_regression and regression_test_file in in_commit:
+        at_files = sorted({*at_files, regression_test_file})
     missing: list[str] = []
     for rel_path in at_files:
         if rel_path in in_commit:
@@ -159,7 +401,8 @@ def missing_at_files(
         if _tracked_before_commit(repo, commit, rel_path):
             continue
         missing.append(rel_path)
-    return sorted(missing)
+    verifiable = bool(at_files) or declared_regression
+    return AtCompletenessOutcome(missing=sorted(missing), verifiable=verifiable)
 
 
 def _tracked_before_commit(repo: Path, commit: str, rel_path: str) -> bool:

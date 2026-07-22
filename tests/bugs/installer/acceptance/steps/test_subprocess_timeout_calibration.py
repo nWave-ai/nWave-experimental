@@ -69,9 +69,9 @@ TIMEOUT_TARGETS: dict[tuple[str, int], float] = {
     # out of test_install_smoke.py into the session-scoped shared fixtures in
     # tests/conftest.py: shared_wheel (python -m build, ~20s) + shared_wheel_venv
     # (uv venv ~10s, uv pip install ~66s). Same RCA hot spots, new home.
-    ("tests/conftest.py", 56): 20.0,
-    ("tests/conftest.py", 88): 10.0,
-    ("tests/conftest.py", 104): 66.0,
+    ("tests/conftest.py", 64): 20.0,
+    ("tests/conftest.py", 96): 10.0,
+    ("tests/conftest.py", 112): 66.0,
     # test_build_dist.py: 5 build_dist.py invocations (~0.4s avg)
     ("tests/build/unit/test_build_dist.py", 427): 0.4,
     ("tests/build/unit/test_build_dist.py", 445): 0.4,

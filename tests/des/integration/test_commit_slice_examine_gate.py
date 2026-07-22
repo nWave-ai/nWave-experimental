@@ -349,4 +349,9 @@ def test_commit_slice_no_charter_leaves_gate_unarmed(tmp_path: Path, capsys) -> 
         f"exit_code={exit_code!r}, event={event!r}"
     )
     assert event["event"] == "SliceCommitRefused", event
-    assert event["refused_half"] == "E2", event
+    # fix-e1-examine-verdict-carveout: E1's own examine-verdict carve-out now
+    # runs BEFORE E2's, so a zero-evidence slice (no .feature, no
+    # pytest-regression at-kind, no examine verdict, no exempt lane) is
+    # caught earlier and more honestly at E1 -- this is the fix's intended
+    # effect, not a regression.
+    assert event["refused_half"] == "E1", event

@@ -17,6 +17,8 @@ import json
 import os
 from pathlib import Path
 
+from des.domain.nwave_root import resolve_nwave_root
+
 
 class AuditLogPathResolver:
     """Resolves audit log directory path deterministically."""
@@ -52,7 +54,7 @@ class AuditLogPathResolver:
             return Path(env_dir)
 
         # Priority 3: Config file
-        effective_cwd = self._cwd or Path.cwd()
+        effective_cwd = self._cwd or resolve_nwave_root()
         config_dir = self._resolve_config_dir(effective_cwd)
         if config_dir:
             return config_dir

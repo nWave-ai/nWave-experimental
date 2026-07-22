@@ -714,10 +714,12 @@ def _predecessor_commit_sha(
     and fails closed by leaving the record absent.
     """
     for sha in _predecessor_commit_shas_via_trailer(repo, predecessor):
-        if not missing_at_files(repo, sha, predecessor, feature_id):
+        outcome = missing_at_files(repo, sha, predecessor, feature_id)
+        if outcome.verifiable and not outcome.missing:
             return sha
     for sha in _predecessor_commit_shas_via_subject_marker(repo, predecessor):
-        if not missing_at_files(repo, sha, predecessor, feature_id):
+        outcome = missing_at_files(repo, sha, predecessor, feature_id)
+        if outcome.verifiable and not outcome.missing:
             return sha
     return None
 
@@ -853,7 +855,8 @@ def _attempt_predecessor_backfill(
     commit_sha = _predecessor_commit_sha(project_root, predecessor, feature_id)
     if commit_sha is None:
         return
-    if missing_at_files(project_root, commit_sha, predecessor, feature_id):
+    outcome = missing_at_files(project_root, commit_sha, predecessor, feature_id)
+    if outcome.missing or not outcome.verifiable:
         return
     if not _verify_gate_scope(project_root, commit_sha):
         return

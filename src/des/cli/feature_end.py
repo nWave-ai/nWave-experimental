@@ -57,11 +57,69 @@ from des.application.feature_end_sign_service import (
     SignRefusal,
     sign_feature_end_review,
 )
+from des.cli.carpaccio_format import GateError as _CarpaccioGateError
+from des.cli.carpaccio_format import mark_feature_end_sealed as _mark_feature_end_sealed
+from des.cli.carpaccio_format import (
+    mark_slice_status_shipped as _mark_slice_status_shipped,
+)
+from des.cli.carpaccio_format import parse_slice_plan as _parse_slice_plan
+from des.domain.repo_path_resolver import feature_delta_path as _feature_delta_path
 
 
 def _emit(payload: dict[str, object]) -> None:
     """Print exactly one single-line JSON object (the command's observable)."""
     print(json.dumps(payload))
+
+
+# ---------------------------------------------------------------------------
+# Feature-delta markdown sync (F-SLICE-PLAN-STATUS-COLUMN-NEVER-SYNCED,
+# GDP-1/4/6): `des feature-end run` mints the `FeatureEndReviewVerdict`
+# ledger record but never wrote back to the feature-delta.md `[REF] Slice
+# Plan` table -- so a genuinely feature-end-sealed feature could sit on
+# disk with stale `pending` rows indefinitely. PURELY ADDITIVE: runs
+# strictly AFTER a genuine `CycleSuccess`; never affects the cycle's own
+# exit code. Best-effort-loud (GDP-6), mirrors `commit_slice._sync_slice_
+# plan_status` / `_notify_feature_end_unmissable`'s shape.
+# ---------------------------------------------------------------------------
+
+
+def _sync_feature_delta_on_feature_end(repo_root: Path, feature_id: str) -> None:
+    """Best-effort-loud (GDP-6): backstop-flip every declared slice's
+    Status to ``shipped`` and append the feature-end-sealed marker.
+
+    PURELY ADDITIVE: runs strictly AFTER the cycle's ``FeatureEndReviewVerdict``
+    record has already been minted -- never affects the cycle's own exit
+    code. A missing ``feature-delta.md`` (a bugfix, or a feature with no
+    Slice Plan) is a silent no-op -- the feature-end cycle succeeding is
+    the primary outcome, this markdown sync is a best-effort side effect.
+    Idempotent: an already-shipped row or an already-sealed marker is a
+    no-op (the pure helpers' own contract).
+    """
+    try:
+        delta_path = _feature_delta_path(repo_root, feature_id)
+        if not delta_path.is_file():
+            return
+        original = delta_path.read_text(encoding="utf-8")
+        text = original
+        try:
+            plan = _parse_slice_plan(text)
+        except _CarpaccioGateError:
+            plan = None
+        if plan is not None:
+            for row in plan.rows:
+                rewritten = _mark_slice_status_shipped(text, row.slice_id)
+                if rewritten is not None:
+                    text = rewritten
+        sealed = _mark_feature_end_sealed(text)
+        if sealed is not None:
+            text = sealed
+        if text != original:
+            delta_path.write_text(text, encoding="utf-8")
+    except Exception as exc:
+        print(
+            "WARNING: des feature-end could not sync the feature-delta.md "
+            f"for feature {feature_id!r}: {exc}"
+        )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -157,7 +215,10 @@ def _build_parser() -> argparse.ArgumentParser:
             "environmental-e2e gates (leaving their genuine heartbeat records), "
             "then sign the deep-review verdict and emit the EBatchRefactorCompleted "
             "+ FeatureEndReviewVerdict records. A failed gate fail-closes the "
-            "cycle (anti-theater); no record is emitted."
+            "cycle (anti-theater); no record is emitted. Sealing MULTIPLE "
+            "features that share one clean whole-tree pass? See "
+            "'des feature-end run-batch' -- it pays the full-suite cost ONCE "
+            "for the whole set instead of once per invocation."
         ),
     )
     run.add_argument(
@@ -327,6 +388,7 @@ def _run_cycle(args: argparse.Namespace) -> int:
         _emit(_member_cycle_payload(args.feature_id, outcome, verb="run"))
         return 3
 
+    _sync_feature_delta_on_feature_end(Path(args.repo), args.feature_id)
     _emit(_member_cycle_success_payload(args.feature_id, outcome, verb="run"))
     return 0
 
@@ -398,6 +460,7 @@ def _run_batch(args: argparse.Namespace) -> int:
                 feature_id, member_outcome, verb="run-batch"
             )
         else:
+            _sync_feature_delta_on_feature_end(repo_root, feature_id)
             payload = _member_cycle_success_payload(
                 feature_id, member_outcome, verb="run-batch"
             )

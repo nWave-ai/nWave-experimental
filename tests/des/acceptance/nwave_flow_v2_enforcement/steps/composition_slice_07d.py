@@ -252,6 +252,14 @@ class InferredFallbackComposition:
             str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
         )
         env["HOME"] = str(self._project_root)
+        # Mirror the dispatch cwd into DES_PROJECT_DIR so `resolve_nwave_root()`
+        # (now consulted by activation_gate.apply_gate and pre_tool_use_handler's
+        # peek_entry/arm_inferred/clear_entry) resolves the SAME root this call
+        # chdir's to, not the per-test isolation root the autouse
+        # `_isolate_nwave_root` fixture set (tests/conftest.py) -- this dict is a
+        # FULL os.environ replacement (run_hook_in_process's `env=`), so the
+        # ambient DES_PROJECT_DIR must be explicitly re-pinned here.
+        env["DES_PROJECT_DIR"] = str(self._project_root)
         return env
 
     def _run_submission_hook(self, prompt: str) -> None:

@@ -5,22 +5,32 @@ that the contract gate's `--collect-only` digest scope stays consistent with
 pytest's own in-process collected count, so the gate can never fingerprint a
 different set than it actually runs.
 
-Real I/O: the gate's real in-process collection over the live tree (via the
-`_collect_scope` child worker).
+Real I/O: the gate's real in-process collection over a small synthetic
+project (via the `_collect_scope` child worker) -- the COLLAPSE_PRONE fixture
+reused verbatim from `ContractGateDigestComposition._stage_collapse_prone_
+project` (fix-contract-gate-slow-tests-synthetic-fixture). The counting
+property under test (collect-only digest cardinality parity vs pytest's own
+in-process collected count) is scale-invariant: it holds identically on this
+~20-item synthetic project as on this repo's own multi-thousand-item live
+tree, so exercising it against the live tree paid an unnecessary ~65.03s per
+run. See docs/product/expectations/fix-contract-gate-slow-tests-synthetic-
+fixture/two-slow-gate-self-tests-swap-to-synthetic-fixture.md.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
+
+from tests.des.cli.fix_contract_gate_digest_undercount.steps.composition import (
+    ContractGateDigestComposition,
+)
 
 
 @pytest.mark.integration
 class TestContractGateCollectOnlyCountConsistency:
     """Pin the collect-only digest scope to the run-phase collected count."""
 
-    def test_collect_only_node_id_count_matches_run_phase_count(self):
+    def test_collect_only_node_id_count_matches_run_phase_count(self, tmp_path):
         """Collect-only digest scope must cover the run-phase collected scope.
 
         The contract gate's `--collect-only` digest path and its run path MUST
@@ -49,7 +59,8 @@ class TestContractGateCollectOnlyCountConsistency:
         """
         from des.cli.run_contract_gate import _RERUN_TOLERANCE, _collect_scope
 
-        repo = Path(__file__).resolve().parents[3]
+        composition = ContractGateDigestComposition(tmp_path)
+        repo = composition._stage_collapse_prone_project()
         scope = _collect_scope(repo)
         digest_count = len(scope.node_ids)
         collected_count = scope.collected_count

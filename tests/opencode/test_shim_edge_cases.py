@@ -85,9 +85,24 @@ class TestSubprocessCrashFailOpen:
     actual exit code for an unknown command.
     """
 
-    def test_unknown_command_exits_nonzero(self):
+    def test_unknown_command_exits_nonzero(self, tmp_path):
         """Adapter exits 1 for unknown commands (not 2, so shim fails open)."""
-        result = _run_adapter("unknown-action", {})
+        # The autouse `_isolate_nwave_root` fixture (tests/conftest.py) sets
+        # DES_PROJECT_DIR for every test, including this one, to a per-test
+        # isolated dir with no `.nwave/local-config.json` -- the activation
+        # gate's fresh-install default ("opt-in", inactive) would then fail
+        # this test open (apply_gate exits 0) before hook_router's own
+        # unknown-command branch is ever reached. Declare the project active
+        # in an explicit, controlled isolated dir instead of relying on
+        # whatever the autouse fixture happens to set.
+        config_dir = tmp_path / ".nwave"
+        config_dir.mkdir()
+        (config_dir / "local-config.json").write_text(
+            json.dumps({"enabled_for_repo": True}), encoding="utf-8"
+        )
+        result = _run_adapter(
+            "unknown-action", {}, env_extra={"DES_PROJECT_DIR": str(tmp_path)}
+        )
 
         # Must be non-zero (error) but NOT 2 (which would mean "block")
         assert result.returncode != 0, "Unknown command should not exit 0"

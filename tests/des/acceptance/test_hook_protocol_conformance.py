@@ -60,6 +60,14 @@ def _invoke_hook(command: str, stdin_json: str) -> subprocess.CompletedProcess:
     # SAME JSON on stdin. PYTHONPATH=src is set on os.environ (restored after).
     prior_pythonpath = os.environ.get("PYTHONPATH")
     os.environ["PYTHONPATH"] = SRC_PATH + os.pathsep + (prior_pythonpath or "")
+    # Mirror the dispatch cwd (PROJECT_ROOT) into DES_PROJECT_DIR so
+    # `resolve_nwave_root()` (now consulted by activation_gate.apply_gate and
+    # pre_tool_use_handler's peek_entry/arm_inferred/clear_entry) resolves the
+    # SAME root this in-process call chdir's to, not the per-test isolation
+    # root the autouse `_isolate_nwave_root` fixture set (tests/conftest.py).
+    # Mirrors the established pattern in composition_slice_07.py.
+    prior_des_project_dir = os.environ.get("DES_PROJECT_DIR")
+    os.environ["DES_PROJECT_DIR"] = PROJECT_ROOT
     try:
         exit_code, out, err = run_hook_in_process(
             claude_code_hook_adapter.main,
@@ -72,6 +80,10 @@ def _invoke_hook(command: str, stdin_json: str) -> subprocess.CompletedProcess:
             os.environ.pop("PYTHONPATH", None)
         else:
             os.environ["PYTHONPATH"] = prior_pythonpath
+        if prior_des_project_dir is None:
+            os.environ.pop("DES_PROJECT_DIR", None)
+        else:
+            os.environ["DES_PROJECT_DIR"] = prior_des_project_dir
     return subprocess.CompletedProcess(
         args=["claude_code_hook_adapter", command],
         returncode=exit_code,
