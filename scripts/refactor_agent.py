@@ -53,6 +53,85 @@ from pathlib import Path
 
 EXIT_MALFORMED_INPUT = 2
 EXIT_NO_CLI = 3
+EXIT_NO_CRAFTER_SPEC = 4
+
+_SPEC_SEARCH_HINT = "~/.claude/agents/nw/ and <target>/nWave/agents/"
+
+# The DECLARED-paradigm -> crafter mapping. Derived from the TARGET project's own
+# declaration, never inferred from the language a file happens to be written in:
+# a language is not a paradigm. Same closed set the pile's `paradigm=` field uses.
+_CRAFTER_BY_PARADIGM = {
+    "functional": "nw-functional-software-crafter.md",
+    "object-oriented": "nw-software-crafter.md",
+}
+
+
+def _declared_paradigm(worktree: Path) -> str:
+    """Read the TARGET's declared development paradigm, defaulting to OO.
+
+    The declaration lives in the project's own instructions file under a
+    `## Development Paradigm` heading. Absent a declaration we default to
+    object-oriented -- the majority shape -- rather than guessing from file
+    extensions, which would be the exact language-is-not-a-paradigm error the
+    agnosticism mandate forbids.
+    """
+    for name in ("CLAUDE.md", "AGENTS.md"):
+        doc = worktree / name
+        if not doc.exists():
+            continue
+        try:
+            text = doc.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        after = text.partition("## Development Paradigm")[2]
+        if "functional" in after[:400].lower():
+            return "functional"
+        if after.strip():
+            return "object-oriented"
+    return "object-oriented"
+
+
+def _crafter_spec_path(worktree: Path) -> Path | None:
+    """Locate the paradigm-selected crafter's spec, or None if unavailable."""
+    override = os.environ.get("NWAVE_CRAFTER_SPEC")
+    if override:
+        candidate = Path(override)
+        return candidate if candidate.is_file() else None
+
+    filename = _CRAFTER_BY_PARADIGM[_declared_paradigm(worktree)]
+    for base in (
+        Path.home() / ".claude" / "agents" / "nw",
+        worktree / "nWave" / "agents",
+    ):
+        candidate = base / filename
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _as_crafter(spec_path: Path, task: str) -> str:
+    """Frame the rendered task as a crafter dispatch, spec loaded verbatim.
+
+    A headless assistant cannot select an nWave agent TYPE, so the spec is
+    loaded into the prompt instead -- the same pattern the orchestrator uses
+    when an agent type is unavailable in its context. The spec goes FIRST so
+    the role is established before the task is read.
+    """
+    return (
+        "You are performing this task AS the nWave crafter whose specification "
+        "follows. Read it in full and apply its methodology -- it is the role you "
+        "are performing, not background reading. Load the skills it names before "
+        "you touch code; loading them is what arms the refactoring lenses.\n\n"
+        f"--- BEGIN {spec_path.name} ---\n{spec_path.read_text(encoding='utf-8')}\n"
+        f"--- END {spec_path.name} ---\n\n"
+        "The task below is ONE item drained from a tech-debt pile. It is a "
+        "BEHAVIOUR-PRESERVING refactoring: the tests that cover the code you touch "
+        "must pass before AND after, unchanged. Never weaken, skip or rewrite a test "
+        "to make your change fit -- if a test blocks the refactoring, the test is "
+        "telling you the change alters behaviour, and that is a finding to report, "
+        "not an obstacle to remove.\n\n"
+        f"--- TASK ---\n{task}"
+    )
 
 
 def fail(code: int, what: str, why: str, how: str) -> int:
@@ -109,6 +188,23 @@ def main(argv: list[str]) -> int:
             "install it and re-run, or name a different binary with "
             "NWAVE_REFACTOR_AGENT_CLI=<binary>",
         )
+
+    spec_path = _crafter_spec_path(worktree)
+    if spec_path is None:
+        return fail(
+            EXIT_NO_CRAFTER_SPEC,
+            "the paradigm-selected crafter's specification could not be located",
+            "a refactoring drain must be performed BY THE CRAFTER -- that is the role "
+            "carrying the L1-L6 refactoring lenses and the smell taxonomy as working "
+            "knowledge. A generic assistant reports and repairs what is VISIBLE (a long "
+            "function, a duplicated literal) instead of what is COSTLY (a leaked "
+            "abstraction, an invariant restated in two places), so its work reads "
+            "plausible while missing the debt that hurts. Dispatching one anyway would be "
+            "worse than refusing, because the item would be marked drained",
+            "install nWave so the agent specs are present (looked under "
+            f"{_SPEC_SEARCH_HINT}), or point NWAVE_CRAFTER_SPEC at the spec file",
+        )
+    prompt_text = _as_crafter(spec_path, prompt_text)
 
     model = os.environ.get("NWAVE_REFACTOR_AGENT_MODEL", "sonnet")
     permission = os.environ.get("NWAVE_REFACTOR_AGENT_PERMISSION", "acceptEdits")

@@ -63,6 +63,10 @@ from des.testarch.discovery import (
     resolve_and_probe_realized_surface,
 )
 from des.testarch.port_realization_discovery import (
+    REASON_ABSENT,
+    REASON_ALWAYS_RAISES,
+    REASON_INHERITED_UNIMPLEMENTED,
+    REASON_RAISES_NOT_IMPLEMENTED,
     PortRealizationProbeError,
     resolve_and_probe_port_realization_with_detail,
 )
@@ -378,6 +382,43 @@ def _display_path(file_path: str) -> str:
         return file_path
 
 
+def _why_clause(detail: PortRealizationGapDetail, file_display: str) -> str:
+    """The WHY, specific to the reason the method carries no evidence of work.
+
+    The VERDICT is identical across shapes; only this clause distinguishes
+    them (GDP-3). It must never assert a falsehood -- a body that never
+    mentions ``NotImplementedError`` is never described as raising one.
+    """
+    location = f"{file_display}:{detail.line_number}"
+    method = f"method `{detail.method_name}`"
+    if detail.reason == REASON_ABSENT:
+        return (
+            f"{method} is absent -- the registered facet "
+            f"`{detail.facet_class}` ({location}) does not define it"
+        )
+    if detail.reason == REASON_INHERITED_UNIMPLEMENTED:
+        return (
+            f"{method} is inherited, not overridden -- it resolves to "
+            f"`{detail.defining_class}.{detail.method_name}` ({location}), "
+            f"whose body does no work"
+        )
+    if detail.reason == REASON_RAISES_NOT_IMPLEMENTED:
+        return (
+            f"{method} is a stub -- its body only raises "
+            f"`NotImplementedError` ({location})"
+        )
+    if detail.reason == REASON_ALWAYS_RAISES:
+        return (
+            f"{method} can never succeed -- its body unconditionally raises "
+            f"`{detail.raised_type or 'an exception'}` ({location})"
+        )
+    return (
+        f"{method} does no work -- its body has no call, assignment or "
+        f"control flow and returns nothing ({location}), so it would "
+        f"silently FAKE success"
+    )
+
+
 def _print_port_realization_gap(
     violation: object, detail: PortRealizationGapDetail | None
 ) -> None:
@@ -386,16 +427,25 @@ def _print_port_realization_gap(
         f"{_PORT_REALIZATION_GAP_PREFIX} port {violation.port!r} on plugin "
         f"{violation.plugin_id!r}"
     )
-    if detail is None:
-        print(header, file=sys.stderr)
-        return
     protocol_name = _PORT_REALIZATION_PROTOCOL_BY_PORT.get(violation.port, "<unknown>")
+    recheck = (
+        f"Re-check with: python -m scripts.cli.validate_language_adapter_catalog "
+        f"{_CHECK_PORT_REALIZATION_FLAG}"
+    )
+    if detail is None:
+        print(
+            f"{header}: the plugin declares this port covered but registered "
+            f"no backing facet for it. Register a facet implementing "
+            f"`{protocol_name}`. {recheck}",
+            file=sys.stderr,
+        )
+        return
     file_display = _display_path(detail.file_path)
+    facet_display = _display_path(detail.facet_file_path or detail.file_path)
     print(
-        f"{header}: method `{detail.method_name}` is a stub "
-        f"({file_display}:{detail.line_number}). Implement `{protocol_name}` in "
-        f"{file_display}. Re-check with: python -m "
-        f"scripts.cli.validate_language_adapter_catalog {_CHECK_PORT_REALIZATION_FLAG}",
+        f"{header}: {_why_clause(detail, file_display)}. "
+        f"Implement `{protocol_name}` on the registered facet "
+        f"`{detail.facet_class}` ({facet_display}). {recheck}",
         file=sys.stderr,
     )
 

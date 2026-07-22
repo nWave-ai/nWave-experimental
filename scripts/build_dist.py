@@ -64,6 +64,7 @@ _GENERAL_PATTERN = re.compile(r"\bsrc\.des\.")
 # copied from scripts/<entry> into dist/scripts/<basename>.
 UTILITY_SCRIPTS = [
     "install_nwave_target_hooks.py",
+    "refactor_agent.py",
     "validate_step_file.py",
 ]
 

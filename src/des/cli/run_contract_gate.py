@@ -590,28 +590,133 @@ class _ArchVerdict:
     failed_node_ids: tuple[str, ...] = ()
 
 
+def _is_python_cache_artifact(path: Path) -> bool:
+    """True for a compiled/cache artifact: a cache directory (``__pycache__``,
+    ``.pytest_cache``) or a compiled bytecode file (``.pyc``/``.pyo``), at any
+    depth. A build byproduct, never an architecture invariant -- excluded by a
+    general PROPERTY (reserved cache directory name / compiled-file suffix),
+    never a hardcoded name list.
+    """
+    if path.is_dir():
+        return path.name in {"__pycache__", ".pytest_cache"}
+    return path.suffix in {".pyc", ".pyo"}
+
+
+def _is_dunder_marker_file(path: Path) -> bool:
+    """True for a Python dunder-marker file (``__init__.py``, ``__main__.py``,
+    ...): a language-reserved package/entry marker carrying no test content of
+    its own (the same "marker, not a component" property the Extension
+    Justification rule names for ``__init__.py`` -- `nw-quality-framework`).
+    Excluded by the SAME general PROPERTY (a double-underscore-wrapped stem),
+    never a name list.
+    """
+    return path.is_file() and path.stem.startswith("__") and path.stem.endswith("__")
+
+
+def _directory_has_nested_acceptance(directory: Path) -> bool:
+    """True iff an ``acceptance`` directory exists anywhere BELOW ``directory``
+    itself (not ``directory`` matching that name -- a strict descendant).
+
+    Pure filesystem read. Used only to decide whether ``directory`` can be
+    handed to pytest whole (fast path, cheap argv) or must be walked one level
+    further to prune a nested ``acceptance`` subtree (see
+    ``_arch_invariant_paths``).
+    """
+    for child in directory.iterdir():
+        if child.is_dir() and (
+            child.name == "acceptance" or _directory_has_nested_acceptance(child)
+        ):
+            return True
+    return False
+
+
+def _arch_member_paths(directory: Path, *, at_build_root: bool) -> list[Path]:
+    """Resolve ``directory``'s architecture-tier members by STRUCTURAL RULE.
+
+    The rule (bug fix `fix-arch-tier-selected-by-assertion`): a path is
+    EXCLUDED from the architecture tier iff it sits under an ``acceptance``
+    directory that has at least one feature-slug path segment between
+    ``tests/build/`` and that ``acceptance`` directory -- i.e.
+    ``tests/build/<feature>/acceptance/**``. This is a GENERAL structural
+    rule (a segment-position check), never a hardcoded denylist of feature
+    names, so it excludes today's colonizing suites and tomorrow's alike.
+
+    ``tests/build/acceptance/**`` itself (no feature-slug segment before
+    ``acceptance``) is NOT excluded -- ``at_build_root=True`` only for the
+    direct children of ``tests/build/`` (the top-level call), where an
+    ``acceptance`` child is genuine, shipped build-tier content, not a
+    colonizing feature scaffold.
+
+    A directory that carries no nested ``acceptance`` anywhere below it is
+    returned WHOLE (one ``Path``, cheap argv) -- most of the tree (``unit/``,
+    the flat top-level scanners, feature-slug directories with no
+    ``acceptance`` subdir) never gets exploded into individual files. Only a
+    directory that DOES nest an ``acceptance`` subtree is walked one level
+    further so that subtree can be pruned while its siblings (e.g. a
+    feature-slug's own non-acceptance step modules) stay included -- and it is
+    exactly that explosion that would otherwise surface non-test artifacts
+    (``__init__.py``, ``__pycache__``) as explicit members; both are filtered
+    by the same general PROPERTY check below (``_is_python_cache_artifact`` /
+    ``_is_dunder_marker_file``), never a name list.
+    """
+    members: list[Path] = []
+    for child in sorted(directory.iterdir()):
+        if _is_python_cache_artifact(child) or _is_dunder_marker_file(child):
+            # a build byproduct or a language-reserved marker -- not an
+            # architecture invariant, excluded at any depth (GDP-3: the
+            # member list is the answer to "what does this repo enforce",
+            # and a marker/cache entry answers nothing).
+            continue
+        if child.is_file():
+            members.append(child)
+            continue
+        if child.name == "acceptance" and not at_build_root:
+            # tests/build/<feature-slug>/acceptance/** -- a feature-slug
+            # segment precedes `acceptance`: excluded by the structural rule.
+            continue
+        if _directory_has_nested_acceptance(child):
+            members.extend(_arch_member_paths(child, at_build_root=False))
+        else:
+            members.append(child)
+    return members
+
+
 def _arch_invariant_paths(repo: Path) -> list[Path]:
-    """Resolve the architecture-invariant set as the ``tests/build/**`` glob.
+    """Resolve the architecture-invariant set by STRUCTURAL RULE, not location.
 
     Pure function (return-only, DDD-4): reads the filesystem, returns paths,
-    mutates nothing. The arch set is OQ-1-ratified for slice-01 as the
+    mutates nothing. The arch set's home is OQ-1-ratified for slice-01 as the
     ``tests/build`` directory (the F-D-09 forbidden-roots gate + the
     inline-interpreter-spawn ban live there). It is read as DATA -- the paths
     are handed to pytest; this resolver never ``import``s from ``tests`` (no
     F-D-09 import-graph violation). The arch set is the SAME for every feature
     (a global invariant), so it is feature-independent.
 
-    Returns the single ``tests/build`` directory when it exists, else an empty
-    list. An EMPTY arch set CLEARS (genericità mandate): the ``--feature-id``
-    gate runs on the TARGET repo during DELIVER, and an external target
-    legitimately carries no nWave arch tier -- with no arch tier there is no arch
-    invariant to enforce, so the caller falls through and clears on the feature
-    scope alone. Only a PRESENT-but-vacuous arch tier is malformed (slice-02's
+    Bug fix `fix-arch-tier-selected-by-assertion`: previously this resolver
+    returned ``tests/build`` WHOLE, so an unrelated, undelivered feature's
+    active-RED acceptance scaffold nested at
+    ``tests/build/<feature>/acceptance/**`` was collected-AND-RUN by the
+    feature-scoped leg and vetoed every OTHER slice's commit tree-wide --
+    directory LOCATION, not what a test ASSERTS, decided arch-tier
+    membership. Now the tier is resolved by the structural rule in
+    ``_arch_member_paths``: any ``acceptance`` directory preceded by a
+    feature-slug path segment is excluded, while the ~55 genuine top-level
+    architecture/build invariant files (and shipped non-slug-nested content
+    such as ``tests/build/unit/`` and ``tests/build/acceptance/``) remain in
+    the tier with zero exceptions.
+
+    Returns the ``tests/build`` directory's structural members (files and
+    sub-paths) when the directory exists, else an empty list. An EMPTY arch
+    set CLEARS (genericità mandate): the ``--feature-id`` gate runs on the
+    TARGET repo during DELIVER, and an external target legitimately carries no
+    nWave arch tier -- with no arch tier there is no arch invariant to
+    enforce, so the caller falls through and clears on the feature scope
+    alone. Only a PRESENT-but-vacuous arch tier is malformed (slice-02's
     ``arch-scope-zero-collected`` floor).
     """
     build_dir = repo / "tests" / "build"
     if build_dir.is_dir():
-        return [build_dir]
+        return _arch_member_paths(build_dir, at_build_root=True)
     return []
 
 
@@ -3395,6 +3500,7 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
                 "whole-tree pre-push gate would refuse",
                 entering_slice=entering_slice,
                 kind=_KIND_TEST_FAILURE,
+                failed_node_ids=list(arch.failed_node_ids),
             )
         arch_collected = arch.collected
 

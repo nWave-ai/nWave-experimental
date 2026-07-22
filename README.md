@@ -3,11 +3,11 @@
 > ⚠️ **EXPERIMENTAL — NOT RECOMMENDED FOR PRODUCTION**
 >
 > - **Breaking changes are expected.** The API, wave structure, and command behavior may change without notice. Use only for evaluation and feedback, not in production systems or critical projects.
-> - **Private, no PyPI.** This repository is access-controlled — published for preview only to collaborators. You install **locally from this clone**.
+> - **No PyPI on this channel.** This preview is not published to PyPI. You install **locally from this clone**.
 > - **Token usage is materially higher than a plain coding session.** This preview runs delivery in parallel (see *Parallel delivery*, below) — concurrent lanes mean concurrent contexts, each reasoning independently. Parallelism buys wall-clock time; it costs tokens.
-> - **Standing loops don't survive a restart.** A restart, a crash, or a killed session disarms nWave's background disciplines (see *Standing loops*, below) silently — nothing will tell you they stopped. If a session starts and nobody asks you about them, ask: *"check the standing loops and tell me which are active."* That one sentence is the whole recovery.
+> - **Standing loops don't survive a restart.** A restart, a crash, or a killed session disarms nWave's background disciplines (see *Standing loops*, below) silently — nothing will tell you they stopped. They should re-arm in the next session and say so; if a session starts and nobody mentions them, ask: *"check the standing loops and tell me which are active."* That one sentence is the whole recovery.
 
-**Build:** atdd-pure preview @ `e03699797` (source `feature/atdd-pure-staging` `e03699797bf63bd8fad8a1f35868e3dc72af97a0`)
+**Build:** atdd-pure preview @ `bd21b5f70` (source `feature/atdd-pure-staging` `bd21b5f7040a1560ff5701be455e20f10e4363b7`)
 
 ---
 
@@ -39,7 +39,7 @@ The seven waves form a methodology graph (entry point depends on your context):
 
 ### Standing loops
 
-The orchestrator can run recurring background disciplines while it works — standing checks it applies to its own behaviour:
+The orchestrator runs recurring background disciplines while it works — standing checks it applies to its own behaviour:
 
 - routes feature work through the full methodology instead of firing off a lone agent
 - reconciles worktrees left behind by a task that stopped mid-way
@@ -48,7 +48,9 @@ The orchestrator can run recurring background disciplines while it works — sta
 - makes every failure explain what went wrong, why, and how to fix it
 - drains two queues — one for tech debt, one for bugs — instead of letting them pile up
 
-They're session-scoped (see the warning at the top of this page): the orchestrator checks which loops are active at the start of a session and asks before arming any — starting background work is your call, not its own.
+Nine loops carry those six disciplines — each queue gets one loop that finds work and a separate one that drains it — and the orchestrator names them `Loop 1/9` through `Loop 9/9` when it arms them, so a missing number is visible at a glance.
+
+They're session-scoped (see the warning at the top of this page): at the start of a session the orchestrator checks which loops are live, arms any that aren't, and then tells you it did — naming what each one does and how to stop them. **They're on by default: you opt out, not in.** Arming isn't the sensitive act; arming *silently* is. Background agents spend tokens the whole time they run, so you have an unconditional right to know they started — which is why the disclosure is mandatory even though the permission isn't. To turn them off, say *"stop the standing loops"*. They stop immediately, without argument, and stay off for the rest of that session.
 
 ### Parallel delivery — the worktree is the mechanism
 
@@ -145,7 +147,7 @@ uv run python -m nwave_ai.cli install
 
 **Then restart Claude Code.** The installer wires nWave into your global Claude Code configuration in `~/.claude/`. Agents, skills, and commands are read once at startup, so a running session keeps the old versions until you reopen it.
 
-Restarting also disarms the standing loops. In the new session, ask: *"check the standing loops and tell me which are active."*
+Restarting also disarms the standing loops. They should re-arm themselves in the new session and tell you so — if nothing mentions them, ask: *"check the standing loops and tell me which are active."*
 
 **pip alternative** (Python 3.10+): `pip install -e . && nwave-ai install`
 
@@ -211,4 +213,4 @@ Both the CLI tool and all agents/commands/configuration are removed from `~/.cla
 
 ---
 
-*Experimental channel — segregated from beta/rc/prod, no PyPI, access limited to collaborators on this private repository.*
+*Experimental channel — segregated from beta/rc/prod, no PyPI: you install locally from this clone.*

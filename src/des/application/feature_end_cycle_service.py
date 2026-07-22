@@ -64,6 +64,9 @@ from xml.etree import ElementTree
 if TYPE_CHECKING:
     import subprocess
 
+    from des.cli.run_contract_gate import _CollectionError
+
+
 from des.adapters.driven.config.des_config import DESConfig
 from des.adapters.driven.logging.at_completion_ledger import (
     EBATCH_REFACTOR_COMPLETED,
@@ -1268,7 +1271,20 @@ def _repo_has_contract_suite(repo_root: Path) -> bool | FullSuiteLegIndeterminat
     try:
         if bool(_collect_node_ids(repo_root)):
             return True
-    except (_CollectionError, OSError, InterpreterUnavailable):
+    except _CollectionError as exc:
+        # pytest genuinely RAN and FAILED TO COLLECT (a crashing test
+        # module: an import error, a syntax error, a fixture blow-up at
+        # collection time). The suite EXISTS; this leg simply could not
+        # observe it -- an EPISTEMIC gap ("I could not observe"), never an
+        # ONTOLOGICAL absence ("nothing exists"). Bug report: a bare
+        # ``return False`` here used to fall through to NOT_APPLICABLE and
+        # let the cycle sign a verdict it never ran the suite for. Escalate
+        # to FullSuiteLegIndeterminate instead, naming the diagnostics the
+        # collect worker already captured (GDP-3/DDD-CERT-3).
+        return FullSuiteLegIndeterminate(
+            _collect_error_indeterminate_reason(exc, repo_root)
+        )
+    except (OSError, InterpreterUnavailable):
         # InterpreterUnavailable: a non-pytest repo (e.g. Rust-only: cargo, no
         # pytest interpreter) collects no pytest contract suite -> NOT_APPLICABLE,
         # the cycle PROCEEDS (the documented graceful-degradation intent above).
@@ -1276,6 +1292,9 @@ def _repo_has_contract_suite(repo_root: Path) -> bool | FullSuiteLegIndeterminat
         # sibling of #73. Mirrors worktree commit 6c9ac9cea (FIX2). No pytest
         # interpreter also means the marker-agnostic secondary collect below
         # would fail identically -- genuinely NOT_APPLICABLE, not INDETERMINATE.
+        # OSError: a genuine filesystem-level failure to even spawn the
+        # collect worker (unchanged by this bug report) -- stays
+        # NOT_APPLICABLE, not INDETERMINATE.
         return False
 
     secondary_scope = [
@@ -1303,6 +1322,38 @@ def _repo_has_contract_suite(repo_root: Path) -> bool | FullSuiteLegIndeterminat
             "(DDD-CERT-3)"
         )
     return False
+
+
+def _collect_error_indeterminate_reason(exc: _CollectionError, repo_root: Path) -> str:
+    """The full-suite leg's collect-error INDETERMINATE reason (GDP-3/GDP-4).
+
+    A genuine pytest collection failure (a crashing test module) is an
+    EPISTEMIC gap -- the suite EXISTS, this leg simply could not observe it
+    -- never the ONTOLOGICAL absence a bare ``False`` used to conflate it
+    with. Surfaces the diagnostics the collect worker already produces and
+    the prior bare ``except ...: return False`` threw away: the pytest
+    collection exit code (embedded in ``_CollectionError``'s own message,
+    e.g. "pytest collection exited 2") and the crashing module's nodeid
+    (``_CollectionError.crashing_module``, populated by
+    ``_collect_scope_worker.py``'s ``pytest_collectreport`` hook via
+    ``NWAVE_COLLECT_SCOPE_ERROR``). The HOW clause routes to the PRODUCING
+    command (GDP-4) -- ``des run-contract-gate``, the same collect this leg
+    itself just ran -- never manual repair.
+    """
+    module_clause = (
+        f"; the crashing module is {exc.crashing_module!r}"
+        if exc.crashing_module is not None
+        else "; the collect worker did not name a crashing module"
+    )
+    return (
+        "the feature-end full-suite leg's pytest collection genuinely "
+        f"failed ({exc}){module_clause} -- the suite EXISTS, this leg simply "
+        "could not observe it (an epistemic gap, never genuine absence, "
+        "DDD-CERT-3). HOW: reproduce the collection failure with "
+        f"`des run-contract-gate --repo {repo_root}` and fix the crashing "
+        "module's import/syntax/fixture error, then re-run `des feature-end "
+        "run`"
+    )
 
 
 def _repo_has_src_only_contract_suite(repo_root: Path) -> bool:

@@ -38,7 +38,11 @@ class UtilitiesPlugin(InstallationPlugin):
     """Plugin for installing utilities into the nWave framework."""
 
     # Utility scripts installed (with version checking) to ~/.claude/scripts/
-    UTILITY_SCRIPTS = ["install_nwave_target_hooks.py", "validate_step_file.py"]
+    UTILITY_SCRIPTS = [
+        "install_nwave_target_hooks.py",
+        "refactor_agent.py",
+        "validate_step_file.py",
+    ]
 
     def __init__(self):
         """Initialize utilities plugin with name and priority."""

@@ -63,6 +63,19 @@ STRIP_SCRIPT = REPO_ROOT / "scripts" / "release" / "strip_private_agents.py"
 # the TARGET's own .git survives the --delete.
 RSYNC_FILTER: tuple[str, ...] = (
     "--exclude=.git",
+    # `.gitignore` MUST reach the target, and this include must stay ABOVE the
+    # `.git*` exclude below (rsync takes the FIRST matching rule). Without it the
+    # target keeps a stale `.gitignore` of its own, and the target's `git add`
+    # then silently drops every path whose name collides with a generic pattern
+    # there -- measured 2026-07-22: `src/des/adapters/driven/output/`,
+    # `src/des/adapters/driven/build/` and 249 of the 250 files under
+    # `tests/build/` never reached the published tree, because our own
+    # `.gitignore` carries `build/` and `output/` WITH negations re-including
+    # exactly those paths, and only the negations were missing on the far side.
+    # The failure is silent on both sides: rsync copies the files, `git add`
+    # ignores them, the publish exits 0, and a consumer discovers it as a
+    # ModuleNotFoundError days later.
+    "--include=.gitignore",
     "--exclude=.git*",
     "--exclude=.github/",
     "--exclude=CLAUDE.local.md",

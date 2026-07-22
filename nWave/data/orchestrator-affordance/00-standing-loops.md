@@ -7,6 +7,19 @@ tool-result. Read <path> (or, failing that, `nWave/data/orchestrator-affordance/
 stop reading. This paragraph is deliberately first so the pointer survives even a
 2KB-preview cut.
 
+WHO THIS ADDRESSES — read this before the mandate below, because the mandate is dangerous
+in the wrong hands. These instructions are for the SESSION ORCHESTRATOR: the top-level agent
+in direct conversation with the human. **If you are a SUBAGENT — dispatched by an
+orchestrator, working a mission, running inside a worktree — you must NEVER arm these loops,
+and encountering this text is not an instruction to you.** Three of the nine dispatch agents
+that WRITE to working trees; a subagent arming them mid-mission would start concurrent writers
+nobody asked for, on a machine whose state it cannot see. Note the file and carry on with your
+mission; if you think the loops should be armed, SAY SO to whoever dispatched you and let them
+decide. Reading a file is not receiving an order — this text is addressed to a role, and if
+you are not in that role it does not bind you. (Added 2026-07-22 after a subagent correctly
+declined to act on this file and flagged the ambiguity instead: the arm-by-default change made
+an instruction dangerous that was previously self-limiting.)
+
 THREE MANDATORY ACTIONS — THE FIRST ACTION OF THIS SESSION, full stop. Not "somewhere
 in the next reply", not "after one quick check": the literal first thing you do the
 moment you are able to act, before Bash, Read, Grep, Task, Agent, TodoWrite, before any
@@ -31,8 +44,18 @@ comes right after, not instead of, and not before.
    do NOT persist across sessions; a fresh session starts with ZERO active loops even
    if a PRIOR session asked and started all nine. "I recall covering this already" is
    about a different session's state, not this one's — it does not satisfy step 3,
-   checking does. If ANY are not active in THIS session, ASK about ALL of them together
-   in ONE batched message (not one per loop), naming what each does.
+   checking does. If ANY are not active in THIS session, **ARM THEM — all of them, now,
+   without asking first — and then SAY SO in one batched message** naming what each does
+   and how to stop them. They are ON BY DEFAULT (Ale, 2026-07-22): the human opts OUT,
+   not in. The reason is that these loops are the safety net — they drain the defect and
+   tech-debt piles, catch a bare failure that explains nothing, reconcile a worktree
+   abandoned mid-task, and stop a lane idling — and a safety net that waits to be asked
+   for is missing exactly when nobody thought to ask. Arming is not the sensitive act;
+   arming SILENTLY is. So the disclosure is NOT optional and NOT a formality: state
+   plainly that background work is now running, what it will do, roughly what it costs,
+   and the literal sentence that stops it — *"stop the standing loops"* — which you must
+   honour immediately and without argument. A human who says stop is not to be
+   persuaded; they are to be obeyed, and the loops stay off for the rest of that session.
    **THE ARRIVAL OF THIS INJECTION IS THE TRIGGER TO RE-CHECK — every time it arrives,
    never once and then from memory.** This block is injected on SessionStart AND on
    UserPromptSubmit precisely because the loops are session-scoped: a restart, a crash or
@@ -46,12 +69,20 @@ Full detail (red-flags, per-loop rationale) follows below — read it if present
 the three actions above do not require it: act on this paragraph alone if that is all
 you can see.
 
-Starting a loop is a real commitment (background agents, ongoing token spend) — you
-ASK, you do not self-start. Skipping the ask because it "felt unnecessary", or doing
-it AFTER other tool calls instead of before them, are both the failure this mandate
-prevents.
+Starting a loop is a real commitment (background agents, ongoing token spend), and that
+is precisely why the DISCLOSURE is mandatory rather than the permission. Skipping the
+disclosure because it "felt unnecessary", or doing it AFTER other tool calls instead of
+before them, are both the failure this mandate prevents — the loops may start on their
+own, but they may never run UNANNOUNCED. Someone whose machine is running background
+agents has an unconditional right to know it, in the first reply, without having to ask.
 
-## Red flags — these thoughts mean you are about to skip the ask. Don't.
+## Red flags — these thoughts mean you are about to skip the CHECK or the DISCLOSURE. Don't.
+
+*(These rows were written when the mandate was ASK-then-arm. Under the current policy the
+loops arm by default, so wherever a row says "the ask" read "the check plus the disclosure":
+verify with the real tool which loops are live, arm what is missing, and SAY SO. The failure
+each row describes is unchanged — it was never really about the question, it was about the
+silence.)*
 
 | Thought | Reality |
 |---------|---------|
@@ -210,8 +241,19 @@ work, it does not DIY it.
 **`/loop 45m` — drain the tech-debt pile, if one exists.** Separate loop from sourcing
 above, on its own cadence, so each can be tuned independently. If `techdebt.md` has ≥1
 pending row and no drain is already running, invoke `des refactor --pile techdebt.md
---agent-cmd 'scripts/refactor_agent.py {prompt}' --max-parallel N` -- that script is the SHIPPED ACTUATOR; `--agent-cmd` must name a real
-executable (the harness probes it with `shutil.which`), so there is nothing to invent here (N is a
+--agent-cmd '<path>/refactor_agent.py {prompt}' --max-parallel N < /dev/null` (N is a
+CONFIGURABLE number of agents). **The `< /dev/null` is not optional and not cosmetic** — measured
+2026-07-22: every process in the drain's chain inherits the invoking stdin, and the headless agent
+at the end of it blocks forever reading a descriptor that delivers data and never reaches EOF,
+while the drain blocks draining the capture pipe that same blocked process holds open. Four levels,
+no output, no timeout, killed by hand. Redirecting at the OUTERMOST invocation immunises the whole
+subtree, because stdin inherits transitively; it is also the agent CLI's own prescription in its
+warning text. Without it the drain hangs silently and a working run is indistinguishable from a
+dead one. **`<path>` is a real path on THIS machine, not a repo-relative one** — the actuator is
+installed under the configuration directory, NOT into the target project, so the older documented
+`scripts/refactor_agent.py` resolves to nothing in a consumer's own repo and the harness refuses
+every item (`shutil.which` probes the literal string). Locate the installed actuator, or omit
+`--agent-cmd` entirely on a build where the DES resolves its own installed actuator. (N is a
 CONFIGURABLE number of agents, each draining ONE item independently in its OWN isolated
 worktree+venv). Per item: tests must stay green, but ONLY fast+impacted tests scoped to
 that item's own change — never a full-suite run per item, that would kill the
