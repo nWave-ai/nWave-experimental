@@ -28,6 +28,15 @@ Three doubles:
   of paying a real (slow) ``uv sync`` per concurrent item, and records every
   provisioned path so an AT asserts isolation (no two items share a path)
   without the real provisioning cost.
+* ``ExplodingEnvProvisionPort`` -- bugfix-drain-cleanup-on-every-exit
+  regression double: a driven env-provisioning port whose ``probe()``
+  succeeds (so the startup probe chain does NOT refuse before a worktree
+  ever gets created) but whose ``provision()`` unconditionally raises a
+  deliberate exception -- a genuine mid-lifecycle crash landing EXACTLY in
+  the window between ``create_worktree_from_tip`` and the eventual
+  cleanup/return that today's ``drain_one``/``_drain_concurrently`` leave
+  unguarded. Proves the fix's ``try / except BaseException: cleanup; raise``
+  window actually fires on a real exception, not merely a refusal branch.
 """
 
 from __future__ import annotations
@@ -140,3 +149,20 @@ class FakeEnvProvisionPort(EnvProvisionPort):
         )
         self.provisioned_paths.append(worktree_path)
         return venv / "bin" / "python"
+
+
+class ExplodingEnvProvisionPort(EnvProvisionPort):
+    """Regression double (bugfix-drain-cleanup-on-every-exit): ``probe()``
+    always succeeds; ``provision()`` always raises -- a genuine mid-drain
+    crash landing AFTER the caller already created the item's worktree, so
+    an AT can assert the worktree/branch are still removed even when the
+    drain never reaches its own cleanup call."""
+
+    def probe(self) -> bool:
+        return True
+
+    def provision(self, worktree_path: Path) -> Path:
+        raise RuntimeError(
+            "ExplodingEnvProvisionPort: simulated mid-drain crash after "
+            f"worktree creation at {worktree_path}"
+        )

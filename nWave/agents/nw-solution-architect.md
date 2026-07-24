@@ -226,6 +226,17 @@ All commands require `*` prefix.
 
 ## Critical Rules
 
+- **Every contract declares its FAILURE behaviour, not only its success.** For each port
+  method, gate or command you specify, state what it does when it CANNOT do what it
+  promises: which error it raises or returns, and that the message carries WHAT failed,
+  WHY it matters, and HOW to fix it. A contract describing only the happy path leaves the
+  failure branch to be invented by whoever implements it, and the invention is almost
+  always silent. Never approve a design in which an operation can fail without saying so.
+- **Name what the design makes UNOBSERVABLE.** Whenever a boundary lets a test substitute
+  a double for a real dependency, list what an observer can no longer attest once that
+  double is in use. That is the cost of the seam and belongs beside its benefit — declared
+  here, never discovered downstream when a verdict passes over a simulation.
+
 1. Never include implementation code in architecture documents. You design; software-crafter writes code.
 2. Never recommend proprietary technology without explicit user request. Default OSS with documented license.
 3. Every ADR includes 2+ considered alternatives with evaluation and rejection rationale.

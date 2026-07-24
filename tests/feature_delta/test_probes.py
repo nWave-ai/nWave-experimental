@@ -83,10 +83,22 @@ class TestJsonSchemaFileLoaderProbe:
 
 
 class TestPlaintextVerbLoaderProbe:
-    def test_probe_raises_when_verb_file_missing(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    def test_probe_exits_70_when_verb_file_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """probe() raises AssertionError when en.txt is absent or empty."""
+        """probe() refuses LOUDLY (exit 70) when en.txt is absent or empty (D-6a).
+
+        This used to be a bare ``assert``, whose ``AssertionError`` escaped
+        ``cli.py`` (which catches only ``ReDoSError``) and reached the maintainer
+        as a RAW TRACEBACK — the shipped product's actual behaviour, and output
+        they cannot act on. It now refuses exactly like every other adapter:
+        the structured ``health.startup.refused`` event naming this adapter and
+        the cure, then exit 70 (GDP-3 / GDP-6). Same contract as
+        ``TestJsonSchemaFileLoaderProbe`` above.
+        """
         from nwave_ai.feature_delta.adapters import verbs as verbs_module
         from nwave_ai.feature_delta.adapters.verbs import PlaintextVerbLoader
 
@@ -95,9 +107,18 @@ class TestPlaintextVerbLoaderProbe:
         empty_dir.mkdir()
         monkeypatch.setattr(verbs_module, "_VERB_DIR", empty_dir)
 
-        loader = PlaintextVerbLoader()
-        with pytest.raises(AssertionError, match="empty or missing"):
+        loader = PlaintextVerbLoader(cwd_root=tmp_path)
+        with pytest.raises(SystemExit) as exc_info:
             loader.probe()
+
+        assert exc_info.value.code == 70
+        refusal = capsys.readouterr().err
+        assert "health.startup.refused" in refusal
+        assert "PlaintextVerbLoader" in refusal
+        assert "reinstall" in refusal.lower(), (
+            "the refusal must tell the maintainer HOW to fix it, not just that "
+            f"a file is missing: {refusal!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -164,10 +185,19 @@ class TestRealFileSystemReaderProbe:
 
 
 class TestPlaintextKeywordLoaderProbe:
-    def test_probe_raises_when_keyword_file_missing(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    def test_probe_exits_70_when_keyword_file_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """probe() raises AssertionError when en.txt is absent or empty."""
+        """probe() refuses LOUDLY (exit 70) when en.txt is absent or empty (D-6a).
+
+        Was a bare ``assert``; now the same structured refusal every other
+        adapter emits — a damaged install is a damaged install, whichever asset
+        is the casualty, and the maintainer is told which adapter refused and
+        how to cure it.
+        """
         from nwave_ai.feature_delta.adapters import gherkin as gherkin_module
         from nwave_ai.feature_delta.adapters.gherkin import PlaintextKeywordLoader
 
@@ -177,5 +207,14 @@ class TestPlaintextKeywordLoaderProbe:
         monkeypatch.setattr(gherkin_module, "_KEYWORD_DIR", empty_dir)
 
         loader = PlaintextKeywordLoader()
-        with pytest.raises(AssertionError, match="empty or missing"):
+        with pytest.raises(SystemExit) as exc_info:
             loader.probe()
+
+        assert exc_info.value.code == 70
+        refusal = capsys.readouterr().err
+        assert "health.startup.refused" in refusal
+        assert "PlaintextKeywordLoader" in refusal
+        assert "reinstall" in refusal.lower(), (
+            "the refusal must tell the maintainer HOW to fix it, not just that "
+            f"a file is missing: {refusal!r}"
+        )

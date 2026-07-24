@@ -124,7 +124,7 @@ Adapter-integration coverage matrices often yield 10-15 ATs — exceeds the rati
 | `operation` | function/method exposed at a driving port |
 | `invariant` | system-wide constraint that must always hold |
 
-Run `nwave-ai outcomes register --id OUT-N --kind {kind} --input-shape "..." --output-shape "..." --keywords "k1,k2"`. Exit `0` registered; exit `2` duplicate id (retry). Registry at `docs/product/outcomes/registry.yaml`.
+Run `nwave-ai outcomes register --id OUT-N --kind {kind} --input-shape "..." --output-shape "..." --keywords "k1,k2"`. Exit `0` registered; exit `2` refused after checking (duplicate id, or the entry fails the schema — retry with a corrected entry); exit `3` refused *without* checking (the packaged schema resource could not be read — nothing was written; reinstall `nwave-ai`). Registry at `docs/product/outcomes/registry.yaml`; schema at `nwave_ai/outcomes/schema.json`.
 
 ## Self-Review Checklist (Dimension 9 + Mandate 7)
 

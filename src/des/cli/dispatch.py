@@ -44,6 +44,11 @@ from des.cli.validate_feature_delta import (
     validate_reuse_analysis_content,
 )
 from des.cli.verify_readiness_pre_dispatch import _design_skip_witness_present
+from des.domain.agent_capability import (
+    ClaimRegister,
+    DeclaredCapability,
+    resolve_declared_capability,
+)
 from des.domain.atdd_pure_phases import (
     FEATURE_END_PHASES,
     FEATURE_END_RETURN_PHASE,
@@ -146,14 +151,18 @@ _DEFAULT_AGENT = "nw-software-crafter"
 #: owner (deliver_phase_shape, velocity-v2: "cleared via an ExamineVerdict...
 #: an independent execution-observation, NOT an LLM reviewer-audit",
 #: ``atdd_pure_phases.py:57-59``). Her spec forbids technical/code-reasoning
-#: skills and source/design access BY CONSTRUCTION (RCA
-#: fix-po-charter-dispatch-marker-lane, Face B).
+#: skills; her spec also INSTRUCTS her away from source/design access -- an
+#: instruction, NOT a mechanism (RCA fix-examiner-blindness-enforced: her own
+#: frontmatter grants `Read` and `Bash`, so the constraint is declared, not
+#: enforced; what the envelope may CLAIM about it is derived per-dispatch from
+#: `resolve_declared_capability`, never asserted here).
 _EXAMINER_AGENT = "nw-user-examiner"
 
 #: The feature-end deep code review agent (ADR-027) -- the ONLY agent
 #: ``F_FINAL_REVIEW`` may resolve to: a code-reading reviewer, never the
-#: examiner (no source access by construction) and never the bare
-#: implementing crafter (fix-dispatch-cannot-generate-feature-end-phases).
+#: examiner (whose ROLE excludes reading source -- the whole epistemic value
+#: of her verdict) and never the bare implementing crafter
+#: (fix-dispatch-cannot-generate-feature-end-phases).
 _FEATURE_END_REVIEWER_AGENT = "nw-software-crafter-reviewer"
 
 #: Phase -> agent override map (GDP-5, the producing tool derives the correct
@@ -456,12 +465,17 @@ _DEFAULT_SKILL_LOADING = (
 )
 
 #: SKILL_LOADING body for the examiner -- NO technical/code-reasoning skills
-#: (RCA fix-po-charter-dispatch-marker-lane, Face B: her spec forbids
-#: source/design access BY CONSTRUCTION -- handing her ``nw-tdd-methodology``
-#: is the loaded-gun defect this fix removes).
+#: (RCA fix-po-charter-dispatch-marker-lane, Face B: handing her
+#: ``nw-tdd-methodology`` is the loaded-gun defect that fix removed). It
+#: deliberately makes NO claim about her access: the ONE claim site is the
+#: capability-derived sentence in DESIGN_CONTEXT (``_capability_claim``), so a
+#: claim can never be stated in a register the declaration does not support
+#: (RCA fix-examiner-blindness-enforced -- this body used to assert "no source
+#: or design access by construction" over an unenforced constraint).
 _EXAMINER_SKILL_LOADING = (
-    "No technical or code-reasoning skills to load -- the examiner has no "
-    "source or design access by construction.\n"
+    "No technical or code-reasoning skills to load -- examining is not "
+    "implementation, and code-reasoning knowledge corrupts the examiner's "
+    "epistemology.\n"
 )
 
 #: SKILL_LOADING body for the charter-authoring product-owner -- POSITIVE
@@ -496,10 +510,78 @@ def _skill_loading_body(agent: str) -> str:
 #: the instrument, not an omission. Mirrors the neutral body the guard
 #: already accepts for an examine dispatch (``design_context_carries_
 #: architecture`` is not applied to a non-code-facing dispatch).
+#: The WITHHOLDING half of the body -- keyed on ROLE INTENT, never on
+#: capability. Deriving the ROUTING from capability instead would classify the
+#: examiner as code-facing today (she holds ``Read``/``Bash``) and start
+#: handing her the design pointers whose absence IS her epistemic value.
+#: Only the CLAIM REGISTER below is derived.
 _NON_CODE_FACING_DESIGN_CONTEXT = (
-    "N/A -- this dispatch is non-code-facing; no source, design, or "
-    "acceptance-test access by construction.\n"
+    "N/A -- this dispatch is non-code-facing by ROLE INTENT: no source, "
+    "design, or acceptance-test material is routed to it.\n"
 )
+
+
+def _granting_phrase(capability: DeclaredCapability) -> str:
+    """Name the tools the claim is derived FROM, so the reader can check."""
+    if capability.declared_tools is None:
+        return (
+            "every tool -- its spec declares no `tools:` key at all, an "
+            "omission that INHERITS the full tool set"
+        )
+    if capability.register is ClaimRegister.INSTRUCTED:
+        return ", ".join(capability.source_reaching_tools)
+    if not capability.declared_tools:
+        return "no tool at all"
+    return ", ".join(capability.declared_tools)
+
+
+def _capability_claim(agent: str, capability: DeclaredCapability) -> str:
+    """The ONE sentence this generator may say about a dispatch's access --
+    DERIVED from the agent's declared capability, never asserted (RCA
+    fix-examiner-blindness-enforced, root causes A + D).
+
+    Three mutually exclusive registers (``des.domain.agent_capability``):
+
+      * ``UNKNOWN``    -- the declaration could not be read. Say so plainly.
+        Degrading to the permissive wording here would launder an absence of
+        evidence into evidence of absence (GDP-6).
+      * ``INSTRUCTED`` -- the declaration DOES grant a source-reaching tool.
+        The honest register: instructed, not prevented -- and FALSIFIABLE, so
+        the sentence names the exact file and field the reader can check.
+      * ``ENFORCED``   -- the declaration grants nothing that reaches the
+        tree. An absolute is EARNED only here: an ungranted tool is genuinely
+        uncallable, so the declaration IS the mechanism.
+
+    Forward-compatible by construction of the derivation itself: when real
+    enforcement lands and the examiner's declared capability is genuinely
+    restricted, this same code starts reporting ``ENFORCED`` with no edit.
+    """
+    reference = capability.spec_reference(agent)
+    if capability.register is ClaimRegister.UNKNOWN:
+        return (
+            f"Access constraint -- UNVERIFIED: {agent}'s declared capability "
+            f"could not be determined ({reference} carries no parseable "
+            "`tools:` frontmatter). It was NOT read, which is not the same as "
+            "read-and-clear -- treat the constraint as instructed only, and "
+            "verify the surface this dispatch actually exercised.\n"
+        )
+    if capability.register is ClaimRegister.INSTRUCTED:
+        return (
+            f"Access constraint -- INSTRUCTED, not enforced: {agent}'s "
+            f"declared capability ({reference}, `tools:` frontmatter) grants "
+            f"{_granting_phrase(capability)}, which DO reach the tree. "
+            "Nothing mechanically prevents this dispatch from reading "
+            "implementation, design or acceptance tests -- the constraint is "
+            "a role instruction, never a property of the system. Verify the "
+            "surface actually exercised before trusting the verdict.\n"
+        )
+    return (
+        f"Access constraint -- ENFORCED: {agent}'s declared capability "
+        f"({reference}, `tools:` frontmatter) grants "
+        f"{_granting_phrase(capability)}, none of which reaches the tree, so "
+        "source, design and acceptance-test access is prevented by "
+        "construction -- read from the declaration, never asserted.\n"
+    )
 
 
 #: DESIGN_CONTEXT body for a bugfix-lane dispatch whose feature-id has NO
@@ -547,14 +629,22 @@ _NON_CODE_FACING_TIMEOUT_INSTRUCTION = (
 
 
 def _design_context_body(
-    agent: str, feature_id: str, lane: str | None, project_root: Path
+    agent: str,
+    feature_id: str,
+    lane: str | None,
+    project_root: Path,
+    capability: DeclaredCapability,
 ) -> str:
     """DESIGN_CONTEXT section body, keyed on the resolved dispatch agent
     (and, for a bugfix-lane code-facing dispatch, on whether a
     feature-delta.md genuinely exists on disk).
 
     A NON-CODE-FACING agent (``_NON_CODE_FACING_AGENTS``) never receives the
-    ``docs/feature/<id>/feature-delta.md`` pointer -- every other
+    ``docs/feature/<id>/feature-delta.md`` pointer, and its body carries the
+    capability-DERIVED access claim (``_capability_claim``) -- the withholding
+    stays keyed on ROLE INTENT, only the claim's REGISTER is derived, so
+    honesty about the claim never becomes a licence to route implementation
+    context to a role whose whole value is that it has seen none. Every other
     (code-facing) agent keeps the real design citation, UNLESS ``lane ==
     "bugfix"`` and the file does not actually exist under ``project_root``
     (RCA fix-des-dispatch-broken-design-context-pointer): a bugfix has no
@@ -562,7 +652,7 @@ def _design_context_body(
     never resolve is the exact defect this branch fixes.
     """
     if agent in _NON_CODE_FACING_AGENTS:
-        return _NON_CODE_FACING_DESIGN_CONTEXT
+        return _NON_CODE_FACING_DESIGN_CONTEXT + _capability_claim(agent, capability)
     if lane == "bugfix":
         delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
         if not delta_path.is_file():
@@ -582,6 +672,7 @@ def _section_body(
     wave: str,
     runs_tests: bool,
     project_root: Path,
+    capability: DeclaredCapability,
 ) -> str:
     """Render one section's scaffold body.
 
@@ -590,8 +681,10 @@ def _section_body(
     gate downstream (``design_context_carries_architecture``) for a
     CODE-FACING agent, so it MUST carry a real design-reference token (a
     ``docs/feature/<id>/feature-delta.md`` path). A NON-CODE-FACING agent
-    (``_NON_CODE_FACING_AGENTS``) is exempt from that gate BY CONSTRUCTION --
-    ``_design_context_body`` renders the neutral body instead. A section id
+    (``_NON_CODE_FACING_AGENTS``) is exempt from that gate -- the SAME
+    predicate the guard itself consults (``_is_non_code_facing_dispatch``)
+    exempts it, and ``_design_context_body`` renders the neutral body plus the
+    capability-derived access claim instead. A section id
     absent from this map (e.g. a section newly added to the SSOT that this
     generator does not yet know how to word) still gets its header emitted by
     the caller with an empty body -- the header is the contract; the prose is
@@ -613,7 +706,9 @@ def _section_body(
             else f"Wave {wave} for feature {feature_id} (scope: {slice_id}).\n"
             + (f"{intent}\n" if intent else "")
         ),
-        "DESIGN_CONTEXT": _design_context_body(agent, feature_id, lane, project_root),
+        "DESIGN_CONTEXT": _design_context_body(
+            agent, feature_id, lane, project_root, capability
+        ),
         "ATDD_PURE_PHASES": (
             "Execute the phase named in the DES-PHASE marker.\n"
             + (f"{intent}\n" if intent else "")
@@ -691,6 +786,7 @@ def _build_prompt(
     regression_test_file: str | None,
     agent: str,
     project_root: Path,
+    capability: DeclaredCapability,
 ) -> str:
     """Assemble the full dispatch prompt: marker block, then section headers.
 
@@ -735,6 +831,7 @@ def _build_prompt(
             wave=wave,
             runs_tests=runs_tests,
             project_root=project_root,
+            capability=capability,
         )
         for section_id in section_ids
     ]
@@ -1063,6 +1160,15 @@ def main(argv: list[str] | None = None) -> int:
         if prefactoring_advisory is not None:
             print(prefactoring_advisory, file=sys.stderr)
 
+    # The CLAIM the envelope may make about this dispatch's access is DERIVED
+    # from the recipient's own published declaration, resolved on the SSOT axis
+    # (the checkout/installed tree that carries the nWave assets -- agent specs
+    # live under `nWave/agents/` in a checkout and `<claude_dir>/agents/nw/`
+    # when installed, NOT under the installed `nWave` SSOT dir). Degrades LOUD
+    # to the UNKNOWN register; never to a permissive default.
+    agent = _resolve_agent(phase, args.lane, args.wave)
+    capability = resolve_declared_capability(agent, repo_root=ssot_dir)
+
     prompt = _build_prompt(
         marker_syntax=_read_marker_syntax(ssot_dir),
         feature_id=args.project_id,
@@ -1077,8 +1183,9 @@ def main(argv: list[str] | None = None) -> int:
         runs_tests=runs_tests,
         at_kind=args.at_kind,
         regression_test_file=args.regression_test_file,
-        agent=_resolve_agent(phase, args.lane, args.wave),
+        agent=agent,
         project_root=project_root,
+        capability=capability,
     )
     print(prompt, end="")
     return 0

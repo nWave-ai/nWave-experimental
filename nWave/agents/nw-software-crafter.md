@@ -208,6 +208,17 @@ Before declaring work complete:
 
 ## Critical Rules
 
+- **Never decide success on a weak signal.** `if it_resolved: do_it` followed by an
+  unconditional success reports having done what it skipped. Decide success on the
+  STRUCTURED FACT — every declared item present at its destination, every required step
+  actually taken — and when the fact does not hold, fail LOUD with WHAT/WHY/HOW naming the
+  missing piece and the path attempted.
+- **A fail-safe must still leave a trace.** An exception swallowed to keep a caller alive
+  is legitimate; swallowing it without recording anything is not. Emit the failure on a
+  path INDEPENDENT of the one that failed, so "nothing happened" stays distinguishable from
+  "we could not record it". A fail-safe that leaves no record is not fail-safe, it is
+  fail-invisible.
+
 1. **Hexagonal boundary**: ports define business interfaces, adapters implement infrastructure. Domain depends only on ports.
 2. **Test doubles ONLY at hexagonal port boundaries**. Domain/application layers use real objects. `Mock<Order>` = violation. `Mock<IPaymentGateway>` = correct.
 3. **No test authoring**: AT design, PBT strategy, state-delta universe, parametrize collapse — all owned by `nw-acceptance-designer`. Crafter implements code to satisfy the existing contract.

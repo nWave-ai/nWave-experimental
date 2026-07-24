@@ -4,24 +4,38 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
+from nwave_ai.feature_delta.adapters.refusal import refuse_startup
+from nwave_ai.feature_delta.resources import packaged_resource
 
-_DEFAULT_SCHEMA_PATH = (
-    Path(__file__).parent.parent.parent.parent / "schemas" / "feature-delta-schema.json"
-)
+
+def _default_schema_path() -> Path:
+    """The schema as a PACKAGE RESOURCE — it travels with the install.
+
+    Resolved at call time (not import time) so tests and callers can still see a
+    consistent path after monkeypatching, and so importing this module never
+    depends on where the package sits.
+    """
+    return packaged_resource("schema.json")
 
 
 def _resolve_schema_path(schema_path: Path | None) -> Path:
-    """Resolve schema path: explicit > env var > repo default."""
+    """Resolve schema path: explicit > env var > packaged default.
+
+    The explicit argument and the ``NWAVE_FEATURE_DELTA_SCHEMA`` override are
+    the suite's only injection seams and stay exactly as they were (D-3). Only
+    the DEFAULT moved: it used to walk four ``.parent`` hops OUT of the package
+    to a top-level ``schemas/`` directory, which exists in a source checkout and
+    in no install.
+    """
     if schema_path is not None:
         return schema_path
     env = os.environ.get("NWAVE_FEATURE_DELTA_SCHEMA")
     if env:
         return Path(env)
-    return _DEFAULT_SCHEMA_PATH
+    return _default_schema_path()
 
 
 class JsonSchemaFileLoader:
@@ -52,19 +66,9 @@ class JsonSchemaFileLoader:
             text = self._path.read_text(encoding="utf-8")
             schema = json.loads(text)
         except (OSError, json.JSONDecodeError) as exc:
-            print(
-                f"health.startup.refused adapter=JsonSchemaFileLoader "
-                f"path={self._path} error={exc}",
-                file=sys.stderr,
-            )
-            sys.exit(70)
+            refuse_startup("JsonSchemaFileLoader", self._path, exc)
 
         try:
             Draft7Validator.check_schema(schema)
         except Exception as exc:
-            print(
-                f"health.startup.refused adapter=JsonSchemaFileLoader "
-                f"path={self._path} error={exc}",
-                file=sys.stderr,
-            )
-            sys.exit(70)
+            refuse_startup("JsonSchemaFileLoader", self._path, exc)

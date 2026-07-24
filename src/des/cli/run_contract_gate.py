@@ -375,21 +375,99 @@ def _collect_scope_uncached_dispatch(
     return _collect_scope_uncached(repo, paths, markers=markers)
 
 
-def _light_collect_env() -> dict[str, str] | None:
-    """Env for the collect worker (velocity-v2, <5min G-143).
+# The pytest hooks through which a plugin can ADD/REMOVE a collected item (change
+# the digested SET), as opposed to merely labelling/reordering/reporting it. A
+# plugin implementing any of these is KEPT when autoload is disabled; a plugin
+# implementing none of them (allure's per-item labelling, pytest-cov, pytest-html,
+# metadata, xdist, timeout, respx, ...) is answer-neutral and safely dropped, so
+# the inventory step pays enumeration cost, not full tooling-load cost.
+_ITEM_COLLECTION_HOOKS = frozenset(
+    {
+        "pytest_collect_file",
+        "pytest_collect_directory",
+        "pytest_pycollect_makeitem",
+        "pytest_pycollect_makemodule",
+        "pytest_generate_tests",
+        "pytest_collectstart",
+        "pytest_collection",
+        "pytest_make_collect_report",
+    }
+)
 
-    Under ``NWAVE_COLLECT_MEMO`` (set ONLY by the test conftest) disable the slow
-    NON-collection plugins (cov / hypothesis / randomly) via ``PYTEST_ADDOPTS`` --
-    they do not affect the collected SET, so the contract-gate digest is IDENTICAL
-    (verified 77a0326e), a pure speedup and never a lying-fast shrink. Production
-    (no env var) returns ``None`` -> the subprocess inherits the parent env unchanged.
+_COLLECTION_PLUGIN_ALLOWLIST: list[str] | None = None
+
+
+def _collection_plugin_allowlist() -> list[str]:
+    """The installed ``pytest11`` plugins that can alter the collected item SET.
+
+    Derived DYNAMICALLY from ``importlib.metadata`` at runtime -- NEVER a
+    hand-typed name list (a prior perf commit hand-typed ``-p no:<plugin>`` names
+    that silently no-op'd when the venv's actual plugin set diverged from the
+    list, e.g. ``no:pytest_pspec`` vs the real ``pspec``). Each installed
+    ``pytest11`` entry point is imported and KEPT iff its module implements at
+    least one item-creation hook (``_ITEM_COLLECTION_HOOKS``); a plugin that
+    cannot be imported is kept too (fail-open toward answer-preservation -- never
+    DROP a plugin we cannot inspect). The result is the
+    ``PYTEST_DISABLE_PLUGIN_AUTOLOAD`` re-enable allowlist: these plugins are
+    re-enabled by module name so the trimmed collect stays item-for-item
+    identical to a full-autoload collect for any target whose collection they
+    drive. A target needing a collection plugin NOT on this list fails LOUD in
+    the worker, and ``_collect_scope_uncached`` falls back to the full-autoload
+    collect -- never a silent shrink. Memoised per interpreter session (the
+    installed plugin set is immutable within a process).
     """
-    if not os.environ.get("NWAVE_COLLECT_MEMO"):
-        return None
+    global _COLLECTION_PLUGIN_ALLOWLIST
+    if _COLLECTION_PLUGIN_ALLOWLIST is not None:
+        return _COLLECTION_PLUGIN_ALLOWLIST
+    import importlib
+    from importlib import metadata as importlib_metadata
+
+    modules: list[str] = []
+    for entry_point in importlib_metadata.entry_points(group="pytest11"):
+        module_name = entry_point.value.split(":")[0]
+        try:
+            module = importlib.import_module(module_name)
+        except Exception:
+            modules.append(module_name)
+            continue
+        if any(hasattr(module, hook) for hook in _ITEM_COLLECTION_HOOKS):
+            modules.append(module_name)
+    _COLLECTION_PLUGIN_ALLOWLIST = sorted(set(modules))
+    return _COLLECTION_PLUGIN_ALLOWLIST
+
+
+def _collect_worker_env(*, trim: bool) -> dict[str, str]:
+    """Build the collect worker's environment (fix-gate-collect-spawn-plugin-overhead).
+
+    Two answer-preserving invariants:
+
+    * Ambient neutralisation (ALWAYS): the inventory answer is a property of the
+      TARGET, never of the caller's environment. ``PYTEST_ADDOPTS`` /
+      ``PYTEST_PLUGINS`` are stripped so an ambient ``-p no:<needed-plugin>``
+      cannot silently shrink the collected set, and so the digest is portable
+      across machines whose ambient wiring differs.
+    * Autoload trim (``trim=True``): disable pytest plugin autoload
+      (``PYTEST_DISABLE_PLUGIN_AUTOLOAD=1``) -- a bare item enumeration reads none
+      of this venv's ~18 third-party reporting/coverage ``pytest11`` plugins
+      (allure's per-item labelling alone dominates the cost) -- and RE-ENABLE, by
+      module name, exactly the dynamically-discovered plugins that can change the
+      collected SET (``_collection_plugin_allowlist``). The full-autoload path
+      (``trim=False``) is the fallback; under the test-session memo it keeps the
+      existing <5min speedup by disabling the slow NON-collection plugins (which
+      do not change the collected SET, so the digest is identical).
+    """
     env = os.environ.copy()
-    light = "-p no:cov -p no:hypothesis -p no:randomly"
-    existing = env.get("PYTEST_ADDOPTS", "")
-    env["PYTEST_ADDOPTS"] = f"{existing} {light}".strip()
+    env.pop("PYTEST_ADDOPTS", None)
+    env.pop("PYTEST_PLUGINS", None)
+    addopts: list[str] = []
+    if trim:
+        env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+        for module_name in _collection_plugin_allowlist():
+            addopts += ["-p", module_name]
+    elif os.environ.get("NWAVE_COLLECT_MEMO"):
+        addopts += ["-p", "no:cov", "-p", "no:hypothesis", "-p", "no:randomly"]
+    if addopts:
+        env["PYTEST_ADDOPTS"] = " ".join(addopts)
     return env
 
 
@@ -398,7 +476,39 @@ def _collect_scope_uncached(
     paths: list[Path] | None = None,
     markers: str | None | _UnsetMarkers = _MARKERS_UNSET,
 ) -> _CollectedScope:
-    """Derive the canonical collected scope from pytest's IN-PROCESS session.
+    """Collect the canonical scope with an autoload-trimmed pytest spawn.
+
+    Attempts the cheap collect first -- the worker spawned with plugin autoload
+    DISABLED and only the dynamically-discovered collection plugins re-enabled
+    (``_collect_worker_env(trim=True)``), so the inventory step pays what counting
+    costs, not what loading this venv's ~18 third-party reporting/coverage plugins
+    costs. If that trimmed collect fails LOUD (a collection plugin the target
+    genuinely needs is not on the item-creation allowlist -> the worker raises
+    ``_CollectionError``), fall back transparently to the full-autoload collect
+    (``trim=False``): the answer is never allowed to shrink -- answer-preservation
+    over speed. Signature preserved for the memo layer and test doubles that stub
+    this symbol.
+    """
+    try:
+        return _run_collect_worker(
+            repo, paths, markers, env=_collect_worker_env(trim=True)
+        )
+    except _CollectionError:
+        return _run_collect_worker(
+            repo, paths, markers, env=_collect_worker_env(trim=False)
+        )
+
+
+def _run_collect_worker(
+    repo: Path,
+    paths: list[Path] | None,
+    markers: str | None | _UnsetMarkers,
+    *,
+    env: dict[str, str],
+) -> _CollectedScope:
+    """Spawn the child collect worker with ``env`` and parse its canonical scope.
+
+    Derive the canonical collected scope from pytest's IN-PROCESS session.
 
     The digest input comes from pytest's IN-PROCESS collection API
     (``session.items``), NOT from parsing the collapse-prone ``-q`` collect
@@ -446,7 +556,6 @@ def _collect_scope_uncached(
     """
     interpreter = pytest_interpreter(repo_root=repo)
     worker = Path(__file__).with_name("_collect_scope_worker.py")
-    worker_env = _light_collect_env()
     try:
         completed = subprocess.run(
             [
@@ -460,7 +569,7 @@ def _collect_scope_uncached(
             capture_output=True,
             text=True,
             timeout=_COLLECT_TIMEOUT_SECONDS,
-            env=worker_env,
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         # ZERO DEFECTS: the collect worker must never block forever. A collect

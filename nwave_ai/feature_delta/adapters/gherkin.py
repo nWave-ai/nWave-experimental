@@ -2,30 +2,47 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+from nwave_ai.feature_delta.adapters.refusal import refuse_startup
+from nwave_ai.feature_delta.resources import packaged_resource
 
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_KEYWORD_DIR = _REPO_ROOT / "nWave" / "data" / "gherkin-keywords"
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+# A PACKAGE RESOURCE — it travels with the install. Previously resolved by
+# walking four `.parent` hops OUT of the package to `nWave/data/`, which exists
+# in a source checkout and on no distribution channel.
+_KEYWORD_DIR = packaged_resource("data", "gherkin-keywords")
 
 
 class PlaintextKeywordLoader:
     """Load Gherkin keyword lists from .txt files (one keyword per line)."""
 
     def load_keywords(self, lang: str) -> tuple[str, ...]:
-        """Return Gherkin keywords for `lang` from nWave/data/gherkin-keywords/{lang}.txt."""
+        """Return Gherkin keywords for `lang` from the packaged keyword list."""
         path = _KEYWORD_DIR / f"{lang}.txt"
         return self._load(path)
 
     def probe(self) -> None:
-        """Startup health check — verify en.txt is accessible and non-empty."""
+        """Startup health check — verify en.txt is accessible and non-empty.
+
+        Refuses LOUDLY and identically to every other adapter (D-6a): structured
+        event, adapter name, resource, cure, exit 70. Never a bare ``assert``,
+        whose ``AssertionError`` reaches the maintainer as a raw traceback.
+        """
         keywords = self.load_keywords("en")
-        assert len(keywords) > 0, (
-            f"en.txt is empty or missing at {_KEYWORD_DIR / 'en.txt'}"
-        )
+        if not keywords:
+            refuse_startup(
+                "PlaintextKeywordLoader",
+                _KEYWORD_DIR / "en.txt",
+                "gherkin keyword list is empty or missing",
+            )
 
     def _load(self, path: Path) -> tuple[str, ...]:
-        if not path.exists():
+        if not path.is_file():
             return ()
         lines = path.read_text(encoding="utf-8").splitlines()
         return tuple(

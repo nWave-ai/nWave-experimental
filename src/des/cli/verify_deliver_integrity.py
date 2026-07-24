@@ -33,6 +33,9 @@ from pathlib import Path
 from des.adapters.driven.git.git_commit_trailer_read_adapter import (
     GitCommitTrailerReadAdapter,
 )
+from des.application.feature_end_na_marker_reconciliation import (
+    feature_end_na_marker_reconciles,
+)
 from des.ports.driven_ports.commit_trailer_read_port import (
     CommitTrailerReadPort,
     Indeterminate,
@@ -719,15 +722,16 @@ def _verify_atdd_pure(
     # `required` set is UNCHANGED (R3 sequencing caveat): it keeps demanding the
     # heartbeat / verified names so the done-gate contract for in-flight features
     # does not shift mid-stream; the NA marker merely reconciles the requirement.
-    _NA_MARKER_RECONCILES = {
-        "CoverageMapNotApplicableAtDistillExit": "CoverageMapVerifiedAtDistillExit",
-        "CoverageMapNotApplicableAtDeliverExit": "CoverageMapVerifiedAtDeliverExit",
-        # f-nonbypassable-attestation slice-01 (DDD-4): a target repo with no
-        # collectable contract suite emits `FullSuiteLegNotApplicable` instead of
-        # `FullSuiteLegRan`; the NA marker reconciles the requirement (genericità,
-        # never a fake pass).
-        "FullSuiteLegNotApplicable": "FullSuiteLegRan",
-    }
+    #
+    # fix-na-marker-reconcile-drift slice-01: the NA-marker -> required-record
+    # map is read from the ONE shared source (`feature_end_na_marker_reconciles`,
+    # `des.application.feature_end_na_marker_reconciliation`) -- the SAME
+    # function the SubagentStop hook's `_missing_feature_end_cycle_records`
+    # consults. Before this fix this CLI hardcoded its own independent
+    # three-entry literal (this comment's former home) while the hook only
+    # reconciled the full-suite leg inline; the two surfaces silently
+    # disagreed on every repo with inactive coverage-map adoption.
+    _NA_MARKER_RECONCILES = feature_end_na_marker_reconciles()
     try:
         ledger = AtCompletionLedger(resolved_feature_id, project_dir)
         recorded = (

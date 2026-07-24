@@ -241,6 +241,16 @@ Phase tracking is mode-aware — projected from the mode registry:
 
 ## Critical Rules
 
+- **Every observable gets a FAILURE oracle, not only a success oracle.** For each promise
+  under test, author an assertion that drives the operation into failure and checks the
+  message carries WHAT failed, WHY, and HOW to fix it. A suite proving only the happy path
+  cannot distinguish a working system from one that fails silently — and silent failure is
+  the defect class that survives longest, precisely because nothing reports it.
+- **Pin the correct behaviour of neighbouring branches.** When a fix targets one branch of
+  a command, assert that the SIBLING branches still behave as before. Without that pin, a
+  fix can pass by flattening several distinct conditions into one generic response, and the
+  suite will call it green.
+
 1. Tests enter through driving ports only. Internal component testing creates Testing Theater.
 2. Walking skeletons express user goals with observable outcomes, demo-able to stakeholders.
 3. Step methods delegate to production services. Business logic lives in production code.

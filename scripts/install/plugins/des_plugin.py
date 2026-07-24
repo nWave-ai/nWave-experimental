@@ -459,6 +459,13 @@ class DESPlugin(InstallationPlugin):
             # `.pre-commit-config.yaml`, so `pre-commit install` is the SOLE
             # writer of `.git/hooks/pre-push`.
 
+            # Install the framework DATA tree -- the runtime reads it, and
+            # installing its consumers without it is a silent runtime failure
+            # on the operator's machine (fix-installer-never-ships-data-tree).
+            data_result = self._install_des_data(context)
+            if not data_result.success:
+                return data_result
+
             # Install DES templates
             templates_result = self._install_des_templates(context)
             if not templates_result.success:
@@ -1105,6 +1112,96 @@ class DESPlugin(InstallationPlugin):
                 item_label="script",
             )
         )
+
+    def _install_des_data(self, context: InstallContext) -> PluginResult:
+        """Install the framework DATA tree (`nWave/data/`) to `<claude_dir>/data/`.
+
+        WHY THIS EXISTS: eight runtime modules read `nWave/data/` -- log
+        persistence defaults, the coverage-map digest fixtures, the flavor
+        dispatcher's tables, `des doctor`, and the orchestrator-affordance
+        catalogue the standing-loop injection hook consumes. None of it was
+        ever copied to the operator's tree, so every one of those reads
+        resolved against a directory that exists only in a development
+        checkout. The installed CONSUMER was being deployed without the DATA
+        it consumes, and the install reported success regardless.
+
+        FAIL-LOUD CONTRACT: a missing source tree is NOT skipped silently.
+        Installing a consumer without its data is the defect this method
+        exists to close, so an absent or empty source is a hard failure that
+        names WHAT is missing, WHY it matters, and HOW to fix it.
+        """
+        try:
+            source_dir = context.framework_source / "data"
+            if not source_dir.exists() and context.project_root:
+                source_dir = context.project_root / "nWave" / "data"
+
+            if not source_dir.exists():
+                return PluginResult(
+                    success=False,
+                    plugin_name="des",
+                    message=(
+                        f"WHAT: the framework data tree was not found at "
+                        f"{source_dir}. "
+                        "WHY: eight runtime modules read it (log-persistence "
+                        "defaults, coverage-map fixtures, flavor dispatcher "
+                        "tables, des doctor, and the orchestrator-affordance "
+                        "catalogue the standing-loop hook injects) -- without "
+                        "it they resolve against a path that does not exist on "
+                        "the target machine. "
+                        "HOW: reinstall from a source tree that ships nWave/data/, "
+                        "or from a distribution built by scripts/build_dist.py "
+                        "with the data family included."
+                    ),
+                )
+
+            target_dir = context.claude_dir / "data"
+            if not context.dry_run:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
+
+            # Verify the STRUCTURED FACT -- every top-level entry present at
+            # the destination -- never the weak signal "copytree did not raise".
+            declared = sorted(p.name for p in source_dir.iterdir())
+            if not context.dry_run:
+                arrived = {p.name for p in target_dir.iterdir()}
+                missing = [name for name in declared if name not in arrived]
+                if missing:
+                    return PluginResult(
+                        success=False,
+                        plugin_name="des",
+                        message=(
+                            f"WHAT: {len(missing)} data entr(y|ies) declared at "
+                            f"{source_dir} did not arrive at {target_dir}: "
+                            f"{', '.join(missing)}. "
+                            "WHY: a consumer installed without the data it reads "
+                            "fails at runtime on the operator's machine while the "
+                            "install reports success. "
+                            "HOW: check permissions and free space on the target, "
+                            "then re-run the install."
+                        ),
+                    )
+
+            return PluginResult(
+                success=True,
+                plugin_name="des",
+                message=(
+                    f"Installed {len(declared)} framework data entries to "
+                    f"{context.claude_dir / 'data'}"
+                ),
+            )
+
+        except Exception as e:
+            return PluginResult(
+                success=False,
+                plugin_name="des",
+                message=(
+                    f"WHAT: installing the framework data tree failed ({e}). "
+                    "WHY: eight runtime modules read nWave/data/ and resolve "
+                    "against the installed copy. "
+                    "HOW: re-run the install; if it persists, check write "
+                    "permissions on the Claude config directory."
+                ),
+            )
 
     def _install_des_templates(self, context: InstallContext) -> PluginResult:
         """Install DES templates."""

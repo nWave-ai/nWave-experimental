@@ -95,12 +95,41 @@ def _run_dispatch_main(argv: list[str]) -> tuple[int, str, str]:
     return exit_code, stdout_buf.getvalue(), stderr_buf.getvalue()
 
 
+#: The phase this synthetic EXAMINE prompt DECLARES. Named ONCE so the
+#: AGENT_IDENTITY body below is derived for the SAME phase the marker block
+#: declares -- never a second, hand-synced copy that can drift from it.
+_EXAMINE_PROMPT_PHASE = "C_REVIEWER_AUDIT"
+
+
 def _examine_section_body(section_id: str) -> str:
-    """Minimal body per review-profile section; DESIGN_CONTEXT is deliberately
-    citation-free (no DDD/ADR/SYS id, no feature-delta.md path, no brief.md) --
-    the exact shape `design_context_carries_architecture` refuses today."""
+    """Minimal body per review-profile section, FAITHFUL to the envelope this
+    prompt claims to model -- a real `des dispatch` EXAMINE envelope.
+
+    Two sections carry a real body; the rest are placeholders:
+
+      * DESIGN_CONTEXT is deliberately citation-free (no DDD/ADR/SYS id, no
+        feature-delta.md path, no brief.md) -- the exact shape
+        `design_context_carries_architecture` refuses. That is the point of
+        the test: an examiner dispatch must be accepted DESPITE it.
+      * AGENT_IDENTITY carries the `Agent: <name>` line the real generator
+        ALWAYS emits (`des.cli.dispatch` renders this section as
+        `f"Agent: {agent}\\n"`). It is DERIVED, never restated: the recipient
+        is whatever the PRODUCTION resolver `dispatch._resolve_agent` names
+        for `_EXAMINE_PROMPT_PHASE` -- the same call the generator itself
+        makes. Re-route that phase in `_PHASE_AGENTS` and this fixture follows
+        automatically, with no edit here.
+
+    A placeholder `ok` body for AGENT_IDENTITY was a fixture-faithfulness bug:
+    the validator's non-code-facing exemption keys on the RESOLVED AGENT (the
+    `Agent:` line, tested against `dispatch._NON_CODE_FACING_AGENTS`) and
+    fails CLOSED on an unparsable recipient -- so a synthetic prompt with no
+    `Agent:` line modelled an envelope the generator can never emit, and was
+    correctly gated.
+    """
     if section_id == "DESIGN_CONTEXT":
         return "N/A -- Vera the examiner has no source or design access by design.\n"
+    if section_id == "AGENT_IDENTITY":
+        return f"Agent: {dispatch._resolve_agent(_EXAMINE_PROMPT_PHASE, None, None)}\n"
     return "ok\n"
 
 
@@ -108,12 +137,13 @@ def _build_examine_prompt_without_design_citation(feature_id: str) -> str:
     """A well-formed atdd_pure C_REVIEWER_AUDIT (EXAMINE) dispatch prompt,
     carrying the real 7-section review profile (`_REVIEW_PROFILE_SECTIONS`,
     the SAME SSOT `AtddPurePromptValidator` selects for a review dispatch),
-    but with NO real architecture citation in DESIGN_CONTEXT."""
+    declaring the recipient the PRODUCTION resolver names for that phase, but
+    with NO real architecture citation in DESIGN_CONTEXT."""
     marker_lines = [
         _marker("DES-VALIDATION", "required"),
         _marker("DES-PROJECT-ID", feature_id),
         _marker("DES-MODE", "atdd_pure"),
-        _marker("DES-PHASE", "C_REVIEWER_AUDIT"),
+        _marker("DES-PHASE", _EXAMINE_PROMPT_PHASE),
         _marker("DES-SLICE", "slice-01"),
     ]
     section_lines = [
@@ -257,15 +287,41 @@ def test_dispatch_guard_accepts_examiner_dispatch_without_architecture_citation(
     lacking design context* -- the examiner's exclusion from design is the
     instrument, not an omission.
 
-    FAILS TODAY: `AtddPurePromptValidator` selects the 7-section REVIEW
-    profile for a `C_REVIEWER_AUDIT` dispatch (`_REVIEW_PROFILE_SECTIONS`),
-    which still includes DESIGN_CONTEXT -- and the SAME
+    FAILED AT AUTHORING TIME (the RED this test pinned):
+    `AtddPurePromptValidator` selects the 7-section REVIEW profile for a
+    `C_REVIEWER_AUDIT` dispatch (`_REVIEW_PROFILE_SECTIONS`), which still
+    includes DESIGN_CONTEXT -- and the SAME
     `design_context_carries_architecture` content-presence gate an
-    implementation dispatch is held to fires on a citation-free body,
+    implementation dispatch is held to fired on a citation-free body,
     refusing the dispatch.
+
+    The exemption now keys on the RESOLVED AGENT (the `Agent:` line, tested
+    against `dispatch._NON_CODE_FACING_AGENTS`) rather than on one hardcoded
+    phase literal -- which is why this prompt must DECLARE its recipient the
+    way a real generated envelope does. The assertions are unchanged: this
+    test still drives the real, production-wired `PreToolUseService`, which
+    is coverage no validator-level test provides.
     """
     feature_id = f"probe-guard-{uuid.uuid4().hex[:8]}"
     prompt = _build_examine_prompt_without_design_citation(feature_id)
+
+    # Fixture faithfulness: this prompt only MODELS an examiner dispatch while
+    # the phase it declares still routes to a non-code-facing agent. Assert it
+    # explicitly, so a future re-route fails LOUDLY by name here instead of
+    # silently turning this into a test of something else.
+    declared_agent = dispatch._resolve_agent(_EXAMINE_PROMPT_PHASE, None, None)
+    assert declared_agent in dispatch._NON_CODE_FACING_AGENTS, (
+        f"fixture problem: phase {_EXAMINE_PROMPT_PHASE!r} now routes to "
+        f"{declared_agent!r}, which is NOT in "
+        "dispatch._NON_CODE_FACING_AGENTS -- this prompt no longer models a "
+        "non-code-facing dispatch, so the assertions below would be testing "
+        "something else entirely."
+    )
+    assert f"Agent: {declared_agent}" in prompt, (
+        "fixture problem: the synthetic prompt must carry the `Agent:` line a "
+        "real generated envelope always carries -- the guard's non-code-facing "
+        "exemption reads the RESOLVED AGENT and fails closed without it"
+    )
 
     service = service_factory.create_pre_tool_use_service(
         audit_writer_factory=NullAuditLogWriter

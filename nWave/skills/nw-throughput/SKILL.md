@@ -10,6 +10,22 @@ Ledger-measured methodology for keeping the delivery pipeline full without tripp
 local machine. Load this when you are the ORCHESTRATOR fanning wave/gate work across
 slices or features.
 
+## Standing loops arm by default — and they route DRAINS, not just delivery
+
+The standing consolidation loops are ON by default (the human opts OUT). They are session-scoped:
+a restart, crash, or killed session disarms ALL of them SILENTLY, so re-check with the real tool
+(`CronList`/`TaskList`) on every SessionStart and re-arm what is missing — a remembered "I armed
+them" describes a session that may no longer exist.
+
+Throughput is NOT only parallel swarm delivery. The loops also route the two DRAINS, and both are
+first-class throughput work, not a side chore:
+- **tech-debt drain** — `des refactor --pile techdebt.md`, one item per isolated worktree+venv.
+- **bugfix drain** — each pending `defects.md` row driven through `/nw-bugfix` end-to-end in its
+  own isolated worktree (RCA → t=0 charter → regression AT → GREEN → Vera examine → commit).
+
+Same box discipline applies: N cloud lanes fan out, ONE box lane serialized, resource-aware. A
+drain is a tree-writing lane — it MUST run in its own worktree, never in trunk.
+
 ## Default: parallel, in the background, unless the user says otherwise
 
 Dispatch agents and commands in the BACKGROUND by default, and maximize how much runs

@@ -1,27 +1,26 @@
 """Unit test: JSON Schema validates registry entries.
 
-Loads docs/product/outcomes/schema.json (draft-07) and asserts:
+Drives the production loader (`registry_service.load_schema`, which reads the
+packaged `nwave_ai/outcomes/schema.json` via importlib.resources) and asserts:
 - a valid canonical entry passes
 - entries missing required fields fail
 - entries with invalid kind/id pattern fail
+
+The schema is deliberately NOT re-resolved by a path formula of this test's own:
+one loader, one resource. A second copy of the path arithmetic here is exactly
+how the schema location silently drifted out from under the CLI (#63) while this
+file stayed green.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 from jsonschema import Draft7Validator, ValidationError
-
-
-_SCHEMA_PATH = (
-    Path(__file__).parents[3] / "docs" / "product" / "outcomes" / "schema.json"
-)
+from nwave_ai.outcomes.application.registry_service import load_schema
 
 
 def _load_schema() -> dict:
-    return json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    return load_schema()
 
 
 def _valid_entry() -> dict:

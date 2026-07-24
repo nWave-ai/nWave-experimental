@@ -18,7 +18,9 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).parents[3]
-_EN_TXT = _REPO_ROOT / "nWave" / "data" / "protocol-verbs" / "en.txt"
+_EN_TXT = (
+    _REPO_ROOT / "nwave_ai" / "feature_delta" / "data" / "protocol-verbs" / "en.txt"
+)
 _CORPUS_DIR = _REPO_ROOT / "tests" / "fixtures" / "h10-corpus"
 
 

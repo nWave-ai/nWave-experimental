@@ -26,7 +26,7 @@ from des.domain.atdd_pure_phases import FEATURE_END_RETURN_PHASE
 from des.domain.design_context_content_check import (
     design_context_carries_architecture,
 )
-from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
+from des.domain.lane_profile import LANE_PROFILES
 from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
 from des.ports.driver_ports.validator_port import ValidationResult, ValidatorPort
 
@@ -112,31 +112,11 @@ _DES_LANE_MARKER = re.compile(r"<!--\s*DES-LANE\s*:\s*(\S+)\s*-->")
 # exists. See des.domain.wave_dispatch_profile for the measured harm.
 _DES_WAVE_MARKER = re.compile(r"<!--\s*DES-WAVE\s*:\s*(\S+)\s*-->")
 
-
-def _is_non_code_facing_dispatch(prompt: str) -> bool:
-    """True for a dispatch whose recipient is NON-CODE-FACING BY
-    CONSTRUCTION -- the DESIGN_CONTEXT content-presence gate must never hold
-    such a dispatch to a citation it structurally cannot carry (RCA
-    fix-po-charter-dispatch-marker-lane). Two independent faces, ONE
-    predicate -- consulting the SAME SSOT ``des dispatch`` itself reads,
-    never a second/private list:
-
-      * the raw DES-PHASE marker names the EXAMINE step (``C_REVIEWER_AUDIT``)
-        -- the non-code-facing ``nw-user-examiner`` dispatch (Face B).
-        Deliberately narrower than ``_REVIEW_DISPATCH_PHASES``: the
-        feature-end review return (``FEATURE_END_RETURN_PHASE``) is still
-        the code-facing LLM reviewer-audit and keeps the gate; OR
-      * the raw DES-LANE marker names a lane in ``PHASELESS_LANES`` (Face A)
-        -- the SAME domain SSOT ``des.domain.lane_profile`` declares as "the
-        ONE definition of 'phaseless' every consumer reads" (today: the
-        ``charter`` lane, a ``nw-product-owner`` authoring an expectation
-        charter -- excluded from design by construction, not by omission).
-    """
-    phase_match = _DES_PHASE_MARKER.search(prompt)
-    if phase_match is not None and phase_match.group(1) == "C_REVIEWER_AUDIT":
-        return True
-    lane_match = _DES_LANE_MARKER.search(prompt)
-    return lane_match is not None and lane_match.group(1) in PHASELESS_LANES
+# The ``Agent: <name>`` line the generator writes as the whole body of the
+# ``# AGENT_IDENTITY`` section (``des.cli.dispatch``: ``"AGENT_IDENTITY":
+# f"Agent: {agent}\n"``). Anchored to a full line so a prose mention of an
+# agent name cannot be mistaken for the declared identity.
+_AGENT_IDENTITY_LINE = re.compile(r"^Agent:\s*(\S+)\s*$", re.MULTILINE)
 
 
 def _required_sections(prompt: str) -> tuple[str, ...]:
@@ -261,6 +241,69 @@ def _extract_section_body(prompt: str, section: str) -> str:
     return prompt[body_start:end]
 
 
+def _declared_agent(prompt: str) -> str | None:
+    """The agent named by the ``Agent:`` line of the ``# AGENT_IDENTITY``
+    section, or ``None`` when the section or the line is absent/unparsable.
+
+    Scoped to that section's BODY rather than the whole prompt, so an
+    ``Agent:`` line appearing anywhere else (an intent, a quoted example) can
+    never be read as the dispatch's declared identity.
+    """
+    identity_body = _extract_section_body(prompt, "AGENT_IDENTITY")
+    match = _AGENT_IDENTITY_LINE.search(identity_body)
+    return match.group(1) if match is not None else None
+
+
+def _is_non_code_facing_dispatch(prompt: str) -> bool:
+    """True when the dispatch's RESOLVED RECIPIENT is non-code-facing BY
+    CONSTRUCTION -- the DESIGN_CONTEXT content-presence gate must never hold
+    such a dispatch to a citation it structurally cannot carry (RCA
+    fix-po-charter-dispatch-marker-lane, extended by RCA
+    fix-validator-refuses-own-generated-dispatch).
+
+    WHAT IS CONSULTED, exactly -- no claim stronger than the mechanism: the
+    ``Agent:`` line of this envelope's own ``# AGENT_IDENTITY`` section, tested
+    for membership in ``des.cli.dispatch._NON_CODE_FACING_AGENTS``. That is the
+    SAME set the generator consults when it decides it may write a
+    citation-free DESIGN_CONTEXT body, so generator and validator read ONE
+    list and this predicate holds no private copy of who is non-code-facing.
+
+    WHY THE AGENT AND NOT THE PHASE: this predicate's subject IS the agent, and
+    the envelope already CARRIES the resolved answer. Keying on the phase keys
+    on an INPUT to agent resolution instead of on its OUTPUT, so every new
+    phase routed to an ALREADY-known non-code-facing agent becomes a fresh
+    restatement obligation here -- which is the defect CLASS, not one instance:
+    ``FEATURE_END_EXAMINE`` (a second examiner phase, added later) was refused
+    by the very generator that produced it while the hardcoded literal
+    ``"C_REVIEWER_AUDIT"`` still looked "correct". Agent-keying also collapses
+    the two former faces into ONE derivation: the examiner phase face and the
+    phaseless ``charter`` lane face differed only in which agent they resolve
+    to (``nw-user-examiner`` / ``nw-product-owner``), and both are members of
+    that one set.
+
+    FAIL CLOSED: no ``# AGENT_IDENTITY`` section, or no parsable ``Agent:``
+    line, means NOT exempt -- the citation gate applies. An envelope whose
+    recipient cannot be read is never given the benefit of the doubt.
+
+    NOT TAMPER-PROOF, stated plainly: a hand-authored prompt can write
+    ``Agent: nw-user-examiner`` and dodge the citation gate. That is EQUAL
+    exposure, not new -- the identical dodge already exists via a hand-written
+    ``DES-PHASE`` marker. This predicate CLASSIFIES a dispatch; it does not
+    authenticate one.
+    """
+    # Deferred (function-local) import, DELIBERATE: a module-scope import of
+    # des.cli.dispatch pulls +36 modules and 2-3x the import time onto a hook
+    # that runs on EVERY tool call (measured). Three of the four existing
+    # application -> cli precedents in this codebase are function-local too.
+    # des.cli.dispatch has no module-level I/O and there is no import cycle in
+    # either direction, so this validator's pure-function / no-I/O contract
+    # survives the dependency -- keep it that way.
+    from des.cli.dispatch import _NON_CODE_FACING_AGENTS
+
+    agent = _declared_agent(prompt)
+    return agent is not None and agent in _NON_CODE_FACING_AGENTS
+
+
 class AtddPurePromptValidator(ValidatorPort):
     """Validates an atdd_pure carpaccio-slice dispatch prompt.
 
@@ -303,14 +346,13 @@ class AtddPurePromptValidator(ValidatorPort):
         # citation-free body is refused so the crafter never runs without the
         # design it must follow (the root of architectural drift).
         #
-        # EXEMPT for any NON-CODE-FACING dispatch (RCA
-        # fix-po-charter-dispatch-marker-lane): an EXAMINE (C_REVIEWER_AUDIT)
-        # dispatch (Face B) -- the examiner's exclusion from design is the
-        # instrument, not an omission, forcing a citation onto
+        # EXEMPT when the envelope's declared AGENT is non-code-facing (see
+        # _is_non_code_facing_dispatch): forcing a citation onto
         # nw-user-examiner would hand her the exact source/design access her
-        # spec forbids by construction -- and a phaseless PHASELESS_LANES
-        # dispatch (Face A, e.g. ``charter``) -- a nw-product-owner authoring
-        # an expectation charter is excluded from design the same way.
+        # spec forbids by construction, and a nw-product-owner authoring an
+        # expectation charter is excluded from design the same way. Their
+        # exclusion is the instrument, not an omission. Fail-closed: an
+        # envelope whose agent cannot be read keeps the gate.
         if "# DESIGN_CONTEXT" in prompt and not _is_non_code_facing_dispatch(prompt):
             body = _extract_section_body(prompt, "DESIGN_CONTEXT")
             if not design_context_carries_architecture(body):

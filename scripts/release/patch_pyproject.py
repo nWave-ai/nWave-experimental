@@ -188,7 +188,6 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         '"scripts/install_nwave_target_hooks.py" = "scripts/install_nwave_target_hooks.py"\n'
         '"scripts/validate_step_file.py" = "scripts/validate_step_file.py"\n'
         '"lib/python/des" = "nWave/lib/python/des"\n'
-        '"schemas" = "schemas"\n'
     )
     new_text, count = wheel_section.subn(replacement, text_clean)
     if count == 0:

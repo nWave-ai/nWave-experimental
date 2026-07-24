@@ -48,6 +48,7 @@ from des.domain.refactor.green_to_green import (
 from des.domain.refactor.paradigm_select import select_paradigm_lens
 from des.domain.refactor.pile import (
     PileItem,
+    PileUnreadable,
     annotate_item_escalated,
     move_item,
     parse_pile_report,
@@ -85,6 +86,18 @@ _ESCALATED_EVENT = "RefactorItemEscalated"
 _TEST_SOURCE_ENVELOPE = "envelope"
 _TEST_SCOPE_FAST_IMPACTED = "fast+impacted"
 
+#: The entry-gate verdicts that PERMIT the existing green-to-green + merge
+#: path to proceed (D9) -- every OTHER recognized verdict, and a missing
+#: verdict, refuses the merge. Named once here because two readers need the
+#: same answer: ``_entry_gate_refusal`` (which enforces it) and the CLI's
+#: operator-facing entry-gate refusal (which TEACHES it). A second hand-typed
+#: copy is exactly the drift that produced the silent-no-op defect this
+#: constant's introduction accompanies.
+MERGE_PERMITTING_ENTRY_GATE_VERDICTS: tuple[EntryGateVerdict, ...] = (
+    EntryGateVerdict.REFACTOR_SAFE,
+    EntryGateVerdict.MECHANICAL_RENAME_EXEMPT,
+)
+
 _TESTS_RED_REASON = "MergeBlockedTestsRed"
 _MIKADO_ESCALATION_REASON = "MikadoEscalation"
 _NO_TEST_NET_REASON = "EntryGateNoTestNet"
@@ -111,6 +124,25 @@ class DrainResult:
     reason: str | None = None
     parsed_count: int = 0
     skipped_lines: tuple[str, ...] = ()
+
+    @property
+    def refusal_reason(self) -> str | None:
+        """The ONE blocking reason a non-drained outcome must be reported by --
+        derived here, once, from whichever field carried it.
+
+        ``reason`` carries a refusal raised before/around the drain (paradigm,
+        startup probe, worktree creation); ``merge_blocked_reason`` carries one
+        raised at the merge or entry gate. Both reporters in ``des.cli.refactor``
+        read THIS accessor: ``_report`` used to branch on ``reason`` alone and
+        fell through to a bare ``return 0`` for an item blocked with its reason
+        in ``merge_blocked_reason``, while ``_report_batch`` hand-maintained its
+        own ``reason or merge_blocked_reason`` derivation. That drift WAS the
+        silent-no-op defect (fix-drain-single-item-silent-noop) -- one accessor
+        leaves no second copy to drift again.
+
+        ``None`` means, and only means, "nothing refused this outcome".
+        """
+        return self.reason or self.merge_blocked_reason
 
 
 @dataclass(frozen=True)
@@ -167,6 +199,13 @@ class RefactorDrainService:
     ) -> DrainResult:
         """Drain exactly ONE pending pile item end to end."""
         report = parse_pile_report(pile_path)
+        if report.unreadable is not None:
+            # Checked FIRST, ahead of every other startup probe: a pile that
+            # cannot be read is the earliest reason this run never started,
+            # and reporting a later probe instead would name the wrong cause.
+            return self._refused(
+                None, reason=_unreadable_pile_reason(pile_path, report.unreadable)
+            )
         items = report.items
         if not items:
             return DrainResult(
@@ -197,36 +236,50 @@ class RefactorDrainService:
                 item.item_id,
                 reason=_worktree_creation_failure_message(branch, exc),
             )
-        self._env_provision.provision(handle.path)
 
-        before = self._run_tests(handle.path)
-        agent_stdout = self._dispatch_agent(
-            repo, item, handle.path, agent_cmd, prompt_template_path
-        )
+        try:
+            self._env_provision.provision(handle.path)
 
-        entry_gate_refusal = self._entry_gate_refusal(
-            repo,
-            handle.path,
-            branch,
-            item.item_id,
-            agent_stdout,
-            pile_path,
-            handle.head_sha,
-        )
-        if entry_gate_refusal is not None:
-            return entry_gate_refusal
-
-        after = self._run_tests(handle.path)
-
-        outcome = classify_green_to_green(before, after)
-        if outcome.verdict != GreenToGreenVerdict.SAFE:
-            return self._refused(item.item_id, _TESTS_RED_REASON, handle.head_sha)
-
-        merge_result = self._git_worktree.merge_into(repo, integration_branch, branch)
-        if not merge_result.merged:
-            return self._refused(
-                item.item_id, merge_result.blocked_reason, handle.head_sha
+            before = self._run_tests(handle.path)
+            agent_stdout = self._dispatch_agent(
+                repo, item, handle.path, agent_cmd, prompt_template_path
             )
+
+            entry_gate_refusal = self._entry_gate_refusal(
+                repo,
+                handle.path,
+                branch,
+                item.item_id,
+                agent_stdout,
+                pile_path,
+                handle.head_sha,
+            )
+            if entry_gate_refusal is not None:
+                return entry_gate_refusal
+
+            after = self._run_tests(handle.path)
+
+            outcome = classify_green_to_green(before, after)
+            if outcome.verdict != GreenToGreenVerdict.SAFE:
+                return self._refused_after_cleanup(
+                    repo,
+                    handle.path,
+                    branch,
+                    item.item_id,
+                    _TESTS_RED_REASON,
+                    handle.head_sha,
+                )
+
+            merge_result = self._git_worktree.merge_into(
+                repo, integration_branch, branch
+            )
+            if not merge_result.merged:
+                return self._refused(
+                    item.item_id, merge_result.blocked_reason, handle.head_sha
+                )
+        except BaseException:
+            self._cleanup_worktree_and_branch(repo, handle.path, branch)
+            raise
 
         self._git_worktree.remove_worktree(repo, handle.path)
         self._git_worktree.delete_branch(repo, branch)
@@ -270,6 +323,20 @@ class RefactorDrainService:
         agent count).
         """
         report = parse_pile_report(pile_path)
+        if report.unreadable is not None:
+            # The SAME refusal ``drain_one`` raises, for the same cause: an
+            # unreadable pile is a property of the --pile argument, not of
+            # how many lanes were asked for. One refusal, item_id ``None``
+            # (no item was ever read to attribute it to), which the CLI's
+            # shared ``_refusal_line`` renders identically on either path.
+            return BatchDrainResult(
+                results=(
+                    self._refused(
+                        None,
+                        reason=_unreadable_pile_reason(pile_path, report.unreadable),
+                    ),
+                )
+            )
         items = report.items
         if not items:
             return BatchDrainResult(results=())
@@ -298,20 +365,29 @@ class RefactorDrainService:
                     item.item_id,
                     reason=_worktree_creation_failure_message(branch, exc),
                 )
-            self._env_provision.provision(handle.path)
 
-            before = self._run_tests(handle.path)
-            self._dispatch_agent(repo, item, handle.path, agent_cmd, None)
+            try:
+                self._env_provision.provision(handle.path)
 
-            lock.acquire(item.item_id)
+                before = self._run_tests(handle.path)
+                self._dispatch_agent(repo, item, handle.path, agent_cmd, None)
+
+                lock.acquire(item.item_id)
+            except BaseException:
+                self._cleanup_worktree_and_branch(repo, handle.path, branch)
+                raise
+
             try:
                 after = self._run_tests(handle.path)
                 outcome = classify_green_to_green(before, after)
                 if outcome.verdict != GreenToGreenVerdict.SAFE:
-                    self._git_worktree.remove_worktree(repo, handle.path)
-                    self._git_worktree.delete_branch(repo, branch)
-                    return self._refused(
-                        item.item_id, _TESTS_RED_REASON, handle.head_sha
+                    return self._refused_after_cleanup(
+                        repo,
+                        handle.path,
+                        branch,
+                        item.item_id,
+                        _TESTS_RED_REASON,
+                        handle.head_sha,
                     )
 
                 merge_result = self._git_worktree.merge_into(
@@ -428,6 +504,24 @@ class RefactorDrainService:
         result = self._refused(item_id, merge_blocked_reason, worktree_head_sha)
         return replace(result, worktree_removed=True, branch_deleted=True)
 
+    def _cleanup_worktree_and_branch(
+        self, repo: Path, worktree_path: Path, branch: str
+    ) -> None:
+        """Best-effort, idempotent-safe cleanup for the mid-drain exception
+        guard (bugfix-drain-cleanup-on-every-exit): swallows a failure to
+        remove/delete state a refusal branch already cleaned up on this same
+        path (e.g. ``_refused_after_cleanup`` ran before the exception
+        propagated), so a double-cleanup attempt here never masks the
+        original exception this guard re-raises."""
+        try:
+            self._git_worktree.remove_worktree(repo, worktree_path)
+        except Exception:
+            pass
+        try:
+            self._git_worktree.delete_branch(repo, branch)
+        except Exception:
+            pass
+
     # -- internal: entry gate (D9, slice-04) ---------------------------------
 
     def _entry_gate_refusal(
@@ -458,10 +552,7 @@ class RefactorDrainService:
                 ENTRY_GATE_VERDICT_MISSING,
                 worktree_head_sha,
             )
-        if verdict in (
-            EntryGateVerdict.REFACTOR_SAFE,
-            EntryGateVerdict.MECHANICAL_RENAME_EXEMPT,
-        ):
+        if verdict in MERGE_PERMITTING_ENTRY_GATE_VERDICTS:
             return None
         if verdict == EntryGateVerdict.MIKADO_ESCALATION:
             annotate_item_escalated(pile_path, item_id)
@@ -544,6 +635,21 @@ def _worktree_creation_failure_message(
         f"worktree creation failed for branch {branch!r} -- git said: {why}. "
         f"Fix: ensure branch {branch!r} does not already exist in this repo "
         "(delete it, or re-run des refactor once it is free), then try again."
+    )
+
+
+def _unreadable_pile_reason(pile_path: Path, unreadable: PileUnreadable) -> str:
+    """WHAT/WHY/HOW for a ``--pile`` that could not be read as a pile file --
+    the sibling of ``_probe_failure_reason``'s ``--agent-cmd`` refusal, for
+    the OTHER argument, and deliberately worded as a refusal to LOOK rather
+    than a finding ABOUT the pile: nothing was read, so nothing about the
+    maintainer's tech debt is known here (the standing what/why/how mandate).
+    """
+    return (
+        f"the --pile startup probe failed -- {str(pile_path)!r} could not be "
+        f"read as a pile file ({unreadable.value}), so des refactor never "
+        "opened a pile and knows nothing about what it holds. Fix: point "
+        "--pile at an existing pile file, or create one at that path first."
     )
 
 

@@ -46,6 +46,7 @@ from des.adapters.driven.refactor.uv_env_provision_adapter import (
     UvEnvProvisionAdapter,
 )
 from des.application.refactor_drain_service import RefactorDrainService
+from des.domain.refactor.entry_gate import EntryGateVerdict
 
 from .domain_types import EntryGateAgentVerdict
 
@@ -57,6 +58,40 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 #: The default paradigm carried by a seeded pile item (slice-05 consumes this
 #: field; slice-01 only needs it to round-trip).
 _DEFAULT_PARADIGM = "object-oriented"
+
+#: The maintainer's OWN fixer script -- the executable a real operator writes
+#: and points ``--agent-cmd`` at (the charter's precondition: "the fixer
+#: command as the product's own --help and documentation instruct"). Named as
+#: a repo-relative script because that is what an operator naturally writes
+#: next to their pile; the placement (inside the repo vs outside it) and the
+#: committed-ness are exactly the variables
+#: ``test_bug_entry_gate_how_is_actionable.py`` holds under control.
+_FIXER_SCRIPT_NAME = "fixer.sh"
+
+#: What the fixer DOES: a real, benign, suite-green-preserving edit to the
+#: already-committed toy test (mirrors ``agent_cmd_that_makes_a_benign_real_
+#: change``'s inline body, so a script-file fixer and the inline stand-in do
+#: the same work). Runs with ``cwd=<worktree>`` -- the path is relative to the
+#: worktree, never to the operator's own tree.
+_FIXER_WORK_LINE = (
+    "printf '\\n# refactored: benign no-behaviour note\\n' >> test_toy.py\n"
+)
+
+#: What a fixer that FORGOT the entry-gate verdict prints: free-form
+#: commentary carrying no recognized ``EntryGateVerdict`` token anywhere
+#: (``classify_entry_gate`` word-boundary-searches the WHOLE output, so this
+#: line must stay token-free).
+_FIXER_COMMENTARY_LINE = "printf 'looked at the item and applied the fix\\n'\n"
+
+
+def _fixer_verdict_line() -> str:
+    """The line a maintainer appends when following the entry-gate refusal's
+    own ``Fix:`` instruction verbatim ("make your own --agent-cmd print exactly
+    one of those tokens on its stdout as its last act -- for example
+    `your-agent ... && echo REFACTOR_SAFE`"). The token is read off the typed
+    enum, never re-typed, so a renamed verdict cannot silently make the
+    "operator followed the advice" arrangement stop following it."""
+    return f"printf '{EntryGateAgentVerdict.REFACTOR_SAFE.value}\\n'\n"
 
 
 @dataclass(frozen=True)
@@ -286,6 +321,20 @@ proposed_solution="extract a shared function"
         ``seed_toy_passing_test``)."""
         return "sh -c \"printf '\\ndef test_broken():\\n    assert False\\n' >> test_toy.py\""
 
+    def agent_cmd_that_breaks_the_test_suite_after_passing_entry_gate(self) -> str:
+        """Same misbehaving agent as ``agent_cmd_that_breaks_the_test_suite``,
+        but ALSO emits ``REFACTOR_SAFE`` on stdout -- so the drain proceeds
+        PAST slice-04's entry gate and actually reaches the tests-red
+        green-to-green refusal (``MergeBlockedTestsRed``) rather than being
+        refused earlier for an unrecognized entry-gate verdict. The tests-red
+        cleanup arrangement (bugfix-drain-cleanup-on-every-exit) needs this
+        combined command -- the bare ``agent_cmd_that_breaks_the_test_suite``
+        prints nothing on stdout, so it is refused at the entry gate instead."""
+        return (
+            "sh -c \"printf '\\ndef test_broken():\\n    assert False\\n' "
+            ">> test_toy.py && printf 'REFACTOR_SAFE\\n'\""
+        )
+
     def agent_cmd_that_makes_a_benign_real_change(self) -> str:
         """A stand-in for an agent that makes a REAL, suite-green-preserving
         code change (appends a no-behaviour comment to the already-committed
@@ -315,6 +364,83 @@ proposed_solution="extract a shared function"
         BEFORE any worktree is created for the first real item."""
         return "this-executable-does-not-exist-xyz123 {prompt}"
 
+    # --- Given: the maintainer's OWN fixer script (placement x committed) ---
+
+    def install_committed_fixer_script(self, *, emits_verdict: bool) -> str:
+        """Write the maintainer's own fixer script INSIDE the repo, make it
+        executable, COMMIT it, and return the repo-relative ``--agent-cmd``
+        (``./fixer.sh``) the operator types.
+
+        Repo-relative and committed is the shape a maintainer reaches for
+        first: a script next to their pile, tracked by their own repo. It is
+        also the shape whose behaviour is counter-intuitive -- the drain runs
+        it with ``cwd=<an isolated worktree checked out from the last
+        commit>``, so ``./fixer.sh`` there resolves to the COMMITTED copy,
+        never the one in the operator's working tree.
+
+        Only ``fixer.sh`` is staged (never ``git add -A``): the pile files are
+        harness bookkeeping and must stay untracked, exactly as a real
+        operator's ``techdebt.md`` does before their first drain.
+        """
+        script_path = self.project_root / _FIXER_SCRIPT_NAME
+        self._write_fixer_script(script_path, emits_verdict=emits_verdict)
+        self._git("add", "--", _FIXER_SCRIPT_NAME)
+        self._git("commit", "-q", "-m", "chore: add my fixer script")
+        return f"./{_FIXER_SCRIPT_NAME}"
+
+    def install_out_of_repo_fixer_script(self, *, emits_verdict: bool) -> str:
+        """Write the SAME fixer script OUTSIDE the repo (a sibling of the
+        project root, so git never sees it at all), leave it uncommitted --
+        there is nothing to commit it to -- and return the ABSOLUTE
+        ``--agent-cmd`` the operator types.
+
+        The other placement a maintainer reaches for, and the one that already
+        behaves as they expect: an absolute path resolves to the same live file
+        from inside any worktree, so an edit takes effect on the very next run.
+        """
+        script_path = (
+            self.project_root.parent / f"{self.project_root.name}-{_FIXER_SCRIPT_NAME}"
+        )
+        self._write_fixer_script(script_path, emits_verdict=emits_verdict)
+        return str(script_path)
+
+    def operator_edits_fixer_to_emit_verdict_without_committing(self) -> None:
+        """Append the verdict line to the repo-relative fixer's WORKING-TREE
+        copy and leave the change UNCOMMITTED -- the maintainer following the
+        entry-gate refusal's own ``Fix:`` instruction verbatim, with nothing in
+        that instruction telling them a commit is involved."""
+        script_path = self.project_root / _FIXER_SCRIPT_NAME
+        script_path.write_text(
+            script_path.read_text(encoding="utf-8") + _fixer_verdict_line(),
+            encoding="utf-8",
+        )
+
+    def committed_fixer_script_text(self) -> str:
+        """The fixer script content git has COMMITTED -- i.e. the copy that
+        actually lands in an isolated worktree cut from the last commit.
+        Arrangement-integrity witness: proves the working-tree edit really is
+        invisible to the drain, rather than the test asserting it on faith."""
+        return self._git("show", f"HEAD:{_FIXER_SCRIPT_NAME}")
+
+    def fixer_script_change_is_uncommitted(self) -> bool:
+        """True iff the repo-relative fixer script has an uncommitted
+        working-tree change -- the second half of the arrangement-integrity
+        witness above (port-exposed: real ``git status`` output)."""
+        return bool(
+            self._git("status", "--porcelain", "--", _FIXER_SCRIPT_NAME).strip()
+        )
+
+    def _write_fixer_script(self, path: Path, *, emits_verdict: bool) -> None:
+        """Write an executable ``/bin/sh`` fixer that does real work and either
+        emits the entry-gate verdict or (``emits_verdict=False``) prints only
+        free-form commentary -- the default state of any project's first
+        hand-written fixer."""
+        body = "#!/bin/sh\n" + _FIXER_WORK_LINE + _FIXER_COMMENTARY_LINE
+        if emits_verdict:
+            body += _fixer_verdict_line()
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o755)
+
     # --- Given: entry-gate verdict stand-ins (slice-04, AT-7/AT-8) ---------
 
     def agent_cmd_emitting_verdict(self, verdict: EntryGateAgentVerdict) -> str:
@@ -329,6 +455,94 @@ proposed_solution="extract a shared function"
         free-form commentary but NO recognized entry-gate verdict token
         (AT-7) -- the ``EntryGateVerdictMissing`` Given-arrangement."""
         return "sh -c \"printf 'Investigated the item, looks fine to me.\\n'\""
+
+    # --- Given/When: what the fixer is ACTUALLY ASKED (fix-fixer-emits-entry-
+    # --- gate-verdict) ------------------------------------------------------
+
+    def run_drain_capturing_delivered_prompt(self) -> str:
+        """Drive a REAL drain whose ``agent_cmd`` copies the rendered prompt
+        FILE aside, and return the exact text the fixer received.
+
+        This is the real artefact the fixer reads (the file
+        ``RefactorDrainService._dispatch_agent`` renders into the worktree and
+        hands to ``agent_cmd``), never a harness constant -- so an assertion
+        on it is an assertion on what a real fixer would actually be asked.
+        """
+        self.run_drain_one_item(agent_cmd=self.capturing_agent_cmd())
+        return self.observed_agent_cmd_input()
+
+    # --- Given/When: the REAL actuator boundary (scripts/refactor_agent.py) --
+
+    def stub_fixer_cli_that_prints(self, output: str) -> Path:
+        """Create an executable stand-in for the headless assistant CLI the
+        actuator drives (``NWAVE_REFACTOR_AGENT_CLI``).
+
+        It records the argv it received (so the AT can assert on the text the
+        actuator actually delivered to the fixer) and writes ``output`` to its
+        OWN stdout -- the fd the actuator inherits. No ``claude`` on PATH is
+        needed, and no network call is made.
+        """
+        stub = self.project_root.parent / f"{self.project_root.name}-stub-fixer-cli"
+        stub.write_text(
+            f"#!{sys.executable}\n"
+            "import pathlib\n"
+            "import sys\n"
+            f'pathlib.Path({str(self._observed_cli_argv)!r}).write_text("\\n".join(sys.argv[1:]), '
+            'encoding="utf-8")\n'
+            f"sys.stdout.write({output!r})\n",
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        return stub
+
+    @property
+    def _observed_cli_argv(self) -> Path:
+        return self.project_root.parent / f"{self.project_root.name}-stub-cli-argv.txt"
+
+    def text_the_headless_cli_received(self) -> str:
+        """Every argv token the stub CLI was handed, joined -- the observable
+        surface for 'the ask survives the actuator's own crafter framing'."""
+        return self._observed_cli_argv.read_text(encoding="utf-8")
+
+    def run_refactor_actuator(self, *, prompt_text: str, cli: Path) -> CliResult:
+        """Run the REAL ``scripts/refactor_agent.py`` actuator against a stub
+        headless CLI, capturing the actuator's own stdout/stderr.
+
+        This is the boundary NO test covered: the actuator's ``subprocess.run``
+        deliberately carries no ``capture_output``, so the fixer's stdout is
+        INHERITED straight through to whoever invoked the actuator (the
+        harness's ``AgentInvocationPort``). Capturing here pins that transport:
+        a future ``capture_output=True`` would silently swallow the verdict.
+
+        ``NWAVE_CRAFTER_SPEC`` points at a stub spec so the actuator's
+        crafter-spec lookup never depends on the host's ``~/.claude`` install.
+        """
+        prompt_file = (
+            self.project_root.parent / f"{self.project_root.name}-actuator-prompt.md"
+        )
+        prompt_file.write_text(prompt_text, encoding="utf-8")
+        spec = self.project_root.parent / f"{self.project_root.name}-stub-crafter.md"
+        spec.write_text(
+            "# Stub crafter spec\n\nStand-in for the paradigm-selected "
+            "crafter specification.\n",
+            encoding="utf-8",
+        )
+        env = dict(os.environ)
+        env["NWAVE_REFACTOR_AGENT_CLI"] = str(cli)
+        env["NWAVE_CRAFTER_SPEC"] = str(spec)
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(_REPO_ROOT / "scripts" / "refactor_agent.py"),
+                str(prompt_file),
+                str(self.project_root),
+            ],
+            cwd=self.project_root,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        return CliResult(proc.returncode, proc.stdout, proc.stderr)
 
     def techdebt_item_annotated_escalated(self, item_id: str) -> bool:
         """Whether ``item_id`` is STILL present in ``techdebt.md`` AND its
@@ -370,6 +584,43 @@ proposed_solution="extract a shared function"
     ) -> object:
         """Layer 3 composition: drive ``RefactorDrainService.drain_one`` in-process."""
         return self.drain_service().drain_one(
+            repo=self.project_root,
+            pile_path=self.pile_path,
+            paid_path=self.paid_path,
+            agent_cmd=agent_cmd,
+            integration_branch=self.integration_branch,
+        )
+
+    # --- Given/When: bugfix-drain-cleanup-on-every-exit mid-drain crash -----
+
+    def drain_service_with_exploding_env_provision(self) -> RefactorDrainService:
+        """Composition root wiring a REAL ``GitWorktreeAdapter`` (the
+        worktree/branch survival claim needs a real git tree to mean
+        anything) but a FAKE ``EnvProvisionPort`` whose ``.provision(...)``
+        raises AFTER the item's worktree already exists -- proves the
+        try/except-cleanup window between worktree creation and the eventual
+        cleanup/return actually fires on a genuine mid-lifecycle crash
+        (bugfix-drain-cleanup-on-every-exit scope point 2), not merely on a
+        refusal branch."""
+        from .doubles import ExplodingEnvProvisionPort
+
+        return RefactorDrainService(
+            git_worktree=GitWorktreeAdapter(),
+            agent_invocation=ShellAgentInvocationAdapter(),
+            env_provision=ExplodingEnvProvisionPort(),
+            impacted_test_selector=HeuristicImpactedTestSelectorAdapter(),
+            ledger=AtCompletionLedger(self.feature_id, self.project_root),
+        )
+
+    def run_drain_one_item_with_exploding_provision(
+        self, agent_cmd: str = "sh -c \"printf 'REFACTOR_SAFE\\n'\""
+    ) -> object:
+        """Layer 3 composition: drive ``RefactorDrainService.drain_one``
+        in-process with a mid-drain-crashing env-provisioning port. The
+        exception propagates uncaught (that IS the bug under test) -- the
+        caller wraps this in ``pytest.raises`` and then inspects
+        git-observable state, never a returned ``DrainResult``."""
+        return self.drain_service_with_exploding_env_provision().drain_one(
             repo=self.project_root,
             pile_path=self.pile_path,
             paid_path=self.paid_path,
@@ -501,6 +752,26 @@ proposed_solution="extract a shared function"
                     str(max_parallel),
                 ]
             )
+        finally:
+            os.chdir(previous_cwd)
+
+    def call_refactor_main_in_process_with_pile(
+        self, *, pile_path: Path, agent_cmd: str = "true"
+    ) -> int:
+        """Layer 2 in-process: call the REAL ``des refactor`` CLI entry against
+        an EXPLICIT ``--pile`` path -- the operator-typo surface
+        (fix-drain-single-item-silent-noop): a pile path that does not exist,
+        that sits under a directory which does not exist, or that names a
+        directory rather than a file. Mirrors ``call_refactor_main_in_process``
+        exactly, only swapping ``self.pile_path`` for the caller's path, so the
+        unreadable-pile and genuinely-empty-pile outcomes are produced by the
+        very same driving surface and can be compared against each other."""
+        from des.cli.refactor import main as refactor_main
+
+        previous_cwd = Path.cwd()
+        os.chdir(self.project_root)
+        try:
+            return refactor_main(["--pile", str(pile_path), "--agent-cmd", agent_cmd])
         finally:
             os.chdir(previous_cwd)
 
@@ -650,3 +921,29 @@ proposed_solution="extract a shared function"
             "git.worktree_list": self.worktree_list(),
             "git.head_sha": self.repo_head_sha(),
         }
+
+
+def explanation_beside_token(text: str, token: str) -> str:
+    """The explanatory prose accompanying ``token`` in ``text``.
+
+    Every line that mentions ``token``, with the token itself stripped out and
+    the remainder joined -- so an AT can distinguish a prompt that merely
+    LISTS the five entry-gate tokens from one that tells the fixer what each
+    one MEANS. Longer-token-first removal keeps a substring token
+    (``REFACTOR_SAFE``) from being counted as explanation for a
+    longer sibling that contains it.
+    """
+    lines = [line for line in text.splitlines() if token in line]
+    stripped = []
+    for line in lines:
+        remainder = line
+        for other in sorted(_ALL_VERDICT_TOKENS, key=len, reverse=True):
+            remainder = remainder.replace(other, " ")
+        stripped.append(remainder.strip(" \t-*:.|`"))
+    return " ".join(part for part in stripped if part).strip()
+
+
+#: Every entry-gate token spelling, read from the PRODUCTION enum -- a token
+#: added to the production closed set is automatically in scope for the
+#: explanation check above, never silently exempt.
+_ALL_VERDICT_TOKENS = tuple(verdict.value for verdict in EntryGateVerdict)

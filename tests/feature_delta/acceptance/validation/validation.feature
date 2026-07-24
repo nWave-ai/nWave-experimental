@@ -207,7 +207,7 @@ Feature: Feature-delta validation catches cross-wave drift before merge
 
   @US-13 @AC-1 @real-io @adapter-integration
   Scenario: Italian protocol-verb list loads with at least three patterns
-    Given the shipped Italian protocol-verb list at "nWave/data/protocol-verbs/it.txt"
+    Given the shipped Italian protocol-verb list at "nwave_ai/feature_delta/data/protocol-verbs/it.txt"
     When the validator loads the Italian verb list
     Then the loaded list contains at least 3 patterns
     And the file is UTF-8 encoded without BOM
@@ -222,7 +222,7 @@ Feature: Feature-delta validation catches cross-wave drift before merge
 
   @US-13 @AC-3 @real-io
   Scenario Outline: Header-only language stub loads to empty list
-    Given the shipped <language> protocol-verb list at "nWave/data/protocol-verbs/<file>"
+    Given the shipped <language> protocol-verb list at "nwave_ai/feature_delta/data/protocol-verbs/<file>"
     When the validator loads the <language> verb list
     Then the loaded list has length 0
     And the file is UTF-8 encoded without BOM
@@ -308,7 +308,7 @@ Feature: Feature-delta validation catches cross-wave drift before merge
 
   @US-INFRA-1 @AC-1 @real-io @adapter-integration
   Scenario: Schema file validates against draft-07 metaschema
-    Given the shipped schema at "schemas/feature-delta-schema.json"
+    Given the shipped schema at "nwave_ai/feature_delta/schema.json"
     When the validator loads the schema file at startup
     Then the schema validates against the JSON Schema draft-07 metaschema
     And the schema defines WaveSection, CommitmentRow, DDDEntry, and OriginAnnotation
@@ -319,7 +319,7 @@ Feature: Feature-delta validation catches cross-wave drift before merge
 
   @US-INFRA-2 @AC-1 @real-io
   Scenario: Maturity manifest is consistent with rule code
-    Given the rule maturity manifest at "nWave/data/feature-delta-rule-maturity.json"
+    Given the rule maturity manifest at "nwave_ai/feature_delta/data/feature-delta-rule-maturity.json"
     When the consistency check runs
     Then every rule reported as "stable" corresponds to a rule that returns the documented behavior
     And every rule reported as "pending" corresponds to a rule whose code path raises pending-rule

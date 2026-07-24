@@ -22,6 +22,7 @@ from nwave_ai.feature_delta.domain.violations import (
     ValidationResult,
     ValidationViolation,
 )
+from nwave_ai.feature_delta.resources import packaged_resource
 
 
 if TYPE_CHECKING:
@@ -29,11 +30,17 @@ if TYPE_CHECKING:
     from nwave_ai.feature_delta.ports.verbs import VerbListProviderPort
 
 
-# Default maturity manifest path (relative to repo root / installed package).
-# parents[0]=application/, parents[1]=feature_delta/, parents[2]=nwave_ai/, parents[3]=repo root
-_DEFAULT_MANIFEST_PATH = (
-    Path(__file__).parents[3] / "nWave" / "data" / "feature-delta-rule-maturity.json"
-)
+def _default_manifest_path() -> Path:
+    """The rule-maturity manifest as a PACKAGE RESOURCE — it ships with the install.
+
+    Previously resolved by walking out of the package
+    (``Path(__file__).parents[3] / "nWave" / "data" / ...``), which lands on the
+    repo root from a checkout and on site-packages from an install — where it
+    does not exist, so ``--enforce`` died at the maturity gate (exit 78,
+    "maturity manifest not found") without ever reading the maintainer's
+    document.
+    """
+    return packaged_resource("data", "feature-delta-rule-maturity.json")
 
 
 def _check_enforce_eligibility(manifest_path: Path | None) -> str | None:
@@ -43,8 +50,11 @@ def _check_enforce_eligibility(manifest_path: Path | None) -> str | None:
     Loads the maturity manifest and checks that every rule listed in
     enforce_eligibility.required_stable is actually marked 'stable'.
     Returns the error message string when ineligible (caller emits to stderr).
+
+    The explicit ``--maturity-manifest`` injection seam is unchanged; only the
+    default moved into the package.
     """
-    resolved = manifest_path if manifest_path is not None else _DEFAULT_MANIFEST_PATH
+    resolved = manifest_path if manifest_path is not None else _default_manifest_path()
     if not resolved.exists():
         return f"maturity manifest not found: {resolved}"
     try:

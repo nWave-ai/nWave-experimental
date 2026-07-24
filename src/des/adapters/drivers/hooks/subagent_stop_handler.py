@@ -50,6 +50,9 @@ from des.application.decision_table_traceability_gate import (
     DecisionTableParser,
     DecisionTableTraceabilityGate,
 )
+from des.application.feature_end_na_marker_reconciliation import (
+    feature_end_na_marker_reconciles,
+)
 from des.domain.atdd_pure_phases import COMMIT_GATE_PHASES as _COMMIT_GATE_PHASES
 from des.domain.atdd_pure_phases import (
     FEATURE_END_RETURN_PHASE as _FEATURE_END_RETURN_PHASE,
@@ -1869,17 +1872,22 @@ def _missing_feature_end_cycle_records(repo: Path, feature_id: str) -> frozenset
     # reconciles the requirement for a target repo with no collectable contract
     # suite -- genericità, never a fake pass). Mirrors the CLI done-gate.
     full_suite = ledger.full_suite_leg_events()
-    reconciled: set[str] = set()
-    if "FullSuiteLegNotApplicable" in full_suite:
-        reconciled.add("FullSuiteLegRan")
-    return _feature_end_required_records() - (
-        recorded
-        | env_events
-        | walking_skeleton
-        | coverage_map
-        | full_suite
-        | reconciled
-    )
+    all_recorded = recorded | env_events | walking_skeleton | coverage_map | full_suite
+    # fix-na-marker-reconcile-drift slice-01: the NA-marker -> required-record
+    # reconciliation is read from the ONE shared source
+    # (`feature_end_na_marker_reconciles`, `des.application.
+    # feature_end_na_marker_reconciliation`) -- the SAME function the
+    # `verify_deliver_integrity` CLI mirror consults below. Before this fix
+    # only the full-suite leg was reconciled here (inline special-case); the
+    # two coverage-map markers were absent, permanently blocking
+    # F_FINAL_REVIEW for any repo with inactive coverage-map adoption even
+    # though the CLI already permitted the identical ledger.
+    reconciled = {
+        required_name
+        for na_marker, required_name in feature_end_na_marker_reconciles().items()
+        if na_marker in all_recorded
+    }
+    return _feature_end_required_records() - (all_recorded | reconciled)
 
 
 def _handle_feature_end_gate(

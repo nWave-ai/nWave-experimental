@@ -161,6 +161,19 @@ lifecycle_events:
         - FeatureEndReviewVerdict
         - FullSuiteLegRan
         - WalkingSkeletonGateRan
+      # fix-na-marker-reconcile-drift slice-01: the ONE shared source for which
+      # NotApplicable (NA) marker reconciles which required record above --
+      # read by BOTH `subagent_stop_handler._missing_feature_end_cycle_records`
+      # (the SubagentStop hook) and `verify_deliver_integrity._verify_atdd_pure`
+      # (the CLI mirror) via `des.application.feature_end_na_marker_reconciliation
+      # .feature_end_na_marker_reconciles()`. Before this fix the hook only
+      # reconciled `FullSuiteLegNotApplicable` (inline special-case) while the
+      # CLI hardcoded all three entries in a local literal -- the two surfaces
+      # silently disagreed on every repo with inactive coverage-map adoption.
+      feature_end_na_marker_reconciles:
+        CoverageMapNotApplicableAtDistillExit: CoverageMapVerifiedAtDistillExit
+        CoverageMapNotApplicableAtDeliverExit: CoverageMapVerifiedAtDeliverExit
+        FullSuiteLegNotApplicable: FullSuiteLegRan
 
   # Commit lifecycle (git-hook prepare-commit-msg) — closes friction #35
   # mechanical trailer derivation. Phase 5 wiring; today the trailer

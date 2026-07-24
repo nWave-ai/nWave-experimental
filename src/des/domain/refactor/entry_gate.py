@@ -51,6 +51,17 @@ class EntryGateVerdict(str, Enum):
 #: -- never a silent merge.
 ENTRY_GATE_VERDICT_MISSING = "EntryGateVerdictMissing"
 
+#: The only two verdicts that let an item through to merge
+#: (``RefactorDrainService._entry_gate_refusal``). A merge-permitting verdict
+#: is granted ONLY by an unambiguous bare-line attestation (the first pass in
+#: ``classify_entry_gate`` below) -- NEVER by a loose substring match over
+#: prose, because prose is exactly where a fixer explains why it will NOT
+#: certify (e.g. "I cannot certify this as REFACTOR_SAFE"). Widening this back
+#: to a substring match re-opens the arming defect this set exists to close.
+MERGE_PERMITTING_VERDICTS = frozenset(
+    {EntryGateVerdict.REFACTOR_SAFE, EntryGateVerdict.MECHANICAL_RENAME_EXEMPT}
+)
+
 
 def classify_entry_gate(agent_output: str) -> EntryGateVerdict | None:
     """Parse the agent's own emitted verdict token out of ``agent_output``.
@@ -60,6 +71,22 @@ def classify_entry_gate(agent_output: str) -> EntryGateVerdict | None:
     (``RefactorDrainService.drain_one``, A_GREEN) maps ``None`` to the named
     ``ENTRY_GATE_VERDICT_MISSING`` merge-refusal outcome (AT-7), never a
     silent merge against a vacuous or unclassified green.
+
+    Two passes, in order:
+
+    1. **Bare-line attestation** -- a line whose ENTIRE stripped content is
+       exactly one token's value. This is the only path that may yield a
+       merge-permitting verdict (``REFACTOR_SAFE`` /
+       ``MECHANICAL_RENAME_EXEMPT``): an unambiguous, standalone line is the
+       single most reliable shape of "I certify this".
+    2. **Prose fallback, declining tokens only** -- when no bare line exists,
+       a loose substring match is still useful for the tokens that only ever
+       REFUSE to merge (``CHARACTERIZE_FIRST`` / ``ABSTAINED`` /
+       ``MIKADO_ESCALATION``): mis-detecting a refusal as a *different*
+       refusal never merges unreviewed work. The merge-permitting tokens are
+       deliberately excluded from this pass -- an LLM explaining why it will
+       NOT certify is the single most likely shape of a real refusal, and
+       that explanation routinely NAMES the token it is declining.
     """
     for raw_line in agent_output.splitlines():
         stripped = raw_line.strip()
@@ -67,6 +94,8 @@ def classify_entry_gate(agent_output: str) -> EntryGateVerdict | None:
             if stripped == verdict.value:
                 return verdict
     for verdict in EntryGateVerdict:
+        if verdict in MERGE_PERMITTING_VERDICTS:
+            continue
         if re.search(rf"\b{re.escape(verdict.value)}\b", agent_output):
             return verdict
     return None

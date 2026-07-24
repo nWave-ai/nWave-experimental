@@ -71,6 +71,25 @@ def _parse_worktree_porcelain(output: str) -> list[_PorcelainEntry]:
     return entries
 
 
+def _porcelain_status_paths(status: str) -> list[str]:
+    """The path each ``git status --porcelain`` line refers to.
+
+    Porcelain v1 emits ``XY <path>``; a rename/copy emits ``XY <old> -> <new>``
+    and the NEW path is the one that exists in the working tree, so that is the
+    one reported. Paths git had to quote (whitespace / non-ASCII) are unquoted,
+    so a caller can compare them against a path as the operator wrote it.
+    """
+    paths: list[str] = []
+    for line in status.splitlines():
+        entry = line[3:].strip()
+        if not entry:
+            continue
+        if " -> " in entry:
+            entry = entry.split(" -> ", 1)[1].strip()
+        paths.append(entry.strip('"'))
+    return paths
+
+
 def _short_branch(ref: str | None) -> str | None:
     if ref is None:
         return None
@@ -200,6 +219,25 @@ class GitWorktreeAdapter(GitWorktreePort):
         dirty-tree guard errs toward PRESERVING work, so any non-empty status
         blocks the worktree's removal."""
         return bool(git_text(path, "status", "--porcelain").strip())
+
+    def uncommitted_paths(self, repo: Path) -> tuple[str, ...]:
+        """Every repo-relative path ``git status --porcelain`` reports as dirty.
+
+        The SAME single read ``has_uncommitted_changes`` performs, kept
+        path-resolved instead of collapsed to a bool (see the port's docstring
+        for why the refusal path needs the paths themselves).
+
+        Degrades to the port's own empty "nothing known here" default when git
+        cannot answer at all -- ``repo`` is not a repository, or no ``git``
+        exists on this target machine (the git-free mandate: git is an
+        optional driven-adapter capability, never a hard requirement). A
+        refusal that could not run the detection still renders its generic
+        explanation; it never claims a clean tree it did not observe."""
+        try:
+            status = git_text(repo, "status", "--porcelain")
+        except (subprocess.CalledProcessError, OSError):
+            return ()
+        return tuple(_porcelain_status_paths(status))
 
     def list_worktrees(self, repo: Path) -> tuple[WorktreeHandle, ...]:
         """Enumerate every LINKED worktree registered against ``repo``.

@@ -20,7 +20,7 @@ from nwave_ai.feature_delta.adapters.verbs import PlaintextVerbLoader
 
 
 _REPO_ROOT = Path(__file__).parents[3]
-_VERB_DIR = _REPO_ROOT / "nWave" / "data" / "protocol-verbs"
+_VERB_DIR = _REPO_ROOT / "nwave_ai" / "feature_delta" / "data" / "protocol-verbs"
 
 
 # ---------------------------------------------------------------------------

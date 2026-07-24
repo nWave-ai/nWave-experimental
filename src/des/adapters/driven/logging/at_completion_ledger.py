@@ -1338,7 +1338,10 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         FeatureEndCycleIncomplete block at feature-end. The slice-04
         applicability reconciliation also accepts the
         `CoverageMapNotApplicableAt{Distill,Deliver}Exit` NA markers in place of
-        the verified records.
+        the verified records -- both surfaces derive that reconciliation from
+        the ONE shared source, `des.application.feature_end_na_marker_reconciliation
+        .feature_end_na_marker_reconciles()` (fix-na-marker-reconcile-drift
+        slice-01), so this docstring's promise and the code now agree.
 
         Optional `feature_id=` filter (slice-02b) scopes the read to one
         feature in the singleton-shape substrate; ``None`` retains the

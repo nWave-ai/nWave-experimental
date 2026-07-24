@@ -18,7 +18,8 @@ import pytest
 
 _MATURITY_FILE = (
     Path(__file__).parent.parent.parent
-    / "nWave"
+    / "nwave_ai"
+    / "feature_delta"
     / "data"
     / "feature-delta-rule-maturity.json"
 )

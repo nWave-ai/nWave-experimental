@@ -5,9 +5,17 @@ service calls (RegistryService.register, CollisionDetector.check,
 RegistryService.collision_check_for_id) and maps results to exit codes
 per feature-delta DESIGN:
 
-    register:    0 success, 2 duplicate id
+    register:    0 success
+                 2 refused — checked and rejected (invalid, or duplicate id)
+                 3 refused — could NOT check (schema resource unavailable)
     check:       0 no collisions, 1 collision detected
     check-delta: 0 zero collisions across delta, 1 if any collision
+
+2 and 3 are kept apart deliberately: "I checked it and said no" and "I never
+managed to check it" are different events for whoever is reading the exit code,
+and only one of them is fixed by reinstalling. Every other unexpected failure is
+reported as `ERROR: <Type>: <message>` on stderr with exit 2 — a raw traceback
+is never a user-facing outcome (see `handle_outcomes`).
 """
 
 from __future__ import annotations
@@ -26,12 +34,23 @@ from nwave_ai.outcomes.application.registry_service import (
     DuplicateOutcomeIdError,
     InvalidOutcomeError,
     RegistryService,
+    SchemaUnavailableError,
     UnknownOutcomeIdError,
 )
 from nwave_ai.outcomes.domain.outcome import InputShape, Outcome, OutputShape
 
 
 _OUT_ID_PATTERN = re.compile(r"\bOUT-[A-Z0-9-]+\b")
+
+# Exit codes. 2 = refused after checking; 3 = refused because checking was
+# impossible. Kept distinct so a damaged install cannot look like bad input.
+_EXIT_REFUSED = 2
+_EXIT_SCHEMA_UNAVAILABLE = 3
+
+_REINSTALL_HINT = (
+    "HOW: reinstall nwave-ai (e.g. `pipx reinstall nwave-ai`, or "
+    "`uv tool install --force nwave-ai`) - the schema ships inside the package."
+)
 
 
 _DEFAULT_REGISTRY = Path("docs") / "product" / "outcomes" / "registry.yaml"
@@ -74,15 +93,29 @@ def handle_outcomes(argv: list[str]) -> int:
     chd.add_argument("delta_path", type=Path)
 
     args = parser.parse_args(argv)
-    registry_path = _ensure_registry(args.registry)
 
+    # Everything downstream of argv parsing runs inside the guard, so no failure
+    # mode reaches the user as a raw traceback: not the schema resource, and not
+    # the several other unguarded throw sites either (registry mkdir/write ->
+    # PermissionError, malformed registry YAML -> YAMLError, a row missing `id`
+    # -> KeyError, an unreadable feature-delta -> OSError). `Exception`, not
+    # `BaseException`: argparse's SystemExit must still pass through.
+    try:
+        registry_path = _ensure_registry(args.registry)
+        return _dispatch(args, registry_path)
+    except Exception as err:
+        print(f"ERROR: {type(err).__name__}: {err}", file=sys.stderr)
+        return _EXIT_REFUSED
+
+
+def _dispatch(args: argparse.Namespace, registry_path: Path) -> int:
     if args.cmd == "register":
         return _run_register(args, registry_path)
     if args.cmd == "check":
         return _run_check(args, registry_path)
     if args.cmd == "check-delta":
         return _run_check_delta(args, registry_path)
-    return 2
+    return _EXIT_REFUSED
 
 
 def _ensure_registry(registry_path: Path) -> Path:
@@ -102,11 +135,30 @@ def _run_register(args: argparse.Namespace, registry_path: Path) -> int:
     outcome = _build_outcome_from_args(args)
     try:
         service.register(outcome)
+    except SchemaUnavailableError as err:
+        return _refuse_unvalidatable(outcome.id, err)
     except (DuplicateOutcomeIdError, InvalidOutcomeError) as err:
         print(f"ERROR: {err}", file=sys.stderr)
-        return 2
+        return _EXIT_REFUSED
     print(f"REGISTERED: {outcome.id}")
     return 0
+
+
+def _refuse_unvalidatable(outcome_id: str, err: SchemaUnavailableError) -> int:
+    """Say WHAT / WHY / HOW, having written nothing, and exit 3.
+
+    The outcome could not be checked, so it was not registered. Saying so out
+    loud is the whole point: silently writing an unvalidated row, or dying in a
+    traceback, would both leave the user unable to tell a damaged install from
+    a bad outcome.
+    """
+    print(
+        f"REFUSED: cannot validate {outcome_id} - the outcome was NOT registered.",
+        file=sys.stderr,
+    )
+    print(f"WHY: {err}", file=sys.stderr)
+    print(_REINSTALL_HINT, file=sys.stderr)
+    return _EXIT_SCHEMA_UNAVAILABLE
 
 
 def _build_outcome_from_args(args: argparse.Namespace) -> Outcome:

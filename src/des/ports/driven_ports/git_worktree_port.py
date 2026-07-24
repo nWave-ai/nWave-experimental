@@ -131,6 +131,28 @@ class GitWorktreePort(ABC):
         "confirmed merged" state-check depends on currency."""
         ...
 
+    def uncommitted_paths(self, repo: Path) -> tuple[str, ...]:
+        """The repo-relative paths carrying uncommitted work in ``repo``'s OWN
+        working tree -- modified, staged, renamed or untracked.
+
+        The path-RESOLVED sibling of ``has_uncommitted_changes``: that one
+        collapses a whole worktree to the yes/no the cleanup guard asks; this
+        one names WHICH paths, which is what an operator-facing refusal needs
+        in order to say "the copy of YOUR fixer that ran was the committed
+        one". A bare bool cannot carry that -- a repo is almost always dirty
+        somewhere (an untracked pile file is enough), so only the per-path
+        answer distinguishes "your fixer is shadowed" from "some unrelated
+        file is dirty".
+
+        Concrete (NOT abstract) so it is a safe, additive extension: every
+        existing implementer -- including in-memory test doubles that never
+        touch a real git tree -- inherits the empty default unchanged, exactly
+        as ``is_linked_worktree`` does. The empty tuple means, and only means,
+        "no uncommitted path is known here" -- never "this tree is provably
+        clean" (GDP-6: absence of evidence is never reported as evidence of
+        absence)."""
+        return ()
+
     def is_linked_worktree(self, repo: Path) -> bool:
         """True iff ``repo`` is a LINKED worktree -- one whose worktree/branch/
         checkout mutations land in a ``.git`` SHARED with sibling worktrees

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
 
@@ -48,23 +49,66 @@ class PileItem:
     schema_version: int = SCHEMA_VERSION
 
 
+class PileUnreadable(Enum):
+    """WHY a ``--pile`` path could not be READ as a pile file at all.
+
+    A pile that was never read is a categorically different outcome from a
+    pile that WAS read and holds zero pending items -- "I could not start, so
+    I never looked" vs "I looked and there was nothing to do". Each member's
+    value is the WHY phrase a reporter renders for a maintainer.
+
+    All three collapse to the same ``Path.is_file() is False``, which is why
+    they are classified rather than tested for one at a time: a fix that only
+    recognised a missing file would still read a ``--pile`` aimed at a
+    directory as an empty pile.
+    """
+
+    NO_SUCH_FILE = "no file exists at that path"
+    NO_SUCH_DIRECTORY = "its parent directory does not exist"
+    IS_A_DIRECTORY = "that path is a directory, not a pile file"
+
+
 @dataclass(frozen=True)
 class PileParseReport:
-    """Parsed pending items plus any non-blank, non-header lines that failed
-    the item grammar -- the observability need that distinguishes a
-    genuinely empty pile from one whose only content couldn't be parsed."""
+    """Parsed pending items, any non-blank non-header lines that failed the
+    item grammar, and whether the pile could be read at all -- the three
+    outcomes a reporter must be able to tell apart.
+
+    ``unreadable`` is ``None``, and only ``None``, when the pile file WAS
+    read. Folding an unreadable path into the same empty value a real, empty,
+    parsed pile produces is what let ``des refactor`` tell a maintainer who
+    mistyped ``--pile`` that their pile was empty, and exit 0
+    (fix-drain-single-item-silent-noop).
+    """
 
     items: tuple[PileItem, ...]
     skipped_lines: tuple[str, ...]
+    unreadable: PileUnreadable | None = None
+
+
+def classify_unreadable_pile(pile_path: Path) -> PileUnreadable | None:
+    """Why ``pile_path`` cannot be read as a pile file, or ``None`` when it
+    can -- named once here so the distinction survives parsing instead of
+    being destroyed at it."""
+    if pile_path.is_file():
+        return None
+    if pile_path.is_dir():
+        return PileUnreadable.IS_A_DIRECTORY
+    if not pile_path.parent.is_dir():
+        return PileUnreadable.NO_SUCH_DIRECTORY
+    return PileUnreadable.NO_SUCH_FILE
 
 
 def parse_pile_report(pile_path: Path) -> PileParseReport:
-    """Parse a ``techdebt.md``-shaped pile file, reporting both the parsed
-    items and any non-blank content line that did not match the item
-    grammar (a real parse-miss, never silently dropped from observability).
+    """Parse a ``techdebt.md``-shaped pile file, reporting the parsed items,
+    any non-blank content line that did not match the item grammar (a real
+    parse-miss, never silently dropped from observability), and -- when the
+    path could not be read as a pile file at all -- WHY, so a caller can
+    refuse instead of reporting a finding about a pile it never opened.
     """
-    if not pile_path.is_file():
-        return PileParseReport(items=(), skipped_lines=())
+    unreadable = classify_unreadable_pile(pile_path)
+    if unreadable is not None:
+        return PileParseReport(items=(), skipped_lines=(), unreadable=unreadable)
     items: list[PileItem] = []
     skipped: list[str] = []
     for raw_line in pile_path.read_text(encoding="utf-8").splitlines():
@@ -87,11 +131,15 @@ def parse_pile_report(pile_path: Path) -> PileParseReport:
 
 
 def parse_pile(pile_path: Path) -> tuple[PileItem, ...]:
-    """Parse the pending items out of a ``techdebt.md``-shaped pile file.
+    """Parse the pending ITEMS out of a ``techdebt.md``-shaped pile file.
 
-    A genuinely absent pile file parses as zero pending items (a fresh pile
-    has no file yet) -- never an error, since an absent pile is a legitimate
-    "nothing to drain" state, the same observable outcome as an empty one.
+    Items only. An absent pile file yields zero items here, which is NOT the
+    same observable outcome as an empty one: a caller that must tell "read,
+    and there was nothing pending" apart from "could not be read at all"
+    calls ``parse_pile_report`` and consults ``PileParseReport.unreadable``.
+    Collapsing the two -- and calling that collapse legitimate -- is what let
+    a mistyped ``--pile`` be reported to a maintainer as an empty pile, with
+    a success exit (fix-drain-single-item-silent-noop).
     """
     return parse_pile_report(pile_path).items
 

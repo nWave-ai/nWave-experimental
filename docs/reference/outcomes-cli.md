@@ -75,7 +75,10 @@ nwave-ai outcomes register --id OUT-ID --kind KIND \
 | Code | Condition                                                            |
 |------|----------------------------------------------------------------------|
 | 0    | Outcome registered successfully.                                     |
-| 2    | Duplicate `--id` (already in registry), or invalid Outcome (schema). |
+| 2    | Refused after checking: duplicate `--id`, or the Outcome fails the schema. |
+| 3    | Refused *without* checking: the packaged JSON Schema could not be read. Nothing was written. Reinstall `nwave-ai`. |
+
+`2` and `3` are distinct on purpose. `2` means the outcome was validated and rejected — fix the outcome. `3` means validation could not run at all (a damaged install, whose schema resource is missing or corrupt) — fix the install. An unvalidated outcome is never written and never reported as registered.
 
 ### Output
 
@@ -263,7 +266,7 @@ nwave-ai outcomes check-delta docs/feature/my-feature/feature-delta.md
 
 ## Registry schema
 
-The registry file is YAML matching the JSON Schema at `docs/product/outcomes/schema.json` (draft-07). Each entry is one element of the top-level `outcomes:` list.
+The registry file is YAML matching the JSON Schema at `nwave_ai/outcomes/schema.json` (draft-07). Each entry is one element of the top-level `outcomes:` list. The schema is a *package resource*: it ships inside `nwave_ai` and is loaded via `importlib.resources`, so it is present in every install (a schema living under `docs/` would be stripped from every distribution channel).
 
 ### Top-level structure
 
@@ -346,5 +349,5 @@ Threshold: ≥ 0.4 → Tier-2 fires.
 - **[Your First Outcome](../guides/outcomes-first-outcome/README.md)** — tutorial for new authors.
 - **[How to resolve a collision](../guides/howto-resolve-outcomes-collision.md)** — triage flagged candidates.
 - **[Why an outcomes registry?](../product/outcomes/README.md)** — design rationale and locked decisions.
-- **JSON Schema** — `docs/product/outcomes/schema.json`.
+- **JSON Schema** — `nwave_ai/outcomes/schema.json` (a packaged resource, shipped inside the wheel).
 - **Seeded registry** — `docs/product/outcomes/registry.yaml`.

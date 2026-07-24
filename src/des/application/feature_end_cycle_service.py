@@ -272,6 +272,19 @@ class FullSuiteLegRan:
     """
 
     pytest_exit_code: int
+    excluded_directories: tuple[str, ...] = ()
+    """Well-known generated/build directories (:data:`_CONTRACT_SUITE_PRUNE_DIRS`)
+    that were PRESENT at the repo root and therefore excluded from this leg's
+    collect scope -- named here so the exclusion is a visible, observable
+    outcome rather than an invisible internal choice (the charter's own
+    wording, fix-stale-build-output-contamination). Empty when no prune-set
+    directory was present."""
+
+    exclusion_reason: str = ""
+    """WHAT/WHY the directories named in ``excluded_directories`` were
+    disregarded (e.g. "excluded 'build' as stale/generated build output; not
+    collected as part of the certified full suite"). Empty when
+    ``excluded_directories`` is empty."""
 
 
 @dataclass(frozen=True)
@@ -1195,7 +1208,12 @@ def _run_full_suite_leg(
         return _full_suite_failure_refusal(
             completed, junit_path=junit_path, repo_root=repo_root
         )
-    return FullSuiteLegRan(pytest_exit_code=completed.returncode)
+    excluded = _present_prune_dirs(repo_root)
+    return FullSuiteLegRan(
+        pytest_exit_code=completed.returncode,
+        excluded_directories=excluded,
+        exclusion_reason=_exclusion_reason(excluded),
+    )
 
 
 _CONTRACT_SUITE_TEST_ROOTS = ("tests", "test")
@@ -1220,6 +1238,67 @@ _CONTRACT_SUITE_PRUNE_DIRS = frozenset(
         ".nwave",
     }
 )
+
+
+def _pruned_top_level_dirs(
+    repo_root: Path, *, exclude: frozenset[str] = frozenset()
+) -> list[Path]:
+    """Top-level directories of ``repo_root`` outside the shared prune set.
+
+    ONE place :data:`_CONTRACT_SUITE_PRUNE_DIRS` is applied to a directory
+    listing (DRY/SSOT) -- both the PRIMARY (marker-filtered) and SECONDARY
+    (marker-agnostic) collect scopes in :func:`_repo_has_contract_suite` call
+    through here instead of each re-filtering ``repo_root.iterdir()``
+    independently, which is exactly how the primary collect went unpruned in
+    the first place. Only DIRECTORIES are ever returned -- a top-level
+    manifest FILE (e.g. ``pyproject.toml``) is never a test root and must
+    never be handed to pytest collection (see :func:`_repo_has_contract_suite`
+    docstring). ``exclude`` lets a caller additionally drop names beyond the
+    shared prune set (the secondary scope excludes ``src/`` this way; the
+    primary scope passes no extra exclusion).
+    """
+    return [
+        entry
+        for entry in sorted(repo_root.iterdir())
+        if entry.is_dir()
+        and entry.name not in _CONTRACT_SUITE_PRUNE_DIRS
+        and entry.name not in exclude
+    ]
+
+
+def _present_prune_dirs(repo_root: Path) -> tuple[str, ...]:
+    """Well-known generated/build directory names actually PRESENT at
+    ``repo_root``'s top level (a subset of :data:`_CONTRACT_SUITE_PRUNE_DIRS`).
+
+    :func:`_pruned_top_level_dirs` already silently drops these names from
+    every collect scope; this helper answers the SEPARATE visibility
+    question -- which of them existed at all, so :func:`_run_full_suite_leg`
+    can NAME them in :class:`FullSuiteLegRan` instead of leaving the
+    exclusion an invisible internal choice (fix-stale-build-output-contamination).
+    Sorted for deterministic repr/output.
+    """
+    try:
+        entries = {entry.name for entry in repo_root.iterdir() if entry.is_dir()}
+    except OSError:
+        return ()
+    return tuple(sorted(entries & _CONTRACT_SUITE_PRUNE_DIRS))
+
+
+def _exclusion_reason(excluded: tuple[str, ...]) -> str:
+    """WHAT/WHY text for the directory names in ``excluded`` (GDP-3).
+
+    Empty when ``excluded`` is empty (nothing to explain). Names every
+    excluded directory and states why (stale/generated build output pruned
+    from collection), so the full-suite leg's outcome self-explains rather
+    than leaving a bare exit code as the only observable.
+    """
+    if not excluded:
+        return ""
+    names = ", ".join(repr(name) for name in excluded)
+    return (
+        f"excluded {names} as stale/generated build output; not collected "
+        "as part of the certified full suite"
+    )
 
 
 def _repo_has_contract_suite(repo_root: Path) -> bool | FullSuiteLegIndeterminate:
@@ -1268,8 +1347,19 @@ def _repo_has_contract_suite(repo_root: Path) -> bool | FullSuiteLegIndeterminat
     from des.cli.run_contract_gate import _collect_node_ids, _CollectionError
     from des.runtime.interpreter import InterpreterUnavailable
 
+    # Primary scope: same prune set the secondary collect already honours
+    # (:func:`_pruned_top_level_dirs`), so a generated artifact directory
+    # (e.g. a stale ``build/`` copy) can never shadow real source or poison
+    # collection here. Unlike the secondary scope, ``src/`` is NOT excluded --
+    # the primary collect keeps observing the whole non-generated tree, only
+    # narrower than before by the prune set. An empty primary scope (no
+    # top-level directories survive pruning) must skip the collect call
+    # entirely rather than pass an empty ``paths`` list -- the worker treats
+    # a falsy ``paths`` as "no narrowing" and would silently fall back to
+    # collecting the unpruned whole tree, reintroducing this exact defect.
+    primary_scope = _pruned_top_level_dirs(repo_root)
     try:
-        if bool(_collect_node_ids(repo_root)):
+        if primary_scope and bool(_collect_node_ids(repo_root, paths=primary_scope)):
             return True
     except _CollectionError as exc:
         # pytest genuinely RAN and FAILED TO COLLECT (a crashing test
@@ -1297,13 +1387,7 @@ def _repo_has_contract_suite(repo_root: Path) -> bool | FullSuiteLegIndeterminat
         # NOT_APPLICABLE, not INDETERMINATE.
         return False
 
-    secondary_scope = [
-        entry
-        for entry in repo_root.iterdir()
-        if entry.is_dir()
-        and entry.name != "src"
-        and entry.name not in _CONTRACT_SUITE_PRUNE_DIRS
-    ]
+    secondary_scope = _pruned_top_level_dirs(repo_root, exclude=frozenset({"src"}))
     if not secondary_scope:
         return False
     try:
