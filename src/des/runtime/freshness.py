@@ -30,12 +30,20 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from des.adapters.driven.freshness.repo_source_probe import (
-    NO_MANIFEST_REASON,
-    NO_MANIFEST_REMEDIATION,
-    RepoSourceProbe,
-)
 from des.ports.driven_ports.freshness_port import FreshnessProbe, FreshnessVerdict
+
+
+# The concrete probe and its remediation texts are imported AT POINT OF USE, not
+# here. This module is imported by `des.cli.__init__`, which runs on every single
+# `des <command>` and every hook process -- so a module-scope import of the
+# adapter made the whole edge (filesystem, git) part of the cost of starting any
+# command. Worse, the probe usually does not even run: in a developer checkout
+# the gate auto-skips, so the import was paid for a check that was then skipped.
+#
+# Measured 2026-07-25: the serial spawn census counted 2781 nested pytest
+# invocations at a 279ms floor; anything on this path is multiplied by that.
+# Keeping the layering honest and keeping startup cheap turn out to be the same
+# edit -- the application-side module now names only its PORT at module scope.
 
 
 # Exit code 78 = EX_CONFIG (sysexits.h) — configuration error, distinct from
@@ -72,6 +80,7 @@ def _emit_event(payload: dict[str, Any]) -> None:
 
 _REMEDIATION = "python scripts/install/install_nwave.py"
 
+
 # Reason-keyed remediation overrides (RCA fix-des-silent-config-failure, root
 # cause B): the blanket `_REMEDIATION` ("reinstall") is wrong for a DEGRADED
 # cause with nothing to reinstall. Keyed off `NO_MANIFEST_REASON` (the SSOT
@@ -80,16 +89,29 @@ _REMEDIATION = "python scripts/install/install_nwave.py"
 # reason — whether or not it went through `RepoSourceProbe` — still resolves
 # to the differentiated fix. Extend this map as more DEGRADED causes gain a
 # cause-appropriate remediation; unmapped reasons keep the blanket fallback.
-_REASON_REMEDIATION_OVERRIDES: dict[str, str] = {
-    NO_MANIFEST_REASON: NO_MANIFEST_REMEDIATION,
-}
+def _reason_remediation_overrides() -> dict[str, str]:
+    """The reason->remediation map, built where it is READ rather than at import.
+
+    It was a module-level constant, and building it required importing the
+    adapter's texts -- which is what dragged the concrete probe into every
+    process that so much as imports a `des.cli` submodule. The map is consumed
+    in exactly one place (`_resolve_remediation`), and only on the failure path,
+    so paying for it at import time charged every successful command for a
+    lookup table that a successful command never reads.
+    """
+    from des.adapters.driven.freshness.repo_source_probe import (
+        NO_MANIFEST_REASON,
+        NO_MANIFEST_REMEDIATION,
+    )
+
+    return {NO_MANIFEST_REASON: NO_MANIFEST_REMEDIATION}
 
 
 def _resolve_remediation(verdict: FreshnessVerdict) -> str:
     """Cause-appropriate remediation: probe-supplied > reason-mapped > blanket."""
     if verdict.remediation:
         return verdict.remediation
-    return _REASON_REMEDIATION_OVERRIDES.get(verdict.reason, _REMEDIATION)
+    return _reason_remediation_overrides().get(verdict.reason, _REMEDIATION)
 
 
 def _refuse(verdict: FreshnessVerdict) -> None:
@@ -262,7 +284,15 @@ def assert_fresh_or_explain(
                 break  # reached filesystem root, no .git/ found
             cwd = parent
 
-    verdict = (probe or RepoSourceProbe()).probe()
+    if probe is None:
+        # Resolved HERE, past every early return above: an injected probe never
+        # needs the concrete one, and a run that auto-skips never reaches this
+        # line at all. Importing it at module scope charged both cases for a
+        # class neither of them uses.
+        from des.adapters.driven.freshness.repo_source_probe import RepoSourceProbe
+
+        probe = RepoSourceProbe()
+    verdict = probe.probe()
     if verdict.state in ("DEGRADED", "D"):
         # Degrade-loud contract (feature-delta DISCUSS D1 / DEVOPS DV-2/DV-4,
         # resolving DESIGN OQ#1): "the HOOK degrades LOUD (warns + proceeds, exit

@@ -57,7 +57,7 @@ Feature: The mode registry is the single home of the crafter's conditional skill
   across agent specs, while today's dispatch behaviour stays byte-identical
 
   Background:
-    Given the shipped mode registry declares the atdd_pure and classic flavors
+    Given the shipped mode registry declares the atdd_pure flavor
 
   @walking_skeleton @driving_port @real-io @slice-01 @contract-shape:pure-function
   Scenario: Under atdd_pure the registry directs the crafter to its discipline skill exactly as the retired inline table did
@@ -65,11 +65,14 @@ Feature: The mode registry is the single home of the crafter's conditional skill
     Then the crafter is directed to load exactly "nw-crafter-discipline-atdd-pure"
     And no other conditional skill is injected for the crafter
 
-  @driving_port @real-io @slice-01 @contract-shape:pure-function
-  Scenario: Under classic the registry itself declares the crafter needs no conditional skills
+  # Converted with the removal. This pinned the registry's own DECLARED-EMPTY
+  # answer for classic -- valuable while classic was a mode one could ask about.
+  # It is not one any more, so the registry does not answer: it refuses. Kept
+  # rather than deleted so the refusal stays pinned where the answer used to be.
+  @driving_port @real-io @slice-01 @error @contract-shape:pure-function
+  Scenario: The registry refuses to answer for the retired classic flavor
     When the dispatch asks the registry for the crafter's conditional skills under the "classic" flavor
-    Then the crafter is directed to load no conditional skills
-    And that empty answer is the registry's own declaration, not a fallback
+    Then the registry refuses the retired flavor instead of answering
 
   @driving_port @real-io @slice-01 @error @contract-shape:pure-function
   Scenario Outline: The registry refuses to improvise an answer it does not properly declare

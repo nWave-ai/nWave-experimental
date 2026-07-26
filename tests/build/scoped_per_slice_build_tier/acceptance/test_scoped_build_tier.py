@@ -268,6 +268,35 @@ def _drive_gate(
 # ---------------------------------------------------------------------------
 
 
+def _covers_whole_tier(selected: set[Path], whole_tree: Path) -> tuple[set, set]:
+    """Return (uncovered, outside) for a whole-tree selection.
+
+    The whole-tree contract is the tier's COVERAGE, not its argv SHAPE. Since
+    da64aba54 the resolver hands back the tier's filtered MEMBERS rather than
+    the bare directory, so that a feature-slug-nested acceptance scaffold can be
+    pruned. Pinning the single-directory form would forbid that fix; pinning
+    coverage-and-confinement does not, and the confinement leg is STRONGER than
+    the equality it replaces -- `== {whole_tree}` could not tell a widening to
+    the repo root from a legitimate member list.
+    """
+    tier_files = {
+        path
+        for path in whole_tree.rglob("test_*.py")
+        if "__pycache__" not in path.parts
+    }
+    uncovered = {
+        path
+        for path in tier_files
+        if not any(path == s or path.is_relative_to(s) for s in selected)
+    }
+    outside = {
+        path
+        for path in selected
+        if path != whole_tree and not path.is_relative_to(whole_tree)
+    }
+    return uncovered, outside
+
+
 def test_scoped_run_selects_only_slice_test_and_light_invariants_not_whole_tree(
     monkeypatch: pytest.MonkeyPatch, repo_with_slice_scope: _SliceScopeRepo
 ) -> None:
@@ -433,10 +462,15 @@ def test_full_mode_still_selects_whole_tree_overriding_any_scope(
     )
     selected = {Path(p) for p in run.arch_paths_calls[-1]}
     whole_tree = repo_with_slice_scope.root / "tests" / "build"
-    assert selected == {whole_tree}, (
-        f"full=True must select the WHOLE tests/build tree, overriding any "
-        f"regression_test_file/light_invariant_paths scope -- expected "
-        f"{{{whole_tree}}}, got {selected}"
+    uncovered, outside = _covers_whole_tier(selected, whole_tree)
+    assert not uncovered, (
+        "full=True must select the WHOLE tests/build tier, overriding any "
+        f"regression_test_file/light_invariant_paths scope -- uncovered="
+        f"{uncovered}, selected={selected}"
+    )
+    assert not outside, (
+        "full=True must stay CONFINED to the tests/build tier -- it must never "
+        f"widen beyond {whole_tree}; outside={outside}, selected={selected}"
     )
     assert run.exit_code == 0, f"expected exit 0 -- got {run.exit_code}"
 
@@ -483,9 +517,12 @@ def test_default_call_with_no_new_kwargs_preserves_whole_tree_selection(
     assert exit_code == 0, f"expected exit 0 -- got {exit_code}"
     assert arch_calls, "the default call must still invoke the arch-invariant runner"
     whole_tree = repo_with_slice_scope.root / "tests" / "build"
-    assert set(arch_calls[-1]) == {whole_tree}, (
-        f"a caller using none of the new scope kwargs must see the SAME "
-        f"whole-tree selection as before this feature -- got {arch_calls[-1]}"
+    default_selected = {Path(p) for p in arch_calls[-1]}
+    uncovered, outside = _covers_whole_tier(default_selected, whole_tree)
+    assert not uncovered and not outside, (
+        "a caller using none of the new scope kwargs must still see the WHOLE "
+        f"tier, confined to it -- uncovered={uncovered}, outside={outside}, "
+        f"got {arch_calls[-1]}"
     )
 
 

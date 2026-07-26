@@ -89,7 +89,6 @@ registry `skill_load_set` via `flavor_dispatcher.resolve_skill_load_set`;
 re-render with `python scripts/docgen.py`:
 
 - `atdd_pure`: (none)
-- `classic`: (none)
 <!-- GENERATED:skill-load-set END -->
 
 ### Phase-to-skill routing

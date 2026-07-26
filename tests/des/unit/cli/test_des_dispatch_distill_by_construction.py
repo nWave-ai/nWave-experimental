@@ -58,6 +58,7 @@ from pathlib import Path
 from des.domain.atdd_pure_phases import FEATURE_END_PHASES
 from des.domain.des_marker_parser import DesMarkerParser, classify_atdd_pure_dispatch
 from des.domain.design_context_content_check import design_context_carries_architecture
+from tests.common.in_process_cli import run_module_in_process
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -93,12 +94,10 @@ def _dispatch_env() -> dict[str, str]:
 
 
 def _run_dispatch(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        _dispatch_argv(*args),
-        capture_output=True,
-        text=True,
-        timeout=30,
-        env=_dispatch_env(),
+    argv = _dispatch_argv(*args)
+    exit_code, out, err = run_module_in_process(argv[2], *argv[3:], env=_dispatch_env())
+    return subprocess.CompletedProcess(
+        args=argv, returncode=exit_code, stdout=out, stderr=err
     )
 
 

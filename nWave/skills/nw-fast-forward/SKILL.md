@@ -115,13 +115,11 @@ If any wave fails:
 
 ## Resume Detection Under `atdd_pure` <!-- mode-ref-ok -->
 
-When the feature runs under the per-slice workflow mode (set in `.nwave/config.yaml`), the resume position is read from the **AT-completion ledger**, the append-only JSONL at `.nwave/telemetry/atdd-pure/{feature-id}.jsonl` — not from the classic artifacts. Per-mode descriptor + DELIVER phase shape, projected from the mode registry:
+The resume position is read from the **AT-completion ledger**, the append-only JSONL at `.nwave/telemetry/atdd-pure/{feature-id}.jsonl`.
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
-  Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
 The ledger carries one record at each **phase-boundary** of every carpaccio slice's `A→G` run, each record stamped with `slice_id` and `at_ids`. To resume an interrupted DELIVER, fast-forward reads the latest phase-boundary record and the feature-delta slice plan: slices whose rows are still `pending` are not yet shipped, and the most recent phase-boundary record names the slice and phase where the run stopped. A `FeatureEndCheckpoint` record (when all slice rows are `shipped`) gives the resume cue for the once-per-feature feature-end cycle. The ledger phase-boundary records — never `roadmap.json` — are this mode's resume source of truth.

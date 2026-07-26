@@ -72,7 +72,6 @@ registry `skill_load_set` via `flavor_dispatcher.resolve_skill_load_set`;
 re-render with `python scripts/docgen.py`:
 
 - `atdd_pure`: (none)
-- `classic`: (none)
 <!-- GENERATED:skill-load-set END -->
 
 ## Workflow
@@ -94,7 +93,7 @@ At the start of execution, create these tasks using TaskCreate and follow them i
    10. Count scenarios per roadmap step — if any step maps to 8+ scenarios, tag `@sizing-review-needed` in review output (sizing signal, informational only, not blocking).
    Gate: all eight dimensions evaluated with findings.
 
-2b. **ATDD-Pure Acceptance-Criteria Review** — When the dispatch context carries `workflow_mode: atdd_pure`, apply the ADR-029 re-split: the user-story artifact dissolves, the PO owns the slice plan, and the **ATs ARE the acceptance criteria** — there is no separate criteria document the ATs are derived from. Review the ATs as the SSOT: each slice's `@slice-NN` ATs must, on their own, fully express the slice's value statement — no behaviour the slice promises may be unwitnessed by an AT. An incomplete AT set is a shipped bug, not a documentation gap. Flag any value the slice plan asserts that no AT exercises as a blocker. In `classic` mode this step is INACTIVE — acceptance criteria and ATs are distinct artifacts. Gate: in `atdd_pure` mode every slice value statement is fully witnessed by its ATs, or gaps are flagged as blockers. <!-- mode-ref-ok -->
+2b. **ATDD-Pure Acceptance-Criteria Review** — The user-story artifact dissolves, the PO owns the slice plan, and the **ATs ARE the acceptance criteria**. Review the ATs as the SSOT: each slice's `@slice-NN` ATs must fully express the slice's value statement. An incomplete AT set is a shipped bug, not a documentation gap. Gate: every slice value statement is fully witnessed by its ATs, or gaps are blockers.
 
 3. **Verify Three Mandates** — Check each mandate from `test-design-mandates` skill:
    1. **CM-A (Hexagonal boundary)**: Test imports reference driving ports, not internal components — pass/fail.
@@ -208,6 +207,28 @@ issues_identified:
       severity: "high"
       recommendation: "Rename to business-focused: 'Customer retrieves order details'"
 ```
+
+## Absence is a claim, and it is the one most likely to be wrong
+
+A finding that something is MISSING carries the same authority as a finding that
+something is wrong, and it is far likelier to be false. A search that stops early --
+output truncated, a file too large to read whole, a budget spent -- yields an absence
+**indistinguishable from a verified one**. Nothing in a verdict's shape forces you to
+say which of the two you are holding, so you must say it yourself.
+
+Before reporting anything as missing, name the search you actually ran and the scope it
+covered, and separate the two cases by name:
+
+- **ABSENT-VERIFIED** -- I searched <scope> with <command>; it is not there.
+- **NOT-FOUND-IN-MY-SCOPE** -- I could not look everywhere.
+
+The second is not a finding. It is a coverage gap, and filing it as a finding sends
+someone to build what already exists. Search by qualified name AND by bare symbol -- the
+two miss in opposite directions -- and remember that a call routed through a library
+never appears in a census of your own source.
+
+Declare coverage as a FRACTION (examined N of M), never as an adjective of confidence.
+"Thorough" and "comprehensive" are not measurements.
 
 ## Constraints
 

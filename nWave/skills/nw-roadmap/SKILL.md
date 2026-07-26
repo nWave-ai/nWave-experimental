@@ -18,7 +18,6 @@ Dispatches expert agent to fill a pre-scaffolded YAML roadmap skeleton. CLI tool
 
 Output: `docs/feature/{feature-id}/deliver/roadmap.json`
 
-> **Scope (ADR-028):** `roadmap.json` is a classic mode only artifact. The classic ADR-025 roadmap-driven DELIVER spine consumes it; the `atdd_pure` workflow mode never reads or writes it (it is mechanically unreachable there, replaced by the feature-delta `[REF] Slice Plan` section + per-slice ATs). Use `nw-roadmap` only when `.nwave/config.yaml:workflow.mode` is `classic`. <!-- mode-ref-ok -->
 
 ## Usage
 
@@ -82,7 +81,6 @@ documented as exempt:
   Single-example unit tests are FALLBACK only — document why in a
   `# bypass:` comment if used. Acceptance scenarios MUST be framed as
   Property: blocks (quantified preconditions + invariant outcomes) where
-  the contract supports it; classic Scenario: is fallback. Integration
   and E2E tests REMAIN single-example — they verify wiring, not
   invariants. Universe declaration is mandatory even when only one slot
   is checked: the unchanged() predicate covers the rest.

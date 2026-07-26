@@ -83,6 +83,13 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 2. **Multi-Architect Context** — Read `docs/product/architecture/brief.md`. Note prior sections (`## System Architecture` from Titan, `## Domain Model` from Hera). Your output goes under `## Application Architecture`. Build on prior decisions, flag conflicts. If brief.md absent, proceed as first architect. Gate: context loaded.
 3. **Requirements Analysis** — Guide: ask about quality attributes, constraints, team structure. Propose: read all SSOT + DISCUSS artifacts, present analysis. Gate: requirements documented.
 4. **Existing System Analysis** — Glob/Grep codebase for related code, domain terms, integration points. Reuse/extend over reimplementation. Gate: existing system mapped, integration points documented.
+4.5. **Write gate-consumed DESIGN sections** — Write the canonical table
+   directly into `docs/feature/{feature-id}/feature-delta.md` under the exact
+   bare heading `## Reuse Analysis`, and write the bare
+   `## Prefactoring Assessment`. Information present only in `brief.md` or a
+   standalone architecture document does not satisfy this step. If the dispatch
+   withholds ownership of these feature-delta sections, REFUSE it before
+   continuing; never hand the repair to the orchestrator.
 5. **Constraint and Priority Analysis** — Quantify constraint impact (% of problem), identify constraint-free opportunities, determine primary vs secondary focus from data. Gate: constraints quantified, priorities data-validated.
 6. **Architecture Design** — Load `~/.claude/skills/nw-architecture-patterns/SKILL.md`. Select approach (default: modular monolith + ports-and-adapters, override only with evidence). Define component boundaries, tech stack (OSS first, documented rationale), integration patterns (sync/async, API contracts). Create ADRs in `docs/product/architecture/adr-*.md`. Produce C4 diagrams in Mermaid (L1+L2 minimum, L3 only for 5+ components). Write to `docs/product/architecture/brief.md` under `## Application Architecture`. Produce `component-manifest.yaml`: enumerate unbounded input/state domains per component boundary; grep-verify each `sut:` symbol in its cited file before emission. Validate: `python -m scripts.cli.validate_component_manifest docs/feature/{feature-id}/design/component-manifest.yaml` must exit 0. Gate: brief.md updated, ADRs in SSOT, C4 produced, `component-manifest.yaml` present and schema-valid with every `sut:` symbol grep-findable.
 7. **Quality Validation** — Verify ISO 25010 quality attributes, dependency-inversion compliance, simplest-solution check, C4 completeness. Gate: all quality gates passed.
@@ -130,7 +137,9 @@ Display: review YAML (complete)|revisions made (issue-by-issue)|re-review result
 
 ## Architecture Document Structure
 
-Primary deliverable `docs/product/architecture/brief.md`:
+Primary architecture SSOT `docs/product/architecture/brief.md`, plus the
+mandatory gate-consumed DESIGN sections in
+`docs/feature/{feature-id}/feature-delta.md`:
 System context and capabilities|C4 System Context (Mermaid)|C4 Container (Mermaid)|C4 Component (Mermaid, complex subsystems only)|component architecture with boundaries|technology stack with rationale|integration patterns and API contracts|quality attribute strategies|deployment architecture|ADRs (in `docs/product/architecture/adr-*.md`).
 
 ## Quality-Attribute-Driven Decision Framework
@@ -167,7 +176,16 @@ Before handoff, all must pass:
 - [ ] Architectural enforcement tooling recommended (language-appropriate)
 - [ ] `component-manifest.yaml` present, schema-valid (`python -m scripts.cli.validate_component_manifest` exits 0), every `sut:` symbol grep-findable in its cited file
 - [ ] Forbidden-Import-Roots check (F-D-09): every Reuse Analysis row with `Decision = CREATE_NEW` AND `Target Path` matching `src/des/**` declares its imports AND no declared import's root module is in `FORBIDDEN_ROOTS = {"scripts", "tests"}`
-- [ ] Reuse Analysis gate-form (no Bash to self-check — verify by eye before handoff; backstop is the orchestrator running `des validate-feature-delta --require-reuse-analysis`): canonical `## Reuse Analysis` heading (NOT the Wave-form) · exactly the 5 columns `Existing Component | File | Overlap | Decision | Justification` in order · every Decision cell reduces to a canonical `EXTEND` or `CREATE_NEW` token (bare preferred; a single trailing parenthetical is tolerated per DDD-7, a non-canonical cell is rejected) · non-empty Justification on every `CREATE_NEW`
+- [ ] Reuse Analysis gate-form: canonical `## Reuse Analysis` heading (NOT
+  the Wave-form) · exactly the 5 columns
+  `Existing Component | File | Overlap | Decision | Justification` in order ·
+  every Decision cell reduces to `EXTEND` or `CREATE_NEW` · non-empty
+  Justification on every `CREATE_NEW`. **Mechanical pre-handoff execution is
+  mandatory, never “verify by eye”:** run
+  `des validate-feature-delta docs/feature/{feature-id}/feature-delta.md
+  --require-reuse-analysis --format=json` and
+  `des verify-readiness-pre-dispatch --repo . --feature-id {feature-id}`.
+  Any non-zero exit keeps DESIGN open; repair the owned section and rerun.
 - [ ] Peer review completed and approved
 
 ## Examples

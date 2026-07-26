@@ -3,6 +3,9 @@ description: "Orchestrates the full DELIVER wave end-to-end (roadmap > execute-a
 argument-hint: '[feature-description] - Example: "Implement user authentication with JWT"'
 ---
 
+> Classic is removed. Migration or historical replay is read-only; all active
+> delivery dispatches use `atdd_pure`. <!-- mode-ref-ok -->
+
 <!-- gates-ref: deliver -->
 <!-- outputs-ref: deliver -->
 
@@ -30,18 +33,14 @@ Sub-agents cannot use Skill tool or `/nw:*` commands. You MUST:
 
 **DES monitoring is non-negotiable.** Circumventing DES — faking step IDs, omitting markers, or writing log entries manually — is a **violation that invalidates the delivery**. DES detects unmonitored steps and flags them; finalize **blocks** until every flagged step is re-executed through a properly instrumented Task. There is no workaround: unverified steps cannot pass integrity verification, and the delivery cannot be finalized. Without DES monitoring, nWave cannot **verify** TDD phase compliance. For non-deliver tasks (docs, research, one-off edits): `<!-- DES-ENFORCEMENT : exempt -->`.
 
-## Workflow Mode Dispatch (classic vs atdd_pure) <!-- mode-ref-ok -->
 
 Before any phase work, read `.nwave/config.yaml` key `workflow.mode`. Two execution paths — per-mode descriptor + DELIVER phase shape projected from the mode registry, never hand-written here: <!-- mode-ref-ok -->
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
-  Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
-Read precedence: `.nwave/config.yaml:workflow.mode` → if missing, fall back to `classic`. Mid-feature mode switch is forbidden (a feature is born in one mode and dies in it). On the per-slice spine, the classic 3-phase orchestration in §Orchestration Flow Phase 2 is REPLACED by the per-slice sequence below; all other phases (refactor, review, mutation, integrity, finalize) still run as written. <!-- mode-ref-ok -->
 
 ## ATDD-Pure 7-Phase Sequence (A→G) — invoked when workflow.mode = atdd_pure <!-- mode-ref-ok -->
 
@@ -127,7 +126,6 @@ Fields `reviewer_findings`, `cycle_n`, `verdict_hash` are null outside their res
 After Phase G commit completes, invoke `python scripts/automation/atdd_pure_falsifier_gate.py` (Phase 5 deliverable per plan v3 §4.5). Behavior:
 
 - Reads N=3 latest pilot JSONL records.
-- ANY threshold breach (median wall-clock > 1.3× target | reviewer findings median > 12 | post-deploy defect rate > 2× classic | Phase D cycle rate median ≥ 2.0) → patch `.nwave/config.yaml:workflow.mode = classic`, emit `FalsifierGateTripped`, exit 42. <!-- mode-ref-ok -->
 - Otherwise → emit `FalsifierGateHealthy`, exit 0.
 
 Falsifier-gate exit 42 blocks subsequent CI release steps; operator review required before next pilot feature.
@@ -139,7 +137,6 @@ The mode-conditional skill set per agent is declared by the mode registry `skill
 | E | `nw-refactor` | `~/.claude/skills/nw-refactor/SKILL.md` |
 | F | `nw-review` | `~/.claude/skills/nw-review/SKILL.md` |
 
-Classic mode skill loading is unchanged (per existing Task Invocation Pattern below).
 
 ## Rigor Profile Integration
 

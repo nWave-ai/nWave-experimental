@@ -45,12 +45,20 @@ Provenance: feature `lean-wave-documentation` — D2 (schema-typed sections), D1
 
 ### Tier-1 [REF] — always emitted
 
-Under `## Wave: DESIGN / [REF] <Section>` headings:
+Under `## Wave: DESIGN / [REF] <Section>` headings, **except for the two
+gate-consumed canonical sections whose bare headings are literal protocol
+tokens**:
+
+- `## Reuse Analysis`
+- `## Prefactoring Assessment`
+
+Never render either exception as `## Wave: DESIGN / [REF] ...`; the readiness
+parsers correctly classify that shape as missing.
 
 - DDD list — D-numbered design decisions with verdicts and one-line rationale
 - Component decomposition — table of components with paths and change types
 - Driving ports — inbound surfaces (CLI, skill, HTTP) named per the C4 contract
-- Driven ports + adapters — outbound side-effects with adapter mapping
+- Driven ports + adapters — outbound side-effects with adapter mapping **and a Runtime Contract Matrix**: declared argument/receipt/authority type → exact invoked method → concrete runtime argument/receipt → boundary AT
 - Technology choices — pinned languages/frameworks/runtime versions
 - Decisions table — DDD-N row per locked decision (no rationale prose)
 - Reuse Analysis table — every overlapping component classified EXTEND or CREATE_NEW
@@ -85,6 +93,18 @@ Wave-specific signal: DEVOPS/DISTILL consuming a lean DESIGN feature-delta — d
 ## Reuse Analysis (Discovery Flow step 5 — the gate-parsed contract)
 
 Referenced as step 5 of the Discovery Flow (`nw-design-discovery-flow`); the contract stays in this core because it is AT-pinned to this file. Before designing ANY new component, search the existing codebase for components with overlapping responsibilities. For each overlap, decide "extend existing" or "justify new". Output a table:
+
+### Mandatory feature-delta ownership
+
+Every DESIGN architect dispatch MUST grant the architect write ownership of the
+DESIGN sections in `docs/feature/{feature-id}/feature-delta.md`. A detailed
+architecture document may supplement that file; it never replaces the
+gate-consumed `## Reuse Analysis` and `## Prefactoring Assessment` sections.
+
+A dispatch that requests DESIGN while limiting the architect to a separate
+design document or withholding those feature-delta sections is DEFECTIVE. The
+architect MUST refuse it before authoring and request a regenerated ownership
+envelope. The orchestrator MUST NOT repair the missing sections after handoff.
 
 ```
 | Existing Component | File | Overlap | Decision | Justification |
@@ -370,7 +390,7 @@ This summary enables DEVOPS and DISTILL to quickly assess architecture decisions
 
 ## Outputs
 
-**Single narrative file**: `docs/feature/{feature-id}/feature-delta.md` — DDD list, component decomposition, driving/driven ports, technology choices, decisions table, reuse analysis, open questions all become `## Wave: DESIGN / [REF|WHY|HOW] <Section>` headings.
+**Single narrative file**: `docs/feature/{feature-id}/feature-delta.md` — DDD list, component decomposition, driving/driven ports, technology choices, decisions table, reuse analysis, open questions use the density contract. The gate-consumed `## Reuse Analysis` and `## Prefactoring Assessment` headings remain bare; every other DESIGN section uses `## Wave: DESIGN / [REF|WHY|HOW] <Section>`.
 
 **Machine artifacts**: none unique to feature dir (the `feature-delta.md` IS the artifact; SSOT writes carry the architectural payload).
 

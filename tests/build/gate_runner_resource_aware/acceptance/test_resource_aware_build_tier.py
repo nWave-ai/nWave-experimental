@@ -188,9 +188,21 @@ def _drive_gate(
 
 @pytest.fixture
 def repo_with_build_tier(tmp_path: Path) -> Path:
-    """A repo carrying a ``tests/build`` directory (the spawn itself is faked)."""
+    """A repo carrying a ``tests/build`` directory (the spawn itself is faked).
+
+    The tier must carry at least one genuine MEMBER, not merely the directory
+    and its package marker: ``_arch_member_paths`` filters ``__init__.py`` as a
+    dunder marker BY PROPERTY, so a tier holding only that file resolves to
+    ZERO members and the runner correctly reports ``BuildTierNotApplicable``
+    instead of exercising the resource-aware path under test.  A fixture that
+    names a precondition it does not actually build tests nothing.
+    """
     (tmp_path / "tests" / "build").mkdir(parents=True)
     (tmp_path / "tests" / "build" / "__init__.py").touch()
+    (tmp_path / "tests" / "build" / "test_arch_invariant.py").write_text(
+        "def test_arch_invariant() -> None:\n    assert True\n",
+        encoding="utf-8",
+    )
     return tmp_path
 
 

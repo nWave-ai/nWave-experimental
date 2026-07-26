@@ -90,6 +90,7 @@ from des.domain.repo_path_resolver import (
 from des.domain.repo_path_resolver import (
     resolve_repo_root as _repo_root,
 )
+from des.domain.telemetry_paths import LedgerFamily, ledger_path
 from des.ports.driven_ports.committed_scope_port import Indeterminate
 
 
@@ -358,7 +359,7 @@ def _emit_tag_mismatch_event(
 
 
 def _ledger_path(repo: Path, feature_id: str) -> Path:
-    return repo / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
+    return ledger_path(repo, LedgerFamily.ATDD_PURE, feature_id)
 
 
 # ---------------------------------------------------------------------------

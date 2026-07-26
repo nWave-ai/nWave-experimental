@@ -91,6 +91,7 @@ from des.application.atdd_pure_prompt_validator import (
 from des.application.dispatch_lane_ssot import _read_full_sections
 from des.domain.atdd_pure_phases import ATDDPurePhase
 from des.domain.lane_profile import LANE_PROFILES
+from tests.common.in_process_cli import run_module_in_process
 
 
 # tests/des/unit/cli/<this file> -> parents[4] is the checkout root, mirroring
@@ -149,13 +150,12 @@ def _run_dispatch(
     *args: str, cwd: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Invoke `des dispatch` as a CLI subprocess and capture exit code + stdio."""
-    return subprocess.run(
-        _dispatch_argv(*args),
-        capture_output=True,
-        text=True,
-        timeout=30,
-        env=_dispatch_env(),
-        cwd=str(cwd) if cwd is not None else None,
+    argv = _dispatch_argv(*args)
+    exit_code, out, err = run_module_in_process(
+        argv[2], *argv[3:], cwd=cwd, env=_dispatch_env()
+    )
+    return subprocess.CompletedProcess(
+        args=argv, returncode=exit_code, stdout=out, stderr=err
     )
 
 

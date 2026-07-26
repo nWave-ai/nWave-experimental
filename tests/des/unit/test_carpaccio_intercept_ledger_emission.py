@@ -103,17 +103,38 @@ def test_emitted_carpaccio_event_makes_reconciliation_meaningful(
     ) == frozenset({"slice-02"})
 
 
-def test_passthrough_dispatch_emits_no_carpaccio_record(tmp_path: Path) -> None:
-    """A non-atdd_pure dispatch writes no ledger record (classic path unchanged)."""
+def test_a_mode_less_dispatch_is_refused_and_writes_no_carpaccio_record(
+    tmp_path: Path,
+) -> None:
+    """A dispatch with no mode marker is REFUSED, and leaves no ledger record.
+
+    This scenario used to read "a non-atdd_pure dispatch passes through (classic
+    path unchanged)". Since the classic removal there is no other path to pass
+    through TO: an absent mode is a declared refusal (DispatchModeUnresolved),
+    never a fallback. Keeping the old premise would have asserted the absence of
+    a workflow the product deliberately stopped having.
+
+    The property worth holding survives the change and is what is pinned here: a
+    dispatch that never cleared the gate must leave the carpaccio ledger empty.
+    A refusal that still emitted a record would make the ledger say a gate ran on
+    a dispatch it actually turned away.
+    """
     decision = evaluate_atdd_pure_dispatch(
-        prompt="ordinary classic prompt, no DES markers",
+        prompt="ordinary prompt, no DES markers at all",
         feature_id=_FEATURE_ID,
         project_root=tmp_path,
         carpaccio_runner=lambda _f, _s: (0, "{}"),
         readiness_runner=lambda _f, _s: (0, ""),
     )
 
-    assert not decision.is_atdd_pure
+    assert decision.is_block, (
+        "a dispatch carrying no DES-MODE marker must be REFUSED -- absence "
+        f"cannot select a retired workflow; got {decision}"
+    )
+    assert decision.event == "DispatchModeUnresolved", (
+        "the refusal must name the mode as the unresolved thing, not blame a "
+        f"marker the prompt was never asked to carry; got {decision.event!r}"
+    )
     assert AtCompletionLedger(_FEATURE_ID, tmp_path).read_records() == []
 
 

@@ -152,7 +152,7 @@ class BulkMigrationSweepComposition:
         self._upsert_skill_load_row(
             WorkflowFlavor.ATDD_PURE, case.agent_id, case.conditional
         )
-        self._upsert_skill_load_row(WorkflowFlavor.CLASSIC, case.agent_id, ())
+        # No second flavor to sweep: the migration covers the one shipped mode.
 
     def freshly_render_and_accept(self) -> None:
         """Pillar-2 chaining: the AT-01 When reused as the AT-02/03 baseline.
@@ -319,8 +319,20 @@ class BulkMigrationSweepComposition:
         text = flavor_file.read_text(encoding="utf-8")
         if "skill_load_set:" not in text:  # fixture integrity, not SUT behaviour
             raise RuntimeError(
-                f"working registry {flavor_file} carries no skill_load_set "
-                "block — slice-04 fixture needs re-basing on the shipped tree"
+                f"WHAT: working registry {flavor_file} (a copy of the shipped "
+                "flavor file) carries no top-level `skill_load_set:` key. "
+                "WHY: this fixture inserts/replaces one agent's row under "
+                "`skill_load_set:` to author a slice-04 bulk-migration render "
+                "case -- without the key there is no block to insert into. "
+                "HOW: diff this working copy against the shipped "
+                "nWave/flavors/atdd_pure.yaml. If the key was RENAMED there, "
+                'update the literal `"skill_load_set:"` checks and the '
+                "insertion point in `_upsert_skill_load_row`. If the key is "
+                "GENUINELY gone (agent-to-skill direction moved elsewhere), "
+                "this scenario's witness is no longer plantable here -- replace "
+                "it with one targeting wherever that direction now lives; do "
+                "NOT rename the key check onto a structure that no longer "
+                "exists."
             )
         # drop any existing row for the agent (replace-or-insert)
         text = re.sub(

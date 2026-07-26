@@ -58,6 +58,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # tuple is covered by construction (charter expectation #3).
 REQUIRED_ASSET_DIRS = DESPlugin._NWAVE_RUNTIME_ASSET_DIRS
 REQUIRED_ASSET_FILES = DESPlugin._NWAVE_RUNTIME_ASSET_FILES
+REQUIRED_RUNTIME_HOOKS = DESPlugin._NWAVE_RUNTIME_HOOK_FILES
 
 
 # ---------------------------------------------------------------------------
@@ -71,8 +72,24 @@ def patched_force_include_map(sample_pyproject_path, tmp_path) -> dict[str, str]
     """Run the REAL `patch_pyproject` and parse the resulting force-include map.
 
     Drives the actual production wheel-config builder (not stubbed); this
-    fixture only parses its TOML output back into a dict for assertions.
+    fixture first recreates the release topology beside the temporary
+    pyproject.  This matters because ``patch_pyproject`` stages physical
+    aliases relative to that pyproject, just as it does in a release checkout.
     """
+    source_root = Path(sample_pyproject_path).parent
+    source_nwave = source_root / "nWave"
+    source_nwave.mkdir()
+    for asset_dir_name in REQUIRED_ASSET_DIRS:
+        shutil.copytree(
+            REPO_ROOT / "nWave" / asset_dir_name,
+            source_nwave / asset_dir_name,
+        )
+    for asset_file_name in REQUIRED_ASSET_FILES:
+        shutil.copy2(
+            REPO_ROOT / "nWave" / asset_file_name,
+            source_nwave / asset_file_name,
+        )
+
     output_path = str(tmp_path / "patched_pyproject.toml")
     patch_pyproject(
         input_path=sample_pyproject_path,
@@ -92,7 +109,9 @@ def patched_force_include_map(sample_pyproject_path, tmp_path) -> dict[str, str]
 
 
 def _materialize_wheel_tree(
-    force_include: dict[str, str], fake_site_packages: Path
+    force_include: dict[str, str],
+    fake_site_packages: Path,
+    source_root: Path,
 ) -> None:
     """Materialise the patched force-include map as a fake pipx site-packages tree.
 
@@ -103,7 +122,7 @@ def _materialize_wheel_tree(
     resolve rather than merely asserting a directory exists.
     """
     for lhs, rhs in force_include.items():
-        source = REPO_ROOT / lhs
+        source = source_root / lhs
         if not source.exists():
             continue
         destination = fake_site_packages / rhs
@@ -114,8 +133,21 @@ def _materialize_wheel_tree(
             shutil.copy2(source, destination)
 
 
+def _file_manifest(root: Path) -> dict[str, bytes]:
+    """Return the exact relative file population and bytes below ``root``."""
+    if not root.is_dir():
+        return {}
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
 @pytest.fixture()
-def resolved_runtime_assets_root(patched_force_include_map, tmp_path) -> Path:
+def resolved_runtime_assets_root(
+    patched_force_include_map, sample_pyproject_path, tmp_path
+) -> Path:
     """Drive the REAL des_plugin runtime-asset resolver against the simulated wheel.
 
     End-to-end simulation of a pipx install: materialise the force-include map
@@ -126,7 +158,11 @@ def resolved_runtime_assets_root(patched_force_include_map, tmp_path) -> Path:
     return the root where it lands the assets (`<claude_dir>/lib/nWave`).
     """
     fake_site_packages = tmp_path / "fake_site_packages"
-    _materialize_wheel_tree(patched_force_include_map, fake_site_packages)
+    _materialize_wheel_tree(
+        patched_force_include_map,
+        fake_site_packages,
+        source_root=Path(sample_pyproject_path).parent,
+    )
 
     framework_source = fake_site_packages / "nWave"
     claude_dir = tmp_path / ".claude"
@@ -218,6 +254,24 @@ def test_wheel_resolves_orchestrator_affordance_content(resolved_runtime_assets_
     )
 
 
+@pytest.mark.parametrize("hook_name", REQUIRED_RUNTIME_HOOKS)
+def test_wheel_resolves_host_neutral_orchestrator_affordance_resolver(
+    resolved_runtime_assets_root, hook_name
+):
+    """A non-Claude host receives the executable resolver with its data tier.
+
+    The installed Codex SessionStart launcher may only reference this runtime
+    path: a source checkout and ~/.claude are not authorities on a public
+    Codex-only install.
+    """
+    resolver = resolved_runtime_assets_root / "hooks" / hook_name
+    assert resolver.is_file(), (
+        f"host-neutral resolver {hook_name!r} did not resolve at {resolver}; "
+        "the public wheel would install a Codex SessionStart hook with no "
+        "installed implementation"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Scenario 3 -- negative-AT (required for the seal): asserts the WRONG state
 # (an omitted required asset dir) is NOT produced by the current force-include
@@ -270,3 +324,56 @@ def test_wheel_still_ships_agents_and_skills_after_patch(patched_force_include_m
         "runtime-asset fix must be additive, not a replacement of the "
         "pre-existing skill selection"
     )
+
+
+def test_materialized_wheel_never_changes_flat_or_nested_data_population(
+    sample_pyproject_path, tmp_path
+):
+    """Both public data destinations conserve every relative file and byte."""
+    source_root = Path(sample_pyproject_path).parent
+    source_data = source_root / "nWave" / "data"
+    shutil.copytree(REPO_ROOT / "nWave" / "data", source_data)
+    output_path = tmp_path / "patched_pyproject.toml"
+
+    patch_pyproject(
+        input_path=sample_pyproject_path,
+        output_path=str(output_path),
+        target_name="nwave-ai",
+        target_version="1.1.22",
+    )
+    parsed = tomli.loads(output_path.read_text(encoding="utf-8"))
+    force_include = parsed["tool"]["hatch"]["build"]["targets"]["wheel"][
+        "force-include"
+    ]
+    data_entries = {
+        destination: source_root / source
+        for source, destination in force_include.items()
+        if Path(destination).name == "data"
+    }
+    required_destinations = {
+        "nWave/data",
+        "nWave/nWave/data",
+    }
+
+    assert set(data_entries) == required_destinations
+    normalized_sources = {
+        Path(source).resolve(strict=True) for source in data_entries.values()
+    }
+    assert len(normalized_sources) == 2
+    first_source, second_source = data_entries.values()
+    assert not first_source.samefile(second_source)
+
+    fake_site_packages = tmp_path / "fake_site_packages"
+    _materialize_wheel_tree(
+        force_include,
+        fake_site_packages,
+        source_root=source_root,
+    )
+    source_manifest = _file_manifest(source_data)
+    assert source_manifest
+    assert any(path.startswith("orchestrator-affordance/") for path in source_manifest)
+
+    for destination in required_destinations:
+        materialized_manifest = _file_manifest(fake_site_packages / destination)
+        assert set(materialized_manifest) == set(source_manifest)
+        assert materialized_manifest == source_manifest

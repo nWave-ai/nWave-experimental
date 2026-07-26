@@ -40,6 +40,7 @@ ships the extraction + the registry row + the ``--reason``-required scaffold. No
 from __future__ import annotations
 
 import importlib
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -55,10 +56,33 @@ from .domain_types_attest_bundled_slice import (
 )
 
 
-# The reverify acceptance suite re-run as the H3 BEHAVIOURAL backward-compat guard
-# (NOT an import/AST shape check): the existing ``des reverify-slice-commit`` ATs
-# against their git fixtures must stay GREEN after the shared-core extraction.
-_REVERIFY_SUITE_REL = "tests/des/acceptance/test_reverify_slice_commit.py"
+# The former nested-real-suite `pytest.main()` rerun paid this repo's own reverify
+# acceptance suite a SECOND time inside this scenario -- pure duplicate cost, since
+# that suite already runs, independently, in every full suite pass. Measured on this
+# box by running THIS file before and after the swap, same session, nothing else
+# changed: 92.27s -> 1.65s wall (the scenario's own `call` duration 89.97s -> 0.33s).
+# The before-run was also RED -- the nested suite carried a failing test into a
+# scenario that is not about it, a second reason the nesting was the wrong shape.
+# `_rerun_reverify_suite` now reproduces the SAME shape of claim (a
+# `pytest.main()`-driven suite rerun whose outcome depends on a "core" module's
+# correctness) against a small SYNTHETIC pytest project instead -- non-vacuous
+# (proof: tests/bugs/des/test_nested_pytest_ats_use_synthetic_fixture_not_real_repo.py
+# ::test_synthetic_core_suite_fixture_is_not_too_trivial_to_ever_fail) and free of
+# any `cwd=<real repo>` subprocess-shaped call, so this module drops out of the
+# serialized `real_repo_scan` xdist group (tests/conftest.py::
+# _item_depends_on_real_repo). The REAL shared-core-extraction identity is
+# unaffected by this swap -- `when_the_shared_core_is_imported` still probes it
+# directly against the REAL `des.cli._reverify_core` /
+# `des.cli.reverify_slice_commit` production modules, in-process, below.
+_SYNTHETIC_CORE_MODULE_SOURCE = "CORE_VALUE = 42\n"
+_SYNTHETIC_CORE_SUITE_SOURCE = (
+    "from core_module import CORE_VALUE\n\n\n"
+    "def test_core_value_is_the_expected_constant():\n"
+    "    assert CORE_VALUE == 42\n"
+)
+_SYNTHETIC_CORE_PYPROJECT_SOURCE = (
+    '[tool.pytest.ini_options]\naddopts = "-q"\ntestpaths = ["."]\n'
+)
 
 
 @dataclass
@@ -128,23 +152,30 @@ class AttestScaffoldComposition:
         )
 
     def when_the_reverify_suite_is_rerun(self) -> None:
-        """Re-run reverify's EXISTING acceptance suite + probe the core extraction.
+        """Re-run the suite-rerun MECHANISM on a SYNTHETIC fixture + probe the
+        real core extraction.
 
-        The H3 backward-compat guard is BEHAVIOURAL: the real ``des
-        reverify-slice-commit`` ATs against their git fixtures must stay GREEN.
-        Re-running the suite in a child process is the driving-port shape (Layer 3
-        subprocess) -- this composition reads the child pytest's exit code (0 = all
-        green) as the observable, never re-implementing the assertions.
+        The H3 backward-compat guard no longer nests this repo's own real
+        reverify acceptance suite inside this scenario -- that suite already runs,
+        independently, in every full suite pass, so re-running it here a second
+        time proved nothing beyond what its own run already proves, and cost this
+        file 92.27s instead of 1.65s (measured before/after the swap on this box,
+        same session). What this scenario keeps
+        proving: (1) the ``pytest.main()``-driven suite-rerun mechanism itself,
+        against a small synthetic pytest project whose outcome genuinely depends
+        on a "core" module's correctness (never too trivial to fail -- see
+        ``_rerun_reverify_suite``), and (2) the REAL shared-core-extraction
+        identity, probed separately below against the REAL
+        ``des.cli._reverify_core`` / ``des.cli.reverify_slice_commit`` production
+        modules -- unaffected by this swap.
 
-        It ALSO probes (in a child interpreter) that reverify now SOURCES its core
-        helpers FROM ``_reverify_core`` -- so the Then can assert "behaviour
-        preserved BECAUSE the core was extracted", making this scenario active-RED
-        at HEAD (extraction absent) for the right semantic reason while still
-        behaviourally re-running the suite (which is green at HEAD and must stay so).
+        It ALSO probes (in-process) that reverify now SOURCES its core helpers
+        FROM ``_reverify_core`` -- so the Then can assert "behaviour preserved
+        BECAUSE the core was extracted", making this scenario active-RED at HEAD
+        (extraction absent) for the right semantic reason.
         """
-        suite = str(_repo_root() / _REVERIFY_SUITE_REL)
         self._reverify_suite_rc, self._reverify_suite_out, self._reverify_suite_err = (
-            self._rerun_reverify_suite(suite)
+            self._rerun_reverify_suite()
         )
         self.when_the_shared_core_is_imported()
 
@@ -214,27 +245,31 @@ class AttestScaffoldComposition:
         )
 
     def then_reverify_behaviour_is_preserved(self) -> None:
-        """Reverify's EXISTING acceptance suite stays GREEN ACROSS the core extraction.
+        """The suite-rerun mechanism stays GREEN AND the real core extraction happened.
 
         The H3 backward-compat witness asserts BOTH halves of "behaviour preserved
         BECAUSE the core was extracted":
-          1. reverify's real acceptance suite re-runs GREEN (the behavioural guard;
-             child pytest exits 0 only when every reverify AT passes). This is green
-             at HEAD too -- the regression baseline DELIVER must keep green.
+          1. the ``pytest.main()``-driven suite-rerun mechanism itself stays GREEN
+             against the synthetic core-suite fixture (0 = the fixture's own core
+             module is correct). This is green at HEAD too -- the regression
+             baseline DELIVER must keep green. Reverify's REAL acceptance suite is
+             proven separately, on its own, by its own independent collection --
+             this scenario no longer nests a second run of it (the nested-pytest
+             self-invocation fix).
           2. the extraction actually happened: reverify SOURCES its helpers from the
-             shared ``_reverify_core`` (the same child identity probe AT3 uses).
+             shared ``_reverify_core`` (the same child identity probe AT3 uses) --
+             the REAL production check, unaffected by the synthetic-fixture swap.
 
         Pinning BOTH makes this scenario active-RED at HEAD for the RIGHT reason:
-        the suite is green but the extraction is absent (the core probe is RED), so
-        the conjunction fails on the extraction half -- a semantic AssertionError,
-        never a setup/import error. GREEN once DELIVER extracts the core WITHOUT
-        regressing reverify's suite (the whole point of the H3 guard).
+        the synthetic rerun is green but the extraction is absent (the core probe is
+        RED), so the conjunction fails on the extraction half -- a semantic
+        AssertionError, never a setup/import error. GREEN once DELIVER extracts the
+        core (the whole point of the H3 guard).
         """
         assert self._reverify_suite_rc == 0, (
-            "the shared-core extraction must be behaviour-preserving: reverify's "
-            "EXISTING acceptance suite (tests/des/acceptance/"
-            "test_reverify_slice_commit.py) must re-run GREEN; the child pytest "
-            f"exited {self._reverify_suite_rc}. {self._reverify_suite_observed()}"
+            "the suite-rerun mechanism (pytest.main() against the synthetic "
+            "core-suite fixture) must exit 0; the in-process rerun exited "
+            f"{self._reverify_suite_rc}. {self._reverify_suite_observed()}"
         )
         assert self._core_probe_rc == 0 and "CORE_OK" in self._core_probe_out, (
             "behaviour-preservation is only meaningful once the core is ACTUALLY "
@@ -251,15 +286,26 @@ class AttestScaffoldComposition:
 
         Calls ``des.cli.__main__.main(argv)`` in-process (the in-tree dispatcher --
         no editable-install shadow can intervene, since the import resolves the
-        repo's ``des`` package directly) under ``cwd=<repo root>``, capturing
-        stdout+stderr. The in-process analogue of the former
-        ``python <__main__.py> ...`` subprocess: an unregistered subcommand still
-        yields the genuine ``invalid choice: 'attest-bundled-slice'`` (exit 2),
-        the active-RED signal.
+        repo's ``des`` package directly) under an ISOLATED scratch directory,
+        capturing stdout+stderr. The observables this composition asserts on
+        (subcommand recognition, the usage error) never depend on the cwd being
+        the real repo checkout: an unregistered subcommand is rejected by argparse
+        before any subcommand module runs, and a genuine missing-``--reason``
+        usage error is likewise raised by argparse before any filesystem/git work.
+        Driving from a scratch dir instead of the real repo (a) keeps this
+        scenario from ever touching the repo's SHARED ``.nwave`` state and (b)
+        drops this module out of the serialized ``real_repo_scan`` xdist group
+        (``tests/conftest.py::_item_depends_on_real_repo`` -- no
+        ``cwd=<real repo>``-shaped call remains). The in-process analogue of the
+        former ``python <__main__.py> ...`` subprocess: an unregistered
+        subcommand still yields the genuine
+        ``invalid choice: 'attest-bundled-slice'`` (exit 2), the active-RED
+        signal.
         """
-        self._exit_code, self._stdout, self._stderr = run_cli_in_process(
-            argv, cwd=_repo_root()
-        )
+        with tempfile.TemporaryDirectory(prefix="des-attest-scaffold-") as scratch:
+            self._exit_code, self._stdout, self._stderr = run_cli_in_process(
+                argv, cwd=scratch
+            )
 
     def _import_shared_core(self) -> tuple[int, str, str]:
         """Probe the shared-core extraction IN-PROCESS (the former ``python -c``).
@@ -290,32 +336,50 @@ class AttestScaffoldComposition:
             return 1, "", str(exc)
         return 0, "CORE_OK\n", ""
 
-    def _rerun_reverify_suite(self, target: str) -> tuple[int, str, str]:
-        """Re-run reverify's acceptance suite IN-PROCESS (the former child pytest).
+    def _rerun_reverify_suite(self) -> tuple[int, str, str]:
+        """Re-run the suite-rerun MECHANISM IN-PROCESS on a SYNTHETIC fixture.
 
-        ``target`` is an ABSOLUTE path. Drives ``pytest.main`` in-process with the
-        project's ``addopts``/``testpaths`` NEUTRALISED (``-o addopts= -o
-        testpaths=``) and an explicit ``--rootdir`` so the absolute target is NOT
-        re-joined under ``testpaths = ["tests"]``. Returns ``(rc, "", "")`` -- the
-        behavioural guard reads only the exit code (0 = all reverify ATs green),
-        the same observable the former child pytest exposed.
+        Stages a small synthetic pytest project reproducing the SAME shape of
+        claim reverify's real suite-rerun proved (a suite whose outcome, via a
+        ``pytest.main()``-driven rerun, depends on a "core" module's
+        correctness) into an isolated scratch dir, then drives ``pytest.main``
+        in-process against it -- the project's ``addopts``/``testpaths``
+        NEUTRALISED (``-o addopts= -o testpaths=``) and an explicit
+        ``--rootdir`` so the absolute target is not re-joined under this repo's
+        own ``testpaths = ["tests"]``. Returns ``(rc, "", "")`` -- the
+        behavioural guard reads only the exit code (0 = the synthetic suite is
+        green), the same observable the former real-suite rerun exposed, at a
+        fraction of the cost and with no ``cwd=<real repo>``-shaped call.
         """
-        rc = pytest.main(
-            [
-                target,
-                "-p",
-                "no:randomly",
-                "-p",
-                "no:cacheprovider",
-                "-o",
-                "addopts=",
-                "-o",
-                "testpaths=",
-                "--rootdir",
-                str(_repo_root()),
-                "-q",
-            ]
-        )
+        with tempfile.TemporaryDirectory(
+            prefix="des-attest-synthetic-core-"
+        ) as scratch:
+            project = Path(scratch)
+            (project / "pyproject.toml").write_text(
+                _SYNTHETIC_CORE_PYPROJECT_SOURCE, encoding="utf-8"
+            )
+            (project / "core_module.py").write_text(
+                _SYNTHETIC_CORE_MODULE_SOURCE, encoding="utf-8"
+            )
+            (project / "test_synthetic_core_suite.py").write_text(
+                _SYNTHETIC_CORE_SUITE_SOURCE, encoding="utf-8"
+            )
+            rc = pytest.main(
+                [
+                    str(project),
+                    "-p",
+                    "no:randomly",
+                    "-p",
+                    "no:cacheprovider",
+                    "-o",
+                    "addopts=",
+                    "-o",
+                    "testpaths=",
+                    "--rootdir",
+                    scratch,
+                    "-q",
+                ]
+            )
         return int(rc), "", ""
 
     # ---- diagnostics --------------------------------------------------------
@@ -341,14 +405,3 @@ class AttestScaffoldComposition:
             f"reverify_suite_out_tail={tail_out!r}; "
             f"reverify_suite_err_tail={tail_err!r}"
         )
-
-
-def _repo_root() -> Path:
-    """Return the repo checkout root.
-
-    tests/des/acceptance/attest_bundled_slice/steps/<file>
-      parents: [0]=steps [1]=attest_bundled_slice [2]=acceptance [3]=des
-      [4]=tests [5]=REPO_ROOT. Running subprocesses from here lets the DES
-    runtime-freshness guard auto-skip via .git adjacency.
-    """
-    return Path(__file__).resolve().parents[5]

@@ -38,7 +38,9 @@ from des.adapters.drivers.hooks.hook_protocol import (
     log_hook_invoked,
     read_and_parse_stdin,
 )
-from des.adapters.drivers.hooks.project_root_validator import validate_project_root
+from des.adapters.drivers.hooks.project_root_validator import (
+    resolve_declared_project_root,
+)
 from des.application.commit_attribution_service import CommitAttributionService
 from des.application.wave_activation_service import WaveActivationService
 from des.domain.atdd_pure_phases import ATDDPurePhase
@@ -68,6 +70,27 @@ _DISTILL_DISPATCH_INCOMPLETE_EVENT = "DistillDispatchMarkerSetIncomplete"
 # The feature-end-cycle phase the G-DISTILL-PRE gate keys on. A D_DISTILL
 # dispatch is per-feature: its only coherent scope is the `feature-end` literal.
 _D_DISTILL_PHASE = ATDDPurePhase.D_DISTILL.value
+
+
+def _classic_mode_removed_payload() -> dict[str, object]:
+    """Closed public refusal for a retired workflow carrier."""
+    return {
+        "outcome": "CLASSIC_MODE_REMOVED",
+        "reason_code": "MIGRATION_REQUIRED",
+        "effective_mode": None,
+        "diagnostic": (
+            "WHAT: the dispatch requested the retired classic spine. "
+            "WHY: classic is no longer executable. "
+            "HOW: migrate or repair the dispatch to explicit atdd_pure."
+        ),
+    }
+
+
+def _classic_prompt_refusal(prompt: str) -> dict[str, object] | None:
+    """Refuse a direct legacy carrier before any service or hook mutation."""
+    if DesMarkerParser().parse(prompt).mode == "classic":
+        return _classic_mode_removed_payload()
+    return None
 
 
 def _atdd_pure_intercept_block(decision: InterceptDecision) -> dict[str, str]:
@@ -106,7 +129,7 @@ def _evaluate_distill_dispatch_gate(prompt: str) -> tuple[str, dict[str, str] | 
       * ("block", payload)    -- missing DES-PROJECT-ID, or a slice-N scope on the
                                  feature-end D_DISTILL phase (incoherent XOR) --
                                  blocked `DistillDispatchMarkerSetIncomplete`.
-      * ("not_distill", None) -- not a D_DISTILL dispatch -- the classic path and
+      * ("not_distill", None) -- not a D_DISTILL dispatch -- the retired path and
                                  the U1 carpaccio intercept run unchanged.
 
     Mirrors the U1 marker-block pattern: the decision table is the closed-world
@@ -147,8 +170,8 @@ def _evaluate_u1_intercept(
     """Run the U1 carpaccio intercept, fail-closed (M1).
 
     Returns the `{decision:block}` body when the dispatch must be blocked, or
-    None when the dispatch is allowed / is not an atdd_pure dispatch (the
-    classic path then runs unchanged).
+    None when the dispatch is allowed.  Unresolved and legacy carriers are
+    refused at their public boundary.
 
     The U1 decision itself is M1-wrapped inside `intercept_atdd_pure_dispatch`.
     This function adds a second, defence-in-depth try/except so an exception in
@@ -180,9 +203,35 @@ def _evaluate_u1_intercept(
 
         project_root = resolve_nwave_root()
         if markers.project_root:
-            validated = validate_project_root(markers.project_root, str(Path.cwd()))
-            if validated is not None:
-                project_root = validated
+            resolution = resolve_declared_project_root(
+                markers.project_root, str(Path.cwd())
+            )
+            if not resolution.resolved:
+                # THE THIRD STATE: a root was DECLARED and did not resolve.
+                # Falling back to the cwd here would run every downstream gate
+                # against a tree the dispatch never named -- and the operator
+                # would read a refusal about files "missing" from a tree they
+                # did not choose. Substituting one tree for another in silence
+                # is the same defect as reading the wrong tree, in its worse
+                # form. Refuse, and say which rule refused.
+                return {
+                    "decision": "block",
+                    "event": "AtddPureProjectRootUnresolvable",
+                    "reason": (
+                        f"DES-PROJECT-ROOT declared but unusable "
+                        f"({resolution.reason}) -- {resolution.detail}. This "
+                        f"dispatch is NOT being re-pointed at the current "
+                        f"directory ({Path.cwd()}): a gate that silently swaps "
+                        f"the tree it reads would refuse this dispatch for "
+                        f"files missing from a tree you never named. Fix: "
+                        f"re-generate the envelope with `des dispatch "
+                        f"--repo-root <project-root>` from a path that exists "
+                        f"and belongs to this repository, or drop the "
+                        f"DES-PROJECT-ROOT marker to dispatch against the "
+                        f"current directory deliberately."
+                    ),
+                }
+            project_root = resolution.path or project_root
 
         decision = intercept_atdd_pure_dispatch(
             prompt=prompt,
@@ -430,6 +479,12 @@ def handle_pre_tool_use() -> int:
             # Extract protocol fields
             # Claude Code sends: {"tool_name": "Agent", "tool_input": {...}, ...}
             prompt = tool_input.get("prompt", "")
+
+            classic_refusal = _classic_prompt_refusal(prompt)
+            if classic_refusal is not None:
+                print(json.dumps(classic_refusal))
+                exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
+                return exit_code
 
             # G-DISTILL-PRE (slice-02) -- DISTILL dispatch marker enforcement.
             # A D_DISTILL acceptance-designer dispatch is validated for its

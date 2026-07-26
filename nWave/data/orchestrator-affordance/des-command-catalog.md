@@ -21,7 +21,7 @@ Every hand-edit of a checked artifact is a producing tool you didn't invoke. The
 **Sealing the AT (before dispatching the crafter)**
 - `des verify-red-green --record-red --test-file <f>` — records the RedObserved seal (bound to the file's current content; re-run if the file changes).
 - `des verify-negative-at --test-file <f> --all-critical` — verifies ≥1 negative AT present.
-- `des at-review-verdict --feature-id <id> --slice-id <s> --verdict APPROVED --reviewer-agent-id <a> --at-kind pytest-regression --regression-test-file <f>` — records an AT-review verdict (the reviewer-verdict path clears the carpaccio gate for a pytest AT).
+- `des record-at-review-verdict --feature-id <id> --slice-id <s> --verdict APPROVED --reviewer-agent-id <a> --at-kind pytest-regression --regression-test-file <f>` — records an AT-review verdict (the reviewer-verdict path clears the carpaccio gate for a pytest AT).
 - `des carpaccio-slice-gate --feature-id <id> --entering-slice <slice> [--at-kind pytest-regression --regression-test-file <f>]` — run it DIRECTLY to see the full what/why/how when the hook-truncated `ATReviewGateRejected` fires.
 
 **After the crafter (examine + commit)**

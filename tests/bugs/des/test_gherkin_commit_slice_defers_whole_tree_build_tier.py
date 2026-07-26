@@ -532,9 +532,37 @@ def test_full_mode_still_sweeps_whole_tree_including_the_poison_scaffold(
     selected = {Path(p) for p in arch_calls[-1]}
     whole_tree = repo / "tests" / "build"
     poison = repo / _POISON_SCAFFOLD_REL
-    assert selected == {whole_tree}, (
-        f"full=True must select the WHOLE tests/build tree -- expected "
-        f"{{{whole_tree}}}, got {selected}"
+    # The whole-tree contract is the tier's COVERAGE, not its argv SHAPE. Since
+    # da64aba54 the resolver hands back the tier's filtered MEMBERS rather than
+    # the bare directory, precisely so a feature-slug-nested acceptance scaffold
+    # can be pruned. Pinning the single-directory form would forbid that fix;
+    # pinning the property does not -- and the confinement leg below is STRONGER
+    # than the equality it replaces, because `== {whole_tree}` could not tell a
+    # widening to the repo root from a legitimate member list.
+    tier_files = {
+        path
+        for path in whole_tree.rglob("test_*.py")
+        if "__pycache__" not in path.parts
+    }
+    assert tier_files, (
+        "fixture precondition: the build tier must carry at least one "
+        f"arch-tier test file under {whole_tree}"
+    )
+    uncovered = {path for path in tier_files if not _swept(path, list(selected))}
+    assert not uncovered, (
+        "full=True must select the WHOLE tests/build tier -- every arch-tier "
+        f"test file under {whole_tree} must be covered by the selection; "
+        f"uncovered={uncovered}, selected={selected}"
+    )
+    outside = {
+        path
+        for path in selected
+        if path != whole_tree and not path.is_relative_to(whole_tree)
+    }
+    assert not outside, (
+        "full=True must stay CONFINED to the tests/build tier -- it must never "
+        f"widen to the repo root or any path outside {whole_tree}; got "
+        f"outside={outside}, selected={selected}"
     )
     assert _swept(poison, list(selected)), (
         "the feature-end/full whole-tree floor must still be capable of "

@@ -14,6 +14,7 @@ so uninstall() can remove only nWave skills without touching user-created ones.
 import json
 import os
 import shutil
+from hashlib import sha256
 from pathlib import Path
 
 from scripts.install.plugins.base import (
@@ -21,7 +22,7 @@ from scripts.install.plugins.base import (
     InstallContext,
     PluginResult,
 )
-from scripts.shared.agent_catalog import load_public_agents
+from scripts.shared.agent_catalog import detect_command_skills, load_public_agents
 from scripts.shared.platform_contracts import CODEX_SKILL_FORBIDDEN_FIELDS
 from scripts.shared.skill_distribution import (
     enumerate_skills,
@@ -31,6 +32,119 @@ from scripts.shared.skill_path_rewrite import rewrite_host_paths
 
 
 _MANIFEST_FILENAME = ".nwave-manifest.json"
+
+# The first public Codex installer (manifest version 1.0) omitted these two
+# command skills.  This is deliberately a closed historical set: newly added
+# commands must never become implicitly adoptable merely because their name
+# starts with ``nw-``.  The digests are of the Codex rendering written by that
+# installer, not of the Claude source asset.
+_V1_OMITTED_PUBLIC_COMMAND_SKILL_DIGESTS = {
+    "nw-design": "9ff2358b5b9f27b4dcd0cbb77f9b90b91913fe6ba6614f7bfb79c6b2027875b3",
+    "nw-deliver": "4b24054d706d03fc6f8d84c156f07690a7151dca35c3de054f74a89b4f64b7f0",
+}
+
+# A separate public v1 bootstrap wrote an incomplete 174-skill manifest while
+# installing this exact 27-skill command profile.  These are intentionally
+# pinned Codex-rendered bytes, captured from that candidate representation;
+# they must never be regenerated from today's source tree.  It remains a
+# separate profile from the two-skill bridge above because the historical
+# renderings for their overlapping names differ.
+_V1_INCOMPLETE_MANIFEST_SKILL_DIGESTS = {
+    "nw-buddy": "bc0d60b68de55abc36e8e273e729a36887f3808b4b6369ba58dbced76df2d0bb",
+    "nw-bugfix": "0ca4c2438ded122439db8ead2abbaf0f5522ba35e5fd091855e866476a328b55",
+    "nw-continue": "1fe801835ab0800b9e9c8fde3bef10b561aab9e84c55079acd888b526b24d86a",
+    "nw-deliver": "ac8def71068d07bd072f9a18317ded0a206d77797335a38e77489d29d4ddfd8c",
+    "nw-design": "b7b43b7189cff072c94517a8fab3e5b2688ec8386e7bbd0d4fb15b2553ded306",
+    "nw-devops": "a902b5d9b876411f2b73cf1fec3f6fb8681f70ec19155d500290eeaa8eb49f71",
+    "nw-diagram": "5e4f3231f3b68ba4d1af796ff31c7fc80d6db2d7cc8f0558e2fb6a3f98d0bd98",
+    "nw-discover": "98daa12c8ffdc3dae9c3e5b3452f9afc107207e568ee495a8ea8f95bfdaa3b7f",
+    "nw-discuss": "93d94f1d5a02293eab210028c0eb1fc4a143924dc7fd0e2c6331022a83d8f2fa",
+    "nw-diverge": "95de6f0a9ab9235768bf902c0726d1284127796ce10e6377e71f2870bec114c3",
+    "nw-document": "df6ddadeee36257d79806da2349a442f18c4597e39dbd2fe0f7ee8e1905e0be0",
+    "nw-execute": "12472465a632d881592b391d4665ab48231ecbc0d3527898e53c5c65527402dd",
+    "nw-fast-forward": "3c5c450e4b1a07ff5f886c40c6cc8b4db3abfaa227acfb2a4f3c39ff46e8d68f",
+    "nw-finalize": "8e92edd03e10e14b3795714fc24bcfd8ac1c87e7d4c05a7865e4008cfe21a47b",
+    "nw-forge": "019ec548e58da0640d82b989365041bfb079ada2e9396c781f7a4de500bc399a",
+    "nw-hotspot": "94c30ad58319bddf587a65696d269184fb5ab336584e3a4d1763a3a2e760f546",
+    "nw-mikado": "9279af248efa74789f1ebf03d3ecd97bacd96c77adbd60dfe86ac30bb06fe7e9",
+    "nw-new": "0747cf3379c1f311fa5ddfdcb4f16c62320995cca997e0c07256caa3729c75c9",
+    "nw-optimize-tests": "051b21677ae1506852393832c0903e1b9b34a658ea9fde3ad1db3ac5d3338e21",
+    "nw-research": "87be14adc1430ddd1b042f41023799a2b2f87c57d0e08fdfb6fbad1d821902be",
+    "nw-review": "e5233e5218bdc2d9408b81e9c0dbfd57939ad8b3ca7a280945eb9d7de7c24623",
+    "nw-rigor": "f0683d0c8118c189bc6d3b2c1f5499e4dd2ae8c310fc43a2ed69b809f18f219b",
+    "nw-roadmap": "afbe4234a6d4c4c40a96c336e0b85528e968f258922af3021050b3dfd6c248f2",
+    "nw-root-why": "3e3f460531b46c3e780cc992f81d8bb229784983a01f49c766d75e9b94b07f68",
+    "nw-spike": "51f0c0b27c941ef1f2e3613aecde8afad3db6e60c44b1f49fe2219d05598868c",
+    "nw-throughput": "6fbe991edc39410df327803ceb3a1c5e48f9e55e08573de1870ff71b6378cfed",
+    "nw-update": "c6c39bac491e1fc852c06e3e760c36ea992d62cb617f2c41a11fff3048d2060a",
+}
+
+_V1_OMITTED_SKILL_PROFILES = (
+    _V1_OMITTED_PUBLIC_COMMAND_SKILL_DIGESTS,
+    _V1_INCOMPLETE_MANIFEST_SKILL_DIGESTS,
+)
+
+
+def legacy_v1_omitted_command_skills(
+    skills_dir: Path, manifest: object
+) -> set[str] | None:
+    """Return the exact, byte-proven v1 omissions, or refuse the witness.
+
+    A legacy manifest is only a catalogue witness when it retains its exact
+    three-field v1 shape.  Each omitted skill must be one of the closed
+    historical set and its complete on-disk tree must be the single trusted
+    ``SKILL.md`` asset with the pinned Codex-rendered digest.  This prevents a
+    future command, an added sidecar file, a symlink, or a local edit from
+    acquiring installer ownership through a name-shaped rule.
+    """
+    if not (
+        isinstance(manifest, dict)
+        and set(manifest) == {"installed_skills", "version"}
+        and manifest.get("version") == "1.0"
+        and isinstance(manifest.get("installed_skills"), list)
+        and all(
+            isinstance(name, str) and name.startswith("nw-") and Path(name).name == name
+            for name in manifest["installed_skills"]
+        )
+        and len(manifest["installed_skills"]) == len(set(manifest["installed_skills"]))
+    ):
+        return None
+
+    listed = set(manifest["installed_skills"])
+    candidates = {
+        candidate.name: candidate
+        for candidate in skills_dir.glob("nw-*")
+        if candidate.name not in listed
+    }
+
+    # Exact membership is part of each fingerprint.  A small test/bootstrap
+    # manifest may already list a member of the historical profile, but the
+    # complete profile must still be present and byte-proven before any of its
+    # remaining members are adopted.  This never promotes a discovered name:
+    # the only returned names are the static profile's unlisted members.
+    for profile in _V1_OMITTED_SKILL_PROFILES:
+        unlisted_profile = set(profile) - listed
+        if not unlisted_profile or set(candidates) != unlisted_profile:
+            continue
+        for name, expected_digest in profile.items():
+            candidate = skills_dir / name
+            skill = candidate / "SKILL.md"
+            try:
+                trusted = (
+                    not candidate.is_symlink()
+                    and candidate.is_dir()
+                    and list(candidate.iterdir()) == [skill]
+                    and not skill.is_symlink()
+                    and skill.is_file()
+                    and sha256(skill.read_bytes()).hexdigest() == expected_digest
+                )
+            except OSError:
+                trusted = False
+            if not trusted:
+                break
+        else:
+            return unlisted_profile
+    return None
 
 
 def _codex_skills_dir() -> Path:
@@ -170,7 +284,11 @@ class CodexSkillsPlugin(InstallationPlugin):
         """
         codex_dir = _codex_config_dir()
         codex_binary = shutil.which("codex") is not None
-        if not codex_dir.exists() and not codex_binary:
+        if (
+            "codex" not in context.target_platforms
+            and not codex_dir.exists()
+            and not codex_binary
+        ):
             return PluginResult(
                 success=True,
                 plugin_name=self.name,
@@ -233,7 +351,12 @@ class CodexSkillsPlugin(InstallationPlugin):
             )
 
             entries = enumerate_skills(skills_source)
-            entries = filter_public_skills(entries, public_agents, ownership_map)
+            command_skills = (
+                set() if context.dev_mode else detect_command_skills(skills_source)
+            )
+            entries = filter_public_skills(
+                entries, public_agents, ownership_map, command_skills
+            )
 
             installed_names: list[str] = []
             installed_files: list[Path] = []
@@ -242,15 +365,16 @@ class CodexSkillsPlugin(InstallationPlugin):
                 skill_target_dir = target_dir / entry.name
                 if skill_target_dir.exists():
                     shutil.rmtree(skill_target_dir)
-                skill_target_dir.mkdir(parents=True)
 
-                target_file = skill_target_dir / "SKILL.md"
                 if entry.source_path.is_dir():
-                    source_file = entry.source_path / "SKILL.md"
+                    shutil.copytree(entry.source_path, skill_target_dir)
+                    target_file = skill_target_dir / "SKILL.md"
                 else:
-                    source_file = entry.source_path
+                    skill_target_dir.mkdir(parents=True)
+                    target_file = skill_target_dir / "SKILL.md"
+                    shutil.copy2(entry.source_path, target_file)
 
-                content = source_file.read_text(encoding="utf-8")
+                content = target_file.read_text(encoding="utf-8")
                 content = _strip_forbidden_fields(content)
                 content = rewrite_host_paths(content, "codex")
                 target_file.write_text(content, encoding="utf-8")

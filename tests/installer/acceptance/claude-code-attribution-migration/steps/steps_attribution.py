@@ -321,7 +321,15 @@ def _make_context(log_sink: list[str]):
         def info(self, msg: str) -> None:
             log_sink.append(msg)
 
-        def warn(self, msg: str) -> None:
+        def warning(self, msg: str) -> None:
+            log_sink.append(msg)
+
+        #: The real Logger's level method is `warning`; this double carried
+        #: only `warn`, so a production `logger.warning(...)` raised
+        #: AttributeError here instead of being captured.
+        warn = warning
+
+        def error(self, msg: str) -> None:
             log_sink.append(msg)
 
     # Variable indirection (_home) keeps the hermeticity guard

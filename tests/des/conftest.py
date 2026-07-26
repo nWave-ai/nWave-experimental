@@ -264,7 +264,7 @@ def in_memory_filesystem():
     Returns:
         InMemoryFileSystem: Fresh in-memory filesystem instance
     """
-    from des.adapters.driven.filesystem.in_memory_filesystem import (
+    from tests.des.adapters.in_memory_filesystem import (
         InMemoryFileSystem,
     )
 
@@ -281,7 +281,7 @@ def mocked_time_provider():
     """
     from datetime import datetime, timezone
 
-    from des.adapters.driven.time.mocked_time import MockedTimeProvider
+    from tests.des.adapters.mocked_time import MockedTimeProvider
 
     return MockedTimeProvider(datetime(2026, 1, 26, 10, 0, 0, tzinfo=timezone.utc))
 
@@ -294,7 +294,7 @@ def mocked_hook():
     Returns:
         MockedSubagentStopHook: Hook that returns predefined results
     """
-    from des.adapters.drivers.hooks.mocked_hook import MockedSubagentStopHook
+    from tests.des.adapters.mocked_hook import MockedSubagentStopHook
 
     return MockedSubagentStopHook()
 
@@ -307,7 +307,7 @@ def mocked_validator():
     Returns:
         MockedTemplateValidator: Validator returning passing results by default
     """
-    from des.adapters.drivers.validators.mocked_validator import (
+    from tests.des.adapters.mocked_validator import (
         MockedTemplateValidator,
     )
 

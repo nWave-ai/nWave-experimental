@@ -1,3 +1,5 @@
+# @feature-language-port-realization-gate
+# @slice-07
 """Acceptance tests -- ``port_realization_discovery`` composition root (DISTILL, slice-02).
 
 Feature-delta: docs/feature/language-port-realization-gate/feature-delta.md
@@ -222,6 +224,46 @@ class _ConditionalStubRobustnessAdapter:
         if at_scope_dir is None:
             raise NotImplementedError("only when at_scope_dir is None")
         return set()
+
+
+class _EllipsisPaddedStubRobustnessAdapter:
+    """Evasion shape (A): a leading bare ``...`` THEN the canonical stub raise.
+
+    ``...`` is idiomatic Python for "unimplemented" -- padding it in front of
+    the raise turns a 1-statement body into 2, which the pre-2026-07-22
+    single-statement-only rule silently waved through as "not a pure stub".
+    """
+
+    def covered_domain_ids(self, at_scope_dir: Path) -> set[str]:
+        ...
+        raise NotImplementedError("fixture stub -- ellipsis-padded")
+
+
+class _BareEllipsisRobustnessAdapter:
+    """Evasion shape (B), bare form: a body of ONLY ``...`` -- never raises."""
+
+    def covered_domain_ids(self, at_scope_dir: Path) -> set[str]: ...
+
+
+class _NoOpPassRobustnessAdapter:
+    """Evasion shape (B), ``pass`` form: does nothing, raises nothing."""
+
+    def covered_domain_ids(self, at_scope_dir: Path) -> set[str]:
+        pass
+
+
+class _NoOpEmptyReturnRobustnessAdapter:
+    """Evasion shape (B), bare-``return`` form: fakes completion, no value."""
+
+    def covered_domain_ids(self, at_scope_dir: Path) -> set[str]:
+        return
+
+
+class _NoOpReturnNoneRobustnessAdapter:
+    """Evasion shape (B), explicit ``return None`` form: same fake-completion."""
+
+    def covered_domain_ids(self, at_scope_dir: Path) -> set[str]:
+        return None
 
 
 class _SideEffectRobustnessAdapter:
@@ -646,3 +688,119 @@ def test_discovery_rejects_conformance_for_a_declared_port_with_one_real_and_two
     assert _offenders(verdict) == {("partial-stub-lang", VERIFY_ENVIRONMENTAL_E2E)}, (
         verdict.violations
     )
+
+
+# ---------------------------------------------------------------------------
+# Scenario 12 -- REGRESSION (2026-07-22 feature-end deep-review FAIL): the
+# orchestrator EXECUTED two evasion shapes the deep review had only traced,
+# and both got past the gate (measured: exit 0, 0 gaps found, on the same
+# run a control liar fixture correctly exited 1). Root cause:
+# `_is_pure_notimplementederror_stub` treated a body as a stub ONLY when it
+# was exactly one `raise NotImplementedError` (+ optional docstring) --
+# sitting UPSTREAM of the slice-06 `all`->`any` fix, so aggregation could not
+# help. Fix: pad-stripping (`...`/`pass` are zero-information) +
+# fake-completion detection (a value-less `return`/`return None`).
+# CONTRACT_SHAPE: pure-function
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "adapter_factory",
+    [
+        _EllipsisPaddedStubRobustnessAdapter,
+        _BareEllipsisRobustnessAdapter,
+        _NoOpPassRobustnessAdapter,
+        _NoOpEmptyReturnRobustnessAdapter,
+        _NoOpReturnNoneRobustnessAdapter,
+    ],
+    ids=[
+        "ellipsis-padded-raise",
+        "bare-ellipsis-never-raises",
+        "bare-pass-never-raises",
+        "empty-return-never-raises",
+        "return-none-never-raises",
+    ],
+)
+def test_discovery_flags_evasion_shapes_the_2026_07_22_deep_review_found_unflagged(
+    adapter_factory: type,
+) -> None:
+    """CONTRACT_SHAPE: pure-function
+
+    Outcome anchor: feature-delta Summary; this charter's negative oracle
+    verbatim ("the command must NOT exit 0 while any registered plugin
+    declares a capability whose backing adapter is an unimplemented stub").
+
+    Each of these 5 bodies is a maintainer-plausible "I have not written this
+    yet" placeholder that never reduces to the ORIGINAL single-raise rule --
+    every one of them must still be flagged as a pure stub.
+    """
+    plugin = _FixtureRobustnessPlugin("evasion-lang", adapter_factory())
+
+    verdict = _load().resolve_and_probe_port_realization([plugin])
+
+    assert verdict.flagged is True, (
+        f"{adapter_factory.__name__} is a no-op/evasion shape and must be "
+        f"flagged as stub-backed: {verdict!r}"
+    )
+    assert _offenders(verdict) == {("evasion-lang", CHECK_ROBUSTNESS_DENSITY)}
+
+
+@pytest.mark.negative_at
+def test_discovery_does_not_flag_a_padded_body_that_returns_a_real_value() -> None:
+    """CONTRACT_SHAPE: pure-function
+
+    Outcome anchor: feature-delta Summary (false-positive guard, mirrors
+    Scenario 6/7's discipline for the NEW pad-stripping/empty-return rules).
+
+    ``pass`` padding followed by a REAL return (an actual, non-None,
+    non-trivial value) is still a genuine implementation -- the no-op rule
+    must never swallow an honest answer just because it is preceded by
+    padding (WRONG outcome -- a real body flagged as a lie -- asserted
+    absent).
+    """
+
+    class _PaddedRealRobustnessAdapter:
+        def covered_domain_ids(self, at_scope_dir: Path) -> set[str]:
+            pass
+            return {"real-domain"}
+
+    plugin = _FixtureRobustnessPlugin(
+        "padded-real-lang", _PaddedRealRobustnessAdapter()
+    )
+
+    verdict = _load().resolve_and_probe_port_realization([plugin])
+
+    assert verdict.flagged is False, (
+        f"a padded body ending in a REAL return must not be flagged: "
+        f"{verdict.violations!r}"
+    )
+    assert verdict.violations == ()
+
+
+@pytest.mark.negative_at
+def test_discovery_does_not_flag_an_honest_empty_collection_return() -> None:
+    """CONTRACT_SHAPE: pure-function
+
+    Outcome anchor: feature-delta Summary (false-positive guard).
+
+    ``return set()`` is an ACTUAL asserted answer (zero robustness domains
+    covered), not a no-op -- the new empty-return rule is deliberately
+    narrower than "any falsy/empty value" (it matches only a value-LESS
+    return or the literal ``None``) precisely so this stays unflagged (WRONG
+    outcome -- an honest empty answer treated as a lie -- asserted absent).
+    """
+
+    class _HonestEmptySetRobustnessAdapter:
+        def covered_domain_ids(self, at_scope_dir: Path) -> set[str]:
+            return set()
+
+    plugin = _FixtureRobustnessPlugin(
+        "honest-empty-lang", _HonestEmptySetRobustnessAdapter()
+    )
+
+    verdict = _load().resolve_and_probe_port_realization([plugin])
+
+    assert verdict.flagged is False, (
+        f"an honest empty-collection return must not be flagged: {verdict.violations!r}"
+    )
+    assert verdict.violations == ()

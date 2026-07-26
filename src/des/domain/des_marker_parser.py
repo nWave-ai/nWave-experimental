@@ -8,7 +8,7 @@ Replaces inline regex in claude_code_hook_adapter.handle_pre_tool_use()
 
 Marker formats:
   <!-- DES-VALIDATION : required -->
-  <!-- DES-MODE : orchestrator -->
+  <!-- DES-MODE : atdd_pure -->
   <!-- DES-PROJECT-ID : my-project -->
   <!-- DES-STEP-ID : 01-01 -->
   <!-- DES-PROJECT-ROOT : /abs/path/to/worktree -->
@@ -129,7 +129,8 @@ class DesMarkers:
 
     Attributes:
         is_des_task: True if prompt contains DES-VALIDATION: required marker
-        is_orchestrator_mode: True if the DES-MODE marker value is orchestrator
+        is_orchestrator_mode: Always false; the former orchestrator carrier is
+            retained only as untrusted historical input.
         project_id: Value of DES-PROJECT-ID marker, or None
         feature_id: Value of DES-FEATURE-ID marker, or None. The feature being
             delivered, distinct from DES-PROJECT-ID (the project-ROOT identity).
@@ -141,8 +142,7 @@ class DesMarkers:
             against the correct repo when the orchestrator's CWD differs
             from the executing worktree (Rex RCA F-DES-WORKTREE-EXECUTION-
             LOG-RESOLUTION). Adapter-layer validation is required before use.
-        mode: Normalised DES-MODE marker value (e.g. "orchestrator",
-            "atdd_pure"), or None when the marker is absent.
+        mode: Normalised DES-MODE marker value, or None when absent.
         atdd_pure_phase: The canonical ATDDPurePhase value when the DES-PHASE
             marker carries a valid in-vocabulary phase, else None (absent or
             out-of-vocabulary).
@@ -382,7 +382,7 @@ class DesMarkerParser:
 
         return DesMarkers(
             is_des_task=is_des_task,
-            is_orchestrator_mode=mode == "orchestrator",
+            is_orchestrator_mode=False,
             project_id=project_id,
             feature_id=feature_id,
             step_id=step_id,
@@ -476,7 +476,7 @@ def classify_atdd_pure_dispatch(markers: DesMarkers) -> str:
     """Classify a parsed marker set as 'absent' / 'valid' / 'defective'.
 
     M3/M14 contract:
-      * DES-MODE:atdd_pure absent            -> 'absent'  (a classic dispatch)
+      * DES-MODE:atdd_pure absent            -> 'absent'  (unresolved)
       * mode atdd_pure + valid phase + scope
         + a COHERENT (phase, scope) pair     -> 'valid'
       * mode atdd_pure + any marker missing/
@@ -491,6 +491,8 @@ def classify_atdd_pure_dispatch(markers: DesMarkers) -> str:
     `phase in feature-end-phases  XOR  scope == feature-end` -- neither
     half-valid combination is representable as 'valid'.
     """
+    if markers.mode == "classic":
+        return "defective"
     if markers.mode != "atdd_pure":
         return "absent"
     if markers.slice_id is None:
@@ -523,11 +525,12 @@ def atdd_pure_missing_marker(markers: DesMarkers) -> str | None:
 
     Returns one of 'des-mode' / 'des-phase' / 'des-slice' when the corresponding
     marker is absent/malformed/invalid, and None when the dispatch is a valid
-    atdd_pure dispatch or a classic one. The /nw-deliver phase-entry diagnostic
+    atdd_pure dispatch. Any legacy or absent carrier is unresolved. The
+    /nw-deliver phase-entry diagnostic
     consumes this to name its refusal.
     """
     if markers.mode != "atdd_pure":
-        return None
+        return "des-mode"
     if markers.atdd_pure_phase is None and not dispatch_is_phaseless(
         lane=markers.lane, declared_wave=markers.declared_wave
     ):

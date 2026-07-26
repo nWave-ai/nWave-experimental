@@ -18,11 +18,17 @@ Feature: The deprecated classic spine still works as a fallback floor
   # --- The fallback floor still works after deprecation ------------------------
 
   @slice-14 @driving_port @contract-shape:bounded-change
-  Scenario: A classic dispatch still runs to completion as a deprecated fallback
+  # Converted with the removal. This scenario pinned the DEPRECATION contract:
+  # classic still runs, and the operator is warned. After removal there is
+  # nothing left to warn about -- the dispatch refuses, and the advisory that
+  # belonged to the warning phase no longer exists. Kept rather than deleted so
+  # the opposite invariant stays pinned: a project on the retired spine is
+  # stopped, not served with a note.
+  Scenario: A classic dispatch is refused outright, with no fallback and no advisory
     Given a project configured for the classic spine
     When a DELIVER dispatch runs
-    Then the classic dispatch still runs to completion as a fallback
-    And a classic-spine deprecation advisory is emitted
+    Then the dispatch refuses removed classic with migration required
+    And no classic-spine deprecation advisory is emitted
 
   # --- Release N deletes no classic artifact -----------------------------------
 

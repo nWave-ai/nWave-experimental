@@ -13,15 +13,20 @@ BDD scenario mapping:
 from __future__ import annotations
 
 import subprocess
-import sys
+
+from tests.common.in_process_cli import run_module_in_process
 
 
 def _run_read_toml(args: list[str]) -> subprocess.CompletedProcess:
     """Run read_toml_field.py as a subprocess and return the result."""
-    return subprocess.run(
-        [sys.executable, "-m", "scripts.release.read_toml_field", *args],
-        capture_output=True,
-        text=True,
+    exit_code, out, err = run_module_in_process(
+        "scripts.release.read_toml_field", *args
+    )
+    return subprocess.CompletedProcess(
+        args=["scripts.release.read_toml_field", *args],
+        returncode=exit_code,
+        stdout=out,
+        stderr=err,
     )
 
 

@@ -50,6 +50,7 @@ from .domain_types_slice_01 import (
     AUTHORED_DEFECTIVE_FLAVOR_ID,
     CRAFTER_AGENT,
     EXPECTED_ATDD_PURE_CRAFTER_SKILLS,
+    SHIPPED_FLAVORS,
     RegistryDefect,
     SkillName,
     WorkflowFlavor,
@@ -112,7 +113,11 @@ class ModeRegistryResolutionComposition:
 
     def use_shipped_registry(self) -> None:
         """Pin the precondition: the REAL shipped registry files exist."""
-        for flavor in WorkflowFlavor:
+        # Iterate what the product SHIPS, not every name the enum knows. The
+        # enum keeps a retired id so fixtures can author a second flavor in
+        # tmp_path; asserting that id exists on disk asserts the product still
+        # ships a mode it removed.
+        for flavor in SHIPPED_FLAVORS:
             flavor_file = SHIPPED_FLAVORS_DIR / f"{flavor.value}.yaml"
             assert flavor_file.is_file(), (
                 f"shipped mode registry file missing: {flavor_file} -- the "
@@ -170,6 +175,14 @@ class ModeRegistryResolutionComposition:
         assert self._resolved == EXPECTED_ATDD_PURE_CRAFTER_SKILLS, (
             f"registry injected {sorted(self._resolved)} -- the inline table "
             f"carries {sorted(EXPECTED_ATDD_PURE_CRAFTER_SKILLS)}"
+        )
+
+    def assert_refused_retired_flavor(self) -> None:
+        """The registry refuses a retired flavor rather than answering empty."""
+        assert self._refusal is not None, (
+            "expected a refusal for the retired flavor, got the answer "
+            f"{sorted(self._resolved or ())} -- an empty answer for a removed "
+            "mode is indistinguishable from a valid one"
         )
 
     def assert_directed_to_load_nothing(self) -> None:

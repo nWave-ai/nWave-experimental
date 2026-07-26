@@ -62,7 +62,9 @@ class TestInstallTargetFlag:
                 cli, "handle_install_density_prompt", return_value="default_silent"
             ),
         ):
-            rc = cli._handle_install(["--target", str(target), "--yes"])
+            rc = cli._handle_install(
+                ["--target", str(target), "--yes", "--platform", "claude-code"]
+            )
         assert rc == 0
         assert captured["args"] is not None
         assert "--target" not in captured["args"]
@@ -77,7 +79,9 @@ class TestInstallTargetFlag:
                 cli, "handle_install_density_prompt", return_value="default_silent"
             ),
         ):
-            cli._handle_install(["--target", str(target), "--yes"])
+            cli._handle_install(
+                ["--target", str(target), "--yes", "--platform", "claude-code"]
+            )
         assert captured["claude_config_dir"] == str(target.resolve())
 
     def test_target_with_user_expansion(self, tmp_path: Path, monkeypatch):
@@ -106,7 +110,9 @@ class TestInstallTargetFlag:
                 cli, "handle_install_density_prompt", return_value="default_silent"
             ),
         ):
-            cli._handle_install(["--target", "./.claude", "--yes"])
+            cli._handle_install(
+                ["--target", "./.claude", "--yes", "--platform", "claude-code"]
+            )
         assert captured["claude_config_dir"] == str((tmp_path / ".claude").resolve())
 
     def test_target_equal_to_home_is_refused(self, tmp_path: Path, monkeypatch, capsys):

@@ -16,6 +16,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from des.adapters.driven.git.git_constants import GIT_HEAD, GIT_REV_PARSE
 from des.adapters.driven.git.git_mutate import git_run
 from des.adapters.driven.git.git_subprocess import git_text
 from des.ports.driven_ports.git_worktree_port import (
@@ -143,9 +144,9 @@ class GitWorktreeAdapter(GitWorktreePort):
         that case is a separate, existing refusal (the git-repo startup probe),
         not a linked worktree."""
         try:
-            git_dir = git_text(repo, "rev-parse", "--absolute-git-dir").strip()
+            git_dir = git_text(repo, GIT_REV_PARSE, "--absolute-git-dir").strip()
             common_dir = git_text(
-                repo, "rev-parse", "--path-format=absolute", "--git-common-dir"
+                repo, GIT_REV_PARSE, "--path-format=absolute", "--git-common-dir"
             ).strip()
         except subprocess.CalledProcessError:
             return False
@@ -157,7 +158,7 @@ class GitWorktreeAdapter(GitWorktreePort):
         probe_path = repo.parent / f"{repo.name}{_PROBE_DIR_SUFFIX}"
         try:
             git_run(
-                repo, "worktree", "add", "-b", _PROBE_BRANCH, str(probe_path), "HEAD"
+                repo, "worktree", "add", "-b", _PROBE_BRANCH, str(probe_path), GIT_HEAD
             )
         except subprocess.CalledProcessError:
             return False
@@ -168,8 +169,8 @@ class GitWorktreeAdapter(GitWorktreePort):
     def create_worktree_from_tip(
         self, repo: Path, branch: str, path: Path
     ) -> WorktreeHandle:
-        head_sha = git_text(repo, "rev-parse", "HEAD").strip()
-        git_run(repo, "worktree", "add", "-b", branch, str(path), "HEAD")
+        head_sha = git_text(repo, GIT_REV_PARSE, GIT_HEAD).strip()
+        git_run(repo, "worktree", "add", "-b", branch, str(path), GIT_HEAD)
         return WorktreeHandle(path=path, branch=branch, head_sha=head_sha)
 
     def merge_into(

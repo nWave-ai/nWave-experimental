@@ -15,18 +15,24 @@ manifest presence + user-hook preservation).
 
 from __future__ import annotations
 
+import base64
+import inspect
 import json
-from typing import TYPE_CHECKING
+import os
+import re
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
 from nwave_ai.state_delta import assert_state_delta, set_to
 
+from scripts.install.plugins import codex_des_plugin
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.codex_des_plugin import CodexDESPlugin
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -47,9 +53,23 @@ def _make_context(
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir()
     if des_module_exists:
-        des_dir = claude_dir / "lib" / "python" / "des"
+        des_dir = tmp_path / ".nwave" / "runtime" / "des"
         des_dir.mkdir(parents=True)
         (des_dir / "__init__.py").write_text("", encoding="utf-8")
+        resolver = (
+            tmp_path
+            / ".nwave"
+            / "nWave"
+            / "hooks"
+            / "orchestrator_affordance_refresh.py"
+        )
+        resolver.parent.mkdir(parents=True)
+        resolver.write_text(
+            'import json\nprint(json.dumps({"hookSpecificOutput": '
+            '{"hookEventName": "SessionStart", "additionalContext": '
+            '"standing-loop catalogue available"}}))\n',
+            encoding="utf-8",
+        )
 
     return InstallContext(
         claude_dir=claude_dir,
@@ -58,6 +78,16 @@ def _make_context(
         logger=MagicMock(),
         project_root=project_root,
         framework_source=framework_source,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _host_neutral_runtime_is_tmp_scoped(tmp_path: Path, monkeypatch) -> None:
+    """Make prerequisite checks observe only the fixture's runtime root."""
+    runtime_root = tmp_path / ".nwave" / "runtime"
+    monkeypatch.setattr(
+        "scripts.install.plugins.codex_des_plugin.host_neutral_runtime_dir",
+        lambda: runtime_root,
     )
 
 
@@ -191,16 +221,297 @@ class TestInstallWritesHooksJsonAndManifest:
         assert isinstance(pretool, list)
         assert len(pretool) == 1
         entry = pretool[0]
-        # Narrow matcher: only Codex-real tools trigger DES validation.
-        # DDD-6 (refined by DDD-8 spike Q6, 2026-05-13) restricts the
-        # whitelist to {Bash, apply_patch}. The pre-FM-3 value
-        # "^Task$|^Bash$" referenced "Task" — a Claude-Code-only tool name
-        # Codex never emits in PreToolUse — and was corrected at step 01-03.
-        assert entry["matcher"] == "^Bash$|^apply_patch$"
+        # The matcher is tied to the tool surface observed on the running
+        # Codex host. Bash/apply_patch are not emitted tool names here.
+        assert entry["matcher"] == "^exec_command$"
         command = entry["hooks"][0]["command"]
         assert "claude_code_hook_adapter" in command
-        assert "/usr/bin/python3" in command
-        assert "/home/tester/.claude/lib/python" in command
+        assert "/usr/bin/python3" not in command
+        assert "/home/tester/.claude/lib/python" not in command
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        launcher = Path(manifest["launcher_file"])
+        assert str(launcher) in shlex.split(command)
+        session = doc["hooks"].get("SessionStart")
+        assert isinstance(session, list) and len(session) == 1
+        session_command = session[0]["hooks"][0]["command"]
+        session_launcher = Path(manifest["session_start_launcher_file"])
+        assert shlex.split(session_command) == [
+            sys.executable,
+            str(session_launcher),
+            "session-start",
+        ]
+        assert manifest["resolver_script_file"].endswith(
+            "nWave/hooks/orchestrator_affordance_refresh.py"
+        )
+
+    def test_installed_session_start_hook_emits_only_the_affordance_envelope(
+        self, tmp_path, monkeypatch
+    ):
+        """A Codex-only installation invokes its installed standing-loop hook."""
+        context = _make_context(tmp_path)
+        codex_dir = tmp_path / "home" / ".codex"
+        codex_dir.mkdir(parents=True)
+        _patch_codex_config_dir(monkeypatch, codex_dir)
+        _patch_path_resolvers(monkeypatch)
+        assert CodexDESPlugin().install(context).success is True
+
+        document = json.loads((codex_dir / "hooks.json").read_text(encoding="utf-8"))
+        command = document["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        completed = subprocess.run(
+            command,
+            shell=True,
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
+        envelope = json.loads(completed.stdout)
+        assert envelope == {
+            "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": "standing-loop catalogue available",
+            }
+        }
+
+    def test_launcher_hook_builder_has_no_fixture_specific_magic_branch(self):
+        """CONTRACT_SHAPE: unbounded-preservation
+
+        Outcome anchor: installed semantics never depend on test fixture values.
+        """
+        source = inspect.getsource(codex_des_plugin._build_launcher_hook_entry)
+        assert "/usr/bin/python3" not in source
+        assert "/home/tester/.claude/lib/python" not in source
+
+    @pytest.mark.parametrize(
+        ("python_path", "pythonpath"),
+        [
+            (
+                "/Users/Ada Lovelace/O'Brien/$(touch nope)/`whoami`;python",
+                "/Users/Ada Lovelace/O'Brien/$(touch nope)/`whoami`;lib",
+            ),
+            (
+                'C:/Users/Ada Lovelace/"quoted"/$(touch nope)/`whoami`;python.exe',
+                'C:/Users/Ada Lovelace/"quoted"/$(touch nope)/`whoami`;lib',
+            ),
+        ],
+    )
+    def test_install_materializes_shell_independent_launcher_for_hostile_paths(
+        self, tmp_path, monkeypatch, python_path, pythonpath
+    ):
+        """CONTRACT_SHAPE: bounded-change
+
+        Outcome anchor: the installed Codex hook cannot reinterpret path bytes.
+        """
+        context = _make_context(tmp_path)
+        codex_dir = tmp_path / "codex home with spaces"
+        codex_dir.mkdir()
+        _patch_codex_config_dir(monkeypatch, codex_dir)
+        monkeypatch.setattr(
+            codex_des_plugin,
+            "resolve_python_command_for_spawn",
+            lambda: python_path,
+        )
+        monkeypatch.setattr(
+            codex_des_plugin,
+            "resolve_des_lib_path_for_spawn",
+            lambda: pythonpath,
+        )
+
+        result = CodexDESPlugin().install(context)
+        assert result.success is True
+        manifest = json.loads(
+            (codex_dir / ".nwave-des-manifest.json").read_text(encoding="utf-8")
+        )
+        launcher = Path(manifest["launcher_file"])
+        launcher_source = launcher.read_text(encoding="utf-8")
+        compile(launcher_source, str(launcher), "exec")
+
+        doc = json.loads((codex_dir / "hooks.json").read_text(encoding="utf-8"))
+        command = doc["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        command_argv = shlex.split(command)
+        assert "pre-tool-use" in command
+        assert str(launcher) in command_argv
+        assert command_argv[-1] == "pre-tool-use"
+        assert python_path not in command
+        assert pythonpath not in command
+        assert manifest["python_path"] == python_path
+        assert manifest["pythonpath"] == pythonpath
+        assert launcher in result.installed_files
+
+    def test_exact_installed_launcher_command_executes_without_injection(
+        self, tmp_path, monkeypatch
+    ):
+        """CONTRACT_SHAPE: bounded-change
+
+        Outcome anchor: Codex executes the serialized installed hook safely.
+        """
+        context = _make_context(tmp_path)
+        codex_dir = tmp_path / "codex home; $(touch sentinel) `whoami`"
+        codex_dir.mkdir()
+        _patch_codex_config_dir(monkeypatch, codex_dir)
+        repo_root = Path(__file__).resolve().parents[4]
+        pythonpath = str(repo_root / "src")
+        monkeypatch.setattr(
+            codex_des_plugin,
+            "resolve_python_command_for_spawn",
+            lambda: sys.executable,
+        )
+        monkeypatch.setattr(
+            codex_des_plugin,
+            "resolve_des_lib_path_for_spawn",
+            lambda: pythonpath,
+        )
+
+        assert CodexDESPlugin().install(context).success is True
+        manifest = json.loads(
+            (codex_dir / ".nwave-des-manifest.json").read_text(encoding="utf-8")
+        )
+        launcher = Path(manifest["launcher_file"])
+        assert launcher.is_file()
+        doc = json.loads((codex_dir / "hooks.json").read_text(encoding="utf-8"))
+        command = doc["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        assert shlex.split(command) == [
+            sys.executable,
+            str(launcher),
+            "pre-tool-use",
+        ]
+        assert pythonpath not in command
+        completed = subprocess.run(
+            command,
+            shell=True,
+            input='{"tool_name":"Read","tool_input":{}}',
+            text=True,
+            capture_output=True,
+            cwd=repo_root,
+            timeout=10,
+            check=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        assert not (repo_root / "sentinel").exists()
+
+    @pytest.mark.parametrize("override", [False, True], ids=["default-home", "hostile"])
+    def test_windows_host_serializes_canonical_launcher_as_encoded_powershell(
+        self, tmp_path, monkeypatch, override
+    ):
+        """CONTRACT_SHAPE: bounded-change
+
+        Outcome anchor: Windows Codex receives an exact, cmd-opaque launcher command.
+
+        Native PowerShell execution remains a Windows CI obligation; on Linux this
+        test validates the complete serialization boundary by decoding its payload.
+        """
+        context = _make_context(tmp_path)
+        hostile_name = "Codex O'Brien %NWAVE_TEST%! & ^ (unsafe) with spaces"
+        codex_dir = tmp_path / (hostile_name if override else ".codex")
+        codex_dir.mkdir()
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+        if override:
+            monkeypatch.setenv("CODEX_HOME", str(codex_dir))
+        else:
+            monkeypatch.delenv("CODEX_HOME", raising=False)
+        monkeypatch.setattr(
+            codex_des_plugin,
+            "os",
+            SimpleNamespace(name="nt", environ=os.environ),
+        )
+        _patch_path_resolvers(monkeypatch)
+
+        assert CodexDESPlugin().install(context).success is True
+        doc = json.loads((codex_dir / "hooks.json").read_text(encoding="utf-8"))
+        command = doc["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        manifest = json.loads(
+            (codex_dir / ".nwave-des-manifest.json").read_text(encoding="utf-8")
+        )
+
+        launcher = Path(manifest["launcher_file"])
+        assert launcher == codex_dir / codex_des_plugin._LAUNCHER_FILENAME
+        tokens = command.split()
+        assert tokens[:3] == ["powershell", "-NoProfile", "-EncodedCommand"]
+        assert len(tokens) == 4
+        encoded = tokens[3]
+        assert re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", encoded)
+        assert hostile_name not in command
+        decoded = base64.b64decode(encoded).decode("utf-16le")
+
+        def ps_literal(value: str) -> str:
+            return "'" + value.replace("'", "''") + "'"
+
+        expected = (
+            f"& {ps_literal(sys.executable)} {ps_literal(str(launcher))} "
+            f"{ps_literal('pre-tool-use')}"
+        )
+        assert decoded == expected
+
+        # A command containing the canonical path/event merely as a substring
+        # is not equivalent and must fail semantic verification.
+        tampered = base64.b64encode((decoded + " extra").encode("utf-16le")).decode(
+            "ascii"
+        )
+        doc["hooks"]["PreToolUse"][0]["hooks"][0]["command"] = (
+            f"powershell -NoProfile -EncodedCommand {tampered}"
+        )
+        (codex_dir / "hooks.json").write_text(json.dumps(doc), encoding="utf-8")
+        assert CodexDESPlugin().verify(context).success is False
+
+    @pytest.mark.parametrize(
+        "hostile",
+        [
+            "/Users/Ada Lovelace/O'Brien/$(touch nope)/`whoami`;still-one",
+            'C:/Users/Ada Lovelace/"quoted"/$(touch nope)/`whoami`;still-one',
+        ],
+    )
+    def test_hook_invocation_separates_argv_and_environment_without_shell_parsing(
+        self, hostile
+    ):
+        """CONTRACT_SHAPE: bounded-change
+
+        Outcome anchor: Codex executes DES without reinterpreting user path bytes.
+        """
+        build_invocation = getattr(codex_des_plugin, "_build_hook_invocation", None)
+        assert callable(build_invocation), (
+            "WHAT: Codex DES exposes only a shell command string. WHY: shell "
+            "grammars reinterpret spaces and metacharacters differently across "
+            "hosts. HOW: generate a platform-neutral argv + env invocation."
+        )
+        invocation = build_invocation(hostile, hostile)
+
+        assert invocation["argv"] == [
+            hostile,
+            "-m",
+            "des.adapters.drivers.hooks.claude_code_hook_adapter",
+            "pre-tool-use",
+        ]
+        assert invocation["env"] == {"PYTHONPATH": hostile}
+
+    def test_hook_invocation_executes_literal_pre_tool_use_argv_without_a_shell(self):
+        """CONTRACT_SHAPE: bounded-change
+
+        Outcome anchor: the generated representation reaches Python as literal argv.
+        """
+        build_invocation = getattr(codex_des_plugin, "_build_hook_invocation", None)
+        assert callable(build_invocation)
+        invocation = build_invocation(
+            sys.executable,
+            str(Path(__file__).resolve().parents[4] / "src"),
+        )
+        env = os.environ.copy()
+        env.update(invocation["env"])
+
+        completed = subprocess.run(
+            invocation["argv"],
+            input='{"tool_name":"Read","tool_input":{}}',
+            text=True,
+            capture_output=True,
+            env=env,
+            cwd=Path(__file__).resolve().parents[4],
+            timeout=10,
+            check=False,
+        )
+
+        assert invocation["argv"][-1] == "pre-tool-use"
+        assert completed.returncode == 0, completed.stderr
 
     def test_reinstall_does_not_duplicate_nwave_entries(self, tmp_path, monkeypatch):
         """
@@ -259,6 +570,125 @@ class TestInstallWritesHooksJsonAndManifest:
         ]
         assert len(nwave_entries) == 1, "nWave DES entry must not duplicate"
         assert len(user_entries) == 1, "User hook must be preserved"
+        session_entries = [
+            e
+            for e in final_doc["hooks"]["SessionStart"]
+            if any(
+                "nwave_orchestrator_affordance_launcher" in h.get("command", "")
+                for h in e.get("hooks", [])
+            )
+        ]
+        assert len(session_entries) == 1, "SessionStart affordance must not duplicate"
+
+    def test_reinstall_replaces_launcher_owned_hook_after_interpreter_change(
+        self, tmp_path, monkeypatch
+    ):
+        """A changed interpreter does not change nWave hook ownership."""
+        context = _make_context(tmp_path)
+        codex_dir = tmp_path / "home" / ".codex"
+        codex_dir.mkdir(parents=True)
+        _patch_codex_config_dir(monkeypatch, codex_dir)
+        _patch_path_resolvers(monkeypatch)
+
+        plugin = CodexDESPlugin()
+        assert plugin.install(context).success is True
+        hooks_path = codex_dir / "hooks.json"
+        hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
+        user_command = "echo user-owned"
+        hooks["hooks"]["PreToolUse"].insert(
+            0,
+            {
+                "matcher": "^Bash$",
+                "hooks": [{"type": "command", "command": user_command}],
+            },
+        )
+        hooks_path.write_text(
+            json.dumps(hooks).replace(sys.executable, "/obsolete/venv/bin/python"),
+            encoding="utf-8",
+        )
+
+        assert plugin.install(context).success is True
+        commands = [
+            hook["command"]
+            for group in json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"][
+                "PreToolUse"
+            ]
+            for hook in group["hooks"]
+        ]
+        assert "/obsolete/venv/bin/python" not in "\n".join(commands)
+        assert commands.count(user_command) == 1
+        assert len(commands) == 2
+
+    def test_unproven_legacy_direct_hook_survives_reinstall_and_uninstall(
+        self, tmp_path, monkeypatch
+    ):
+        """CONTRACT_SHAPE: unbounded-preservation
+
+        Outcome anchor: a direct legacy hook needs a manifest ownership proof.
+        """
+        context = _make_context(tmp_path)
+        codex_dir = tmp_path / ".codex"
+        codex_dir.mkdir()
+        _patch_codex_config_dir(monkeypatch, codex_dir)
+        _patch_path_resolvers(monkeypatch)
+        user_command = "echo user-owned"
+        legacy_command = (
+            "PYTHONPATH=/legacy python3 -m "
+            "des.adapters.drivers.hooks.claude_code_hook_adapter pre-tool-use"
+        )
+        (codex_dir / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "^Bash$",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": user_command,
+                                        "statusMessage": "nWave DES validation...",
+                                    }
+                                ],
+                            },
+                            {
+                                "matcher": "^Bash$",
+                                "hooks": [
+                                    {"type": "command", "command": legacy_command}
+                                ],
+                            },
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        plugin = CodexDESPlugin()
+        assert plugin.install(context).success is True
+        after_install = json.loads(
+            (codex_dir / "hooks.json").read_text(encoding="utf-8")
+        )
+        install_commands = [
+            hook["command"]
+            for group in after_install["hooks"]["PreToolUse"]
+            for hook in group.get("hooks", [])
+        ]
+        assert install_commands.count(user_command) == 1
+        assert install_commands.count(legacy_command) == 1
+        assert len(install_commands) == 3
+
+        assert plugin.uninstall(context).success is True
+        after_uninstall = json.loads(
+            (codex_dir / "hooks.json").read_text(encoding="utf-8")
+        )
+        uninstall_commands = [
+            hook["command"]
+            for group in after_uninstall["hooks"]["PreToolUse"]
+            for hook in group.get("hooks", [])
+        ]
+        assert uninstall_commands == [user_command, legacy_command]
+        assert not (codex_dir / ".nwave-des-manifest.json").exists()
 
 
 class TestVerify:
@@ -282,6 +712,60 @@ class TestVerify:
 
         assert result.success is True
 
+    def test_tampered_manifest_cannot_authorize_external_launcher(
+        self, tmp_path, monkeypatch
+    ):
+        """CONTRACT_SHAPE: bounded-change
+
+        Outcome anchor: Codex verification trusts only its canonical launcher.
+        """
+        context = _make_context(tmp_path)
+        codex_dir = tmp_path / ".codex"
+        codex_dir.mkdir()
+        _patch_codex_config_dir(monkeypatch, codex_dir)
+        external = tmp_path / "user-owned.py"
+        external.write_text("user data\n", encoding="utf-8")
+        canonical = codex_dir / codex_des_plugin._LAUNCHER_FILENAME
+        canonical.write_text("canonical\n", encoding="utf-8")
+        command = shlex.join([sys.executable, str(canonical), "pre-tool-use"])
+        (codex_dir / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "^Bash$",
+                                "hooks": [{"type": "command", "command": command}],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        (codex_dir / ".nwave-des-manifest.json").write_text(
+            json.dumps({"launcher_file": str(external)}), encoding="utf-8"
+        )
+
+        plugin = CodexDESPlugin()
+        assert plugin.verify(context).success is False
+        assert plugin.uninstall(context).success is True
+        assert external.read_text(encoding="utf-8") == "user data\n"
+        assert canonical.read_text(encoding="utf-8") == "canonical\n"
+        assert json.loads((codex_dir / "hooks.json").read_text(encoding="utf-8")) == {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "^Bash$",
+                        "hooks": [{"type": "command", "command": command}],
+                    }
+                ]
+            }
+        }
+        assert (codex_dir / ".nwave-des-manifest.json").read_text(
+            encoding="utf-8"
+        ) == json.dumps({"launcher_file": str(external)})
+
 
 class TestUninstallPreservesUserHooks:
     """uninstall: removes only nWave DES entries; user hooks survive."""
@@ -304,6 +788,9 @@ class TestUninstallPreservesUserHooks:
 
         hooks_path = codex_config_dir / "hooks.json"
         manifest_path = codex_config_dir / ".nwave-des-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        launcher_path = Path(manifest["launcher_file"])
+        assert launcher_path.is_file()
 
         # Add a user-created hook on the event-keyed PreToolUse list (DDD-1).
         doc = json.loads(hooks_path.read_text(encoding="utf-8"))
@@ -314,6 +801,18 @@ class TestUninstallPreservesUserHooks:
                     {
                         "type": "command",
                         "command": "/usr/bin/echo user-hook",
+                        "timeout": 10,
+                    }
+                ],
+            }
+        )
+        doc["hooks"].setdefault("SessionStart", []).append(
+            {
+                "matcher": "startup",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "/usr/bin/echo user-session-start",
                         "timeout": 10,
                     }
                 ],
@@ -341,16 +840,11 @@ class TestUninstallPreservesUserHooks:
             else:
                 groups = []
             user_present = any(
-                any(
-                    "echo user-hook" in h.get("command", "") for h in e.get("hooks", [])
-                )
+                any("echo user-" in h.get("command", "") for h in e.get("hooks", []))
                 for e in groups
             )
             nwave_present = any(
-                any(
-                    "claude_code_hook_adapter" in h.get("command", "")
-                    for h in e.get("hooks", [])
-                )
+                any("nwave_" in h.get("command", "") for h in e.get("hooks", []))
                 for e in groups
             )
             return {
@@ -371,6 +865,7 @@ class TestUninstallPreservesUserHooks:
         after = snapshot()
 
         assert result.success is True
+        assert not launcher_path.exists()
         assert_state_delta(
             before,
             after,

@@ -329,6 +329,68 @@ class TestInstallationVerifierEssentialCommands:
         assert "nw-review" in missing
         assert "nw-devops" in missing
 
+    def test_verify_essential_commands_skipped_for_non_claude_target(self, tmp_path):
+        """
+        GIVEN: check_essential_commands=False (a Copilot/OpenCode-only target,
+               which never receives CommandsPlugin -- install_nwave.py's
+               _create_plugin_registry registers it only when "claude_code"
+               is requested)
+        WHEN: verify_essential_commands() is called on an empty skills dir
+        THEN: Returns an empty list -- the check is skipped entirely, not
+              evaluated and vacuously passed
+        """
+        from scripts.install.installation_verifier import InstallationVerifier
+
+        # ARRANGE
+        skills_dir = tmp_path / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+        # No skill directories created -- would report all 6 missing if checked
+
+        verifier = InstallationVerifier(
+            claude_config_dir=tmp_path / ".claude",
+            check_essential_commands=False,
+        )
+
+        # ACT
+        missing = verifier.verify_essential_commands()
+
+        # ASSERT
+        assert missing == []
+
+    def test_run_verification_succeeds_with_zero_skills_for_non_claude_target(
+        self, tmp_path
+    ):
+        """
+        GIVEN: check_essential_commands=False, manifest present, DES present,
+               but ZERO nw-* skills (SkillsPlugin, like CommandsPlugin, ships
+               only when "claude_code" is requested -- a Copilot/OpenCode-only
+               install never receives any)
+        WHEN: run_verification() is called
+        THEN: success is True -- zero skills is the expected shape for this
+              target, not a failure
+        """
+        from scripts.install.installation_verifier import InstallationVerifier
+
+        # ARRANGE
+        config_dir = tmp_path / ".claude"
+        skills_dir = config_dir / "skills"
+        des_dir = config_dir / "lib" / "python" / "des"
+        skills_dir.mkdir(parents=True)
+        des_dir.mkdir(parents=True)
+        (des_dir / "__init__.py").write_text("")
+        (config_dir / "nwave-manifest.txt").write_text("installed\n")
+
+        verifier = InstallationVerifier(
+            claude_config_dir=config_dir,
+            check_essential_commands=False,
+        )
+
+        # ACT
+        result = verifier.run_verification()
+
+        # ASSERT
+        assert result.success is True, result.message
+
 
 class TestInstallationVerifierFullVerification:
     """Test full verification orchestration."""
@@ -532,7 +594,11 @@ class TestInstallNwaveCallsVerifier:
                             # ACT
                             from scripts.install.install_nwave import main
 
-                            with patch.object(sys, "argv", ["install_nwave.py"]):
+                            with patch.object(
+                                sys,
+                                "argv",
+                                ["install_nwave.py", "--platform", "claude-code"],
+                            ):
                                 main()
 
         # ASSERT
@@ -602,7 +668,11 @@ class TestInstallNwaveCallsVerifier:
                                 # ACT
                                 from scripts.install.install_nwave import main
 
-                                with patch.object(sys, "argv", ["install_nwave.py"]):
+                                with patch.object(
+                                    sys,
+                                    "argv",
+                                    ["install_nwave.py", "--platform", "claude-code"],
+                                ):
                                     main()
 
         # ASSERT - Check that verification counts are displayed
@@ -646,7 +716,11 @@ class TestInstallNwaveCallsVerifier:
                             # ACT
                             from scripts.install.install_nwave import main
 
-                            with patch.object(sys, "argv", ["install_nwave.py"]):
+                            with patch.object(
+                                sys,
+                                "argv",
+                                ["install_nwave.py", "--platform", "claude-code"],
+                            ):
                                 exit_code = main()
 
         # ASSERT

@@ -18,23 +18,19 @@ This prose does not re-enumerate the gate stack inline; it POINTS at the registr
 
 You (main Claude instance) = orchestrator: dispatch agents, enforce gates. Orchestrate AT creation from prior-wave artifacts, then gate through parallel reviews before DELIVER handoff.
 
-Behaviour gated by `workflow.mode` from `.nwave/config.yaml` (default `classic`; opt-in `atdd_pure` per ADR-027 / plan v3 §4). Cohort pre-assignment gate, AT-completeness gate, MAX-PBT mandate, Mandate-12 step-reuse metric: MANDATORY under `atdd_pure`, ADVISORY under `classic`. <!-- mode-ref-ok -->
 
 ## Workflow Mode Dispatch (read first)
 
-Read `.nwave/config.yaml` key `workflow.mode`. Allowed values: `classic` | `atdd_pure`. If missing, default `classic`. <!-- mode-ref-ok -->
 Per-mode descriptor + DELIVER phase shape, projected from the mode registry (never hand-written here):
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
-  Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
 | Mode | Cohort pre-assignment gate (Phase 0) | AT-completeness gate (Phase 2.5) | MAX-PBT mandate to Quinn | Mandate-12 step-reuse |
 |---|---|---|---|---|
-| `classic` | skipped | advisory (warn on score) | recommended | informational |
+| `retired workflow` | skipped | advisory (warn on score) | recommended | informational |
 | `atdd_pure` | **MANDATORY** (BLOCKS on cohort ∉ {M}) | **MANDATORY** (re-author < 10/15) | **MANDATORY** | **target ≥4× informational** | <!-- mode-ref-ok -->
 
 Mid-feature mode switch is forbidden (per ADR-027).
@@ -47,7 +43,6 @@ After the acceptance designer produces scenarios, you MUST dispatch 4 parallel r
 
 Runs BEFORE author dispatch. Mechanical, deterministic, cohort-keyed. Implementation: `scripts/cli/cohort_classifier.py` (core CLI per [[feedback_target_machine_independence_2026_05_15]] — NOT a pre-commit hook).
 
-**Trigger**: `workflow.mode == atdd_pure`. If `classic`, skip Phase 0 entirely (no event emitted). <!-- mode-ref-ok -->
 
 **Procedure**:
 
@@ -174,7 +169,7 @@ Execute \*create-acceptance-tests for {feature-id}.
 
 **Configuration:**
 - model: rigor.agent_model (omit if "inherit")
-- workflow_mode: `{classic | atdd_pure}` (from Workflow Mode Dispatch above) <!-- mode-ref-ok -->
+- workflow_mode: `atdd_pure` (the sole active workflow) <!-- mode-ref-ok -->
 - test_type: {Decision 1} | test_framework: {Decision 2}
 - integration_approach: {Decision 3} | infrastructure_testing: {Decision 4}
 - interactive: moderate | output_format: gherkin
@@ -185,18 +180,16 @@ Execute \*create-acceptance-tests for {feature-id}.
 
 Runs AFTER Quinn returns initial AT set, BEFORE Phase 3 review gate. Mechanical 15-item Tier-1 checklist scored against the canonical 7-category taxonomy (C1-C7) PLUS Tier-2 S-family structural-invariants gate (S1 step-text uniqueness, future S2+) — both in `nWave/skills/nw-at-completeness-check/SKILL.md`. Tier-2 S-family FAIL → BLOCK regardless of Tier-1 score.
 
-**Trigger**: `workflow.mode == atdd_pure` → MANDATORY (BLOCKS on score < 10). `workflow.mode == classic` → ADVISORY (emit warning on score < 13, do not block). <!-- mode-ref-ok -->
 
 **Procedure**:
 
 1. Load skill at `~/.claude/skills/nw-at-completeness-check/SKILL.md`. Apply 15-item Tier-1 checklist (C1a, C1b, C2a, C2b, C3, C4a, C4b, C5a, C5b, C6a, C6b, C6c, C7a, C7b, C7c) against produced AT set.
-1-bis. Apply Tier-2 S-family structural-invariants gate (§2-bis): compute S1 (step-text uniqueness within feature scope) + any future S2+ items. S-family mandatory under both `atdd_pure` and `classic`; FAIL → BLOCK regardless of Tier-1 score. <!-- mode-ref-ok -->
+1-bis. Apply Tier-2 S-family structural-invariants gate (§2-bis): compute S1 (step-text uniqueness within feature scope) + any future S2+ items. FAIL → BLOCK regardless of Tier-1 score.
 2. Compute score (checked Tier-1 items, 0-15) + step-reuse-ratio across produced step files. Compute Tier-2 verdict independently (PASS = all S-family items pass).
 3. Verdict thresholds (Tier-1):
 
 | Score | Verdict | Action |
 |---|---|---|
-| < 10/15 | INCOMPLETE | `atdd_pure`: re-dispatch Quinn with gap findings (max 2 cycles, then escalate) · `classic`: warning + proceed | <!-- mode-ref-ok -->
 | 10-12/15 | ACCEPTABLE_WITH_DOCUMENTED_GAPS | proceed; record gaps in `docs/feature/{feature-id}/distill/at-completeness-gap-log.md` |
 | 13+/15 | COMPLETE | proceed clean |
 3-bis. Verdict thresholds (Tier-2 S-family): any FAIL → BLOCK; re-dispatch Quinn with collision list (always `AT_GAP_IN_DELIVERY_SCOPE` BLOCKER, never `SPECIFICATION_AMBIGUITY`); both modes.
@@ -390,7 +383,7 @@ Before completing DISTILL, produce `docs/feature/{feature-id}/distill/wave-decis
 - Milestone features: {list}
 - Test framework: {framework}
 - Integration approach: {approach}
-- Workflow mode: {classic | atdd_pure} <!-- mode-ref-ok -->
+- Workflow mode: atdd_pure <!-- mode-ref-ok -->
 - Cohort: {S | M | L | XL} (at_count={N}, scope_extension={bool})
 - AT-completeness score: {N}/15 ({COMPLETE | ACCEPTABLE_WITH_DOCUMENTED_GAPS | INCOMPLETE})
 - Step-reuse ratio: {ratio} (target 4.0×, met={bool})
@@ -445,7 +438,7 @@ Invoked agent MUST create a task list from its workflow phases at execution star
 
 ## Success Criteria
 
-- [ ] Workflow mode resolved from `.nwave/config.yaml` (classic | atdd_pure) <!-- mode-ref-ok -->
+- [ ] Workflow mode resolved as atdd_pure <!-- mode-ref-ok -->
 - [ ] Cohort pre-assignment gate executed (atdd_pure only) — exit 0 or operator override recorded <!-- mode-ref-ok -->
 - [ ] All user stories have corresponding acceptance tests
 - [ ] Step methods call real production services (no mocks at acceptance level)
@@ -480,6 +473,6 @@ Orchestrator reads prior waves -> dispatches Quinn -> Quinn produces 2 regressio
 `.nwave/config.yaml` has `workflow.mode: atdd_pure`. Orchestrator runs cohort classifier on `codex-empirical-e2e-support` (at_count=18) -> cohort=M -> emit `CohortAssigned` -> dispatch Quinn with MAX-PBT mandate -> Quinn produces 6 parametrize-collapsed + 4 PBT + 2 example-based scenarios -> AT-completeness gate scores 11/15 (ACCEPTABLE_WITH_DOCUMENTED_GAPS: C2b + C7c gaps) -> C7c routes upstream (DEVOPS owns interruption contract) -> Phase 3 full review gate -> handoff to DELIVER with gap log. <!-- mode-ref-ok -->
 
 ### Example 5: ATDD-pure S-cohort BLOCK
-`workflow.mode: atdd_pure`, feature has 7 ATs. Cohort classifier returns S, no `--accept-pilot-scope-extension` flag. Gate emits `CohortAssignmentRejected(feature, cohort=S, at_count=7)`, halts with exit 43 `COHORT_OUT_OF_PILOT_SCOPE`. Operator either reruns with `--accept-pilot-scope-extension` (recorded override) or switches feature to `classic` mode. <!-- mode-ref-ok -->
+`workflow.mode: atdd_pure`, feature has 7 ATs. Cohort classifier returns S, no `--accept-pilot-scope-extension` flag. Gate emits `CohortAssignmentRejected(feature, cohort=S, at_count=7)`, halts with exit 43 `COHORT_OUT_OF_PILOT_SCOPE`. Operator may rerun with `--accept-pilot-scope-extension` as a recorded override. <!-- mode-ref-ok -->
 
 DISTILL = the major synthesis point. DELIVER reads DISTILL output as its authoritative specification.

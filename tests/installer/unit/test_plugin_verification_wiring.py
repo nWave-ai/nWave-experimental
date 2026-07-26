@@ -92,7 +92,7 @@ class TestValidateInstallationPluginVerification:
             mock_root.return_value = tmp_path / "project"
             from scripts.install.install_nwave import NWaveInstaller
 
-            installer = NWaveInstaller(dry_run=True)
+            installer = NWaveInstaller(dry_run=True, platform_override={"claude_code"})
         return installer
 
     def _mock_verification_result(self):

@@ -104,6 +104,7 @@ CODEX_SKILL_FORBIDDEN_FIELDS: frozenset[str] = frozenset(
 #   skills              -- injected via $HOME/.agents/skills/, not per-agent TOML
 #   maxTurns            -- no per-agent turn limit in Codex TOML schema
 #   disable-model-invocation -- Claude Code-only field
+#   permissionMode       -- Claude Code-only field
 
 CODEX_AGENT_FORBIDDEN_FIELDS: frozenset[str] = frozenset(
     {
@@ -111,5 +112,6 @@ CODEX_AGENT_FORBIDDEN_FIELDS: frozenset[str] = frozenset(
         "skills",
         "maxTurns",
         "disable-model-invocation",
+        "permissionMode",
     }
 )

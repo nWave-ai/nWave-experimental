@@ -113,7 +113,8 @@ def test_cohort_boundaries_classify_correctly(
         "--feature-id",
         "feat-x",
         "--workflow-mode",
-        "classic",  # classic always succeeds; isolates classification
+        "atdd_pure",
+        "--accept-pilot-scope-extension",
     ]
     code, payload = _run_cli(args)
     assert code == 0
@@ -170,18 +171,16 @@ def test_atdd_pure_M_cohort_proceeds(repo: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Classic mode (always advisory)
+# Retired-mode refusal
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("at_count", [5, 20, 50, 100])
-def test_classic_mode_always_exits_zero(repo: Path, at_count: int) -> None:
-    """Classic mode never blocks regardless of cohort."""
-    _make_feature_dir(repo, "feat-c", at_count)
-    code, payload = _run_cli(["--feature-id", "feat-c", "--workflow-mode", "classic"])
-    assert code == 0
-    assert payload["event"] == "CohortAssigned"
-    assert payload["workflow_mode"] == "classic"
+def test_classic_is_not_a_selectable_cohort_workflow_mode(repo: Path) -> None:
+    """Historic classic cannot be selected through an active DISTILL CLI."""
+    _make_feature_dir(repo, "feat-c", 20)
+    with pytest.raises(SystemExit) as exited:
+        _run_cli(["--feature-id", "feat-c", "--workflow-mode", "classic"])
+    assert exited.value.code == 2
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +202,7 @@ def test_lean_feature_delta_md_supported(repo: Path) -> None:
 def test_missing_feature_dir_exits_1(repo: Path) -> None:
     """Neither distill/ nor feature-delta.md → exit 1."""
     code, payload = _run_cli(
-        ["--feature-id", "does-not-exist", "--workflow-mode", "classic"]
+        ["--feature-id", "does-not-exist", "--workflow-mode", "atdd_pure"]
     )
     assert code == 1
     assert "error" in payload
@@ -261,7 +260,13 @@ def test_cohort_assignment_is_monotonic(
     _os.environ["NWAVE_REPO_ROOT"] = str(repo)
     try:
         code, payload = _run_cli(
-            ["--feature-id", "feat-pbt", "--workflow-mode", "classic"]
+            [
+                "--feature-id",
+                "feat-pbt",
+                "--workflow-mode",
+                "atdd_pure",
+                "--accept-pilot-scope-extension",
+            ]
         )
     finally:
         if prior is None:

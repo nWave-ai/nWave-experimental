@@ -10,9 +10,13 @@ BDD scenario mapping:
   - US-RTR-003: Stable release pipeline, pyproject patching step.
 """
 
-import pytest
+import posixpath
+import shutil
 
-from scripts.release.patch_pyproject import patch_pyproject
+import pytest
+import tomllib
+
+from scripts.release.patch_pyproject import _patch_wheel_packages, patch_pyproject
 
 
 class TestPackageNameSwap:
@@ -139,12 +143,112 @@ class TestBuildTargetRewrite:
         # Pre-built DES module (produced by scripts/build_dist.py into dist/lib/
         # and staged to repo root ./lib before `python -m build --wheel`).
         # Hatch force-include semantics: LHS=source, RHS=destination.  The
-        # destination MUST be nWave/lib/python/des so the installer's
-        # des_plugin.py (framework_source = site-packages/nWave/) finds it.
-        assert '"lib/python/des" = "nWave/lib/python/des"' in content
+        # Distinct staged sources are mandatory: Hatch normalizes a trailing
+        # slash and would otherwise retain only one destination.  The public
+        # entry point needs top-level des, while the installer needs its nested
+        # runtime asset copy.
+        assert '"lib/python/des" = "des"' in content
+        assert '"lib/nwave-runtime/des" = "nWave/lib/python/des"' in content
         # Should NOT include nWave/ as a whole (avoids broken symlinks)
         lines = content.splitlines()
         assert not any(line.strip() == '"nWave" = "nWave"' for line in lines)
+
+    def test_public_catalog_never_has_single_destination_or_broad_include(self):
+        """The public catalog ships at both consumer-visible wheel locations.
+
+        Each destination needs a distinct normalized source key: syntactically
+        different aliases that normalize to the same path collide in Hatch.
+        """
+        patched_text, _ = _patch_wheel_packages(
+            '[tool.hatch.build.targets.wheel]\npackages = ["nWave"]\n',
+            "nwave_ai",
+        )
+        patched = tomllib.loads(patched_text)
+        force_include = patched["tool"]["hatch"]["build"]["targets"]["wheel"][
+            "force-include"
+        ]
+
+        catalog_entries = [
+            (posixpath.normpath(source), destination)
+            for source, destination in force_include.items()
+            if posixpath.basename(destination) == "framework-catalog.yaml"
+        ]
+        required_destinations = {
+            "nWave/framework-catalog.yaml",
+            "nWave/nWave/framework-catalog.yaml",
+        }
+
+        # Witness: both consumer-visible destinations are present, with no extras.
+        assert {destination for _, destination in catalog_entries} == (
+            required_destinations
+        )
+        # Mutation pair: normalized-source collision or broad fallback must fail.
+        assert len({source for source, _ in catalog_entries}) == 2
+        assert "nWave" not in {posixpath.normpath(source) for source in force_include}
+
+    def test_public_templates_never_share_normalized_source_or_use_broad_include(
+        self,
+    ):
+        """Both template consumers require collision-free force-includes.
+
+        Each destination needs a distinct normalized source key: syntactically
+        different aliases that normalize to the same path collide in Hatch.
+        """
+        patched_text, _ = _patch_wheel_packages(
+            '[tool.hatch.build.targets.wheel]\npackages = ["nWave"]\n',
+            "nwave_ai",
+        )
+        patched = tomllib.loads(patched_text)
+        force_include = patched["tool"]["hatch"]["build"]["targets"]["wheel"][
+            "force-include"
+        ]
+
+        required_destinations = {
+            "nWave/templates",
+            "nWave/nWave/templates",
+        }
+        template_entries = [
+            (posixpath.normpath(source), destination)
+            for source, destination in force_include.items()
+            if posixpath.basename(destination) == "templates"
+        ]
+
+        # Witness: both consumer-visible destinations are present, with no extras.
+        assert {destination for _, destination in template_entries} == (
+            required_destinations
+        )
+        # Mutation pair: normalized-source collision or broad fallback must fail.
+        assert len({source for source, _ in template_entries}) == 2
+        assert "nWave" not in {posixpath.normpath(source) for source in force_include}
+
+    def test_public_data_never_has_one_destination_shared_source_or_broad_include(
+        self,
+    ):
+        """Data ships to both consumers from collision-free, narrow sources."""
+        patched_text, _ = _patch_wheel_packages(
+            '[tool.hatch.build.targets.wheel]\npackages = ["nWave"]\n',
+            "nwave_ai",
+        )
+        patched = tomllib.loads(patched_text)
+        force_include = patched["tool"]["hatch"]["build"]["targets"]["wheel"][
+            "force-include"
+        ]
+
+        required_destinations = {
+            "nWave/data",
+            "nWave/nWave/data",
+        }
+        data_entries = [
+            (posixpath.normpath(source), destination)
+            for source, destination in force_include.items()
+            if posixpath.basename(destination) == "data"
+        ]
+
+        assert {destination for _, destination in data_entries} == (
+            required_destinations
+        )
+        assert len({source for source, _ in data_entries}) == 2
+        assert "nWave" not in {posixpath.normpath(source) for source in force_include}
 
     def test_force_include_excludes_broad_scripts(
         self, sample_pyproject_path, tmp_path
@@ -258,6 +362,37 @@ class TestCliEntryPoint:
         content = (tmp_path / "out.toml").read_text()
         assert 'nwave-ai = "nwave_ai.cli:main"' in content
 
+    def test_existing_des_entry_point_is_preserved_with_importable_destination(
+        self, tmp_path
+    ):
+        """The public DES script keeps its import target and top-level package.
+
+        The release patcher deliberately keeps the nested prebuilt copy used
+        by the installer while also force-including the same package at
+        ``site-packages/des``.  Without the latter, an installed ``des``
+        script fails before its CLI can start.
+        """
+        toml_with_des = (
+            '[project]\nname = "nwave"\nversion = "1.0.0"\n\n'
+            '[project.scripts]\ndes = "des.cli.__main__:main"\n\n'
+            '[tool.hatch.build.targets.wheel]\npackages = ["nWave"]\n'
+        )
+        src = tmp_path / "src.toml"
+        src.write_text(toml_with_des)
+        output_path = str(tmp_path / "out.toml")
+
+        patch_pyproject(
+            input_path=str(src),
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+
+        content = (tmp_path / "out.toml").read_text()
+        assert 'des = "des.cli.__main__:main"' in content
+        assert '"lib/python/des" = "des"' in content
+        assert '"lib/nwave-runtime/des" = "nWave/lib/python/des"' in content
+
 
 class TestDevSectionRemoval:
     """Remove dev-only sections from the public pyproject.toml."""
@@ -354,6 +489,107 @@ class TestDryRunMode:
 
 class TestIdempotency:
     """Patching the same file twice yields identical results."""
+
+    def test_repeated_patch_never_retains_staged_data_alias_after_source_deletion(
+        self, sample_pyproject_path, tmp_path
+    ):
+        """A repeated patch removes a data alias whose source was deleted."""
+        source = tmp_path / "nWave" / "data"
+        source.mkdir(parents=True)
+        (source / "orchestrator-affordance").mkdir()
+        (source / "orchestrator-affordance" / "standing-loops.md").write_text(
+            "keep the loop standing\n",
+            encoding="utf-8",
+        )
+        staged = tmp_path / ".nwave-wheel-assets" / "data"
+        output_path = str(tmp_path / "out.toml")
+
+        patch_pyproject(
+            input_path=sample_pyproject_path,
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+
+        # Model a staged copy left by an earlier successful patch. The repeated
+        # patch owns cleanup even when the current source has disappeared.
+        if not staged.exists():
+            shutil.copytree(source, staged)
+        shutil.rmtree(source)
+
+        patch_pyproject(
+            input_path=sample_pyproject_path,
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+
+        assert not staged.exists()
+
+    def test_repeated_patch_removes_staged_template_alias_when_source_is_deleted(
+        self, sample_pyproject_path, tmp_path
+    ):
+        """A repeated patch cannot retain templates deleted from the source.
+
+        CONTRACT_SHAPE: bounded-change
+        Outcome anchor: EXP-fix-codex-bootstrap-spine-1 (Expected observations).
+        """
+        source = tmp_path / "nWave" / "templates"
+        source.mkdir(parents=True)
+        (source / "role.md").write_text("portable role\n", encoding="utf-8")
+        staged = tmp_path / ".nwave-wheel-assets" / "templates"
+        output_path = str(tmp_path / "out.toml")
+
+        patch_pyproject(
+            input_path=sample_pyproject_path,
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+        assert (staged / "role.md").is_file()
+
+        (source / "role.md").unlink()
+        source.rmdir()
+        patch_pyproject(
+            input_path=sample_pyproject_path,
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+
+        assert not staged.exists()
+
+    def test_repeated_patch_removes_staged_catalog_alias_when_source_is_deleted(
+        self, sample_pyproject_path, tmp_path
+    ):
+        """A repeated patch cannot retain a catalog deleted from the source.
+
+        CONTRACT_SHAPE: bounded-change
+        Outcome anchor: EXP-fix-codex-bootstrap-spine-1 (Expected observations).
+        """
+        source = tmp_path / "nWave" / "framework-catalog.yaml"
+        source.parent.mkdir(parents=True)
+        source.write_text("name: public\n", encoding="utf-8")
+        staged = tmp_path / ".nwave-wheel-assets" / "framework-catalog.yaml"
+        output_path = str(tmp_path / "out.toml")
+
+        patch_pyproject(
+            input_path=sample_pyproject_path,
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+        assert staged.is_file()
+
+        source.unlink()
+        patch_pyproject(
+            input_path=sample_pyproject_path,
+            output_path=output_path,
+            target_name="nwave-ai",
+            target_version="1.1.22",
+        )
+
+        assert not staged.exists()
 
     def test_double_patch_is_idempotent(self, sample_pyproject_path, tmp_path):
         """Given a source pyproject.toml is patched once to output_a,

@@ -1019,7 +1019,7 @@ def _resolver_absent_config_default() -> str:
     from the resolver.
     """
     with tempfile.TemporaryDirectory() as empty:
-        return resolve_workflow_mode(Path(empty))
+        return resolve_workflow_mode(Path(empty)).effective_mode
 
 
 def _declared_phase_tokens(shape: str) -> tuple[str, ...]:

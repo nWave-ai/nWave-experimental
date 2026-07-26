@@ -8,7 +8,6 @@ skills:
   - nw-cicd-and-deployment
   - nw-infrastructure-and-observability
   - nw-platform-engineering-foundations
-  - nw-deliver-orchestration
   - nw-deployment-strategies
   - nw-production-readiness
   - nw-stakeholder-engagement

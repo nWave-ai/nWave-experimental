@@ -61,12 +61,12 @@ from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types_slice_02 import (
     ATDD_DESCRIPTOR_SENTINEL,
-    CLASSIC_DESCRIPTOR_SENTINEL,
-    CLASSIC_PHASE_SHAPE_SENTINEL,
     CRAFTER_AGENT,
+    DESCRIPTOR_SENTINEL_BY_FLAVOR,
     EDITED_CRAFTER_SKILL,
     INLINE_ROW_MARKER,
     RETIRED_INLINE_SKILL,
+    SHIPPED_FLAVORS,
     ProjectionDrift,
     RegionId,
     WorkflowFlavor,
@@ -150,7 +150,9 @@ class DocgenProjectionComposition:
         """Byte-copy the shipped assets + registry into a tmp working copy."""
         for rel in (CRAFTER_SPEC_REL, DELIVER_GUIDE_REL, CATALOG_REL):
             self._copy_shipped(rel)
-        for flavor in WorkflowFlavor:
+        # Copy what SHIPS. Iterating the enum copies a retired fixture identity
+        # too, and there is no file behind it to byte-copy.
+        for flavor in SHIPPED_FLAVORS:
             self._copy_shipped(FLAVORS_REL / f"{flavor.value}.yaml")
         (self._worktree / "nWave" / "tasks" / "nw").mkdir(parents=True, exist_ok=True)
         (self._worktree / "nWave" / "templates").mkdir(parents=True, exist_ok=True)
@@ -172,11 +174,9 @@ class DocgenProjectionComposition:
             WorkflowFlavor.ATDD_PURE,
             descriptor=ATDD_DESCRIPTOR_SENTINEL,
         )
-        self._replace_descriptor(
-            WorkflowFlavor.CLASSIC,
-            descriptor=CLASSIC_DESCRIPTOR_SENTINEL,
-            phase_shape=CLASSIC_PHASE_SHAPE_SENTINEL,
-        )
+        # The second flavor is gone with the mode: the projection now has one
+        # descriptor to cross-check, not two. Replacing a descriptor in a file
+        # the product no longer ships fails on the file, not on the property.
 
     def edit_registry_to_direct_crafter_elsewhere(self) -> None:
         """The wiring-witness edit: the working registry now directs the
@@ -189,8 +189,21 @@ class DocgenProjectionComposition:
         )
         if edited == original:  # fixture integrity, not SUT behaviour
             raise RuntimeError(
-                f"working registry {flavor_file} no longer carries "
-                f"'- {RETIRED_INLINE_SKILL}' — slice-02 fixture needs re-basing"
+                f"WHAT: working registry {flavor_file} no longer carries the "
+                f"skill_load_set row '- {RETIRED_INLINE_SKILL}' under "
+                "nw-software-crafter's `conditional:` list. "
+                "WHY: this fixture edits that exact row to a sentinel skill to "
+                "prove the crafter-spec projection reads the registry (never a "
+                "baked value) -- with no row there is nothing to edit. "
+                f"HOW: diff {flavor_file} against the shipped "
+                "nWave/flavors/atdd_pure.yaml. If nw-software-crafter still "
+                "directs this skill under a RENAMED value, update "
+                "RETIRED_INLINE_SKILL in domain_types_slice_01.py to the new "
+                "name. If nw-software-crafter no longer directs ANY conditional "
+                "skill (the row is gone, not renamed), this scenario's witness "
+                "is no longer plantable -- replace it with an edit against a "
+                "row that still exists; do NOT rename the sentinel onto a row "
+                "that is not there."
             )
         flavor_file.write_text(edited, encoding="utf-8")
 
@@ -291,9 +304,9 @@ class DocgenProjectionComposition:
             "after the re-render — the registry projection never landed"
         )
         absent = [
-            sentinel
-            for sentinel in (ATDD_DESCRIPTOR_SENTINEL, CLASSIC_DESCRIPTOR_SENTINEL)
-            if sentinel not in region
+            DESCRIPTOR_SENTINEL_BY_FLAVOR[flavor]
+            for flavor in SHIPPED_FLAVORS
+            if DESCRIPTOR_SENTINEL_BY_FLAVOR[flavor] not in region
         ]
         assert not absent, (
             f"the mode-descriptor region does not carry the registry's "
@@ -317,17 +330,49 @@ class DocgenProjectionComposition:
         )
 
     def assert_deliver_region_carries_phase_shape(self) -> None:
-        """Registry read-through for `deliver_phase_shape`, proven via the
-        CLASSIC row (post-review amendment 2026-06-11): the default flavor's
-        phase shape must stay runtime-canonical for the Layer-C agreement
-        leg, so the sentinel lives on the classic flavor — same single
-        renderer code path, per-flavor data."""
+        """Registry read-through for `deliver_phase_shape`, witnessed against
+        the value the WORKING REGISTRY actually declares.
+
+        The sentinel technique this assertion used until the classic flavor was
+        retired is no longer available: the sentinel had to live on a NON-default
+        flavor, because the slice-05 Layer-C agreement leg requires the DEFAULT
+        flavor's phase shape to stay runtime-canonical — with one shipped flavor,
+        which IS the default, a planted sentinel and the AT-03 accepted baseline
+        are mutually exclusive.
+
+        So the witness reads the field from the registry file and asserts the
+        rendered region agrees. This is DELIBERATELY weaker than a sentinel: a
+        guide that hard-coded the canonical shape would also pass. What keeps the
+        scenario honest is the descriptor sentinel asserted just above — it
+        proves this same region is registry-rendered, and docgen renders both
+        fields through the ONE `resolve_mode_descriptor` code path."""
         region = (self._after or {})["deliver_guide.mode_descriptor_region"]
-        assert CLASSIC_PHASE_SHAPE_SENTINEL in region, (
+        registry_text = (
+            self._flavors_dir / f"{WorkflowFlavor.ATDD_PURE.value}.yaml"
+        ).read_text(encoding="utf-8")
+        declared = _PHASE_SHAPE_LINE_RE.search(registry_text)
+        if declared is None:  # fixture integrity, not SUT behaviour
+            raise RuntimeError(
+                "WHAT: the working copy of nWave/flavors/atdd_pure.yaml "
+                "declares no top-level `deliver_phase_shape:` line. "
+                "WHY: this assertion reads the registry's OWN declared phase "
+                "shape and checks the rendered deliver-guide region agrees -- "
+                "deliberately not a sentinel, because atdd_pure is the only "
+                "shipped (and therefore default) flavor, and a planted sentinel "
+                "here would collide with the slice-05 Layer-C agreement leg. "
+                "HOW: diff the working copy against the shipped "
+                "nWave/flavors/atdd_pure.yaml. If the field was RENAMED there, "
+                "update `_PHASE_SHAPE_LINE_RE` in composition_slice_02.py. If "
+                "the field is GENUINELY gone from the schema, this witness has "
+                "nothing left to read through -- replace the assertion with one "
+                "against whatever field replaced it; do NOT keep reading a "
+                "field the schema no longer carries."
+            )
+        shape = declared.group(0).split(":", 1)[1].strip().strip('"')
+        assert shape in region, (
             "the mode-descriptor region does not carry the registry's "
-            f"deliver phase shape '{CLASSIC_PHASE_SHAPE_SENTINEL}' (authored "
-            "on the classic flavor — the registry-read-through witness for "
-            "the phase-shape field).\n"
+            f"declared deliver phase shape '{shape}' — the rendered region "
+            "and the registry file disagree on the field.\n"
             f"region body:\n{region}"
         )
 
@@ -439,9 +484,21 @@ class DocgenProjectionComposition:
         new_text, count = pattern.subn(replacement, text)
         if count != 1:  # fixture integrity, not SUT behaviour
             raise RuntimeError(
-                f"working registry {flavor_file} must declare {field!r} exactly "
-                f"once (found {count} replaceable declarations) — slice-02 "
-                "fixture needs re-basing on the shipped tree"
+                f"WHAT: {flavor_file} must declare {field!r} exactly once but "
+                f"the working copy has {count} replaceable declarations "
+                f"(regex {pattern.pattern!r}). "
+                "WHY: `_replace_descriptor` requires each registry field "
+                "declared EXACTLY ONCE so the working copy stays the LEGAL "
+                "single-key registry the slice-05 Layer-B completeness gate "
+                "demands. "
+                f"HOW: diff {flavor_file} against the shipped "
+                f"nWave/flavors/{flavor_file.name}. If {field!r} was RENAMED "
+                "there, update the pattern this helper is called with "
+                "(_DESCRIPTOR_BLOCK_RE / _PHASE_SHAPE_LINE_RE) to the new name. "
+                "If the field is GENUINELY gone from the schema, that field's "
+                "registry-read-through witness is no longer plantable -- "
+                "replace the calling scenario; do NOT rename the sentinel onto "
+                "a field the schema no longer carries."
             )
         return new_text
 
@@ -451,7 +508,11 @@ class DocgenProjectionComposition:
         agents): the slice-05 Layer-B gate verifies agent existence under
         `--root`, and the slice-02 working copy must be a LEGAL registry-
         bearing tree end-to-end — fixture mechanics, never an oracle."""
-        for flavor in WorkflowFlavor:
+        # Iterate what the working copy actually CARRIES (the shipped set the
+        # `build_working_copy` loop above copied), never the enum: the enum
+        # retains CLASSIC as a fixture-only identity, and stubbing agents for a
+        # flavor file that was never copied fails on the file, not the property.
+        for flavor in SHIPPED_FLAVORS:
             text = (self._flavors_dir / f"{flavor.value}.yaml").read_text(
                 encoding="utf-8"
             )
@@ -520,8 +581,5 @@ class DocgenProjectionComposition:
             ),
             "registry.atdd_pure": (
                 self._flavors_dir / f"{WorkflowFlavor.ATDD_PURE.value}.yaml"
-            ).read_text(encoding="utf-8"),
-            "registry.classic": (
-                self._flavors_dir / f"{WorkflowFlavor.CLASSIC.value}.yaml"
             ).read_text(encoding="utf-8"),
         }

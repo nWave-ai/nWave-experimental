@@ -55,6 +55,10 @@ from des.domain.atdd_pure_phases import (
     ATDDPurePhase,
 )
 from des.domain.des_marker_parser import dispatch_is_phaseless
+from des.domain.expectation_charter_mapping import (
+    CharterMappingState,
+    resolve_slice_charter,
+)
 from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
 from des.domain.repo_path_resolver import resolve_repo_root
 from des.domain.wave_active import WAVE_VOCABULARY
@@ -157,6 +161,11 @@ _DEFAULT_AGENT = "nw-software-crafter"
 #: enforced; what the envelope may CLAIM about it is derived per-dispatch from
 #: `resolve_declared_capability`, never asserted here).
 _EXAMINER_AGENT = "nw-user-examiner"
+
+#: The code-facing fallback for an unarmed C_REVIEWER_AUDIT slot.  A project
+#: without a slice-matching charter retains the legacy AT-completeness gate;
+#: the examiner is selected only when the domain resolver arms the slot.
+_LEGACY_MIDDLE_SLOT_REVIEWER = "nw-acceptance-designer-reviewer"
 
 #: The feature-end deep code review agent (ADR-027) -- the ONLY agent
 #: ``F_FINAL_REVIEW`` may resolve to: a code-reading reviewer, never the
@@ -521,6 +530,73 @@ _NON_CODE_FACING_DESIGN_CONTEXT = (
 )
 
 
+def _armed_middle_slot_section_body(section_id: str, charter_path: str) -> str:
+    """Render the charter-only EXAMINE envelope for an armed middle slot."""
+    bodies = {
+        "SKILL_LOADING": (
+            "Your only specification is the named expectation charter. "
+            "Do not load technical or code-reasoning skills.\n"
+        ),
+        "TASK_CONTEXT": (
+            f"Charter: {charter_path}\n"
+            "Walk the promised outcome through the real surface as a user "
+            "or API consumer.\n"
+        ),
+        "DESIGN_CONTEXT": f"Charter: {charter_path}\n",
+        "ATDD_PURE_PHASES": (
+            "Exercise the charter through the real surface and report only "
+            "what you observe.\n"
+        ),
+        "QUALITY_GATES": (
+            "Exercise the real product surface directly; do not substitute "
+            "an implementation review for observation.\n"
+        ),
+        "AT_COMPLETION_LEDGER": (
+            "Record the resulting ExamineVerdict for this charter.\n"
+        ),
+        "RECORDING_INTEGRITY": (
+            "Report observed evidence honestly; never manufacture a passing outcome.\n"
+        ),
+        "BOUNDARY_RULES": (
+            "Stay within the charter's promised outcome and its stated observations.\n"
+        ),
+        "TERMINATING_RUN": (
+            "Report what worked, what did not, and any discrepancy from the "
+            "charter after walking the real surface.\n"
+        ),
+        "TIMEOUT_INSTRUCTION": (
+            "STOP once the real surface has been exercised end to end and "
+            "your ExamineVerdict is ready.\n"
+        ),
+    }
+    return bodies.get(section_id, "")
+
+
+def _legacy_middle_slot_section_body(section_id: str) -> str | None:
+    """Return explicit technical-audit instructions for an unarmed slot."""
+    bodies = {
+        "SKILL_LOADING": (
+            "Load nw-at-completeness-check for the legacy 15-item "
+            "AT-completeness audit.\n"
+        ),
+        "TASK_CONTEXT": (
+            "Review the slice's code, design reference, and acceptance-test "
+            "material as the legacy technical reviewer.\n"
+        ),
+        "QUALITY_GATES": (
+            "Conduct the 15-item AT-completeness audit; do not clear the "
+            "middle slot on a partial review.\n"
+        ),
+        "AT_COMPLETION_LEDGER": (
+            "Emit a PhaseCReviewerVerdict with the technical audit findings.\n"
+        ),
+        "TERMINATING_RUN": (
+            "Report the 15-item AT-completeness audit and its PhaseCReviewerVerdict.\n"
+        ),
+    }
+    return bodies.get(section_id)
+
+
 def _granting_phrase(capability: DeclaredCapability) -> str:
     """Name the tools the claim is derived FROM, so the reader can check."""
     if capability.declared_tools is None:
@@ -603,6 +679,17 @@ _BUGFIX_MISSING_FEATURE_DELTA_DESIGN_CONTEXT = (
 )
 
 
+def _design_ownership_envelope(feature_id: str) -> str:
+    """Return the non-substitutable ownership/readiness contract for DESIGN."""
+    return (
+        f"nw-solution-architect owns docs/feature/{feature_id}/feature-delta.md "
+        "canonical DESIGN sections `## Reuse Analysis` and "
+        "`## Prefactoring Assessment`.\n"
+        "Standalone design documents never substitute for feature-delta.md.\n"
+        "Before handoff, run `des verify-readiness-pre-dispatch`.\n"
+    )
+
+
 #: QUALITY_GATES / TERMINATING_RUN / TIMEOUT_INSTRUCTION bodies for every
 #: NON-CODE-FACING agent (bugfix fix-feature-end-examine-agent, Cause B):
 #: these three sections used to branch ONLY on ``runs_tests``, so a
@@ -628,10 +715,31 @@ _NON_CODE_FACING_TIMEOUT_INSTRUCTION = (
 )
 
 
+#: Appended to EVERY TIMEOUT_INSTRUCTION body -- ONE shared constant, never a
+#: per-branch paraphrase (three copies of the prose are three things to keep in
+#: step). Bugfix fix-dispatched-agent-background-job-never-wakes: a dispatched
+#: agent that starts a long command in the BACKGROUND and then ends its turn
+#: waiting for the task-notification waits forever, because that notification
+#: is delivered to the ORCHESTRATOR and never to a dispatched agent for its own
+#: shell job. The failure disguises itself as slowness -- the agent is alive
+#: and coherent, so from outside it is indistinguishable from a merely slow one
+#: and nobody intervenes. The rule belongs in THIS section because the section
+#: an agent reads when it is about to stop is its own termination contract.
+_NO_BACKGROUND_TURN_CLOSE = (
+    "Never end your turn waiting for a background job you started: that "
+    "notification reaches the ORCHESTRATOR, never a dispatched agent, so the "
+    "turn waits forever while merely looking slow and nobody intervenes. If "
+    "you need a long-running command's result, run it in the FOREGROUND in "
+    "this turn, or poll for it within the SAME turn. Backgrounding is an "
+    "orchestrator's tool, not a dispatched agent's.\n"
+)
+
+
 def _design_context_body(
     agent: str,
     feature_id: str,
     lane: str | None,
+    wave: str,
     project_root: Path,
     capability: DeclaredCapability,
 ) -> str:
@@ -653,6 +761,8 @@ def _design_context_body(
     """
     if agent in _NON_CODE_FACING_AGENTS:
         return _NON_CODE_FACING_DESIGN_CONTEXT + _capability_claim(agent, capability)
+    if agent == "nw-solution-architect" and wave == "design":
+        return _design_ownership_envelope(feature_id)
     if lane == "bugfix":
         delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
         if not delta_path.is_file():
@@ -673,6 +783,8 @@ def _section_body(
     runs_tests: bool,
     project_root: Path,
     capability: DeclaredCapability,
+    middle_slot_charter: str | None,
+    legacy_middle_slot: bool,
 ) -> str:
     """Render one section's scaffold body.
 
@@ -690,6 +802,23 @@ def _section_body(
     the caller with an empty body -- the header is the contract; the prose is
     not asserted downstream.
     """
+    if middle_slot_charter is not None and section_id != "AGENT_IDENTITY":
+        armed_body = _armed_middle_slot_section_body(section_id, middle_slot_charter)
+        # The capability-derived access claim is a property of the AGENT's
+        # DECLARATION, not of how the middle slot was resolved: arming the slot
+        # narrows the SPECIFICATION the examiner works from, never what its
+        # tools can reach.  Dropping the claim here would leave the reader of an
+        # armed envelope believing an unstated constraint held -- the exact
+        # silent-wrong this register exists to prevent (GDP-6), and the reason
+        # the claim is DERIVED from the declaration rather than asserted.
+        if section_id == "DESIGN_CONTEXT":
+            return armed_body + _capability_claim(agent, capability)
+        return armed_body
+    if legacy_middle_slot:
+        legacy_body = _legacy_middle_slot_section_body(section_id)
+        if legacy_body is not None:
+            return legacy_body
+
     bodies: dict[str, str] = {
         "DES_METADATA": (
             f"Slice: {slice_id}\nFeature: {feature_id}\n"
@@ -707,7 +836,7 @@ def _section_body(
             + (f"{intent}\n" if intent else "")
         ),
         "DESIGN_CONTEXT": _design_context_body(
-            agent, feature_id, lane, project_root, capability
+            agent, feature_id, lane, wave, project_root, capability
         ),
         "ATDD_PURE_PHASES": (
             "Execute the phase named in the DES-PHASE marker.\n"
@@ -750,20 +879,23 @@ def _section_body(
             else "Report files created/modified; RAW pass/fail of the slice's ATs.\n"
         ),
         "TIMEOUT_INSTRUCTION": (
-            _NON_CODE_FACING_TIMEOUT_INSTRUCTION
-            if agent in _NON_CODE_FACING_AGENTS
-            else (
-                "Target ~60 turns -- a crafter/AT run needs room to seal, run static "
-                "checks, and REPORT after the last command; too small a budget kills "
-                "the agent between the work and its confirmation. STOP after the ATs "
-                "are green.\n"
-                if runs_tests
+            (
+                _NON_CODE_FACING_TIMEOUT_INSTRUCTION
+                if agent in _NON_CODE_FACING_AGENTS
                 else (
-                    f"Target ~60 turns. STOP once the {wave} wave's artifacts are "
-                    "authored and their gate has been RUN -- report its raw verdict. "
-                    "Do not continue into a downstream wave.\n"
+                    "Target ~60 turns -- a crafter/AT run needs room to seal, run "
+                    "static checks, and REPORT after the last command; too small a "
+                    "budget kills the agent between the work and its confirmation. "
+                    "STOP after the ATs are green.\n"
+                    if runs_tests
+                    else (
+                        f"Target ~60 turns. STOP once the {wave} wave's artifacts are "
+                        "authored and their gate has been RUN -- report its raw "
+                        "verdict. Do not continue into a downstream wave.\n"
+                    )
                 )
             )
+            + _NO_BACKGROUND_TURN_CLOSE
         ),
     }
     return bodies.get(section_id, "")
@@ -787,6 +919,9 @@ def _build_prompt(
     agent: str,
     project_root: Path,
     capability: DeclaredCapability,
+    declared_project_root: Path | None = None,
+    middle_slot_charter: str | None = None,
+    legacy_middle_slot: bool = False,
 ) -> str:
     """Assemble the full dispatch prompt: marker block, then section headers.
 
@@ -795,6 +930,18 @@ def _build_prompt(
     authoring is not one of the 3 canonical DELIVER phases, so the
     ``DES-PHASE`` marker is omitted entirely rather than borrowing an
     unrelated phase word.
+
+    ``declared_project_root`` is the tree the CALLER explicitly named
+    (``--repo-root``); when set it is stamped as the ``DES-PROJECT-ROOT``
+    marker. Without that marker a cross-worktree dispatch is indistinguishable
+    from a same-tree one: every hook-side gate then resolves the feature-delta
+    against the ORCHESTRATOR's cwd and refuses a feature that exists, complete,
+    in the declared worktree. Cross-worktree dispatch is the normal shape here,
+    and a feature-delta is born in a worktree before it ever reaches trunk --
+    so the declaration has to travel WITH the envelope, in the marker grammar
+    the parser actually reads, not in prose the operator adds by hand.
+    ``None`` (no ``--repo-root``) stamps nothing: nothing was declared, and the
+    hook's cwd default is then the right answer.
     """
 
     def marker(key: str, value: str) -> str:
@@ -805,6 +952,8 @@ def _build_prompt(
         marker("DES-PROJECT-ID", feature_id),
         marker("DES-MODE", "atdd_pure"),
     ]
+    if declared_project_root is not None:
+        marker_lines.append(marker("DES-PROJECT-ROOT", str(declared_project_root)))
     if phase is not None:
         marker_lines.append(marker("DES-PHASE", phase))
     marker_lines.append(marker("DES-SLICE", slice_id))
@@ -832,6 +981,8 @@ def _build_prompt(
             runs_tests=runs_tests,
             project_root=project_root,
             capability=capability,
+            middle_slot_charter=middle_slot_charter,
+            legacy_middle_slot=legacy_middle_slot,
         )
         for section_id in section_ids
     ]
@@ -1160,13 +1311,71 @@ def main(argv: list[str] | None = None) -> int:
         if prefactoring_advisory is not None:
             print(prefactoring_advisory, file=sys.stderr)
 
+    # C_REVIEWER_AUDIT is an evidence-mode slot, not an unconditional examiner
+    # assignment.  Resolve its charter map before rendering an AGENT_IDENTITY:
+    # an arbitrary role after malformed/ambiguous evidence would corrupt the
+    # gate, so those outcomes refuse before any prompt is emitted.
+    middle_slot_charter: str | None = None
+    legacy_middle_slot = False
+    if phase == ATDDPurePhase.C_REVIEWER_AUDIT.value:
+        charter_mapping = resolve_slice_charter(project_root, args.project_id, slice_id)
+        if charter_mapping.state is CharterMappingState.INDETERMINATE:
+            print(
+                "INDETERMINATE: WHAT: the C_REVIEWER_AUDIT expectation-charter "
+                f"mapping is malformed or ambiguous ({charter_mapping.detail}); "
+                "WHY: selecting either the technical reviewer or the user "
+                "examiner without one valid slice-matching charter would make the "
+                "middle-slot evidence arbitrary; HOW: repair each charter's single "
+                "`Spec rows:` mapping to comma-separated `slice-NN` values so this "
+                f"slice ({slice_id}) matches exactly one charter, then rerun `des "
+                "dispatch`.",
+                file=sys.stderr,
+            )
+            return _EXIT_USAGE_ERROR
+        if charter_mapping.state is CharterMappingState.ARMED:
+            assert charter_mapping.charter_path is not None
+            middle_slot_charter = str(
+                charter_mapping.charter_path.relative_to(project_root)
+            )
+            agent = _EXAMINER_AGENT
+        elif charter_mapping.state is CharterMappingState.UNARMED:
+            # The feature carries NO charter directory: the expectation-charter
+            # practice is not adopted here, so there is no omission to report
+            # and nothing to refuse.  The phase keeps its declared role -- the
+            # examiner -- exactly as it did before charters existed.  Silently
+            # handing the slot to the technical reviewer instead would give the
+            # operator an AT-completeness audit while they believe they asked
+            # for an examine, and the two answer different questions.
+            agent = _EXAMINER_AGENT
+        else:
+            # UNMAPPED: charters ARE written for this feature and this slice is
+            # not in one.  That is an omission, and it is refused OUT LOUD --
+            # never silently traded for a different role.  Refusing names what
+            # is missing; substituting hides it (GDP-6, GDP-8).
+            print(
+                "INDETERMINATE: WHAT: no expectation charter maps slice "
+                f"{slice_id} of feature {args.project_id}, so the "
+                "C_REVIEWER_AUDIT middle slot has no evidence to arm; WHY: the "
+                f"user examiner ({_EXAMINER_AGENT}) examines a PROMISED "
+                "OUTCOME, and without a charter there is no promise to walk -- "
+                "selecting the technical reviewer instead would return an "
+                "AT-completeness audit under the name of an examine, which "
+                "answers a different question; HOW: author the slice's "
+                "expectation charter (`des dispatch --lane charter "
+                f"--project-id {args.project_id} --slice {slice_id}`) so its "
+                f"`Spec rows:` names {slice_id}, then rerun `des dispatch`.",
+                file=sys.stderr,
+            )
+            return _EXIT_USAGE_ERROR
+    else:
+        agent = _resolve_agent(phase, args.lane, args.wave)
+
     # The CLAIM the envelope may make about this dispatch's access is DERIVED
     # from the recipient's own published declaration, resolved on the SSOT axis
     # (the checkout/installed tree that carries the nWave assets -- agent specs
     # live under `nWave/agents/` in a checkout and `<claude_dir>/agents/nw/`
     # when installed, NOT under the installed `nWave` SSOT dir). Degrades LOUD
     # to the UNKNOWN register; never to a permissive default.
-    agent = _resolve_agent(phase, args.lane, args.wave)
     capability = resolve_declared_capability(agent, repo_root=ssot_dir)
 
     prompt = _build_prompt(
@@ -1186,6 +1395,12 @@ def main(argv: list[str] | None = None) -> int:
         agent=agent,
         project_root=project_root,
         capability=capability,
+        # Stamped ONLY when the caller explicitly declared a tree. `project_root`
+        # is also the cwd default, and stamping that would turn every envelope
+        # into a declaration the caller never made.
+        declared_project_root=project_root if args.repo_root is not None else None,
+        middle_slot_charter=middle_slot_charter,
+        legacy_middle_slot=legacy_middle_slot,
     )
     print(prompt, end="")
     return 0

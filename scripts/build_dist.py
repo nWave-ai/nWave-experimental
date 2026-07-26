@@ -6,7 +6,9 @@ Assembles a distributable layout from scattered source directories:
   nWave/templates/    → dist/templates/
   nWave/skills/nw-*/  → dist/skills/nw-*/    (flat layout, includes command-skills)
   nWave/scripts/des/  → dist/scripts/des/
-  src/des/            → dist/lib/python/des/  (imports rewritten: src.des → des)
+  src/des/            → dist/lib/python/des/ and dist/lib/nwave-runtime/des/
+                        (one rewritten runtime, staged for the public entry
+                        point and the installer-owned bundled runtime)
   scripts/*.py        → dist/scripts/
 
 Note: Commands are now installed as skills (nw-{name}/SKILL.md) since v2.8.0.
@@ -52,6 +54,7 @@ REQUIRED_DIRS = [
     "skills",
     "scripts/des",
     "lib/python/des",
+    "lib/nwave-runtime/des",
 ]
 
 # DES import rewriting patterns (from des_plugin.py)
@@ -237,7 +240,7 @@ class DistBuilder:
         return count
 
     def build_des_module(self) -> int:
-        """src/des/ → dist/lib/python/des/ (rewrite imports, clear __pycache__)."""
+        """Build one rewritten DES runtime under both public and bundled roots."""
         src = self.project_root / "src" / "des"
         if not src.exists():
             self._log("DES module: src/des/ not found, skipping", "WARN")
@@ -263,7 +266,18 @@ class DistBuilder:
             if cache_dir.is_dir():
                 shutil.rmtree(cache_dir)
 
-        self._log(f"DES module: rewrote imports in {files_modified} files")
+        # Hatch normalizes equivalent source keys in a force-include map, so
+        # one physical source cannot reliably serve two wheel destinations.
+        # Stage a second physical root after rewriting once: `des/` serves the
+        # public console entry point; `nWave/lib/python/des/` serves the
+        # installer that deploys the bundled runtime to host integrations.
+        bundled_dst = self.dist_dir / "lib" / "nwave-runtime" / "des"
+        shutil.copytree(dst, bundled_dst, dirs_exist_ok=True)
+
+        self._log(
+            "DES module: rewrote imports in "
+            f"{files_modified} files and staged public + bundled roots"
+        )
         return files_modified
 
     def build_utilities(self) -> int:

@@ -87,6 +87,7 @@ def _run(
     *,
     cwd: Path,
     python_flags: list[str] | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Invoke the hook script exactly as Claude Code would: argv[1] = event."""
     cmd = [sys.executable, *(python_flags or []), str(script), event]
@@ -97,6 +98,7 @@ def _run(
         text=True,
         input="",
         timeout=30,
+        env=env,
     )
 
 
@@ -333,7 +335,14 @@ def test_missing_assets_dir_never_silently_exits_clean(tmp_path: Path) -> None:
     # the assets dir the script computes from its own __file__ is
     # guaranteed absent here.
 
-    result = _run(isolated_script, "SessionStart", cwd=isolated_root)
+    isolated_env = os.environ.copy()
+    isolated_env["HOME"] = str(tmp_path / "empty-home")
+    result = _run(
+        isolated_script,
+        "SessionStart",
+        cwd=isolated_root,
+        env=isolated_env,
+    )
 
     assert result.stderr.strip() != "", (
         "a missing assets directory must produce a non-silent stderr "
@@ -460,4 +469,71 @@ def test_des_plugin_ships_the_orchestrator_affordance_refresh_script() -> None:
         "the new standalone hook must be added to DESPlugin.DES_HOOKS so it "
         "is shipped independent of the DES gate mechanism -- got "
         f"DES_HOOKS={DESPlugin.DES_HOOKS!r}"
+    )
+
+
+# ===========================================================================
+# 6. HOST-NEUTRAL RESOLUTION -- Codex/Copilot/OpenCode installs (no ~/.claude)
+# ===========================================================================
+
+
+def test_session_start_resolves_assets_from_host_neutral_runtime_when_installed_and_dev_layouts_are_absent(
+    tmp_path: Path,
+) -> None:
+    """A host-neutral install (Codex, Copilot, OpenCode -- `DESPlugin.
+    _runtime_python_dir` ships runtime assets to `~/.nwave/nWave/`
+    instead of `<claude_dir>/lib/nWave/`) must still resolve the shipped
+    `orchestrator-affordance/` assets.
+
+    THE DEFECT this guards: `_candidate_assets_dirs()` only tried the
+    Claude-scoped installed path and the dev-checkout path. A host-neutral
+    install populates NEITHER -- it populates `~/.nwave/nWave/data/
+    orchestrator-affordance/` -- so the resolver diagnosed "assets not
+    found" and injected nothing, even though the data had genuinely
+    reached the operator's machine.
+
+    Isolation: the script is copied to a location that resolves neither the
+    installed-Claude-scoped candidate (no `lib/nWave/` two hops up) nor the
+    dev-checkout candidate (no `nWave/data/` three hops up); `HOME` is
+    pointed at a synthetic tmp_path carrying ONLY the host-neutral assets.
+    """
+    isolated_scripts_dir = tmp_path / "isolated" / "somewhere" / "scripts"
+    isolated_scripts_dir.mkdir(parents=True)
+    isolated_script = isolated_scripts_dir / _SCRIPT.name
+    isolated_script.write_text(_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+
+    fake_home = tmp_path / "fake-home"
+    affordance_dir = fake_home / ".nwave" / "nWave" / "data" / "orchestrator-affordance"
+    affordance_dir.mkdir(parents=True)
+    (affordance_dir / "spine-discipline.md").write_text(
+        f"# {_SPINE_DISCIPLINE_MARKER}\n", encoding="utf-8"
+    )
+    (affordance_dir / "des-command-catalog.md").write_text(
+        f"Run {_CATALOG_DES_NEXT_MARKER}.\n", encoding="utf-8"
+    )
+
+    env = os.environ.copy()
+    env["HOME"] = str(fake_home)
+    result = subprocess.run(
+        [sys.executable, str(isolated_script), "SessionStart"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        input="",
+        timeout=30,
+        env=env,
+    )
+
+    assert result.returncode == 0, (
+        "must exit 0 even when resolving via the host-neutral candidate -- "
+        f"got returncode={result.returncode}, stderr={result.stderr!r}"
+    )
+    payload = _parse_json_or_fail(result.stdout)
+    additional_context = payload.get("hookSpecificOutput", {}).get(
+        "additionalContext", ""
+    )
+    assert _SPINE_DISCIPLINE_MARKER in additional_context, (
+        "THE DEFECT: host-neutral install assets exist on disk but were "
+        f"never found -- got additionalContext={additional_context!r}, "
+        f"stderr={result.stderr!r}"
     )

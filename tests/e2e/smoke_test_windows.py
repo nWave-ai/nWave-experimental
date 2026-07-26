@@ -10,6 +10,11 @@ Exit codes: 0 = all pass, 1 = one or more failures.
 
 Layer 4 of platform-testing-strategy.md
 
+Only runs on Windows -- see ``tests/e2e/smoke_guard.py:require_windows`` for
+the refusal on every other platform. Every path this script touches is a
+throwaway sandbox directory (``tests/e2e/smoke_guard.py:sandbox_home``); it
+never touches the developer's real Claude configuration.
+
 Usage (GitHub Actions windows-latest):
     python tests/e2e/smoke_test_windows.py
 """
@@ -21,6 +26,24 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+from tests.e2e.smoke_guard import require_windows, sandbox_home
+
+
+_REFUSAL = require_windows(sys.platform)
+if _REFUSAL is not None:
+    print(_REFUSAL)
+    sys.exit(1)
+
+
+# --- Sandbox: every path below descends from this throwaway root, never
+# from the machine's real home directory. ---
+
+SANDBOX_ROOT = Path(tempfile.gettempdir()) / "nwave-smoke-sandbox"
+SANDBOX_HOME = sandbox_home(SANDBOX_ROOT)
+if SANDBOX_HOME.exists():
+    shutil.rmtree(SANDBOX_HOME, ignore_errors=True)
+SANDBOX_HOME.mkdir(parents=True, exist_ok=True)
 
 
 TOTAL = 0
@@ -40,11 +63,18 @@ def test(name: str, condition: bool, detail: str = "") -> None:
 
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    """Run a command and return the result."""
+    """Run a command and return the result.
+
+    Every child process sees the sandbox as its home -- HOME on POSIX,
+    USERPROFILE on Windows -- so nothing it does can resolve to the real
+    home directory, however it looks that up internally.
+    """
     # Ensure UTF-8 encoding on Windows to avoid UnicodeEncodeError
     # from installer banner emoji characters
     env = kwargs.pop("env", None) or os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
+    env["HOME"] = str(SANDBOX_HOME)
+    env["USERPROFILE"] = str(SANDBOX_HOME)
     return subprocess.run(
         cmd,
         capture_output=True,
@@ -67,7 +97,7 @@ print()
 
 print("--- Setup: venv + nwave-ai ---")
 
-venv_dir = Path(tempfile.gettempdir()) / "nwave-test-venv"
+venv_dir = SANDBOX_HOME / "nwave-test-venv"
 if venv_dir.exists():
     shutil.rmtree(venv_dir, ignore_errors=True)
 
@@ -103,16 +133,17 @@ test("nwave-ai version reports version", version_ok, version_output)
 print()
 print("--- nwave-ai install ---")
 
-# Create minimal Claude Code environment
-home = Path.home()
-claude_dir = home / ".claude"
+# Sandbox Claude Code environment -- never the developer's real config.
+claude_dir = SANDBOX_HOME / ".claude"
 claude_dir.mkdir(parents=True, exist_ok=True)
 
 settings_file = claude_dir / "settings.json"
 if not settings_file.exists():
     settings_file.write_text('{"permissions": {}, "hooks": {}}', encoding="utf-8")
 
-r = run([str(nwave_exe), "install"])
+# --target is belt-and-braces on top of the HOME/USERPROFILE redirect in
+# run(): it sets CLAUDE_CONFIG_DIR explicitly for the install subprocess.
+r = run([str(nwave_exe), "install", "--target", str(claude_dir)])
 install_output = r.stdout + r.stderr
 # Installer may fail partially on Windows (no Claude Code binary), but should install assets
 print(f"  Install output (last 200 chars): {install_output[-200:]}")
@@ -169,7 +200,7 @@ if skills_dir_exists:
 print()
 print("--- Git attribution test ---")
 
-test_repo = Path(tempfile.gettempdir()) / "nwave-git-test"
+test_repo = SANDBOX_HOME / "nwave-git-test"
 if test_repo.exists():
     shutil.rmtree(test_repo, ignore_errors=True)
 
@@ -180,7 +211,7 @@ run(["git", "config", "user.email", "test@nwave.ai"], cwd=str(test_repo))
 run(["git", "config", "user.name", "Test"], cwd=str(test_repo))
 
 # Enable attribution
-nwave_config_dir = home / ".nwave"
+nwave_config_dir = SANDBOX_HOME / ".nwave"
 nwave_config_dir.mkdir(parents=True, exist_ok=True)
 config_path = nwave_config_dir / "global-config.json"
 config_path.write_text(

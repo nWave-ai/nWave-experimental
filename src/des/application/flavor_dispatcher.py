@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from des._internal import subset_parser
+from des.application.workflow_mode import ACTIVE_MODES, CLASSIC_MODE
 
 
 if TYPE_CHECKING:
@@ -126,6 +127,40 @@ class CompositionResult:
 GateInvoker = Callable[[str, dict[str, str]], "tuple[int, str]"]
 
 
+def _not_executable(flavor_id: str) -> str:
+    """The refusal for a flavor this build cannot dispatch.
+
+    It states the condition that is actually true -- the flavor is not among the
+    executable modes -- and mentions the classic migration ONLY when the caller
+    really did ask for classic. The single message this replaces named classic
+    for every caller, so a synthetic or mistyped flavor id was told to migrate
+    off a mode it had never used, and the reader went looking for a history that
+    was not theirs. Naming the frequent case for every case is how a diagnostic
+    stops carrying information.
+    """
+    active = ", ".join(sorted(ACTIVE_MODES))
+    if flavor_id == CLASSIC_MODE:
+        return (
+            f"WHAT: flavor {flavor_id!r} is not executable. "
+            "WHY: classic was removed; a declaration, a copied config or an "
+            "environment default cannot bring it back. "
+            f"HOW: migrate the project to atdd_pure with `des "
+            f"convert-to-atdd-pure --workspace <project-dir>` (executable "
+            f"modes: {active})."
+        )
+    return (
+        f"WHAT: flavor {flavor_id!r} is not among this build's executable "
+        "modes. "
+        "WHY: only a mode the product ships can be dispatched -- an unknown id "
+        "is refused rather than resolved to a default, because silently "
+        "dispatching the wrong composition is worse than refusing. "
+        f"HOW: dispatch one of the executable modes ({active}), or -- if this "
+        "id is a test-authored flavor meant to exercise gate COMPOSITION rather "
+        "than a product mode -- see the open design question on separating "
+        "those two responsibilities before widening this set."
+    )
+
+
 def dispatch_lifecycle_event(
     event_id: str,
     flavor_id: str,
@@ -160,20 +195,114 @@ def dispatch_lifecycle_event(
     assert flavors_dir is not None, "flavors_dir must be provided"
     assert gate_invoker is not None, "gate_invoker must be provided"
 
-    flavor_doc = _parse_flavor_file(flavors_dir / f"{flavor_id}.yaml")
-    lifecycle_events = flavor_doc["lifecycle_events"]
-    assert isinstance(lifecycle_events, dict), (
-        f"flavor {flavor_id!r} `lifecycle_events` must be a mapping"
-    )
-    composition = lifecycle_events[event_id]
-
-    return iterate_composition(
-        composition,
+    flavor_file = resolve_executable_flavor_path(flavor_id, flavors_dir)
+    return compose_lifecycle_event(
+        flavor_file,
         event_id=event_id,
         flavor_id=flavor_id,
         context=context,
         gate_invoker=gate_invoker,
     )
+
+
+class FlavorNotExecutable(ValueError):
+    """A mode IDENTITY this build does not dispatch.
+
+    A subclass of ValueError so existing callers catching the base class keep
+    working; distinct as a type so an oracle can decide on the property rather
+    than on message text.
+    """
+
+
+class FlavorFileAbsent(ValueError):
+    """The flavor DOCUMENT is missing at the resolved path.
+
+    Deliberately distinct from `FlavorNotExecutable`: "this mode was retired"
+    and "this file was deleted" ask for two different repairs, and one message
+    covering both sends the reader down the wrong one.
+    """
+
+
+def resolve_executable_flavor_path(flavor_id: str, flavors_dir: Path) -> Path:
+    """Identity -> document. THE single owner of the ACTIVE_MODES guard.
+
+    Every caller holding a mode IDENTITY resolves it here, so the guard has one
+    home instead of three inline copies. The guard is not weakened by the move --
+    it is the same check, in one place, with the same refusal text.
+    """
+    if flavor_id not in ACTIVE_MODES:
+        raise FlavorNotExecutable(_not_executable(flavor_id))
+    path = flavors_dir / f"{flavor_id}.yaml"
+    if not path.is_file():
+        raise FlavorFileAbsent(
+            f"WHAT: flavor {flavor_id!r} is executable but its declaration is "
+            f"missing at {path}. "
+            "WHY: an executable mode with no document cannot be composed, and "
+            "reporting this as 'not executable' would send you to migrate a mode "
+            "that is perfectly current. "
+            "HOW: restore the flavor file, or point --flavors-dir at the "
+            "directory that carries it."
+        )
+    return path
+
+
+def compose_lifecycle_event(
+    flavor_file: Path,
+    *,
+    event_id: str,
+    flavor_id: str,
+    context: dict[str, str],
+    gate_invoker: GateInvoker,
+) -> CompositionResult:
+    """Document -> composition. Blind to the mode registry, BY SIGNATURE.
+
+    This entry takes a DOCUMENT, never an identity, which is what makes the
+    fusion this separation removes non-representable rather than merely
+    discouraged: re-adding the guard here would mean adding a parameter the
+    function does not use -- visible in review, unlike an `if` at the top of a
+    body. It therefore cannot execute a retired mode: it is never handed one.
+
+    `flavor_id` is still accepted, but only as a LABEL threaded into results for
+    reporting. It is never compared against the registry here.
+    """
+    if not flavor_file.is_file():
+        raise FlavorFileAbsent(
+            f"WHAT: no flavor document at {flavor_file}. "
+            "WHY: composition reads a declaration; without the file there is "
+            "nothing to compose and nothing to report. "
+            "HOW: pass the path of an existing flavor file."
+        )
+    flavor_doc = _parse_flavor_file(flavor_file)
+    lifecycle_events = flavor_doc["lifecycle_events"]
+    assert isinstance(lifecycle_events, dict), (
+        f"flavor document {flavor_file} `lifecycle_events` must be a mapping"
+    )
+    if event_id not in lifecycle_events:
+        declared = ", ".join(sorted(lifecycle_events)) or "(none)"
+        raise LifecycleEventUndeclared(
+            f"WHAT: {flavor_file} declares no composition for lifecycle event "
+            f"{event_id!r}. "
+            "WHY: an undeclared event has no gate order to run, and a bare "
+            "KeyError naming only the event leaves you guessing what the file "
+            "does declare. "
+            f"HOW: declare {event_id!r} under `lifecycle_events`, or dispatch "
+            f"one that is declared -- this file declares: {declared}."
+        )
+    return iterate_composition(
+        lifecycle_events[event_id],
+        event_id=event_id,
+        flavor_id=flavor_id,
+        context=context,
+        gate_invoker=gate_invoker,
+    )
+
+
+class LifecycleEventUndeclared(KeyError):
+    """The document declares no composition for the requested event.
+
+    A KeyError subclass so callers catching KeyError still work; its message
+    names the events the file DOES declare, which a bare KeyError never did.
+    """
 
 
 def iterate_composition(
@@ -412,6 +541,8 @@ def resolve_skill_load_set(
       The resolver NEVER improvises an empty answer for a defective
       declaration.
     """
+    if flavor_id not in ACTIVE_MODES:
+        raise ValueError(_not_executable(flavor_id))
     flavor_doc = _parse_flavor_file(flavors_dir / f"{flavor_id}.yaml")
     agent_row = _declared_agent_row(flavor_doc, agent_id, flavor_id)
     return _declared_conditional_skills(agent_row, agent_id, flavor_id)
@@ -489,6 +620,8 @@ def resolve_mode_descriptor(flavor_id: str, *, flavors_dir: Path) -> ModeDescrip
     `deliver_phase_shape` as non-empty prose — the resolver NEVER improvises
     a descriptor for a defective declaration.
     """
+    if flavor_id not in ACTIVE_MODES:
+        raise ValueError(_not_executable(flavor_id))
     flavor_doc = _parse_flavor_file(flavors_dir / f"{flavor_id}.yaml")
     return ModeDescriptor(
         descriptor=_declared_prose(flavor_doc, "descriptor", flavor_id),

@@ -71,7 +71,6 @@ EXPECTED_BULK_SKILLS = [
     "nw-ddd-eventsourcing",
     "nw-ddd-strategic",
     "nw-ddd-tactical",
-    "nw-deliver-orchestration",
     "nw-deployment-strategies",
     "nw-design-methodology",
     "nw-design-patterns",
@@ -184,9 +183,9 @@ EXPECTED_BULK_SKILLS = [
 
 BULK_HASHES = {
     # 2026-06-11 (mode-registry-single-locus slice-04): THE LAST MANUAL RE-PIN.
-    # 6 skills re-pinned after the bulk mode-prose migration (GENERATED regions
+    # 5 skills re-pinned after the bulk mode-prose migration (GENERATED regions
     # + mode-ref-ok allow-markers): nw-buddy-project-reading,
-    # nw-buddy-wave-knowledge, nw-deliver-orchestration, nw-tdd-methodology,
+    # nw-buddy-wave-knowledge, nw-tdd-methodology,
     # nw-tdd-review-enforcement, nw-test-design-mandates. From slice-05 on,
     # the mode_locus_gate + docgen --check own this guard.
     # Prior hash updated 2026-07-08: added Skill-addressing-tables (load-by-trigger)
@@ -195,7 +194,7 @@ BULK_HASHES = {
     "nw-agent-testing": "58093930e354b85b07be5fe0a08fc4ed",
     "nw-ai-workflow-tutorials": "93e15d83c8b2042102785dff4c677bb7",
     "nw-architectural-styles-tradeoffs": "f6dc4a1e0f1ac40d9d1dd0d25d9c90f4",
-    "nw-architecture-patterns": "f7cd2c114c72307ee46a6114e16d664a",
+    "nw-architecture-patterns": "96b7c923612a4b44b805a5743d244b55",
     "nw-assessment-kirkpatrick": "abaecd7a3e1d040b4a4b53971e1716d8",
     "nw-authoritative-sources": "29aa67bf5e4dd89382504767654ed6a4",
     "nw-backward-design-ubd": "8e88399482057722474748531482667f",
@@ -216,8 +215,8 @@ BULK_HASHES = {
     # routing) + /nw-roadmap deprecation (classic-only, removed in v4) row framing.
     # Prior hash updated 2026-07-21: added des refactor / des find / the 3
     # autonomous-loop tick CLIs to the discoverability catalog.
-    "nw-buddy-command-catalog": "a543e96bd0c4033fd6335c6ed009b6d6",
-    "nw-buddy-project-reading": "63fccdf0187159a10205b3d85ce2729c",
+    "nw-buddy-command-catalog": "df423f91f2090bb62965e623b1f76fe7",
+    "nw-buddy-project-reading": "2ad40ff04927d0f7ca0c9518cd7e9b5b",
     "nw-buddy-ssot-knowledge": "7a801cc1b1ab7379a258f621a08a71f5",
     # Hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation —
     # DELIVER wave description now cites 3-phase RED→GREEN→COMMIT with legacy fallback.
@@ -256,7 +255,7 @@ BULK_HASHES = {
     "nw-competitive-analysis": "ec05866d4429c42ea27d84aad891f719",
     "nw-compliance-framework": "5574d1c462405437898f603dce12340e",
     "nw-copy-paste-quality": "5dfcb24d42977804b8638aa11010c5f6",
-    "nw-copywriting-frameworks": "53d9774ad655abd12963cce48c90e135",
+    "nw-copywriting-frameworks": "28b4e03c165d77e8048346427988c1d0",
     "nw-css-implementation-recipes": "2f603190952ac6308a16f358a4fea9a3",
     "nw-curriculum-series-design": "cfc09ee152b468fe1f170a1d8afefe73",
     "nw-data-architecture-patterns": "319bf0158dcd71391e144be1abda9446",
@@ -266,7 +265,6 @@ BULK_HASHES = {
     "nw-ddd-eventsourcing": "f014437fa2b76008896d3a83e4f48288",
     "nw-ddd-strategic": "1bee905e197ac9f2cacf4e5e37f3f8ef",
     "nw-ddd-tactical": "7ec690c487144de353ae7d01ba24cd6c",
-    "nw-deliver-orchestration": "dd6bc975556a7bb65bf5058581e7b1c4",
     "nw-deployment-strategies": "a73beb26bce3706db567f8cce3497b9b",
     "nw-design-methodology": "9f161d6ae6ad061a6a4eb7dcb63c082c",
     "nw-design-patterns": "b0e3f59bfde50d1a7bb6ada40ca9b3b4",
@@ -308,7 +306,7 @@ BULK_HASHES = {
     "nw-interaction-choreography": "8707cda3fea5be7df1daa63d6f56660f",
     "nw-interviewing-techniques": "fffd5344322d67d5070f3a7e4f435304",
     "nw-investigation-techniques": "b04c2a2ec34ed186c238518788ea7640",
-    "nw-it-specific-pedagogy": "0a144003672f4a21f40fd99f69704148",
+    "nw-it-specific-pedagogy": "759e1dabd6e7f0a1fd8064ff0b0b35ea",
     "nw-jtbd-analysis": "325735a2314231e61af6f7f819f3baa7",
     "nw-jtbd-bdd-integration": "c0226577d42aef2f8ac314b1a4001841",
     "nw-jtbd-core": "7c211aab49cd6d81b331953ae334081a",
@@ -399,7 +397,7 @@ BULK_HASHES = {
     # + mode-scoped execution-log prose for the roadmap-free spine.
     # Prior hash updated 2026-05-15: closed-source refs scrubbed (3ab776967).
     # Prior hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation.
-    "nw-tdd-review-enforcement": "40d1743e3a9ea73aa53c8ca806071e46",
+    "nw-tdd-review-enforcement": "fd974d67c36a11af0eebcf904aef2d16",
     # Hash updated 2026-06-08: ADR-GV-001 D8 — back-ported Mandates 12-15
     # into the SSOT + added the numbering-convention frame + Mandate Registry.
     # Hash updated 2026-06-17: decompose-and-recompose into 3 nw-test-design-mandates-*
@@ -407,7 +405,9 @@ BULK_HASHES = {
     # a lean composing router + Mandate Registry. §22.0 reviewed.
     # Hash updated 2026-07-16: add the STANDING Closure obligations section
     # (COUNT->population / PARTITION->conservation / SILENCE->discriminator; methodology Cambio-1).
-    "nw-test-design-mandates": "6d1b1fdeaff4eff7341bbf96be055742",
+    # Hash updated 2026-07-26: add durable-outcome naming so delivery metadata
+    # cannot become the public identifier of an acceptance test.
+    "nw-test-design-mandates": "5d3bdd8f2ec6af8c13af68a2ba16aeb9",
     "nw-test-organization-conventions": "b478170a1cccb0aac1811fa06daf0ba1",
     "nw-test-refactoring-catalog": "9dd4d17224b32058386f4413027253bd",
     "nw-tlaplus-verification": "39ba15e1845e237a9d2014c467aa56ff",

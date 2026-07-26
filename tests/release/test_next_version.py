@@ -13,10 +13,11 @@ BDD scenario mapping:
 
 import json
 import subprocess
-import sys
 
 import pytest
 from packaging.version import Version
+
+from tests.common.in_process_cli import run_script_in_process
 
 
 SCRIPT = "scripts/release/next_version.py"
@@ -24,10 +25,9 @@ SCRIPT = "scripts/release/next_version.py"
 
 def run_next_version(*args: str) -> subprocess.CompletedProcess:
     """Run next_version.py as a subprocess, returning the CompletedProcess."""
-    return subprocess.run(
-        [sys.executable, SCRIPT, *args],
-        capture_output=True,
-        text=True,
+    exit_code, out, err = run_script_in_process(SCRIPT, *args)
+    return subprocess.CompletedProcess(
+        args=[SCRIPT, *args], returncode=exit_code, stdout=out, stderr=err
     )
 
 

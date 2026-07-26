@@ -347,3 +347,163 @@ def test_string_literal_decoy_does_not_mask_a_real_marker_elsewhere(
     uncovered = event["uncovered"]
     assert isinstance(uncovered, list) and len(uncovered) == 1
     assert uncovered[0]["id"] == "R1"
+
+
+# --- regression: hierarchical requirement identifiers are exact contracts ---
+#
+# RCA: every grammar in `verify_spec_coverage` accepts only the legacy
+# `R\\d+` shape. A legitimate vertically sliced requirement such as
+# `R-S01-03` is therefore omitted from the checklist denominator and the
+# gate returns SpecCoverageIndeterminate before its Python and Gherkin marker
+# readers have a chance to recognize the exact identifier.
+
+_HIERARCHICAL_REQUIREMENT_ID = "R-S01-03"
+_HIERARCHICAL_CHECKLIST = (
+    "| ID | Requirement | Category |\n"
+    "|----|-------------|----------|\n"
+    f"| {_HIERARCHICAL_REQUIREMENT_ID} | installed Codex host starts the slice | functional |\n"
+)
+
+
+def _write_hierarchical_coverage_corpus(
+    tmp_path: Path, *at_files: tuple[str, str]
+) -> tuple[str, str]:
+    """Write one hierarchical checklist and a non-empty AT corpus."""
+    checklist = tmp_path / "checklist.md"
+    checklist.write_text(_HIERARCHICAL_CHECKLIST)
+    at_dir = tmp_path / "ats"
+    at_dir.mkdir()
+    for name, source in at_files:
+        (at_dir / name).write_text(source)
+    return str(checklist), str(at_dir)
+
+
+def test_python_marker_covers_exact_hierarchical_requirement_id(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Positive: an exact Python marker covers `R-S01-03` end-to-end.
+
+    This drives the public CLI rather than a reader helper: the requirement
+    must be parsed into the denominator *and* the Python marker must be
+    attributed to the exact same identity.
+    """
+    checklist, at_dir = _write_hierarchical_coverage_corpus(
+        tmp_path,
+        (
+            "test_hierarchical.py",
+            '@pytest.mark.covers("R-S01-03")\n'
+            "def test_installed_codex_host_starts_slice():\n"
+            "    assert True\n",
+        ),
+    )
+
+    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 0, (
+        "BUG: an exact Python coverage marker for R-S01-03 must verify the "
+        "hierarchical checklist row rather than degrading INDETERMINATE"
+    )
+    assert _first_event(capsys)["event"] == "SpecCoverageVerified"
+
+
+def test_gherkin_tag_covers_exact_hierarchical_requirement_id(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Positive: an exact Gherkin tag covers `R-S01-03` end-to-end."""
+    checklist, at_dir = _write_hierarchical_coverage_corpus(
+        tmp_path,
+        (
+            "installed-host.feature",
+            "@covers-R-S01-03\n"
+            "Feature: Installed Codex host\n\n"
+            "  Scenario: Start an installed slice\n"
+            "    Given an installed Codex host\n"
+            "    When it starts a slice\n"
+            "    Then the slice starts\n",
+        ),
+    )
+
+    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 0, (
+        "BUG: an exact Gherkin @covers-R-S01-03 tag must verify the "
+        "hierarchical checklist row rather than degrading INDETERMINATE"
+    )
+    assert _first_event(capsys)["event"] == "SpecCoverageVerified"
+
+
+def test_uncovered_hierarchical_requirement_is_refused_not_indeterminate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """NEGATIVE: a valid but uncovered hierarchy row is a visible refusal.
+
+    This distinguishes a genuine uncovered requirement (exit 1) from an
+    unsupported identifier grammar (exit 2). A non-empty unrelated corpus
+    proves the result is not the empty-corpus degrade path.
+    """
+    checklist, at_dir = _write_hierarchical_coverage_corpus(
+        tmp_path,
+        ("test_unrelated.py", "def test_unrelated():\n    assert True\n"),
+    )
+
+    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 1, (
+        "BUG: R-S01-03 is a valid requirement identity; without an exact "
+        "AT it must be REFUSED (1), never treated as malformed/INDETERMINATE (2)"
+    )
+    event = _first_event(capsys)
+    assert event["event"] == "SpecCoverageRefused"
+    uncovered = event["uncovered"]
+    assert isinstance(uncovered, list) and [row["id"] for row in uncovered] == [
+        _HIERARCHICAL_REQUIREMENT_ID
+    ]
+
+
+def test_legacy_numeric_requirement_id_remains_supported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Compatibility: the existing `R1` grammar remains a valid exact ID."""
+    checklist = tmp_path / "checklist.md"
+    checklist.write_text("| R1 | legacy booking works | functional |\n")
+    at_dir = tmp_path / "ats"
+    at_dir.mkdir()
+    (at_dir / "test_legacy.py").write_text(
+        '@pytest.mark.covers("R1")\ndef test_legacy_booking():\n    assert True\n'
+    )
+
+    assert main(["--checklist", str(checklist), "--at-dir", str(at_dir)]) == 0
+    assert _first_event(capsys)["event"] == "SpecCoverageVerified"
+
+
+@pytest.mark.parametrize(
+    "lookalike",
+    [
+        "R-S1-03",  # missing zero in the slice segment
+        "R-S01-3",  # missing zero in the requirement segment
+        "prefix-R-S01-03",  # prefix partial must not cover the exact ID
+        "R-S01-03-suffix",  # suffix partial must not cover the exact ID
+    ],
+)
+def test_hierarchical_marker_lookalikes_do_not_cover_exact_requirement(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], lookalike: str
+) -> None:
+    """Negative precision proof: near IDs cannot cover `R-S01-03`.
+
+    The parser must admit the valid canonical identity without weakening its
+    equality relation into prefix/suffix or zero-insensitive matching.
+    """
+    checklist, at_dir = _write_hierarchical_coverage_corpus(
+        tmp_path,
+        (
+            "test_lookalike.py",
+            f'@pytest.mark.covers("{lookalike}")\n'
+            "def test_lookalike_marker():\n"
+            "    assert True\n",
+        ),
+    )
+
+    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 1, (
+        f"BUG: marker {lookalike!r} is not the exact canonical ID "
+        f"{_HIERARCHICAL_REQUIREMENT_ID!r}; it must leave that row REFUSED"
+    )
+    event = _first_event(capsys)
+    assert event["event"] == "SpecCoverageRefused"
+    uncovered = event["uncovered"]
+    assert isinstance(uncovered, list) and [row["id"] for row in uncovered] == [
+        _HIERARCHICAL_REQUIREMENT_ID
+    ]

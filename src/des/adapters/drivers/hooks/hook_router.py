@@ -9,6 +9,8 @@ Entry point: python3 -m des.adapters.drivers.hooks.claude_code_hook_adapter <com
 import io
 import json
 import sys
+from dataclasses import asdict
+from pathlib import Path
 
 from des.adapters.drivers.hooks.activation_gate import apply_gate
 from des.adapters.drivers.hooks.deliver_progress_handler import handle_deliver_progress
@@ -54,6 +56,25 @@ def main() -> None:
         buffered_stdin = sys.stdin.read()
     except (OSError, ValueError):
         buffered_stdin = ""
+
+    # ``deliver-progress`` is a retired-state carrier.  Resolve workflow
+    # authority before the activation gate reads local-config or the handler
+    # inspects a transcript/roadmap/log.  A legacy selector is a refusal, never
+    # permission to enter the old progress tracker.
+    if command == "deliver-progress":
+        try:
+            envelope = json.loads(buffered_stdin)
+            cwd = envelope.get("cwd") if isinstance(envelope, dict) else None
+            if isinstance(cwd, str):
+                from des.application.workflow_mode import resolve_workflow_selection
+
+                selection = resolve_workflow_selection(Path(cwd))
+                if not selection.selected:
+                    print(json.dumps(asdict(selection)))
+                    sys.exit(1)
+        except (json.JSONDecodeError, OSError, ValueError):
+            pass
+
     reinjected = apply_gate(command, buffered_stdin)
     sys.stdin = io.StringIO(reinjected if reinjected is not None else buffered_stdin)
 

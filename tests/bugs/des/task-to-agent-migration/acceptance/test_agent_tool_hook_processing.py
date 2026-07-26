@@ -43,8 +43,17 @@ _MAX_TURNS_TOKENS = ("MAX_TURNS", "max_turns")
 
 
 def _make_valid_des_prompt() -> str:
-    """Build a fully valid DES prompt with all mandatory sections."""
+    """Build a DES prompt the spine still ALLOWS, with all mandatory sections.
+
+    The mode marker is load-bearing since the classic removal (aa46b6c03): an
+    absent mode is a declared REFUSAL (DISPATCH_MODE_UNRESOLVED), not a legacy
+    fallback, so a markerless envelope never reaches the allow branch. This
+    fixture is about the Task->Agent hook pipeline, not about mode selection,
+    so it carries the marker rather than encoding a request the product has
+    deliberately stopped serving.
+    """
     return """<!-- DES-VALIDATION : required -->
+<!-- DES-MODE : refactor -->
 <!-- DES-PROJECT-ID : test-project -->
 <!-- DES-STEP-ID : 01-01 -->
 

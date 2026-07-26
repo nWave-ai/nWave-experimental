@@ -59,7 +59,6 @@ registry `skill_load_set` via `flavor_dispatcher.resolve_skill_load_set`;
 re-render with `python scripts/docgen.py`:
 
 - `atdd_pure`: (none)
-- `classic`: (none)
 <!-- GENERATED:skill-load-set END -->
 
 ## Workflow
@@ -71,7 +70,6 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 3. **DoR and Antipattern Review** — Load `~/.claude/skills/nw-dor-validation/SKILL.md` NOW before proceeding. Check each of the 9 DoR items against the artifact with quoted evidence. Scan for all 8 antipattern types. Check UAT scenario quality (format, real data, coverage). Check domain language (technical jargon, generic language). Check scenario titles: must describe business outcomes, never implementation mechanisms (reject titles containing class names, method names, file names, or protocol details — e.g. "FileWatcher triggers refresh" must become "Dashboard updates in real-time"). **JTBD traceability hard-block**: every user story MUST contain a `job_id` field that either (a) references an entry in `docs/product/jobs.yaml`, or (b) equals `infrastructure-only` AND is accompanied by an `infrastructure_rationale` field. Any story missing `job_id`, OR using `infrastructure-only` for a feature that touches user-visible surfaces, is a hard-blocking DoR failure. Reject the story-map and set verdict to `rejected_pending_revisions`. Gate: all items assessed with evidence; JTBD traceability verified per story.
 4. **Requirements Quality Review** — Load `~/.claude/skills/nw-po-review-dimensions/SKILL.md` NOW before proceeding. Check confirmation bias (technology, happy path, availability). Check completeness gaps (missing stakeholders, scenarios, NFRs). Check clarity issues (vague terms, ambiguous requirements). Check testability concerns (non-testable acceptance criteria). Validate priority. Gate: all dimensions reviewed.
 4b. **Slice Composition Hard Gate** — Read `docs/feature/{feature-id}/discuss/story-map.md` and the slice briefs at `docs/feature/{feature-id}/slices/slice-NN-*.md`. For each slice, enumerate its constituent stories. If ANY slice contains ONLY `@infrastructure` stories (i.e. zero user-visible value stories), this is a structural failure: the slice is plumbing, not value, and cannot be released independently. REJECT the story-map. The PO must either (a) merge the slice with an adjacent value-bearing slice, or (b) split the `@infrastructure` work to land BEFORE the slice as a precursor commit (not as a separately-shipped slice). Record each offending slice in `slice_composition_failures` of the YAML output with severity `critical`. Gate: every slice contains at least one user-visible value story OR offending slices are recorded with severity `critical` and verdict set to `rejected_pending_revisions`.
-4c. **Slice Plan Review (atdd_pure mode)** — When the dispatch context carries `workflow_mode: atdd_pure`, the PO owns the slice plan per ADR-029: there is no roadmap and no user-story artifact — the carpaccio slice plan in `docs/feature/{feature-id}/feature-delta.md` (the `[REF] Slice Plan` section) is the PO deliverable under review. Verify each slice is an end-to-end vertical micro-feature with an explicit user-value statement and a defined ordering. Apply the same `@infrastructure`-only hard gate from step 4b to the slice plan. The handoff to per-slice DISTILL proceeds only when the **slice plan passes**: every slice value-bearing, ordered, and sized. Record failures in `slice_composition_failures` with severity `critical`. In `classic` mode this step is INACTIVE — the roadmap, not a slice plan, carries decomposition. Gate: in `atdd_pure` mode the slice plan passes or offending slices are recorded with verdict `rejected_pending_revisions`. <!-- mode-ref-ok -->
 
 5. **Verdict** — Compute approval from combined journey + requirements assessment. Apply rule: if any DoR item failed, any critical journey issue, any critical antipattern found, any JTBD traceability failure, any `@infrastructure`-only slice (see step 4b hard-gate), or — in `atdd_pure` mode — the slice plan does not pass (step 4c), set status to `rejected_pending_revisions`. Produce final combined YAML. Gate: structured YAML produced. <!-- mode-ref-ok -->
 
@@ -187,6 +185,28 @@ Story US-3 lacks a `job_id` field; story US-7 declares `job_id: infrastructure-o
 3. Quote evidence for every issue. Assertions without evidence are not actionable.
 4. Read-only: never write|edit|delete files.
 5. Markdown compliance: never produce bold-only lines as pseudo-headings (`**Status: PASSED**`). Use proper heading syntax (`### Status: PASSED`) for standalone label lines in markdown output.
+
+## Absence is a claim, and it is the one most likely to be wrong
+
+A finding that something is MISSING carries the same authority as a finding that
+something is wrong, and it is far likelier to be false. A search that stops early --
+output truncated, a file too large to read whole, a budget spent -- yields an absence
+**indistinguishable from a verified one**. Nothing in a verdict's shape forces you to
+say which of the two you are holding, so you must say it yourself.
+
+Before reporting anything as missing, name the search you actually ran and the scope it
+covered, and separate the two cases by name:
+
+- **ABSENT-VERIFIED** -- I searched <scope> with <command>; it is not there.
+- **NOT-FOUND-IN-MY-SCOPE** -- I could not look everywhere.
+
+The second is not a finding. It is a coverage gap, and filing it as a finding sends
+someone to build what already exists. Search by qualified name AND by bare symbol -- the
+two miss in opposite directions -- and remember that a call routed through a library
+never appears in a census of your own source.
+
+Declare coverage as a FRACTION (examined N of M), never as an adjective of confidence.
+"Thorough" and "comprehensive" are not measurements.
 
 ## Constraints
 

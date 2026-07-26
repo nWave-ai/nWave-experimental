@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -41,6 +42,9 @@ class PatchError(Exception):
 
 # Dev-only TOML sections to strip from public distribution.
 _DEV_SECTIONS = frozenset({"[tool.nwave]", "[tool.semantic_release]"})
+_TEMPLATE_BUILD_ALIAS = ".nwave-wheel-assets/templates"
+_DATA_BUILD_ALIAS = ".nwave-wheel-assets/data"
+_CATALOG_BUILD_ALIAS = ".nwave-wheel-assets/framework-catalog.yaml"
 
 
 def _read_and_validate(input_path: str) -> tuple[str, dict]:
@@ -138,14 +142,20 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
     # and stage `dist/lib` -> `./lib` before `python -m build --wheel` for the
     # nWave/lib/python/des force-include to resolve.
     #
-    # Path semantics for "lib/python/des" = "nWave/lib/python/des":
-    #   LHS = source path relative to repo root -> <repo>/lib/python/des/
-    #   RHS = destination inside wheel          -> site-packages/nWave/lib/python/des/
+    # One built runtime has two consumers, so build_dist produces two distinct
+    # physical source roots (Hatch normalizes equivalent source keys):
+    #   lib/python/des          -> site-packages/des/ (public `des` entry point)
+    #   lib/nwave-runtime/des  -> site-packages/nWave/lib/python/des/
+    #                               (installer-owned bundled runtime)
     # The installer's des_plugin.py:222 looks up
     # `context.framework_source / "lib/python/des"`.  When installed via pipx,
     # install_nwave.py sets framework_source = site-packages/nWave/, so files
     # must land at site-packages/nWave/lib/python/des/ — which only happens if
-    # the force-include destination is prefixed with "nWave/".
+    # the force-include destination is prefixed with "nWave/".  The public
+    # ``des = des.cli.__main__:main`` entry point also needs the prebuilt
+    # package at site-packages/des/.  Hatch normalizes force-include source
+    # paths, so these must be genuinely distinct staged source directories;
+    # a trailing-slash spelling of one source is silently deduplicated.
     #
     # RUNTIME-ASSET note (fix-wheel-ships-nwave-runtime-assets, 2026-07-08):
     # `DESPlugin._install_nwave_runtime_assets` reads a DIFFERENT, deeper root
@@ -157,14 +167,11 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
     # nested destination in addition to (or instead of) their flat one.
     # `templates` is consumed at BOTH the flat destination (TemplatesPlugin
     # reads `context.templates_dir` = framework_source/"templates") and the
-    # nested one (the runtime-asset resolver) — TOML forbids reusing the same
-    # key twice, so the second `nWave/templates` mapping is keyed with a
-    # trailing slash ("nWave/templates/"); pathlib normalises the trailing
-    # slash away, so it resolves to the identical source directory as a
-    # distinct TOML key.  `framework-catalog.yaml` has no other consumer of
-    # its flat destination (verified: only the runtime-asset resolver reads
-    # it), so its existing entry is repointed to the nested destination
-    # in place rather than duplicated.
+    # nested one (the runtime-asset resolver). Hatch normalises source keys, so
+    # syntactic aliases such as a trailing slash collide. The nested mapping
+    # therefore reads a physically distinct, build-private staged copy.
+    # `framework-catalog.yaml` is likewise shipped to both destinations; one
+    # mapping therefore uses its own physically distinct staged copy too.
     replacement = (
         "[tool.hatch.build.targets.wheel]\n"
         f'packages = ["{pkg_name}"]\n'
@@ -175,19 +182,30 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         '"nWave/skills" = "nWave/skills"\n'
         '"nWave/tasks/nw" = "nWave/tasks/nw"\n'
         '"nWave/templates" = "nWave/templates"\n'
-        '"nWave/templates/" = "nWave/nWave/templates"\n'
+        f'"{_TEMPLATE_BUILD_ALIAS}" = "nWave/nWave/templates"\n'
         '"nWave/flavors" = "nWave/nWave/flavors"\n'
-        '"nWave/data" = "nWave/nWave/data"\n'
+        '"nWave/data" = "nWave/data"\n'
+        f'"{_DATA_BUILD_ALIAS}" = "nWave/nWave/data"\n'
         '"nWave/schemas" = "nWave/nWave/schemas"\n'
         '"nWave/dispatch" = "nWave/nWave/dispatch"\n'
-        '"nWave/framework-catalog.yaml" = "nWave/nWave/framework-catalog.yaml"\n'
+        f'"{_CATALOG_BUILD_ALIAS}" = "nWave/nWave/framework-catalog.yaml"\n'
+        '"nWave/framework-catalog.yaml" = "nWave/framework-catalog.yaml"\n'
+        '"scripts/hooks/orchestrator_affordance_refresh.py" = "nWave/nWave/hooks/orchestrator_affordance_refresh.py"\n'
         '"nWave/VERSION" = "nWave/VERSION"\n'
         '"nWave/README.md" = "nWave/README.md"\n'
         '"scripts/install" = "scripts/install"\n'
         '"scripts/shared" = "scripts/shared"\n'
         '"scripts/install_nwave_target_hooks.py" = "scripts/install_nwave_target_hooks.py"\n'
         '"scripts/validate_step_file.py" = "scripts/validate_step_file.py"\n'
-        '"lib/python/des" = "nWave/lib/python/des"\n'
+        # `des refactor` SPAWNS this script as its actuator, so a wheel that
+        # ships the command without the script offers a drain that cannot run
+        # on any installed machine -- the failure surfaces only at drain time,
+        # far from here.  UTILITY_SCRIPTS (scripts/build_dist.py) is the SSOT
+        # of what must ship; tests/release/test_wheel_utility_scripts_invariant
+        # holds this map to it, which is how the omission was caught.
+        '"scripts/refactor_agent.py" = "scripts/refactor_agent.py"\n'
+        '"lib/python/des" = "des"\n'
+        '"lib/nwave-runtime/des" = "nWave/lib/python/des"\n'
     )
     new_text, count = wheel_section.subn(replacement, text_clean)
     if count == 0:
@@ -195,6 +213,45 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
     return (
         new_text,
         f'wheel config: rewritten with packages=["{pkg_name}"] + force-include',
+    )
+
+
+def _add_offline_handoff_hook(text: str) -> tuple[str, str | None]:
+    """Register the public-wheel hook that writes its adjacent offline closure."""
+    section = "[tool.hatch.build.hooks.custom]"
+    hook = (
+        "\n[tool.hatch.build.hooks.custom]\n"
+        'path = "scripts/release/offline_wheelhouse_hook.py"\n'
+    )
+    if section in text:
+        return text, None
+
+    wheel_section = re.compile(
+        r"(^\[tool\.hatch\.build\.targets\.wheel\.force-include\]\s*\n(?:(?!\[).+\n?)*)",
+        re.MULTILINE,
+    )
+    new_text, count = wheel_section.subn(rf"\1{hook}", text, count=1)
+    if count == 0:
+        return text, None
+    return new_text, "registered offline public-candidate handoff build hook"
+
+
+def _add_offline_handoff_build_requirement(text: str) -> tuple[str, str | None]:
+    """Ensure the isolated public-wheel backend can run ``pip download``."""
+    pattern = re.compile(
+        r"(^\[build-system\]\nrequires\s*=\s*\[)([^\]]*)(\])",
+        re.MULTILINE,
+    )
+    match = pattern.search(text)
+    if match is None or re.search(r'"pip(?:[<>=!~].*)?"', match.group(2)):
+        return text, None
+
+    existing = match.group(2).rstrip()
+    separator = ", " if existing else ""
+    replacement = f'{match.group(1)}{existing}{separator}"pip>=24"{match.group(3)}'
+    return (
+        text[: match.start()] + replacement + text[match.end() :],
+        "added pip>=24 to the public wheel build backend requirements",
     )
 
 
@@ -292,6 +349,51 @@ def _strip_private_artifacts(input_path: str) -> str | None:
     )
 
 
+def _stage_directory_build_alias(
+    input_path: str,
+    source_relative: str,
+    alias_relative: str,
+    asset_name: str,
+) -> str | None:
+    """Mirror a public directory to a private source used by Hatch.
+
+    Replacing the prior alias on every real patch keeps the staged tree an
+    exact, idempotent copy even when files have been removed upstream.
+    """
+    tree_root = Path(input_path).resolve().parent
+    source = tree_root / Path(source_relative)
+    alias = tree_root / Path(alias_relative)
+    if alias.is_symlink() or alias.is_file():
+        alias.unlink()
+    elif alias.is_dir():
+        shutil.rmtree(alias)
+
+    if not source.is_dir():
+        return None
+
+    alias.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, alias)
+    return f"staged wheel {asset_name}: {source} -> {alias}"
+
+
+def _stage_catalog_build_alias(input_path: str) -> str | None:
+    """Copy the public catalog to the private source used by Hatch."""
+    tree_root = Path(input_path).resolve().parent
+    source = tree_root / "nWave" / "framework-catalog.yaml"
+    alias = tree_root / Path(_CATALOG_BUILD_ALIAS)
+    if alias.is_symlink() or alias.is_file():
+        alias.unlink()
+    elif alias.is_dir():
+        shutil.rmtree(alias)
+
+    if not source.is_file():
+        return None
+
+    alias.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, alias)
+    return f"staged wheel catalog: {source} -> {alias}"
+
+
 def patch_pyproject(
     input_path: str,
     output_path: str,
@@ -326,6 +428,17 @@ def patch_pyproject(
     if change:
         changes.append(change)
 
+    # The public candidate handoff must be self-contained for normal pipx
+    # resolution, without adding pip or pinned transitive dependencies to the
+    # public wheel's Requires-Dist metadata.
+    text, change = _add_offline_handoff_hook(text)
+    if change:
+        changes.append(change)
+
+    text, change = _add_offline_handoff_build_requirement(text)
+    if change:
+        changes.append(change)
+
     # 4. Add CLI entry point
     text, change = _add_cli_entry_point(text, target_name)
     if change:
@@ -346,6 +459,25 @@ def patch_pyproject(
         strip_change = _strip_private_artifacts(input_path)
         if strip_change:
             changes.append(strip_change)
+        template_change = _stage_directory_build_alias(
+            input_path,
+            "nWave/templates",
+            _TEMPLATE_BUILD_ALIAS,
+            "templates",
+        )
+        if template_change:
+            changes.append(template_change)
+        data_change = _stage_directory_build_alias(
+            input_path,
+            "nWave/data",
+            _DATA_BUILD_ALIAS,
+            "data",
+        )
+        if data_change:
+            changes.append(data_change)
+        catalog_change = _stage_catalog_build_alias(input_path)
+        if catalog_change:
+            changes.append(catalog_change)
 
     patched = len(changes) > 0
 

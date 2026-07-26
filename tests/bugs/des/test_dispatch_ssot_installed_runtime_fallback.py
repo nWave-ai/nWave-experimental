@@ -321,19 +321,27 @@ def test_dispatch_refuses_with_both_cures_when_neither_ssot_source_exists(
 
 def test_installed_runtime_assets_ship_dispatch_yaml_directory(tmp_path: Path) -> None:
     """`DESPlugin._install_nwave_runtime_assets` must ship `nWave/dispatch/`
-    alongside the existing `("flavors", "data", "templates", "schemas")`.
+    alongside the other runtime asset families.
 
     Mirrors `tests/installer/unit/plugins/test_des_nwave_runtime_assets.py`'s
     established seam/fixture shape for this SAME method.
 
-    FAILS TODAY: `DESPlugin._NWAVE_RUNTIME_ASSET_DIRS` is
-    `("flavors", "data", "templates", "schemas")` -- "dispatch" is absent, so
-    `~/.claude/lib/nWave/dispatch/` never gets created (confirmed empirically
-    on this machine: `~/.claude/lib/nWave/` exists with no `dispatch/` child).
+    The fixture must build a source tree the method RECOGNISES as an nWave
+    tier: `_install_nwave_runtime_assets` returns N/A early when the tree
+    carries no `framework-catalog.yaml`, because a target with no nWave tier is
+    a legitimate install target under target-machine agnosticism. A fixture that
+    supplies only `dispatch/` never reaches the copy loop at all -- it exercises
+    the early return and then reports the miss as if the asset-dir list were at
+    fault. The catalogue file below is what makes this test measure the thing it
+    names.
     """
     project_root = tmp_path / "project"
     nwave_source = project_root / "nWave"
     _copy_real_dispatch_ssot(nwave_source / "dispatch")
+    # Marks the tree as an nWave source tier; without it the method declares N/A.
+    (nwave_source / "framework-catalog.yaml").write_text(
+        "agents: []\n", encoding="utf-8"
+    )
 
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir(parents=True)

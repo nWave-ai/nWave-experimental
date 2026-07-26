@@ -31,11 +31,11 @@ Feature: The E2 contract gate verifies a real, non-empty test scope
   # (MISSING_FUNCTIONALITY). They pass once slice-01 lands the fix.
 
   @slice-01 @walking_skeleton @wiring_e2e @driving_port @real-io @contract-shape:pure-function
-  Scenario: The contract gate digests the real non-empty contract suite
+  Scenario: The contract gate digests a clean non-empty contract suite
     Given a contract test tree that collects clean
     When the operator derives the contract gate-scope digest
      And the operator derives the contract gate-scope digest again
-    Then the digest fingerprints the real non-empty contract suite
+    Then the digest fingerprints the non-empty collected scope
      And the digest is not the empty-suite sentinel
      And the collection that produced the digest preserved strict marker checking
      And both digest derivations produce the identical digest

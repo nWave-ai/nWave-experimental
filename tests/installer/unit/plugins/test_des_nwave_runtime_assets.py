@@ -30,6 +30,9 @@ def _context_with_nwave(base: Path) -> tuple[InstallContext, Path]:
     (nwave / "schemas").mkdir(parents=True)
     (nwave / "schemas" / "atdd-pure-phase-sequence.schema.json").write_text("{}\n")
     (nwave / "framework-catalog.yaml").write_text("agents: []\n")
+    hooks = project_root / "scripts" / "hooks"
+    hooks.mkdir(parents=True)
+    (hooks / "orchestrator_affordance_refresh.py").write_text("print('hook')\n")
 
     claude_dir = base / ".claude"
     claude_dir.mkdir(parents=True)
@@ -61,6 +64,7 @@ def test_runtime_assets_shipped_to_lib_nwave(tmp_path: Path) -> None:
     assert (lib_nwave / "templates" / "step-tdd-cycle-schema.json").is_file()
     assert (lib_nwave / "schemas" / "atdd-pure-phase-sequence.schema.json").is_file()
     assert (lib_nwave / "framework-catalog.yaml").is_file()
+    assert (lib_nwave / "hooks" / "orchestrator_affordance_refresh.py").is_file()
 
 
 def test_missing_nwave_source_skips_without_crash(tmp_path: Path) -> None:

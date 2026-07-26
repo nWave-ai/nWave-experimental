@@ -310,7 +310,7 @@ def _session_cwd_is_atdd_pure(cwd: str | None) -> bool:
         project_dir = Path(cwd)
         if not (project_dir / ".nwave").is_dir():
             return False
-        return resolve_workflow_mode(project_dir) == ATDD_PURE_MODE
+        return resolve_workflow_mode(project_dir).effective_mode == ATDD_PURE_MODE
     except Exception:
         return False
 
@@ -340,6 +340,75 @@ def _emit_hook_version_skew_finding(cwd: str | None) -> None:
         print(json.dumps({"additionalContext": message}))
     except Exception:
         pass
+
+
+def _is_an_nwave_project(project_dir: Path) -> bool:
+    """True when this directory is nWave's business at all.
+
+    Two independent traces, either sufficient: a declared `.nwave/` directory,
+    or PRIOR USE -- feature work left on disk by earlier nWave runs. The second
+    matters because the population that most needs to hear "the classic
+    selector is gone" is precisely the one that used nWave BEFORE any mode was
+    declared, and so has no `.nwave/` to key on.
+
+    The prior-use predicate is deliberately the same shape the auto-marking
+    service already uses (`_has_prior_use`): re-deriving "what counts as prior
+    use" in a second place would be the very long-locality coupling this lane
+    exists to remove -- two answers to one question, drifting apart silently.
+    """
+    if (project_dir / ".nwave").is_dir():
+        return True
+    feature_dir = project_dir / "docs" / "feature"
+    return (
+        any(feature_dir.glob("*/feature-delta.md"))
+        or any(feature_dir.glob("*/execution-log.json"))
+        or any(p.is_dir() for p in feature_dir.glob("*/deliver"))
+    )
+
+
+def _workflow_mode_session_guidance(cwd: str | None) -> str | None:
+    """Return non-mutating, operator-actionable mode guidance for SessionStart.
+
+    SessionStart is the earliest public seam.  It must distinguish an empty
+    fresh workspace (the active workflow is ready), a legacy project whose
+    mode was never declared, and a project still carrying a removed selector.
+    Resolving here only reads bytes; it never repairs ``config.yaml``.
+    """
+    if not cwd:
+        return None
+    try:
+        project_dir = Path(cwd)
+        # SILENCE OUTSIDE AN nWave PROJECT IS A CONTRACT, not an oversight.
+        # `resolve_workflow_selection` answers "which mode does this project
+        # run", and for a directory carrying no `.nwave/` at all it answers
+        # SELECTED/atdd_pure -- correct for its own question (nothing declares
+        # anything else) and wrong as a reason to SPEAK. A session opened in an
+        # unrelated directory must produce zero bytes: announcing there injects
+        # context nobody asked for into every foreign session -- a surprise to
+        # the operator, and a token cost re-paid on every turn that follows.
+        # The adjacent `_session_cwd_is_atdd_pure` already draws this line; this
+        # seam has to draw it too, because the question it asks is not the
+        # question it must answer.
+        #
+        # But "is this an nWave project" is NOT the same as "does it carry a
+        # `.nwave/` directory". A project that used nWave before the mode was
+        # ever declared has no config and still deserves the guidance -- it is
+        # exactly the population that must be told the selector it may remember
+        # no longer exists. Silence is owed only where there is NO trace at all.
+        if not _is_an_nwave_project(project_dir):
+            return None
+
+        from des.application.workflow_mode import resolve_workflow_selection
+
+        selection = resolve_workflow_selection(project_dir)
+    except Exception:
+        return None
+    if selection.selected:
+        return (
+            "nWave workflow ready: atdd_pure is the sole active workflow. "
+            "Use the per-slice ATDD-pure spine."
+        )
+    return selection.diagnostic
 
 
 def _build_visible_message(local: str, latest: str) -> str:
@@ -692,18 +761,41 @@ def handle_session_start() -> int:
     # empty after the first).
     raw_stdin = sys.stdin.read()
     session_cwd: str | None = None
+    envelope_defect: str | None = None
     try:
-        parsed_input = json.loads(raw_stdin) if raw_stdin.strip() else {}
-        if isinstance(parsed_input, dict):
-            cwd_value = parsed_input.get("cwd")
-            session_cwd = cwd_value if isinstance(cwd_value, str) else None
-    except json.JSONDecodeError:
-        session_cwd = None
+        # `_parse_cwd` ALREADY classifies every malformed-envelope class and
+        # says so in its docstring. Re-deriving that classification inline
+        # would be a second answer to one question -- the long-locality
+        # coupling this lane exists to remove -- so this reads the existing
+        # authority instead of restating it.
+        session_cwd = str(_parse_cwd(raw_stdin))
+    except ValueError as exc:
+        envelope_defect = str(exc)
 
-    # Trigger-1 (prior-use adoption): SessionStart is gate-exempt, so this is
-    # where an unmarked project with prior nWave use is silently adopted. Runs
-    # first and fail-open so it never disturbs the update-notice / housekeeping.
-    _adopt_prior_use_if_warranted(raw_stdin)
+    # A MALFORMED ENVELOPE MUST DEGRADE LOUD, and that is independent of what
+    # workflow policy decides. Removing classic legitimately removed the SILENT
+    # PRIOR-USE ADOPTION that used to live here -- but that same call was also
+    # the only caller of `_parse_cwd`, so deleting it wholesale made "the hook
+    # could not read its input" indistinguishable from "the hook read a valid
+    # plain directory and correctly did nothing". Both produced zero bytes.
+    # That is the could-not-verify collapsed into nothing-to-do, and it stays
+    # fixed here rather than travelling with the adoption behaviour that was
+    # rightly deleted.
+    if envelope_defect is not None:
+        sys.stderr.write(
+            f"[nwave] session-start envelope unreadable (fail-open): "
+            f"{envelope_defect}. No project-specific guidance is emitted for "
+            f"this session; the session itself is never blocked.\n"
+        )
+
+    # Workflow policy is the first project-specific authority at SessionStart.
+    # Prior-use evidence never authorises mutation or silent mode adoption.
+    try:
+        guidance = _workflow_mode_session_guidance(session_cwd)
+        if guidance:
+            print(json.dumps({"additionalContext": guidance}))
+    except Exception:
+        pass
 
     from des.adapters.driven.config.des_config import DESConfig
 

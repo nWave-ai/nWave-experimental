@@ -248,7 +248,21 @@ def _collect_node_ids(
     return _collect_scope(repo, paths, markers=markers).node_ids
 
 
-_COLLECT_MEMO: dict[tuple[str, tuple[str, ...], str | None], _CollectedScope] = {}
+_COLLECT_MEMO: dict[tuple[str, tuple[str, ...], str | None, str], _CollectedScope] = {}
+
+
+def _memo_head_sha(repo: Path) -> str | None:
+    """``repo``'s committed HEAD sha -- the memo key's tree-state axis.
+
+    ``None`` when there is no committed HEAD to name (no git, not a work-tree, an
+    unborn branch). ``None`` is not a key VALUE -- it is the memo's off switch:
+    ``_collect_scope`` bypasses the cache entirely rather than let every HEAD-less
+    tree share one placeholder axis. Read-only; ONLY builds the cache key.
+    """
+    try:
+        return _git(repo, "rev-parse", "HEAD").strip()
+    except (subprocess.CalledProcessError, OSError):
+        return None
 
 
 def _collect_scope(
@@ -259,20 +273,37 @@ def _collect_scope(
     """Memoizing wrapper over ``_collect_scope_uncached`` (velocity-v2, <5min G-143).
 
     Under ``NWAVE_COLLECT_MEMO`` (set ONLY by the test conftest) the collect of the
-    REAL repo tree -- immutable during a test session -- is memoized, so across a
-    serial run every dir that collects the whole ~1677-test suite pays the ~22s cost
-    ONCE instead of once-per-dir. Synthetic tmp trees (per-test, possibly mutated) are
-    NEVER memoized -- only a non-temp repo is, keyed by (resolved-repo, paths, markers).
+    REAL repo tree is memoized, so across a serial run every dir that collects the
+    whole ~1677-test suite pays the ~22s cost ONCE instead of once-per-dir. Synthetic
+    tmp trees (per-test, possibly mutated) are NEVER memoized -- only a non-temp repo
+    with a RESOLVABLE HEAD is, keyed by (resolved-repo, paths, markers, HEAD sha).
+    No HEAD, no cache: a tree whose committed state has no name cannot be keyed on
+    one, and it has next to no committed scope to cache anyway.
+
+    HEAD is IN the key because two callers can ask this seam about two genuinely
+    DIFFERENT committed scopes through an otherwise identical (repo, paths, markers)
+    triple: at terminating-run time HEAD is still the slice's PARENT, while the
+    G_COMMIT exit gate asks after the commit, when HEAD includes the new files
+    (``commit_slice``'s module docstring -- the whole reason the amend-to-fixed-point
+    dance exists). Without the HEAD axis those two questions share one answer and the
+    exit gate certifies the parent tree. The key only ever NARROWS: a genuine repeat
+    on the SAME head still HITS, so the same-HEAD repeats that dominate a session
+    (24 collects -> 8 keys on one measured module) still collapse.
+
     Production (no env var) is an exact pass-through: zero behavior change, no cache.
     """
     if os.environ.get("NWAVE_COLLECT_MEMO"):
         resolved = str(repo.resolve())
-        if not resolved.startswith(tempfile.gettempdir()):
+        if (
+            not resolved.startswith(tempfile.gettempdir())
+            and (head := _memo_head_sha(repo)) is not None
+        ):
             markers_key = None if isinstance(markers, _UnsetMarkers) else markers
             key = (
                 resolved,
                 tuple(sorted(str(p) for p in (paths or []))),
                 markers_key,
+                head,
             )
             if key not in _COLLECT_MEMO:
                 _COLLECT_MEMO[key] = _collect_scope_uncached_dispatch(
@@ -1332,6 +1363,38 @@ def build_tier_exit_verdict(
     """
     arch_paths = _arch_invariant_paths(repo)
     if not arch_paths:
+        # An empty resolve carries TWO different facts, and this branch used to
+        # answer both with "no tests/build tier on this target" -- a sentence
+        # that is simply FALSE for a repo whose tests/build exists.  The
+        # docstring above already declares them distinct ("Only a
+        # PRESENT-but-vacuous arch tier is malformed"); the code collapsed
+        # them, so the operator of a vacuous tier was told their target had no
+        # tier at all and the run cleared.
+        scoped_run = not full and (
+            regression_test_file is not None or light_invariant_paths is not None
+        )
+        if not scoped_run and (repo / "tests" / "build").is_dir():
+            _emit(
+                {
+                    "event": "BuildTierRefused",
+                    "reason": "arch-scope-zero-collected",
+                    "what": "build-tier architecture scope",
+                    "why": (
+                        "tests/build EXISTS but resolves to zero arch-tier "
+                        "members (every entry is excluded as a package/cache "
+                        "marker or as feature-slug-nested acceptance) -- "
+                        "refusing rather than certifying a vacuous arch tier, "
+                        "and never reporting it as an absent one"
+                    ),
+                    "how": (
+                        "add at least one genuine architecture-invariant test "
+                        "under tests/build, or remove the empty tests/build "
+                        "directory so the target honestly carries no tier"
+                    ),
+                },
+                output,
+            )
+            return 1
         _emit(
             {
                 "event": _BUILD_TIER_NOT_APPLICABLE_EVENT,

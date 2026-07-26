@@ -18,9 +18,13 @@ A manifest (.nwave-des-manifest.json) tracks the installed hook config for
 clean uninstallation.
 """
 
+import base64
 import json
 import os
+import re
+import shlex
 import shutil as _shutil
+import sys
 from pathlib import Path
 
 from scripts.install.plugins.base import (
@@ -29,6 +33,7 @@ from scripts.install.plugins.base import (
     PluginResult,
 )
 from scripts.shared.install_paths import (
+    host_neutral_runtime_dir,
     resolve_des_lib_path_for_spawn,
     resolve_python_command_for_spawn,
 )
@@ -36,10 +41,44 @@ from scripts.shared.install_paths import (
 
 _HOOKS_FILENAME = "hooks.json"
 _MANIFEST_FILENAME = ".nwave-des-manifest.json"
+_LAUNCHER_FILENAME = "nwave_claude_code_hook_adapter_launcher.py"
 
 # Event key used by Codex (verified against developers.openai.com/codex/hooks
 # and codex-rs/hooks/schema/generated/pre-tool-use.command.*.schema.json).
 _PRE_TOOL_USE_EVENT = "PreToolUse"
+_SESSION_START_EVENT = "SessionStart"
+_SESSION_START_MATCHER = "startup|resume|clear|compact"
+_SESSION_START_SUBCOMMAND = "session-start"
+_SESSION_START_LAUNCHER_FILENAME = "nwave_orchestrator_affordance_launcher.py"
+_RUNTIME_RESOLVER_RELATIVE_PATH = Path("nWave/hooks/orchestrator_affordance_refresh.py")
+
+# Observed from the running codex-cli 0.145.0 host on 2026-07-26.  The
+# installer must bind a matcher to what the host actually emits, not to a
+# similarly named tool from another vendor or documentation-only surface.
+_ANNOUNCED_TOOLS: tuple[str, ...] = (
+    "exec_command",
+    "write_stdin",
+    "update_plan",
+    "request_user_input",
+    "view_image",
+    "multi_agent_v1",
+    "get_goal",
+    "create_goal",
+    "update_goal",
+    "web_search",
+)
+_INTERCEPTED_TOOLS: tuple[str, ...] = ("exec_command",)
+
+
+def _pre_tool_use_matcher() -> str:
+    """Return a matcher restricted to tools observed on the Codex host."""
+    unannounced = set(_INTERCEPTED_TOOLS).difference(_ANNOUNCED_TOOLS)
+    if not _INTERCEPTED_TOOLS or unannounced:
+        raise ValueError(
+            "Codex PreToolUse matcher names no observed host tool: "
+            f"{sorted(unannounced)!r}"
+        )
+    return "|".join(f"^{re.escape(tool)}$" for tool in _INTERCEPTED_TOOLS)
 
 
 def _codex_config_dir() -> Path:
@@ -50,6 +89,238 @@ def _codex_config_dir() -> Path:
     """
     override = os.environ.get("CODEX_HOME")
     return Path(override) if override else Path.home() / ".codex"
+
+
+def _build_hook_invocation(python_path: str, pythonpath: str) -> dict:
+    """Build a shell-independent DES invocation with literal argv and env."""
+    return {
+        "argv": [
+            python_path,
+            "-m",
+            "des.adapters.drivers.hooks.claude_code_hook_adapter",
+            "pre-tool-use",
+        ],
+        "env": {"PYTHONPATH": pythonpath},
+    }
+
+
+def _launcher_source(python_path: str, pythonpath: str) -> str:
+    """Return the exact bytes of an nWave-generated launcher."""
+    return (
+        '"""nWave Codex DES launcher. Generated; reinstall to update."""\n'
+        "import os\n"
+        "import subprocess\n"
+        "import sys\n\n"
+        f"PYTHON_PATH = {json.dumps(python_path)}\n"
+        f"PYTHONPATH = {json.dumps(pythonpath)}\n"
+        "env = os.environ.copy()\n"
+        'env["PYTHONPATH"] = PYTHONPATH\n'
+        "argv = [\n"
+        "    PYTHON_PATH,\n"
+        '    "-m",\n'
+        '    "des.adapters.drivers.hooks.claude_code_hook_adapter",\n'
+        '    "pre-tool-use",\n'
+        "]\n"
+        "completed = subprocess.run(argv, env=env, check=False)\n"
+        "sys.exit(completed.returncode)\n"
+    )
+
+
+def _v1_launcher_source(python_path: str, pythonpath: str) -> str:
+    """Return the exact launcher body emitted by the public v1 bootstrap."""
+    return (
+        '"""nWave Codex DES launcher. Generated; reinstall to update."""\n'
+        "import os\nimport subprocess\nimport sys\n\n"
+        f"PYTHON_PATH = {json.dumps(python_path)}\n"
+        f"PYTHONPATH = {json.dumps(pythonpath)}\n"
+        'env = os.environ.copy()\nenv["PYTHONPATH"] = PYTHONPATH\n'
+        'argv = [PYTHON_PATH, "-m", '
+        '"des.adapters.drivers.hooks.claude_code_hook_adapter", "pre-tool-use"]\n'
+        "completed = subprocess.run(argv, env=env, check=False)\n"
+        "sys.exit(completed.returncode)\n"
+    )
+
+
+def _write_launcher(launcher_path: Path, python_path: str, pythonpath: str) -> None:
+    """Materialize a stdlib launcher carrying dynamic values as data."""
+    launcher_path.write_text(
+        _launcher_source(python_path, pythonpath), encoding="utf-8"
+    )
+
+
+def _runtime_resolver_path() -> Path:
+    """Return the resolver shipped with the host-neutral nWave runtime.
+
+    This is deliberately not ``~/.claude`` and never a development checkout:
+    the same public candidate must serve a Codex-only user after its source
+    tree has gone away.
+    """
+    # DES code lives in ~/.nwave/runtime/des while its sibling nWave assets
+    # deliberately live at ~/.nwave/nWave.  Runtime assets are a peer of the
+    # code runtime, not a child of it.
+    return host_neutral_runtime_dir().parent / _RUNTIME_RESOLVER_RELATIVE_PATH
+
+
+def _session_start_launcher_source(python_path: str, resolver_path: str) -> str:
+    """Return the bounded transparent launcher for Codex SessionStart.
+
+    The resolver owns the protocol envelope and writes exactly one JSON object
+    to stdout.  This launcher must not add output around it.
+    """
+    return (
+        '"""nWave Codex SessionStart launcher. Generated; reinstall to update."""\n'
+        "import subprocess\n"
+        "import sys\n\n"
+        f"PYTHON_PATH = {json.dumps(python_path)}\n"
+        f"RESOLVER_PATH = {json.dumps(resolver_path)}\n"
+        'argv = [PYTHON_PATH, RESOLVER_PATH, "SessionStart"]\n'
+        "try:\n"
+        "    completed = subprocess.run(\n"
+        "        argv, stdin=subprocess.DEVNULL, timeout=10, check=False\n"
+        "    )\n"
+        "except subprocess.TimeoutExpired:\n"
+        "    sys.exit(0)\n"
+        "sys.exit(completed.returncode)\n"
+    )
+
+
+def _write_session_start_launcher(
+    launcher_path: Path, python_path: str, resolver_path: Path
+) -> None:
+    launcher_path.write_text(
+        _session_start_launcher_source(python_path, str(resolver_path)),
+        encoding="utf-8",
+    )
+
+
+def _build_launcher_hook_entry(launcher_path: Path) -> dict:
+    """Render a hook command containing only fixed installer-controlled values."""
+    if os.name == "nt":
+        powershell = " ".join(
+            (
+                "&",
+                _powershell_literal(sys.executable),
+                _powershell_literal(str(launcher_path)),
+                _powershell_literal("pre-tool-use"),
+            )
+        )
+        encoded = base64.b64encode(powershell.encode("utf-16le")).decode("ascii")
+        command = f"powershell -NoProfile -EncodedCommand {encoded}"
+    else:
+        command = shlex.join([sys.executable, str(launcher_path), "pre-tool-use"])
+    return {
+        "matcher": _pre_tool_use_matcher(),
+        "hooks": [
+            {
+                "type": "command",
+                "command": command,
+                "timeout": 30,
+                "statusMessage": "nWave DES validation...",
+            }
+        ],
+    }
+
+
+def _build_session_start_hook_entry(launcher_path: Path) -> dict:
+    """Render the observed Codex SessionStart schema for the nWave launcher."""
+    if os.name == "nt":
+        powershell = " ".join(
+            (
+                "&",
+                _powershell_literal(sys.executable),
+                _powershell_literal(str(launcher_path)),
+                _powershell_literal(_SESSION_START_SUBCOMMAND),
+            )
+        )
+        encoded = base64.b64encode(powershell.encode("utf-16le")).decode("ascii")
+        command = f"powershell -NoProfile -EncodedCommand {encoded}"
+    else:
+        command = shlex.join(
+            [sys.executable, str(launcher_path), _SESSION_START_SUBCOMMAND]
+        )
+    return {
+        "matcher": _SESSION_START_MATCHER,
+        "hooks": [
+            {
+                "type": "command",
+                "command": command,
+                "timeout": 15,
+                "statusMessage": "nWave orchestrator affordance...",
+            }
+        ],
+    }
+
+
+def _powershell_literal(value: str) -> str:
+    """Render one exact PowerShell single-quoted string literal."""
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _command_targets_launcher(
+    command: str, launcher_path: Path, subcommand: str = "pre-tool-use"
+) -> bool:
+    """Verify the serialized command is exactly the canonical invocation."""
+    expected_argv = [sys.executable, str(launcher_path), subcommand]
+    if os.name != "nt":
+        try:
+            return shlex.split(command) == expected_argv
+        except ValueError:
+            return False
+
+    tokens = command.split()
+    if tokens[:3] != ["powershell", "-NoProfile", "-EncodedCommand"]:
+        return False
+    if len(tokens) != 4:
+        return False
+    try:
+        decoded = base64.b64decode(tokens[3], validate=True).decode("utf-16le")
+    except (ValueError, UnicodeDecodeError):
+        return False
+    expected_powershell = " ".join(
+        (
+            "&",
+            _powershell_literal(expected_argv[0]),
+            _powershell_literal(expected_argv[1]),
+            _powershell_literal(expected_argv[2]),
+        )
+    )
+    return decoded == expected_powershell
+
+
+def _command_owns_launcher(
+    command: str, launcher_path: Path, subcommand: str = "pre-tool-use"
+) -> bool:
+    """Identify an nWave hook by its canonical launcher, not its interpreter.
+
+    The interpreter is intentionally excluded from this ownership identity: a
+    reinstall may run under a different Python than the one that rendered the
+    previous hook command.  The launcher path and event are installer-owned
+    and remain stable across that change.
+    """
+    if os.name != "nt":
+        try:
+            argv = shlex.split(command)
+        except ValueError:
+            return False
+        return len(argv) == 3 and argv[1:] == [str(launcher_path), subcommand]
+
+    tokens = command.split()
+    if tokens[:3] != ["powershell", "-NoProfile", "-EncodedCommand"]:
+        return False
+    if len(tokens) != 4:
+        return False
+    try:
+        decoded = base64.b64decode(tokens[3], validate=True).decode("utf-16le")
+    except (ValueError, UnicodeDecodeError):
+        return False
+    return decoded.endswith(
+        " ".join(
+            (
+                _powershell_literal(str(launcher_path)),
+                _powershell_literal(subcommand),
+            )
+        )
+    )
 
 
 def _build_hook_entry(python_path: str, pythonpath: str) -> dict:
@@ -89,13 +360,26 @@ def _build_hook_entry(python_path: str, pythonpath: str) -> dict:
     # only `cwd` is set; the configured `command` runs as-is. The token must
     # therefore be baked into the command string at install time. Without it,
     # the adapter exits 1 with "Missing command argument" on every fire.
-    hook_command = (
-        f"PYTHONPATH={pythonpath} {python_path} -m "
-        "des.adapters.drivers.hooks.claude_code_hook_adapter "
-        "pre-tool-use"
-    )
+    invocation = _build_hook_invocation(python_path, pythonpath)
+    _, *module_argv = invocation["argv"]
+    module_and_event = " ".join(module_argv)
+    pythonpath = invocation["env"]["PYTHONPATH"]
+    windows_path = len(python_path) >= 3 and python_path[1:3] in {":/", ":\\"}
+    if windows_path:
+        powershell_python = python_path.replace("'", "''")
+        powershell_pythonpath = pythonpath.replace("'", "''")
+        hook_command = (
+            "powershell -NoProfile -Command "
+            f"""'$env:PYTHONPATH = "{powershell_pythonpath}"; """
+            f"""& "{powershell_python}" {module_and_event}'"""
+        )
+    else:
+        hook_command = (
+            f"PYTHONPATH={shlex.quote(pythonpath)} "
+            f"{shlex.quote(python_path)} {module_and_event}"
+        )
     return {
-        "matcher": "^Bash$|^apply_patch$",
+        "matcher": _pre_tool_use_matcher(),
         "hooks": [
             {
                 "type": "command",
@@ -105,6 +389,88 @@ def _build_hook_entry(python_path: str, pythonpath: str) -> dict:
             }
         ],
     }
+
+
+def _legacy_direct_des_command(
+    manifest: object, hooks_path: Path, hooks_document: object
+) -> str | None:
+    """Return the sole direct-hook command proven by the pre-launcher manifest.
+
+    The original Codex bootstrap recorded only its hook file, interpreter and
+    PYTHONPATH.  That sparse record is ownership evidence only when it has its
+    exact three-field shape *and* either the recorded direct command or the
+    exact v1 launcher file and command still appears in ``hooks.PreToolUse``.
+    A module-name substring, another event, or a merely similar shell command
+    is deliberately not enough.
+    """
+    if not (
+        isinstance(manifest, dict)
+        and set(manifest) == {"hooks_file", "python_path", "pythonpath"}
+        and manifest.get("hooks_file") == str(hooks_path)
+        and isinstance(manifest.get("python_path"), str)
+        and manifest["python_path"]
+        and isinstance(manifest.get("pythonpath"), str)
+        and manifest["pythonpath"]
+        and isinstance(hooks_document, dict)
+        and isinstance(hooks_document.get("hooks"), dict)
+    ):
+        return None
+    expected_direct = _build_hook_entry(
+        manifest["python_path"], manifest["pythonpath"]
+    )["hooks"][0]["command"]
+    launcher_path = hooks_path.parent / _LAUNCHER_FILENAME
+    try:
+        launcher_is_v1 = (
+            launcher_path.is_file()
+            and not launcher_path.is_symlink()
+            and launcher_path.read_text(encoding="utf-8")
+            == _v1_launcher_source(manifest["python_path"], manifest["pythonpath"])
+        )
+    except (OSError, UnicodeDecodeError):
+        launcher_is_v1 = False
+    expected_launcher = shlex.join(
+        [manifest["python_path"], str(launcher_path), "pre-tool-use"]
+    )
+    pretool = hooks_document["hooks"].get(_PRE_TOOL_USE_EVENT)
+    if not isinstance(pretool, list):
+        return None
+    for group in pretool:
+        if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+            continue
+        for handler in group["hooks"]:
+            command = handler.get("command") if isinstance(handler, dict) else None
+            if command == expected_direct or (
+                launcher_is_v1 and command == expected_launcher
+            ):
+                return command
+    return None
+
+
+def _is_legacy_direct_des_command(command: object) -> bool:
+    """Recognize the pre-launcher DES invocation, not an adapter substring.
+
+    This is the exact five-token POSIX form emitted by the old Codex
+    installer.  It is intentionally restricted to ``PreToolUse`` by the
+    caller so a user command in another event cannot be adopted.
+    """
+    if not isinstance(command, str):
+        return False
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    return (
+        len(tokens) == 5
+        and tokens[0].startswith("PYTHONPATH=")
+        and len(tokens[0]) > len("PYTHONPATH=")
+        and tokens[1]
+        and tokens[2:]
+        == [
+            "-m",
+            "des.adapters.drivers.hooks.claude_code_hook_adapter",
+            "pre-tool-use",
+        ]
+    )
 
 
 def _empty_doc() -> dict:
@@ -153,24 +519,38 @@ def _read_hooks(hooks_path: Path) -> dict:
     return _empty_doc()
 
 
-def _is_nwave_matcher_group(entry: dict) -> bool:
-    """True if the matcher group contains a nWave DES handler."""
+def _is_nwave_matcher_group(
+    entry: dict,
+    launcher_path: Path | None = None,
+    subcommand: str = "pre-tool-use",
+) -> bool:
+    """True if the matcher group contains a proven nWave DES handler."""
     if not isinstance(entry, dict):
         return False
-    return any(
-        "claude_code_hook_adapter" in h.get("command", "")
-        for h in entry.get("hooks", [])
-        if isinstance(h, dict)
-    )
+    for handler in entry.get("hooks", []):
+        if not isinstance(handler, dict):
+            continue
+        command = handler.get("command", "")
+        if launcher_path is not None and _command_owns_launcher(
+            command, launcher_path, subcommand
+        ):
+            return True
+    return False
 
 
-def _remove_nwave_hooks(doc: dict) -> dict:
-    """Strip any previously installed nWave DES matcher groups from the doc.
+def _remove_nwave_hooks(
+    doc: dict,
+    launcher_path: Path | None = None,
+    legacy_direct_command: str | None = None,
+    *,
+    subcommand: str = "pre-tool-use",
+) -> dict:
+    """Remove only proven nWave DES handlers from the doc.
 
-    Operates on the event-keyed document shape. Identifies nWave entries by
-    the presence of ``claude_code_hook_adapter`` in any handler's command
-    string. Non-nWave matcher groups (user-authored) are preserved as-is, on
-    every event key.
+    Operates on the event-keyed document shape. A handler is nWave-owned only
+    when it invokes the canonical launcher; an adapter-module substring is not
+    ownership evidence. Co-located foreign handlers stay in their matcher
+    group, as do wholly foreign matcher groups.
 
     Args:
         doc: Event-keyed hooks document (``{"hooks": {<event>: [...], ...}}``)
@@ -186,9 +566,59 @@ def _remove_nwave_hooks(doc: dict) -> dict:
         if not isinstance(entries, list):
             cleaned_events[event_name] = entries
             continue
-        cleaned_events[event_name] = [
-            entry for entry in entries if not _is_nwave_matcher_group(entry)
-        ]
+        cleaned_entries: list[dict] = []
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+                cleaned_entries.append(entry)
+                continue
+            owned_handler_present = any(
+                isinstance(handler, dict)
+                and (
+                    (
+                        launcher_path is not None
+                        and _command_owns_launcher(
+                            handler.get("command", ""), launcher_path, subcommand
+                        )
+                    )
+                    or (
+                        event_name == _PRE_TOOL_USE_EVENT
+                        and legacy_direct_command is not None
+                        and handler.get("command") == legacy_direct_command
+                    )
+                )
+                for handler in entry["hooks"]
+            )
+            retained_handlers = [
+                handler
+                for handler in entry["hooks"]
+                if not (
+                    isinstance(handler, dict)
+                    and (
+                        (
+                            launcher_path is not None
+                            and _command_owns_launcher(
+                                handler.get("command", ""), launcher_path, subcommand
+                            )
+                        )
+                        or (
+                            event_name == _PRE_TOOL_USE_EVENT
+                            and legacy_direct_command is not None
+                            and handler.get("command") == legacy_direct_command
+                        )
+                    )
+                )
+            ]
+            if not owned_handler_present:
+                # An empty group, or a group with no nWave-owned command, is
+                # a user-owned configuration surface.  It must survive a
+                # reinstall byte-for-byte rather than being mistaken for an
+                # emptied nWave matcher group.
+                cleaned_entries.append(entry)
+            elif retained_handlers:
+                retained_entry = dict(entry)
+                retained_entry["hooks"] = retained_handlers
+                cleaned_entries.append(retained_entry)
+        cleaned_events[event_name] = cleaned_entries
     return {"hooks": cleaned_events}
 
 
@@ -216,14 +646,18 @@ class CodexDESPlugin(InstallationPlugin):
         codex_dir = _codex_config_dir()
         codex_binary = _shutil.which("codex") is not None
 
-        if not codex_dir.exists() and not codex_binary:
+        if (
+            "codex" not in context.target_platforms
+            and not codex_dir.exists()
+            and not codex_binary
+        ):
             return PluginResult(
                 success=True,
                 plugin_name=self.name,
                 message="Codex CLI not detected, skipping DES hook installation",
             )
 
-        des_module = context.claude_dir / "lib" / "python" / "des"
+        des_module = host_neutral_runtime_dir() / "des"
         if not des_module.exists():
             return PluginResult(
                 success=False,
@@ -269,13 +703,50 @@ class CodexDESPlugin(InstallationPlugin):
 
             python_path = resolve_python_command_for_spawn()
             pythonpath = resolve_des_lib_path_for_spawn()
-
+            launcher_path = codex_dir / _LAUNCHER_FILENAME
+            session_start_launcher_path = codex_dir / _SESSION_START_LAUNCHER_FILENAME
+            resolver_path = _runtime_resolver_path()
+            if not resolver_path.is_file() or resolver_path.is_symlink():
+                raise FileNotFoundError(
+                    "WHAT: Codex SessionStart cannot install because its "
+                    f"host-neutral resolver is absent: {resolver_path}. "
+                    "WHY: registering a hook whose installed implementation "
+                    "does not exist would silently deprive Codex-only users "
+                    "of standing-loop/parallelism/drain guidance. "
+                    "HOW: install the DES runtime assets from the same public "
+                    "candidate before registering Codex hooks."
+                )
             hooks_path = codex_dir / _HOOKS_FILENAME
-            doc = _remove_nwave_hooks(_read_hooks(hooks_path))
+            existing_doc = _read_hooks(hooks_path)
+            manifest_path = codex_dir / _MANIFEST_FILENAME
+            try:
+                legacy_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                legacy_manifest = None
+            legacy_direct_command = _legacy_direct_des_command(
+                legacy_manifest, hooks_path, existing_doc
+            )
+            _write_launcher(launcher_path, python_path, pythonpath)
+            _write_session_start_launcher(
+                session_start_launcher_path, python_path, resolver_path
+            )
+
+            doc = _remove_nwave_hooks(
+                existing_doc, launcher_path, legacy_direct_command
+            )
+            doc = _remove_nwave_hooks(
+                doc,
+                session_start_launcher_path,
+                subcommand=_SESSION_START_SUBCOMMAND,
+            )
             doc.setdefault("hooks", {})
             pretool_list = doc["hooks"].setdefault(_PRE_TOOL_USE_EVENT, [])
-            new_entry = _build_hook_entry(python_path, pythonpath)
+            new_entry = _build_launcher_hook_entry(launcher_path)
             pretool_list.append(new_entry)
+            session_start = doc["hooks"].setdefault(_SESSION_START_EVENT, [])
+            session_start.append(
+                _build_session_start_hook_entry(session_start_launcher_path)
+            )
 
             hooks_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
 
@@ -283,8 +754,10 @@ class CodexDESPlugin(InstallationPlugin):
                 "hooks_file": str(hooks_path),
                 "python_path": python_path,
                 "pythonpath": pythonpath,
+                "launcher_file": str(launcher_path),
+                "session_start_launcher_file": str(session_start_launcher_path),
+                "resolver_script_file": str(resolver_path),
             }
-            manifest_path = codex_dir / _MANIFEST_FILENAME
             manifest_path.write_text(
                 json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
             )
@@ -295,7 +768,12 @@ class CodexDESPlugin(InstallationPlugin):
                 success=True,
                 plugin_name=self.name,
                 message="Codex DES hook installed successfully",
-                installed_files=[hooks_path],
+                installed_files=[
+                    hooks_path,
+                    manifest_path,
+                    launcher_path,
+                    session_start_launcher_path,
+                ],
             )
 
         except Exception as e:
@@ -310,9 +788,11 @@ class CodexDESPlugin(InstallationPlugin):
     def uninstall(self, context: InstallContext) -> PluginResult:
         """Remove nWave DES hook entries from ~/.codex/hooks.json.
 
-        Reads hooks.json, strips only nWave DES entries (identified by
-        'claude_code_hook_adapter' in the command), and rewrites the file.
-        User-created hook entries are preserved. The manifest is also removed.
+        Reads hooks.json and removes only hooks proven by an exact nWave
+        manifest witness: either the canonical launcher, or the v1 direct
+        command derived from its three-field manifest. Launcher and manifest
+        files are removed only when their expected generated bytes are also
+        proven. User-created hooks and same-shaped foreign artifacts remain.
 
         Args:
             context: InstallContext with shared installation utilities
@@ -322,11 +802,123 @@ class CodexDESPlugin(InstallationPlugin):
         """
         try:
             codex_dir = _codex_config_dir()
+            manifest_path = codex_dir / _MANIFEST_FILENAME
+            launcher_path = codex_dir / _LAUNCHER_FILENAME
+            session_start_launcher_path = codex_dir / _SESSION_START_LAUNCHER_FILENAME
 
             hooks_path = codex_dir / _HOOKS_FILENAME
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                manifest = None
+
+            existing: dict | None = None
+            legacy_direct_command: str | None = None
             if hooks_path.exists():
                 existing = _read_hooks(hooks_path)
-                cleaned = _remove_nwave_hooks(existing)
+                legacy_direct_command = _legacy_direct_des_command(
+                    manifest, hooks_path, existing
+                )
+
+            # A launcher is removable only when the manifest proves the exact
+            # bytes we generated.  In particular, do not delete a file merely
+            # because it occupies our historical pathname: a failed/partial
+            # migration must not turn that into ownership of somebody else's
+            # launcher.
+            launcher_is_owned = False
+            current_manifest_is_owned = (
+                isinstance(manifest, dict)
+                and set(manifest)
+                == {
+                    "hooks_file",
+                    "python_path",
+                    "pythonpath",
+                    "launcher_file",
+                    "session_start_launcher_file",
+                    "resolver_script_file",
+                }
+                and manifest.get("hooks_file") == str(hooks_path)
+                and manifest.get("launcher_file") == str(launcher_path)
+                and manifest.get("session_start_launcher_file")
+                == str(session_start_launcher_path)
+                and manifest.get("resolver_script_file")
+                == str(_runtime_resolver_path())
+                and isinstance(manifest.get("python_path"), str)
+                and manifest["python_path"]
+                and isinstance(manifest.get("pythonpath"), str)
+                and manifest["pythonpath"]
+            )
+            if current_manifest_is_owned:
+                try:
+                    launcher_is_owned = (
+                        launcher_path.is_file()
+                        and not launcher_path.is_symlink()
+                        and launcher_path.read_text(encoding="utf-8")
+                        == _launcher_source(
+                            manifest["python_path"], manifest["pythonpath"]
+                        )
+                    )
+                except (OSError, UnicodeDecodeError):
+                    pass
+
+            session_start_launcher_is_owned = False
+            if current_manifest_is_owned:
+                try:
+                    session_start_launcher_is_owned = (
+                        session_start_launcher_path.is_file()
+                        and not session_start_launcher_path.is_symlink()
+                        and session_start_launcher_path.read_text(encoding="utf-8")
+                        == _session_start_launcher_source(
+                            manifest["python_path"], manifest["resolver_script_file"]
+                        )
+                    )
+                except (OSError, UnicodeDecodeError):
+                    pass
+
+            # Public v1 sometimes had already written its transitional
+            # launcher.  Its exact manifest + exact bytes + exact hook command
+            # are the closed ownership witness for removing that file.
+            legacy_launcher_is_owned = False
+            if legacy_direct_command is not None and isinstance(manifest, dict):
+                try:
+                    legacy_launcher_is_owned = (
+                        launcher_path.is_file()
+                        and not launcher_path.is_symlink()
+                        and launcher_path.read_text(encoding="utf-8")
+                        == _v1_launcher_source(
+                            manifest["python_path"], manifest["pythonpath"]
+                        )
+                        and legacy_direct_command
+                        == shlex.join(
+                            [
+                                manifest["python_path"],
+                                str(launcher_path),
+                                "pre-tool-use",
+                            ]
+                        )
+                    )
+                except (KeyError, OSError, UnicodeDecodeError):
+                    pass
+
+            manifest_is_owned = (
+                legacy_direct_command is not None
+                or launcher_is_owned
+                or session_start_launcher_is_owned
+            )
+            if hooks_path.exists():
+                assert existing is not None
+                cleaned = _remove_nwave_hooks(
+                    existing,
+                    launcher_path if launcher_is_owned else None,
+                    legacy_direct_command,
+                )
+                cleaned = _remove_nwave_hooks(
+                    cleaned,
+                    session_start_launcher_path
+                    if session_start_launcher_is_owned
+                    else None,
+                    subcommand=_SESSION_START_SUBCOMMAND,
+                )
                 events = cleaned.get("hooks", {}) if isinstance(cleaned, dict) else {}
                 any_user_entries = any(
                     isinstance(v, list) and len(v) > 0 for v in events.values()
@@ -339,8 +931,22 @@ class CodexDESPlugin(InstallationPlugin):
                     hooks_path.unlink()
                 context.logger.info(f"  Removed nWave DES hook from {hooks_path}")
 
-            manifest_path = codex_dir / _MANIFEST_FILENAME
-            if manifest_path.exists():
+            if launcher_is_owned or legacy_launcher_is_owned:
+                launcher_path.unlink()
+                context.logger.info(f"  Removed Codex DES launcher: {launcher_path}")
+
+            if session_start_launcher_is_owned:
+                session_start_launcher_path.unlink()
+                context.logger.info(
+                    "  Removed Codex SessionStart affordance launcher: "
+                    f"{session_start_launcher_path}"
+                )
+
+            if (
+                manifest_is_owned
+                and manifest_path.exists()
+                and not manifest_path.is_symlink()
+            ):
                 manifest_path.unlink()
                 context.logger.info(f"  Removed Codex DES manifest: {manifest_path}")
 
@@ -383,6 +989,9 @@ class CodexDESPlugin(InstallationPlugin):
                 )
 
             errors: list[str] = []
+            launcher_path = codex_dir / _LAUNCHER_FILENAME
+            session_start_launcher_path = codex_dir / _SESSION_START_LAUNCHER_FILENAME
+            resolver_path = _runtime_resolver_path()
 
             hooks_path = codex_dir / _HOOKS_FILENAME
             if not hooks_path.exists():
@@ -394,13 +1003,78 @@ class CodexDESPlugin(InstallationPlugin):
                     if isinstance(doc, dict)
                     else []
                 )
-                nwave_entries = [e for e in pretool if _is_nwave_matcher_group(e)]
+                nwave_entries = [
+                    entry
+                    for entry in pretool
+                    if _is_nwave_matcher_group(entry, launcher_path)
+                ]
                 if not nwave_entries:
                     errors.append("No nWave DES hook entry found in hooks.json")
+                elif not all(
+                    _command_targets_launcher(hook.get("command", ""), launcher_path)
+                    for entry in nwave_entries
+                    for hook in entry.get("hooks", [])
+                    if isinstance(hook, dict)
+                ):
+                    errors.append("DES hook does not target canonical launcher")
+
+                session_start = doc.get("hooks", {}).get(_SESSION_START_EVENT, [])
+                if not isinstance(session_start, list):
+                    session_start = []
+                session_entries = [
+                    entry
+                    for entry in session_start
+                    if _is_nwave_matcher_group(
+                        entry,
+                        session_start_launcher_path,
+                        _SESSION_START_SUBCOMMAND,
+                    )
+                ]
+                if len(session_entries) != 1:
+                    errors.append(
+                        "Expected exactly one nWave SessionStart affordance hook"
+                    )
+                elif not all(
+                    _command_targets_launcher(
+                        hook.get("command", ""),
+                        session_start_launcher_path,
+                        _SESSION_START_SUBCOMMAND,
+                    )
+                    for entry in session_entries
+                    for hook in entry.get("hooks", [])
+                    if isinstance(hook, dict)
+                ):
+                    errors.append(
+                        "SessionStart affordance hook does not target canonical launcher"
+                    )
 
             manifest_path = codex_dir / _MANIFEST_FILENAME
             if not manifest_path.exists():
                 errors.append(f"DES manifest not found: {manifest_path}")
+            else:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                launcher_file = manifest.get("launcher_file")
+                if launcher_file != str(launcher_path):
+                    errors.append("DES manifest launcher path is not canonical")
+                if not launcher_path.is_file():
+                    errors.append("DES canonical launcher is missing")
+                if manifest.get("session_start_launcher_file") != str(
+                    session_start_launcher_path
+                ):
+                    errors.append(
+                        "DES manifest SessionStart launcher path is not canonical"
+                    )
+                if manifest.get("resolver_script_file") != str(resolver_path):
+                    errors.append("DES manifest resolver path is not canonical")
+                if (
+                    not session_start_launcher_path.is_file()
+                    or session_start_launcher_path.is_symlink()
+                ):
+                    errors.append("Codex SessionStart launcher is missing or unsafe")
+                if not resolver_path.is_file() or resolver_path.is_symlink():
+                    errors.append(
+                        "Host-neutral affordance resolver is missing or unsafe"
+                    )
 
             if errors:
                 return PluginResult(

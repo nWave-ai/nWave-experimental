@@ -167,7 +167,7 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
         transcript_path: Absolute path to the agent's transcript JSONL file
 
     Returns:
-        For a classic dispatch: dict with "project_id", "step_id",
+        For an unresolved dispatch: dict with "project_id", "step_id",
         "project_root". For an atdd_pure dispatch: dict with "mode",
         "project_id", "slice_id", "atdd_pure_phase", "project_root",
         "at_kind" (the raw DES-AT-KIND marker value, or None when absent --
@@ -177,7 +177,7 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
     if not Path(transcript_path).exists():
         return None
 
-    classic_context: dict | None = None
+    legacy_context: dict | None = None
     atdd_pure_context: dict | None = None
 
     try:
@@ -225,8 +225,8 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
                     continue
 
                 # Classic dispatch: first complete marker set wins.
-                if classic_context is None and markers.project_id and markers.step_id:
-                    classic_context = {
+                if legacy_context is None and markers.project_id and markers.step_id:
+                    legacy_context = {
                         "project_id": markers.project_id,
                         "step_id": markers.step_id,
                         "project_root": markers.project_root,
@@ -239,8 +239,8 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
     # An atdd_pure dispatch takes precedence — it IS an atdd_pure return.
     if atdd_pure_context is not None:
         return atdd_pure_context
-    if classic_context is not None:
-        return classic_context
+    if legacy_context is not None:
+        return legacy_context
 
     _log_transcript_audit("HOOK_TRANSCRIPT_NO_MARKERS", transcript_path)
     return None
@@ -758,6 +758,26 @@ def _extract_execution_stats(hook_input: dict) -> tuple[int | None, int | None]:
     if raw_tokens is not None:
         tokens_used = int(raw_tokens)
     return turns_used, tokens_used
+
+
+def _classic_mode_removed_payload() -> dict[str, object]:
+    """Closed public refusal for a direct legacy stop-context carrier.
+
+    The diagnostic is READ from the resolver, never restated here: this hook and
+    `des resolve-workflow-mode` refuse the same project for the same reason, so
+    an operator must not get a different HOW depending on which one caught them.
+    A second copy of the text drifts silently -- and a stale HOW is worse than a
+    bare failure, because it sends the operator somewhere that no longer fixes
+    anything.
+    """
+    from des.application.workflow_mode import refusal_diagnostic
+
+    return {
+        "outcome": "CLASSIC_MODE_REMOVED",
+        "reason_code": "MIGRATION_REQUIRED",
+        "effective_mode": None,
+        "diagnostic": refusal_diagnostic("CLASSIC_MODE_REMOVED"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2451,7 +2471,7 @@ def _emit_wave_only_refire_terminal(
     ``stop_hook_active: true``), re-emitting ``{decision:block}`` makes no
     progress -- the agent loops unboundedly (RC2: the ~100k-per-dispatch
     wave-marker tax). Unlike atdd_pure (`_emit_bounded_block_terminal`) and the
-    classic path (the `stop_hook_active` loop-break at
+    legacy path (the `stop_hook_active` loop-break at
     subagent_stop_service.py:266), the wave-only path had NO loop-breaker.
 
     On a RE-FIRE this mirrors those two terminals: NO ``{decision:block}`` body
@@ -2537,7 +2557,7 @@ def _handle_wave_only_return(
         return 0
 
     # RC2/RC1: on a RE-FIRE break the loop loud instead of re-emitting the block
-    # (mirrors `_emit_bounded_block_terminal` + the classic stop_hook_active
+    # (mirrors `_emit_bounded_block_terminal` + the legacy stop_hook_active
     # loop-break). The FIRST fire (stop_hook_active=False) keeps the gate-out
     # review veto's fail-closed block byte-stable below.
     if stop_hook_active:
@@ -2588,7 +2608,7 @@ def _handle_wave_only_unresolved(
         "silently allowed to close the wave."
     )
     # RC2/RC1: on a RE-FIRE break the loop loud instead of re-emitting the block
-    # (mirrors `_emit_bounded_block_terminal` + the classic stop_hook_active
+    # (mirrors `_emit_bounded_block_terminal` + the legacy stop_hook_active
     # loop-break). The FIRST fire keeps the slice-06 fail-closed refusal below.
     if stop_hook_active:
         return _emit_wave_only_refire_terminal(
@@ -2645,6 +2665,11 @@ def handle_subagent_stop() -> int:
             hook_input = stdin_result.hook_input
             assert hook_input is not None  # narrowed by the guards above
 
+            if hook_input.get("workflowMode") == "classic":
+                print(json.dumps(_classic_mode_removed_payload()))
+                exit_code = 2
+                return exit_code
+
             # Extract execution stats from hook_input
             turns_used, tokens_used = _extract_execution_stats(hook_input)
 
@@ -2669,6 +2694,36 @@ def handle_subagent_stop() -> int:
 
             # Resolve DES context from either protocol
             des_context_result = _resolve_des_context(hook_input)
+
+            # A stop context that DECLARES the retired spine is refused before
+            # signal or log handling; read-only replay stays outside this live
+            # hook path.
+            #
+            # The discriminator is what the PROJECT DECLARES, not the shape of
+            # the resolved context. Refusing every tuple-shaped context treated
+            # "carries a project/step pair" as "is classic" -- a designation,
+            # not the property -- and the tuple form is the ordinary return for
+            # dispatches that were never classic at all. That reading refused
+            # normal subagent stops with a message about a mode they never
+            # requested, and the operator had no way to tell the two apart.
+            if (
+                isinstance(des_context_result, tuple)
+                and des_context_result[0] is not None
+            ):
+                from des.application.workflow_mode import resolve_workflow_selection
+
+                cwd = hook_input.get("cwd")
+                declares_classic = False
+                if cwd:
+                    try:
+                        selection = resolve_workflow_selection(Path(cwd))
+                        declares_classic = selection.outcome == "CLASSIC_MODE_REMOVED"
+                    except Exception:
+                        declares_classic = False
+                if declares_classic:
+                    print(json.dumps(_classic_mode_removed_payload()))
+                    exit_code = 2
+                    return exit_code
 
             # atdd_pure dispatch return (T-C): execution-log-free path.
             if isinstance(des_context_result, _AtddPureResolvedContext):

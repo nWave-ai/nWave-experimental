@@ -67,6 +67,37 @@ Source: plan v3 §7.2. Decision sequence:
 
 Sentinels map to `PhaseExit` enum in `src/des/domain/atdd_pure_phases.py` — use those names verbatim in audit-log events.
 
+### `RELOOP_A` is a dispatch, never an orchestrator edit
+
+The orchestrator owns routing only. A non-PASS verdict does not expand its
+mutation authority.
+
+| Finding after EXAMINE/reviewer audit | DES dispatch | Mutation owner |
+|---|---|---|
+| Acceptance oracle missing or insufficient | `des dispatch --mode atdd_pure --project-id {feature-id} --slice {slice-NN} --wave distill --intent "{verbatim-findings}"` | `nw-acceptance-designer`; tests only | <!-- mode-ref-ok -->
+| Existing AT/charter sufficient; production behavior wrong | `des dispatch --mode atdd_pure --project-id {feature-id} --slice {slice-NN} --wave deliver --phase A_GREEN --intent "{verbatim-findings}"` | selected crafter; production only | <!-- mode-ref-ok -->
+| C2/C5/C7 specification ambiguity or architecture-scope miss | use the upstream wave returned by rules 4-5 | that wave's owner |
+| Blocker, exhaustion or timeout | no corrective dispatch | halt/escalate/checkpoint |
+
+The DISTILL wave is phaseless: do **not** combine `--wave distill` with
+`--phase D_DISTILL`. Always use the prompt emitted by `des dispatch`; do not
+hand-assemble an agent envelope.
+
+**Ownership firewall:**
+
+- the main orchestrator MUST NOT write acceptance tests, paired tests or
+  production code;
+- the acceptance designer MUST NOT edit production;
+- the crafter MUST NOT edit tests;
+- the reviewer/examiner reports findings only;
+- pre-existing orchestrator-authored WIP is unattested input that the owning
+  agent may replace; it cannot establish RED, GREEN or PASS.
+
+For a mixed verdict, split findings by owner and dispatch the independent
+DISTILL and upstream-analysis cloud lanes in parallel. Dispatch `A_GREEN` only
+after the acceptance designer has produced an active RED for every routed AT
+gap. Keep the single box lane serialized.
+
 ## Separation Enforcement — SUPERSEDED (D_REFACTOR_COMMIT is commit-only)
 
 **No separate crafter instance is required for `D_REFACTOR_COMMIT`.** The Ale 2026-05-19 mandate below governed a `D_REFACTOR_COMMIT` that DID L1-L6 refactor + review; that per-slice refactor is now SUPERSEDED (not re-dropped — see `nw-deliver`'s `D_REFACTOR_COMMIT` table row and commit a91bf4f6b, 2026-07-04) by the mandatory per-feature Prefactoring Assessment upstream in DESIGN. With no refactor and no review happening inside `D_REFACTOR_COMMIT` — it is `des commit-slice` and nothing else — the rubber-stamp-your-own-bias risk this section guarded against does not arise: there is no review of the implementer's own work to rubber-stamp. The SAME crafter instance that ran `A_GREEN` runs the commit-only `D_REFACTOR_COMMIT`.
@@ -108,7 +139,6 @@ Each canonical phase (A_GREEN → C_REVIEWER_AUDIT → D_REFACTOR_COMMIT) emits 
 After the D_REFACTOR_COMMIT commit completes, invoke `python scripts/automation/atdd_pure_falsifier_gate.py` (plan v3 §4.5 Phase 5 deliverable):
 
 - Reads N=3 latest pilot JSONL records.
-- ANY breach (median wall-clock > 1.3× target | findings median > 12 | defect rate > 2× classic | Phase D cycle rate median ≥ 2.0) → patch `.nwave/config.yaml:workflow.mode = classic`, emit `FalsifierGateTripped`, exit 42. <!-- mode-ref-ok -->
 - Otherwise → emit `FalsifierGateHealthy`, exit 0.
 
 Exit 42 blocks subsequent CI release steps; operator review required before next pilot feature.

@@ -188,6 +188,21 @@ def fixture_checkout(tmp_path_factory: pytest.TempPathFactory) -> Path:
             _REPO_ROOT / "nWave" / "dispatch" / asset,
             root / "nWave" / "dispatch" / asset,
         )
+    # The C_REVIEWER_AUDIT slot is EVIDENCE-armed: the user examiner is
+    # dispatched because a charter promises an outcome for this slice, never
+    # because the phase happens to be named after a review.  Without one the
+    # CLI refuses OUT LOUD (it does not silently hand the slot to the technical
+    # reviewer), so a checkout that means to render an examiner envelope must
+    # carry the charter that arms it.
+    charter_dir = root / "docs" / "product" / "expectations" / _FEATURE_ID
+    charter_dir.mkdir(parents=True)
+    (charter_dir / "slice-01-charter.md").write_text(
+        f"# Expectation charter -- {_FEATURE_ID} slice-01\n\n"
+        "Spec rows: slice-01\n\n"
+        "Promised outcome: the dispatch envelope states its access register "
+        "honestly.\n",
+        encoding="utf-8",
+    )
     return root
 
 

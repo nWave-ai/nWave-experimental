@@ -20,11 +20,11 @@ from __future__ import annotations
 
 import itertools
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from des.domain.requirement_id import COVERS_TAG_RE
 from des.domain.slice_id_trailer import SLICE_TAG_RE
 
 
@@ -195,12 +195,13 @@ def _file_feature_tags(path: Path) -> tuple[str, ...]:
 #: letter-suffixed `@slice-04a` head-comment sub-tag resolves identically to
 #: `@slice-NN`.
 _SLICE_SUBTAG_RE = SLICE_TAG_RE
-_COVERS_SUBTAG_RE = re.compile(r"@covers-(R\d+)\b", re.IGNORECASE)
+_COVERS_SUBTAG_RE = COVERS_TAG_RE
 
 
 @dataclass(frozen=True)
 class TestFileAttribution:
-    """The ``@slice-NN`` / ``@covers-Rn`` sub-tag attribution parsed from a
+    """The ``@slice-NN`` / exact ``@covers-R<n>`` or ``@covers-R-Sdd-dd``
+    sub-tag attribution parsed from a
     test file's head-comment window.
 
     ``slice_id`` is ``None`` (never a raise) when the head window carries no
@@ -213,7 +214,7 @@ class TestFileAttribution:
 
 
 def resolve_test_file_attribution(path: Path) -> TestFileAttribution:
-    """Resolve the ``@slice-NN`` / ``@covers-Rn`` sub-tags carried on ``path``'s
+    """Resolve the ``@slice-NN`` / exact requirement-ID sub-tags carried on ``path``'s
     head-comment window.
 
     Scans the SAME bounded ``_HEAD_SCAN_LINES`` window
@@ -226,7 +227,5 @@ def resolve_test_file_attribution(path: Path) -> TestFileAttribution:
     window = _file_head_window(path)
     slice_match = _SLICE_SUBTAG_RE.search(window)
     slice_id = slice_match.group(1) if slice_match else None
-    covers = tuple(
-        match.group(1).upper() for match in _COVERS_SUBTAG_RE.finditer(window)
-    )
+    covers = tuple(match.group(1) for match in _COVERS_SUBTAG_RE.finditer(window))
     return TestFileAttribution(slice_id=slice_id, covers=covers)

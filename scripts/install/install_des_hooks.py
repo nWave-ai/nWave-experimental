@@ -11,6 +11,8 @@ import json
 import sys
 from pathlib import Path
 
+from scripts.shared.install_paths import is_durable_interpreter_path
+
 
 class DESHookInstaller:
     """Manages DES hook installation and uninstallation."""
@@ -253,6 +255,32 @@ class DESHookInstaller:
         if "PostToolUse" not in config["hooks"]:
             config["hooks"]["PostToolUse"] = []
 
+    def _resolve_python_path(self) -> str:
+        """Resolve the Python interpreter path for this legacy hook path.
+
+        Rejects an interpreter rooted under a known-ephemeral location
+        (tempfile.gettempdir()) -- a temp-rooted venv can be reaped after
+        settings.json is written, silently taking every wired hook down
+        with it (non-blocking failures, no surfaced signal). Falls back
+        to bare 'python3' on PATH, announced so the operator can see the
+        downgrade rather than discovering it only when a hook misbehaves.
+        """
+        python_path = sys.executable
+        if is_durable_interpreter_path(python_path):
+            return python_path
+        print(
+            "WHAT: rejected interpreter path for DES hook commands: "
+            f"{python_path!r}\n"
+            "WHY: it is rooted under the system temp directory "
+            "(tempfile.gettempdir()) and may not exist by the time a hook "
+            "fires -- it would silently break every wired hook.\n"
+            "HOW: falling back to bare 'python3' resolved via PATH at hook "
+            "run time. To use a specific durable interpreter, re-run this "
+            "installer from that interpreter directly "
+            "(e.g. `/path/to/python -m scripts.install.install_des_hooks`)."
+        )
+        return "python3"
+
     def _add_des_hooks(self, config: dict):
         """
         Add DES hooks to configuration.
@@ -266,7 +294,7 @@ class DESHookInstaller:
         # Substitution map for all placeholders
         substitutions = {
             "{project_root}": project_root,
-            "{python_path}": sys.executable,
+            "{python_path}": self._resolve_python_path(),
         }
 
         # Create hook configs with placeholders substituted

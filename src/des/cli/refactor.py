@@ -14,30 +14,63 @@ branch, and mandatory cleanup.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import shlex
+import signal
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from des.application.refactor_drain_service import BatchDrainResult, DrainResult
+    from collections.abc import Iterator
+
+    from des.application.refactor_drain_service import (
+        BatchDrainResult,
+        DrainResult,
+        RefactorDrainService,
+    )
     from des.ports.driven_ports.git_worktree_port import GitWorktreePort
+
+
+class DispatchedCommandOrigin(Enum):
+    """WHO chose the command a run dispatched.
+
+    Carried beside the command itself because a refusal that names the command
+    correctly can still be wrong about whose choice it was, and that error
+    sends a reader hunting for an option they never wrote. The two origins are
+    genuinely different situations with different next steps -- override the
+    default, versus fix your own script -- so they are modelled as a closed
+    set rather than left implicit in the rendering.
+    """
+
+    #: The operator typed ``--agent-cmd <value>``.
+    OPERATOR = "operator"
+    #: No ``--agent-cmd`` was given, so ``des refactor`` resolved its own
+    #: installed actuator (``_resolve_default_agent_cmd``) and ran that.
+    RESOLVED_BY_DES = "resolved-by-des"
 
 
 @dataclass(frozen=True)
 class RefusalContext:
     """What the shared refusal rendering knows about the RUN that produced it.
 
-    A ``DrainResult`` says what happened to an ITEM; these two facts are
-    properties of the INVOCATION, and a refusal that omits them leaves the
-    operator unable to act on it:
+    A ``DrainResult`` says what happened to an ITEM; these facts are properties
+    of the INVOCATION, and a refusal that omits them leaves the operator unable
+    to act on it:
 
-    * ``agent_cmd`` -- the ``--agent-cmd`` value this run actually dispatched,
-      so a maintainer with several scripts can see which of theirs a refusal is
-      about.
+    * ``agent_cmd`` -- the command this run actually dispatched, so a
+      maintainer with several scripts can see which of theirs a refusal is
+      about. The RESOLVED value, never the raw ``--agent-cmd`` argument: on the
+      default path that argument is ``None``, and a refusal built from it named
+      ``None`` as the command it ran (bugfix-refusal-names-none).
+    * ``agent_cmd_origin`` -- whether that command was the operator's choice or
+      one ``des refactor`` made for them. Inseparable from the command itself:
+      the same string means "your script" in one run and "the default we
+      picked" in another, and only the origin tells the two apart.
     * ``shadowed_fixer_path`` -- the repo-relative path of a fixer script whose
       WORKING-TREE copy is uncommitted, and which the drain therefore could not
       have run (it dispatches inside a worktree cut from the last commit).
@@ -50,7 +83,12 @@ class RefusalContext:
     """
 
     agent_cmd: str
+    agent_cmd_origin: DispatchedCommandOrigin
     shadowed_fixer_path: str | None = None
+
+
+#: HOW for the actuator-not-found refusal -- the producing tool (GDP-4).
+_REMEDIATION_HINT = "nwave-ai install"
 
 
 #: The load-bearing shape of one pending pile item -- printed verbatim in the
@@ -102,6 +140,20 @@ def main(argv: list[str] | None = None) -> int:
         print(_driver_loop_refusal(), file=sys.stderr)
         return 1
 
+    # Annotated, not left as the Namespace's ``Any``: every use below -- the
+    # drain calls AND the refusal context -- must see one resolved ``str``.
+    # ``args.agent_cmd`` typed as ``Any`` is what let the refusal context be
+    # built from the raw, still-``None`` argument without a type error
+    # (bugfix-refusal-names-none); past this block the name is a ``str``.
+    agent_cmd: str | None = args.agent_cmd
+    agent_cmd_origin = DispatchedCommandOrigin.OPERATOR
+    if agent_cmd is None:
+        agent_cmd = _resolve_default_agent_cmd()
+        agent_cmd_origin = DispatchedCommandOrigin.RESOLVED_BY_DES
+        if agent_cmd is None:
+            print(_actuator_not_found_refusal(), file=sys.stderr)
+            return 1
+
     from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
     from des.adapters.driven.refactor.git_worktree_adapter import GitWorktreeAdapter
     from des.adapters.driven.refactor.shell_agent_invocation_adapter import (
@@ -136,26 +188,101 @@ def main(argv: list[str] | None = None) -> int:
     # the pile file (move_item), which would otherwise erase the very
     # skipped-line evidence the refusal/AT-6 notice needs to report.
     skipped_lines = parse_pile_report(args.pile).skipped_lines
-    context = _refusal_context(repo, args.agent_cmd, git_worktree)
-    if args.max_parallel > 1:
-        batch_result = service.drain_batch(
+    # The RESOLVED command, never ``args.agent_cmd``: the drain dispatches the
+    # resolved one, so a refusal built from the raw argument would be about a
+    # command that never ran (and, with no --agent-cmd given, about ``None``).
+    context = _refusal_context(repo, agent_cmd, agent_cmd_origin, git_worktree)
+    # A drain dispatches a third-party agent subtree into its OWN session (so the
+    # timeout reap can killpg it); a SIGTERM/SIGINT to THIS parent would
+    # otherwise orphan that subtree and strand the in-flight worktree/branch,
+    # because Python's default SIGTERM disposition terminates the process without
+    # unwinding drain_one's own cleanup at all. The handler makes the abort as
+    # clean as any refusal (bugfix-inherited-stdin-deadlocks-spawns slice-02).
+    with _abort_on_signal(service):
+        if args.max_parallel > 1:
+            batch_result = service.drain_batch(
+                repo=repo,
+                pile_path=args.pile,
+                paid_path=paid_path,
+                agent_cmd=agent_cmd,
+                max_parallel=args.max_parallel,
+            )
+            return _report_batch(
+                batch_result, DEFAULT_INTEGRATION_BRANCH, skipped_lines, context
+            )
+        result = service.drain_one(
             repo=repo,
             pile_path=args.pile,
             paid_path=paid_path,
-            agent_cmd=args.agent_cmd,
-            max_parallel=args.max_parallel,
+            agent_cmd=agent_cmd,
+            prompt_template_path=args.prompt_template,
         )
-        return _report_batch(
-            batch_result, DEFAULT_INTEGRATION_BRANCH, skipped_lines, context
-        )
-    result = service.drain_one(
-        repo=repo,
-        pile_path=args.pile,
-        paid_path=paid_path,
-        agent_cmd=args.agent_cmd,
-        prompt_template_path=args.prompt_template,
+        return _report(result, DEFAULT_INTEGRATION_BRANCH, skipped_lines, context)
+
+
+@contextlib.contextmanager
+def _abort_on_signal(service: RefactorDrainService) -> Iterator[None]:
+    """Install a SIGINT/SIGTERM handler that aborts the drain CLEANLY, then
+    restore the previous handlers on the way out.
+
+    Duty on a signal, in order: (1) SIGKILL every in-flight agent process group
+    via ``des.runtime.spawn.reap_active_process_groups`` -- reaching the subtree
+    the drain detached into its own session, which a bare parent-death would
+    orphan; (2) run the same worktree/branch cleanup a mid-drain crash does via
+    ``service.cleanup_in_flight`` -- so the abort leaves the repo as clean as any
+    refusal; (3) print a WHAT/WHY/HOW abort message; (4) exit non-zero (POSIX
+    128+signum), because an operator-initiated abort is not a drained item.
+
+    The handler raises ``SystemExit`` rather than ``os._exit`` on purpose: it
+    lets the drain's own ``except BaseException`` cleanup and this manager's
+    handler restoration still run (both idempotent with step 2), and it flushes
+    stdio. A re-entry flag makes a second signal during cleanup a no-op instead
+    of restarting the abort. ``signal.signal`` is a main-thread-only call, which
+    is where ``main`` runs; drain_batch's worker threads are reached through the
+    process-group registry, not through a per-thread handler.
+    """
+    from des.runtime.spawn import reap_active_process_groups
+
+    aborting = False
+
+    def _handle(signum: int, _frame: object) -> None:
+        nonlocal aborting
+        if aborting:
+            return
+        aborting = True
+        reap_active_process_groups()
+        service.cleanup_in_flight()
+        print(_abort_message(signum), file=sys.stderr, flush=True)
+        raise SystemExit(128 + signum)
+
+    previous = {
+        sig: signal.signal(sig, _handle) for sig in (signal.SIGINT, signal.SIGTERM)
+    }
+    try:
+        yield
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def _abort_message(signum: int) -> str:
+    """WHAT/WHY/HOW for an operator-initiated abort -- never a bare traceback or
+    a silent exit (the standing what/why/how mandate; the charter negative 'a
+    bare non-zero exit code with no human-readable explanation')."""
+    name = signal.Signals(signum).name
+    return (
+        f"des refactor aborted:\n"
+        f"WHAT: interrupted by {name} -- the in-flight item was stopped before "
+        "it could merge.\n"
+        "WHY: you (or your OS) signalled des refactor. The fixer agent subtree "
+        "it had dispatched was killed together with its whole process group, "
+        "and the in-flight item's worktree and branch were removed, so nothing "
+        "is left half-merged or orphaned.\n"
+        "HOW: nothing was merged for the interrupted item -- re-run the same "
+        "`des refactor --pile ...` to pick it up again from a clean state. To "
+        "let long agent work finish instead of aborting it, do not signal the "
+        "process: the agent is already bounded by NWAVE_REFACTOR_AGENT_TIMEOUT."
     )
-    return _report(result, DEFAULT_INTEGRATION_BRANCH, skipped_lines, context)
 
 
 def _report(
@@ -278,12 +405,15 @@ def _entry_gate_verdict_missing_refusal(context: RefusalContext) -> str:
     GDP-4 HOW invokes the producing tool, modelled on
     ``_unparseable_pile_refusal`` above, honesty clause included).
 
-    Names the ``--agent-cmd`` value VERBATIM: an operator with more than one
-    fixer script cannot otherwise tell which of theirs a refusal is about. And
-    when that command is a repo-relative script git reports as UNCOMMITTED, the
-    shadowed-fixer paragraph is appended -- the one case where following the
-    ``Fix:`` line above verbatim reproduces this very refusal byte-for-byte, on
-    forever (fix-drain-single-item-silent-noop)."""
+    Names the dispatched command VERBATIM, and attributes it to whoever chose
+    it: an operator with more than one fixer script cannot otherwise tell which
+    of theirs a refusal is about, and an operator who chose nothing at all must
+    not be told a command was theirs -- that sends them looking for an option
+    they never wrote (bugfix-refusal-names-none). And when that command is a
+    repo-relative script git reports as UNCOMMITTED, the shadowed-fixer
+    paragraph is appended -- the one case where following the ``Fix:`` line
+    above verbatim reproduces this very refusal byte-for-byte, on forever
+    (fix-drain-single-item-silent-noop)."""
     from des.application.refactor_drain_service import (
         MERGE_PERMITTING_ENTRY_GATE_VERDICTS,
     )
@@ -301,22 +431,63 @@ def _entry_gate_verdict_missing_refusal(context: RefusalContext) -> str:
         if verdict not in MERGE_PERMITTING_ENTRY_GATE_VERDICTS
     )
     explanation = (
-        f"{ENTRY_GATE_VERDICT_MISSING} -- the command you passed to "
-        f"--agent-cmd ({context.agent_cmd}) finished without emitting any "
-        "recognized entry-gate verdict token in its output, so the drain "
-        "refused to merge blind against a green it could not classify.\n"
+        f"{ENTRY_GATE_VERDICT_MISSING} -- {_dispatched_command_clause(context)} "
+        "finished without emitting any recognized entry-gate verdict token in "
+        "its output, so the drain refused to merge blind against a green it "
+        "could not classify.\n"
         f"Verdict tokens that PERMIT the merge: {permitting}\n"
         f"Verdict tokens that deliberately REFUSE it: {refusing}\n"
-        "Fix: make your own --agent-cmd print exactly one of those tokens on "
-        "its stdout as its last act -- for example "
-        "`your-agent ... && echo REFACTOR_SAFE`. No shipped tool emits the "
-        "verdict for you yet: scripts/refactor_agent.py, the actuator the "
-        "command catalog names as the --agent-cmd value, does not print one."
+        f"{_verdict_fix_line(context)}"
     )
     shadowed = _shadowed_fixer_notice(context)
     if shadowed is None:
         return explanation
     return f"{explanation}\n{shadowed}"
+
+
+def _dispatched_command_clause(context: RefusalContext) -> str:
+    """The subject of the refusal's WHAT: the command that ran, named
+    verbatim, and attributed to whoever actually chose it (GDP-3).
+
+    The two origins get two different sentences on purpose. Telling an
+    operator who passed nothing that this is "the command you passed to
+    --agent-cmd" is a wrong WHAT twice over: it names a choice that was the
+    system's, and it points at a flag that is absent from their command line,
+    so the one place they are told to look holds nothing at all."""
+    if context.agent_cmd_origin is DispatchedCommandOrigin.OPERATOR:
+        return f"the command you passed to --agent-cmd ({context.agent_cmd})"
+    return (
+        "no --agent-cmd was given, so des refactor resolved its own installed "
+        f"actuator and ran that ({context.agent_cmd}); it"
+    )
+
+
+def _verdict_fix_line(context: RefusalContext) -> str:
+    """The refusal's HOW, routed by who chose the command that just ran.
+
+    An operator with their OWN fixer has one thing to change: their script's
+    last line. An operator who passed nothing has a different move -- the
+    actuator that ran is nWave's own and does not emit a verdict, so the step
+    forward is to override it. Both branches keep the honesty clause: no
+    shipped tool emits the verdict for anyone yet (GDP-4 states that plainly
+    rather than naming a producing tool that does not exist)."""
+    if context.agent_cmd_origin is DispatchedCommandOrigin.OPERATOR:
+        return (
+            "Fix: make your own --agent-cmd print exactly one of those tokens "
+            "on its stdout as its last act -- for example "
+            "`your-agent ... && echo REFACTOR_SAFE`. No shipped tool emits "
+            "the verdict for you yet: scripts/refactor_agent.py, the actuator "
+            "the command catalog names as the --agent-cmd value, does not "
+            "print one."
+        )
+    return (
+        "Fix: pass --agent-cmd naming a command that prints exactly one of "
+        "those tokens on its stdout as its last act -- for example "
+        "`--agent-cmd 'your-agent {prompt} && echo REFACTOR_SAFE'`. The "
+        "actuator resolved above is the only one nWave ships, and it does not "
+        "print a verdict, so no shipped tool emits it for you yet -- until one "
+        "does, this default cannot reach a merge on its own."
+    )
 
 
 def _shadowed_fixer_notice(context: RefusalContext) -> str | None:
@@ -365,6 +536,39 @@ def _shadowed_fixer_notice(context: RefusalContext) -> str | None:
     )
 
 
+def _resolve_default_agent_cmd() -> str | None:
+    """When ``--agent-cmd`` is omitted, resolve nWave's OWN installed
+    actuator via the existing ``des.runtime.interpreter`` seam and build the
+    equivalent ``agent_cmd`` template (``<python> <actuator> {prompt}``) --
+    same substitution/invocation path an explicit ``--agent-cmd`` gets, so
+    the drain lifecycle never has to know which source it came from. Returns
+    ``None`` when the actuator cannot be found at either candidate location
+    (dev checkout or installed layout)."""
+    from des.runtime.interpreter import resolve_installed_actuator
+
+    actuator_path = resolve_installed_actuator()
+    if actuator_path is None:
+        return None
+    return f"{shlex.quote(sys.executable)} {shlex.quote(str(actuator_path))} {{prompt}}"
+
+
+def _actuator_not_found_refusal() -> str:
+    """WHAT/WHY/HOW for a missing installed actuator: names every path
+    searched and points at the remediation (`nwave-ai install`) or an
+    explicit `--agent-cmd` -- never a bare failure, never mistakable for the
+    genuinely-empty-pile message (GDP-3/GDP-4)."""
+    from des.runtime.interpreter import actuator_search_paths
+
+    searched = " and ".join(str(path) for path in actuator_search_paths())
+    return (
+        "des refactor refused: no --agent-cmd was given and the installed "
+        f"refactor_agent.py actuator could not be found -- searched: "
+        f"{searched}. Fix: run `{_REMEDIATION_HINT}` to install the "
+        "actuator, or pass --agent-cmd explicitly to use a different "
+        "command."
+    )
+
+
 def _driver_loop_refusal() -> str:
     """WHAT/WHY/HOW for `--driver loop`: names the requested driver, states
     it is not implemented yet, and points at `python` (the working default)
@@ -405,9 +609,16 @@ def _skipped_lines_notice(skipped_lines: tuple[str, ...]) -> str:
 
 
 def _refusal_context(
-    repo: Path, agent_cmd: str, git_worktree: GitWorktreePort
+    repo: Path,
+    agent_cmd: str,
+    agent_cmd_origin: DispatchedCommandOrigin,
+    git_worktree: GitWorktreePort,
 ) -> RefusalContext:
     """Read, ONCE per run, the invocation-level facts a refusal may need.
+
+    ``agent_cmd`` is the command the run DISPATCHES -- the caller's resolved
+    value, not the raw ``--agent-cmd`` argument, which is ``None`` whenever the
+    default actuator was used.
 
     The uncommitted-path read goes through the driven port, never a git call
     inlined here: a git-absent or non-repository target simply reports no
@@ -420,7 +631,11 @@ def _refusal_context(
         (path for path in _repo_relative_paths_in(agent_cmd) if path in dirty),
         None,
     )
-    return RefusalContext(agent_cmd=agent_cmd, shadowed_fixer_path=shadowed)
+    return RefusalContext(
+        agent_cmd=agent_cmd,
+        agent_cmd_origin=agent_cmd_origin,
+        shadowed_fixer_path=shadowed,
+    )
 
 
 def _repo_relative_paths_in(agent_cmd: str) -> tuple[str, ...]:
@@ -437,11 +652,31 @@ def _repo_relative_paths_in(agent_cmd: str) -> tuple[str, ...]:
     the escape route the refusal recommends), a bare program name resolved on
     PATH (``sh``, ``python``), and anything normalizing outside the repo.
     """
+    if not isinstance(agent_cmd, str):
+        # LOUD, because the alternative is silent-wrong (GDP-6): ``shlex.split``
+        # raises ValueError for a non-string too, so without this the ``except``
+        # below -- written for ONE cause it names in its own comment -- would
+        # absorb a wrong TYPE as if it were an operator's malformed command,
+        # answering "no repo-relative paths" and disabling the shadowed-fixer
+        # detection for every caller with no trace. That is exactly what
+        # happened when the raw, still-``None`` ``--agent-cmd`` argument reached
+        # here (bugfix-refusal-names-none).
+        raise TypeError(
+            "des defect: the shadowed-fixer detection was handed "
+            f"{type(agent_cmd).__name__} ({agent_cmd!r}) where the RESOLVED "
+            "agent command string was owed. WHY: a caller passed the raw "
+            "--agent-cmd argument instead of the value main() resolved, and a "
+            "non-string is not a malformed command -- it is a wiring bug that "
+            "must not be read as one. HOW: pass the resolved command (see "
+            "des.cli.refactor.main's agent_cmd), never args.agent_cmd."
+        )
     try:
         tokens = shlex.split(agent_cmd)
     except ValueError:
         # An unbalanced quote leaves no token resolvable, so nothing is
         # claimed about any of them -- never a guess at where the split fell.
+        # Reachable ONLY for that cause now: the type guard above means a
+        # non-string can no longer arrive here wearing a quoting error's face.
         return ()
     separators = {"/", os.sep}
     paths: list[str] = []
@@ -456,10 +691,13 @@ def _repo_relative_paths_in(agent_cmd: str) -> tuple[str, ...]:
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    """Parse the ``--pile --agent-cmd [--max-parallel] [--driver]`` argv contract."""
+    """Parse the ``--pile [--agent-cmd] [--max-parallel] [--driver]`` argv
+    contract. ``--agent-cmd`` is OPTIONAL -- when omitted, ``main`` resolves
+    nWave's own installed actuator (``_resolve_default_agent_cmd``) instead;
+    an explicit ``--agent-cmd`` is passed through byte-identical, unaffected."""
     parser = argparse.ArgumentParser(prog="des refactor")
     parser.add_argument("--pile", required=True, type=Path)
-    parser.add_argument("--agent-cmd", required=True)
+    parser.add_argument("--agent-cmd", required=False, default=None)
     parser.add_argument("--max-parallel", type=int, default=1)
     parser.add_argument("--driver", choices=("python", "loop"), default="python")
     parser.add_argument("--prompt-template", type=Path, default=None)

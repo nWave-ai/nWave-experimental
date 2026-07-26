@@ -11,11 +11,12 @@ while ANY checklist row lacks a covering AT.
 Checklist grammar (the mechanical contract, deliberately simple):
 
   A checklist row declares ONE requirement and carries (a) an ID matching
-  ``R\\d+`` and (b) a category from the CLOSED set
+  ``R<n>`` or ``R-S<two digits>-<two digits>`` and (b) a category from the CLOSED set
   {ui, e2e, nfr, security, validation, build, functional}. Two row forms:
 
     table row:  | R12 | <requirement text> | ui |
-        cells split on ``|``; the ID is the first cell matching ``R\\d+``;
+        cells split on ``|``; the ID is the first cell matching the closed
+        requirement-ID grammar;
         the category is the first OTHER cell equal (case-insensitive) to a
         closed-set name; the remaining cells join into the text.
         Header/separator rows (no ``R\\d+`` cell) are ignored.
@@ -68,6 +69,13 @@ import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
+from des.domain.requirement_id import (
+    COVERS_TAG_RE,
+    REQUIREMENT_ID_PATTERN,
+    is_requirement_id,
+    requirement_ids_in,
+)
+
 
 def _comment_lines(source: str) -> dict[int, str]:
     """Map 1-based line number -> real COMMENT token text via ``tokenize``.
@@ -94,15 +102,12 @@ CATEGORIES = frozenset(
 )
 MANDATORY_CATEGORIES = ("ui", "e2e", "nfr", "security", "validation", "build")
 
-_REQ_ID_CELL_RE = re.compile(r"^R\d+$")
-_REQ_ID_TOKEN_RE = re.compile(r"\bR\d+\b")
-_LIST_ROW_RE = re.compile(r"^[-*]\s+(R\d+)\s+\[([^\]]+)\]\s*(.*)$")
+_LIST_ROW_RE = re.compile(rf"^[-*]\s+({REQUIREMENT_ID_PATTERN})\s+\[([^\]]+)\]\s*(.*)$")
 # Language-general comment marker: accept the common single-line comment
 # prefixes so `// covers: R12` (TS/JS/Rust/Java/C), `-- covers: R12` (SQL/Lua)
 # and `# covers: R12` (Python/shell/Ruby) all count. Full per-language adapter
 # is backlog (F-SPEC-COVERAGE-LANG-ADAPTER); this broadens the hardcoded set.
 _COVERS_COMMENT_RE = re.compile(r"(?:#|//|--)\s*covers:\s*(.+)", re.IGNORECASE)
-_GHERKIN_COVERS_TAG_RE = re.compile(r"@covers-(R\d+)\b")
 
 _EXIT_VERIFIED = 0
 _EXIT_REFUSED = 1
@@ -110,9 +115,10 @@ _EXIT_INDETERMINATE = 2
 
 _HOW_TO_FIX = (
     "author an AT for the requirement and mark it -- pytest: "
-    '@pytest.mark.covers("R<n>") on the test, or a "# covers: R<n>" comment '
-    'in its body, or "R<n>" in its docstring; Gherkin: tag the scenario '
-    "@covers-R<n>"
+    '@pytest.mark.covers("R<n>" or "R-S01-03") on the test, or a '
+    '"# covers: R<n>" or "# covers: R-S01-03" comment in its body, or '
+    'that exact ID in its docstring; Gherkin: tag the scenario "@covers-R<n>" '
+    'or "@covers-R-S01-03"'
 )
 
 
@@ -145,7 +151,7 @@ def _indeterminate(what: str, why: str, how: str) -> int:
 
 def _parse_table_row(cells: list[str], lineno: int) -> _Requirement | int | None:
     """Parse one ``|``-delimited row; None when it is not a requirement row."""
-    id_index = next((i for i, c in enumerate(cells) if _REQ_ID_CELL_RE.match(c)), None)
+    id_index = next((i for i, c in enumerate(cells) if is_requirement_id(c)), None)
     if id_index is None:
         return None
     category_index = next(
@@ -214,7 +220,9 @@ def _parse_checklist(path: Path) -> list[_Requirement] | int:
             how=(
                 "extract the checklist at DISTILL-open (P3.1) -- one row per "
                 "requirement, '| R<n> | <text> | <category> |' or "
-                "'- R<n> [<category>] <text>' -- and pass it via --checklist."
+                "'- R<n> [<category>] <text>' (where <n> may be "
+                "legacy R<n> or canonical R-Sdd-dd) -- and pass it via "
+                "--checklist."
             ),
         )
     try:
@@ -241,8 +249,9 @@ def _parse_checklist(path: Path) -> list[_Requirement] | int:
         return _indeterminate(
             what=f"checklist {path} declares no requirement rows",
             why=(
-                "no row matched the '| R<n> | ... | <category> |' or "
-                "'- R<n> [<category>] ...' grammar; an empty denominator "
+                "no row matched the closed requirement-ID grammar in "
+                "'| R<n> | ... | <category> |' or '- R<n> [<category>] ...'; "
+                "an empty denominator "
                 "would make the gate a silent pass."
             ),
             how="add one row per requirement (see this gate's --help).",
@@ -280,7 +289,7 @@ def _covers_ids_from_marks(decorators: list[ast.expr]) -> set[str]:
             continue
         for arg in dec.args:
             if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                ids.update(_REQ_ID_TOKEN_RE.findall(arg.value))
+                ids.update(requirement_ids_in(arg.value))
     return ids
 
 
@@ -302,7 +311,7 @@ def _covers_ids_from_body_comments(
             continue
         match = _COVERS_COMMENT_RE.search(comment)
         if match:
-            ids.update(_REQ_ID_TOKEN_RE.findall(match.group(1)))
+            ids.update(requirement_ids_in(match.group(1)))
     return ids
 
 
@@ -333,7 +342,7 @@ def _covered_ids_in_pytest_file(path: Path) -> set[str] | int:
                 covered.update(_covers_ids_from_body_comments(comments_by_line, node))
                 docstring = ast.get_docstring(node)
                 if docstring:
-                    covered.update(_REQ_ID_TOKEN_RE.findall(docstring))
+                    covered.update(requirement_ids_in(docstring))
 
     _collect(tree.body, frozenset())
     return covered
@@ -349,7 +358,7 @@ def _covered_ids_in_feature_file(path: Path) -> set[str] | int:
             why=str(exc),
             how="fix the file encoding/permissions and re-run.",
         )
-    return set(_GHERKIN_COVERS_TAG_RE.findall(text))
+    return set(COVERS_TAG_RE.findall(text))
 
 
 _PY_SUFFIXES = frozenset({".py"})
@@ -394,7 +403,7 @@ def _covered_ids_in_source_text(path: Path) -> set[str] | int:
     for line in text.splitlines():
         match = _COVERS_COMMENT_RE.search(_strip_string_literals(line))
         if match:
-            covered.update(_REQ_ID_TOKEN_RE.findall(match.group(1)))
+            covered.update(requirement_ids_in(match.group(1)))
     return covered
 
 
@@ -554,10 +563,13 @@ def main(argv: list[str] | None = None) -> int:
         ),
         epilog=(
             "Checklist rows: '| R<n> | <text> | <category> |' or "
-            "'- R<n> [<category>] <text>' with category in {ui, e2e, nfr, "
+            "'- R<n> [<category>] <text>', where IDs are legacy R<n> or "
+            "canonical R-Sdd-dd, with category in {ui, e2e, nfr, "
             "security, validation, build, functional}. Coverage marker: "
-            'pytest @pytest.mark.covers("R<n>") / "# covers: R<n>" body '
-            'comment / "R<n>" in the test docstring; Gherkin @covers-R<n> '
+            'pytest @pytest.mark.covers("R<n>" or "R-S01-03") / '
+            '"# covers: R<n>" or "# covers: R-S01-03" body comment / that '
+            "exact ID in the test docstring; Gherkin @covers-R<n> or "
+            "@covers-R-S01-03 "
             "tag. The six mandatory categories (ui, e2e, nfr, security, "
             "validation, build) are called out explicitly when uncovered."
         ),

@@ -192,8 +192,20 @@ class GuardrailGateComposition:
         )
         if drifted == text:  # fixture integrity, not SUT behaviour
             raise RuntimeError(
-                f"working registry {flavor_file} carries no deliver_phase_shape "
-                "field — slice-05 fixture needs re-basing on the shipped tree"
+                f"WHAT: working registry {flavor_file} carries no "
+                "`deliver_phase_shape:` field to drift. "
+                "WHY: this plants the Layer-C defect (registry/runtime phase "
+                "shape disagreement) that the docgen --check agreement leg must "
+                "refuse -- with no field there is no value to drift away from "
+                "the runtime-canonical shape. "
+                f"HOW: diff {flavor_file} against the shipped "
+                "nWave/flavors/atdd_pure.yaml. If the field was RENAMED there, "
+                "update this method's regex to the new name. If the field is "
+                "GENUINELY gone (no flavor declares a delivery phase shape any "
+                "more), the Layer-C agreement leg this scenario exercises is "
+                "itself obsolete -- replace the defect and its gate-side check "
+                "TOGETHER; do NOT keep drifting a field the runtime no longer "
+                "cross-checks."
             )
         flavor_file.write_text(drifted, encoding="utf-8")
         self._defect_token = "deliver_phase_shape"
@@ -358,21 +370,37 @@ class GuardrailGateComposition:
         )
         if stripped == text:  # fixture integrity, not SUT behaviour
             raise RuntimeError(
-                f"working registry {flavor_file} carries no `descriptor:` field "
-                "— slice-05 fixture needs re-basing on the shipped tree"
+                f"WHAT: working registry {flavor_file} carries no top-level "
+                "`descriptor:` field to strip. "
+                "WHY: this plants the MISSING_REQUIRED_FIELD defect that the "
+                "Layer-B completeness gate (src/des/cli/"
+                "mode_registry_completeness.py, _REQUIRED_FIELDS) must refuse "
+                "-- without the field present first there is nothing to strip. "
+                f"HOW: diff {flavor_file} against the shipped "
+                "nWave/flavors/atdd_pure.yaml. If `descriptor` was RENAMED "
+                "there, update this method's regex. If `descriptor` is "
+                "GENUINELY no longer in _REQUIRED_FIELDS (the schema dropped "
+                "the requirement), strip a DIFFERENT still-required field from "
+                "that list instead; do NOT keep stripping a field the gate no "
+                "longer requires."
             )
         flavor_file.write_text(stripped, encoding="utf-8")
         return "descriptor"
 
     def _introduce_two_defaults(self) -> str:
-        for flavor in (WorkflowFlavor.ATDD_PURE, WorkflowFlavor.CLASSIC):
-            flavor_file = self._flavor_path(flavor)
-            text = flavor_file.read_text(encoding="utf-8")
-            text = re.sub(r"^default:.*$", "", text, flags=re.MULTILINE)
-            flavor_file.write_text(
-                text.replace("flavor_id:", "default: true\nflavor_id:", 1),
-                encoding="utf-8",
-            )
+        # Only ATDD_PURE ships, so "two defaults" cannot be planted by iterating
+        # the real registry — one file cannot contradict itself. This defect
+        # FABRICATES a second file under the fixture-only CLASSIC identity: a
+        # byte-copy of the shipped flavor with `flavor_id` renamed, so two files
+        # legally declare `default: true` and the gate has a real pair to count.
+        atdd_pure_file = self._flavor_path(WorkflowFlavor.ATDD_PURE)
+        classic_file = self._flavor_path(WorkflowFlavor.CLASSIC)
+        classic_file.write_text(
+            atdd_pure_file.read_text(encoding="utf-8").replace(
+                "flavor_id: atdd_pure", "flavor_id: classic", 1
+            ),
+            encoding="utf-8",
+        )
         return "default"
 
     def _name_nonexistent_agent(self) -> str:
@@ -381,8 +409,20 @@ class GuardrailGateComposition:
         text = flavor_file.read_text(encoding="utf-8")
         if "skill_load_set:" not in text:  # fixture integrity
             raise RuntimeError(
-                f"working registry {flavor_file} carries no skill_load_set "
-                "block — slice-05 fixture needs re-basing on the shipped tree"
+                f"WHAT: working registry {flavor_file} carries no top-level "
+                "`skill_load_set:` key. "
+                "WHY: this plants the SKILL_LOAD_SET_NAMES_NONEXISTENT_AGENT "
+                "defect (a ghost-agent row) that the Layer-B completeness gate "
+                "must refuse -- without the key there is no block to insert the "
+                "ghost row into. "
+                f"HOW: diff {flavor_file} against the shipped "
+                "nWave/flavors/atdd_pure.yaml. If the key was RENAMED there, "
+                'update the literal `"skill_load_set:"` check and the '
+                "insertion point in `_name_nonexistent_agent`. If the key is "
+                "GENUINELY gone (agent-to-skill direction moved elsewhere), "
+                "this defect can no longer be planted here -- replace the "
+                "scenario and the gate check it exercises TOGETHER; do NOT "
+                "rename the key check onto a structure that no longer exists."
             )
         row = f"  {ghost}:\n    conditional: []\n"
         flavor_file.write_text(
@@ -397,9 +437,6 @@ class GuardrailGateComposition:
         pure reads; the empty-expected delta proves they rewrite nothing."""
         return {
             "registry.atdd_pure": self._flavor_path(WorkflowFlavor.ATDD_PURE).read_text(
-                encoding="utf-8"
-            ),
-            "registry.classic": self._flavor_path(WorkflowFlavor.CLASSIC).read_text(
                 encoding="utf-8"
             ),
             "asset.locus_probe": (self._worktree / _CLEAN_LOCUS_PROBE_REL).read_text(

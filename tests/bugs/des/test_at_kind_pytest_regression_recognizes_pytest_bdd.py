@@ -57,12 +57,12 @@ needs no `pytest_bdd` dependency.
 from __future__ import annotations
 
 import os
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+
+from tests.common.in_process_cli import run_module_in_process
 
 
 def _repo_root() -> Path:
@@ -107,10 +107,8 @@ _GHERKIN_HINTS = ("gherkin", "pytest-bdd", "scenarios", "--at-kind gherkin")
 def _run_record_at_review_verdict(
     repo_root: Path, regression_file: str
 ) -> tuple[int, str]:
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
+    exit_code, out, err = run_module_in_process(
+        *[
             "des",
             "record-at-review-verdict",
             "--feature-id",
@@ -128,13 +126,10 @@ def _run_record_at_review_verdict(
             "--repo-root",
             str(repo_root),
         ],
-        capture_output=True,
-        text=True,
-        timeout=30,
         env=_env(),
         cwd=repo_root,
     )
-    return result.returncode, (result.stdout + result.stderr)
+    return exit_code, (out + err)
 
 
 # ---------------------------------------------------------------------------
@@ -157,10 +152,8 @@ def _write_minimal_slice_plan(repo_root: Path) -> None:
 
 def _run_carpaccio_slice_gate(repo_root: Path, regression_file: str) -> tuple[int, str]:
     _write_minimal_slice_plan(repo_root)
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
+    exit_code, out, err = run_module_in_process(
+        *[
             "des",
             "carpaccio-slice-gate",
             "--feature-id",
@@ -174,13 +167,10 @@ def _run_carpaccio_slice_gate(repo_root: Path, regression_file: str) -> tuple[in
             "--regression-test-file",
             regression_file,
         ],
-        capture_output=True,
-        text=True,
-        timeout=30,
         env=_env(),
         cwd=repo_root,
     )
-    return result.returncode, (result.stdout + result.stderr)
+    return exit_code, (out + err)
 
 
 _RunSurface = Callable[[Path, str], tuple[int, str]]

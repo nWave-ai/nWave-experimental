@@ -6,15 +6,16 @@ Feature-delta: docs/feature/check-contract-shape-declarations/feature-delta.md
 
 Contract under test (DOES NOT EXIST YET -- active-RED by design):
 `src/des/cli/check_contract_shape_declarations.py:main(argv: list[str] | None = None) -> int`
-runs the 3 Principle-11 mechanical Contract-Shape checks over an explicit,
+runs the 4 Principle-11 mechanical Contract-Shape checks over an explicit,
 caller-provided `--files <path> [<path> ...]` list (git-free), parsing test
 functions + docstrings via stdlib `ast`:
   (a) every `def test_*` docstring contains the substring `CONTRACT_SHAPE:`;
   (b) every acceptance test (a test in a file whose path contains
       `/acceptance/`) docstring contains `Outcome anchor: DISCUSS Elevator
       Pitch`;
-  (c) no test-function NAME matches the banned regex
-      `^test_.*(returns_\\d+|exit_code|calls_.*_once|status_code|http_\\d+)`.
+  (c) no test-function NAME matches a technical-oracle pattern;
+  (d) no test-function NAME or test filename embeds delivery metadata such
+      as `slice_00` or `slice-00`.
 
 Exit 0 (all clean) / 1 (>=1 violation) / 2 (malformed input: a missing,
 unreadable, or unparseable file -- degrade-LOUD diagnostic naming the file,
@@ -26,7 +27,7 @@ suite IS the schema's spec, per ADR-025 DISTILL-authors-the-AT contract):
       "verdict": "clean" | "violations_found" | "malformed_input",
       "violation_count": <int>,
       "violations": [
-        {"target": "<file>::<test_name>", "check": "a"|"b"|"c", "how": "<remediation text>"}
+        {"target": "<file>::<test_name>", "check": "a"|"b"|"c"|"d", "how": "<remediation text>"}
       ],
       "diagnostic": "<message>"   # populated only on malformed_input
     }
@@ -67,7 +68,7 @@ def _import_check_contract_shape():
             "MISSING_FUNCTIONALITY: "
             "src/des/cli/check_contract_shape_declarations.py does not exist "
             f"yet ({exc}). Implement `main(argv: list[str] | None = None) "
-            "-> int` running the 3 Principle-11 mechanical checks per the "
+            "-> int` running the 4 Principle-11 mechanical checks per the "
             "DESIGN contract (feature-delta [REF] Code-Design) before this "
             "AT can pass."
         ) from exc
@@ -256,7 +257,7 @@ def test_main_reports_check_a_violation_and_how_to_fix(
 
 
 # ---------------------------------------------------------------------------
-# Scenario 3 -- POSITIVE: check (c) violation -- banned regex test name
+# Scenario 3 -- POSITIVE: check (c)/(d) violation -- non-outcome test name
 # CONTRACT_SHAPE: bounded-change
 # ---------------------------------------------------------------------------
 
@@ -269,6 +270,7 @@ def test_main_reports_check_a_violation_and_how_to_fix(
         "test_service_calls_charge_once",
         "test_returns_status_code",
         "test_payment_http_500",
+        "test_slice_00_refuses_a_probe_receipt_lookalike",
     ],
 )
 def test_main_reports_check_c_violation_and_how_to_fix(
@@ -278,10 +280,10 @@ def test_main_reports_check_c_violation_and_how_to_fix(
 
     Outcome anchor: DISCUSS Elevator Pitch
 
-    A test-function name matching the banned regex (technically-framed
-    names: `returns_<digits>`, `exit_code`, `calls_..._once`, `status_code`,
-    `http_<digits>`) makes `main` return non-zero; the verdict names the
-    `file::test`, identifies check (c), and carries a rename HOW.
+    A test-function name framed as a technical oracle (`returns_<digits>`,
+    `exit_code`, `calls_..._once`, `status_code`, `http_<digits>`) or as
+    delivery metadata (`slice_NN`) makes `main` return non-zero; the verdict
+    names the `file::test`, identifies the check, and carries a rename HOW.
     """
     violating_file = _write(
         tmp_path / "unit" / "test_banned_name.py",
@@ -295,7 +297,8 @@ def test_main_reports_check_c_violation_and_how_to_fix(
         f"got 0: {verdict!r}"
     )
     assert verdict["verdict"] == "violations_found", verdict
-    violation = _violation_by_check(verdict, "c")
+    expected_check = "d" if "slice_" in banned_name else "c"
+    violation = _violation_by_check(verdict, expected_check)
     assert (
         str(violating_file) in violation["target"]
         and banned_name in violation["target"]
@@ -304,6 +307,32 @@ def test_main_reports_check_c_violation_and_how_to_fix(
     assert "rename" in how_text or "outcome-named" in how_text, (
         f"HOW must instruct renaming to an outcome-named test: {violation!r}"
     )
+
+
+def test_main_rejects_delivery_metadata_in_a_test_filename(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTRACT_SHAPE: bounded-change
+
+    Outcome anchor: DISCUSS Elevator Pitch
+
+    A test file named for its delivery slice rather than its observable
+    outcome cannot silently enter the acceptance tree: the verdict identifies
+    the file and explains where that scheduling metadata belongs.
+    """
+    violating_file = _write(
+        tmp_path / "acceptance" / "test_slice_00_host_parity.py",
+        _clean_acceptance_module(),
+    )
+
+    exit_code, verdict = _run(capsys, violating_file)
+
+    assert exit_code != 0, (
+        f"expected non-zero exit on delivery metadata in filename, got 0: {verdict!r}"
+    )
+    violation = _violation_by_check(verdict, "d")
+    assert violation["target"] == str(violating_file), violation
+    assert "ledger or commit trailer" in violation["how"], violation
 
 
 # ---------------------------------------------------------------------------

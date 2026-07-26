@@ -39,13 +39,15 @@ class HookVerdict(str, Enum):
 class DispatchShape(str, Enum):
     """The marker-set shape of a PreToolUse dispatch the U1 intercept sees.
 
-    CLASSIC          -- no `DES-MODE:atdd_pure` marker; classic path unchanged.
+    MODE_LESS        -- carries no `DES-MODE` marker at all. Since the classic
+                        removal this is a REFUSAL, not another path: absence
+                        cannot select a workflow that no longer exists.
     ATDD_PURE_VALID  -- `DES-MODE:atdd_pure` + valid phase + valid slice.
     PHASE_MISSING    -- `DES-MODE:atdd_pure` present, `DES-PHASE` absent.
     SLICE_MISSING    -- `DES-MODE:atdd_pure` present, `DES-SLICE` absent.
     """
 
-    CLASSIC = "classic"
+    MODE_LESS = "mode-less"
     ATDD_PURE_VALID = "atdd_pure_valid"
     PHASE_MISSING = "phase_missing"
     SLICE_MISSING = "slice_missing"
@@ -66,7 +68,7 @@ class CarpaccioOutcome(str, Enum):
 # flow in step bodies -- each body is a single typed lookup + composition call).
 
 DISPATCH_SHAPE_BY_PHRASE: dict[str, DispatchShape] = {
-    "a classic dispatch": DispatchShape.CLASSIC,
+    "a dispatch with no mode marker": DispatchShape.MODE_LESS,
     "a valid atdd_pure A_GREEN_ATS dispatch": DispatchShape.ATDD_PURE_VALID,
     "an atdd_pure dispatch missing its phase marker": DispatchShape.PHASE_MISSING,
     "an atdd_pure dispatch missing its slice marker": DispatchShape.SLICE_MISSING,

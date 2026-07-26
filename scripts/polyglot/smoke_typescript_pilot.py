@@ -6,13 +6,18 @@ Invocation::
 
 Behaviour:
 
-1. ``cd tests/polyglot-pilot/typescript/``.
+1. Copy the pilot sources into a throwaway temp sandbox (excluding
+   ``node_modules``).
 2. If ``npx`` is absent on PATH: log ``[polyglot-smoke] toolchain absent —
    skipped`` and exit 0 with WARNING. (Fail-open robustness — CI without
    Node should not break unrelated test suites.)
-3. ``npm install`` (only if ``node_modules`` absent).
-4. ``npx vitest run``.
+3. ``npm install`` in the sandbox.
+4. ``npx vitest run`` in the sandbox.
 5. Exit 0 on success; non-zero on failure with the captured stderr.
+
+The install+test run against the SANDBOX copy, never the git-tracked pilot
+directory — so npm's in-place rewrite of ``package-lock.json`` lands on the
+throwaway copy and the tracked lockfile is left byte-identical.
 
 The script is the single contract Python-side callers depend on. Both
 manual human runs and the pytest wrapper at
@@ -25,6 +30,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -58,6 +64,35 @@ def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_in_sandbox(sandbox: Path) -> int:
+    """Run npm install + vitest inside an isolated sandbox copy of the pilot."""
+    _log("installing npm dependencies (sandboxed temp copy)")
+    install_env = os.environ.copy()
+    # Keep npm output terse but visible.
+    install_env.setdefault("npm_config_fund", "false")
+    install_env.setdefault("npm_config_audit", "false")
+    install_env.setdefault("npm_config_progress", "false")
+    result = subprocess.run(
+        ["npm", "install", "--no-fund", "--no-audit"],
+        cwd=str(sandbox),
+        check=False,
+        text=True,
+        env=install_env,
+    )
+    if result.returncode != 0:
+        _log(f"npm install failed (exit {result.returncode})")
+        return EXIT_TOOLCHAIN_BROKEN
+
+    _log("running vitest")
+    result = _run(["npx", "vitest", "run"], cwd=sandbox)
+    if result.returncode != 0:
+        _log(f"vitest reported failures (exit {result.returncode})")
+        return EXIT_TEST_FAILED
+
+    _log("OK — polyglot TypeScript pilot GREEN end-to-end")
+    return EXIT_OK
+
+
 def main() -> int:
     if not PILOT_DIR.is_dir():
         _log(f"pilot directory missing: {PILOT_DIR}")
@@ -67,33 +102,16 @@ def main() -> int:
         _log("toolchain absent — skipped (npm/npx not on PATH)")
         return EXIT_OK
 
-    node_modules = PILOT_DIR / "node_modules"
-    if not node_modules.is_dir():
-        _log("installing npm dependencies (one-time per checkout)")
-        install_env = os.environ.copy()
-        # Keep npm output terse but visible.
-        install_env.setdefault("npm_config_fund", "false")
-        install_env.setdefault("npm_config_audit", "false")
-        install_env.setdefault("npm_config_progress", "false")
-        result = subprocess.run(
-            ["npm", "install", "--no-fund", "--no-audit"],
-            cwd=str(PILOT_DIR),
-            check=False,
-            text=True,
-            env=install_env,
+    # Sandbox the install+test in a throwaway copy so npm's in-place rewrite of
+    # package-lock.json never dirties the git-tracked pilot directory.
+    with tempfile.TemporaryDirectory(prefix="polyglot-smoke-ts-") as tmp:
+        sandbox = Path(tmp) / "typescript"
+        shutil.copytree(
+            PILOT_DIR,
+            sandbox,
+            ignore=shutil.ignore_patterns("node_modules"),
         )
-        if result.returncode != 0:
-            _log(f"npm install failed (exit {result.returncode})")
-            return EXIT_TOOLCHAIN_BROKEN
-
-    _log("running vitest")
-    result = _run(["npx", "vitest", "run"], cwd=PILOT_DIR)
-    if result.returncode != 0:
-        _log(f"vitest reported failures (exit {result.returncode})")
-        return EXIT_TEST_FAILED
-
-    _log("OK — polyglot TypeScript pilot GREEN end-to-end")
-    return EXIT_OK
+        return _run_in_sandbox(sandbox)
 
 
 if __name__ == "__main__":  # pragma: no cover - script entry point

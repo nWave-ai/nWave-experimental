@@ -102,7 +102,14 @@ Waiting on a dispatched agent is NOT idle time. While a crafter greens slice N:
   memory-starved window.
 
 Rule: LLM lanes are cloud (parallel is ~free); the box is the constraint. Pipeline the
-cloud, serialize the box. Canonical prose + anchor: `nw-deliver` §Per-slice pipelining.
+cloud, serialize the box. At every completion, refusal or emitted artifact, recompute
+the artifact-level DAG and dispatch every ownership-safe READY cloud lane until
+capacity is full. Dependencies attach to consumed unstable artifacts, never
+whole-slice completion. A READY lane plus an idle cloud slot is
+`UNUSED_PARALLELISM` unless an artifact/file/box reason is recorded. Before waiting,
+surface `RUNNING / READY / BOX / BLOCKED`, then fill the READY difference. Load
+`nw-throughput` for the mandatory scheduling cycle; canonical DELIVER anchor:
+`nw-deliver` §Per-slice pipelining.
 
 Self-test at every dispatch and every wait — answer it, don't skim it: **while this agent
 runs, what ELSE is running?** If the honest answer is "nothing", you are burning wall-clock

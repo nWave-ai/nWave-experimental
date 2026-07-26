@@ -26,11 +26,13 @@ from dataclasses import dataclass
 from enum import Enum
 
 from des.domain.review_verdict_gate import ReviewGateToken, ReviewVerdictGate
+from des.domain.wave_review_spec import DISCUSS_REVIEW_SPEC
 
 
 # The DISCUSS-scoped verdict event name -- the record-family discriminant the
 # reader selects on (analogous to ``ATReviewVerdict``, keyed by feature).
-DISCUSS_REVIEW_EVENT = "DiscussReviewVerdict"
+# Sourced from the wave spec so the three wave event names have ONE origin.
+DISCUSS_REVIEW_EVENT = DISCUSS_REVIEW_SPEC.event
 
 
 class DiscussReviewToken(str, Enum):

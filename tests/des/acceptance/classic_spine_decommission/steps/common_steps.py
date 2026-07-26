@@ -516,6 +516,28 @@ def then_advisory_not_fired(deprecation: DeprecationComposition) -> None:
     assert deprecation.advisory_state() == AdvisoryState.NOT_FIRED
 
 
+@then("the dispatch refuses removed classic with migration required")
+def then_classic_removed(deprecation: DeprecationComposition) -> None:
+    payload = deprecation.removal_payload()
+    assert payload["outcome"] == "CLASSIC_MODE_REMOVED"
+    assert payload["reason_code"] == "MIGRATION_REQUIRED"
+    assert payload["effective_mode"] is None
+
+
+@then("the dispatch refuses the undeclared mode without defaulting")
+def then_mode_undeclared(deprecation: DeprecationComposition) -> None:
+    """An undeclared mode is its OWN refusal, not the classic one.
+
+    Two different causes with two different remedies: a project carrying the
+    retired selector must migrate; a project that declares nothing must declare.
+    Collapsing them would tell an operator to migrate away from something they
+    never chose -- the same conflation filed today against the PreToolUse path.
+    """
+    payload = deprecation.removal_payload()
+    assert payload["outcome"] == "MODE_UNDECLARED", payload
+    assert payload["effective_mode"] is None, payload
+
+
 @then("the classic dispatch still runs to completion as a fallback")
 def then_classic_fallback_works(deprecation: DeprecationComposition) -> None:
     assert deprecation.classic_dispatch_completed() is True

@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.common.in_process_cli import run_module_in_process
+
 
 # ---------------------------------------------------------------------------
 # Snapshot helpers
@@ -91,7 +93,12 @@ def _run_validator(
     home_dir: Path,
     extra_args: list[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run nwave-ai validate-feature-delta in an isolated subprocess."""
+    """Run nwave-ai validate-feature-delta in-process under a swapped env.
+
+    The hermetic env the fork passed (sandbox HOME, narrowed PATH,
+    GIT_CEILING_DIRECTORIES) is swapped into ``os.environ`` for the call and
+    restored after, so the side-effect assertions observe the same sandbox.
+    """
     env = {
         "HOME": str(home_dir),
         "PATH": str(Path(sys.executable).parent),
@@ -115,14 +122,11 @@ def _run_validator(
         str(feature_delta_path),
         *(extra_args or []),
     ]
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-        env=env,
-        cwd=str(feature_delta_path.parent),
+    exit_code, out, err = run_module_in_process(
+        cmd[2], *cmd[3:], env=env, cwd=str(feature_delta_path.parent)
+    )
+    return subprocess.CompletedProcess(
+        args=cmd, returncode=exit_code, stdout=out, stderr=err
     )
 
 
@@ -130,7 +134,7 @@ def _run_extractor(
     feature_delta_path: Path,
     home_dir: Path,
 ) -> subprocess.CompletedProcess[str]:
-    """Run nwave-ai extract-gherkin in an isolated subprocess."""
+    """Run nwave-ai extract-gherkin in-process under the same swapped env."""
     env = {
         "HOME": str(home_dir),
         "PATH": str(Path(sys.executable).parent),
@@ -151,14 +155,11 @@ def _run_extractor(
         "extract-gherkin",
         str(feature_delta_path),
     ]
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-        env=env,
-        cwd=str(feature_delta_path.parent),
+    exit_code, out, err = run_module_in_process(
+        cmd[2], *cmd[3:], env=env, cwd=str(feature_delta_path.parent)
+    )
+    return subprocess.CompletedProcess(
+        args=cmd, returncode=exit_code, stdout=out, stderr=err
     )
 
 

@@ -47,7 +47,7 @@ Feature: The carpaccio entry gate is an unskippable PreToolUse intercept
 
     Examples:
       | dispatch                                          | carpaccio | verdict | carpaccio_invocation |
-      | a classic dispatch                                | clears    | allowed | is skipped           |
+      | a dispatch with no mode marker                    | clears    | blocked | is skipped           |
       | a valid atdd_pure A_GREEN_ATS dispatch            | clears    | allowed | happens              |
       | a valid atdd_pure A_GREEN_ATS dispatch            | rejects   | blocked | happens              |
       | an atdd_pure dispatch missing its phase marker    | clears    | blocked | is skipped           |

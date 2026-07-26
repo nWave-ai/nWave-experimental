@@ -28,6 +28,7 @@ from pathlib import Path
 
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.examine_verdict_signing import EXAMINE_VERDICTS, charter_seal
+from des.domain.telemetry_paths import LedgerFamily, ledger_path
 
 
 __all__ = ["main", "record_examine_verdict"]
@@ -44,7 +45,7 @@ _HUMAN_VERDICT_BY_EXAMINE_VERDICT: dict[str, Verdict] = {
 
 def examine_ledger_path(repo: Path, feature_id: str) -> Path:
     """The examine-verdict ledger path for ``feature_id`` under ``repo``."""
-    return repo / ".nwave" / "telemetry" / "examine" / f"{feature_id}.jsonl"
+    return ledger_path(repo, LedgerFamily.EXAMINE, feature_id)
 
 
 def _repo_relative(path: Path, repo: Path) -> str:

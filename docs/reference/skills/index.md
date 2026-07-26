@@ -224,14 +224,6 @@
 
 - [nw-deliver-atdd-pure-slice-gates](nw-deliver-atdd-pure-slice-gates.md) — DELIVER ATDD-pure per-slice phase-boundary contracts — the D_REFACTOR_COMMIT exit gate (E1 slice-commit completeness + E2 contract-gate scope), Phase D routing decision rules, A_GREEN/D_REFACTOR_COMMIT separation enforcement, the verdict-hash trailer, per-phase-boundary telemetry, and the post-commit falsifier-gate hook. Load when a per-slice phase boundary beyond the A_GREEN entry dispatch must be governed.
 
-## nw-deliver-classic-orchestration
-
-- [nw-deliver-classic-orchestration](nw-deliver-classic-orchestration.md) — DELIVER classic roadmap-driven spine (deprecated fallback, ADR-028 D6) — the §Orchestration Flow phase list (setup, paradigm/mutation/deliverable-type detection, roadmap creation + review, execute-all-steps, post-merge integration + Elevator Pitch demo gate, refactoring, adversarial review, mutation, integrity, finalize, retrospective, report), orchestrator responsibilities, the Task invocation pattern (DES template), the roadmap quality gate, skip/resume, and the per-step design compliance check. Load when the mode dispatch routes to the classic spine, or when the per-slice spine re-enters the shared refactor/review/mutation/integrity/finalize phases as written.
-
-## nw-deliver-orchestration
-
-- [nw-deliver-orchestration](nw-deliver-orchestration.md) — DELIVER wave orchestration workflow -- 9 phases from baseline to finalization. Load when user invokes *deliver command. Covers state tracking, smart skip logic, retry, resume, and quality gate enforcement.
-
 ## nw-density-resolution-contract
 
 - [nw-density-resolution-contract](nw-density-resolution-contract.md) — Shared density-resolution contract for wave skills. Canonical detail on the D12 cascade, density resolver call, ad-hoc override workflow, and DocumentationDensityEvent telemetry emission. Referenced from nw-discover / nw-discuss / nw-design / nw-devops / nw-distill / nw-deliver.
@@ -378,7 +370,7 @@
 
 ## nw-execute
 
-- [nw-execute](nw-execute.md) — Dispatches one unit of DELIVER work to a specialized agent for TDD execution. Use to run a step (classic workflow mode, a roadmap.json plan) or one carpaccio slice (ATDD-pure workflow mode).
+- [nw-execute](nw-execute.md) — Dispatches one unit of DELIVER work to a specialized agent for TDD execution. Use to run one carpaccio slice of the ATDD-pure workflow.
 
 ## nw-expectation-charter
 

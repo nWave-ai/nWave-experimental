@@ -18,7 +18,6 @@ disable-model-invocation: true
 | Level | Default paradigm | Rationale |
 |---|---|---|
 | **Unit** | Property-based + state-delta — single-example is FALLBACK only | Property tests cover equivalence classes; the state-delta universe forbids hidden mutations on adjacent slots |
-| **Acceptance (Gherkin)** | `Property:` framing with quantified preconditions; classic `Scenario:` is FALLBACK | Acceptance tests document system invariants; properties express the spec better than picked examples |
 | **Integration** | UNCHANGED — single-example test verifies WIRING | The contract is "wires connect correctly", not "all input shapes succeed". One representative call suffices |
 | **E2E** | UNCHANGED — single-example end-to-end happy path | The contract is "complete flow connects", not "all flows are equivalent". One golden walkthrough suffices |
 
@@ -69,7 +68,6 @@ Property: Board column order reflects recency
 ```
 
 **Fallback** — when property-framing genuinely cannot express the contract (e.g., flow-specific UI tests with puntual outcomes, golden-file diffs, error messages with exact strings):
-- Write classic example-based test
 - Document WHY property-framing failed in a one-line `# bypass:` comment
 - Compensate by adding stronger PBT at unit/integration level
 

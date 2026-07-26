@@ -225,7 +225,6 @@ Any unchecked box blocks COMMIT. Surface diagnosis to operator; do not bypass.
 
 - **ADR-027** — 7-phase extension architectural decision: `docs/architecture/adrs/adr-027-atdd-pure-7-phase-extension.md`
 - **Plan v3** — executable specification: `docs/proposals/atdd-pure-workflow-restructure-v3-2026-05-19.md`
-- **nw-tdd-methodology** — 3-phase canonical TDD (sibling skill; classic mode default)
 - **nw-test-design-mandates** — PBT + state-delta paradigm (applies to Phase A paired unit tests)
 - **nw-at-completeness-check** — Phase C reviewer taxonomy (7-category C1-C7, plan v3 §6)
 - **nw-refactor** — L1-L6 transformation catalogue (unconditional batch-then-verify default per `feedback_refactor_batch_when_test_suite_slow_2026_05_19`)

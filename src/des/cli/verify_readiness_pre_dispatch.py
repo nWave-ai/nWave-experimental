@@ -99,6 +99,12 @@ from des.cli.validate_feature_delta import (
     validate_reuse_analysis_content,
     validate_sustainability_content,
 )
+from des.domain.feature_delta_source import (
+    FEATURE_DELTA_ABSENT,
+    FEATURE_DELTA_SECTION_MISSING,
+    FeatureDeltaRead,
+    read_feature_delta,
+)
 from des.domain.lane_profile import LANE_PROFILES, LaneProfile
 
 
@@ -252,6 +258,14 @@ class _InvariantResult:
     # 2026-07-04) is deliberately preserved -- but it can no longer claim to
     # have verified what it never looked at.
     attested: bool = True
+    # WHICH of the feature-delta read states produced this outcome, when the
+    # outcome came from reading the feature-delta at all (see
+    # `des.cli.feature_delta_source`). Empty for invariants that read nothing.
+    # A DOWNSTREAM reader branches on this token instead of re-parsing prose:
+    # "the file is absent" and "the file is there but a section is missing"
+    # route the operator to two different actions, and only the FIRST is a
+    # dispatch that may legitimately have no feature-delta at all.
+    cause: str = ""
 
 
 @dataclass
@@ -278,6 +292,21 @@ class _ReadinessReport:
 # --- Invariant check functions (one per first-dispatch friction) ----------
 
 
+def _unreadable_remediation(read: FeatureDeltaRead, invariant_id: str) -> str:
+    """The remediation for an invariant that could not read the feature-delta.
+
+    An ABSENT document must still be AUTHORED with everything each invariant
+    needs, so the invariant's own remediation is appended -- the operator
+    creating the file learns in one pass which section this leg wants. An
+    UNDECODABLE one is not missing anything: appending "write section X" there
+    would send the operator to author content the file already carries, when
+    the only fault is its bytes.
+    """
+    if read.cause == FEATURE_DELTA_ABSENT:
+        return f"{read.detail} -- {_REMEDIATIONS[invariant_id]}"
+    return read.detail
+
+
 def _slice_row_missing_remediation(slice_id: str) -> str:
     """What/why/how remediation for a `--slice-id` with no Slice Plan row.
 
@@ -293,7 +322,9 @@ def _slice_row_missing_remediation(slice_id: str) -> str:
     )
 
 
-def _check_slice_plan_section(workspace: Path, slice_id: str) -> _InvariantResult:
+def _check_slice_plan_section(
+    repo_root: Path, feature_id: str, slice_id: str
+) -> _InvariantResult:
     """Invariant 1: feature-delta.md carries the slice-plan heading AND the
     entering slice has a row in the parsed Slice Plan table.
 
@@ -310,29 +341,25 @@ def _check_slice_plan_section(workspace: Path, slice_id: str) -> _InvariantResul
     `SlicePlan.row_for` -- the SAME discriminating predicate
     `carpaccio-slice-gate` already uses -- zero new parsing logic.
     """
-    delta = workspace / "feature-delta.md"
-    if not delta.is_file():
+    read = read_feature_delta(repo_root, feature_id)
+    if read.content is None:
+        # An absent or undecodable feature-delta carries no slice-plan heading.
+        # Report FAILED rather than crashing the aggregate -- naming WHICH of
+        # the two it was, so the operator is not sent to fix an encoding on a
+        # file that is simply not there.
         return _InvariantResult(
             invariant_id=_INV_SLICE_PLAN,
             satisfied=False,
-            remediation=_REMEDIATIONS[_INV_SLICE_PLAN],
+            remediation=_unreadable_remediation(read, _INV_SLICE_PLAN),
+            cause=read.cause,
         )
-    try:
-        text = delta.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        # An undecodable feature-delta carries no slice-plan heading. Report
-        # FAILED rather than crashing the aggregate so every invariant -- in
-        # particular the reuse-first degrade-LOUD diagnostic -- still emits.
-        return _InvariantResult(
-            invariant_id=_INV_SLICE_PLAN,
-            satisfied=False,
-            remediation=_REMEDIATIONS[_INV_SLICE_PLAN],
-        )
+    text = read.content
     if _SLICE_PLAN_HEADING not in text:
         return _InvariantResult(
             invariant_id=_INV_SLICE_PLAN,
             satisfied=False,
             remediation=_REMEDIATIONS[_INV_SLICE_PLAN],
+            cause=FEATURE_DELTA_SECTION_MISSING,
         )
     try:
         plan = parse_slice_plan(text)
@@ -345,12 +372,14 @@ def _check_slice_plan_section(workspace: Path, slice_id: str) -> _InvariantResul
             invariant_id=_INV_SLICE_PLAN,
             satisfied=False,
             remediation=f"{detail} -- {_REMEDIATIONS[_INV_SLICE_PLAN]}",
+            cause=FEATURE_DELTA_SECTION_MISSING,
         )
     if plan.row_for(slice_id) is None:
         return _InvariantResult(
             invariant_id=_INV_SLICE_PLAN,
             satisfied=False,
             remediation=_slice_row_missing_remediation(slice_id),
+            cause=FEATURE_DELTA_SECTION_MISSING,
         )
     return _InvariantResult(invariant_id=_INV_SLICE_PLAN, satisfied=True)
 
@@ -380,8 +409,17 @@ def _check_scenario_slice_tags(
     """
     tests_dir = repo_root / "tests"
     if tests_dir.is_dir():
+        # The path segment test is REPO-ROOT-RELATIVE on purpose: `p` is
+        # absolute, so comparing `feature_id` against `p.parts` would also
+        # match every ancestor of the checkout -- a worktree checked out at
+        # `.../wt/<feature-id>/` would attribute EVERY .feature file in the
+        # tree to this feature (and refuse on any other feature's untagged
+        # scenario). The name of the directory the repo happens to live in is
+        # not a selector.
         legacy_feature_files = [
-            p for p in tests_dir.rglob("*.feature") if feature_id in p.parts
+            p
+            for p in tests_dir.rglob("*.feature")
+            if feature_id in p.relative_to(repo_root).parts
         ]
         if legacy_feature_files:
             untagged = _collect_untagged_scenarios(legacy_feature_files)
@@ -570,7 +608,14 @@ def _check_pre_commit_scope(repo_root: Path, feature_id: str) -> _InvariantResul
     if not tests_dir.is_dir():
         return _InvariantResult(invariant_id=_INV_PRE_COMMIT, satisfied=True)
 
-    feature_files = [p for p in tests_dir.rglob("*.feature") if feature_id in p.parts]
+    # Repo-root-relative for the same reason as the legacy leg above: `p` is
+    # absolute, so a worktree checked out at `.../wt/<feature-id>/` would put the
+    # feature id in EVERY path and claim every .feature file in the tree.
+    feature_files = [
+        p
+        for p in tests_dir.rglob("*.feature")
+        if feature_id in p.relative_to(repo_root).parts
+    ]
     if not feature_files:
         return _InvariantResult(invariant_id=_INV_PRE_COMMIT, satisfied=True)
 
@@ -630,22 +675,23 @@ def _check_reuse_first_or_design_skip(
     rationale is present (witness leg).
 
     Reuses the SHIPPED `validate_reuse_analysis_content` parser (DDD-8) -- no
-    second reuse parser. Degrades LOUD on an unreadable feature-delta: the
-    diagnostic names the unreadable source rather than silent-passing or
-    crashing.
+    second reuse parser, and the SHIPPED `read_feature_delta` seam for the read
+    itself. Degrades LOUD on an unreadable feature-delta: the diagnostic names
+    WHICH state the source is in (absent vs undecodable) rather than reporting
+    an absent file as a bad encoding, silent-passing, or crashing.
     """
-    delta = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
-    try:
-        content = delta.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    read = read_feature_delta(repo_root, feature_id)
+    if read.content is None:
         return _InvariantResult(
             invariant_id=_INV_REUSE_FIRST,
             satisfied=False,
             remediation=(
-                f"feature-delta could not be read as UTF-8 text at {delta}; "
-                f"the reuse-first invariant cannot be evaluated (degrade-LOUD)"
+                f"{_unreadable_remediation(read, _INV_REUSE_FIRST)} -- the "
+                f"reuse-first invariant cannot be evaluated (degrade-LOUD)"
             ),
+            cause=read.cause,
         )
+    content = read.content
 
     result = validate_reuse_analysis_content(content)
     if result.verdict in _REUSE_LEG_PRESENT_VERDICTS:
@@ -658,6 +704,7 @@ def _check_reuse_first_or_design_skip(
             invariant_id=_INV_REUSE_FIRST,
             satisfied=False,
             remediation=_REMEDIATIONS[_INV_REUSE_FIRST],
+            cause=FEATURE_DELTA_SECTION_MISSING,
         )
 
     if result.verdict in (
@@ -676,12 +723,14 @@ def _check_reuse_first_or_design_skip(
             invariant_id=_INV_REUSE_FIRST,
             satisfied=False,
             remediation=f"{result.detail} -- {_REMEDIATIONS[_INV_REUSE_FIRST]}",
+            cause=FEATURE_DELTA_SECTION_MISSING,
         )
 
     return _InvariantResult(
         invariant_id=_INV_REUSE_FIRST,
         satisfied=False,
         remediation=_REMEDIATIONS[_INV_REUSE_FIRST],
+        cause=FEATURE_DELTA_SECTION_MISSING,
     )
 
 
@@ -738,23 +787,25 @@ def _check_prefactoring_assessment(
     (`missing-prefactoring-assessment` / `unmotivated-prefactoring-assessment`)
     co-occurs with a valid Design-Skipped witness. Otherwise FAILS.
 
-    Reuses the SHIPPED parser -- no second prefactoring parser. Degrades LOUD
-    on an unreadable feature-delta: the diagnostic names the unreadable source
-    rather than silent-passing or crashing.
+    Reuses the SHIPPED parser -- no second prefactoring parser -- and the
+    SHIPPED `read_feature_delta` seam for the read itself. Degrades LOUD on an
+    unreadable feature-delta: the diagnostic names WHICH state the source is in
+    (absent vs undecodable) rather than reporting an absent file as a bad
+    encoding, silent-passing, or crashing.
     """
-    delta = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
-    try:
-        content = delta.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    read = read_feature_delta(repo_root, feature_id)
+    if read.content is None:
         return _InvariantResult(
             invariant_id=_INV_PREFACTORING,
             satisfied=False,
             remediation=(
-                f"feature-delta could not be read as UTF-8 text at {delta}; "
-                f"the prefactoring-assessment invariant cannot be evaluated "
+                f"{_unreadable_remediation(read, _INV_PREFACTORING)} -- the "
+                f"prefactoring-assessment invariant cannot be evaluated "
                 f"(degrade-LOUD)"
             ),
+            cause=read.cause,
         )
+    content = read.content
 
     result = validate_prefactoring_assessment_content(content)
     if result.verdict in _PREFACTORING_CLEAR_VERDICTS:
@@ -768,6 +819,7 @@ def _check_prefactoring_assessment(
         invariant_id=_INV_PREFACTORING,
         satisfied=False,
         remediation=f"{result.detail} -- {_REMEDIATIONS[_INV_PREFACTORING]}",
+        cause=FEATURE_DELTA_SECTION_MISSING,
     )
 
 
@@ -785,24 +837,25 @@ def _check_sustainability(repo_root: Path, feature_id: str) -> _InvariantResult:
     `_SUSTAINABILITY_ACCEPTED_VERDICTS`: structurally-accepted / methodology-exempt
     / no-new-tests). A declared-but-missing or malformed section FAILS.
 
-    Reuses the SHIPPED parser -- no second sustainability parser. Degrades LOUD on
-    an unreadable feature-delta: the diagnostic names the unreadable source rather
-    than silent-passing or crashing.
+    Reuses the SHIPPED parser -- no second sustainability parser -- and the
+    SHIPPED `read_feature_delta` seam for the read itself. Degrades LOUD on an
+    unreadable feature-delta: the diagnostic names WHICH state the source is in
+    (absent vs undecodable) rather than reporting an absent file as a bad
+    encoding, silent-passing, or crashing.
     """
-    delta = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
-    try:
-        content = delta.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    read = read_feature_delta(repo_root, feature_id)
+    if read.content is None:
         return _InvariantResult(
             invariant_id=_INV_SUSTAINABILITY,
             satisfied=False,
             remediation=(
-                f"feature-delta could not be read as UTF-8 text at {delta}; "
-                f"the sustainability invariant cannot be evaluated (degrade-LOUD)"
+                f"{_unreadable_remediation(read, _INV_SUSTAINABILITY)} -- the "
+                f"sustainability invariant cannot be evaluated (degrade-LOUD)"
             ),
+            cause=read.cause,
         )
 
-    result = validate_sustainability_content(content)
+    result = validate_sustainability_content(read.content)
     if result.verdict in _SUSTAINABILITY_ACCEPTED_VERDICTS:
         return _InvariantResult(invariant_id=_INV_SUSTAINABILITY, satisfied=True)
 
@@ -810,6 +863,7 @@ def _check_sustainability(repo_root: Path, feature_id: str) -> _InvariantResult:
         invariant_id=_INV_SUSTAINABILITY,
         satisfied=False,
         remediation=f"{result.detail} -- {_REMEDIATIONS[_INV_SUSTAINABILITY]}",
+        cause=FEATURE_DELTA_SECTION_MISSING,
     )
 
 
@@ -979,7 +1033,6 @@ def _run_lane_profile(
     repo_root: Path,
     feature_id: str,
     slice_id: str,
-    workspace: Path,
     profile: LaneProfile,
 ) -> _ReadinessReport:
     """Build the readiness report for a ``--lane`` value recognized by the
@@ -992,7 +1045,9 @@ def _run_lane_profile(
     bugfix lane's own audit record shape, one level up).
     """
     checks: dict[str, Callable[[], _InvariantResult]] = {
-        _INV_SLICE_PLAN: lambda: _check_slice_plan_section(workspace, slice_id),
+        _INV_SLICE_PLAN: lambda: _check_slice_plan_section(
+            repo_root, feature_id, slice_id
+        ),
         _INV_SCENARIO_TAGS: lambda: _check_scenario_slice_tags(
             repo_root, feature_id, slice_id
         ),
@@ -1142,6 +1197,10 @@ def _emit_report(report: _ReadinessReport) -> None:
                 "attested": inv.attested,
                 "remediation": inv.remediation,
                 "confidence": inv.confidence,
+                # WHICH feature-delta read state produced a failure, so a
+                # downstream formatter branches on the fact instead of the
+                # prose (see `_readiness_reason` in carpaccio_intercept).
+                "cause": inv.cause,
             }
             for inv in report.invariants
         ],
@@ -1179,7 +1238,6 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root) if args.repo_root else Path.cwd()
     feature_id = args.feature_id
     slice_id = args.slice_id
-    workspace = repo_root / "docs" / "feature" / feature_id
 
     lane_name = getattr(args, "lane", None)
 
@@ -1200,14 +1258,12 @@ def main(argv: list[str] | None = None) -> int:
         # names, sibling of the bugfix branch above (ADD-not-mutate). An
         # unrecognized/absent lane falls through to the full 7-invariant
         # default path below -- the exemption never leaks.
-        report = _run_lane_profile(
-            repo_root, feature_id, slice_id, workspace, lane_profile
-        )
+        report = _run_lane_profile(repo_root, feature_id, slice_id, lane_profile)
         _emit_report(report)
         return 0 if report.verdict == "cleared" else 1
 
     report = _ReadinessReport(feature_id=feature_id, slice_id=slice_id)
-    report.invariants.append(_check_slice_plan_section(workspace, slice_id))
+    report.invariants.append(_check_slice_plan_section(repo_root, feature_id, slice_id))
     report.invariants.append(
         _check_scenario_slice_tags(repo_root, feature_id, slice_id)
     )

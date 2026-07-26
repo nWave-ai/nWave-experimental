@@ -44,9 +44,15 @@ Feature: des-init-log respects the project's workflow mode
       | unset         |
 
   @component @driving_port @contract-shape:bounded-change
-  Scenario: des-init-log creates the execution log only for an explicit classic feature
+  # Converted, not deleted. This scenario used to pin "classic succeeds"; with
+  # classic removed there is no longer an authority that can grant it, and the
+  # invariant worth protecting is the OPPOSITE one -- that a project still
+  # carrying the removed selector is refused rather than quietly served. A
+  # deleted scenario would have left that refusal unpinned.
+  Scenario: a project still carrying the removed classic selector is refused, not served
     Given a deliver project directory for feature "classic-demo"
     And the project workflow mode is "classic"
     When the operator runs des-init-log for that feature
-    Then des-init-log succeeds with a zero exit code
-    And an execution log is created for feature "classic-demo"
+    Then des-init-log refuses with a non-zero exit code
+    And the refusal names the removed classic selector and the migration route
+    And no execution log is created in the project directory

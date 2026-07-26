@@ -60,6 +60,58 @@ Two conditions, BOTH mandatory — the boundary is not satisfied by traversal al
 
 **Prose-surface case** — when the shipped surface is a markdown asset (skill / task / agent under `nWave/...`): the AT MUST read the **real file shipped from the repo** (not an inline test string), and every marker MUST be a **discriminating phrase**, never a substring that matches a common word. Empirical false-positives: `"table"` matches `"acceptable"`; `"rigor"` matches `"rigorous"`. Assert on a multi-word phrase unique to the shipped surface.
 
+### Artifact Lineage Closure — assembled surfaces
+
+When the paying user consumes a derived or assembled artifact — wheel, package,
+archive, image, generated tree, installed plugin set, executable bundle,
+deployment manifest, or synchronized configuration — reaching the producer's
+real entry point is necessary but insufficient. The AT MUST close the full
+consumer lineage:
+
+```
+production input
+  -> real production pipeline
+  -> one immutable candidate
+  -> clean consumer environment
+  -> public user journey
+  -> user-observable capability
+```
+
+All six links are mandatory:
+
+1. **Real production pipeline** — build through the same public producer used
+   for release. A test-authored copy, reconstructed fixture, or hand-assembled
+   directory is not the release artifact.
+2. **One immutable candidate** — identify the candidate by exact path plus
+   digest (or equivalent immutable identity). Build once; downstream probes
+   consume that same candidate. A rebuild is a different subject.
+3. **Clean consumer environment** — install/load where the candidate cannot
+   borrow from the source checkout, developer HOME, editable install, or global
+   installation.
+4. **Public user journey** — exercise the command/API/loader/runtime a customer
+   uses. Archive inspection alone is insufficient when the product claim is
+   installation or execution.
+5. **User-observable capability** — assert what the user can actually do, not
+   merely a packaging declaration, manifest entry, configured source path, or
+   producer success message.
+6. **Loud failure** — an incomplete candidate returns explicit non-success
+   naming WHAT capability/artifact is unavailable, WHY the journey cannot
+   complete, and HOW to produce a valid candidate.
+
+**Decide on the produced PROPERTY, never its DESIGNATION.** A declaration is
+evidence only when the declaration itself is the public contract. When it is
+meant to produce another artifact/effect, assert the produced property: a
+manifest naming `nWave/templates` is weaker than the immutable wheel containing
+those templates and a clean installation loading them. Never require the
+Acceptance Designer to resolve this rule through another skill that its phase
+does not load.
+
+This obligation does NOT multiply E2E tests. The feature's single
+`@walking_skeleton` closes the lineage when the feature is assembly-sensitive;
+focused behavioral scenarios remain at L2. If one feature truly exposes
+multiple independent assembled consumer journeys, justify the additional E2E
+or split the feature along those value boundaries.
+
 Rationale: hexagonal boundary discipline + ATDD-pure paradigm (Layer 3 only) + recursive compounding. Ale directive 2026-05-25 verbatim: "ma perche ci sono unit test? il nuovo DES non dovrebbe farne scrivere. Inoltre il domain non dovrebbe essere testato direttamente." Empirical anchors (2 caught 2026-05-25 before shipping): M15 composition imported `DesMarkerParser` directly under `tests/des/unit/domain/*` — REMOVED; M16 reviewer recommended a Layer-1 parity guard — recommendation itself was the anti-pattern, REMOVED. Mechanical enforcement: `nw-at-completeness-check` S2 (Tier-2 gate), enforced at the nWave hook spine (PreToolUse/SubagentStop — Python + filesystem, git-free). Friction: `F-ATDD-PURE-AT-DIRECT-DOMAIN-TESTING-ANTI-PATTERN`.
 
 ### The 6-level composition — the induction target for a new AT

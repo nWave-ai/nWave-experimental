@@ -1,23 +1,32 @@
 """Unit tests for the Codex DES plugin matcher whitelist (US-3 / FM-3).
 
 Single-behavior unit test that pins the contract: ``_build_hook_entry`` MUST
-produce a matcher regex whose alternations are restricted to the documented
-Codex tool whitelist ``{"Bash", "apply_patch"}`` — no reference to ``Task``
-(which is a Claude-Code-internal tool name Codex never emits in PreToolUse).
+produce a matcher regex whose alternations are restricted to tool names the
+RUNNING Codex host was observed to announce.
 
-Whitelist source: DDD-6 refined by DDD-8 spike Q6
-(``docs/feature/codex-empirical-e2e-support/spike-codex-hooks-schema.md`` lines
-157+). ``Edit|Write`` aliases are deferred per DESIGN out-of-scope for this
-slice; MCP names also deferred.
+Whitelist source (amended 2026-07-26): the tool names read off the wire of
+``codex-cli 0.145.0`` driven against a mock Responses provider. This file
+previously sourced its whitelist from a documentation page
+(``docs/feature/codex-empirical-e2e-support/spike-codex-hooks-schema.md``,
+citing DDD-6 / DDD-8 spike Q6) and consequently blessed a matcher —
+``^Bash$|^apply_patch$`` — that the host can never trigger: neither name is a
+tool the host emits, ``apply_patch`` being a command passed inside
+``exec_command``. A whitelist sourced from a declaration certifies what the
+vendor DECLARED, never what the host DOES.
+
+The list below is an INDEPENDENT restatement of that observation, kept
+literal here on purpose: importing the production record would make the
+membership property tautological.
 
 Budget: 1 behavior (matcher whitelist) x 2 = 2 unit tests. Coverage shape:
-1. Alternation-membership property → matcher ⊆ whitelist (catches Task literal
-   transitively since Task ∉ whitelist).
-2. Match-rejection property → ∀ name ∉ whitelist · matcher rejects name
-   (covers Claude-Code-only names + fabricated names + empty string).
-The "matches every whitelisted tool" direction is folded into the acceptance
-suite (matcher-real-tools.feature: Bash + apply_patch positive scenarios) to
-keep the unit budget honest.
+1. Alternation-membership property → matcher ⊆ announced tools (catches the
+   Task literal and the Bash/apply_patch literals transitively, since the
+   host announces none of them).
+2. Match-rejection property → ∀ name ∉ announced · matcher rejects name
+   (covers Claude-Code-only names + doc-sourced names + fabricated names +
+   empty string).
+The "matches the tool the host emits" direction is folded into the acceptance
+suite (matcher-real-tools.feature) to keep the unit budget honest.
 
 WHY-NEW-FILE: tests/installer/unit/plugins/test_codex_matcher_real_tools.py
   CLOSEST-EXISTING: tests/installer/unit/plugins/test_codex_argv_contract.py
@@ -41,11 +50,24 @@ from hypothesis import strategies as st
 from scripts.install.plugins.codex_des_plugin import _build_hook_entry
 
 
-# Vetted whitelist sourced from DDD-6 / DDD-8 spike Q6.
-# Source: docs/feature/codex-empirical-e2e-support/spike-codex-hooks-schema.md
-_CODEX_TOOL_WHITELIST: tuple[str, ...] = ("Bash", "apply_patch")
+# Tool names announced by the observed host (codex-cli 0.145.0, 2026-07-26),
+# transcribed from the wire — not from a documentation page.
+_CODEX_TOOL_WHITELIST: tuple[str, ...] = (
+    "exec_command",
+    "write_stdin",
+    "update_plan",
+    "request_user_input",
+    "view_image",
+    "multi_agent_v1",
+    "get_goal",
+    "create_goal",
+    "update_goal",
+    "web_search",
+)
 
-# Fabricated / Claude-Code-only names that MUST NOT match.
+# Names the observed host never announces, so the matcher must never name
+# them: Claude-Code-only tools, the two doc-sourced names that made the
+# matcher unfireable, and fabricated input.
 _BLACKLIST: tuple[str, ...] = (
     "Task",
     "Read",
@@ -53,6 +75,8 @@ _BLACKLIST: tuple[str, ...] = (
     "Write",
     "Grep",
     "Glob",
+    "Bash",
+    "apply_patch",
     "FictionalTool",
     "",
 )
@@ -73,14 +97,15 @@ def _alternations(matcher_regex: str) -> list[str]:
 
 
 class TestBuildHookEntryMatcherWhitelist:
-    """``_build_hook_entry`` matcher MUST be restricted to Codex-real tools."""
+    """``_build_hook_entry`` matcher MUST name only tools the host announces."""
 
     def test_every_alternation_is_in_whitelist(self) -> None:
-        """Property: matcher alternations ⊆ documented Codex tool whitelist.
+        """Property: matcher alternations ⊆ tools the observed host announces.
 
-        Catches FM-3 transitively: ``Task`` is not in the whitelist, so a
-        matcher containing ``^Task$`` would fail this assertion. Covers both
-        "no Task literal" and "alternations are vetted" in one property check.
+        Catches FM-3 and its successor transitively: neither ``Task`` nor
+        ``Bash`` nor ``apply_patch`` is announced by the host, so a matcher
+        naming any of them fails this assertion. Covers both "no unfireable
+        literal" and "alternations are host-observed" in one property check.
         """
         entry = _build_hook_entry("/usr/bin/python3", "/home/tester/.claude/lib/python")
         matcher = entry["matcher"]

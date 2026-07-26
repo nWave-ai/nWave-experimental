@@ -23,7 +23,7 @@ class _InstallerTestHelper:
     """Shared test infrastructure for validate_installation tests."""
 
     @staticmethod
-    def build_installer(tmp_path):
+    def build_installer(tmp_path, platform_override=None):
         """Build an NWaveInstaller with filesystem mocked."""
         # Create minimal catalog to satisfy fail-closed load_public_agents
         project_dir = tmp_path / "project" / "nWave"
@@ -43,7 +43,9 @@ class _InstallerTestHelper:
             mock_root.return_value = tmp_path / "project"
             from scripts.install.install_nwave import NWaveInstaller
 
-            installer = NWaveInstaller(dry_run=True)
+            installer = NWaveInstaller(
+                dry_run=True, platform_override=platform_override
+            )
         return installer
 
     @staticmethod
@@ -270,3 +272,79 @@ class TestVerificationLogsEachCheck:
         assert len([msg for level, msg in log_messages if level == "ERROR"]) > 0, (
             f"At least one ERROR should be logged for {condition_name} failure"
         )
+
+
+class TestScriptsComponentIsPlatformAware:
+    """The "scripts" component (UtilitiesPlugin's install_nwave_target_hooks.py +
+    validate_step_file.py) must not be expected on a platform that never
+    registers UtilitiesPlugin in the first place.
+
+    _create_plugin_registry only registers UtilitiesPlugin (and Templates/
+    Agents/Commands/Skills/Attribution) when "claude_code" is in the requested
+    platforms (install_nwave.py, "Every other shared plugin writes a Claude
+    discovery surface and is therefore registered only for Claude"). But the
+    "scripts" component check in validate_installation() computed
+    script_expected from the SOURCE tree unconditionally, with no platform
+    guard -- so a Copilot/OpenCode-only install source tree that happens to
+    carry those two utility scripts (as this repo's always does) reports
+    "scripts (0/2)" and fails validation for every non-Claude-only target,
+    regardless of whether the install itself succeeded.
+    """
+
+    def test_copilot_only_install_does_not_expect_claude_utility_scripts(
+        self, tmp_path
+    ):
+        """
+        GIVEN: platform_override={"copilot"} (claude_code NOT requested) and the
+               source tree carries install_nwave_target_hooks.py/validate_step_file.py
+        WHEN: validate_installation() runs
+        THEN: The scripts component is not expected (UtilitiesPlugin never ships
+              them for this platform), so it must not fail validation
+        """
+        # ARRANGE
+        installer = _InstallerTestHelper.build_installer(
+            tmp_path, platform_override={"copilot"}
+        )
+        _InstallerTestHelper.setup_framework_dirs(installer)
+        scripts_dir = installer.framework_source / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "install_nwave_target_hooks.py").write_text("# stub\n")
+        (scripts_dir / "validate_step_file.py").write_text("# stub\n")
+
+        # ACT
+        result, log_messages = _InstallerTestHelper.run_validate_with(installer)
+
+        # ASSERT
+        error_messages = [msg for level, msg in log_messages if level == "ERROR"]
+        all_error_text = " ".join(error_messages)
+        assert "scripts" not in all_error_text.lower(), (
+            "A Copilot-only install must not be judged against Claude-only "
+            f"utility scripts it never registers a plugin to ship. Got: {all_error_text}"
+        )
+        assert result is True, (
+            "Copilot-only install must pass validation when everything it "
+            f"actually owns is synced. Log: {log_messages}"
+        )
+
+    def test_copilot_only_install_does_not_expect_the_schema_template(self, tmp_path):
+        """
+        GIVEN: platform_override={"copilot"} and NO templates directory at all
+               (TemplatesPlugin, like UtilitiesPlugin, never registers for a
+               non-Claude target -- fourth instance of the same gap)
+        WHEN: _validate_schema_template() is called directly (unmocked)
+        THEN: Returns True -- the schema file is not expected on this
+              platform, not silently absent
+        """
+        # ARRANGE
+        installer = _InstallerTestHelper.build_installer(
+            tmp_path, platform_override={"copilot"}
+        )
+        assert not (
+            installer.claude_config_dir / "templates" / "step-tdd-cycle-schema.json"
+        ).exists()
+
+        # ACT
+        schema_valid = installer._validate_schema_template()
+
+        # ASSERT
+        assert schema_valid is True

@@ -729,6 +729,53 @@ proposed_solution="extract a shared function"
         finally:
             os.chdir(previous_cwd)
 
+    def call_refactor_main_in_process_without_agent_cmd(self) -> int:
+        """Layer 2 in-process: call the REAL ``des refactor`` CLI entry with NO
+        ``--agent-cmd`` token at all -- the DEFAULT-actuator surface
+        (bugfix-refusal-names-none). ``main`` then resolves nWave's own
+        installed actuator and dispatches THAT, so every refusal the run
+        renders is about a command the SYSTEM chose rather than one the
+        operator typed. Mirrors ``call_refactor_main_in_process`` exactly, only
+        omitting the ``--agent-cmd`` argv pair -- the one variable under test.
+        """
+        from des.cli.refactor import main as refactor_main
+
+        previous_cwd = Path.cwd()
+        os.chdir(self.project_root)
+        try:
+            return refactor_main(["--pile", str(self.pile_path)])
+        finally:
+            os.chdir(previous_cwd)
+
+    def env_making_the_default_actuator_emit_no_verdict(self) -> dict[str, str]:
+        """Environment that lets the SYSTEM-RESOLVED actuator
+        (``scripts/refactor_agent.py``, what ``des refactor`` runs when no
+        ``--agent-cmd`` is given) run hermetically and finish WITHOUT emitting
+        any recognized entry-gate verdict -- the ``EntryGateVerdictMissing``
+        Given-arrangement for the default path.
+
+        Both variables are the actuator's OWN documented tuning knobs, so this
+        drives the real actuator rather than standing in for it: the headless
+        assistant it dispatches becomes a stub that prints free-form commentary
+        (no ``EntryGateVerdict`` token anywhere, so ``classify_entry_gate``
+        finds nothing), and the crafter-spec lookup is pinned to a stub file so
+        the arrangement never depends on the host's ``~/.claude`` install. No
+        network call is made and no real assistant is invoked.
+        """
+        cli = self.stub_fixer_cli_that_prints(
+            "looked at the item and applied the fix\n"
+        )
+        spec = self.project_root.parent / f"{self.project_root.name}-stub-crafter.md"
+        spec.write_text(
+            "# Stub crafter spec\n\nStand-in for the paradigm-selected "
+            "crafter specification.\n",
+            encoding="utf-8",
+        )
+        return {
+            "NWAVE_REFACTOR_AGENT_CLI": str(cli),
+            "NWAVE_CRAFTER_SPEC": str(spec),
+        }
+
     def call_refactor_main_in_process_with_max_parallel(
         self, *, max_parallel: int, agent_cmd: str
     ) -> int:

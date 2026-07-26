@@ -1411,6 +1411,7 @@ class DeprecationComposition:
 
     workspace: Path
     _resolved_mode: WorkflowMode | None = field(default=None, init=False)
+    _removal_payload: dict[str, object] | None = field(default=None, init=False)
     _audit_log: list[str] = field(default_factory=list, init=False)
 
     @property
@@ -1448,21 +1449,47 @@ class DeprecationComposition:
 
         self._audit_log = []
         resolved = resolve_dispatch_mode(self.workspace, audit_log=self._audit_log)
-        self._resolved_mode = WorkflowMode(resolved)
-        return 0
+        # Branch on the OUTCOME, not on the Python type. The resolver used to
+        # return a bare string on success and an object on refusal, so
+        # `isinstance(resolved, str)` was a usable discriminator. It now always
+        # returns the decision object -- so the type check silently sent every
+        # SUCCESSFUL resolution down the refusal branch, and the scenarios
+        # failed with "run_dispatch was not called" three layers away from the
+        # cause. Deciding on the shape of the value instead of on what it says
+        # is the same defect this whole lane exists to remove.
+        outcome = getattr(resolved, "outcome", None)
+        if outcome is None:  # legacy string form, kept for older call paths
+            self._resolved_mode = WorkflowMode(str(resolved))
+            return 0
+        if outcome == "SELECTED":
+            self._resolved_mode = WorkflowMode(resolved.effective_mode)
+            return 0
+        self._removal_payload = vars(resolved)
+        return 1
 
     def resolved_mode(self) -> WorkflowMode:
         """The mode the resolver selected for the dispatch."""
         assert self._resolved_mode is not None, "run_dispatch was not called"
         return self._resolved_mode
 
+    def removal_payload(self) -> dict[str, object]:
+        """Structured refusal projected by the legacy resolver."""
+        assert self._removal_payload is not None, "classic was not refused"
+        return self._removal_payload
+
     def advisory_state(self) -> AdvisoryState:
         """Whether the `ClassicSpineDeprecated` per-dispatch advisory fired."""
-        from des.cli.init_log import CLASSIC_SPINE_DEPRECATED_ADVISORY
+        # The advisory is GONE, and its absence is now a property rather than an
+        # accident. It belonged to the DEPRECATION step: warn the operator that
+        # classic still works but is going away. Classic no longer works, so
+        # there is nothing to warn about -- the dispatch REFUSES with
+        # CLASSIC_MODE_REMOVED instead. Reading the audit log for a token no
+        # module defines any more would raise; asserting on its absence keeps
+        # the scenarios that pin "no advisory" honest, and the scenario that
+        # pinned "advisory fires" is converted to pin the refusal.
+        _RETIRED_ADVISORY_TOKEN = "ClassicSpineDeprecated"
 
-        fired = any(
-            CLASSIC_SPINE_DEPRECATED_ADVISORY in record for record in self._audit_log
-        )
+        fired = any(_RETIRED_ADVISORY_TOKEN in record for record in self._audit_log)
         return AdvisoryState.FIRED if fired else AdvisoryState.NOT_FIRED
 
     def classic_dispatch_completed(self) -> bool:
@@ -1506,7 +1533,10 @@ class DeprecationComposition:
         `workflow.mode` text of the fixture config (the resolver's input) and
         the count of advisory records on the dispatch audit log.
         """
-        from des.cli.init_log import _read_workflow_mode
+        # Moved: the reader now lives with the resolver it serves, not with the
+        # CLI that used to own it. Importing it from the old home is connascence
+        # of name across a boundary nothing enforces -- exactly what broke here.
+        from des.application.workflow_mode import _read_workflow_mode
 
         configured = (
             _read_workflow_mode(self.workspace) if self._config_path.is_file() else None

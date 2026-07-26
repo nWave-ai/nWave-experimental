@@ -86,7 +86,15 @@ def then_refuses(result_box: dict[str, InitLogResult]) -> None:
 @then("the refusal message explains ATDD-pure is execution-log-free")
 def then_refusal_message(result_box: dict[str, InitLogResult]) -> None:
     message = result_box["result"].output.lower()
-    assert "atdd-pure" in message and "execution-log" in message
+    # Accept EITHER spelling of the mode. The canonical identifier is the
+    # underscore form `atdd_pure` (the config token and the enum value); the
+    # hyphenated form is prose. Pinning only the prose form made this assertion
+    # fail the moment the refusal was reworded, though the behaviour it exists
+    # to protect -- refuse, and say why -- never changed. An assertion on a
+    # message should test that the operator is TOLD the right thing, not which
+    # of two equivalent spellings the sentence happened to use.
+    names_the_mode = "atdd_pure" in message or "atdd-pure" in message
+    assert names_the_mode and "execution-log" in message, message
 
 
 @then("no execution log is created in the project directory")
@@ -102,3 +110,20 @@ def then_succeeds(result_box: dict[str, InitLogResult]) -> None:
 @then(parsers.parse('an execution log is created for feature "{feature_id}"'))
 def then_log_created(composition: InitLogComposition, feature_id: str) -> None:
     assert composition.execution_log_path.exists()
+
+
+@then("the refusal names the removed classic selector and the migration route")
+def then_classic_refusal_is_actionable(
+    result_box: dict[str, InitLogResult],
+) -> None:
+    """The refusal must be operator-actionable, not merely non-zero.
+
+    A bare non-zero exit tells an operator that something was refused, not WHY
+    or WHAT to do -- and for a project carrying a selector that no longer
+    exists, "why" is the whole message: the mode was removed, and there is a
+    migration route rather than a flag to flip back.
+    """
+    message = result_box["result"].output.lower()
+    names_removal = "classic_mode_removed" in message or "removed" in message
+    names_route = "migration" in message or "migrate" in message
+    assert names_removal and names_route, message

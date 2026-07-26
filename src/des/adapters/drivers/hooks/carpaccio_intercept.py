@@ -29,8 +29,7 @@ The U1 contract (feature-delta DESIGN/U1):
 
   * **M3 positive recognition** (in-house, NOT delegated -- INV-1 atomic
     responsibility: M3 is about marker parsing, not gate composition).
-    `DES-MODE:atdd_pure` absent => not an atdd_pure dispatch => `passthrough`
-    (the classic path is unchanged). Present + valid phase + valid slice =>
+    `DES-MODE:atdd_pure` absent => unresolved dispatch => BLOCK. Present + valid phase + valid slice =>
     the atdd_pure branch. Present + an incomplete / malformed remainder =>
     BLOCK `AtddPureMarkerSetIncomplete` -- never a fall-through.
   * **carpaccio CLI invocation** (DELEGATED to flavor dispatcher).
@@ -75,6 +74,10 @@ from des.domain.des_marker_parser import (
     atdd_pure_missing_marker,
     classify_atdd_pure_dispatch,
     classify_bootstrap,
+)
+from des.domain.feature_delta_source import (
+    FEATURE_DELTA_SECTION_MISSING,
+    FEATURE_DELTA_UNDECODABLE,
 )
 from des.domain.slice_id_trailer import extract_slice_ids
 from des.runtime.interpreter import des_spawn
@@ -209,11 +212,6 @@ class InterceptDecision:
     event: str | None = None
     reason: str | None = None
     how: str | None = None
-
-    @classmethod
-    def passthrough(cls) -> InterceptDecision:
-        """Not an atdd_pure dispatch -- the classic path is unchanged."""
-        return cls(is_block=False, is_atdd_pure=False)
 
     @classmethod
     def allow(cls) -> InterceptDecision:
@@ -1130,7 +1128,7 @@ def evaluate_atdd_pure_dispatch(
     DISTILL gate-out was bypassed.
 
     Returns an `InterceptDecision`:
-      * `passthrough()` -- not an atdd_pure dispatch; the classic path runs.
+      * `block(...)`    -- an unresolved or legacy dispatch carrier.
       * `allow()`       -- a recognised atdd_pure dispatch the U1 gate cleared.
       * `block(...)`    -- a recognised atdd_pure dispatch the gate rejected.
 
@@ -1154,7 +1152,14 @@ def evaluate_atdd_pure_dispatch(
 
     # M3 positive recognition (in-house -- INV-1 atomic).
     if classification == "absent":
-        return InterceptDecision.passthrough()
+        return InterceptDecision.block(
+            event="DispatchModeUnresolved",
+            reason=(
+                "WHAT: the dispatch omits DES-MODE: atdd_pure. "
+                "WHY: absence cannot select a retired workflow. "
+                "HOW: regenerate the dispatch with the explicit atdd_pure marker."
+            ),
+        )
     if classification == "defective":
         missing = atdd_pure_missing_marker(markers)
         if missing is not None:
@@ -1391,6 +1396,27 @@ _BUGFIX_LANE_HINT = (
     " RED->GREEN safety guard still applies."
 )
 
+#: The readiness invariants whose failure MAY mean "this dispatch carries no
+#: feature-delta by design" -- the only shape for which the bugfix-lane escape
+#: above is honest advice.
+_FEATURE_DELTA_CEREMONY_INVARIANTS = frozenset(
+    {
+        "slice_plan_section",
+        "reuse_first_or_design_skip",
+        "sustainability",
+        "at_review_verdict",
+    }
+)
+
+#: Read-state causes (`des.cli.feature_delta_source`) that CONTRA-INDICATE the
+#: escape: each one proves the feature-delta EXISTS, so the dispatch is a real
+#: feature with an authoring/encoding gap, not a delta-less bugfix. A payload
+#: carrying no cause at all (a legacy or non-readiness producer) is not a
+#: contra-indication -- absence of the fact is not the opposite fact.
+_BUGFIX_LANE_HINT_CONTRAINDICATIONS = frozenset(
+    {FEATURE_DELTA_SECTION_MISSING, FEATURE_DELTA_UNDECODABLE}
+)
+
 
 def _carpaccio_reason(stdout: str) -> str:
     """Extract a human-readable reason from the carpaccio CLI JSON output.
@@ -1480,13 +1506,19 @@ def _readiness_reason(stdout: str) -> str:
     # FR-7: when the failures are the feature-delta ceremony invariants, surface
     # the bugfix-lane escape -- a single-slice bugfix has no feature-delta by
     # design and should not have to discover the lane by reading source.
+    #
+    # CONDITIONED (this defect): the escape is advice for a dispatch that has NO
+    # feature-delta by design. When the delta demonstrably EXISTS -- it is there
+    # but a section is missing, or there but undecodable -- "re-mark it as a
+    # bugfix" is a gate teaching how to get around itself, printed at the exact
+    # moment the operator most wants a way through. Withheld on any failure
+    # carrying a delta-exists cause; the invariant's own remediation already
+    # names the real action.
     failed_ids = {str(inv.get("id")) for inv in failed}
-    if failed_ids & {
-        "slice_plan_section",
-        "reuse_first_or_design_skip",
-        "sustainability",
-        "at_review_verdict",
-    }:
+    causes = {str(inv.get("cause") or "") for inv in failed}
+    if failed_ids & _FEATURE_DELTA_CEREMONY_INVARIANTS and not (
+        causes & _BUGFIX_LANE_HINT_CONTRAINDICATIONS
+    ):
         lines.append(_BUGFIX_LANE_HINT.strip())
     return "\n".join(lines)
 

@@ -186,6 +186,16 @@ class RefactorDrainService:
         self._env_provision = env_provision
         self._impacted_test_selector = impacted_test_selector
         self._ledger = ledger
+        # The per-item worktree/branch state currently mid-drain, so a
+        # process-wide SIGINT/SIGTERM handler (des.cli.refactor._abort_on_signal)
+        # can clean it up from OUTSIDE the drain call frame -- the parent-signal
+        # path drain_one's own ``except BaseException`` cleanup cannot cover
+        # (SIGTERM raises no exception to unwind it). A set (not one slot) because
+        # drain_batch runs several items concurrently; each drains on its own
+        # thread while the handler runs on the main one. Cleared on every exit
+        # path so it only ever names items a cleanup still owes.
+        self._in_flight_lock = threading.Lock()
+        self._in_flight: set[tuple[Path, Path, str]] = set()
 
     def drain_one(
         self,
@@ -237,71 +247,80 @@ class RefactorDrainService:
                 reason=_worktree_creation_failure_message(branch, exc),
             )
 
+        # Registered the instant a worktree exists, forgotten on EVERY exit
+        # (the outer try/finally) so a SIGINT/SIGTERM handler can find and clean
+        # up exactly the items a cleanup still owes -- the parent-signal path
+        # the ``except BaseException`` below cannot cover, because SIGTERM
+        # terminates the process without unwinding it at all.
+        self._register_in_flight(repo, handle.path, branch)
         try:
-            self._env_provision.provision(handle.path)
+            try:
+                self._env_provision.provision(handle.path)
 
-            before = self._run_tests(handle.path)
-            agent_stdout = self._dispatch_agent(
-                repo, item, handle.path, agent_cmd, prompt_template_path
-            )
+                before = self._run_tests(handle.path)
+                agent_stdout = self._dispatch_agent(
+                    repo, item, handle.path, agent_cmd, prompt_template_path
+                )
 
-            entry_gate_refusal = self._entry_gate_refusal(
-                repo,
-                handle.path,
-                branch,
-                item.item_id,
-                agent_stdout,
-                pile_path,
-                handle.head_sha,
-            )
-            if entry_gate_refusal is not None:
-                return entry_gate_refusal
-
-            after = self._run_tests(handle.path)
-
-            outcome = classify_green_to_green(before, after)
-            if outcome.verdict != GreenToGreenVerdict.SAFE:
-                return self._refused_after_cleanup(
+                entry_gate_refusal = self._entry_gate_refusal(
                     repo,
                     handle.path,
                     branch,
                     item.item_id,
-                    _TESTS_RED_REASON,
+                    agent_stdout,
+                    pile_path,
                     handle.head_sha,
                 )
+                if entry_gate_refusal is not None:
+                    return entry_gate_refusal
 
-            merge_result = self._git_worktree.merge_into(
-                repo, integration_branch, branch
-            )
-            if not merge_result.merged:
-                return self._refused(
-                    item.item_id, merge_result.blocked_reason, handle.head_sha
+                after = self._run_tests(handle.path)
+
+                outcome = classify_green_to_green(before, after)
+                if outcome.verdict != GreenToGreenVerdict.SAFE:
+                    return self._refused_after_cleanup(
+                        repo,
+                        handle.path,
+                        branch,
+                        item.item_id,
+                        _TESTS_RED_REASON,
+                        handle.head_sha,
+                    )
+
+                merge_result = self._git_worktree.merge_into(
+                    repo, integration_branch, branch
                 )
-        except BaseException:
-            self._cleanup_worktree_and_branch(repo, handle.path, branch)
-            raise
+                if not merge_result.merged:
+                    return self._refused(
+                        item.item_id, merge_result.blocked_reason, handle.head_sha
+                    )
+            except BaseException:
+                self._cleanup_worktree_and_branch(repo, handle.path, branch)
+                raise
 
-        self._git_worktree.remove_worktree(repo, handle.path)
-        self._git_worktree.delete_branch(repo, branch)
-        integration_removed = self._git_worktree.land_and_remove_integration(
-            repo, integration_branch
-        )
-        move_item(pile_path, paid_path, item.item_id)
-        self._ledger.append_gate_event(
-            _DRAINED_EVENT, _SLICE_ID, feature_id=_FEATURE_ID
-        )
+            self._git_worktree.remove_worktree(repo, handle.path)
+            self._git_worktree.delete_branch(repo, branch)
+            integration_removed = self._git_worktree.land_and_remove_integration(
+                repo, integration_branch
+            )
+            move_item(pile_path, paid_path, item.item_id)
+            self._ledger.append_gate_event(
+                _DRAINED_EVENT, _SLICE_ID, feature_id=_FEATURE_ID
+            )
 
-        return DrainResult(
-            drained=True,
-            item_id=item.item_id,
-            merged=True,
-            worktree_head_sha_at_creation=handle.head_sha,
-            worktree_removed=True,
-            branch_deleted=True,
-            integration_removed=integration_removed,
-            test_target_scope=_TEST_SCOPE_FAST_IMPACTED,
-            test_result_source=_TEST_SOURCE_ENVELOPE,
-        )
+            return DrainResult(
+                drained=True,
+                item_id=item.item_id,
+                merged=True,
+                worktree_head_sha_at_creation=handle.head_sha,
+                worktree_removed=True,
+                branch_deleted=True,
+                integration_removed=integration_removed,
+                test_target_scope=_TEST_SCOPE_FAST_IMPACTED,
+                test_result_source=_TEST_SOURCE_ENVELOPE,
+            )
+        finally:
+            self._forget_in_flight(repo, handle.path, branch)
 
     def drain_batch(
         self,
@@ -521,6 +540,42 @@ class RefactorDrainService:
             self._git_worktree.delete_branch(repo, branch)
         except Exception:
             pass
+
+    # -- internal: in-flight tracking for the operator-abort path ------------
+
+    def _register_in_flight(self, repo: Path, worktree_path: Path, branch: str) -> None:
+        with self._in_flight_lock:
+            self._in_flight.add((repo, worktree_path, branch))
+
+    def _forget_in_flight(self, repo: Path, worktree_path: Path, branch: str) -> None:
+        with self._in_flight_lock:
+            self._in_flight.discard((repo, worktree_path, branch))
+
+    def cleanup_in_flight(self) -> None:
+        """Remove the worktree/branch of every item currently mid-drain.
+
+        The seam a process-wide SIGINT/SIGTERM handler
+        (``des.cli.refactor._abort_on_signal``) calls so an operator-initiated
+        abort leaves the repository exactly as clean as a tests-red or
+        mid-drain-crash refusal already does -- the parent-signal path
+        ``drain_one``'s own ``except BaseException`` cleanup cannot reach,
+        because SIGTERM terminates the process without unwinding it.
+
+        Reuses the best-effort, idempotent ``_cleanup_worktree_and_branch`` (a
+        double cleanup on an already-removed worktree is a no-op), so it is safe
+        to run even while ``drain_one``'s own unwinding cleanup races it on the
+        same item. A SNAPSHOT is taken under the lock and the git work runs
+        OUTSIDE it, so a git subprocess never runs while the lock is held. The
+        merge-blocked path preserves its unmerged branch for human recovery
+        (``test_an_unmerged_branch_is_never_deleted_after_a_failed_merge``) and
+        FORGETS the item on return (the outer ``finally``), precisely so a later
+        abort's cleanup never deletes the branch that path deliberately left.
+        """
+        with self._in_flight_lock:
+            pending = list(self._in_flight)
+        for repo, worktree_path, branch in pending:
+            self._cleanup_worktree_and_branch(repo, worktree_path, branch)
+            self._forget_in_flight(repo, worktree_path, branch)
 
     # -- internal: entry gate (D9, slice-04) ---------------------------------
 

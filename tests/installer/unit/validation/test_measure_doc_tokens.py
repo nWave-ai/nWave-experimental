@@ -15,7 +15,6 @@ but is not enforced here.
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -28,6 +27,7 @@ from scripts.measure_doc_tokens import (
     main,
     measure_doc,
 )
+from tests.common.in_process_cli import run_script_in_process
 
 
 # ---------------------------------------------------------------------------
@@ -174,12 +174,14 @@ def _script_path() -> Path:
 
 
 def _run_script(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_script_path()), *args],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        cwd=_project_root(),
+    exit_code, out, err = run_script_in_process(
+        _script_path(), *args, cwd=_project_root()
+    )
+    return subprocess.CompletedProcess(
+        args=[str(_script_path()), *args],
+        returncode=exit_code,
+        stdout=out,
+        stderr=err,
     )
 
 

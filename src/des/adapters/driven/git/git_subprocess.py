@@ -25,6 +25,8 @@ from __future__ import annotations
 import subprocess
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.git.git_constants import GIT_REV_PARSE
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -120,7 +122,7 @@ def _resolve_via_candidate_probe(repo: Path) -> str | None:
 def _ref_resolves_to_commit(repo: Path, ref: str) -> bool:
     """True iff `ref` resolves to a real commit in `repo` (local git state only)."""
     completed = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+        ["git", GIT_REV_PARSE, "--verify", "--quiet", f"{ref}^{{commit}}"],
         cwd=repo,
         capture_output=True,
         text=True,

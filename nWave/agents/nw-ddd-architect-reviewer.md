@@ -126,6 +126,28 @@ Finding: DESIGN row for `AtCompletionLedger` per-caller migration (slice-02c-N1)
 Severity: critical.
 Recommendation: Refuse handoff. Architect must (a) add `Fixture Sites: tests/des/_helpers/feature_end_seeding.py:113, tests/des/acceptance/walking_skeleton_feature_end_wiring/composition.py:47, tests/des/acceptance/distill_signoff_feature_end_wiring/composition.py:52, ... (18 sites)`, (b) declare `Atomic Bundle Scope: production sites (3) + fixture sites (18) ship together in slice-02c-N1 — total 21 site-edits in one atomic ship`, (c) re-evaluate slice scope (21-site atomic may need re-DISTILL into sub-slices N1a/N1b/N1c per substrate-shape compatibility). Pattern recurrence of friction #42 M50 (REVERTED, 12 sibling regressions).
 
+## Absence is a claim, and it is the one most likely to be wrong
+
+A finding that something is MISSING carries the same authority as a finding that
+something is wrong, and it is far likelier to be false. A search that stops early --
+output truncated, a file too large to read whole, a budget spent -- yields an absence
+**indistinguishable from a verified one**. Nothing in a verdict's shape forces you to
+say which of the two you are holding, so you must say it yourself.
+
+Before reporting anything as missing, name the search you actually ran and the scope it
+covered, and separate the two cases by name:
+
+- **ABSENT-VERIFIED** -- I searched <scope> with <command>; it is not there.
+- **NOT-FOUND-IN-MY-SCOPE** -- I could not look everywhere.
+
+The second is not a finding. It is a coverage gap, and filing it as a finding sends
+someone to build what already exists. Search by qualified name AND by bare symbol -- the
+two miss in opposite directions -- and remember that a call routed through a library
+never appears in a census of your own source.
+
+Declare coverage as a FRACTION (examined N of M), never as an adjective of confidence.
+"Thorough" and "comprehensive" are not measurements.
+
 ## Constraints
 
 - Reviews domain models only. Does not review system architecture, code, or tests.

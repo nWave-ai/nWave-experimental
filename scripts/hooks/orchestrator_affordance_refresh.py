@@ -52,27 +52,42 @@ _ASSET_SEPARATOR = "\n\n"
 def _candidate_assets_dirs() -> list[Path]:
     """Every plausible location of the shipped `orchestrator-affordance/` assets.
 
-    Two install shapes, tried in order:
-      1. Installed layout -- this script ships flat to
+    Three install shapes, tried in order:
+      1. Installed Claude-scoped layout -- this script ships flat to
          `<claude_dir>/scripts/orchestrator_affordance_refresh.py`, and the
          nWave runtime assets ship to `<claude_dir>/lib/nWave/data/...`
          (`DESPlugin._ship_nwave_runtime_assets`). Two `.parent` hops off
          the script's own file reach `<claude_dir>`.
-      2. Dev-checkout layout -- this script lives at
+      2. Installed host-neutral layout (Codex, Copilot, OpenCode) --
+         `DESPlugin._runtime_python_dir` ships the SAME runtime assets to
+         `~/.nwave/nWave/data/...` instead, whenever "codex" is in
+         the install's target platforms (fix-codex-only-orchestrator-
+         affordance-runtime-aware-resolver). A host-neutral install never
+         populates candidate 1, so this script found nothing there and
+         diagnosed a false "missing assets" -- even though the data had
+         already landed on disk, just under a different root. Computed
+         inline (not imported from scripts/shared/install_paths) to keep
+         this script's zero-coupling, stdlib-only contract intact.
+      3. Dev-checkout layout -- this script lives at
          `<repo_root>/scripts/hooks/orchestrator_affordance_refresh.py`,
          and the assets live at `<repo_root>/nWave/data/...`. Three
          `.parent` hops off the script's own file reach `<repo_root>`.
 
-    Never cwd-dependent -- always resolved relative to `Path(__file__)`.
+    Never cwd-dependent -- always resolved relative to `Path(__file__)` (and,
+    for candidate 2, `Path.home()`, which is what the shipping side also
+    resolves against).
     """
     script_path = Path(__file__).resolve()
     installed_candidate = (
         script_path.parent.parent / "lib" / "nWave" / "data" / "orchestrator-affordance"
     )
+    host_neutral_candidate = (
+        Path.home() / ".nwave" / "nWave" / "data" / "orchestrator-affordance"
+    )
     dev_checkout_candidate = (
         script_path.parent.parent.parent / "nWave" / "data" / "orchestrator-affordance"
     )
-    return [installed_candidate, dev_checkout_candidate]
+    return [installed_candidate, host_neutral_candidate, dev_checkout_candidate]
 
 
 def _resolve_assets_dir() -> Path | None:

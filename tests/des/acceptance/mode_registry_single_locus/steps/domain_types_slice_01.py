@@ -43,7 +43,17 @@ class WorkflowFlavor(Enum):
     """A shipped workflow flavor — one registry file under `nWave/flavors/`."""
 
     ATDD_PURE = "atdd_pure"
+    # CLASSIC is retained ONLY as a fixture identity: slices that author their
+    # own registry in tmp_path still need a second flavor id to author, and a
+    # retired name is the honest one to use. It is NOT shipped -- see
+    # SHIPPED_FLAVORS, which is what any assertion about the real registry must
+    # iterate. Conflating "a name the fixtures can use" with "a mode the product
+    # ships" is what made this feature fail after the removal.
     CLASSIC = "classic"
+
+
+#: The flavors the product actually SHIPS. One mode, one registry file.
+SHIPPED_FLAVORS: tuple[WorkflowFlavor, ...] = (WorkflowFlavor.ATDD_PURE,)
 
 
 FLAVOR_BY_PHRASE: dict[str, WorkflowFlavor] = {

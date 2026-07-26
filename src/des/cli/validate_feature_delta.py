@@ -756,6 +756,38 @@ def read_declared_parallel_slice_ids(content: str) -> tuple[str, ...]:
     return tuple(declared_parallel)
 
 
+def read_slice_plan_dependencies(
+    content: str,
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Return the declared Slice Plan dependency graph in document order.
+
+    This is an advisory planning projection of the already-authoritative
+    Slice-Plan grammar.  It does not validate, repair, or infer dependencies:
+    callers must first apply :func:`validate_slice_plan_content`.  Each value
+    is ``(slice_id, prerequisite_ids)``.  A row without ``depends-on`` has an
+    empty prerequisite tuple.
+
+    Keeping this beside ``read_declared_parallel_slice_ids`` prevents a second
+    Markdown parser from silently becoming an authority for delivery order.
+    """
+    rows = _plan_table_rows(content, _SLICE_PLAN_HEADING_RE)
+    if not rows:
+        return ()
+    data_rows = [row for row in rows if not _is_separator_row(row)][1:]
+    graph: list[tuple[str, tuple[str, ...]]] = []
+    for row in data_rows:
+        cells = _parse_table_cells(row)
+        if len(cells) < len(SLICE_PLAN_COLUMNS):
+            continue
+        slice_id = cells[0].strip()
+        dependency = _SLICE_DEPENDENCY_RE.search(cells[3])
+        prerequisites = (
+            (dependency.group().split(maxsplit=1)[1],) if dependency is not None else ()
+        )
+        graph.append((slice_id, prerequisites))
+    return tuple(graph)
+
+
 def read_declared_parallel_feature_ids(content: str) -> tuple[str, ...]:
     """Return the feature-ids of the Feature Plan's DECLARED-PARALLEL rows.
 

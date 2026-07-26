@@ -50,7 +50,6 @@ INPUT: "{bug-description}"
   │   └─ Test MUST fail against current code for the diagnosed reason (not import/syntax error)
   │
   ├─ Phase 3b: Fix (branches on workflow.mode, paradigm-selected crafter, GREEN)  🔒 box <!-- mode-ref-ok -->
-  │   └─ classic   → /nw-deliver "fix-{bug-id}" — roadmap-based bugfix flow
   │   └─ atdd_pure → single carpaccio slice via the /nw-execute per-slice cycle, A_GREEN <!-- mode-ref-ok -->
   │   └─ Paradigm detection determines crafter (OOP or FP)
   │   └─ Crafter implements against the already-RED test only — never authors or edits the test
@@ -200,7 +199,7 @@ Outside an autonomous loop, Phase 2 stays a hard interactive STOP.
 Invoke @nw-acceptance-designer via Agent tool to author the regression test from the RCA's
 root cause chain and proposed fix (Phase 1 output) — the crafter dispatched in Phase 3b
 does NOT write or edit this test, only implements against it. Test location + naming follow
-the mode-appropriate convention below (classic: `tests/regression/{component}/` or
+the mode-appropriate convention below (retired workflow: `tests/regression/{component}/` or
 `tests/bugs/`, `test_bug_{description}.py`; atdd_pure: the bugfix's single-slice `.feature` + <!-- mode-ref-ok -->
 step file under `tests/{feature-path}/`). The test MUST fail against current code for the
 diagnosed reason (a real assertion on the defect's observable behavior, never an
@@ -237,8 +236,6 @@ hand-written here):
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
-  Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
 Both paths share paradigm detection (reads project
@@ -254,9 +251,7 @@ regression test — it was authored in Phase 3a by @nw-acceptance-designer.
 3. Prepare RCA context from Phase 1 output (root cause, files affected, proposed fix)
 4. Confirm Phase 3a's regression test exists and is RED for the right reason before dispatching the crafter
 
-#### Mode `classic` — roadmap-based bugfix flow
 
-Under `workflow.mode: classic`, delegate to `/nw-deliver`: <!-- mode-ref-ok -->
 
 ```
 /nw-deliver "fix-{bug-summary}"
@@ -400,6 +395,5 @@ Phase 3b: `/nw-deliver "fix-compose-none-guard"` → paradigm detected as FP →
 - The regression test is the primary deliverable — it prevents the bug from recurring. It is authored by @nw-acceptance-designer (Phase 3a), never by the crafter — the SLIM-crafter no-test-authorship discipline applies to `/nw-bugfix` exactly as it does everywhere else in nWave.
 - Keep the fix minimal. Refactoring belongs in `/nw-refactor`, not here.
 - If the RCA reveals a design flaw (not just a code bug), escalate to `/nw-design` before fixing.
-- **Phase 0-charter and Phase 1 (RCA) both start at t=0, in parallel** — two independent derivations of the same bug (charter from the OBSERVABLE, RCA from the CODE). The charter does not depend on the RCA, so authoring it at t=0 keeps its context uncontaminated BY CONSTRUCTION. Phase 3a (@nw-acceptance-designer, regression test) runs next, regardless of mode. Phase 3b branches on `workflow.mode`: `classic` delegates to `/nw-deliver` (one-step roadmap, GREEN only); `atdd_pure` runs a single carpaccio slice via the `/nw-execute` per-slice cycle starting at `A_GREEN`. <!-- mode-ref-ok --> Both modes handle paradigm detection, DES enforcement, and rigor profile automatically for the fix implementor; neither touches the test.
 - **The charter is authored at t=0 (Phase 0-charter), NOT at Phase 3c.** By Phase 3c the bugfix orchestrator, holding the RCA + fix diff, is disqualified from authoring it — so the charter is authored earlier, at t=0, by a FRESH `nw-product-owner` from the OBSERVABLE only (before any contaminated context exists — see `nw-expectation-charter` skill + §Phase 0-charter). This makes the disqualification rule structurally easy to obey rather than a virtue to remember (GDP-1 fire-early + GDP-5 cost-on-system).
 - **Phase 3c (EXAMINE) always runs before the commit, in BOTH modes.** The `A_GREEN → EXAMINE → COMMIT` DoD is not waived for a bugfix: @nw-user-examiner (Vera) records a PASS via `des record-examine-verdict` against the t=0 charter before `des commit-slice` will commit. Green regression tests prove the code; EXAMINE proves the running system through the real surface. Skipping examine on the "light" bugfix cycle is the spec-drift this closes — examine is high-value and low-cost, never skipped.

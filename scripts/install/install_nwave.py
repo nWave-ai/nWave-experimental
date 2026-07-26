@@ -9,14 +9,20 @@ Usage: python install_nwave.py [--backup-only] [--restore] [--dry-run] [--help]
 """
 
 import argparse
+import ast
 import hashlib
 import json
+import os
+import shlex
+import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
 
 _HASH_CHUNK_BYTES = 65536  # 64 KiB chunked read keeps SKILL.md etc. memory-bounded
+_LEGACY_CODEX_AGENT_ALIASES = {"nw-architect", "nw-crafter"}
 
 
 def _file_md5(path: Path) -> str | None:
@@ -345,6 +351,7 @@ class NWaveInstaller:
         dry_run: bool = False,
         platform_override: set[str] | None = None,
         dev_mode: bool = False,
+        adopt_legacy_codex_dev: bool = False,
     ):
         """Initialize installer.
 
@@ -352,10 +359,17 @@ class NWaveInstaller:
             dry_run: When True, show what would be done without making changes.
             platform_override: Override auto-detected platforms. None means auto-detect.
             dev_mode: When True, install ALL agents/skills (not just public).
+            adopt_legacy_codex_dev: Explicitly quarantine unmanifested legacy
+                Codex dev assets after a normal nWave backup, before install.
         """
         self.dry_run = dry_run
         self.dev_mode = dev_mode
+        self.adopt_legacy_codex_dev = adopt_legacy_codex_dev
         self._platform_override = platform_override
+        # The install must have one target truth.  In particular, auto mode
+        # cannot install a detected Codex target and later reconstruct a
+        # Claude-only validation set from the original CLI override.
+        self._effective_target_platforms: set[str] | None = None
         self.script_dir = Path(__file__).parent
         self.project_root = PathUtils.get_project_root(self.script_dir)
         self.claude_config_dir = PathUtils.get_claude_config_dir()
@@ -369,14 +383,50 @@ class NWaveInstaller:
         else:
             self.framework_source = source_dir  # fall through for error reporting
 
-        log_file = self.claude_config_dir / "nwave-install.log"
-        self.logger = Logger(log_file if not dry_run else None)
+        # Persistent logging starts only after Codex ownership preflight.  A
+        # refusal must leave every user-controlled byte untouched, including
+        # an unrelated pre-existing Claude log.
+        self._install_log_file = self.claude_config_dir / "nwave-install.log"
+        self.logger = Logger(None)
         self.backup_manager = BackupManager(self.logger, "install")
         # Public observability contract for restore_backup: after a successful
         # restore, this attribute exposes the path of the backup that was
         # selected. Acceptance tests inspect this to verify selection without
         # re-running glob/sort logic in the test step (see DWD-09).
         self.last_restored_from: Path | None = None
+        self._codex_backup_dir: Path | None = None
+
+    @property
+    def _legacy_codex_dev_adoption_enabled(self) -> bool:
+        """Whether this invocation may adopt the narrowly scoped legacy state."""
+        return (
+            self.adopt_legacy_codex_dev
+            and self.dev_mode
+            and self.effective_target_platforms == {"codex"}
+        )
+
+    def enable_install_logging(self) -> None:
+        """Enable persistent logging after the no-write ownership preflight."""
+        if not self.dry_run:
+            self.logger.log_file = self._install_log_file
+
+    @property
+    def effective_target_platforms(self) -> frozenset[str]:
+        """Return the authoritative targets for this installer invocation.
+
+        Platform detection is intentionally lazy so construction remains
+        side-effect free, but it is cached at first use.  Every downstream
+        stage therefore consumes the exact same explicit or detected set.
+        """
+        cached_target_platforms = getattr(self, "_effective_target_platforms", None)
+        if cached_target_platforms is None:
+            if self._platform_override is not None:
+                self._effective_target_platforms = set(self._platform_override)
+            else:
+                self._effective_target_platforms = {
+                    platform.value for platform in detect_target_platforms()
+                }
+        return frozenset(self._effective_target_platforms)
 
     def create_backup(self) -> None:
         """Create backup of existing installation, then enforce retention.
@@ -398,10 +448,592 @@ class NWaveInstaller:
                 runs — see scope.md S9 ("no backup is touched if config is
                 invalid"); equivalently, no install proceeds either.
         """
-        self.backup_manager.create_backup(dry_run=self.dry_run)
+        if "codex" in self.effective_target_platforms:
+            agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME", Path.home()))
+            codex_dir = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+            self.backup_manager.backup_root = agents_home / ".nwave" / "backups"
+            self.backup_manager.backup_dir = (
+                self.backup_manager.backup_root
+                / f"nwave-install-{self.backup_manager.timestamp}"
+            )
+            self._codex_backup_dir = self.backup_manager.create_codex_backup(
+                skills_dir=agents_home / ".agents" / "skills",
+                agents_dir=codex_dir / "agents",
+                codex_dir=codex_dir,
+                dry_run=self.dry_run,
+            )
+        else:
+            self.backup_manager.create_backup(dry_run=self.dry_run)
         if self.dry_run:
             return
         self.backup_manager.apply_retention(max_count=None)
+
+    def _legacy_codex_dev_candidates(self) -> list[tuple[Path, Path]]:
+        """Return only safe, non-manifested legacy dev assets for quarantine.
+
+        This deliberately does not discover ownership by name in the default
+        path.  It is reachable only from the explicit dev-only migration flag;
+        malformed manifests, symlinks, files with the wrong shape, and all
+        non-``nw-*`` assets remain fail-closed.
+        """
+        if not self._legacy_codex_dev_adoption_enabled:
+            return []
+        agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME", Path.home()))
+        skills_dir = agents_home / ".agents" / "skills"
+        codex_dir = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+        agents_dir = codex_dir / "agents"
+
+        def manifest_names(path: Path, key: str) -> set[str]:
+            if not path.exists() or path.is_symlink() or not path.is_file():
+                return set()
+            try:
+                document = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                return set()
+            names = document.get(key) if isinstance(document, dict) else None
+            if not (
+                isinstance(document, dict)
+                and document.get("version") == "1.0"
+                and isinstance(names, list)
+                and all(
+                    isinstance(name, str)
+                    and name.startswith("nw-")
+                    and Path(name).name == name
+                    for name in names
+                )
+            ):
+                return set()
+            return set(names)
+
+        skills_manifest = manifest_names(
+            skills_dir / ".nwave-manifest.json", "installed_skills"
+        )
+        agents_manifest = manifest_names(
+            agents_dir / ".nwave-agents-manifest.json", "installed_agents"
+        )
+        candidates: list[tuple[Path, Path]] = []
+        if skills_dir.is_dir() and not skills_dir.is_symlink():
+            for path in sorted(skills_dir.glob("nw-*")):
+                skill = path / "SKILL.md"
+                if (
+                    path.name not in skills_manifest
+                    and not path.is_symlink()
+                    and path.is_dir()
+                    and skill.is_file()
+                    and not skill.is_symlink()
+                    and all(not child.is_symlink() for child in path.rglob("*"))
+                ):
+                    candidates.append(
+                        (path, Path("legacy-codex-dev") / "skills" / path.name)
+                    )
+        if agents_dir.is_dir() and not agents_dir.is_symlink():
+            for path in sorted(agents_dir.glob("nw-*.toml")):
+                if (
+                    path.stem not in agents_manifest
+                    and path.is_file()
+                    and not path.is_symlink()
+                ):
+                    candidates.append(
+                        (path, Path("legacy-codex-dev") / "agents" / path.name)
+                    )
+        return candidates
+
+    def adopt_legacy_codex_dev_assets(self) -> bool:
+        """Quarantine opt-in legacy assets in this invocation's normal backup.
+
+        The complete pre-migration state was snapshotted by ``create_backup``.
+        Relocation itself is recoverable too: moved paths live under the same
+        backup directory.  No hook, manifest-owned asset, or non-nWave path is
+        considered here.
+        """
+        if not self._legacy_codex_dev_adoption_enabled:
+            return True
+        candidates = self._legacy_codex_dev_candidates()
+        if not candidates:
+            return True
+        if self._codex_backup_dir is None:
+            self.logger.error(
+                "  ❌ Legacy Codex adoption refused: backup was not created"
+            )
+            return False
+        try:
+            for source, relative_destination in candidates:
+                destination = self._codex_backup_dir / relative_destination
+                if destination.exists() or destination.is_symlink():
+                    raise FileExistsError(destination)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(source), str(destination))
+            receipt = self._codex_backup_dir / "legacy-codex-dev" / "receipt.json"
+            receipt.write_text(
+                json.dumps(
+                    {
+                        "adopted_at": datetime.now().isoformat(timespec="seconds"),
+                        "assets": [
+                            {"source": str(source), "quarantine": str(relative)}
+                            for source, relative in candidates
+                        ],
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.logger.info(
+                f"  ✅ Quarantined {len(candidates)} legacy Codex dev asset(s) in {self._codex_backup_dir}"
+            )
+            return True
+        except OSError as exc:
+            self.logger.error(f"  ❌ Legacy Codex adoption failed: {exc}")
+            return False
+
+    def validate_codex_ownership_preflight(self) -> bool:
+        """Reject ambiguous Codex ownership before the installer writes.
+
+        Codex plugins intentionally preserve user configuration, but cannot
+        safely decide whether an existing reserved nWave path is theirs without
+        a well-formed, contained manifest.  This check runs before backup,
+        target-directory creation, and plugin dispatch so a refusal leaves the
+        complete user state untouched.
+        """
+        if "codex" not in self.effective_target_platforms:
+            return True
+
+        agents_home_override = os.environ.get("NWAVE_AGENTS_HOME")
+        agents_home = (
+            Path(agents_home_override) if agents_home_override else Path.home()
+        )
+        skills_dir = agents_home / ".agents" / "skills"
+        codex_home_override = os.environ.get("CODEX_HOME")
+        codex_dir = (
+            Path(codex_home_override) if codex_home_override else Path.home() / ".codex"
+        )
+        agents_dir = codex_dir / "agents"
+        errors: list[str] = []
+        public_agents = load_public_agents(self.project_root / "nWave")
+        legacy_agent_names = {
+            source.stem
+            for source in (self.framework_source / "agents").glob("nw-*.md")
+            if is_public_agent(source.name, public_agents)
+        } | _LEGACY_CODEX_AGENT_ALIASES
+        hooks_path = codex_dir / "hooks.json"
+        des_manifest_path = codex_dir / ".nwave-des-manifest.json"
+        launcher_path = codex_dir / "nwave_claude_code_hook_adapter_launcher.py"
+
+        def regular_file(path: Path) -> bool:
+            return not path.is_symlink() and path.is_file()
+
+        def safe_directory(path: Path) -> bool:
+            return not path.is_symlink() and path.is_dir()
+
+        def safe_skill_tree(path: Path) -> bool:
+            if not safe_directory(path):
+                return False
+            try:
+                skill = path / "SKILL.md"
+                return regular_file(skill) and all(
+                    not child.is_symlink() and (child.is_dir() or child.is_file())
+                    for child in path.rglob("*")
+                )
+            except OSError:
+                return False
+
+        skills_dir_safe = not (
+            skills_dir.exists() or skills_dir.is_symlink()
+        ) or safe_directory(skills_dir)
+        agents_dir_safe = not (
+            agents_dir.exists() or agents_dir.is_symlink()
+        ) or safe_directory(agents_dir)
+        for label, path in (
+            ("Codex skills directory", skills_dir),
+            ("Codex agents directory", agents_dir),
+            ("Codex hooks configuration", hooks_path),
+            ("nWave DES manifest", des_manifest_path),
+            ("nWave DES launcher", launcher_path),
+        ):
+            if (path.exists() or path.is_symlink()) and (
+                (path in {skills_dir, agents_dir} and not safe_directory(path))
+                or (path not in {skills_dir, agents_dir} and not regular_file(path))
+            ):
+                errors.append(f"unsafe {label}: {path}")
+
+        legacy_direct_command: str | None = None
+        legacy_launcher_witness = False
+        legacy_direct_hook_witness = False
+        orphan_launcher_witness = False
+        if regular_file(des_manifest_path) and regular_file(hooks_path):
+            try:
+                from scripts.install.plugins.codex_des_plugin import (
+                    _legacy_direct_des_command,
+                    _v1_launcher_source,
+                )
+
+                legacy_manifest = json.loads(
+                    des_manifest_path.read_text(encoding="utf-8")
+                )
+                legacy_hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
+                legacy_direct_command = _legacy_direct_des_command(
+                    legacy_manifest, hooks_path, legacy_hooks
+                )
+                expected_legacy_launcher_command = shlex.join(
+                    [
+                        legacy_manifest["python_path"],
+                        str(launcher_path),
+                        "pre-tool-use",
+                    ]
+                )
+                legacy_pretool = (
+                    legacy_hooks.get("hooks", {}).get("PreToolUse", [])
+                    if isinstance(legacy_hooks, dict)
+                    and isinstance(legacy_hooks.get("hooks"), dict)
+                    else []
+                )
+                launcher_hook_present = any(
+                    isinstance(group, dict)
+                    and isinstance(group.get("hooks"), list)
+                    and any(
+                        isinstance(handler, dict)
+                        and handler.get("command") == expected_legacy_launcher_command
+                        for handler in group["hooks"]
+                    )
+                    for group in legacy_pretool
+                )
+                if (
+                    isinstance(legacy_manifest, dict)
+                    and set(legacy_manifest)
+                    == {"hooks_file", "python_path", "pythonpath"}
+                    and legacy_manifest.get("hooks_file") == str(hooks_path)
+                    and isinstance(legacy_manifest.get("python_path"), str)
+                    and legacy_manifest["python_path"]
+                    and isinstance(legacy_manifest.get("pythonpath"), str)
+                    and legacy_manifest["pythonpath"]
+                    and regular_file(launcher_path)
+                    and launcher_path.read_text(encoding="utf-8")
+                    == _v1_launcher_source(
+                        legacy_manifest["python_path"], legacy_manifest["pythonpath"]
+                    )
+                    and launcher_hook_present
+                ):
+                    legacy_launcher_witness = True
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                pass
+
+        def manifest_names(path: Path, key: str) -> set[str] | None:
+            if not (path.exists() or path.is_symlink()):
+                return None
+            if not regular_file(path):
+                errors.append(f"unsafe nWave manifest {path}")
+                return set()
+            try:
+                document = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                errors.append(f"unreadable nWave manifest {path}: {exc}")
+                return set()
+            names = document.get(key) if isinstance(document, dict) else None
+            if (
+                not isinstance(document, dict)
+                or document.get("version") != "1.0"
+                or not isinstance(names, list)
+                or any(
+                    not isinstance(name, str)
+                    or not name.startswith("nw-")
+                    or Path(name).name != name
+                    for name in names
+                )
+                or len(names) != len(set(names))
+            ):
+                errors.append(f"untrusted nWave manifest {path}")
+                return set()
+            return set(names)
+
+        skill_manifest = (
+            manifest_names(skills_dir / ".nwave-manifest.json", "installed_skills")
+            if skills_dir_safe
+            else None
+        )
+        agent_manifest = (
+            manifest_names(
+                agents_dir / ".nwave-agents-manifest.json", "installed_agents"
+            )
+            if agents_dir_safe
+            else None
+        )
+        # Explicit dev-only adoption is the sole exception to the normal
+        # name-is-not-ownership rule.  Only structurally safe, unmanifested
+        # assets may be quarantined after the ordinary backup; every other
+        # collision remains a preflight refusal.
+        adoptable_skill_names: set[str] = set()
+        adoptable_agent_names: set[str] = set()
+        if self._legacy_codex_dev_adoption_enabled:
+            if skills_dir_safe and skills_dir.exists():
+                adoptable_skill_names = {
+                    path.name
+                    for path in skills_dir.glob("nw-*")
+                    if (skill_manifest is None or path.name not in skill_manifest)
+                    and safe_skill_tree(path)
+                }
+            if agents_dir_safe and agents_dir.exists():
+                adoptable_agent_names = {
+                    path.stem
+                    for path in agents_dir.glob("nw-*.toml")
+                    if (agent_manifest is None or path.stem not in agent_manifest)
+                    and regular_file(path)
+                }
+        # This is deliberately separate from the manifest catalogue.  It can
+        # contain only the closed set returned by the byte-level v1 witness;
+        # no directory discovery result is ever promoted to ownership here.
+        attested_legacy_skills: set[str] = set()
+
+        # A v1 public Codex manifest historically omitted a closed pair of
+        # command skills.  Its DES witness corroborates that this is the
+        # bootstrap shape, while the skill helper proves every omitted tree
+        # byte-for-byte.  No current command discovery participates here:
+        # future nw-* directories remain foreign until a manifest records
+        # them explicitly.
+        if skills_dir_safe and skills_dir.exists() and skill_manifest is not None:
+            try:
+                from scripts.install.plugins.codex_skills_plugin import (
+                    legacy_v1_omitted_command_skills,
+                )
+
+                skill_document = json.loads(
+                    (skills_dir / ".nwave-manifest.json").read_text(encoding="utf-8")
+                )
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                skill_document = None
+            unlisted_skills = {
+                path.name
+                for path in skills_dir.glob("nw-*")
+                if path.name not in skill_manifest
+            }
+            if unlisted_skills:
+                omissions = (
+                    legacy_v1_omitted_command_skills(skills_dir, skill_document)
+                    if (legacy_direct_command is not None or legacy_launcher_witness)
+                    else None
+                )
+                unadoptable_skills = unlisted_skills - adoptable_skill_names
+                if omissions is not None and omissions == unlisted_skills:
+                    attested_legacy_skills = omissions
+                elif unadoptable_skills:
+                    errors.extend(
+                        f"foreign or untracked Codex skill collision: {skills_dir / name}"
+                        for name in sorted(unadoptable_skills)
+                    )
+
+        # A reserved nWave name without a manifest is not adoptable: it could
+        # be a foreign file and the plugin would otherwise replace it.
+        if skills_dir_safe and skills_dir.exists() and skill_manifest is None:
+            for path in skills_dir.glob("nw-*"):
+                if path.name not in adoptable_skill_names:
+                    errors.append(f"foreign or untracked Codex skill collision: {path}")
+        if agents_dir_safe and agents_dir.exists() and agent_manifest is None:
+            for path in agents_dir.glob("nw-*.toml"):
+                if (
+                    not (
+                        legacy_direct_command is not None
+                        and path.stem in legacy_agent_names
+                    )
+                    and path.stem not in adoptable_agent_names
+                ):
+                    errors.append(f"foreign or untracked Codex agent collision: {path}")
+
+        if skill_manifest is not None:
+            owned_skill_names = skill_manifest | attested_legacy_skills
+            for name in owned_skill_names:
+                if not safe_skill_tree(skills_dir / name):
+                    errors.append(f"manifest-owned Codex skill is missing: {name}")
+            for path in skills_dir.glob("nw-*"):
+                if (
+                    path.name not in owned_skill_names
+                    and path.name not in adoptable_skill_names
+                ):
+                    errors.append(f"foreign or untracked Codex skill collision: {path}")
+        if agent_manifest is not None:
+            for name in agent_manifest:
+                if not regular_file(agents_dir / f"{name}.toml"):
+                    errors.append(f"manifest-owned Codex agent is missing: {name}")
+            for path in agents_dir.glob("nw-*.toml"):
+                if (
+                    path.stem not in agent_manifest
+                    and path.stem not in adoptable_agent_names
+                ):
+                    errors.append(f"foreign or untracked Codex agent collision: {path}")
+
+        hooks: object = None
+        if regular_file(hooks_path):
+            try:
+                hooks_document = json.loads(hooks_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                errors.append(
+                    f"malformed Codex hooks configuration {hooks_path}: {exc}"
+                )
+            else:
+                hooks = (
+                    hooks_document.get("hooks")
+                    if isinstance(hooks_document, dict)
+                    else None
+                )
+                if not isinstance(hooks, dict) or any(
+                    not isinstance(entries, list) for entries in hooks.values()
+                ):
+                    errors.append(f"ambiguous Codex hooks configuration {hooks_path}")
+
+        if regular_file(des_manifest_path):
+            try:
+                des_manifest = json.loads(des_manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                errors.append(
+                    f"unreadable nWave DES manifest {des_manifest_path}: {exc}"
+                )
+            else:
+                if legacy_direct_command is not None:
+                    # A public direct-hook bootstrap could leave behind the
+                    # newer canonical launcher without recording it in its
+                    # three-field manifest.  Adopt that orphan only when the
+                    # direct hook is exact and the launcher round-trips to the
+                    # fixed generated template with both embedded paths under
+                    # this user's historical .nwave runtime root.
+                    try:
+                        from scripts.install.plugins.codex_des_plugin import (
+                            _build_hook_entry,
+                            _launcher_source,
+                        )
+
+                        expected_direct = _build_hook_entry(
+                            des_manifest["python_path"], des_manifest["pythonpath"]
+                        )["hooks"][0]["command"]
+                        legacy_direct_hook_witness = (
+                            legacy_direct_command == expected_direct
+                        )
+                        launcher_source = launcher_path.read_text(encoding="utf-8")
+                        launcher_tree = ast.parse(launcher_source)
+                        launcher_values = {
+                            node.targets[0].id: node.value.value
+                            for node in launcher_tree.body
+                            if isinstance(node, ast.Assign)
+                            and len(node.targets) == 1
+                            and isinstance(node.targets[0], ast.Name)
+                            and isinstance(node.value, ast.Constant)
+                            and isinstance(node.value.value, str)
+                            and node.targets[0].id in {"PYTHON_PATH", "PYTHONPATH"}
+                        }
+                        launcher_python = launcher_values["PYTHON_PATH"]
+                        launcher_pythonpath = launcher_values["PYTHONPATH"]
+                        legacy_runtime_dir = agents_home / ".nwave"
+                        runtime_root_is_safe = (
+                            not legacy_runtime_dir.is_symlink()
+                            and legacy_runtime_dir.is_dir()
+                        )
+                        legacy_runtime_root = legacy_runtime_dir.resolve(strict=False)
+                        lexical_runtime_root = Path(
+                            os.path.normpath(str(legacy_runtime_dir))
+                        )
+                        lexical_python = Path(os.path.normpath(launcher_python))
+                        pythonpath_is_contained = Path(
+                            launcher_pythonpath
+                        ).is_absolute() and Path(launcher_pythonpath).resolve(
+                            strict=False
+                        ).is_relative_to(legacy_runtime_root)
+                        # The candidate venv's terminal interpreter is often
+                        # a symlink to the host Python.  Its pathname and its
+                        # parent must still be inside .nwave; only that final
+                        # interpreter link may leave the runtime root.
+                        python_is_contained = (
+                            lexical_python.is_absolute()
+                            and lexical_python.is_relative_to(lexical_runtime_root)
+                            and lexical_python.parent.resolve(
+                                strict=False
+                            ).is_relative_to(legacy_runtime_root)
+                        )
+                        orphan_launcher_witness = (
+                            legacy_direct_hook_witness
+                            and regular_file(launcher_path)
+                            and runtime_root_is_safe
+                            and pythonpath_is_contained
+                            and python_is_contained
+                            and launcher_source
+                            == _launcher_source(launcher_python, launcher_pythonpath)
+                        )
+                    except (
+                        KeyError,
+                        OSError,
+                        UnicodeDecodeError,
+                        SyntaxError,
+                        TypeError,
+                        ValueError,
+                    ):
+                        orphan_launcher_witness = False
+                    if launcher_path.exists() and not (
+                        legacy_launcher_witness or orphan_launcher_witness
+                    ):
+                        errors.append(
+                            f"untracked nWave DES launcher collision: {launcher_path}"
+                        )
+                elif not (
+                    isinstance(des_manifest, dict)
+                    and des_manifest.get("hooks_file") == str(hooks_path)
+                    and des_manifest.get("launcher_file") == str(launcher_path)
+                    and isinstance(des_manifest.get("python_path"), str)
+                    and isinstance(des_manifest.get("pythonpath"), str)
+                    and set(des_manifest)
+                    in (
+                        {
+                            "hooks_file",
+                            "python_path",
+                            "pythonpath",
+                            "launcher_file",
+                        },
+                        {
+                            "hooks_file",
+                            "python_path",
+                            "pythonpath",
+                            "launcher_file",
+                            "session_start_launcher_file",
+                            "resolver_script_file",
+                        },
+                    )
+                ):
+                    errors.append(f"untrusted nWave DES manifest {des_manifest_path}")
+                else:
+                    from scripts.install.plugins.codex_des_plugin import (
+                        _command_owns_launcher,
+                        _launcher_source,
+                    )
+
+                    try:
+                        launcher_source = launcher_path.read_text(encoding="utf-8")
+                    except OSError as exc:
+                        errors.append(
+                            f"unreadable nWave DES launcher {launcher_path}: {exc}"
+                        )
+                    else:
+                        if launcher_source != _launcher_source(
+                            des_manifest["python_path"], des_manifest["pythonpath"]
+                        ):
+                            errors.append(
+                                f"untrusted nWave DES launcher {launcher_path}"
+                            )
+                    has_owned_launcher_hook = isinstance(hooks, dict) and any(
+                        isinstance(group, dict)
+                        and any(
+                            isinstance(handler, dict)
+                            and _command_owns_launcher(
+                                handler.get("command", ""), launcher_path
+                            )
+                            for handler in group.get("hooks", [])
+                            if isinstance(group.get("hooks", []), list)
+                        )
+                        for groups in hooks.values()
+                        for group in groups
+                    )
+                    if not has_owned_launcher_hook:
+                        errors.append(f"untrusted nWave DES hook {hooks_path}")
+        elif launcher_path.exists():
+            errors.append(f"untracked nWave DES launcher collision: {launcher_path}")
+
+        for error in errors:
+            self.logger.error(f"  ❌ Ownership preflight: {error}")
+        return not errors
 
     def restore_backup(self) -> bool:
         """Restore from most recent backup.
@@ -475,14 +1107,21 @@ class NWaveInstaller:
             PluginRegistry configured with plugins for the target platforms.
         """
         registry = PluginRegistry(logger=None if silent else self.logger)
-        # Claude Code plugins (always registered -- default platform)
-        registry.register(AgentsPlugin())
-        registry.register(CommandsPlugin())
-        registry.register(TemplatesPlugin())
-        registry.register(SkillsPlugin())
-        registry.register(UtilitiesPlugin())
-        registry.register(DESPlugin())
-        registry.register(AttributionPlugin())
+        requested_platforms = target_platforms or {"claude_code"}
+
+        # The DES runtime is host-neutral.  Every other shared plugin writes a
+        # Claude discovery surface and is therefore registered only for Claude.
+        des_plugin = DESPlugin()
+        if "claude_code" not in requested_platforms:
+            des_plugin.set_dependencies([])
+        registry.register(des_plugin)
+        if "claude_code" in requested_platforms:
+            registry.register(TemplatesPlugin())
+            registry.register(UtilitiesPlugin())
+            registry.register(AgentsPlugin())
+            registry.register(CommandsPlugin())
+            registry.register(SkillsPlugin())
+            registry.register(AttributionPlugin())
         # OpenCode plugins (registered when opencode detected)
         if target_platforms and "opencode" in target_platforms:
             opencode_skills = OpenCodeSkillsPlugin()
@@ -525,7 +1164,57 @@ class NWaveInstaller:
         Returns:
             True if all plugins installed successfully, False otherwise.
         """
+        target_platforms = self.effective_target_platforms
         if self.dry_run:
+            if target_platforms == frozenset({"codex"}):
+                from scripts.install.plugins.codex_agents_plugin import (
+                    _codex_agents_dir,
+                )
+                from scripts.install.plugins.codex_des_plugin import _codex_config_dir
+                from scripts.install.plugins.codex_skills_plugin import (
+                    _codex_skills_dir,
+                )
+                from scripts.shared.agent_catalog import (
+                    build_ownership_map,
+                    detect_command_skills,
+                )
+                from scripts.shared.skill_distribution import (
+                    enumerate_skills,
+                    filter_public_skills,
+                )
+
+                agents_source = self.framework_source / "agents"
+                public_agents = (
+                    set()
+                    if self.dev_mode
+                    else load_public_agents(self.project_root / "nWave")
+                )
+                agent_count = sum(
+                    is_public_agent(source.name, public_agents)
+                    for source in agents_source.glob("nw-*.md")
+                )
+                skills_source = self.framework_source / "skills"
+                skill_entries = enumerate_skills(skills_source)
+                if not self.dev_mode:
+                    skill_entries = filter_public_skills(
+                        skill_entries,
+                        public_agents,
+                        build_ownership_map(agents_source),
+                        detect_command_skills(skills_source),
+                    )
+                self.logger.info(
+                    f"  🚨 [DRY RUN] Would install {len(skill_entries)} Codex skills to "
+                    f"{_codex_skills_dir()}"
+                )
+                self.logger.info(
+                    f"  🚨 [DRY RUN] Would install {agent_count} Codex agents to "
+                    f"{_codex_agents_dir()}"
+                )
+                self.logger.info(
+                    "  🚨 [DRY RUN] Would install Codex DES hook to "
+                    f"{_codex_config_dir() / 'hooks.json'}"
+                )
+                return True
             self.logger.info(
                 f"  🚨 [DRY RUN] Would install nWave framework to: {self.claude_config_dir}"
             )
@@ -554,16 +1243,14 @@ class NWaveInstaller:
         self.logger.info("")
         self.logger.info(f"  💿 Installing nWave → {self.claude_config_dir}")
 
-        # Create target directories
-        self.claude_config_dir.mkdir(parents=True, exist_ok=True)
-
-        # Detect target platforms
-        detected_platforms = {p.value for p in detect_target_platforms()}
-        if self._platform_override is not None:
-            detected_platforms = self._platform_override
+        # Codex has no Claude activation surface.  Do not create an empty
+        # ~/.claude directory merely because the installer knows its legacy
+        # location.
+        if "claude_code" in target_platforms:
+            self.claude_config_dir.mkdir(parents=True, exist_ok=True)
 
         # Create plugin registry and install all components
-        registry = self._create_plugin_registry(target_platforms=detected_platforms)
+        registry = self._create_plugin_registry(target_platforms=target_platforms)
 
         # Create installation context with all required utilities
         context = InstallContext(
@@ -575,7 +1262,7 @@ class NWaveInstaller:
             framework_source=self.framework_source,
             dry_run=self.dry_run,
             dev_mode=self.dev_mode,
-            target_platforms=detected_platforms,
+            target_platforms=target_platforms,
         )
 
         self.logger.info("  📑 Installing Context...")
@@ -594,7 +1281,17 @@ class NWaveInstaller:
         return True
 
     def _validate_schema_template(self) -> bool:
-        """Validate TDD cycle schema template has required fields."""
+        """Validate TDD cycle schema template has required fields.
+
+        The schema file is shipped by TemplatesPlugin, which -- like
+        CommandsPlugin and SkillsPlugin -- _create_plugin_registry registers
+        only when "claude_code" is in the requested platforms. A Copilot/
+        OpenCode-only install never receives it, so the check is not
+        applicable there (fourth instance of the same gap in this module).
+        """
+        if "claude_code" not in self.effective_target_platforms:
+            return True
+
         schema_file = (
             self.claude_config_dir / "templates" / "step-tdd-cycle-schema.json"
         )
@@ -664,18 +1361,31 @@ class NWaveInstaller:
         Returns:
             True if verification passed, False otherwise.
         """
+        target_platforms = self.effective_target_platforms
+        codex_valid = True
+        if "codex" in target_platforms:
+            codex_valid = self._validate_codex_installation()
+            if target_platforms == {"codex"}:
+                return codex_valid
+
         self.logger.info("")
         self.logger.info("  🔎 Validate Installation...")
         with self.logger.progress_spinner("  🚧 Work in progress..."):
             # Use shared InstallationVerifier for consistent verification
-            verifier = InstallationVerifier(claude_config_dir=self.claude_config_dir)
+            verifier = InstallationVerifier(
+                claude_config_dir=self.claude_config_dir,
+                use_host_neutral_runtime="claude_code" not in target_platforms,
+                check_essential_commands="claude_code" in target_platforms,
+            )
             result = verifier.run_verification()
 
             # Validate schema template (additional check specific to installer)
             schema_valid = self._validate_schema_template()
 
         # Plugin verification via registry.verify_all()
-        plugin_registry = self._create_plugin_registry(silent=True)
+        plugin_registry = self._create_plugin_registry(
+            silent=True, target_platforms=target_platforms
+        )
         plugin_context = InstallContext(
             claude_dir=self.claude_config_dir,
             scripts_dir=self.project_root / "scripts" / "install",
@@ -685,6 +1395,7 @@ class NWaveInstaller:
             framework_source=self.framework_source,
             dry_run=self.dry_run,
             dev_mode=self.dev_mode,
+            target_platforms=target_platforms,
         )
         plugin_results = plugin_registry.verify_all(plugin_context)
         plugin_failures = {
@@ -694,123 +1405,135 @@ class NWaveInstaller:
         # Verify components: compare source files vs installed target
         # Supports both dist/ layout (agents/nw/, commands/nw/) and
         # nWave/ source layout (agents/nw-*.md, tasks/nw/*.md)
+        #
+        # Agents/Commands/Templates/Scripts are all shipped by plugins that
+        # _create_plugin_registry registers ONLY when "claude_code" is in the
+        # requested platforms (TemplatesPlugin, UtilitiesPlugin, AgentsPlugin,
+        # CommandsPlugin, SkillsPlugin -- "every other shared plugin writes a
+        # Claude discovery surface"). A Copilot/OpenCode-only target never
+        # gets those plugins, so judging it against these components' source
+        # counts fails validation unconditionally, regardless of whether the
+        # install the target actually owns succeeded.
         all_synced = True
         components: list[ComponentResult] = []
 
-        # Agents: dist/agents/nw/ or nWave/agents/
-        # In dev_mode, all agents are installed; otherwise only public
-        dist_agents = self.framework_source / "agents" / "nw"
-        if dist_agents.exists():
-            agents_source = dist_agents
-        else:
-            agents_source = self.project_root / "nWave" / "agents"
-        agents_target = self.claude_config_dir / "agents" / "nw"
-        if agents_source.exists():
-            public_agents = (
-                set()
-                if self.dev_mode
-                else load_public_agents(self.project_root / "nWave")
-            )
-            agent_source_files = sorted(
-                f
-                for f in agents_source.glob("nw-*.md")
-                if is_public_agent(f.name, public_agents)
-            )
-            agent_matched = sum(
-                1 for f in agent_source_files if (agents_target / f.name).exists()
-            )
-            agent_expected = len(agent_source_files)
-            agent_ok = agent_matched == agent_expected and agent_expected > 0
-            if not agent_ok:
-                all_synced = False
-            components.append(
-                ComponentResult("agents", agent_matched, agent_expected, agent_ok)
-            )
-            self.logger.info(
-                f"    {'✅' if agent_ok else '❌'} Agents verified ({agent_matched}/{agent_expected})"
-            )
-
-        # Commands: now installed as skills (nw-{name}/SKILL.md with user-invocable)
-        skills_target = self.claude_config_dir / "skills"
-        essential_commands = [
-            "nw-deliver",
-            "nw-design",
-            "nw-discuss",
-            "nw-distill",
-            "nw-devops",
-            "nw-review",
-        ]
-        cmd_matched = sum(
-            1
-            for name in essential_commands
-            if (skills_target / name / "SKILL.md").exists()
-        )
-        cmd_expected = len(essential_commands)
-        cmd_ok = cmd_matched == cmd_expected
-        if not cmd_ok:
-            all_synced = False
-        components.append(
-            ComponentResult("commands", cmd_matched, cmd_expected, cmd_ok)
-        )
-        self.logger.info(
-            f"    {'✅' if cmd_ok else '❌'} Commands verified ({cmd_matched}/{cmd_expected})"
-        )
-
-        # Templates from framework_source/templates/
-        #
-        # Content-aware verify (M1 fix-installer-silent-template-skip): replace
-        # the existence-only check with a md5 compare so a stale target that
-        # diverges from source is reported as drift instead of "verified".
-        templates_source = self.framework_source / "templates"
-        templates_target = self.claude_config_dir / "templates"
-        if templates_source.exists():
-            tmpl_files = [f for f in templates_source.iterdir() if f.is_file()]
-            tmpl_drifted: list[str] = []
-            tmpl_matched = 0
-            for f in tmpl_files:
-                if _files_content_equal(f, templates_target / f.name):
-                    tmpl_matched += 1
-                else:
-                    tmpl_drifted.append(f.name)
-            tmpl_expected = len(tmpl_files)
-            tmpl_ok = _component_synced(tmpl_matched, tmpl_expected)
-            if not tmpl_ok:
-                all_synced = False
-            components.append(
-                ComponentResult("templates", tmpl_matched, tmpl_expected, tmpl_ok)
-            )
-            self.logger.info(
-                f"    {'✅' if tmpl_ok else '❌'} Templates verified ({tmpl_matched}/{tmpl_expected})"
-            )
-            for drifted in tmpl_drifted:
-                self.logger.error(
-                    f"      ❌ Content drift: templates/{drifted} differs from source "
-                    f"(re-run `python -m nwave_ai.cli install` to refresh)"
+        if "claude_code" in target_platforms:
+            # Agents: dist/agents/nw/ or nWave/agents/
+            # In dev_mode, all agents are installed; otherwise only public
+            dist_agents = self.framework_source / "agents" / "nw"
+            if dist_agents.exists():
+                agents_source = dist_agents
+            else:
+                agents_source = self.project_root / "nWave" / "agents"
+            agents_target = self.claude_config_dir / "agents" / "nw"
+            if agents_source.exists():
+                public_agents = (
+                    set()
+                    if self.dev_mode
+                    else load_public_agents(self.project_root / "nWave")
+                )
+                agent_source_files = sorted(
+                    f
+                    for f in agents_source.glob("nw-*.md")
+                    if is_public_agent(f.name, public_agents)
+                )
+                agent_matched = sum(
+                    1 for f in agent_source_files if (agents_target / f.name).exists()
+                )
+                agent_expected = len(agent_source_files)
+                agent_ok = agent_matched == agent_expected and agent_expected > 0
+                if not agent_ok:
+                    all_synced = False
+                components.append(
+                    ComponentResult("agents", agent_matched, agent_expected, agent_ok)
+                )
+                self.logger.info(
+                    f"    {'✅' if agent_ok else '❌'} Agents verified ({agent_matched}/{agent_expected})"
                 )
 
-        # Scripts: dist/scripts/ or project_root/scripts/
-        dist_scripts = self.framework_source / "scripts"
-        if (
-            dist_scripts.exists()
-            and (dist_scripts / "install_nwave_target_hooks.py").exists()
-        ):
-            scripts_source = dist_scripts
-        else:
-            scripts_source = self.project_root / "scripts"
-        scripts_target = self.claude_config_dir / "scripts"
-        utility_scripts = ["install_nwave_target_hooks.py", "validate_step_file.py"]
-        script_files = [s for s in utility_scripts if (scripts_source / s).exists()]
-        script_matched = sum(1 for s in script_files if (scripts_target / s).exists())
-        script_expected = len(script_files)
-        script_ok = _component_synced(script_matched, script_expected)
-        if not script_ok:
-            all_synced = False
-        components.append(
-            ComponentResult("scripts", script_matched, script_expected, script_ok)
-        )
-        self.logger.info(
-            f"    {'✅' if script_ok else '❌'} Scripts verified ({script_matched}/{script_expected})"
-        )
+            # Commands: now installed as skills (nw-{name}/SKILL.md with user-invocable)
+            skills_target = self.claude_config_dir / "skills"
+            essential_commands = [
+                "nw-deliver",
+                "nw-design",
+                "nw-discuss",
+                "nw-distill",
+                "nw-devops",
+                "nw-review",
+            ]
+            cmd_matched = sum(
+                1
+                for name in essential_commands
+                if (skills_target / name / "SKILL.md").exists()
+            )
+            cmd_expected = len(essential_commands)
+            cmd_ok = cmd_matched == cmd_expected
+            if not cmd_ok:
+                all_synced = False
+            components.append(
+                ComponentResult("commands", cmd_matched, cmd_expected, cmd_ok)
+            )
+            self.logger.info(
+                f"    {'✅' if cmd_ok else '❌'} Commands verified ({cmd_matched}/{cmd_expected})"
+            )
+
+            # Templates from framework_source/templates/
+            #
+            # Content-aware verify (M1 fix-installer-silent-template-skip): replace
+            # the existence-only check with a md5 compare so a stale target that
+            # diverges from source is reported as drift instead of "verified".
+            templates_source = self.framework_source / "templates"
+            templates_target = self.claude_config_dir / "templates"
+            if templates_source.exists():
+                tmpl_files = [f for f in templates_source.iterdir() if f.is_file()]
+                tmpl_drifted: list[str] = []
+                tmpl_matched = 0
+                for f in tmpl_files:
+                    if _files_content_equal(f, templates_target / f.name):
+                        tmpl_matched += 1
+                    else:
+                        tmpl_drifted.append(f.name)
+                tmpl_expected = len(tmpl_files)
+                tmpl_ok = _component_synced(tmpl_matched, tmpl_expected)
+                if not tmpl_ok:
+                    all_synced = False
+                components.append(
+                    ComponentResult("templates", tmpl_matched, tmpl_expected, tmpl_ok)
+                )
+                self.logger.info(
+                    f"    {'✅' if tmpl_ok else '❌'} Templates verified ({tmpl_matched}/{tmpl_expected})"
+                )
+                for drifted in tmpl_drifted:
+                    self.logger.error(
+                        f"      ❌ Content drift: templates/{drifted} differs from source "
+                        f"(re-run `python -m nwave_ai.cli install` to refresh)"
+                    )
+
+            # Scripts: dist/scripts/ or project_root/scripts/
+            dist_scripts = self.framework_source / "scripts"
+            if (
+                dist_scripts.exists()
+                and (dist_scripts / "install_nwave_target_hooks.py").exists()
+            ):
+                scripts_source = dist_scripts
+            else:
+                scripts_source = self.project_root / "scripts"
+            scripts_target = self.claude_config_dir / "scripts"
+            utility_scripts = ["install_nwave_target_hooks.py", "validate_step_file.py"]
+            script_files = [s for s in utility_scripts if (scripts_source / s).exists()]
+            script_matched = sum(
+                1 for s in script_files if (scripts_target / s).exists()
+            )
+            script_expected = len(script_files)
+            script_ok = _component_synced(script_matched, script_expected)
+            if not script_ok:
+                all_synced = False
+            components.append(
+                ComponentResult("scripts", script_matched, script_expected, script_ok)
+            )
+            self.logger.info(
+                f"    {'✅' if script_ok else '❌'} Scripts verified ({script_matched}/{script_expected})"
+            )
 
         self.logger.info(
             f"    {'✅' if result.manifest_exists else '❌'} Manifest created"
@@ -835,7 +1558,11 @@ class NWaveInstaller:
 
         # Determine overall success
         overall_success = (
-            result.success and schema_valid and all_synced and not plugin_failures
+            result.success
+            and schema_valid
+            and all_synced
+            and not plugin_failures
+            and codex_valid
         )
 
         if overall_success:
@@ -854,6 +1581,8 @@ class NWaveInstaller:
                 failures.append(
                     f"plugin verification failed: {', '.join(plugin_failures)}"
                 )
+            if not codex_valid:
+                failures.append("Codex validation failed")
             if not result.manifest_exists:
                 failures.append("manifest not created")
             detail = "; ".join(failures) if failures else "unknown condition"
@@ -862,6 +1591,67 @@ class NWaveInstaller:
             )
             return False
 
+    def _validate_codex_installation(self) -> bool:
+        """Validate the Codex-native discovery surfaces for a Codex-only install."""
+        self.logger.info("")
+        self.logger.info("  🔎 Validate Codex Installation...")
+
+        agents_home_override = os.environ.get("NWAVE_AGENTS_HOME")
+        agents_home = (
+            Path(agents_home_override) if agents_home_override else Path.home()
+        )
+        skills_dir = agents_home / ".agents" / "skills"
+        codex_home_override = os.environ.get("CODEX_HOME")
+        codex_home = (
+            Path(codex_home_override) if codex_home_override else Path.home() / ".codex"
+        )
+        essential_skills = (
+            "nw-deliver",
+            "nw-design",
+            "nw-discuss",
+            "nw-distill",
+            "nw-devops",
+            "nw-review",
+        )
+        native_artifacts = [
+            *(skills_dir / name / "SKILL.md" for name in essential_skills),
+            skills_dir / ".nwave-manifest.json",
+            codex_home / "agents" / ".nwave-agents-manifest.json",
+            codex_home / "hooks.json",
+            codex_home / ".nwave-des-manifest.json",
+        ]
+        missing = [path for path in native_artifacts if not path.exists()]
+
+        registry = self._create_plugin_registry(silent=True, target_platforms={"codex"})
+        context = InstallContext(
+            claude_dir=self.claude_config_dir,
+            scripts_dir=self.project_root / "scripts" / "install",
+            templates_dir=self.framework_source / "templates",
+            logger=self.logger,
+            project_root=self.project_root,
+            framework_source=self.framework_source,
+            dry_run=self.dry_run,
+            dev_mode=self.dev_mode,
+            target_platforms={"codex"},
+        )
+        plugin_failures = {
+            name: result
+            for name, result in registry.verify_all(context).items()
+            if not result.success
+        }
+        for path in missing:
+            self.logger.error(f"    ❌ Missing Codex artifact: {path}")
+        for name, result in plugin_failures.items():
+            self.logger.error(
+                f"    ❌ {name} plugin verification failed: {result.message}"
+            )
+
+        if missing or plugin_failures:
+            self.logger.error("  ❌ Codex deployment validation failed")
+            return False
+        self.logger.info("  🍾 Codex deployment validated")
+        return True
+
     def create_manifest(self) -> None:
         """Create installation manifest."""
         if self.dry_run:
@@ -869,7 +1659,10 @@ class NWaveInstaller:
             return
 
         ManifestWriter.write_install_manifest(
-            self.claude_config_dir, self.backup_manager.backup_dir, self.script_dir
+            self.claude_config_dir,
+            self.backup_manager.backup_dir,
+            self.script_dir,
+            target_platforms=self.effective_target_platforms,
         )
 
         self.logger.info(
@@ -908,31 +1701,70 @@ def show_title_panel(logger: Logger, dry_run: bool = False) -> None:
     logger.print_styled("")
 
 
-def show_installation_summary(logger: Logger, target_dir: Path | None = None) -> None:
+def show_installation_summary(
+    logger: Logger,
+    target_dir: Path | None = None,
+    target_platforms: set[str] | None = None,
+) -> None:
     """Display installation summary panel at end of successful install."""
+    codex_only = target_platforms == {"codex"}
     logger.info("")
     logger.info(f"  🎉 nWave v{__version__} installed and healthy!")
-    if target_dir is not None:
+    if target_dir is not None and not (
+        target_platforms and "codex" in target_platforms
+    ):
         logger.info(f"  📂 Installed to: {target_dir}")
     logger.info("")
     logger.info("  📖 Quick start")
+    command_prefix = "$" if codex_only else "/"
     commands = [
-        ("/nw-discover", "Evidence-based product discovery"),
-        ("/nw-discuss", "Requirements gathering and business analysis"),
-        ("/nw-design", "Architecture design with visual representation"),
-        ("/nw-distill", "Acceptance test creation and business validation"),
-        ("/nw-develop", "Outside-In TDD implementation with refactoring"),
-        ("/nw-deliver", "Production readiness validation"),
+        (f"{command_prefix}nw-discover", "Evidence-based product discovery"),
+        (
+            f"{command_prefix}nw-discuss",
+            "Requirements gathering and business analysis",
+        ),
+        (
+            f"{command_prefix}nw-design",
+            "Architecture design with visual representation",
+        ),
+        (
+            f"{command_prefix}nw-distill",
+            "Acceptance test creation and business validation",
+        ),
+        (
+            f"{command_prefix}nw-develop",
+            "Outside-In TDD implementation with refactoring",
+        ),
+        (f"{command_prefix}nw-deliver", "Production readiness validation"),
     ]
     for cmd, desc in commands:
         logger.info(f"    {cmd:<16} {desc}")
+    mixed_hosts = bool(
+        target_platforms and {"claude_code", "codex"}.issubset(target_platforms)
+    )
+    if mixed_hosts:
+        logger.info(
+            "    $nw-design       Architecture design with visual representation"
+        )
     logger.info("")
-    logger.info(
-        "  ⚠️  Quit and reopen Claude Code to load the new agents, skills, and commands."
-    )
-    logger.info(
-        "  💡 Open Claude Code in any project directory and type a /nw- command."
-    )
+    if codex_only:
+        logger.info("  ⚠️  Quit and reopen Codex to load the new agents and skills.")
+        logger.info(
+            "  💡 Open Codex in any project directory and invoke the $nw-design skill."
+        )
+    elif mixed_hosts:
+        logger.info(
+            "  ⚠️  Quit and reopen Claude Code to load the new agents, skills, and commands."
+        )
+        logger.info("  ⚠️  Quit and reopen Codex to load the new agents and skills.")
+        logger.info("  💡 Start with /nw-design in Claude Code or $nw-design in Codex.")
+    else:
+        logger.info(
+            "  ⚠️  Quit and reopen Claude Code to load the new agents, skills, and commands."
+        )
+        logger.info(
+            "  💡 Open Claude Code in any project directory and type a /nw- command."
+        )
     logger.info("  📚 Docs: https://github.com/nWave-ai/nWave")
 
 
@@ -961,6 +1793,9 @@ def show_help():
     --restore         Restore from the most recent backup
     --dry-run         Show what would be installed without making any changes
     --dev             Install ALL agents and skills (including private/unreleased)
+    --adopt-legacy-codex-dev
+                      With --dev --platform codex only, quarantine safely
+                      backed-up legacy unmanifested Codex nWave assets
     --help            Show this help message
 
 {B}EXAMPLES:{N}
@@ -1030,12 +1865,23 @@ def main():
         action="store_true",
         help="Install ALL agents and skills (not just public). For local dev only.",
     )
+    parser.add_argument(
+        "--adopt-legacy-codex-dev",
+        action="store_true",
+        help=(
+            "With --dev --platform codex only: quarantine legacy unmanifested "
+            "Codex nWave dev assets in the normal nWave backup before installing."
+        ),
+    )
 
     args = parser.parse_args()
 
     if args.help:
         show_help()
         return 0
+
+    if args.adopt_legacy_codex_dev and not (args.dev and args.platform == "codex"):
+        parser.error("--adopt-legacy-codex-dev requires --dev --platform codex")
 
     # Resolve platform override from CLI flag
     platform_override = _resolve_platform_override(args.platform)
@@ -1044,7 +1890,13 @@ def main():
         dry_run=args.dry_run,
         platform_override=platform_override,
         dev_mode=args.dev,
+        adopt_legacy_codex_dev=args.adopt_legacy_codex_dev,
     )
+
+    # Codex has no Claude backup or restore surface.  Keep its explicit
+    # restore command a no-op without consulting any retired runtime state.
+    if args.restore and installer.effective_target_platforms == {"codex"}:
+        return 0
 
     # Show title panel at startup
     show_title_panel(installer.logger, dry_run=args.dry_run)
@@ -1080,6 +1932,9 @@ def main():
 
     # Handle backup-only mode
     if args.backup_only:
+        if installer.effective_target_platforms == {"codex"}:
+            return 0
+        installer.enable_install_logging()
         installer.create_backup()
         installer.logger.info("  🍾 Backup completed successfully")
         return 0
@@ -1093,7 +1948,18 @@ def main():
             return 1
 
     # Normal installation
+    if not installer.validate_codex_ownership_preflight():
+        installer.logger.error("  ❌ Installation refused: Codex ownership is unsafe")
+        return 1
+
+    if args.dry_run:
+        return 0 if installer.install_framework() else 1
+
+    installer.enable_install_logging()
     installer.create_backup()
+
+    if not installer.adopt_legacy_codex_dev_assets():
+        return 1
 
     if not installer.install_framework():
         return 1
@@ -1101,7 +1967,8 @@ def main():
     # Create manifest after installation but before validation
     # This prevents circular dependency where validation fails because
     # manifest doesn't exist yet
-    installer.create_manifest()
+    if installer.effective_target_platforms != {"codex"}:
+        installer.create_manifest()
 
     # Dry-run preview: install_framework + create_manifest already returned
     # without side effects (each plugin honors context.dry_run). Skip the
@@ -1134,7 +2001,11 @@ def main():
             )
 
         installer.logger.info("")
-        show_installation_summary(installer.logger, installer.claude_config_dir)
+        show_installation_summary(
+            installer.logger,
+            installer.claude_config_dir,
+            target_platforms=installer.effective_target_platforms,
+        )
 
         return 0
     else:

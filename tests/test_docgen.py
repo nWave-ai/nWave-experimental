@@ -722,7 +722,13 @@ class TestRegistryRuntimePhaseVocabAgreement:
         from des.application.workflow_mode import resolve_workflow_mode
 
         with tempfile.TemporaryDirectory() as empty:
-            resolver_default = resolve_workflow_mode(Path(empty))
+            # `.effective_mode`: the resolver now returns a decision OBJECT
+            # (outcome + mode + reason), not a bare mode string. This site
+            # uses the value as a flavor id and a filename, so the object's
+            # repr would silently become the filename -- the fixture would
+            # build a differently-named flavor and this negative oracle
+            # would report the wrong disagreement instead of the planted one.
+            resolver_default = resolve_workflow_mode(Path(empty)).effective_mode
 
         flavors_dir = tmp_path / "nWave" / "flavors"
         flavors_dir.mkdir(parents=True)

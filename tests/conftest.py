@@ -334,6 +334,26 @@ def _scrub_git_repo_override_env():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _clear_interpreter_resolution_cache():
+    """Forget memoized interpreter resolutions between tests.
+
+    ``des.runtime.interpreter.python_for`` memoizes successful resolutions per
+    process (feature-delta §7, superseded 2026-07-24). Production resolves
+    against a fixed interpreter landscape and exits; the TEST session instead
+    drives it across thousands of mutually-isolated tmp repos and monkeypatched
+    ladders inside ONE process, where an inherited entry would be cross-test
+    contamination. Clearing on BOTH sides keeps a test that seeded the cache
+    from leaking forward, and a test that inherited a dirty process from
+    starting warm.
+    """
+    from des.runtime.interpreter import clear_resolution_cache
+
+    clear_resolution_cache()
+    yield
+    clear_resolution_cache()
+
+
 # ---------------------------------------------------------------------------
 # Class B regression guard — editable install health check (RCA 2026-05-13).
 #
@@ -1773,6 +1793,50 @@ def pytest_collection_modifyitems(config, items):
                         "ADR-PLAT-010); set NWAVE_RUN_DOCKER_E2E=1 to run locally"
                     )
                 )
+
+    # --- Scheduler-honors-groups guardrail (2026-07-26) ---
+    # This conftest just pinned items onto xdist_group markers (real_repo_scan,
+    # e2e_docker_install) on the strength of a promise: "loadgroup" is the only
+    # xdist scheduler that runs every member of a group on one worker, never
+    # concurrently. If xdist is actually active with more than one worker and
+    # the active scheduler is something else (e.g. the default "load", or
+    # "worksteal" -- neither honors xdist_group), that promise is false and the
+    # pinned tests will race across workers on the shared .nwave repo state --
+    # exactly the collision this pin exists to prevent, now silently
+    # unenforced. Refuse loudly instead of proceeding on a broken assumption
+    # (the same principle GDP-6 applies to gates: a checker is not exempt from
+    # the property it checks).
+    numprocesses = getattr(config.option, "numprocesses", None)
+    active_dist = getattr(config.option, "dist", "no")
+    has_pinned_group = any(
+        any(mark.name == "xdist_group" for mark in item.iter_markers())
+        for item in items
+    )
+    violation = scheduler_guard_violation(numprocesses, active_dist, has_pinned_group)
+    if violation is not None:
+        raise pytest.UsageError(violation)
+
+
+def scheduler_guard_violation(
+    numprocesses: object, active_dist: str, has_pinned_group: bool
+) -> str | None:
+    """Return a refusal message if xdist won't honor a pinned xdist_group.
+
+    None means the run is safe: either xdist is off/serial, no test is pinned
+    to a group, or the active scheduler is "loadgroup" (the only one that
+    serializes group members onto one worker). Pure so it is testable without
+    driving a real pytest collection.
+    """
+    xdist_active = numprocesses not in (None, 0, "0", "no")
+    if xdist_active and has_pinned_group and active_dist != "loadgroup":
+        return (
+            f"xdist is active (-n {numprocesses}) with scheduler {active_dist!r}, "
+            "but this suite pins shared-repo-state tests onto xdist_group markers "
+            "that only the 'loadgroup' scheduler serializes. Re-run with "
+            "--dist loadgroup, or those tests will race across workers on the "
+            "real repo's shared .nwave state."
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------

@@ -70,8 +70,6 @@ Reviews run against two DELIVER spines, siblings selected by `workflow.mode` —
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
-  Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
 When dispatching a reviewer, pass the `workflow_mode` from dispatch context unchanged so the reviewer agent applies the spine-appropriate DoR/DoD (ADR-029 re-split: the PO reviewer gates the slice plan; the acceptance-designer reviewer gates that the ATs themselves stand as the acceptance criteria).

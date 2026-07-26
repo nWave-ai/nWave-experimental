@@ -15,10 +15,10 @@ import json
 
 import pytest
 
-from des.adapters.driven.time.mocked_time import MockedTimeProvider
 from des.application.skill_tracking_service import SkillTrackingService
 from des.domain.skill_load_event import SkillLoadEvent
 from des.ports.driven_ports.skill_tracking_port import SkillTrackingPort
+from tests.des.adapters.mocked_time import MockedTimeProvider
 
 
 class InMemorySkillTracker(SkillTrackingPort):

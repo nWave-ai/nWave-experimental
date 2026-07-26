@@ -35,6 +35,48 @@ resource, or two lanes that touch the same files. Absent one of those, more para
 is always the default, not something you ask permission for — the user opts OUT of
 parallelism explicitly if they want serial/foreground work, not the other way round.
 
+### Fan-out is a scheduling invariant, not an optional optimization
+
+After every phase transition, completion, refusal, new artifact or changed dependency,
+the orchestrator MUST recompute the feature's slice/lane DAG and immediately dispatch
+every ownership-safe READY cloud lane until cloud capacity is full or no READY lane
+remains. Waiting for the current slice to finish while an independent charter, DISTILL,
+JIT-analysis, review or downstream-preparation lane is READY is
+`UNUSED_PARALLELISM` — an orchestration defect, not a conservative choice.
+
+**Dependencies attach to consumed artifacts, not whole-slice completion.** A
+`depends-on slice-N` declaration blocks only work that consumes an unstable output of
+slice N. It MUST NOT become a whole-slice barrier for work whose inputs are already
+stable: charter authoring from accepted product intent, DISTILL from stable contracts,
+source inventory/JIT analysis, independent intra-slice lanes, or generation of later
+DES dispatches. A slice boundary is not a synchronization barrier; only an unmet
+artifact dependency, explicit file conflict or box constraint is.
+
+At each scheduling point:
+
+1. Mark every lane `READY`, `BLOCKED_BY_ARTIFACT`, `BLOCKED_BY_FILE`, `RUNNING`, or
+   `DONE`.
+2. Partition READY work into cloud lanes and the single box lane.
+3. Dispatch READY cloud lanes in dependency order until all cloud slots are occupied.
+4. Queue — never overlap — box-lane work.
+5. Pipeline slice N+1 charter/DISTILL while slice N is in `A_GREEN` or EXAMINE.
+6. Recompute immediately when any lane emits an artifact or finding.
+
+The target is a **saturated dependency-safe pipeline**:
+`running_cloud = min(available_cloud_slots, ready_cloud_lanes)`, with at most one
+running box lane. If a cloud slot remains idle while READY work exists, record the
+specific reason; silence is a defect. Before dispatch, surface a compact snapshot:
+
+```text
+RUNNING: slice-00/A_GREEN
+READY:   slice-01/H0-DISTILL, slice-01/R0-DISTILL, slice-04/charter
+BOX:     idle
+BLOCKED: slice-02/A_GREEN <- slice-01/preservation-contract
+```
+
+Then fill every READY cloud slot. Fan out both **between slices** and **inside a
+slice** when sub-lanes have disjoint ownership and stable inputs.
+
 ## The constraint (Theory of Constraints): the BOX, not the agents
 
 - **LLM-bound stages run in the CLOUD, parallel almost for free**: RCA, charter (PO),
@@ -84,7 +126,8 @@ fan them ALL out at once, and synthesize/triage what they escalate.
 
 2. **Pipeline the cloud across slices (C2).** Author AT(N+1) + charter(N+1) in the cloud
    WHILE the crafter greens slice N. ~4-5' hidden per slice. Never block slice N+1's cloud
-   work on slice N's box work.
+   work on slice N's box work. This is mandatory whenever those lanes are READY, not a
+   discretionary speed-up.
 
 3. **Scope the box per-slice (C1).** The per-slice seal digests only the ENTERING slice's
    regression test + light always-on invariants; the whole-tree tier defers to feature-end.
@@ -145,11 +188,34 @@ LARGE-BY-CONSTRUCTION output, not every tool call.
 
 ## The measure (re-runnable)
 
-`SliceCommitted` events from `.nwave/telemetry/atdd-pure/*.jsonl`; gaps between consecutive
-timestamps per feature give a real per-slice throughput distribution. Look at the TAIL
-(p90), not just the median — a slow median with a long tail means occasional collisions or
-starvation, not a steady bottleneck. Re-run this after applying the moves above to confirm
-they actually moved the number, not just that they sound right.
+`SliceCommitVerified` events from `.nwave/telemetry/atdd-pure/*.jsonl`; gaps between
+consecutive timestamps per feature give the spacing distribution. **Verify the event name
+against the ledger before trusting an empty result** — this line named `SliceCommitted` for a
+long time, an event those ledgers do not carry, so the measure silently returned nothing and
+looked like a repo with no history rather than a query with no subject. A distribution of
+zero is a claim about your instrument first.
+
+Look at the TAIL (p90), not just the median. A long tail means occasional collisions or
+starvation, not a steady bottleneck — and that reading holds whether the median is slow OR
+fast: a fast median with a p90 several times larger is the signature of contention, not of
+speed.
+
+**This measures CALENDAR SPACING, not slice cost, and the difference is not a footnote.**
+The gap between two verified slices contains every minute nobody was working — nights,
+breaks, waiting on a human. Filtering out gaps over some threshold removes session
+boundaries and nothing subtler, so a long pause in the middle of the night still counts as
+slice time. The median therefore overstates true per-slice work by an unknown amount and the
+tail overstates it enormously. Two consequences worth stating before anyone quotes a number:
+
+- a comparison against a baseline is only meaningful if the baseline was computed the SAME
+  way; if that has not been checked, "X versus Y" is not yet a claim;
+- turning this into a performance result requires a per-slice `started_at` recorded beside
+  the verification timestamp. Without it, a quiet week and a fast week are indistinguishable
+  in this distribution, and reporting the first as the second is the easiest false claim in
+  the whole methodology.
+
+Re-run after applying the moves above to confirm they moved the number — and re-state the
+caveat every time the number is quoted, because a figure travels further than its footnote.
 
 ## When NOT to optimize
 

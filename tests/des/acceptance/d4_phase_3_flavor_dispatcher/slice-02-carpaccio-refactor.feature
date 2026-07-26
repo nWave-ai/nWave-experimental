@@ -30,8 +30,14 @@ Feature: carpaccio intercept becomes a thin caller of the flavor dispatcher
     And the block reason mentions the missing slice marker
 
   @slice-02 @driving_port @real-io @contract-shape:unbounded-preservation
-  Scenario: A non-atdd_pure dispatch yields a passthrough decision
+  # Was "a non-atdd_pure dispatch yields a passthrough decision". Since the
+  # classic removal there is no other workflow to pass through TO, so a prompt
+  # with no mode marker is REFUSED rather than waved past. The property this
+  # scenario protects is unchanged -- the intercept must reach a DECISION on
+  # every dispatch and never wave one through unexamined -- but the honest
+  # decision for an absent mode is now a block that names it.
+  Scenario: A dispatch with no mode marker is refused, never waved through
     Given a dispatch prompt carrying no DES markers at all
     When the intercept evaluates the dispatch
-    Then the intercept verdict is a passthrough decision
-    And the intercept verdict is not recognised as atdd_pure
+    Then the intercept verdict is a block decision
+    And the block event name is "DispatchModeUnresolved"

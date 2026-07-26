@@ -267,4 +267,17 @@ class ScriptsUpgradeJourney:
         prebuilt = framework / "lib" / "python" / "des"
         prebuilt.mkdir(parents=True)
         (prebuilt / "__init__.py").write_text("")
+        # The DES plugin FAILS LOUD when the framework ships no `data/` tree:
+        # eight runtime modules read it on the target machine, so installing
+        # the consumer without its data is the defect that check exists to
+        # close. A fabricated source tree must therefore carry one too -- and
+        # carry at least one ENTRY, because the plugin verifies the structured
+        # fact (every top-level entry arrived at the destination), not the weak
+        # signal that copytree did not raise. An empty dir would make that
+        # verification vacuously true.
+        data = framework / "data"
+        (data / "orchestrator-affordance").mkdir(parents=True)
+        (data / "orchestrator-affordance" / "00-standing-loops.md").write_text(
+            "# standing loops (fixture)\n"
+        )
         return framework

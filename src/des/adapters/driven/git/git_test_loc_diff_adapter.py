@@ -17,6 +17,7 @@ from __future__ import annotations
 import subprocess
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.git.git_constants import GIT_HEAD
 from des.adapters.driven.git.git_subprocess import git_text
 from des.domain.sustainability_metrics import GitDiffUnavailable, TestLocDelta
 from des.ports.driven_ports.test_loc_diff_port import TestLocDiffPort
@@ -50,7 +51,7 @@ class GitTestLocDiffAdapter(TestLocDiffPort):
     def test_loc_delta(self, repo: Path) -> TestLocDelta | GitDiffUnavailable:
         """Return the net test-LOC delta in ``repo`` (working tree vs HEAD), or LOUD."""
         try:
-            stdout = git_text(repo, "diff", "--numstat", "HEAD")
+            stdout = git_text(repo, "diff", "--numstat", GIT_HEAD)
         except FileNotFoundError as exc:
             return GitDiffUnavailable(reason=f"git binary not found: {exc}")
         except subprocess.CalledProcessError as exc:

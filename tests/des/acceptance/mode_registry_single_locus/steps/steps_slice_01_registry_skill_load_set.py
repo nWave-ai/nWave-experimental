@@ -21,7 +21,7 @@ from .domain_types_slice_01 import DEFECT_BY_PHRASE, FLAVOR_BY_PHRASE, SkillName
 # --- Background ------------------------------------------------------------
 
 
-@given("the shipped mode registry declares the atdd_pure and classic flavors")
+@given("the shipped mode registry declares the atdd_pure flavor")
 def given_shipped_registry(composition) -> None:
     composition.use_shipped_registry()
 
@@ -83,3 +83,15 @@ def then_refused_as_declaration_defect(composition) -> None:
 @then("no conditional skills are improvised for the crafter")
 def then_no_skills_improvised(composition) -> None:
     composition.assert_no_skills_improvised()
+
+
+@then("the registry refuses the retired flavor instead of answering")
+def then_registry_refuses_retired(composition) -> None:
+    """A retired flavor gets a REFUSAL, never a plausible empty answer.
+
+    An empty set and a refusal are different facts: the first says "this mode
+    needs no conditional skills", the second says "this mode does not exist".
+    Returning the first for a removed mode would let a caller believe it had
+    asked a valid question and received a valid answer.
+    """
+    composition.assert_refused_retired_flavor()

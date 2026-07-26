@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.repo_path_resolver import resolve_repo_root
+from des.domain.telemetry_paths import LedgerFamily, ledger_path
 
 
 if TYPE_CHECKING:
@@ -51,7 +52,7 @@ _HUMAN_VERDICT_BY_REVIEW_VERDICT: dict[str, Verdict] = {
 
 def review_ledger_path(repo: Path, feature_id: str) -> Path:
     """The review-verdict ledger path for ``feature_id`` under ``repo``."""
-    return repo / ".nwave" / "telemetry" / "review" / f"{feature_id}.jsonl"
+    return ledger_path(repo, LedgerFamily.REVIEW, feature_id)
 
 
 def record_review_verdict(

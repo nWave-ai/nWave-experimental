@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 from scripts.shared.git_hooks_paths import resolve_hooks_dir
+from scripts.shared.install_paths import is_durable_interpreter_path
 
 
 _SHELL_UNSAFE = re.compile(r"[;&|`(){}]")
@@ -76,11 +77,18 @@ def _resolve_python_path() -> str:
     """Resolve Python interpreter path for hook shim.
 
     Same pattern as DESPlugin._resolve_python_path():
-    captures sys.executable, replaces $HOME for portability,
-    falls back to 'python3' for project-local .venv paths.
+    captures sys.executable, replaces $HOME for portability, and falls
+    back to 'python3' under two independent guards -- durability (rooted
+    under a known-ephemeral location, see is_durable_interpreter_path())
+    and portability (project-local .venv paths).
     """
     python_path = sys.executable
 
+    # Durability: reject interpreters rooted in a known-ephemeral location
+    if not is_durable_interpreter_path(python_path):
+        return "python3"
+
+    # Portability: project-local .venv must not leak into the git hook shim
     if "/.venv/" in python_path or "\\.venv\\" in python_path:
         return "python3"
 

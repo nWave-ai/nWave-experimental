@@ -421,10 +421,9 @@ commands:
     - updated_diagrams
     - visual_architecture
   roadmap:
-    description: "DEPRECATED (classic-mode only, removed in v4). Creates a phased\
-      \ roadmap.json \u2014 a classic-mode artifact; under the atdd-pure workflow\
-      \ the feature-delta Slice Plan + per-slice ATs replace it. Run only under explicit\
-      \ classic authorization."
+    description: Removed active workflow command. Historical roadmap data is available
+      only through the explicit migration or read-only replay path; atdd-pure uses
+      the feature-delta Slice Plan and per-slice acceptance tests.
     argument_hint: '[agent] [goal-description] - Example: @solution-architect "Migrate
       to microservices"'
     outputs:
@@ -440,8 +439,7 @@ commands:
     agents: []
   execute:
     description: Dispatches one unit of DELIVER work to a specialized agent for TDD
-      execution. Use to run a step (classic workflow mode, a roadmap.json plan) or
-      one carpaccio slice (ATDD-pure workflow mode).
+      execution. Active execution is one atdd-pure carpaccio slice.
     argument_hint: '[agent] [feature-id] [step-id] - Example: @nw-software-crafter
       "auth-upgrade" "01-01"'
     outputs:

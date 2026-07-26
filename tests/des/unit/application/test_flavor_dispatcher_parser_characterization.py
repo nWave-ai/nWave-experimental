@@ -1,7 +1,7 @@
 """Characterization tests pinning flavor-file parsing behavior.
 
-Locks the parsed structure of the REAL shipped flavor files
-(`nWave/flavors/atdd_pure.yaml`, `classic.yaml`) so the consolidation of
+Locks the parsed structure of the sole REAL shipped flavor file
+(`nWave/flavors/atdd_pure.yaml`) so the consolidation of
 `flavor_dispatcher`'s private YAML-subset parser onto the SSOT
 (`des._internal.subset_parser`) is provably behavior-preserving.
 
@@ -22,7 +22,7 @@ from des.application import flavor_dispatcher
 _FLAVORS_DIR = Path(__file__).resolve().parents[4] / "nWave" / "flavors"
 
 
-@pytest.mark.parametrize("flavor_id", ["atdd_pure", "classic"])
+@pytest.mark.parametrize("flavor_id", ["atdd_pure"])
 def test_dispatcher_parses_real_flavor_file_identically_to_ssot(flavor_id: str) -> None:
     """The dispatcher's flavor reader and the SSOT agree on the real inputs.
 
@@ -107,29 +107,12 @@ def test_atdd_pure_flavor_parsed_structure_is_pinned() -> None:
     assert events["session.init"][0] == {"gate_id": "health-check", "on_failure": "log"}
 
 
-def test_classic_flavor_parsed_structure_is_pinned() -> None:
-    """Pin the parsed shape of the shipped classic flavor (current behavior)."""
-    doc = flavor_dispatcher._parse_flavor_file(_FLAVORS_DIR / "classic.yaml")
-
-    assert doc["flavor_id"] == "classic"
-    assert doc["required_artifacts"] == [
-        "docs/feature/{feature_id}/deliver/roadmap.json",
-        "docs/feature/{feature_id}/deliver/execution-log.json",
-    ]
-
-    events = doc["lifecycle_events"]
-    assert list(events) == [
-        "dispatch.pre",
-        "subagent.stop",
-        "commit.pre",
-        "session.init",
-        "feature.end",
-    ]
-    assert events["dispatch.pre"][0]["gate_id"] == "roadmap"
-    assert events["dispatch.pre"][0]["args"]["validate_only"] is True
-    assert events["feature.end"][0]["gate_id"] == "verify-integrity"
-    assert events["feature.end"][0]["args"]["mode"] == "classic"
-    assert events["feature.end"][0]["on_failure"] == "block"
+def test_classic_flavor_is_absent_instead_of_parseable() -> None:
+    """No parser input can reconstruct classic as an installed flavor."""
+    path = _FLAVORS_DIR / "classic.yaml"
+    assert not path.exists()
+    with pytest.raises(FileNotFoundError):
+        flavor_dispatcher._parse_flavor_file(path)
 
 
 # ---------------------------------------------------------------------------

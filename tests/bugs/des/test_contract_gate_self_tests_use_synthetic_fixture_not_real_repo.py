@@ -162,6 +162,60 @@ def test_collect_only_count_consistency_does_not_exceed_timing_ceiling() -> None
 # ===========================================================================
 
 
+# ===========================================================================
+# NEGATIVE SOURCE-SHAPE PIN -- the same policy, a third gate self-test
+# ===========================================================================
+
+_SPINE_DOGFOOD_STEPS = (
+    _REPO_ROOT
+    / "tests/des/acceptance/atdd_pure_spine_dogfood_defects/steps"
+    / "test_atdd_pure_spine_dogfood_defects.py"
+)
+
+
+def test_spine_dogfood_digest_given_does_not_target_the_real_repo() -> None:
+    """The slice-01 digest scenario must stage its own synthetic clean tree.
+
+    Same policy as the two items above, a third site. Its Given step used to
+    return ``composition.repo``, pointing the print-digest CLI at this repo's
+    own ~1677-item tree: 40.33s measured on a warm box (92.24s cold), for a
+    property that holds at any suite size (a clean populated scope digests to
+    a 64-hex non-sentinel value, twice, strict markers preserved). It now
+    stages ``CollectScope.REAL_NON_EMPTY``, the fourth member of the same
+    closed condition universe its three sibling scenarios already draw from.
+
+    Pinned STATICALLY on purpose. The behavioural timing pin used for the two
+    items above is the right tool when the fix is not yet made -- it refuses a
+    cosmetic edit that never relocates the cost. Here the swap is done and
+    measured, so the pin's only remaining job is to stop the real repo coming
+    back; a bounded pytest subprocess would re-pay a slice of the very cost
+    this whole file exists to remove. What that choice gives up, stated
+    plainly: a re-route to the real repo under some OTHER spelling (a fresh
+    ``Path(...).parents[N]``, a new composition attribute) would slip past
+    this check. The literal regression -- ``composition.repo`` handed back to
+    the gate -- would not.
+    """
+    source = _SPINE_DOGFOOD_STEPS.read_text(encoding="utf-8")
+    marker = '@given("a contract test tree that collects clean"'
+    start = source.index(marker)
+    end = source.index("\n@", start + 1)
+    given_block = source[start:end]
+
+    assert "return composition.repo" not in given_block, (
+        "the slice-01 clean-tree Given returns `composition.repo` again -- the "
+        "print-digest CLI is back on this repo's own multi-thousand-item tree "
+        "(40.33s warm / 92.24s cold, measured). WHY it must not: the property "
+        "under test (clean populated scope -> 64-hex non-sentinel digest, "
+        "derived idempotently, strict markers preserved) is scale-invariant, "
+        "and this repo already ratified the synthetic-fixture trade for its "
+        "gate self-tests -- see this file's two timing pins above. HOW to fix: "
+        "return `composition.make_test_tree(tmp_path, "
+        "CollectScope.REAL_NON_EMPTY)`, which stages the tree and anchors it "
+        "mechanically (exit 0, populated under the contract filter) before the "
+        "gate ever sees it."
+    )
+
+
 @pytest.mark.negative_at
 def test_collapse_prone_fixture_is_not_too_trivial_to_ever_fail(
     tmp_path: Path,

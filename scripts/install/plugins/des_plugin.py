@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from scripts.shared import hook_definitions as shared_hooks
+from scripts.shared.install_paths import (
+    host_neutral_runtime_dir,
+    is_durable_interpreter_path,
+)
 from scripts.shared.skill_distribution import (
     SCRIPTS_FAMILY_KEY,
     UTILITIES_FAMILY_KEY,
@@ -179,6 +183,17 @@ def _robust_rmtree(path: Path) -> None:
             if exc.errno != errno.ENOTEMPTY:
                 raise
     shutil.rmtree(path, ignore_errors=True)
+
+
+class RuntimeAssetShippingError(RuntimeError):
+    """An nWave source tier failed to ship its declared runtime assets.
+
+    Raised -- never swallowed -- because the defect this guards is a SILENT
+    one: the installed package resolves `nWave/` assets as siblings of
+    `lib/python`, so an install that omits them reports success and relocates
+    the failure onto the operator's machine. Carries a WHAT/WHY/HOW message
+    that names the distribution channel to fix.
+    """
 
 
 class DESPlugin(InstallationPlugin):
@@ -437,6 +452,23 @@ class DESPlugin(InstallationPlugin):
             if not module_result.success:
                 return module_result
 
+            # Every step below this point (data/templates/hooks/shims/config)
+            # writes into context.claude_dir -- a Claude discovery surface.
+            # A target that never requested "claude_code" (Codex-only,
+            # Copilot-only, OpenCode-only, or any combination of those
+            # without Claude) must not gain one just because the DES module
+            # itself is host-neutral. The prior condition required "codex"
+            # specifically to be in the target, so a Copilot- or OpenCode-only
+            # install fell through and got the full Claude-scoped install
+            # anyway -- a pure non-Claude target creating a Claude discovery
+            # surface (fix-non-claude-target-still-creates-claude-surface).
+            if "claude_code" not in context.target_platforms:
+                return PluginResult(
+                    success=True,
+                    plugin_name="des",
+                    message="host-neutral DES runtime installed (no Claude target requested)",
+                )
+
             # Install DES scripts
             scripts_result = self._install_des_scripts(context)
             if not scripts_result.success:
@@ -526,7 +558,7 @@ class DESPlugin(InstallationPlugin):
                     message=f"DES source not found: {source_dir}",
                 )
 
-            lib_python_dir = context.claude_dir / "lib" / "python"
+            lib_python_dir = self._runtime_python_dir(context)
             target_dir = lib_python_dir / "des"
 
             lib_python_dir.mkdir(parents=True, exist_ok=True)
@@ -605,11 +637,39 @@ class DESPlugin(InstallationPlugin):
                     nwave_assets_root=nwave_assets_root,
                 )
 
+                # A mixed target (claude_code alongside codex/copilot/opencode)
+                # needs the fully-processed module at BOTH runtime locations --
+                # each host's own hook hardcodes its own PYTHONPATH independent
+                # of which one was chosen as primary above. Mirror the already
+                # rewritten+asset-shipped result instead of re-deriving from
+                # source, so the two copies cannot diverge.
+                secondary_lib_python_dir = self._secondary_runtime_python_dir(
+                    context, lib_python_dir
+                )
+                if secondary_lib_python_dir is not None:
+                    secondary_target_dir = secondary_lib_python_dir / "des"
+                    secondary_lib_python_dir.mkdir(parents=True, exist_ok=True)
+                    if secondary_target_dir.exists():
+                        _robust_rmtree(secondary_target_dir)
+                    shutil.copytree(target_dir, secondary_target_dir)
+                    if nwave_assets_root is not None:
+                        secondary_assets_root = (
+                            secondary_lib_python_dir.parent / "nWave"
+                        )
+                        if secondary_assets_root.exists():
+                            _robust_rmtree(secondary_assets_root)
+                        shutil.copytree(nwave_assets_root, secondary_assets_root)
+
             return PluginResult(
                 success=True,
                 plugin_name="des",
                 message=f"DES module copied to {target_dir}",
             )
+
+        except RuntimeAssetShippingError as e:
+            # Already a WHAT/WHY/HOW message naming the channel -- surface it
+            # verbatim rather than burying it under a generic prefix.
+            return PluginResult(success=False, plugin_name="des", message=str(e))
 
         except Exception as e:
             return PluginResult(
@@ -623,6 +683,11 @@ class DESPlugin(InstallationPlugin):
     # leaves these absent and breaks every atdd_pure dispatch.
     _NWAVE_RUNTIME_ASSET_DIRS = ("flavors", "data", "templates", "schemas", "dispatch")
     _NWAVE_RUNTIME_ASSET_FILES = ("framework-catalog.yaml",)
+    # A host-neutral SessionStart hook must be executable from the installed
+    # runtime, not from a Claude-scoped copy or the source checkout.  Keep the
+    # source script canonical under scripts/hooks; this list declares the small
+    # subset that belongs beside the runtime assets for non-Claude hosts.
+    _NWAVE_RUNTIME_HOOK_FILES = ("orchestrator_affordance_refresh.py",)
 
     def _install_nwave_runtime_assets(
         self, *, context: InstallContext, using_prebuilt: bool
@@ -663,14 +728,39 @@ class DESPlugin(InstallationPlugin):
         else:
             nwave_source = Path("nWave")
 
+        if using_prebuilt and context.framework_source is not None:
+            runtime_hook_source = nwave_source / "hooks"
+        elif context.project_root:
+            runtime_hook_source = context.project_root / "scripts" / "hooks"
+        else:
+            runtime_hook_source = Path("scripts/hooks")
+
+        channel = self._describe_asset_channel(
+            context=context, using_prebuilt=using_prebuilt, nwave_source=nwave_source
+        )
+
+        # DECLARED N/A -- not a refusal. A target that carries no nWave tier is
+        # a LEGITIMATE install target under the target-machine-agnosticism
+        # mandate, so the install proceeds. Said at WARNING so it is visible in
+        # the log: a silent `info` is how "no assets shipped" became invisible.
         if not nwave_source.exists():
-            context.logger.info(
-                f"  ⚠️  nWave runtime assets not found at {nwave_source} — "
-                "skipping (dist path residue)"
+            context.logger.warning(
+                f"  ⚠️  N/A: no nWave tier at {nwave_source} ({channel}) — "
+                "runtime assets not applicable to this target; install continues"
             )
             return None
 
-        target_root = context.claude_dir / "lib" / "nWave"
+        catalogue = self._nwave_tier_manifest(nwave_source)
+        if catalogue is None:
+            context.logger.warning(
+                f"  ⚠️  N/A: {nwave_source} carries no "
+                f"{self._NWAVE_RUNTIME_ASSET_FILES[0]} ({channel}), so it is not "
+                "an nWave source tier — runtime assets not applicable to this "
+                "target; install continues"
+            )
+            return None
+
+        target_root = self._runtime_python_dir(context).parent / "nWave"
 
         if context.dry_run:
             context.logger.info(
@@ -679,13 +769,21 @@ class DESPlugin(InstallationPlugin):
             )
             return None
 
-        copied_anything = False
+        # `_NWAVE_RUNTIME_ASSET_DIRS` is a CANDIDATE list, not a mandate: the
+        # families a given tier ships vary by channel and by era, and nothing
+        # declares which ones a particular tree owes. So absence of an
+        # individual family is NOT an error -- inferring that mandate from the
+        # candidate list would be reading a declaration as stronger than it is.
+        # What IS an error is a tier that yields NOTHING: a tree carrying the
+        # catalogue but no asset family at all is a broken distribution, and
+        # that is the shape a channel gap actually produces.
+        target_root.mkdir(parents=True, exist_ok=True)
 
+        shipped_dirs = []
         for subdir in self._NWAVE_RUNTIME_ASSET_DIRS:
             src = nwave_source / subdir
-            if not src.exists():
+            if not src.is_dir():
                 continue
-            target_root.mkdir(parents=True, exist_ok=True)
             dst = target_root / subdir
             if dst.exists():
                 shutil.rmtree(dst)
@@ -694,28 +792,150 @@ class DESPlugin(InstallationPlugin):
                 dst,
                 ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
             )
-            copied_anything = True
+            shipped_dirs.append(subdir)
 
+        shipped_files = []
         for filename in self._NWAVE_RUNTIME_ASSET_FILES:
             src = nwave_source / filename
             if src.exists():
-                target_root.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, target_root / filename)
-                copied_anything = True
+                shipped_files.append(filename)
 
-        if not copied_anything:
-            # nwave_source exists (e.g. it IS framework_source itself for the
-            # prebuilt path) but carries none of the expected subdirs/files --
-            # nothing to snapshot into schema-v2, behave like the "absent"
-            # case (schema stays v1).
-            context.logger.info(
-                f"  ⚠️  no nWave runtime asset subdirs/files found under "
-                f"{nwave_source} — skipping"
+        shipped_hooks = []
+        for filename in self._NWAVE_RUNTIME_HOOK_FILES:
+            src = runtime_hook_source / filename
+            if not src.is_file():
+                continue
+            destination = target_root / "hooks" / filename
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, destination)
+            destination.chmod(0o755)
+            shipped_hooks.append(filename)
+
+        if not shipped_dirs:
+            raise RuntimeAssetShippingError(
+                f"WHAT: {nwave_source} declares itself an nWave source tier "
+                f"(it ships {self._NWAVE_RUNTIME_ASSET_FILES[0]}) but carries "
+                "none of the runtime asset families "
+                f"({', '.join(self._NWAVE_RUNTIME_ASSET_DIRS)}), so nothing "
+                "was shipped. "
+                "WHY: the installed des package resolves these as siblings of "
+                "lib/python (Path(__file__).parents[N] / 'nWave' / ...) -- a "
+                "tier that ships the catalogue and no assets is a broken "
+                "distribution, and installing it reports success while every "
+                "such read fails later on the operator's machine. "
+                f"HOW: this is the {channel}; rebuild it so the tier carries "
+                "its assets -- for a distribution run scripts/build_dist.py "
+                "(build_nwave_runtime_assets ships data/flavors/schemas/"
+                "dispatch, build_templates ships templates), and for a wheel "
+                "check the force-include map in scripts/release/"
+                "patch_pyproject.py."
             )
-            return None
+
+        # Verify the STRUCTURED FACT -- every entry we actually copied is
+        # present at the destination -- never the weak signal "copytree did
+        # not raise".
+        unarrived = [
+            name for name in shipped_dirs if not (target_root / name).is_dir()
+        ] + [name for name in shipped_files if not (target_root / name).is_file()]
+        unarrived += [
+            f"hooks/{name}"
+            for name in shipped_hooks
+            if not (target_root / "hooks" / name).is_file()
+        ]
+        if unarrived:
+            raise RuntimeAssetShippingError(
+                f"WHAT: {len(unarrived)} runtime asset entr"
+                f"{'y' if len(unarrived) == 1 else 'ies'} copied from "
+                f"{nwave_source} did not arrive at {target_root}: "
+                f"{', '.join(unarrived)}. "
+                "WHY: a package installed without the assets it resolves fails "
+                "at runtime on the operator's machine while the install "
+                "reports success. "
+                "HOW: check write permissions and free space on the Claude "
+                "config directory, then re-run the install."
+            )
 
         context.logger.info(f"  📦 nWave runtime assets shipped to {target_root}")
         return target_root
+
+    @staticmethod
+    def _describe_asset_channel(
+        *, context: InstallContext, using_prebuilt: bool, nwave_source: Path
+    ) -> str:
+        """Name the distribution channel a refusal is talking about.
+
+        A refusal that says only "assets missing" leaves the reader to work out
+        WHICH tree to fix. The three channels ship three different layouts, so
+        the channel IS the actionable part of the HOW.
+        """
+        if not using_prebuilt:
+            return "development checkout"
+        if (
+            context.framework_source is not None
+            and nwave_source == context.framework_source / "nWave"
+        ):
+            return "PyPI/pipx wheel (nested nWave/nWave/ layout)"
+        return "GitHub-release dist/ tarball (flat layout)"
+
+    @classmethod
+    def _nwave_tier_manifest(cls, nwave_source: Path) -> Path | None:
+        """Return the catalogue file that marks `nwave_source` an nWave tier.
+
+        The DECLARED fact that discriminates "this tree is an nWave source
+        tier, so its assets are expected" from "this is an external target
+        that legitimately has no nWave tier". Keyed on a shipped file rather
+        than inferred from how many assets happen to be present, because a
+        partially-populated tree must read as INCOMPLETE, not as absent.
+        """
+        for filename in cls._NWAVE_RUNTIME_ASSET_FILES:
+            candidate = nwave_source / filename
+            if candidate.is_file():
+                return candidate
+        return None
+
+    @staticmethod
+    def _runtime_python_dir(context: InstallContext) -> Path:
+        """Choose the shared host-neutral runtime, legacy Claude path otherwise.
+
+        The property that matters is whether Claude is targeted at all, not
+        whether Codex specifically is: an OpenCode-only or Copilot-only
+        target satisfies neither half of the old "codex in platforms" check
+        and fell through to the Claude-scoped path, so its module landed
+        somewhere its own hook's declared PYTHONPATH never pointed at
+        (verified by _require_hook_runtime finding a dangling runtime dir).
+        """
+        if "claude_code" not in context.target_platforms:
+            return host_neutral_runtime_dir()
+        return context.claude_dir / "lib" / "python"
+
+    _HOST_NEUTRAL_PLATFORMS = frozenset({"codex", "copilot", "opencode"})
+
+    @classmethod
+    def _secondary_runtime_python_dir(
+        cls, context: InstallContext, primary: Path
+    ) -> Path | None:
+        """The OTHER runtime dir a mixed target also needs, if any.
+
+        `resolve_des_lib_path_for_spawn()` hardcodes `host_neutral_runtime_dir()`
+        for every non-Claude host's own generated hook (Codex, Copilot,
+        OpenCode) -- independent of which single directory `_runtime_python_dir`
+        picked as the PRIMARY install target above. A target that mixes
+        claude_code with any of those three therefore needs the module in
+        BOTH places: whichever one `_runtime_python_dir` did not already
+        choose. Returns None when only one family is targeted (nothing to
+        mirror) or the secondary already equals the primary.
+        """
+        wants_claude = "claude_code" in context.target_platforms
+        wants_host_neutral = bool(
+            cls._HOST_NEUTRAL_PLATFORMS & context.target_platforms
+        )
+        if not (wants_claude and wants_host_neutral):
+            return None
+        claude_dir = context.claude_dir / "lib" / "python"
+        neutral_dir = host_neutral_runtime_dir()
+        secondary = neutral_dir if primary == claude_dir else claude_dir
+        return None if secondary == primary else secondary
 
     def _rewrite_import_paths(self, target_dir: Path, context: InstallContext) -> None:
         """Rewrite import paths in installed DES module.
@@ -1242,9 +1462,13 @@ class DESPlugin(InstallationPlugin):
         dependencies like PyYAML and pydantic) and makes it portable by
         replacing the home directory prefix with $HOME.
 
-        If the current Python is a project-local .venv (e.g. during
-        development), falls back to 'python3' to avoid embedding a
-        machine-specific project path in settings.json.
+        Two independent guards fall back to 'python3':
+        - Durability: the interpreter is rooted under a known-ephemeral
+          location (tempfile.gettempdir()) and could be reaped before a
+          hook ever fires. See is_durable_interpreter_path().
+        - Portability: the current Python is a project-local .venv (e.g.
+          during development) -- that exact path would not exist on a
+          different machine, so it must not leak into settings.json.
 
         This ensures hooks run under the same Python that was used to
         install nWave — whether that's a pipx venv, pip venv, or system
@@ -1252,7 +1476,11 @@ class DESPlugin(InstallationPlugin):
         """
         python_path = sys.executable
 
-        # Project-local .venv must not leak into settings.json
+        # Durability: reject interpreters rooted in a known-ephemeral location
+        if not is_durable_interpreter_path(python_path):
+            return "python3"
+
+        # Portability: project-local .venv must not leak into settings.json
         if "/.venv/" in python_path or "\\.venv\\" in python_path:
             return "python3"
 
@@ -1968,12 +2196,24 @@ class DESPlugin(InstallationPlugin):
                 message="dry-run: verification skipped",
             )
 
+        if "claude_code" not in context.target_platforms:
+            runtime = self._runtime_python_dir(context) / "des"
+            return PluginResult(
+                success=runtime.is_dir(),
+                plugin_name="des",
+                message=(
+                    "host-neutral DES runtime verified"
+                    if runtime.is_dir()
+                    else f"host-neutral DES runtime missing: {runtime}"
+                ),
+            )
+
         errors = []
 
         # 1. Verify DES module importable under the SAME Python that hooks use
         # (sys.executable = installer's Python, which is also the hook Python)
         try:
-            lib_python = str(context.claude_dir / "lib" / "python")
+            lib_python = str(self._runtime_python_dir(context))
             # Use repr() to properly escape backslashes on Windows paths
             result = subprocess.run(
                 [

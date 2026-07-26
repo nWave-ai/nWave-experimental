@@ -97,11 +97,11 @@ class TestValidatePromptAuditLogging:
         THEN HOOK_PRE_TASK_BLOCKED audit event is logged with rejection reason
         """
         # Arrange
-        from des.adapters.drivers.validators.mocked_validator import (
-            MockedTemplateValidator,
-        )
         from des.application.orchestrator import DESOrchestrator
         from des.ports.driver_ports.validator_port import ValidationResult
+        from tests.des.adapters.mocked_validator import (
+            MockedTemplateValidator,
+        )
 
         # Create validator that returns failure
         failing_validator = MockedTemplateValidator(
@@ -240,11 +240,11 @@ class TestValidatePromptAuditLogging:
         THEN rejection_reason field contains detailed error information
         """
         # Arrange
-        from des.adapters.drivers.validators.mocked_validator import (
-            MockedTemplateValidator,
-        )
         from des.application.orchestrator import DESOrchestrator
         from des.ports.driver_ports.validator_port import ValidationResult
+        from tests.des.adapters.mocked_validator import (
+            MockedTemplateValidator,
+        )
 
         # Create validator that returns failure
         failing_validator = MockedTemplateValidator(

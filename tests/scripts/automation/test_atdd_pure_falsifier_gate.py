@@ -1,9 +1,10 @@
 """Tests for atdd_pure_falsifier_gate CLI (plan v3 §4.5).
 
 CONTRACT_SHAPE: bounded-change (CLI exits + audit-log append + config patch)
-Outcome anchor: DISCUSS plan v3 §4.5 "falsifier-gate is prose, not automation"
-— operator runs the gate and sees TRIPPED/HEALTHY decision; on TRIPPED the
-config flips to classic AND a FalsifierGateTripped event lands in audit log.
+Outcome anchor: a falsifier has veto authority, not mode-selection authority.
+The operator sees TRIPPED/HEALTHY; on TRIPPED the run halts and a
+FalsifierGateTripped event lands in the audit log, while configuration bytes
+remain unchanged and no event claims a flip to removed classic mode.
 
 Tests enter through the CLI's main() driving port. The full observable
 universe is: (exit_code, stdout_json, audit_log_appended_events,
@@ -129,6 +130,8 @@ def _common_args(tmp: Path, **overrides: Any) -> list[str]:
         str(baseline),
         "--n-features",
         str(overrides.get("n_features", 3)),
+        "--audit-log",
+        str(overrides.get("audit_log", tmp / "audit.jsonl")),
     ]
 
 
@@ -163,7 +166,7 @@ def test_single_threshold_breach_trips(
     fixture_kwargs: dict[str, Any],
     expected_breach: str,
 ) -> None:
-    """Each single-axis breach → TRIPPED + config flips + event emitted."""
+    """Each single-axis breach halts without writing a replacement mode."""
     telemetry = tmp_path / "telemetry"
     cfg = tmp_path / "config.yaml"
     _seed_config(cfg, mode="atdd_pure")
@@ -176,9 +179,14 @@ def test_single_threshold_breach_trips(
     assert code == 42
     assert payload["decision"] == "TRIPPED"
     assert expected_breach in payload["breaches"]
-    assert payload["action"] == "config_patched"
-    flipped = yaml.safe_load(cfg.read_text())
-    assert flipped["workflow"]["mode"] == "classic"
+    assert payload["action"] == "halted_unhealthy"
+    assert payload["config_diff"] is None
+    assert yaml.safe_load(cfg.read_text())["workflow"]["mode"] == "atdd_pure"
+    audit_events = [
+        json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()
+    ]
+    assert audit_events[-1]["event_type"] == "FalsifierGateTripped"
+    assert "flipped_to_mode" not in audit_events[-1]
 
 
 def test_defect_rate_breach_trips(tmp_path: Path) -> None:
@@ -215,6 +223,8 @@ def test_defect_rate_breach_trips(tmp_path: Path) -> None:
     assert code == 42
     assert payload["decision"] == "TRIPPED"
     assert "defect_rate_factor" in payload["breaches"]
+    assert payload["action"] == "halted_unhealthy"
+    assert yaml.safe_load(cfg.read_text())["workflow"]["mode"] == "atdd_pure"
 
 
 def test_combined_breaches_single_event(tmp_path: Path) -> None:
@@ -242,6 +252,8 @@ def test_combined_breaches_single_event(tmp_path: Path) -> None:
         "median_reviewer_findings",
         "median_phase_d_cycles",
     }.issubset(breaches)
+    assert payload["action"] == "halted_unhealthy"
+    assert yaml.safe_load(cfg.read_text())["workflow"]["mode"] == "atdd_pure"
 
 
 def test_healthy_metrics_pass(tmp_path: Path) -> None:
@@ -322,8 +334,8 @@ def test_dry_run_does_not_patch_config(tmp_path: Path) -> None:
     assert yaml.safe_load(cfg.read_text())["workflow"]["mode"] == "atdd_pure"
 
 
-def test_config_patch_idempotent(tmp_path: Path) -> None:
-    """Run twice on breach → final config identical to single run."""
+def test_repeated_breach_is_idempotently_non_mutating(tmp_path: Path) -> None:
+    """Repeated vetoes never manufacture a different workflow state."""
     telemetry = tmp_path / "telemetry"
     cfg = tmp_path / "config.yaml"
     _seed_config(cfg)
@@ -344,7 +356,7 @@ def test_config_patch_idempotent(tmp_path: Path) -> None:
 
     assert code1 == code2 == 42
     assert snapshot_after_first == snapshot_after_second
-    assert yaml.safe_load(snapshot_after_first)["workflow"]["mode"] == "classic"
+    assert yaml.safe_load(snapshot_after_first)["workflow"]["mode"] == "atdd_pure"
 
 
 # ---------------------------------------------------------------------------

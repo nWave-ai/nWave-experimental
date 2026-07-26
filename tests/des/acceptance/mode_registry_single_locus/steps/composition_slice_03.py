@@ -316,8 +316,21 @@ class CatalogFrontmatterProjectionComposition:
         edited = original.replace(anchor, replacement)
         if edited == original:  # fixture integrity, not SUT behaviour
             raise RuntimeError(
-                f"working asset {path} no longer carries the anchor "
-                f"{anchor!r} — slice-03 fixture needs re-basing"
+                f"WHAT: {path} no longer carries the anchor {anchor!r} -- zero "
+                "occurrences to replace. "
+                "WHY: this is a wiring-witness edit (hand-edit the working copy, "
+                "re-render, assert the projection disagrees with the stale "
+                "hand-edit) -- the caller needs this exact substring present "
+                "and unique before it can plant its sentinel. "
+                f"HOW: diff {path} against its shipped source "
+                "(nWave/framework-catalog.yaml or nWave/tasks/nw/execute.md, "
+                "depending on which caller triggered this). If the wording was "
+                "RENAMED there, update the matching *_ANCHOR constant in "
+                "domain_types_slice_03.py. If the field the anchor names is "
+                "GENUINELY gone from the shipped asset, this witness has "
+                "nothing left to hand-edit -- replace the calling scenario with "
+                "one targeting a field that still exists; do NOT rename the "
+                "anchor onto unrelated text."
             )
         path.write_text(edited, encoding="utf-8")
 

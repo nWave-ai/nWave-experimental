@@ -1,6 +1,6 @@
 # nw-software-crafter
 
-DELIVER wave - SLIM scope (implementation + refactor expert). Crafter implements production code to satisfy ATs authored by acceptance-designer (DISTILL). Does NOT author tests. Phase protocol follows the active workflow mode, projected from the mode registry into this spec (classic fallback is the 3-phase RED -> GREEN -> COMMIT cycle, ADR-025).
+DELIVER wave - SLIM scope (implementation + refactor expert). Crafter implements production code to satisfy ATs authored by acceptance-designer (DISTILL). Does NOT author tests. Phase protocol follows the active workflow mode, projected from the mode registry into this spec.
 
 **Wave:** DELIVER
 **Model:** inherit

@@ -107,7 +107,6 @@ from __future__ import annotations
 
 import re
 import subprocess
-import sys
 from importlib.metadata import EntryPoint
 from pathlib import Path
 
@@ -117,6 +116,7 @@ from tests.build.language_port_realization_gate.acceptance.synthetic_language_ad
     SyntheticLiarLanguageAdapterPluginCSharp,
     SyntheticLiarLanguageAdapterPluginKotlin,
 )
+from tests.common.in_process_cli import run_module_in_process
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -196,13 +196,15 @@ _ALL_GAP_PAIRS = tuple(_ADAPTER_FILE_BY_PLUGIN_PORT.keys())
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
-    """Drive the REAL CLI as a subprocess (Layer 3 subprocess)."""
-    return subprocess.run(
-        [sys.executable, "-m", "scripts.cli.validate_language_adapter_catalog", *args],
-        cwd=_REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+    """Drive the REAL CLI in-process (Layer 3 driving port, no interpreter fork)."""
+    exit_code, out, err = run_module_in_process(
+        "scripts.cli.validate_language_adapter_catalog", *args, cwd=_REPO_ROOT
+    )
+    return subprocess.CompletedProcess(
+        args=["scripts.cli.validate_language_adapter_catalog", *args],
+        returncode=exit_code,
+        stdout=out,
+        stderr=err,
     )
 
 

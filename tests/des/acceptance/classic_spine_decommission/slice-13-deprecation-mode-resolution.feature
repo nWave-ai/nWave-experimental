@@ -17,10 +17,15 @@ Feature: A DELIVER dispatch resolves to atdd_pure by default
   # Driving port: the `workflow.mode` resolver invoked by a DELIVER dispatch.
 
   @slice-13 @driving_port @contract-shape:bounded-change
-  Scenario: An absent workflow mode resolves to the atdd_pure default
+  # Converted with the removal. During deprecation an undeclared mode fell back
+  # to the default; after removal it is REFUSED as MODE_UNDECLARED. Defaulting
+  # silently is how a project ends up running a spine nobody chose -- the same
+  # silent-adoption path the removal exists to close. The scenario is kept, not
+  # deleted, so the refusal stays pinned.
+  Scenario: An undeclared workflow mode is refused, never silently defaulted
     Given a project configured for no workflow mode configured
     When a DELIVER dispatch runs
-    Then the dispatch resolves to the atdd_pure spine
+    Then the dispatch refuses the undeclared mode without defaulting
     And no classic-spine deprecation advisory is emitted
 
   @slice-13 @driving_port @contract-shape:bounded-change
@@ -31,8 +36,8 @@ Feature: A DELIVER dispatch resolves to atdd_pure by default
     And no classic-spine deprecation advisory is emitted
 
   @slice-13 @driving_port @contract-shape:bounded-change
-  Scenario: An explicit classic mode still resolves to classic but emits the advisory
+  Scenario: An explicit classic mode is refused as removed
     Given a project configured for the classic spine
     When a DELIVER dispatch runs
-    Then the dispatch resolves to the classic spine
-    And a classic-spine deprecation advisory is emitted
+    Then the dispatch refuses removed classic with migration required
+    And no classic-spine deprecation advisory is emitted

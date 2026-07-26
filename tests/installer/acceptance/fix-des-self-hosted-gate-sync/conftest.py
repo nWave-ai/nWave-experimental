@@ -109,8 +109,14 @@ class _SilentLogger:
     def info(self, msg: str) -> None:
         pass
 
-    def warn(self, msg: str) -> None:
+    def warning(self, msg: str) -> None:
         pass
+
+    #: The real Logger's level method is `warning`; this double carried only
+    #: `warn`, so any production `logger.warning(...)` raised AttributeError
+    #: here rather than being silenced. Kept as an alias because removing a
+    #: name a double already exposes is a separate change.
+    warn = warning
 
     def error(self, msg: str) -> None:
         pass

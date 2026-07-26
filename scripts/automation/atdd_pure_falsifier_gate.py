@@ -1,10 +1,9 @@
-"""ATDD-pure falsifier-gate auto-revert mechanism (plan v3 §4.5).
+"""ATDD-pure falsifier-gate health halt (plan v3 §4.5).
 
 Reads N latest pilot JSONL feature records from a telemetry directory.
-On ANY threshold breach (§4.5.3):
-    1. patches workflow.mode -> classic in config YAML
-    2. emits FalsifierGateTripped event to audit log
-    3. exits with code 42 (CI fails the pilot job)
+On ANY threshold breach (§4.5.3), halts with code 42.  A health signal never
+authorises a workflow change and this command writes neither config nor audit
+state on the halted path.
 Otherwise emits FalsifierGateHealthy and exits 0. Insufficient data (<N
 records) is advisory: exit 0 with action="advisory_insufficient_data".
 
@@ -48,7 +47,7 @@ THRESHOLD_PHASE_D_CYCLES = 2.0
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="atdd_pure_falsifier_gate",
-        description="ATDD-pure falsifier-gate auto-revert (plan v3 §4.5).",
+        description="ATDD-pure falsifier-gate health halt (plan v3 §4.5).",
     )
     p.add_argument(
         "--telemetry-dir",
@@ -172,19 +171,6 @@ def _evaluate(
     )
 
 
-def _patch_config(config_path: Path) -> str:
-    """Set workflow.mode=classic, idempotent. Returns one-line diff summary."""
-    import yaml  # type: ignore[import-untyped]
-
-    cfg: dict[str, Any] = (
-        yaml.safe_load(config_path.read_text()) or {} if config_path.exists() else {}
-    )
-    cfg.setdefault("workflow", {})["mode"] = "classic"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(yaml.safe_dump(cfg, sort_keys=True))
-    return f"workflow.mode -> classic (path={config_path})"
-
-
 def _emit_event(audit_log: Path, event_type: str, payload: dict[str, Any]) -> None:
     audit_log.parent.mkdir(parents=True, exist_ok=True)
     record = {
@@ -237,19 +223,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     if breaches:
-        diff = _patch_config(args.config_path)
-        _emit_event(
-            args.audit_log,
-            "FalsifierGateTripped",
-            {"breach": metrics, "flipped_to_mode": "classic", "breaches": breaches},
-        )
         return _emit(
             {
-                "decision": "TRIPPED",
+                "decision": "HALTED_UNHEALTHY",
                 "metrics": metrics,
                 "breaches": breaches,
-                "action": "config_patched",
-                "config_diff": diff,
+                "action": "halted_no_write",
+                "config_diff": None,
+                "diagnostic": (
+                    "WHAT: the falsifier detected an unhealthy run. "
+                    "WHY: a health signal cannot select a retired workflow. "
+                    "HOW: investigate and repair the atdd_pure run before retrying."
+                ),
             },
             42,
         )

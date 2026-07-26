@@ -79,7 +79,7 @@ Under `## Wave: DISTILL / [REF] <Section>` headings:
 
 | Section | Content |
 |---|---|
-| Scenario list | titles + tags (`@walking_skeleton`, `@US-N`, `@real-io`, `@in-memory`, `@error`, `@property`) + **Real-Surface Binding** column (NEW features): each scenario names the shipped artifact / real entry point it touches — repo file path (`nWave/...`), subprocess (`des <subcommand>`), or production composition root. Declarative now, AST-detector-verifiable later; ties the assertion to a shipped artifact / observed effect per the Driving-Port-Only mandate (SSOT: `nw-test-design-mandates-composition-contract`). Schema: `schemas/feature-delta-tier1-sections.yaml` (rule R4, provisional). |
+| Scenario list | titles + tags (`@walking_skeleton`, `@US-N`, `@real-io`, `@in-memory`, `@error`, `@property`) + **Real-Surface Binding** columns (NEW features): `Production driving surface` names the repo file / subprocess / composition root; `Consumer artifact` names the assembled candidate the user receives, or `DIRECT-SURFACE`; `Observable capability` names what the user can do. Do not collapse producer entry point and consumer artifact into one cell. Canonical: Artifact Lineage Closure in `nw-test-design-mandates-composition-contract`. Schema: `schemas/feature-delta-tier1-sections.yaml` (rule R4, provisional). |
 | WS strategy | port-class treatment per `nw-distill-port-treatment-policy`, one-line justification |
 | Adapter coverage table | every driven adapter → ≥1 `@real-io` scenario (`nw-distill-coverage-obligations`) |
 | Scaffolds | RED-ready files (`nw-distill-red-scaffolding`) with `__SCAFFOLD__` markers |
@@ -87,6 +87,28 @@ Under `## Wave: DISTILL / [REF] <Section>` headings:
 | Driving Adapter coverage | every CLI/endpoint/hook in DESIGN → ≥1 subprocess/HTTP/hook scenario |
 | Pre-requisites | DESIGN driving ports + DEVOPS environment matrix dependencies |
 | Requirement Checklist | evolution-plan P3.1 — extracted at DISTILL-open into `docs/feature/{feature-id}/distill/requirement-checklist.md` (template `nWave/templates/requirement-checklist.md`): ONE numbered row per requirement (`\| Rn \| text \| category \|`), category from the closed set `{ui, e2e, nfr, security, validation, build, functional}`. Every requirement becomes a VISIBLE row from day one — the input the spec-coverage gate checks so no requirement (UI/e2e/NFR/security/validation/build) is silently uncovered (the external eval's largest lost pool). See §Requirement Checklist + spec-coverage gate below. |
+
+### Assembly-boundary classification (AUTHORING-time)
+
+Before scenario authoring, classify the user-consumed surface:
+
+- **DIRECT-SURFACE** — the user consumes the driving-port output directly.
+- **ASSEMBLED-SURFACE** — a production step packages, installs, generates,
+  synchronizes, or deploys that output before the user consumes it.
+
+Treat the feature as ASSEMBLED-SURFACE when its requirements or DESIGN mention a
+package, wheel, archive, image, installer, release bundle, generated tree,
+plugin installation, synchronization, deployment, or executable bundle. If the
+classification is uncertain, surface a DISTILL decision point; never silently
+default it to DIRECT-SURFACE.
+
+For DIRECT-SURFACE, use the normal driving-port walking skeleton. For
+ASSEMBLED-SURFACE, the feature's single walking skeleton MUST close the
+Artifact Lineage Closure contract: real producer -> one immutable candidate ->
+clean consumer with no source/HOME/global-install borrowing -> public user
+journey -> observable capability. A driving-port AT that stops at the producer,
+or asserts only the producer's manifest/configuration, does not discharge the
+obligation.
 
 ### Tier-2 EXPANSION CATALOG — lazy, on-demand (per D10)
 
@@ -171,6 +193,7 @@ of the contract induces a specific AT obligation:
 | **Slice Plan** (`[REF] Slice Plan` rows) | the AT scaffold per slice | ATs are scaffolded per-slice per the Slice Plan enumeration, active-RED never skipped |
 | **Example tables** (the scenario examples carried in the contract) | the Given-When-Then scenarios | every example-table row maps to exactly one Given-When-Then scenario |
 | **Contract shape** (declared laws + error-encodings on each component) | the property tests + sad-path scenarios | a declared law induces at least one property test; a declared error-encoding induces a sad-path scenario |
+| **Runtime Contract Matrix** (typed driven port / authority receipt) | an executable boundary-conformance AT | the AT asserts the concrete argument and receipt types at the real invocation, correlation of authority inputs, and rejection of a mapping/namespace/lookalike receipt |
 
 Reading the map:
 
@@ -200,6 +223,13 @@ Reading the map:
   induces at least one property test; a declared error-encoding induces a sad-path
   scenario. The treatment is induced, not guessed: a law without a property test,
   or an error-encoding without a sad path, is an induction gap.
+- **Runtime Contract Matrix → boundary-conformance AT.** For every driven port that
+  declares a concrete request, receipt, capability, lease, identity, or verifier,
+  invoke the production journey and inspect what reaches the adapter. Assert the
+  exact declared request/receipt type and correlation chain; then prove a
+  field-compatible mapping, `SimpleNamespace`, or other lookalike is refused.
+  A double with matching attributes is fixture convenience, never evidence that
+  production consumed the declared contract.
 
 This is the gate-IN consume discipline: the design contract is the input, the AT
 set is the induced output, and the correspondence above is the witness that no AT

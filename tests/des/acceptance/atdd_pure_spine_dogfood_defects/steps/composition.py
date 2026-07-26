@@ -107,12 +107,17 @@ class GateRunResult:
 
 
 #: velocity-v2 (<5min goal, G-143): cache the REAL-repo collect across the module.
-#: The killer scenarios (slice-00 probe + slice-01 digest) each collect the whole
-#: ~1677-test repo (~22s). The real repo is IMMUTABLE during a test session, so its
-#: collect result is stable and shareable -- N scenarios pay the ~22s cost ONCE.
+#: slice-00's probe collects the whole ~1677-test repo (~27s). The real repo is
+#: IMMUTABLE during a test session, so its collect result is stable and shareable --
+#: the two slice-00 clean-tree scenarios pay that cost ONCE.
 #: Synthetic tmp trees are per-test (unique paths) -> distinct keys, never stale.
+#:
+#: There is deliberately NO digest cache. slice-01's gate runs all target synthetic
+#: tmp trees now, so there is nothing expensive to amortize -- and a cache made the
+#: idempotence scenario VACUOUS: "derive the digest again" returned the very same
+#: cached object, so `gate_run.digest == second_gate_run.digest` compared an object
+#: with itself and could not have failed. Two real derivations restore that oracle.
 _PROBE_COLLECT_CACHE: dict[str, CollectProbeResult] = {}
-_DIGEST_COLLECT_CACHE: dict[str, GateRunResult] = {}
 
 
 @dataclass
@@ -188,11 +193,11 @@ class SpineDogfoodComposition:
 
         Drives the real CLI entry point `run_contract_gate.main` -- the same
         definition the U2 G_COMMIT exit gate invokes.
+
+        Uncached on purpose (see the note above `_PROBE_COLLECT_CACHE`): every
+        call is a genuine derivation, so the idempotence scenario compares two
+        independently-computed digests rather than one object with itself.
         """
-        _cache_key = str(repo.resolve())
-        if _cache_key in _DIGEST_COLLECT_CACHE:
-            self.last_gate_run = _DIGEST_COLLECT_CACHE[_cache_key]
-            return self.last_gate_run
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             exit_code = run_contract_gate.main(
@@ -201,7 +206,6 @@ class SpineDogfoodComposition:
         self.last_gate_run = GateRunResult(
             exit_code=exit_code, stdout=out.getvalue(), stderr=err.getvalue()
         )
-        _DIGEST_COLLECT_CACHE[_cache_key] = self.last_gate_run
         return self.last_gate_run
 
     def test_tree_for_scope(self, root: Path, scope: CollectScope) -> Path:
@@ -377,6 +381,13 @@ class SpineDogfoodComposition:
                 "@pytest.mark.unit\ndef test_a():\n    assert True\n\n"
                 "@pytest.mark.acceptance\ndef test_b():\n    assert True\n"
             )
+            # Same BLOCKER 2 / R-3 anchor as its two sibling scopes: a clean,
+            # populated contract scope is exit 0 UNDER THE CONTRACT FILTER. This
+            # is the non-vacuity floor for the slice-01 digest scenario -- a tree
+            # that silently degraded to empty would digest to the sha256("")
+            # sentinel and the scenario would red for a fixture reason it could
+            # not name. It fails HERE instead, naming the fixture.
+            self._anchor_raw_collect_exit(root, 0, contract_filter=True)
         return root
 
     @staticmethod

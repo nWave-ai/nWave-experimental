@@ -76,6 +76,28 @@ findings_list:
     recommendation: "route to @nw-agent-builder to move orchestration into the agent/command file; keep the skill knowledge-only"
 ```
 
+## Absence is a claim, and it is the one most likely to be wrong
+
+A finding that something is MISSING carries the same authority as a finding that
+something is wrong, and it is far likelier to be false. A search that stops early --
+output truncated, a file too large to read whole, a budget spent -- yields an absence
+**indistinguishable from a verified one**. Nothing in a verdict's shape forces you to
+say which of the two you are holding, so you must say it yourself.
+
+Before reporting anything as missing, name the search you actually ran and the scope it
+covered, and separate the two cases by name:
+
+- **ABSENT-VERIFIED** -- I searched <scope> with <command>; it is not there.
+- **NOT-FOUND-IN-MY-SCOPE** -- I could not look everywhere.
+
+The second is not a finding. It is a coverage gap, and filing it as a finding sends
+someone to build what already exists. Search by qualified name AND by bare symbol -- the
+two miss in opposite directions -- and remember that a call routed through a library
+never appears in a census of your own source.
+
+Declare coverage as a FRACTION (examined N of M), never as an adjective of confidence.
+"Thorough" and "comprehensive" are not measurements.
+
 ## Constraints
 
 - Reviews SKILL.md quality only. Does not review production application code, plugin manifests, or acceptance tests.

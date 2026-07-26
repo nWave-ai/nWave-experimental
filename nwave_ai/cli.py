@@ -8,6 +8,21 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
+
+_DISTRIBUTION_ROOT = str(Path(__file__).resolve().parent.parent)
+
+
+def _prefer_current_distribution() -> None:
+    """Keep this wheel/checkout ahead of legacy namespace-package fallbacks."""
+    if _DISTRIBUTION_ROOT in sys.path:
+        sys.path.remove(_DISTRIBUTION_ROOT)
+    sys.path.insert(0, _DISTRIBUTION_ROOT)
+
+
+# Do this before importing installer modules: an old ~/.claude runtime can
+# otherwise supply a stale namespace-package ``scripts`` implementation.
+_prefer_current_distribution()
+
 from nwave_ai.doctor.context import DoctorContext
 from nwave_ai.doctor.formatter import render_human, render_json
 from nwave_ai.doctor.runner import run_doctor
@@ -87,6 +102,13 @@ def _ensure_des_importable(
 
 
 _ensure_des_importable()
+
+# DES may be loaded from a legacy ~/.claude/lib/python fallback.  That tree can
+# also contain an older namespace-package ``scripts`` directory; leaving it at
+# the front of sys.path would make the current console import stale installer
+# code.  Keep this distribution (or the checkout in development) first for
+# installer imports while retaining the DES fallback immediately behind it.
+_prefer_current_distribution()
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +371,40 @@ def _handle_install(args: list[str]) -> int:
     if not non_interactive and not sys.stdin.isatty():
         non_interactive = True
 
+    # The public entry point owns the first possible write (the density
+    # preference below).  Refuse unsafe Codex ownership before that write, so
+    # an invalid manifest, hook document, or reserved-path collision leaves
+    # the complete user state byte-identical.
+    from scripts.install.install_nwave import (
+        NWaveInstaller,
+        _resolve_platform_override,
+    )
+
+    platform = "auto"
+    for index, arg in enumerate(pass_through_args):
+        if arg.startswith("--platform="):
+            platform = arg.split("=", 1)[1]
+        elif arg == "--platform" and index + 1 < len(pass_through_args):
+            platform = pass_through_args[index + 1]
+    ownership_preflight = NWaveInstaller(
+        dry_run=True, platform_override=_resolve_platform_override(platform)
+    )
+    if not ownership_preflight.validate_codex_ownership_preflight():
+        return 1
+    if "--dry-run" in pass_through_args:
+        return _run_script("install_nwave.py", pass_through_args)
+
+    if density_only:
+        config_dir = _get_config_dir()
+        handle_install_density_prompt(
+            config_dir=config_dir, non_interactive=non_interactive
+        )
+        return 0
+
+    result = _run_script("install_nwave.py", pass_through_args)
+    if result != 0:
+        return result
+
     config_dir = _get_config_dir()
     outcome = handle_install_density_prompt(
         config_dir=config_dir, non_interactive=non_interactive
@@ -361,13 +417,8 @@ def _handle_install(args: list[str]) -> int:
             f"{config_path} (existing configuration upgraded)."
         )
 
-    if density_only:
-        return 0
-
-    result = _run_script("install_nwave.py", pass_through_args)
-    if result == 0:
-        _record_package_manager(config_dir)
-    return result
+    _record_package_manager(config_dir)
+    return 0
 
 
 def _handle_uninstall(args: list[str]) -> int:

@@ -10,8 +10,9 @@ AT and no trace).
 GRAMMAR (both forms accepted; pick one and be consistent):
   - table row:  | R12 | requirement text | category |
   - list row:   - R12 [category] requirement text
+  - hierarchical example: | R-S01-03 | requirement text | category |
 
-ID    : ^R\d+  (unique per checklist)
+ID    : ^(?:R\d+|R-S\d{2}-\d{2})$  (unique per checklist; exact only)
 CATEGORY (closed set): ui | e2e | nfr | security | validation | build | functional
   ui         — a screen / control / visible state the user interacts with
   e2e        — a full user journey across the stack (persists, survives restart)
@@ -21,9 +22,11 @@ CATEGORY (closed set): ui | e2e | nfr | security | validation | build | function
   build      — build / packaging / fresh-clone / install requirement
   functional — core domain behaviour not in the above classes
 
-An AT covers Rn iff it carries the marker: pytest `@pytest.mark.covers("R12")`,
-a `# covers: R12` comment in the test body, `R12` in the test docstring, or a
-Gherkin `@covers-R12` tag.
+An AT covers an ID iff it carries the exact same marker: pytest
+`@pytest.mark.covers("R12")` or `@pytest.mark.covers("R-S01-03")`, a
+`# covers: R12` / `# covers: R-S01-03` comment in the test body, that exact ID
+in the test docstring, or a Gherkin `@covers-R12` / `@covers-R-S01-03` tag.
+Partial or lookalike IDs do not cover another row.
 -->
 
 # Requirement Checklist — {feature-id}

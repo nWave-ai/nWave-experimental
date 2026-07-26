@@ -19,8 +19,21 @@ A timeout on the last rung contributes to ``InterpreterUnavailable``, never to a
 hang: ``python_for`` runs inside the gate process before any outer
 timeout-wrapped subprocess, so an unbounded probe would be a silent no-answer.
 
-Stateless — no memoization. See
-docs/feature/fix-des-runtime-interpreter-boundary/feature-delta.md §1.
+MEMOIZED per process, successes only (changed 2026-07-24 — the original design
+recorded "Stateless — no memoization" here; see
+docs/feature/fix-des-runtime-interpreter-boundary/feature-delta.md §7). That
+decision rested on two cost premises, both since measured false: resolution
+was assumed to happen "once per gate run" (it happens ~2.7 times per CLI
+invocation) at "tens of ms, negligible" (a resolution costs ~200 ms — a 47 ms
+``uv run --project`` ladder build plus a 149 ms ``import pytest`` probe, on an
+idle box; ~3x that under load). ``python_for`` now caches successful
+resolutions keyed by (capability, repo_root, ``VIRTUAL_ENV``) — everything the
+answer depends on. Failures are NEVER cached: they raise, so a venv created
+after a miss is seen on the next call instead of pinned to a stale negative.
+The probe itself is unchanged — capability is still PROBED, never
+name-trusted; memoization changes only how often the same question is asked,
+never which branch the code takes. Tests clear the cache per test via an
+autouse fixture (``clear_resolution_cache``).
 """
 
 from __future__ import annotations
@@ -28,8 +41,15 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from itertools import chain
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+from des.runtime.spawn import spawn
 
 
 Capability = Literal["pytest"]
@@ -40,6 +60,28 @@ _PROBE_TIMEOUT_SECONDS = 10
 
 # The module each capability requires the candidate interpreter to import.
 _CAPABILITY_IMPORT: dict[Capability, str] = {"pytest": "pytest"}
+
+# Successful resolutions, keyed by everything the answer depends on:
+# the capability, the target repo, and VIRTUAL_ENV (which steers the
+# repo-scoped rungs). ONLY successes are stored — a failed resolution raises
+# and is never cached, so a venv created after a miss is picked up on the next
+# call rather than pinned to a stale negative. Concurrency-safe by
+# construction: entries are computed idempotently from read-only probes, so
+# two threads racing the same key write the same value.
+_RESOLUTION_CACHE: dict[tuple[Capability | None, str | None, str | None], str] = {}
+
+
+def clear_resolution_cache() -> None:
+    """Forget every memoized resolution.
+
+    Production never needs this — a ``des`` process resolves against a fixed
+    interpreter landscape and exits. It exists for the test session, which
+    drives ``python_for`` thousands of times across mutually-isolated tmp repos
+    and monkeypatched ladders in ONE process: the autouse fixture in
+    ``tests/conftest.py`` calls this per test so no test can inherit another
+    test's resolution.
+    """
+    _RESOLUTION_CACHE.clear()
 
 
 class InterpreterUnavailable(RuntimeError):
@@ -77,27 +119,35 @@ class InterpreterUnavailable(RuntimeError):
         )
 
 
-def _candidates() -> list[str]:
+def _candidates() -> Iterator[str]:
     """The fallback ladder of interpreter paths, in priority order.
 
     1. ``sys.executable`` — the running interpreter (zero-cost common path).
     2. ``uv run python`` — the repo venv interpreter (dev checkout).
     3. a sibling interpreter adjacent to ``sys.executable`` (installed layout
        with a venv python but no uv).
+
+    Yielded LAZILY, rung by rung: rung 2 costs a ``uv run --project`` subprocess
+    to discover, and rung 1 wins the overwhelming majority of resolutions, so
+    building the whole ladder eagerly spent that spawn on every single call and
+    threw the answer away. Consuming this as an iterator (never ``[*_candidates()]``)
+    pays for a rung only once an earlier rung has actually failed its probe.
+    Order is unchanged — this is strictly fewer spawns, never a different answer.
     """
-    ladder = [sys.executable]
+    yielded = [sys.executable]
+    yield sys.executable
 
     uv_python = _uv_python()
-    if uv_python:
-        ladder.append(uv_python)
+    if uv_python and uv_python not in yielded:
+        yielded.append(uv_python)
+        yield uv_python
 
     here = Path(sys.executable)
     for sibling_name in ("python", "python3"):
         sibling = here.with_name(sibling_name)
-        if str(sibling) not in ladder and sibling.exists():
-            ladder.append(str(sibling))
-
-    return ladder
+        if str(sibling) not in yielded and sibling.exists():
+            yielded.append(str(sibling))
+            yield str(sibling)
 
 
 def _venv_executable(venv_dir: Path) -> Path:
@@ -282,10 +332,19 @@ def python_for(capability: Capability | None, repo_root: Path | None = None) -> 
     if capability is None and repo_root is None:
         return sys.executable
 
-    ladder = [
-        *(_repo_scoped_candidates(repo_root) if repo_root is not None else []),
-        *_candidates(),
-    ]
+    cache_key = (
+        capability,
+        str(repo_root.resolve()) if repo_root is not None else None,
+        os.environ.get("VIRTUAL_ENV"),
+    )
+    cached = _RESOLUTION_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    ladder = chain(
+        _repo_scoped_candidates(repo_root) if repo_root is not None else (),
+        _candidates(),
+    )
 
     probed: list[str] = []
     for candidate in ladder:
@@ -293,12 +352,13 @@ def python_for(capability: Capability | None, repo_root: Path | None = None) -> 
             continue
         probed.append(candidate)
         if capability is None or _has_capability(candidate):
+            _RESOLUTION_CACHE[cache_key] = candidate
             return candidate
 
     # capability is never None here: a None capability always matches the
-    # first rung (the ladder is never empty — _candidates()[0] is always
-    # sys.executable), so only a real capability requirement reaches this
-    # raise.
+    # first rung (the ladder is never empty — _candidates() always yields
+    # sys.executable first), so only a real capability requirement reaches
+    # this raise.
     assert capability is not None
     raise InterpreterUnavailable(capability, probed, repo_root=repo_root)
 
@@ -311,6 +371,43 @@ def _des_root() -> str:
     ``~/.claude/lib/python``. ``parents[2]`` is that containing dir either way.
     """
     return str(Path(__file__).resolve().parents[2])
+
+
+#: Relative location of the ``refactor`` fixer-swarm actuator script under a
+#: given "install anchor" directory (repo root in a dev checkout, or the
+#: Claude config dir when installed -- see ``actuator_search_paths``).
+_ACTUATOR_RELATIVE_PATH = ("scripts", "refactor_agent.py")
+
+
+def actuator_search_paths() -> tuple[Path, Path]:
+    """Candidate locations for the installed ``refactor_agent.py`` actuator,
+    derived from ``_des_root()`` alone -- never a name-based match on the
+    config dir (``parent.name == ".claude"`` breaks for ``CLAUDE_CONFIG_DIR``
+    and is a known defect elsewhere in this tree; this must not repeat it).
+
+    Two candidates because ``_des_root()``'s distance to the anchor differs
+    by layout: in a dev checkout ``_des_root()`` is ``<repo>/src`` -- one
+    hop up is ``<repo>``. In the installed standalone layout ``_des_root()``
+    is ``<claude_dir>/lib/python`` -- two hops up is ``<claude_dir>``. Both
+    candidates are always returned, in that order, so a caller can search
+    (first existing wins) or report both when neither exists.
+    """
+    root = Path(_des_root())
+    dev_anchor = root.parent
+    installed_anchor = root.parent.parent
+    return (
+        dev_anchor.joinpath(*_ACTUATOR_RELATIVE_PATH),
+        installed_anchor.joinpath(*_ACTUATOR_RELATIVE_PATH),
+    )
+
+
+def resolve_installed_actuator() -> Path | None:
+    """The installed ``refactor_agent.py`` actuator's real path, or ``None``
+    if it exists at neither candidate from ``actuator_search_paths()``."""
+    for candidate in actuator_search_paths():
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def des_subprocess_env(base: dict[str, str] | None = None) -> dict[str, str]:
@@ -362,16 +459,24 @@ def des_spawn(
     for the ``-c <inline-script>`` form (``module_args`` must then be empty).
 
     Caller kwargs (``cwd``, ``capture_output``, ``text``, ``timeout``,
-    ``input``, ``check``, ...) are forwarded unchanged to ``subprocess.run``. A
-    caller-supplied ``env`` is MERGED through ``des_subprocess_env(base=env)``
-    so the caller's entries are preserved alongside the des root, never dropped.
+    ``input``, ``check``, ...) are forwarded unchanged. A caller-supplied ``env``
+    is MERGED through ``des_subprocess_env(base=env)`` so the caller's entries are
+    preserved alongside the des root, never dropped.
+
+    The actual process creation is DELEGATED to ``des.runtime.spawn.spawn`` (RCA
+    ``fix-inherited-stdin-deadlocks-spawns`` §7/§9.2): this function keeps its own
+    duties — interpreter resolution and ``PYTHONPATH`` — and the boundary one
+    level lower owns the three every spawn needs (an explicit stdin, a bound,
+    a reaped process group). Every one of this function's call sites inherits
+    those for free; the selection criteria are orthogonal, which is why the
+    boundary is a separate object and not an extension of this one.
     """
     base_env = kw.pop("env", None)
     if script is not None:
         argv = [python_for(capability), "-c", script]
     else:
         argv = [python_for(capability), "-m", *module_args]
-    return subprocess.run(
+    return spawn(
         argv,
         env=des_subprocess_env(base=base_env),
         **kw,

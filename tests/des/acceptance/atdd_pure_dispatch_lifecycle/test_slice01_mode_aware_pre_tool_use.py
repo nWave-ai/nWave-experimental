@@ -181,7 +181,13 @@ def _validate(prompt: str):
             "block",
             id="atdd_pure-defective-marker-set",
         ),
-        pytest.param(_classic_prompt(), "allow", id="well-formed-classic"),
+        # Converted, not deleted. This case used to pin "a well-formed
+        # classic dispatch is still ALLOWED (no regression)". With classic
+        # removed there is no schema left to validate it against, so the
+        # invariant worth pinning is the opposite: a dispatch carrying the
+        # retired mode is REFUSED rather than quietly admitted. Deleting the
+        # case would have left that refusal unpinned.
+        pytest.param(_classic_prompt(), "block", id="retired-classic-refused"),
     ],
 )
 def test_at1_pre_tool_use_routes_validation_by_workflow_mode(
@@ -193,8 +199,10 @@ def test_at1_pre_tool_use_routes_validation_by_workflow_mode(
     When PreToolUseService.validate is invoked through the PreToolUsePort,
     Then a well-formed atdd_pure dispatch is ALLOWED (validated against the
          atdd_pure section schema), a structurally-defective or
-         defective-marker-set atdd_pure dispatch is BLOCKED, and a well-formed
-         classic dispatch is still ALLOWED (classic schema, no regression).
+         defective-marker-set atdd_pure dispatch is BLOCKED, and a dispatch
+         still carrying the retired classic mode is BLOCKED -- there is no
+         schema left that could admit it, and admitting it silently would
+         reintroduce the ceremony the removal exists to end.
     """
     decision = _validate(dispatch)
 

@@ -78,6 +78,7 @@ import pytest
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli.commit_slice import main as commit_slice_main
+from des.cli.record_examine_verdict import main as record_examine_verdict_main
 
 
 _GATE_SCOPE_TRAILER_RE = re.compile(r"^Gate-Scope:\s*([0-9a-f]{64})\s*$", re.MULTILINE)
@@ -293,6 +294,51 @@ def _behavioral_argv(
     ]
 
 
+def _arm_examine_verdict(
+    repo: Path, feature_id: str, slice_id: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """FIXTURE SETUP, never the observable under test.
+
+    A charter plus a fresh PASS ``ExamineVerdict`` -- the third of the three
+    routes the E1 refusal names in its own HOW, and the same recipe already used
+    by ``test_gherkin_commit_slice_defers_whole_tree_build_tier.py`` for a
+    gherkin slice with no ``--regression-test-file``. It arms E1 WITHOUT
+    touching ``--at-kind``, so this test's pin on digest ROUTING stays exactly
+    what it was: the refusal being cleared here is AT-completeness, a different
+    gate from the one this scenario exists to hold.
+    """
+    charter_dir = repo / "docs" / "product" / "expectations" / feature_id
+    charter_dir.mkdir(parents=True, exist_ok=True)
+    charter_file = charter_dir / f"{slice_id}.md"
+    charter_file.write_text(
+        "# Charter\n\nWalk the Rust slice on the cargo-root repo.\n",
+        encoding="utf-8",
+    )
+    exit_code = record_examine_verdict_main(
+        [
+            "--repo",
+            str(repo),
+            "--feature-id",
+            feature_id,
+            "--slice",
+            slice_id,
+            "--charter",
+            str(charter_file.relative_to(repo)),
+            "--verdict",
+            "PASS",
+            "--observations",
+            "observed during the rust slice walkthrough",
+            "--examiner",
+            "nw-user-examiner",
+        ]
+    )
+    capsys.readouterr()  # drain -- the producer's JSON is not under test
+    assert exit_code == 0, (
+        "fixture precondition: recording the examine PASS verdict must itself "
+        f"succeed -- got exit {exit_code}"
+    )
+
+
 # ===========================================================================
 # Scenario 1 -- RED-today core (Fix A): the pytest-regression slice must
 # reach SliceCommitVerified, never blocked by cargo's empty scope.
@@ -383,6 +429,9 @@ def test_rust_slice_on_the_same_repo_shape_still_routes_through_cargo(
     monkeypatch.setenv("PATH", str(fake_bin) + os.pathsep + os.environ.get("PATH", ""))
     fixture = _init_polyglot_fixture(tmp_path)
     _write_rust_slice(fixture)
+    _arm_examine_verdict(
+        fixture, "fix-runner-resolves-per-scope-language-rust-slice", "slice-01", capsys
+    )
 
     exit_code, events = _run_commit_slice(
         fixture,

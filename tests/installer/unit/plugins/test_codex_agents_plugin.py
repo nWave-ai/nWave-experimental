@@ -24,11 +24,18 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+import tomllib
 from nwave_ai.state_delta import assert_state_delta, set_to
 
+from scripts.install.plugins import (
+    codex_agents_plugin,
+    codex_des_plugin,
+    codex_skills_plugin,
+)
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.codex_agents_plugin import (
     CodexAgentsPlugin,
@@ -39,10 +46,6 @@ from scripts.install.plugins.codex_agents_plugin import (
     _transform_agent,
     _warn_if_tools_dropped,
 )
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -165,12 +168,14 @@ class TestExtractScalarFields:
             "tools": ["Read", "Bash"],
             "maxTurns": 20,
             "disable-model-invocation": True,
+            "permissionMode": "default",
             "skills": ["nw-skill"],
         }
         result = _extract_scalar_fields(frontmatter)
         assert "tools" not in result
         assert "maxTurns" not in result
         assert "disable-model-invocation" not in result
+        assert "permissionMode" not in result
         assert "skills" not in result
 
     def test_drops_non_scalar_values(self):
@@ -254,14 +259,29 @@ class TestTransformAgent:
             "You are a crafter.\n"
         )
         result = _transform_agent(source, "nw-craft")
+        parsed = tomllib.loads(result)
 
-        assert 'name = "nw-craft"' in result
-        assert 'description = "crafts code"' in result
-        assert 'model = "claude-opus-4"' in result
-        assert "developer_instructions" in result
-        assert "You are a crafter." in result
+        assert parsed["name"] == "nw-craft"
+        assert parsed["description"] == "crafts code"
+        assert "model" not in parsed
+        assert "You are a crafter." in parsed["developer_instructions"]
         # tools block must NOT appear in TOML output
-        assert "tools" not in result
+        assert "tools" not in parsed
+
+    def test_full_transform_preserves_explicit_codex_model(self):
+        # bypass: pure function — mutation pair for Claude-model omission
+        source = (
+            "---\n"
+            "name: nw-craft\n"
+            "description: crafts code\n"
+            "model: gpt-5.2-codex\n"
+            "---\n\n"
+            "You are a crafter.\n"
+        )
+
+        parsed = tomllib.loads(_transform_agent(source, "nw-craft"))
+
+        assert parsed["model"] == "gpt-5.2-codex"
 
 
 # ---------------------------------------------------------------------------
@@ -371,10 +391,10 @@ class TestInstallWritesTomlAgents:
 
     def test_installed_toml_contains_required_fields(self, tmp_path, monkeypatch):
         """
-        GIVEN: A source agent with name, description, model, and a body
+        GIVEN: A source agent with name, description, Claude model, and a body
         WHEN: install() runs
-        THEN: The .toml file contains name, description, model, and
-              developer_instructions with the body text
+        THEN: The .toml file is valid TOML containing name, description, and
+              developer_instructions, without promoting the Claude model
         """
         # bypass: single-slot content assertion after install
         context, _ = _make_context(tmp_path)
@@ -390,12 +410,12 @@ class TestInstallWritesTomlAgents:
         toml_content = (codex_agents_dir / "nw-test-agent.toml").read_text(
             encoding="utf-8"
         )
+        parsed = tomllib.loads(toml_content)
 
-        assert 'name = "nw-test-agent"' in toml_content
-        assert 'description = "A test agent"' in toml_content
-        assert 'model = "claude-sonnet-4-5"' in toml_content
-        assert "developer_instructions" in toml_content
-        assert "You are a test agent." in toml_content
+        assert parsed["name"] == "nw-test-agent"
+        assert parsed["description"] == "A test agent"
+        assert "model" not in parsed
+        assert "You are a test agent." in parsed["developer_instructions"]
 
     def test_install_manifest_records_installed_names(self, tmp_path, monkeypatch):
         """
@@ -444,6 +464,108 @@ class TestVerify:
         result = plugin.verify(context)
 
         assert result.success is True
+
+    def test_verify_rejects_empty_installed_agent_population(
+        self, tmp_path, monkeypatch
+    ):
+        """CONTRACT_SHAPE: bounded-change
+
+        Outcome anchor: an empty Codex role population is never reported healthy.
+        """
+        context, _ = _make_context(tmp_path)
+        target = tmp_path / ".codex" / "agents"
+        target.mkdir(parents=True)
+        _patch_codex_dirs(monkeypatch, target, target.parent)
+        (target / ".nwave-agents-manifest.json").write_text(
+            '{"installed_agents": []}\n', encoding="utf-8"
+        )
+
+        assert CodexAgentsPlugin().verify(context).success is False
+
+    def test_verify_rejects_malformed_or_unloadable_agent_toml(
+        self, tmp_path, monkeypatch
+    ):
+        """CONTRACT_SHAPE: bounded-change
+
+        Outcome anchor: advertised Codex roles are TOML-loadable with required fields.
+        """
+        context, _ = _make_context(tmp_path)
+        target = tmp_path / ".codex" / "agents"
+        target.mkdir(parents=True)
+        _patch_codex_dirs(monkeypatch, target, target.parent)
+        (target / ".nwave-agents-manifest.json").write_text(
+            '{"installed_agents": ["nw-broken"]}\n', encoding="utf-8"
+        )
+        (target / "nw-broken.toml").write_text(
+            'name = "nw-broken"\ndeveloper_instructions = "unterminated\n',
+            encoding="utf-8",
+        )
+
+        assert CodexAgentsPlugin().verify(context).success is False
+
+    @pytest.mark.parametrize("mutation", ["missing-one", "unexpected-one"])
+    def test_verify_conserves_exact_public_source_population(
+        self, tmp_path, monkeypatch, mutation
+    ):
+        """CONTRACT_SHAPE: bounded-change
+
+        Outcome anchor: every and only public Codex roles are reported loadable.
+        """
+        agents = {
+            name: (
+                "---\n"
+                f"name: {name}\n"
+                f"description: {name}\n"
+                "---\n\n"
+                f"Instructions for {name}.\n"
+            )
+            for name in ("nw-alpha", "nw-beta")
+        }
+        context, _ = _make_context(tmp_path, agents=agents)
+        context.dev_mode = False
+        target = tmp_path / ".codex" / "agents"
+        target.parent.mkdir(parents=True)
+        _patch_codex_dirs(monkeypatch, target, target.parent)
+        monkeypatch.setattr(
+            codex_agents_plugin,
+            "load_public_agents",
+            lambda _root: {"alpha", "beta"},
+        )
+        plugin = CodexAgentsPlugin()
+        assert plugin.install(context).success is True
+
+        manifest_path = target / ".nwave-agents-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if mutation == "missing-one":
+            manifest["installed_agents"].remove("nw-beta")
+        else:
+            manifest["installed_agents"].append("nw-unexpected")
+            (target / "nw-unexpected.toml").write_text(
+                'name = "nw-unexpected"\n'
+                'description = "unexpected"\n'
+                'developer_instructions = "unexpected"\n',
+                encoding="utf-8",
+            )
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        assert plugin.verify(context).success is False
+
+
+def test_empty_codex_home_is_consistently_treated_as_unset(
+    tmp_path, monkeypatch
+) -> None:
+    """CONTRACT_SHAPE: pure-function
+
+    Outcome anchor: an empty CODEX_HOME uses the same native default everywhere.
+    """
+    monkeypatch.setenv("CODEX_HOME", "")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    expected = tmp_path / ".codex"
+
+    assert codex_agents_plugin._codex_config_dir() == expected
+    assert codex_agents_plugin._codex_agents_dir() == expected / "agents"
+    assert codex_des_plugin._codex_config_dir() == expected
+    assert codex_skills_plugin._codex_config_dir() == expected
 
 
 class TestUninstallRemovesOnlyNwaveAgents:

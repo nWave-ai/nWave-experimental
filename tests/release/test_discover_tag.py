@@ -41,8 +41,9 @@ Scenario inventory (15 scenarios, 6 error/edge = 40%):
 
 import json
 import subprocess
-import sys
 from pathlib import Path
+
+from tests.common.in_process_cli import run_script_in_process
 
 
 SCRIPT = "scripts/release/discover_tag.py"
@@ -53,10 +54,9 @@ SCRIPT = "scripts/release/discover_tag.py"
 # ---------------------------------------------------------------------------
 def run_discover_tag(*args: str) -> subprocess.CompletedProcess:
     """Run discover_tag.py as a subprocess, returning the CompletedProcess."""
-    return subprocess.run(
-        [sys.executable, SCRIPT, *args],
-        capture_output=True,
-        text=True,
+    exit_code, out, err = run_script_in_process(SCRIPT, *args)
+    return subprocess.CompletedProcess(
+        args=[SCRIPT, *args], returncode=exit_code, stdout=out, stderr=err
     )
 
 
@@ -461,10 +461,9 @@ def _run_discover_in_repo(repo_path, *args):
     """Run discover_tag.py inside a specific git repo directory."""
     script_path = str(Path(_project_root()) / SCRIPT)
     env = {**__import__("os").environ, "GIT_CEILING_DIRECTORIES": str(repo_path)}
-    return subprocess.run(
-        [sys.executable, script_path, *args],
-        cwd=str(repo_path),
-        capture_output=True,
-        text=True,
-        env=env,
+    exit_code, out, err = run_script_in_process(
+        script_path, *args, cwd=str(repo_path), env=env
+    )
+    return subprocess.CompletedProcess(
+        args=[script_path, *args], returncode=exit_code, stdout=out, stderr=err
     )

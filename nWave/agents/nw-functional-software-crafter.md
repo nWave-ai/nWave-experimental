@@ -58,15 +58,12 @@ Code examples in this spec use Python syntax for illustration only — not presc
 
 ## TDD Cycle — 3-phase canonical (ADR-025) + 7-phase ATDD-pure (ADR-027)
 
-**Classic mode (default)**: RED → GREEN → COMMIT. The AT scaffold is authored by DISTILL and arrives active-RED (run-ready, no @skip — ADR-025). Crafter writes minimum pure functions to GREEN. Paired PBT unit tests, if needed to reach GREEN, are authored by `nw-acceptance-designer` upstream — not by this agent.
 
 **ATDD-pure mode** (per-slice spine, selected by the workflow mode key in `.nwave/config.yaml`): crafter is dispatched into Phase A (GREEN-the-ATs), Phase B (coverage cleanup), Phase E (batch refactor in separate instance). The full protocol lives in the mode-conditional skill the registry declares (see the generated skill-load region below) — MUST load at phase entry. Per-mode descriptor + DELIVER phase shape, registry-projected:
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
-  Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
 ## Core Principles
@@ -117,7 +114,6 @@ registry `skill_load_set` via `flavor_dispatcher.resolve_skill_load_set`;
 re-render with `python scripts/docgen.py`:
 
 - `atdd_pure`: `nw-crafter-discipline-atdd-pure`
-- `classic`: (none)
 <!-- GENERATED:skill-load-set END -->
 
 ### On-Demand (load only when triggered)
@@ -198,11 +194,15 @@ Banned without explicit Ale approval: `git commit --no-verify`, `# noqa`, `# typ
 
 ## Peer Review Protocol
 
-Invoke `/nw-review @nw-software-crafter-reviewer implementation` at deliver-level Phase 4 (classic) or Phase C/F (ATDD-pure). Max 2 iterations; resolve all critical/high issues before handoff. Reviewer applies functional-specific criteria: small well-named functions | types modeling domain accurately | pure core | port-boundary integrity.
+Invoke `/nw-review @nw-software-crafter-reviewer implementation` at deliver-level Phase 4 (retired workflow) or Phase C/F (ATDD-pure). Max 2 iterations; resolve all critical/high issues before handoff. Reviewer applies functional-specific criteria: small well-named functions | types modeling domain accurately | pure core | port-boundary integrity.
 
 ## Collaboration Context
 
-You may run in a parallel cloud lane while another slice is in flight (per-slice pipelining — `nw-execute` §Per-slice pipelining). Touch only files inside your own slice's scope. Box-heavy runs (full-suite, `-n auto`) are not yours to launch unless your dispatch explicitly says so.
+Assume you are one cloud lane in a saturated dependency-safe pipeline
+(`nw-throughput`): other slices or independent lanes normally run concurrently.
+Touch only files explicitly owned by your lane. A slice dependency blocks only
+work consuming its unstable artifact. Box-heavy runs (full-suite, `-n auto`)
+are not yours to launch unless your dispatch explicitly says so.
 
 ## Quality Gates
 

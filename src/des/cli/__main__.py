@@ -41,8 +41,10 @@ class _SubcommandRow:
 # (the executable test mirror). Filesystem-grounded against src/des/cli/*.py
 # (excluding __init__.py and __main__.py) as of 2026-05-23.
 _REGISTRY: tuple[_SubcommandRow, ...] = (
+    _SubcommandRow("loop", "des.cli.loop", "main"),
     _SubcommandRow("log-phase", "des.cli.log_phase", "main"),
     _SubcommandRow("init-log", "des.cli.init_log", "main"),
+    _SubcommandRow("resolve-workflow-mode", "des.cli.resolve_workflow_mode", "main"),
     _SubcommandRow("verify-integrity", "des.cli.verify_deliver_integrity", "main"),
     _SubcommandRow("roadmap", "des.cli.roadmap", "main"),
     _SubcommandRow("health-check", "des.cli.health_check", "main"),
@@ -479,6 +481,7 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # subprocess, and emits MEASURED-SAFE / DRIFT per pair. Advisory (exit 0 on
     # both verdicts, D-2); exit 2 only on a malformed --scope invocation.
     _SubcommandRow("parallel-safety-report", "des.cli.parallel_safety_report", "main"),
+    _SubcommandRow("plan", "des.cli.delivery_plan", "main"),
 )
 
 

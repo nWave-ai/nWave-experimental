@@ -1,11 +1,11 @@
 # Workflow-flavor schema (D4 § 3.2 slice-03)
 #
 # Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.2.
-# Per INV-4 workflow IS data + INV-11 atdd_pure + classic as flavors +
+# Per INV-4 workflow IS data with atdd_pure as the sole active flavor +
 # INV-12 future change = reconfig not rewrite.
 #
 # Files validated against this schema live at `nWave/flavors/<flavor-id>.yaml`.
-# Currently: atdd_pure.yaml + classic.yaml (Phase 2 deliverables).
+# Currently: atdd_pure.yaml (the sole executable workflow).
 
 $schema: "https://json-schema.org/draft/2020-12/schema"
 $id: "https://nwave.dev/schemas/flavors/_schema.yaml"
@@ -41,7 +41,7 @@ properties:
     type: string
     pattern: "^[a-z][a-z0-9_]*$"
     description: |
-      Kebab/snake-case identifier (e.g. `atdd_pure`, `classic`).
+      The sole executable identifier is `atdd_pure`.
 
   display_name:
     type: string
@@ -178,3 +178,17 @@ $defs:
         items:
           type: string
         uniqueItems: true
+      feature_end_na_marker_reconciles:
+        type: object
+        description: |
+          fix-na-marker-reconcile-drift slice-01: the ONE shared source naming
+          which NotApplicable marker reconciles which required record above,
+          read by BOTH the subagent.stop hook and the CLI mirror via
+          des.application.feature_end_na_marker_reconciliation. Each key is an
+          emitted NA marker; each value is the required record it discharges.
+          Declared here because the flavor and the runtime already carry this
+          field -- a schema that omits a field its own flavor ships rejects the
+          shipped artifact, and the validator then fails on the CONFORMING
+          file. Only meaningful on the subagent.stop event.
+        additionalProperties:
+          type: string

@@ -73,7 +73,16 @@ def test_real_repo_collect_scope_is_memoized_from_non_acceptance_context(monkeyp
     activates the memo here. Today it does not (see the sibling test above), so
     _collect_scope's env check is false on both calls and the uncached collector
     runs twice -- RED via a real assertion (len(calls) == 1) failing with 2.
+
+    The stand-in repo is given a resolvable HEAD, as any real tree has: the memo
+    keys on a committed HEAD sha and bypasses itself when there is none, so a
+    HEAD-less stand-in would never be cached whatever the env var says.
     """
+    monkeypatch.setattr(
+        run_contract_gate,
+        "_git",
+        lambda repo, *args: "1111111111111111111111111111111111111111\n",
+    )
     calls: list[tuple[Path, object]] = []
     sentinel = object()
 

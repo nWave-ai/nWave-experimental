@@ -30,6 +30,7 @@ TUNING (environment, all optional)
     NWAVE_REFACTOR_AGENT_PERMISSION  --permission-mode value        (default: acceptEdits)
     NWAVE_REFACTOR_AGENT_MAX_TURNS   turn budget per item           (default: 60)
     NWAVE_REFACTOR_AGENT_CLI         the headless assistant binary  (default: claude)
+    NWAVE_REFACTOR_AGENT_TIMEOUT     wall-clock bound per item, s   (default: 3600)
 
 PERMISSIONS -- read before widening
     The default is ``acceptEdits``: the fixer may edit files, which is the whole point, but
@@ -54,6 +55,34 @@ from pathlib import Path
 EXIT_MALFORMED_INPUT = 2
 EXIT_NO_CLI = 3
 EXIT_NO_CRAFTER_SPEC = 4
+EXIT_TIMEOUT = 124  # the POSIX `timeout(1)` convention
+
+AGENT_TIMEOUT_ENV = "NWAVE_REFACTOR_AGENT_TIMEOUT"
+_AGENT_TIMEOUT_DEFAULT_SECONDS = 3600.0
+_INNER_MARGIN_SECONDS = 60.0
+
+
+def _inner_timeout_seconds() -> float:
+    """This actuator's OWN bound -- deliberately just INSIDE the harness's.
+
+    The harness bounds the whole invocation on the same AGENT tier
+    (``des.runtime.spawn.agent_timeout_seconds``). Landing this one slightly
+    shorter is what lets the actuator report its own WHAT/WHY/HOW through
+    ``fail`` instead of being SIGKILLed mutely from outside, where the operator
+    would see a dead process and no reason.
+
+    The value is read here as two literal kwargs rather than through the shared
+    boundary because this script must not import ``des``: nWave assets run on any
+    target with Python and nothing else assumed present (see this module's
+    docstring). ``max(0.95 * outer, outer - 60)`` keeps the margin proportionate
+    for a small override and absolute for the 1-hour default (3540s).
+    """
+    try:
+        outer = float(os.environ.get(AGENT_TIMEOUT_ENV, _AGENT_TIMEOUT_DEFAULT_SECONDS))
+    except ValueError:
+        outer = _AGENT_TIMEOUT_DEFAULT_SECONDS
+    return max(outer * 0.95, outer - _INNER_MARGIN_SECONDS)
+
 
 _SPEC_SEARCH_HINT = "~/.claude/agents/nw/ and <target>/nWave/agents/"
 
@@ -216,23 +245,41 @@ def main(argv: list[str]) -> int:
         file=sys.stderr,
     )
 
-    completed = subprocess.run(
-        [
-            cli,
-            "-p",
-            prompt_text,
-            "--model",
-            model,
-            "--permission-mode",
-            permission,
-            "--max-turns",
-            max_turns,
-            "--add-dir",
-            str(worktree),
-        ],
-        cwd=str(worktree),
-        check=False,
-    )
+    inner_timeout = _inner_timeout_seconds()
+    try:
+        completed = subprocess.run(
+            [
+                cli,
+                "-p",
+                prompt_text,
+                "--model",
+                model,
+                "--permission-mode",
+                permission,
+                "--max-turns",
+                max_turns,
+                "--add-dir",
+                str(worktree),
+            ],
+            cwd=str(worktree),
+            check=False,
+            stdin=subprocess.DEVNULL,
+            timeout=inner_timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return fail(
+            EXIT_TIMEOUT,
+            f"the headless fixer {cli!r} did not finish within "
+            f"{inner_timeout:g}s and was killed",
+            "it was still running when the bound fired -- either it is genuinely "
+            "stuck (a child blocked on a descriptor nobody will ever write to or "
+            "close) or this item legitimately needs longer than the agent tier "
+            "allows",
+            f"raise the bound with {AGENT_TIMEOUT_ENV}=<seconds> and re-drain this "
+            f"item (this actuator bounds itself just inside that value so it can "
+            f"report rather than be killed mutely by the harness), or drop the item "
+            f"from the pile if it is not mechanically fixable",
+        )
 
     if completed.returncode != 0:
         return fail(

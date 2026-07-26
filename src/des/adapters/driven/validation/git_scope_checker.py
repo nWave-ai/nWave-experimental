@@ -14,6 +14,7 @@ import subprocess
 from fnmatch import fnmatch
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.git.git_constants import GIT_HEAD
 from des.ports.driven_ports.scope_checker import ScopeChecker, ScopeCheckResult
 
 
@@ -78,7 +79,7 @@ class GitScopeChecker(ScopeChecker):
         """
         try:
             result = subprocess.run(
-                ["git", "diff", "--name-only", "HEAD"],
+                ["git", "diff", "--name-only", GIT_HEAD],
                 capture_output=True,
                 timeout=self.GIT_TIMEOUT_SECONDS,
                 check=True,

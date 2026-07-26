@@ -15,10 +15,11 @@ workflow sync-public-pr.yml invokes it), to validate the real CLI contract.
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
+
+from tests.common.in_process_cli import run_script_in_process
 
 
 SCRIPT_PATH = (
@@ -36,9 +37,12 @@ VALID_PR = "42"
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[bytes]:
     """Invoke the script via subprocess and capture raw bytes for byte-level asserts."""
-    return subprocess.run(
-        [sys.executable, str(SCRIPT_PATH), *args],
-        capture_output=True,
+    exit_code, out, err = run_script_in_process(SCRIPT_PATH, *args)
+    return subprocess.CompletedProcess(
+        args=[str(SCRIPT_PATH), *args],
+        returncode=exit_code,
+        stdout=out.encode("utf-8"),
+        stderr=err.encode("utf-8"),
     )
 
 

@@ -51,7 +51,7 @@ _FEATURE_ID = FeatureId("atdd-pure-demo")
 def _dispatch_prompt(shape: DispatchShape, slice_id: str) -> str:
     """Render a Task dispatch prompt carrying the marker set for ``shape``."""
     lines = ["<!-- DES-VALIDATION : required -->"]
-    if shape is DispatchShape.CLASSIC:
+    if shape is DispatchShape.MODE_LESS:
         lines.append("<!-- DES-MODE : orchestrator -->")
         lines.append("<!-- DES-PROJECT-ID : atdd-pure-demo -->")
         lines.append("<!-- DES-STEP-ID : 01-01 -->")

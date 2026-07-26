@@ -1,83 +1,67 @@
-"""Unit tests for des.cli.init_log CLI module.
-
-Tests the init_log CLI tool that initializes execution-log.json with the
-ADR-025 v5.0 (3-phase canon) schema. All tests use tmp_path fixture.
-
-Test Budget: 4 distinct behaviors x 1 = 4 tests.
-
-Behaviors:
-1. Success: creates file with correct schema
-2. Fails if file already exists (exit 1)
-3. Fails if project directory doesn't exist (exit 1)
-4. Created file has correct JSON structure
-"""
+"""Safety regressions for the retired classic ``init-log`` carrier."""
 
 from __future__ import annotations
 
-import json
+from pathlib import Path
+
+import pytest
 
 from des.cli.init_log import main
 
 
-def _write_classic_config(project_dir):
-    """Seed an explicit `workflow.mode: classic` so init-log reaches its
-    create / already-exists paths.
-
-    DDD-7 (slice-03 mode-resolution SSOT): an absent `.nwave/config.yaml` now
-    resolves to atdd_pure, under which init-log REFUSES to create the log. The
-    log-CREATE mechanism these tests pin lives only on the classic spine, so the
-    fixture seeds explicit-classic to exercise it. The intent (the create /
-    already-exists mechanism) is unchanged; only the precondition is now explicit.
-    """
+def _write_mode(project_dir: Path, mode: str) -> bytes:
     nwave_dir = project_dir / ".nwave"
     nwave_dir.mkdir(parents=True, exist_ok=True)
-    (nwave_dir / "config.yaml").write_text("workflow:\n  mode: classic\n")
+    config = nwave_dir / "config.yaml"
+    config.write_text(f"workflow:\n  mode: {mode}\n", encoding="utf-8")
+    return config.read_bytes()
 
 
-def test_creates_execution_log_successfully(tmp_path):
-    """init_log creates execution-log.json with correct schema (explicit classic)."""
-    _write_classic_config(tmp_path)
-    exit_code = main(["--project-dir", str(tmp_path), "--feature-id", "my-feature"])
+@pytest.mark.parametrize("mode", ("classic", "atdd_pure"))
+def test_init_log_never_creates_a_runnable_classic_execution_log(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
+) -> None:
+    before = _write_mode(tmp_path, mode)
 
-    assert exit_code == 0
+    exit_code = main(["--project-dir", str(tmp_path), "--feature-id", "retired-spine"])
 
-    log_path = tmp_path / "execution-log.json"
-    assert log_path.exists()
-
-    data = json.loads(log_path.read_text())
-    assert data["schema_version"] == "5.0"
-    assert data["feature_id"] == "my-feature"
-    assert data["events"] == []
-
-
-def test_fails_if_file_already_exists(tmp_path, capsys):
-    """init_log returns exit 1 when execution-log.json already exists (explicit classic)."""
-    _write_classic_config(tmp_path)
-    existing = tmp_path / "execution-log.json"
-    existing.write_text("{}")
-
-    exit_code = main(["--project-dir", str(tmp_path), "--feature-id", "my-feature"])
-
-    assert exit_code == 1
+    assert exit_code != 0
+    assert not (tmp_path / "execution-log.json").exists()
+    assert (tmp_path / ".nwave" / "config.yaml").read_bytes() == before
     captured = capsys.readouterr()
-    assert "already exists" in captured.out
+    output = captured.out + captured.err
+    if mode == "classic":
+        assert "CLASSIC_MODE_REMOVED" in output
+        assert "MIGRATION_REQUIRED" in output
+    else:
+        assert "atdd_pure" in output
+        assert "execution-log-free" in output
 
 
-def test_fails_if_project_dir_missing(tmp_path, capsys):
-    """init_log returns exit 1 when project directory does not exist."""
+def test_existing_historical_log_is_not_mutated_or_resumed(
+    tmp_path: Path,
+) -> None:
+    _write_mode(tmp_path, "classic")
+    historical = tmp_path / "execution-log.json"
+    historical.write_bytes(b'{"schema_version":"4.0","events":[]}')
+    before = historical.read_bytes()
+
+    exit_code = main(["--project-dir", str(tmp_path), "--feature-id", "retired-spine"])
+
+    assert exit_code != 0
+    assert historical.read_bytes() == before
+
+
+def test_missing_project_is_still_a_non_mutating_refusal(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     nonexistent = tmp_path / "nonexistent"
-
-    exit_code = main(["--project-dir", str(nonexistent), "--feature-id", "my-feature"])
-
-    assert exit_code == 1
-    captured = capsys.readouterr()
-    assert "does not exist" in captured.out
-
-
-def test_json_structure_is_valid(tmp_path):
-    """Created execution-log.json is valid JSON with exactly 3 keys (explicit classic)."""
-    _write_classic_config(tmp_path)
-    main(["--project-dir", str(tmp_path), "--feature-id", "test-feat"])
-
-    data = json.loads((tmp_path / "execution-log.json").read_text())
-    assert set(data.keys()) == {"schema_version", "feature_id", "events"}
+    exit_code = main(
+        ["--project-dir", str(nonexistent), "--feature-id", "retired-spine"]
+    )
+    assert exit_code != 0
+    assert "does not exist" in capsys.readouterr().out
+    assert not nonexistent.exists()

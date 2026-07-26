@@ -1,167 +1,28 @@
-"""DISCUSS PO-review verdict producer (O-4 RATIFIED -- slice-07b PRODUCER half).
+"""DISCUSS PO-review verdict PRODUCER -- ``des record-discuss-review`` (slice-07b).
 
-``des record-discuss-review``: after the product-owner reviewer judges the
-DISCUSS artefact, this producer RECORDS the outcome as a
-``DiscussReviewVerdict`` record appended to the per-feature AT-completion
-ledger ``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``. The SubagentStop
-DISCUSS gate-OUT (the CONSUMER, slice-07b review branch) reads it back via
-``DiscussReviewReader`` + ``DiscussReviewGate.evaluate`` -- the agent NEVER
-hands the gate a verdict, it only triggers the RECORDING (§22.7).
+After the product-owner reviewer judges the DISCUSS artefact, this producer
+RECORDS the outcome as a ``DiscussReviewVerdict`` record on the per-feature
+AT-completion ledger. The DISCUSS gate-OUT consumer reads it back -- the agent
+NEVER hands the gate a verdict, it only triggers the RECORDING (§22.7).
 
 O-4 (intentional + isolated divergence from ``at_review_verdict``): this
-producer writes a record for BOTH ``approved`` AND ``needs-revision`` -- the
-gate must mechanically READ a veto to enforce it; a NEEDS_REVISION that wrote
-nothing would collapse into INDETERMINATE alongside "no review yet", defeating
-the veto. ``at_review_verdict.record_review_outcome`` (which skips
-NEEDS_REVISION for its loop-back) is NOT modified.
+producer writes a record for BOTH ``approved`` AND ``needs-revision``.
+``at_review_verdict.record_review_outcome`` (which skips NEEDS_REVISION for its
+loop-back) is NOT affected.
 
-Post-demotion (oss-review-verdict-demotion S3): the HMAC is removed. The
-record carries the keyless content seal ``feature_delta_hash`` (SHA-256
-hexdigest over the feature-delta artefact's exact bytes -- the §21.2 idiom)
-plus the reviewer identity and the verdict. Key absence is a non-event; no
-signing key is needed or resolved.
-
-Stdlib-only (no third-party imports) so the module is bundle-safe.
+The recording itself is the shared ``_wave_review_cli.producer_main``; this
+module is the DISCUSS spec bound to it.
 """
 
 from __future__ import annotations
 
-import argparse
-import datetime
-import hashlib
-import json
-import sys
-from typing import TYPE_CHECKING
-
-from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
-from des.domain.discuss_review_gate import DISCUSS_REVIEW_EVENT, DiscussReviewToken
-from des.domain.repo_path_resolver import (
-    resolve_repo_root as _resolve_repo_root,
-)
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-
-_SCHEMA_VERSION = "1.0.0"
-
-
-def record_discuss_review_verdict(
-    repo_root: Path,
-    feature_id: str,
-    verdict: str,
-    reviewer_agent_id: str,
-    feature_delta_hash: str,
-    timestamp: str,
-    findings_summary: list[object],
-) -> None:
-    """Append one keyless DiscussReviewVerdict record to the ledger.
-
-    Writes BOTH outcomes (``approved`` and ``needs-revision``) -- the O-4
-    both-outcomes policy. Earlier ledger records are never altered
-    (append-only); the record carries the M7 ``seq`` + ``record_hash`` via
-    ``AtCompletionLedger.append_discuss_review_verdict``.
-
-    Post-demotion (oss-review-verdict-demotion S3): no ``hmac_sha256`` field
-    is written; no signing key is needed. The content seal
-    ``feature_delta_hash`` (SHA-256 over artefact bytes) is preserved.
-    """
-    record: dict[str, object] = {
-        "event": DISCUSS_REVIEW_EVENT,
-        "schema_version": _SCHEMA_VERSION,
-        "feature_id": feature_id,
-        "verdict": verdict,
-        "reviewer_agent_id": reviewer_agent_id,
-        "feature_delta_hash": feature_delta_hash,
-        "timestamp": timestamp,
-        "findings_summary": list(findings_summary),
-    }
-
-    ledger = AtCompletionLedger(feature_id=feature_id, project_root=repo_root)
-    verdict_fields = {key: value for key, value in record.items() if key != "event"}
-    ledger.append_discuss_review_verdict(verdict_fields=verdict_fields)
-
-
-def _feature_delta_seal(repo_root: Path, feature_id: str) -> str:
-    """SHA-256 hexdigest over the feature-delta artefact's exact bytes as written.
-
-    The §21.2 seal idiom: the verdict binds to the artefact CONTENT it
-    judged. Raises ``FileNotFoundError`` / ``OSError`` when the artefact is
-    unreadable -- a verdict cannot be sealed against an artefact that does
-    not exist (the ``FeatureDeltaNotReadable`` failure mode).
-    """
-    delta = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
-    return hashlib.sha256(delta.read_bytes()).hexdigest()
-
-
-def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="record-discuss-review",
-        description=(
-            "Record a keyless DISCUSS product-owner review verdict (O-4 "
-            "producer). BOTH approved and needs-revision are written -- the "
-            "DISCUSS gate-OUT mechanically reads the record to honor a veto."
-        ),
-    )
-    parser.add_argument("--feature-id", required=True)
-    parser.add_argument(
-        "--verdict",
-        required=True,
-        choices=[token.value for token in DiscussReviewToken],
-    )
-    parser.add_argument("--reviewer-agent-id", required=True)
-    parser.add_argument("--findings", nargs="*", default=[])
-    parser.add_argument("--repo-root", default=None)
-    return parser.parse_args(sys.argv[1:] if argv is None else list(argv))
+from des.cli._wave_review_cli import producer_main
+from des.domain.wave_review_spec import DISCUSS_REVIEW_SPEC
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Record a DISCUSS PO-review verdict from the command line.
-
-    Computes the ``feature_delta_hash`` seal itself from the feature's
-    feature-delta.md bytes -- the operator supplies only the feature id, the
-    verdict and the reviewer id. Returns 0 on success; 1 when the
-    feature-delta artefact is unreadable.
-    """
-    args = _parse_args(argv)
-    repo_root = _resolve_repo_root(args.repo_root)
-    try:
-        feature_delta_hash = _feature_delta_seal(repo_root, args.feature_id)
-    except OSError as error:
-        sys.stderr.write(
-            f"FeatureDeltaNotReadable: cannot seal the verdict -- {error}\n"
-        )
-        return 1
-    timestamp = (
-        datetime.datetime.now(datetime.timezone.utc)
-        .replace(microsecond=0)
-        .strftime("%Y-%m-%dT%H:%M:%SZ")
-    )
-    record_discuss_review_verdict(
-        repo_root=repo_root,
-        feature_id=args.feature_id,
-        verdict=args.verdict,
-        reviewer_agent_id=args.reviewer_agent_id,
-        feature_delta_hash=feature_delta_hash,
-        timestamp=timestamp,
-        findings_summary=list(args.findings),
-    )
-    event_line = (
-        json.dumps(
-            {
-                "event": "DiscussReviewVerdictCLI",
-                "feature_id": args.feature_id,
-                "verdict": args.verdict,
-                "verdict_written": True,
-                "feature_delta_hash": feature_delta_hash,
-            },
-            sort_keys=True,
-        )
-        + "\n"
-    )
-    sys.stdout.write(event_line)
-    return 0
+    """Record a DISCUSS PO-review verdict from the command line."""
+    return producer_main(DISCUSS_REVIEW_SPEC, argv)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ Mechanical gate for acceptance-test completeness. Runs against any candidate AT 
 Reviewer runs **both** gates before issuing verdict; they are independent and additive:
 
 1. **Tier-1 Coverage Gate** — the canonical 7-category C1-C7 taxonomy + 15-item mechanical checklist + deterministic verdict thresholds. Audits **what the AT set covers** of the SUT's input/state/mode/error/env space. Module: `nw-at-completeness-check-coverage-taxonomy`.
-2. **Tier-2 Structural Invariants Gate** — the S-family (S1 step-text uniqueness, S2 driving-port-only boundary / no direct-domain testing per Mandate-13, S3 dormant-seam reconciliation per D11). Audits **how the AT set itself is structured** — SSOT/boundary/seam-witnessing invariants on the test code, not SUT coverage. A Tier-2 failure is independent of the Tier-1 score and BLOCKS regardless of coverage band. Module: `nw-at-completeness-check-structural-invariants`.
+2. **Tier-2 Structural Invariants Gate** — the S-family (S1 step-text uniqueness, S2 driving-port-only boundary / no direct-domain testing per Mandate-13, S3 dormant-seam reconciliation per D11, S4 declared-runtime-contract conformance). S4 is mandatory whenever DESIGN declares a typed driven-port request, receipt or authority: an AT must observe the concrete production boundary and reject a field-compatible lookalike. Audits **how the AT set itself is structured** — SSOT/boundary/seam-witnessing invariants on the test code, not SUT coverage. A Tier-2 failure is independent of the Tier-1 score and BLOCKS regardless of coverage band. Module: `nw-at-completeness-check-structural-invariants`.
 
 The 15-item count, IDs, and verdict thresholds in Tier-1 are **unchanged** by Tier-2 additions; the S-family lives in its own namespace.
 

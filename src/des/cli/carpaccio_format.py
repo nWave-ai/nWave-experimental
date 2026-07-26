@@ -26,6 +26,7 @@ import ast
 import hashlib
 import json
 import re
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -126,12 +127,12 @@ class GateError(Exception):
 #: The canonical Slice Plan table columns, in order -- the ONE locus every
 #: caller needing the canonical header MUST derive from (M1: never a copied
 #: literal). This is the parser's own header expectation: :func:`_build_slice_rows`
-#: stays column-count-tolerant (unchanged, for backward compatibility with
-#: already-shipped 3-column plans), while :func:`slice_plan_header_deviation`
-#: compares the header ROW TEXT against this constant to catch a drift that
-#: count-tolerance alone cannot (extra/missing/reordered columns) -- see
-#: `feature_delta_doctor._slice_plan_header_gaps`, the `malformed-slice-plan-
-#: header` gap emitter that consumes both.
+#: resolves each canonical field from the cell the HEADER NAMES (falling back to
+#: the legacy positional read only when the header names none of these columns),
+#: while :func:`slice_plan_header_deviation` compares the header ROW TEXT against
+#: this constant to catch a drift the read alone cannot report (extra/missing/
+#: reordered columns) -- see `feature_delta_doctor._slice_plan_header_gaps`, the
+#: `malformed-slice-plan-header` gap emitter that consumes both.
 SLICE_PLAN_CANONICAL_COLUMNS: tuple[str, ...] = (
     "Slice",
     "Value statement",
@@ -139,6 +140,71 @@ SLICE_PLAN_CANONICAL_COLUMNS: tuple[str, ...] = (
     "Annotation",
     "Justification",
 )
+
+#: The canonical columns bound to names, unpacked FROM the SSOT tuple above --
+#: never a second list of column names. An arity/order change to
+#: `SLICE_PLAN_CANONICAL_COLUMNS` breaks this unpack LOUDLY at import time,
+#: which is the intended failure mode.
+(
+    _SLICE_COLUMN,
+    _VALUE_STATEMENT_COLUMN,
+    _STATUS_COLUMN,
+    _ANNOTATION_COLUMN,
+    _JUSTIFICATION_COLUMN,
+) = SLICE_PLAN_CANONICAL_COLUMNS
+
+#: Header-cell separators collapsed before matching a header cell against the
+#: canonical column names: `slice_id`, `slice-id`, `Slice  Id` all normalise to
+#: the same key, so the snake_case/kebab-case spellings already shipped in this
+#: repo's feature-deltas resolve to the same canonical column as `Slice`.
+_HEADER_CELL_SEPARATOR_RE = re.compile(r"[\s_\-]+")
+
+
+def _normalized_header_cell(cell: str) -> str:
+    """Case-insensitive, whitespace/underscore/hyphen-normalised header cell."""
+    return _HEADER_CELL_SEPARATOR_RE.sub(" ", cell.strip().lower()).strip()
+
+
+#: Extra accepted spellings per canonical column, keyed BY the canonical name
+#: (never a parallel column list). Only spellings actually shipped in this
+#: repo's Slice Plan tables: `slice_id` / `slice-id` for the id column.
+_SLICE_PLAN_COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
+    _SLICE_COLUMN: ("slice id",),
+}
+
+#: normalised header cell -> canonical column name.
+_CANONICAL_COLUMN_BY_HEADER_CELL: dict[str, str] = {
+    key: column
+    for column in SLICE_PLAN_CANONICAL_COLUMNS
+    for key in (
+        _normalized_header_cell(column),
+        *_SLICE_PLAN_COLUMN_ALIASES.get(column, ()),
+    )
+}
+
+
+def canonical_slice_plan_header() -> str:
+    """The canonical Slice Plan header ROW, rendered from
+    :data:`SLICE_PLAN_CANONICAL_COLUMNS` -- the copy-pasteable EXPECTED header a
+    rejection shows the author (M1: derived, never a hand-written literal)."""
+    return "| " + " | ".join(SLICE_PLAN_CANONICAL_COLUMNS) + " |"
+
+
+def _resolve_header_columns(header_line: str) -> dict[str, int]:
+    """Map each canonical column NAMED by ``header_line`` to its cell index.
+
+    A canonical column the header does not name is simply absent from the
+    mapping (the caller reads it as ``''``); a non-canonical extra column
+    ("Class", "ADD + REMOVE") contributes no entry and therefore shifts
+    nothing. An empty mapping means the header names no canonical column at
+    all -- the caller's signal to fall back to the legacy positional read.
+    """
+    resolved: dict[str, int] = {}
+    for index, cell in enumerate(_split_table_cells(header_line)):
+        column = _CANONICAL_COLUMN_BY_HEADER_CELL.get(_normalized_header_cell(cell))
+        if column is not None and column not in resolved:
+            resolved[column] = index
+    return resolved
 
 
 @dataclass(frozen=True)
@@ -154,9 +220,18 @@ class SlicePlanRow:
 
 @dataclass(frozen=True)
 class SlicePlan:
-    """The parsed ``[REF] Slice Plan`` table -- ordered slice rows."""
+    """The parsed ``[REF] Slice Plan`` table -- ordered slice rows.
+
+    ``header_line`` carries the table's header ROW verbatim (stripped) so a
+    downstream assertion can tell "the column is ABSENT from the header" from
+    "the cell is present but empty" -- two failure modes with two different
+    repairs (add a column vs write the prose). Defaults to ``''`` for callers
+    that build a plan directly from rows (tests, fixtures): an empty header
+    line means "header unknown", never "column missing".
+    """
 
     rows: tuple[SlicePlanRow, ...]
+    header_line: str = ""
 
     def row_for(self, slice_id: str) -> SlicePlanRow | None:
         for row in self.rows:
@@ -347,14 +422,30 @@ def parse_slice_plan_rows(feature_delta_text: str) -> list[SlicePlanRow]:
 
     * heading depth -- the section heading matches at H2 through H4;
     * escaped pipes -- a GFM ``\\|`` inside a cell is literal, not a boundary;
-    * column count -- the slice-id is the cell matching ``slice-NN`` and the
-      value is the next cell, with any further columns (status, annotation,
-      justification) read positionally and extras ignored. A 3-column plan and
-      a 5-column plan both parse.
+    * column layout -- the slice-id is the cell matching ``slice-NN`` and every
+      other canonical field is read from the cell its HEADER NAMES, so a
+      canonical column the header omits reads ``''`` and a non-canonical extra
+      column shifts nothing. A 4-column plan without ``Status`` and a 6-column
+      plan with a leading ``Class`` both parse correctly. Only a header naming
+      NO canonical column at all falls back to the legacy positional read (and
+      says so, loudly, on stderr).
 
     Raises ``GateError`` exit 1 when the section heading is absent, exit 2 when
     the table is malformed (no data rows, no row carrying a ``slice-NN`` id,
     duplicate slice id).
+    """
+    return _parse_slice_plan_table(feature_delta_text)[1]
+
+
+def _parse_slice_plan_table(
+    feature_delta_text: str,
+) -> tuple[str, list[SlicePlanRow]]:
+    """The shared parse -- the header ROW (verbatim, stripped) and the rows.
+
+    One locus for both public entry points: :func:`parse_slice_plan_rows`
+    keeps its rows-only signature (the hook's contract) while
+    :func:`parse_slice_plan` also boxes the header, which is what lets a
+    downstream rejection name a MISSING COLUMN instead of blaming the prose.
     """
     lines = feature_delta_text.splitlines()
     heading_index = next(
@@ -372,16 +463,19 @@ def parse_slice_plan_rows(feature_delta_text: str) -> list[SlicePlanRow]:
     table_rows = _collect_table_rows(lines, heading_index + 1)
     if len(table_rows) < 2:
         raise _malformed_table("the slice-plan table has no data rows")
-    return _build_slice_rows(table_rows[2:])
+    header_line = table_rows[0].strip()
+    return header_line, _build_slice_rows(table_rows[2:], header_line)
 
 
 def parse_slice_plan(feature_delta_text: str) -> SlicePlan:
     """Parse the ``[REF] Slice Plan`` table out of a feature-delta.
 
-    Thin wrapper over the shared tolerant :func:`parse_slice_plan_rows` that
-    boxes the rows into a :class:`SlicePlan`.
+    Thin wrapper over the shared tolerant :func:`_parse_slice_plan_table` that
+    boxes the rows -- and the header row they were resolved against -- into a
+    :class:`SlicePlan`.
     """
-    return SlicePlan(rows=tuple(parse_slice_plan_rows(feature_delta_text)))
+    header_line, rows = _parse_slice_plan_table(feature_delta_text)
+    return SlicePlan(rows=tuple(rows), header_line=header_line)
 
 
 def _collect_table_rows(lines: list[str], start: int) -> list[str]:
@@ -437,15 +531,27 @@ def _further_table_row_before_next_heading(lines: list[str], from_index: int) ->
     return False
 
 
-def _build_slice_rows(data_rows: list[str]) -> list[SlicePlanRow]:
-    """Build slice rows from the table data rows, column-count-tolerant (exit 2).
+def _build_slice_rows(
+    data_rows: list[str], header_line: str = ""
+) -> list[SlicePlanRow]:
+    """Build slice rows from the table data rows, header-driven (exit 2).
 
-    Column-tolerant: the slice-id is the first cell matching ``slice-NN`` and
-    the value / status / annotation / justification are read positionally from
-    the cells that follow it; any cell beyond the fifth is ignored, and a
-    3-column plan simply leaves annotation + justification empty. This unifies
-    the former 3-column (hook) and 5-column (CLI) contracts into one parse.
+    Header-driven: the slice-id is still the first cell matching ``slice-NN``
+    (the row anchor), and every OTHER canonical field is read from the cell
+    ``header_line`` NAMES for it. A canonical column the header omits reads
+    ``''``; a non-canonical extra column ("Class", "ADD + REMOVE") is ignored
+    and shifts nothing. Reading by offset from the slice-id cell was the defect
+    this replaces: on a 4-column plan without ``Status`` the ``@coupled`` tag
+    landed in ``status`` and the justification prose in ``annotation``.
+
+    Legacy fallback: when ``header_line`` names NO canonical column at all (or
+    no header was threaded in), the positional read is used -- already-shipped
+    plans with a wholly non-canonical header keep parsing exactly as before.
+    That fallback is announced on stderr, never taken silently.
     """
+    columns = _resolve_header_columns(header_line)
+    if not columns:
+        _warn_positional_fallback(header_line)
     rows: list[SlicePlanRow] = []
     seen: set[str] = set()
     for raw in data_rows:
@@ -462,18 +568,76 @@ def _build_slice_rows(data_rows: list[str]) -> list[SlicePlanRow]:
         if slice_id in seen:
             raise _malformed_table(f"duplicate slice id in slice plan: {slice_id!r}")
         seen.add(slice_id)
-        rows.append(
-            SlicePlanRow(
-                slice_id=slice_id,
-                value_statement=_cell_at(cells, slice_index + 1),
-                status=_cell_at(cells, slice_index + 2),
-                annotation=_cell_at(cells, slice_index + 3),
-                justification=_cell_at(cells, slice_index + 4),
-            )
-        )
+        rows.append(_slice_plan_row(slice_id, cells, columns, slice_index))
     if not rows:
         raise _malformed_table("the slice-plan table has no slice rows")
     return rows
+
+
+def _slice_plan_row(
+    slice_id: str,
+    cells: list[str],
+    columns: dict[str, int],
+    slice_index: int,
+) -> SlicePlanRow:
+    """One row's canonical fields, resolved by header name (or, when the header
+    named no canonical column, by the legacy offset from the slice-id cell)."""
+    if not columns:
+        return SlicePlanRow(
+            slice_id=slice_id,
+            value_statement=_cell_at(cells, slice_index + 1),
+            status=_cell_at(cells, slice_index + 2),
+            annotation=_cell_at(cells, slice_index + 3),
+            justification=_cell_at(cells, slice_index + 4),
+        )
+    return SlicePlanRow(
+        slice_id=slice_id,
+        value_statement=_column_cell(cells, columns, _VALUE_STATEMENT_COLUMN),
+        status=_column_cell(cells, columns, _STATUS_COLUMN),
+        annotation=_column_cell(cells, columns, _ANNOTATION_COLUMN),
+        justification=_column_cell(cells, columns, _JUSTIFICATION_COLUMN),
+    )
+
+
+def _warn_positional_fallback(header_line: str) -> None:
+    """Announce the legacy positional read on stderr (GDP-6: degrade LOUD).
+
+    Emitted on stderr as one JSON line so it can never be mistaken for the
+    gate's own stdout verdict, while still being observable to an operator and
+    greppable by a log scan.
+    """
+    print(
+        json.dumps(
+            {
+                "event": "SlicePlanHeaderNamesNoCanonicalColumn",
+                "what": (
+                    "the Slice Plan header names no canonical column "
+                    f"(header: {header_line!r}); every cell was read by "
+                    "POSITION from the slice-id cell"
+                ),
+                "why": (
+                    "a positional read attributes cells by offset, so a table "
+                    "whose columns differ from "
+                    f"{canonical_slice_plan_header()} silently yields the "
+                    "wrong value for status / annotation / justification"
+                ),
+                "how": (
+                    "rewrite the Slice Plan header to "
+                    f"{canonical_slice_plan_header()}, then re-run "
+                    "`des feature-delta-doctor <feature-delta.md>` to confirm "
+                    "the malformed-slice-plan-header gap is cleared"
+                ),
+            }
+        ),
+        file=sys.stderr,
+    )
+
+
+def _column_cell(cells: list[str], columns: dict[str, int], column: str) -> str:
+    """The cell the header names for ``column``; ``''`` when the header omits
+    that canonical column or the row is short of it."""
+    index = columns.get(column)
+    return "" if index is None else _cell_at(cells, index)
 
 
 def _cell_at(cells: list[str], index: int) -> str:
@@ -488,12 +652,11 @@ def slice_plan_header_deviation(feature_delta_text: str) -> str | None:
 
     Compares header-row TEXT CELLS against the canonical schema (not merely
     column count): catches an extra column, a missing column, and reordered
-    columns alike -- three deviation classes ``_build_slice_rows``'s
-    count-tolerant positional read cannot distinguish (fix-delta-doctor-
-    validates-slice-plan-columns). ``_build_slice_rows`` itself is
-    unchanged -- still column-count-tolerant, for backward compatibility
-    with already-shipped 3-column plans; this function only DETECTS the
-    drift, it never rejects the parse.
+    columns alike (fix-delta-doctor-validates-slice-plan-columns). Complements
+    ``_build_slice_rows``, which now RESOLVES each field by header name and so
+    reads a deviating table correctly, but still cannot tell the author their
+    header deviates; this function only DETECTS the drift, it never rejects
+    the parse.
 
     Consumed by ``feature_delta_doctor._slice_plan_header_gaps`` (M1: one
     locus, :data:`SLICE_PLAN_CANONICAL_COLUMNS` is the only place the
@@ -1266,20 +1429,71 @@ def _check_walking_skeleton_first(plan: SlicePlan) -> None:
 
 
 def _check_value_annotation(plan: SlicePlan) -> None:
-    """Assertion 4: an annotated escape row must record a justification."""
+    """Assertion 4: an annotated escape row must record a justification.
+
+    Two failure modes, two repairs (GDP-3/GDP-4) -- conflating them is the
+    defect this split fixes:
+
+    * the ``Justification`` COLUMN is absent from the header -> no prose can
+      ever be recorded, so the rejection names the missing column, shows the
+      header FOUND against the canonical header EXPECTED, and routes the
+      repair to the producing tool (``des feature-delta-doctor``);
+    * the column is present and the CELL is empty -> the author's repair
+      really is to write the prose, so the content-directed rejection stands.
+    """
     for row in plan.rows:
         if _ANNOTATION_ESCAPE_RE.search(row.annotation) and not row.justification:
-            raise GateError(
-                44,
-                {
-                    "event": "CARPACCIO_SLICE_TOO_LARGE",
-                    "error": (
-                        f"slice {row.slice_id} carries annotation "
-                        f"{row.annotation!r} but records no justification"
-                    ),
-                    "instruction": "record a justification for the annotated slice",
-                },
-            )
+            raise _missing_justification_error(plan, row)
+
+
+def _missing_justification_error(plan: SlicePlan, row: SlicePlanRow) -> GateError:
+    """The rejection for an annotated escape row with no justification --
+    missing-COLUMN diagnosis when the header omits ``Justification``, else the
+    content-directed diagnosis for a present-but-empty cell."""
+    if not _justification_column_absent(plan):
+        return GateError(
+            44,
+            {
+                "event": "CARPACCIO_SLICE_TOO_LARGE",
+                "error": (
+                    f"slice {row.slice_id} carries annotation "
+                    f"{row.annotation!r} but records no justification"
+                ),
+                "instruction": "record a justification for the annotated slice",
+            },
+        )
+    canonical_header = canonical_slice_plan_header()
+    return GateError(
+        44,
+        {
+            "event": "CARPACCIO_SLICE_TOO_LARGE",
+            "error": (
+                f"the Slice Plan table has no '{_JUSTIFICATION_COLUMN}' column, "
+                f"so slice {row.slice_id}'s annotation {row.annotation!r} has "
+                f"nowhere to record its justification -- header FOUND: "
+                f"{plan.header_line} -- header EXPECTED: {canonical_header}"
+            ),
+            "instruction": (
+                f"add the missing '{_JUSTIFICATION_COLUMN}' column: rewrite the "
+                f"Slice Plan header to {canonical_header} and give every row a "
+                "matching cell, then re-run `des feature-delta-doctor "
+                "<feature-delta.md>` to confirm the malformed-slice-plan-header "
+                "gap is cleared"
+            ),
+        },
+    )
+
+
+def _justification_column_absent(plan: SlicePlan) -> bool:
+    """Whether the plan's header row names no ``Justification`` column.
+
+    ``False`` when the header is unknown (a plan built directly from rows):
+    an unknown header is never reported as a missing column -- fail-safe onto
+    the content-directed rejection, which is the pre-existing behaviour.
+    """
+    if not plan.header_line:
+        return False
+    return _JUSTIFICATION_COLUMN not in _resolve_header_columns(plan.header_line)
 
 
 def _check_slice_size(

@@ -161,9 +161,31 @@ def _then_collection_error_exit_code(collect) -> None:
 
 
 @given("a contract test tree that collects clean", target_fixture="gate_repo")
-def _given_clean_tree_for_gate(composition: SpineDogfoodComposition):
-    """Precondition: the repo (post-slice-00) collects clean."""
-    return composition.repo
+def _given_clean_tree_for_gate(composition: SpineDogfoodComposition, tmp_path):
+    """Precondition: a synthetic tree that collects clean into a populated scope.
+
+    REAL_NON_EMPTY is the fourth member of the same closed condition universe
+    the three untrustworthy scopes below are drawn from, and it is materialised
+    the same way -- an on-disk tree anchored MECHANICALLY to its real pytest
+    signature (exit 0, populated under the contract filter) before the gate
+    sees it.
+
+    This scenario used to point at `composition.repo`, paying a whole ~1677-item
+    real-repo collect through the gate worker (92.2s measured) for a property
+    that holds identically at any suite size: a clean, populated scope digests
+    to a 64-hex non-sentinel value, twice, with strict markers preserved. The
+    repo already ratified that trade for the sibling gate self-tests -- charter
+    `docs/product/expectations/fix-contract-gate-slow-tests-synthetic-fixture/`,
+    pinned by `tests/bugs/des/
+    test_contract_gate_self_tests_use_synthetic_fixture_not_real_repo.py`.
+
+    What this scenario NO LONGER carries: any claim about the gate's behaviour
+    at THIS repo's scale or against its plugin-rich conftest chain -- notably
+    that `_collect_scope_uncached`'s plugin-allowlist trim does not shrink the
+    real collect. That property is answer-preservation, guarded independently
+    by `tests/bugs/des/test_gate_collect_inventory_is_answer_preserving.py`.
+    """
+    return composition.make_test_tree(tmp_path, CollectScope.REAL_NON_EMPTY)
 
 
 _UNTRUSTWORTHY_SCOPE = {
@@ -219,8 +241,8 @@ def _when_derive_digest_again(composition: SpineDogfoodComposition, gate_repo):
     return composition.run_collect_only_digest(gate_repo)
 
 
-@then("the digest fingerprints the real non-empty contract suite")
-def _then_digest_fingerprints_real_suite(gate_run) -> None:
+@then("the digest fingerprints the non-empty collected scope")
+def _then_digest_fingerprints_collected_scope(gate_run) -> None:
     assert gate_run.outcome is GuardOutcome.DIGEST_PRINTED, (
         "the contract gate did not print a digest -- slice-01 not delivered"
     )

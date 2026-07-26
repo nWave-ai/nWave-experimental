@@ -93,6 +93,53 @@ of the hazard. State what you MEASURED and how much of it; never cite a proporti
 as though you had counted it. A quantitative limit ("don't load the machine", "one box lane") is
 a limit, never a licence for zero.
 
+**A probe that names what it hunts finds itself (STANDING).** Before deciding whether a
+box-bound stage is already running, note that the obvious ways to ask all COUNT THE ASKER:
+`pgrep -f "<pattern>"`, a shell loop whose source contains the pattern, `ps | grep` — in each
+case the pattern is inside the probe's own command line, so the probe matches itself and
+reports one more than the truth. The failure is quiet and one-directional: it always
+over-counts, so it makes a free box look busy and forfeits a lane. Believing a disclaimer
+does not help — asserting "this cannot self-match" is not a property of the probe, it is a
+claim to be checked like any other. A probe is trustworthy only when it CANNOT contain what
+it searches for: build the pattern at runtime rather than as a literal, and exclude the
+asker's own pid AND its ancestor chain (the shell, its parent, up to init) before counting.
+The same discipline applies to liveness: measure the process TREE's CPU, never the parent's
+alone — a parent asleep in `poll` while a child works is healthy, and killing it destroys
+valid work.
+
+**Two fresh measurements on different units are still one wrong conclusion (STANDING).** The
+inheritance rule above catches a STALE measurement carried to a new unit. This catches its
+harder sibling: two measurements, both taken correctly, both taken NOW, on DIFFERENT units,
+joined into a single sentence. Nothing about either looks wrong — the timestamps are current,
+the commands are right — and the conclusion is false anyway. Ask of every joined claim not
+"is each measurement correct?" but "were they taken on the SAME unit?", and name that unit
+out loud in the claim.
+
+The commonest shape is a TOOL measured in one tree and a POPULATION counted in another.
+Worktrees drift far behind trunk — routinely by hundreds of commits — so a tool's behaviour
+observed inside a worktree describes THAT tree's version of the tool, not the product's. A
+capability that looks missing there may simply be a commit the worktree has not integrated,
+and concluding "the tool cannot do X" from that reading turns an integration gap into a
+design defect and can cost a wave of work that was never needed. Before reporting any tool
+behaviour as a product fact, re-run it from TRUNK; if the two disagree, the finding is the
+divergence, not the behaviour.
+
+**A locus is not a path (STANDING).** A defect or debt row may NOT move from OPEN to RESOLVED on
+the strength of inspecting the LOCUS it cites. The locus is where the defect was first written
+down; the defect lives on whatever PATH actually runs. Closing a row therefore requires two
+things, and the first alone is never enough: (1) the cited locus no longer shows the defect, and
+(2) a witness that EXERCISES the reachable path and observes the behaviour gone. Without (2) the
+honest state is `CAUSE_INDETERMINATE / LIVE_RISK` — still open, cause not yet established — never
+RESOLVED. A freshness sweep that asks only "does the cited locus still show it?" finds dead rows
+and, on the same pass, converts live risk into a false all-clear; that second outcome costs more
+than leaving every dead row in place. The same discipline forbids the mirror error: when a
+believed cause is DISPROVED, do not substitute an unverified replacement. Say the cause is
+indeterminate and leave the row open — a wrong cause that sounds specific is harder to dislodge
+than an admitted gap. Coming back OUT of indeterminate has its own bar: naming a cause requires
+citing the observation that DISCRIMINATES it from the alternatives, not one that merely agrees
+with it. Correlation survives every rival explanation, so it promotes whichever cause was
+thought of first; a discriminating observation is one the other candidates would have failed.
+
 **Never inherit a property measured on another unit (STANDING).** NAME the unit you are deciding
 about, then verify you measured THAT one, THIS turn. A property measured elsewhere is a fact —
 elsewhere; carried over it becomes an inference that still looks like a fact, which is why it
@@ -135,6 +182,8 @@ one, go looking for the smaller instance.
 | "It's night / the box is shared / I was told not to load the machine, so zero work is the safe default" | That is a QUANTITATIVE limit (`--max-parallel 1`, resource-aware launch, one box lane), never a licence for zero. Caution over-applied into a total stop is a rationalisation in a safety costume, and it is not what was asked for. |
 | "Most of this pile is design-gated, so the pile is gated" | Do not generalise from the heaviest rows — nor from the lightest. Gating a pile by glancing at its biggest items produces zero; declaring it drainable by keyword-excluding those items is the same error inverted. Route each row by a MEASURED blast radius, one row at a time, and report how many you actually measured. |
 | "The classifier said tier L, so this is L-lane work" | Only if the classifier measured THIS unit. Consumer counts keyed on a bare symbol name conflate every same-named symbol in the repo, so any module exposing a common name (`main`, `run`, `setup`) is tier L by construction. Sanity-probe a measuring gate with two inputs that MUST differ; if the number is identical, the gate is not measuring what it claims. |
+| "This work is X, not nWave delivery, so the sensible default is to leave them off — I'll offer instead of asking" | A default you picked is a unilateral decision wearing the costume of an offer. The mandate is an ASK with all ten named, not a recommendation to decline. Measured 2026-07-22: an instance reasoned exactly this thirty seconds before starting a delivery — and the loops are mostly ABOUT delivery (spine routing, bugfix source/drain, worktree hygiene), so the premise was wrong too. |
+| "The recurring cadence was my own scheduling, not the ten loops" | Self-scheduled wakeups are session-scoped too: the restart killed those as well. Measured 2026-07-22: an instance saw its own cadence stop, never connected "session restarted" to "the thing firing all night just died", and resumed ad-hoc. Re-check regardless of which mechanism was driving the cadence. |
 
 ## The ten loops
 
@@ -165,6 +214,10 @@ Arming the loops CONTENDS the tree: from that moment other lanes may write it. S
 arming is itself a reason never to run a wave or a fix directly on trunk — the contention you
 must respect is one you created. Carry this discipline in the PROCEDURE, not only in the
 reminder: a rule that lives in one and not the other is followed only by whoever read both.
+Measured 2026-07-22: an instance armed all ten loops and then, ten minutes later, ran a full
+`/nw-bugfix` — RCA, charter, AT authoring — directly on trunk, having made the tree contended by
+its own act of arming them. The discipline was in the reminder but not in the procedure it was
+following; both now carry it.
 
 
 **`/loop 30m` — never bare-dispatch for epic/feature/slice work.** Delivering an
@@ -175,6 +228,39 @@ final phases are exactly what catch false-done and blast-radius, and exactly wha
 skipped when work is fragmented (e.g. running `/nw-execute` slice-by-slice without ever
 closing the feature-end cycle). Never skip them — ensure failure injection and Vera's
 examine both actually ran before calling anything done.
+
+**Know the shape of the pull, because knowing the rule is not enough to resist it.** The
+moment you need work from an agent, the form that arrives first is `Agent(subagent_type=…)`.
+It is one call, it is right there, and it produces something. Generating the envelope first
+feels like an extra step toward the same result — and that is exactly the illusion, because
+it is NOT the same result. A generated envelope carries the wave's markers, the design
+context, the gates the agent is held to, and the phase it is executing. A bare dispatch
+carries your prompt and nothing else. The agent will work either way; only one of the two
+is inside the system that catches it being wrong.
+
+**When a gate refuses you, read WHAT IT OFFERS before you take any of it.** A
+wave-marker refusal will propose that you copy the missing markers across, or declare
+wave membership, or clear the floor. Every one of those makes the dispatch you were
+already making go through. Not one of them asks the question that matters: why are you
+hand-writing this dispatch instead of generating it.
+
+**A recovery that lists N ways to make your action succeed is not correcting you — it is
+teaching you to get around itself.** Recognising that shape is the whole skill. The move
+is not to pick the cheapest of the offered options; it is to stop and ask whether the
+FORM of what you were doing was right. Almost always the answer is that the envelope was
+supposed to be generated, and none of the offered options says so. The gate diagnosed a
+missing field because a missing field is what it can see. It cannot see that you took the
+wrong road, so it will never mention the road.
+
+**And of the offered options, the one that disarms a control is the most attractive and
+the least earned.** Clearing a wave floor removes the obstacle instead of satisfying it,
+which is precisely why it is the option that will feel efficient. Before invoking it you
+must have VERIFIED the floor is genuinely stale — when it was raised, for which feature,
+whether you are in fact inside that wave — because "it is blocking me" is evidence about
+you, never about the floor. The command demands a reason for exactly this purpose: the
+reason is a human authorisation token, not a field to fill in so the command will run.
+Writing one yourself to unblock yourself is the asymmetry violation in miniature —
+controls veto, only humans authorise.
 
 **`/loop 59m` — reconcile abandoned worktrees.** Run `git worktree list`. For each
 worktree not actively owned by a live dispatch, decide: merge it back (if the work is
@@ -203,7 +289,13 @@ it. **THE PARALLELISM MECHANISM IS THE ISOLATED WORKTREE, not more agents in one
 units of work = N worktrees, each with its OWN provisioned environment, so N crafters never
 contend (a crafter runs only its own SCOPED tests). What stays serialized behind ONE lane is
 the box-bound legs — the seals, the whole-tree verification runs, and the merge-back write.
-Fan the reasoning lanes out, serialize the seals, isolate every writer in its own worktree. Load the `nw-throughput` skill (Skill tool) the first time this loop fires in a
+Fan the reasoning lanes out, serialize the seals, isolate every writer in its own worktree.
+At every scheduling point recompute the artifact-level DAG: dependencies attach to
+consumed unstable artifacts, never whole-slice completion. Count ownership-safe READY
+cloud lanes, not vaguely “available work.” A READY lane plus idle cloud capacity is
+`UNUSED_PARALLELISM` unless an artifact/file/box reason is recorded. State
+`RUNNING / READY / BOX / BLOCKED`, then fill the READY difference. Load the
+`nw-throughput` skill (Skill tool) the first time this loop fires in a
 session orchestrating multi-slice/multi-feature delivery — it carries the full doctrine
 (the five moves, the resource-threshold SSOT pointer, the re-runnable measure) this
 bullet only summarizes; loading it is what actually arms the discipline, not just reading
@@ -257,7 +349,6 @@ your own incidental noticing.** Passively "watching while working" finds only wh
 happen to touch — most of the repo never gets looked at. This is a real, already-shipped
 spine lane, not a bespoke convention: `des-refactor-fixer-swarm` slice-03 ships a
 `DES-MODE: find` classifier (`classify_find_dispatch`, `des_marker_parser.py`) that spine-
-recognizes a finder dispatch — exempt from the classic TDD-dispatch completeness check,
 same as `DES-MODE: refactor` — but nothing yet fires it periodically. THIS loop is that
 missing trigger. **DISPATCH THE CRAFTER REVIEWER (`@nw-software-crafter-reviewer`), NEVER A
 GENERIC AGENT.** WHY the reviewer specifically, and not a general-purpose agent nor the

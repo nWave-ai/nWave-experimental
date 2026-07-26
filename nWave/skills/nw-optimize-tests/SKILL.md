@@ -29,11 +29,8 @@ The timing baseline Trim compares against depends on `workflow.mode` — per-mod
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
-  Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
-- **classic mode** — wall-clock figures recorded in the classic-mode execution-log.json.
 - **atdd_pure mode** — use the **AT-completion ledger** phase-boundary timestamps as the timing baseline. <!-- mode-ref-ok --> Each ledger slice records a phase-boundary timestamp per phase transition, and the deltas between consecutive phase-boundary marks give the per-slice timing baseline Trim measures improvement against.
 
 ## Agent Invocation
@@ -91,7 +88,6 @@ Trim inventories the unit suite, runs md5sum cross-check, scans for anti-pattern
 ```
 /nw-optimize-tests lean-wave-documentation
 ```
-Trim resolves to `tests/<feature-id>/` paths from the classic-mode execution-log.json if available (or, in atdd_pure mode, from the ledger's recorded test paths), otherwise scopes to test files referencing the feature-id. <!-- mode-ref-ok -->
 
 ### Example 3: Single fat file
 ```

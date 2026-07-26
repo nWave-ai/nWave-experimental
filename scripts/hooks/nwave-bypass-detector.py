@@ -1,101 +1,141 @@
 #!/usr/bin/env python3
-"""nWave Bypass Detector - Post-commit hook."""
+"""nWave Bypass Detector -- post-commit hook.
 
+Records every commit, and records LOUDLY when one skipped verification.
+
+ORDER IS THE CONTRACT HERE, and it is why this file is shaped the way it is.
+The detection signal -- did pre-commit run? -- and the human-facing BYPASS line
+need nothing but git and the filesystem. The structured audit event needs the DES
+package. Those are two different fragilities, and the earlier version fused them:
+the DES import came FIRST, inside one broad `try`, so when
+`des.adapters.driven.logging.audit_logger` was deleted on 2026-02-06 the
+ModuleNotFoundError was swallowed by `except Exception: return 0` and the hook
+stopped doing ALL of its jobs at once -- silently, for five months.
+
+Worse than the missing event: the marker was never consumed either, because that
+code sat downstream of the failing import. So a later partial repair -- fixing
+only the import -- would have read a stale marker and reported the next
+`--no-verify` commit as verified. A false negative is worse than the outage.
+
+So: git-and-filesystem work first and unconditionally, the optional structured
+event last and separately guarded. If the DES package breaks again, this hook
+still detects the bypass and still writes the line a human reads.
+"""
+
+from __future__ import annotations
+
+import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
-def main():
-    """Log commit for audit purposes using DES audit logger."""
-    try:
-        # Add src to path to import DES modules
-        project_root = Path(__file__).parent.parent.parent
-        sys.path.insert(0, str(project_root))
-
-        # Import DES config and audit logger
-        from src.des.adapters.driven.config.des_config import DESConfig
-        from src.des.adapters.driven.logging.audit_logger import log_audit_event
-
-        # Check if audit logging is enabled
-        config = DESConfig()
-        if not config.audit_logging_enabled:
-            return 0
-
-        # Get commit info
-        import subprocess
-        from datetime import datetime, timezone
-
-        # Resolve $GIT_DIR to read the pre-commit "ran" marker. The marker is
-        # written ONLY by the pre-commit stage (nwave_precommit_marker); a
-        # `git commit --no-verify` skips pre-commit, so an ABSENT marker is the
-        # reliable signal of a verification bypass. post-commit is NOT skipped by
-        # --no-verify, so this detector always runs and can observe the absence.
-        # (The prior PRE_COMMIT_ALLOW_NO_CONFIG env check never fired and silently
-        # logged every --no-verify commit as a normal one.)
-        git_dir = (
-            subprocess.run(
-                ["git", "rev-parse", "--git-dir"],
-                capture_output=True,
-                text=True,
-                check=False,
-            ).stdout.strip()
-            or ".git"
-        )
-        marker = Path(git_dir) / ".nwave-precommit-ran"
-        no_verify = not marker.exists()
-        if marker.exists():
-            try:
-                marker.unlink()  # consume so the next commit re-detects freshly
-            except OSError:
-                pass
-
-        result = subprocess.run(
-            ["git", "log", "-1", "--format=%H|%s|%an"],
+def _git_dir() -> Path:
+    return Path(
+        subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
             capture_output=True,
             text=True,
             check=False,
+        ).stdout.strip()
+        or ".git"
+    )
+
+
+def _consume_marker(git_dir: Path) -> bool:
+    """True when pre-commit did NOT run (the bypass signal).
+
+    The marker is written only by the pre-commit stage, which `--no-verify`
+    skips; post-commit is not skipped, so this hook always runs and can observe
+    the absence. Consuming it here -- BEFORE anything that can raise -- is what
+    keeps the next commit's detection honest.
+    """
+    marker = git_dir / ".nwave-precommit-ran"
+    ran = marker.exists()
+    if ran:
+        try:
+            marker.unlink()
+        except OSError:
+            pass
+    return not ran
+
+
+def _head_commit() -> tuple[str, str, str]:
+    result = subprocess.run(
+        ["git", "log", "-1", "--format=%H|%s|%an"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ("unknown", "unknown", "unknown")
+    parts = result.stdout.strip().split("|", 2)
+    while len(parts) < 3:
+        parts.append("unknown")
+    return (parts[0], parts[1], parts[2])
+
+
+def _write_bypass_line(git_dir: Path, commit_hash: str) -> None:
+    """The line a human reads. Needs no DES import, so it is never lost with one."""
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    line = (
+        f"{stamp} | {commit_hash[:8]} | BYPASS | --no-verify used | ⚠️ AUDIT REQUIRED\n"
+    )
+    try:
+        log = git_dir / "hooks" / "pre-commit.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with log.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+    except OSError:
+        pass
+
+
+def _log_audit_event(
+    commit_hash: str, subject: str, author: str, no_verify: bool
+) -> None:
+    """The structured event. Optional by design, and guarded ALONE.
+
+    Its failure must never take the detection with it -- that coupling is the
+    defect this file exists to not repeat.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        from des.adapters.driven.config.des_config import DESConfig
+        from des.adapters.driven.logging.audit_events import AuditEvent
+        from des.adapters.driven.logging.jsonl_audit_log_writer import (
+            JsonlAuditLogWriter,
         )
 
-        if result.returncode == 0:
-            parts = result.stdout.strip().split("|", 2)
-            if len(parts) >= 3:
-                commit_hash, subject, author = parts
-            else:
-                commit_hash = parts[0] if parts else "unknown"
-                subject = parts[1] if len(parts) > 1 else "unknown"
-                author = "unknown"
-
-            # Log to DES audit log
-            log_audit_event(
-                event_type="GIT_COMMIT",
-                commit=commit_hash[:8],
-                commit_full=commit_hash,
-                subject=subject,
-                author=author,
-                no_verify=no_verify,
+        if not DESConfig().audit_logging_enabled:
+            return
+        JsonlAuditLogWriter().log_event(
+            AuditEvent(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                event="GIT_COMMIT",
+                commit_hash=commit_hash,
+                outcome="BYPASS" if no_verify else "VERIFIED",
+                extra_context={
+                    "commit": commit_hash[:8],
+                    "subject": subject,
+                    "author": author,
+                    "no_verify": no_verify,
+                },
             )
-
-            # Restore the human-facing bypass audit log so a --no-verify commit is
-            # loudly recorded for review (the Feb-era format Ale relies on).
-            if no_verify:
-                stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                log_line = (
-                    f"{stamp} | {commit_hash[:8]} | BYPASS | --no-verify used "
-                    f"| ⚠️ AUDIT REQUIRED\n"
-                )
-                try:
-                    with (Path(git_dir) / "hooks" / "pre-commit.log").open(
-                        "a", encoding="utf-8"
-                    ) as handle:
-                        handle.write(log_line)
-                except OSError:
-                    pass
-
-        return 0
-
+        )
     except Exception:
-        # Never block on audit failures
-        return 0
+        pass
+
+
+def main() -> int:
+    git_dir = _git_dir()
+    no_verify = _consume_marker(git_dir)
+    commit_hash, subject, author = _head_commit()
+
+    if no_verify:
+        _write_bypass_line(git_dir, commit_hash)
+
+    _log_audit_event(commit_hash, subject, author, no_verify)
+    return 0
 
 
 if __name__ == "__main__":

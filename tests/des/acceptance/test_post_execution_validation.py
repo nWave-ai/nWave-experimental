@@ -594,16 +594,16 @@ class TestOrchestratorHookIntegration:
         THEN the hook's on_agent_complete() is invoked exactly once
         AND the step file path is forwarded to the hook
         """
-        from des.adapters.driven.filesystem.in_memory_filesystem import (
-            InMemoryFileSystem,
-        )
-        from des.adapters.driven.time.mocked_time import MockedTimeProvider
-        from des.adapters.drivers.hooks.mocked_hook import MockedSubagentStopHook
-        from des.adapters.drivers.validators.mocked_validator import (
-            MockedTemplateValidator,
-        )
         from des.application.orchestrator import DESOrchestrator
         from des.ports.driven_ports.hook_port import HookResult
+        from tests.des.adapters.in_memory_filesystem import (
+            InMemoryFileSystem,
+        )
+        from tests.des.adapters.mocked_hook import MockedSubagentStopHook
+        from tests.des.adapters.mocked_time import MockedTimeProvider
+        from tests.des.adapters.mocked_validator import (
+            MockedTemplateValidator,
+        )
 
         hook = MockedSubagentStopHook(HookResult(validation_status="PASSED"))
         orchestrator = DESOrchestrator(
@@ -632,16 +632,16 @@ class TestOrchestratorHookIntegration:
         WHEN on_subagent_complete() is called
         THEN the orchestrator propagates the FAILED result with abandoned phase info
         """
-        from des.adapters.driven.filesystem.in_memory_filesystem import (
-            InMemoryFileSystem,
-        )
-        from des.adapters.driven.time.mocked_time import MockedTimeProvider
-        from des.adapters.drivers.hooks.mocked_hook import MockedSubagentStopHook
-        from des.adapters.drivers.validators.mocked_validator import (
-            MockedTemplateValidator,
-        )
         from des.application.orchestrator import DESOrchestrator
         from des.ports.driven_ports.hook_port import HookResult
+        from tests.des.adapters.in_memory_filesystem import (
+            InMemoryFileSystem,
+        )
+        from tests.des.adapters.mocked_hook import MockedSubagentStopHook
+        from tests.des.adapters.mocked_time import MockedTimeProvider
+        from tests.des.adapters.mocked_validator import (
+            MockedTemplateValidator,
+        )
 
         hook = MockedSubagentStopHook(
             HookResult(

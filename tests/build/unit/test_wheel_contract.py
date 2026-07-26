@@ -15,7 +15,6 @@ These tests operate on real wheel files built by `python -m build --wheel`.
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -23,6 +22,7 @@ import pytest
 from scripts.validation.validate_wheel_contents import (
     WheelContents,
 )
+from tests.common.in_process_cli import run_script_in_process
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -256,20 +256,13 @@ class TestScriptExitCodes:
 
     def test_valid_wheel_exits_zero(self, built_wheel: Path):
         """Running the script against a valid wheel exits with code 0."""
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(
-                    PROJECT_ROOT
-                    / "scripts"
-                    / "validation"
-                    / "validate_wheel_contents.py"
-                ),
-                str(built_wheel),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        script = PROJECT_ROOT / "scripts" / "validation" / "validate_wheel_contents.py"
+        exit_code, out, err = run_script_in_process(script, str(built_wheel))
+        result = subprocess.CompletedProcess(
+            args=[str(script), str(built_wheel)],
+            returncode=exit_code,
+            stdout=out,
+            stderr=err,
         )
         assert result.returncode == 0, (
             f"Expected exit code 0 for valid wheel, got {result.returncode}.\n"
@@ -279,20 +272,13 @@ class TestScriptExitCodes:
     def test_nonexistent_wheel_exits_nonzero(self, tmp_path: Path):
         """Running the script against a nonexistent file exits non-zero."""
         fake_wheel = tmp_path / "nonexistent.whl"
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(
-                    PROJECT_ROOT
-                    / "scripts"
-                    / "validation"
-                    / "validate_wheel_contents.py"
-                ),
-                str(fake_wheel),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        script = PROJECT_ROOT / "scripts" / "validation" / "validate_wheel_contents.py"
+        exit_code, out, err = run_script_in_process(script, str(fake_wheel))
+        result = subprocess.CompletedProcess(
+            args=[str(script), str(fake_wheel)],
+            returncode=exit_code,
+            stdout=out,
+            stderr=err,
         )
         assert result.returncode != 0, (
             f"Expected non-zero exit for nonexistent wheel, got {result.returncode}"

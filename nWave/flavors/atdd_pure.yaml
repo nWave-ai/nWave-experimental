@@ -36,8 +36,8 @@ description: |
   with mechanical ledger evidence (ATReviewVerdict + SliceCommitVerified
   + CarpaccioGateCleared). Slices are ordered (slice-N predecessor
   must carry SliceCommitVerified record before slice-N+1 dispatches).
-  Replaces classic roadmap-based DELIVER with config-driven gate
-  composition per INV-11 + INV-12.
+  Uses config-driven gate composition instead of the retired roadmap-driven
+  delivery path, per INV-11 + INV-12.
 
 required_artifacts:
   - docs/feature/{feature_id}/feature-delta.md

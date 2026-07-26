@@ -344,9 +344,16 @@ class TestNWaveInstallerLogging:
         self, tmp_path, monkeypatch
     ):
         """
-        GIVEN: NWaveInstaller is instantiated
-        WHEN: Not in dry-run mode
-        THEN: Logger is configured with log file in claude config directory
+        GIVEN: NWaveInstaller is instantiated outside dry-run
+        WHEN: install logging is enabled
+        THEN: the sink lands in the claude config directory -- and NOT before
+
+        The two-step is the point, not an accident of construction order. The
+        sink stays unset until `enable_install_logging()` so that a refused
+        ownership preflight leaves no trace on a machine nWave was not
+        authorised to write to. Asserting only the end state would let a
+        regression that logs from construction pass unnoticed, so both ends are
+        pinned here.
         """
         from scripts.install.install_nwave import NWaveInstaller
         from scripts.install.install_utils import PathUtils
@@ -362,8 +369,13 @@ class TestNWaveInstallerLogging:
         # ACT
         installer = NWaveInstaller(dry_run=False)
 
+        # ASSERT - nothing is written before the preflight authorises it
+        assert installer.logger.log_file is None
+
+        # ACT - the explicit enable is what arms the sink
+        installer.enable_install_logging()
+
         # ASSERT
-        assert installer.logger.log_file is not None
         expected_log_path = tmp_path / ".claude" / "nwave-install.log"
         assert installer.logger.log_file == expected_log_path
 

@@ -116,13 +116,36 @@ def _validator_for(document: object) -> Draft202012Validator:
     return Draft202012Validator(schema)
 
 
+def _missing_manifest_diagnostic(manifest_path: Path) -> str:
+    """WHAT/WHY/HOW diagnostic for a manifest path that does not exist.
+
+    Names (1) the missing path as given, (2) WHY the manifest gate needs it,
+    (3) a concrete remediation, and (4) the resolved repo root the CLI
+    actually used to interpret a relative path -- the real cause of this bug
+    class is almost always resolution against the wrong worktree, and prior
+    to this fix no message said so.
+    """
+    resolved_root = Path.cwd()
+    return (
+        f"manifest not found: {manifest_path} -- resolved against repo root "
+        f"{resolved_root}. WHY: the design wave's manifest gate needs this "
+        "file to validate the unbounded-input-domain rows. HOW: generate it "
+        "with the design wave's producing tool, or check you are running "
+        "from the intended repo root (this path is resolved relative to the "
+        "current working directory)."
+    )
+
+
 def validate_manifest(manifest_path: Path) -> int:
     """Validate one manifest.yaml; return the process exit code.
 
     Returns 0 when the manifest is schema-valid and every sut: symbol is
-    grep-findable, 1 when a sut: symbol is stale, 2 when the manifest is
-    malformed or schema-invalid.
+    grep-findable, 1 when the path is missing or a sut: symbol is stale,
+    2 when the manifest is malformed or schema-invalid.
     """
+    if not manifest_path.is_file():
+        print(_missing_manifest_diagnostic(manifest_path), file=sys.stderr)
+        return 1
     document = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     validator = _validator_for(document)
     errors = sorted(validator.iter_errors(document), key=lambda error: str(error.path))

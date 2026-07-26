@@ -109,43 +109,6 @@ def _build_no_max_turns_stdin() -> str:
 # --- Test 1: PreToolUse ALLOWED event carries same hook_id as HOOK_INVOKED ---
 
 
-def test_pre_tool_use_allowed_event_carries_hook_id(monkeypatch, tmp_path):
-    """When PreToolUse allows a DES task, the HOOK_PRE_TOOL_USE_ALLOWED
-    event carries the same hook_id as the HOOK_INVOKED event."""
-    from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    monkeypatch.setattr(des_task_signal, "DES_SESSION_DIR", tmp_path / ".nwave" / "des")
-    monkeypatch.setattr(
-        des_task_signal,
-        "DES_TASK_ACTIVE_FILE",
-        tmp_path / ".nwave" / "des" / "des-task-active",
-    )
-
-    events: list[AuditEvent] = []
-    writer = make_capturing_writer(events)
-
-    monkeypatch.setattr("sys.stdin", io.StringIO(_build_des_task_stdin()))
-    monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
-
-    with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
-        exit_code = adapter.handle_pre_tool_use()
-
-    assert exit_code == 0
-
-    # Extract hook_id from HOOK_INVOKED
-    invoked = [e for e in events if e.event_type == "HOOK_INVOKED"]
-    assert len(invoked) >= 1
-    hook_id = invoked[0].data["hook_id"]
-
-    # The service-emitted ALLOWED event must carry the same hook_id
-    allowed = [e for e in events if e.event_type == "HOOK_PRE_TOOL_USE_ALLOWED"]
-    assert len(allowed) == 1
-    assert allowed[0].hook_id == hook_id
-
-
-# --- Test 2: PreToolUse BLOCKED event carries same hook_id as HOOK_INVOKED ---
-
-
 def test_pre_tool_use_blocked_event_carries_hook_id(monkeypatch):
     """When PreToolUse blocks (missing max_turns), the HOOK_PRE_TOOL_USE_BLOCKED
     event carries the same hook_id as the HOOK_INVOKED event."""
@@ -249,55 +212,3 @@ def test_subagent_stop_passed_event_carries_hook_id(monkeypatch, tmp_path):
 
 
 # --- Test 4: SubagentStop FAILED event carries same hook_id as HOOK_INVOKED ---
-
-
-def test_subagent_stop_failed_event_carries_hook_id(monkeypatch, tmp_path):
-    """When SubagentStop fails validation (incomplete phases), the
-    HOOK_SUBAGENT_STOP_FAILED event carries the same hook_id as HOOK_INVOKED."""
-    from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
-
-    des_dir = tmp_path / ".nwave" / "des"
-    des_dir.mkdir(parents=True)
-    monkeypatch.setattr(des_task_signal, "DES_SESSION_DIR", des_dir)
-    monkeypatch.setattr(
-        des_task_signal, "DES_TASK_ACTIVE_FILE", des_dir / "des-task-active"
-    )
-
-    # Write incomplete execution log (only 2 of 7 phases)
-    log_path = tmp_path / "execution-log.json"
-    event_strings = [
-        "01-01|PREPARE|EXECUTED|PASS|2026-02-10T21:00:00Z",
-        "01-01|RED_ACCEPTANCE|EXECUTED|FAIL|2026-02-10T21:01:00Z",
-    ]
-    log_data = {
-        "schema_version": "2.0",
-        "project_id": "test-project",
-        "events": event_strings,
-    }
-    log_path.write_text(json.dumps(log_data, indent=2))
-
-    events: list[AuditEvent] = []
-    writer = make_capturing_writer(events)
-
-    stop_stdin = json.dumps(
-        {
-            "executionLogPath": str(log_path),
-            "projectId": "test-project",
-            "stepId": "01-01",
-        }
-    )
-    monkeypatch.setattr("sys.stdin", io.StringIO(stop_stdin))
-    monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
-
-    with patch.object(hook_protocol, "_audit_writer_factory", return_value=writer):
-        adapter.handle_subagent_stop()
-
-    # Extract hook_id from HOOK_INVOKED
-    invoked = [e for e in events if e.event_type == "HOOK_INVOKED"]
-    assert len(invoked) >= 1
-    hook_id = invoked[0].data["hook_id"]
-
-    # The service-emitted FAILED event must carry the same hook_id
-    failed = [e for e in events if e.event_type == "HOOK_SUBAGENT_STOP_FAILED"]
-    assert len(failed) == 1
-    assert failed[0].hook_id == hook_id

@@ -45,6 +45,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.git.git_constants import GIT_REV_PARSE
 from des.adapters.driven.git.git_subprocess import git_text
 from des.adapters.driven.runner.pytest_runner import (
     _signal_kill_reason,
@@ -340,7 +341,7 @@ def _worktree_target_dir(target_root: Path) -> Path | None:
     "no reuse" (logged, never a crash, never a guessed dir).
     """
     try:
-        common_dir = git_text(target_root, "rev-parse", "--git-common-dir").strip()
+        common_dir = git_text(target_root, GIT_REV_PARSE, "--git-common-dir").strip()
     except (subprocess.CalledProcessError, OSError) as exc:
         _logger.info(
             "cargo_runner: CARGO_TARGET_DIR worktree-reuse skipped for %s "

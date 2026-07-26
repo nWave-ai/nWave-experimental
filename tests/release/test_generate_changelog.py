@@ -36,10 +36,10 @@ Scenario inventory (16 scenarios):
 """
 
 import subprocess
-import sys
 from pathlib import Path
 
 from scripts.release.generate_changelog import _categorize_commits
+from tests.common.in_process_cli import run_script_in_process
 
 
 SCRIPT = "scripts/release/generate_changelog.py"
@@ -92,12 +92,11 @@ def _run_changelog_in_repo(repo_path, *args):
     """Run generate_changelog.py inside a specific git repo directory."""
     script_path = str(Path(_project_root()) / SCRIPT)
     env = {**__import__("os").environ, "GIT_CEILING_DIRECTORIES": str(repo_path)}
-    return subprocess.run(
-        [sys.executable, script_path, *args],
-        cwd=str(repo_path),
-        capture_output=True,
-        text=True,
-        env=env,
+    exit_code, out, err = run_script_in_process(
+        script_path, *args, cwd=str(repo_path), env=env
+    )
+    return subprocess.CompletedProcess(
+        args=[script_path, *args], returncode=exit_code, stdout=out, stderr=err
     )
 
 

@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 FeatureId = FeatureName
 
 # ADR-027 §Decision: workflow_mode opt-in dispatch selector.
-WorkflowMode = Literal["classic", "atdd_pure"]
+WorkflowMode = Literal["atdd_pure"]
 
 # Plan v3 §4.1: cohort pre-assignment drives SLO calibration.
 Cohort = Literal["S", "M", "L", "XL"]
@@ -605,8 +605,8 @@ class FalsifierGateTripped:
 
     feature_id: FeatureId
     breach: dict[str, float]
-    flipped_to_mode: Literal["classic"]
     timestamp: datetime
+    halted: Literal[True] = True
 
     def __post_init__(self) -> None:
         _require_tz_aware(self.timestamp, "FalsifierGateTripped.timestamp")

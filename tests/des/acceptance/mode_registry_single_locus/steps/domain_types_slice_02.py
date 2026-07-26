@@ -30,6 +30,7 @@ from enum import Enum
 from .domain_types_slice_01 import (  # shared slice-01 vocabulary (S1-safe reuse)
     ATDD_PURE_CRAFTER_DISCIPLINE,
     CRAFTER_AGENT,
+    SHIPPED_FLAVORS,
     SkillName,
     WorkflowFlavor,
 )
@@ -37,13 +38,13 @@ from .domain_types_slice_01 import (  # shared slice-01 vocabulary (S1-safe reus
 
 __all__ = [
     "ATDD_DESCRIPTOR_SENTINEL",
-    "CLASSIC_DESCRIPTOR_SENTINEL",
-    "CLASSIC_PHASE_SHAPE_SENTINEL",
     "CRAFTER_AGENT",
+    "DESCRIPTOR_SENTINEL_BY_FLAVOR",
     "DRIFT_BY_PHRASE",
     "EDITED_CRAFTER_SKILL",
     "INLINE_ROW_MARKER",
     "RETIRED_INLINE_SKILL",
+    "SHIPPED_FLAVORS",
     "ProjectionDrift",
     "RegionId",
     "SkillName",
@@ -84,12 +85,14 @@ INLINE_ROW_MARKER = "CONDITIONAL"
 EDITED_CRAFTER_SKILL = SkillName("nw-conditional-skill-authored-by-at-01")
 
 ATDD_DESCRIPTOR_SENTINEL = "registry-authored atdd-pure descriptor sentinel 7f3a"
-CLASSIC_DESCRIPTOR_SENTINEL = "registry-authored classic descriptor sentinel 2c9e"
 
-# The ONE phase-shape sentinel, classic-flavor-targeted (see module docstring:
-# the default flavor's phase shape must stay runtime-canonical for the Layer-C
-# agreement leg; the classic row carries the read-through proof).
-CLASSIC_PHASE_SHAPE_SENTINEL = "AT02_CLASSIC_SHAPE"
+#: The descriptor sentinel each SHIPPED flavor carries. The assertion iterates
+#: this map, never a hand-written tuple: "every declared mode" is a population
+#: the registry defines, so a flavor leaving the product must not leave behind
+#: an expectation nothing plants.
+DESCRIPTOR_SENTINEL_BY_FLAVOR: dict[WorkflowFlavor, str] = {
+    WorkflowFlavor.ATDD_PURE: ATDD_DESCRIPTOR_SENTINEL,
+}
 
 
 # --- Projection drifts (AT-03 named sad paths) --------------------------------

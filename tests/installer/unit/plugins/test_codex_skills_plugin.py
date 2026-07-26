@@ -214,6 +214,46 @@ class TestValidatePrerequisites:
 class TestInstallCopiesSkills:
     """install: copies SKILL.md files into the Codex skills directory."""
 
+    def test_install_copies_and_transforms_file_backed_hierarchical_skill(
+        self, tmp_path, monkeypatch
+    ):
+        """An OLD_HIERARCHICAL file entry becomes a Codex ``SKILL.md``.
+
+        CONTRACT_SHAPE: bounded-change
+        Outcome anchor: EXP-fix-codex-bootstrap-spine-1 (Expected observations).
+        """
+        context, _, framework_source = _make_context(tmp_path)
+        flat_skill = framework_source / "skills" / "nw-test-skill"
+        (flat_skill / "SKILL.md").unlink()
+        flat_skill.rmdir()
+
+        hierarchical_skill = framework_source / "skills" / "architect" / "design.md"
+        hierarchical_skill.parent.mkdir()
+        hierarchical_skill.write_text(
+            "---\n"
+            "name: design\n"
+            "description: Legacy design skill\n"
+            "user-invocable: false\n"
+            "---\n\n"
+            "Read ~/.claude/skills/nw-design/SKILL.md.\n",
+            encoding="utf-8",
+        )
+
+        codex_skills_dir = tmp_path / "home" / ".agents" / "skills"
+        codex_config_dir = tmp_path / "home" / ".codex"
+        codex_config_dir.mkdir(parents=True)
+        _patch_codex_dirs(monkeypatch, codex_skills_dir, codex_config_dir)
+
+        result = CodexSkillsPlugin().install(context)
+
+        assert result.success is True, result.message
+        installed = (codex_skills_dir / "design" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        assert "user-invocable" not in installed
+        assert "~/.agents/skills/nw-design/SKILL.md" in installed
+        assert "~/.claude/skills/" not in installed
+
     def test_install_creates_skill_directory_and_manifest(self, tmp_path, monkeypatch):
         """
         GIVEN: A flat-layout source with one skill (nw-test-skill)

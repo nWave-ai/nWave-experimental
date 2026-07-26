@@ -17,6 +17,51 @@ DESIGN defect, not an implementation detail. Design the self-explaining surface 
 the affordance inline at the authoring point, not only in the reactive rejection (GDP-3 /
 GDP-4 / GDP-2).
 
+## Gate Design Principles — GDP-1..8 (STANDING — canonical definitions)
+
+The design contract EVERY gate, oracle, or error surface must satisfy. This skill is the
+SHIPPED home of these definitions: everywhere else in the framework (skills, agents) that
+cites "GDP-N" by number resolves against this list. Audit every gate you design against it;
+a gap is a plan item to correct that gate.
+
+- **GDP-1 — Intercept EARLY (timing).** Fire at the earliest point the defect is detectable —
+  BEFORE the effort it guards is spent and the value delivered. A gate that fires after
+  delivery only COMMENTS, it cannot prevent. Efficacy ladder: **proactive-inline ≫
+  reactive-before-completion ≫ advisory-after-completion**.
+- **GDP-2 — Proactive INLINE affordance.** Pair the reactive gate with guidance inline at the
+  authoring surface, so the block is rarely reached — a gate that fires is already too late to
+  teach. Keep the gate, ADD the inline guidance.
+- **GDP-3 — Self-explaining (WHAT/WHY/HOW).** Every rejection states WHAT failed, WHY, and HOW
+  to fix — directly, no investigation needed. A bare `FAILED`/exit-code is itself a defect.
+- **GDP-4 — The HOW invokes the PRODUCING TOOL.** The HOW routes to the system tool that
+  produces the valid artifact, never manual repair. No producing tool yet → the gate is the
+  signal to build one.
+- **GDP-5 — Cost on the SYSTEM.** The system produces/generates the checked artifact (hook
+  injects / script generates / gate verifies); the operator never hand-assembles it.
+  System-pays = capability; operator-pays = ceremony. The fix relocates the production, never
+  removes the check.
+- **GDP-6 — Reliability: NO silent-wrong.** Degrade-LOUD / INDETERMINATE, never false-green
+  nor silently-wrong. Silent-wrong destroys trust worse than loud-fail; fix correctness before
+  pushing adoption.
+- **GDP-7 — Agnostic + execution-observing.** Language-agnostic (no external-tool hard-dep in
+  gate logic — behind an optional degrade-loud port); where it can, OBSERVE real execution (the
+  fixed floor), not merely asserted state.
+- **GDP-8 — Decide on the PROPERTY, never the DESIGNATION.** A gate must key on the verifiable
+  property the object HAS (what it *is* / *does* / *resolves to*), never on a name, form,
+  string-pattern, or hash that merely *stands for* it. A designation matches itself, not its
+  referent, so a designation-check is blind exactly where they diverge — and they diverge by
+  construction (a rebase changes the SHA not the content; `python -m pytest` is named `python`;
+  `..%2f` is traversal without the `../` form; `/var/tmp` is a temp dir `gettempdir()` never
+  returns). Before comparing a symbol, name the property it represents and test THAT: a property
+  can be stated and falsified with a known negative case; a name cannot. **Corollary — arity:**
+  every outcome has ≥3 values (pass / fail / could-not-verify), and the third must reach the
+  AGGREGATE (the summary line the reader sees), never collapse into pass/empty — a `10/10` while
+  one check could not look, an allow-list that persists only approvals, are GDP-8 violations.
+  **Corollary — witness:** the checker is not exempt from the class it checks (a form-grep for
+  bare failures finds its own false positives; an examiner given one axis develops a stable
+  blind spot). When the property is not locally inspectable, verification requires a SECOND AXIS
+  — a different question or a differently-lensed witness, not a better single checker.
+
 ## C4 Model -- Hierarchical Architecture Visualization
 
 Four levels for different audiences:

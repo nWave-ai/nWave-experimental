@@ -32,7 +32,7 @@ class SubagentStopContext:
             When True and validation fails, service allows to prevent infinite loops.
         cwd: Working directory for git commit verification. Empty string skips
             git verification (backward compatibility).
-        mode: Dispatch workflow mode (``"classic"`` | ``"atdd_pure"``). The
+        mode: Dispatch workflow mode (``"atdd_pure"`` only). The
             mode discriminant for T-C: under ``"atdd_pure"`` the SubagentStop
             validator takes a path that does NOT read an execution-log.json
             (atdd_pure is roadmap-free / execution-log-free by design).
@@ -56,7 +56,7 @@ class SubagentStopContext:
     turns_used: int | None = None
     tokens_used: int | None = None
     # --- atdd_pure dispatch discriminant (T-C / F-DES-ATDD-PURE-DISPATCH-LIFECYCLE)
-    mode: str = "classic"
+    mode: str = "atdd_pure"
     slice_id: str | None = None
     atdd_pure_phase: str | None = None
     # --- cross-wave floor auto-close owner identity (fix-floor-auto-close-cross-wave)

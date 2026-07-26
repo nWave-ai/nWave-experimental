@@ -24,7 +24,8 @@ At execution start create these as TaskCreate items and run in order:
 3. **ADAPTER-INTEGRATION SLICE** — when the feature ships a CRITICAL (Port, Adapter) pair, author an adapter-integration slice; declare each of the 10 properties EXERCISED / N/A / DEFERRED with citation. Gate: every property row carries a verdict + citation.
 4. **REGISTER OUTCOMES** — per new typed contract surface, run `nwave-ai outcomes register`; skip when feature is methodology-only. Gate: every new contract registered, or skip documented.
 5. **DORMANT-SEAM CROSS-CHECK** — per the Mandate-15 reconciliation (`nw-test-design-mandates-composition-contract`): every net-new DESIGN-declared load-bearing seam has a witnessing AT naming that seam, driving it through the real entry point, asserting an observable effect (indirect registry/DI wiring counts). Gate: zero declared seams without a witnessing AT.
-6. **SELF-REVIEW CHECKLIST** — run the checklist below; every item passes or is documented N/A. Gate: checklist complete.
+6. **ARTIFACT LINEAGE CLOSURE** — classify DIRECT-SURFACE vs ASSEMBLED-SURFACE. For assembled surfaces, verify the single WS binds real producer -> immutable candidate -> clean consumer -> public journey -> observable capability, with no source/HOME/global-install borrowing. A producer manifest/configuration is not the produced property. Gate: PASS or DIRECT-SURFACE with named rationale.
+7. **SELF-REVIEW CHECKLIST** — run the checklist below; every item passes or is documented N/A. Gate: checklist complete.
 
 ## Scenario writing guidance (induction-aligned)
 
@@ -144,6 +145,7 @@ Run `nwave-ai outcomes register --id OUT-N --kind {kind} --input-shape "..." --o
 - [ ] 14. F-004: timing assertions in `.feature` files use budget >= 200ms
 - [ ] 15. F-003: BDD imports after `sys.path` manipulation have `# noqa` markers
 - [ ] 16. Dormant-Seam: every net-new DESIGN-declared load-bearing seam this slice has a witnessing AT naming THAT seam, driving it through the REAL entry point, asserting an observable effect (indirect registry/entry-point/DI wiring counts — not a naive name/protocol match). Canonical: `nw-test-design-mandates-composition-contract` Mandate 15; mechanically gated by `nw-at-completeness-check` S3.
+- [ ] 17. Artifact Lineage Closure: DIRECT-SURFACE carries a named rationale; ASSEMBLED-SURFACE has one immutable candidate produced once by the real pipeline and consumed in a clean environment through the public journey, asserting the capability rather than a producer designation. Canonical: `nw-test-design-mandates-composition-contract`.
 
 ## Success Criteria
 
@@ -152,4 +154,5 @@ Run `nwave-ai outcomes register --id OUT-N --kind {kind} --input-shape "..." --o
 - [ ] Adapter-integration slice authored (when CRITICAL pair) with all 10 properties verdict+cited
 - [ ] Every new typed contract registered, or methodology-only skip documented
 - [ ] Zero declared seams without a witnessing AT
+- [ ] Artifact Lineage Closure PASS, or DIRECT-SURFACE rationale documented
 - [ ] Self-review checklist complete

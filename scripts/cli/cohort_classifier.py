@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Literal
 
 
-WorkflowMode = Literal["classic", "atdd_pure"]
+WorkflowMode = Literal["atdd_pure"]
 Cohort = Literal["S", "M", "L", "XL"]
 
 SCENARIO_RE = re.compile(r"^\s*Scenario(?: Outline)?:", re.MULTILINE)
@@ -134,11 +134,9 @@ def _build_classification(
     accept_override: bool,
 ) -> tuple[int, Classification]:
     cohort = _classify_cohort(at_count)
-    if workflow_mode == "classic":
-        return 0, Classification(
-            feature_id, "classic", at_count, cohort, False, "CohortAssigned"
-        )
-    # atdd_pure
+    # atdd_pure is the sole active workflow. Historical classic features are
+    # classified by the explicit migration/replay tooling, never by an active
+    # workflow selector.
     if cohort == "M":
         return 0, Classification(
             feature_id, "atdd_pure", at_count, cohort, False, "CohortAssigned"
@@ -167,7 +165,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         description="Mechanical cohort classification for ATDD-pure pilot gate.",
     )
     p.add_argument("--feature-id", required=True)
-    p.add_argument("--workflow-mode", required=True, choices=("classic", "atdd_pure"))
+    p.add_argument(
+        "--workflow-mode",
+        required=True,
+        choices=("atdd_pure",),
+        help="The sole active workflow mode; historical classic is migration-only.",
+    )
     p.add_argument(
         "--accept-pilot-scope-extension",
         action="store_true",

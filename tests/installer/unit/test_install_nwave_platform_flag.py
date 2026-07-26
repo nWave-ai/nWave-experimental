@@ -7,9 +7,11 @@ silent dropping of a target when a new platform is added (or removed).
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-from scripts.install.install_nwave import _resolve_platform_override
+from scripts.install.install_nwave import NWaveInstaller, _resolve_platform_override
 
 
 class TestPlatformFlagResolution:
@@ -48,3 +50,34 @@ class TestPlatformFlagResolution:
         """
         with pytest.raises(KeyError):
             _resolve_platform_override("unknown")
+
+
+def test_effective_targets_are_cached_and_externally_immutable(monkeypatch):
+    """Auto-detected target truth cannot be changed by a downstream caller."""
+    monkeypatch.setattr(
+        "scripts.install.install_nwave.detect_target_platforms",
+        lambda: (SimpleNamespace(value="codex"),),
+    )
+    installer = NWaveInstaller()
+
+    targets = installer.effective_target_platforms
+
+    assert targets == frozenset({"codex"})
+    with pytest.raises(AttributeError):
+        targets.add("claude_code")
+    assert installer.effective_target_platforms == frozenset({"codex"})
+
+
+def test_create_manifest_receives_the_authoritative_effective_targets(monkeypatch):
+    """Manifest creation cannot reconstruct a different target set."""
+    installer = NWaveInstaller(platform_override={"codex"})
+    received: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "scripts.install.install_nwave.ManifestWriter.write_install_manifest",
+        lambda *_args, **kwargs: received.update(kwargs),
+    )
+
+    installer.create_manifest()
+
+    assert received["target_platforms"] == frozenset({"codex"})

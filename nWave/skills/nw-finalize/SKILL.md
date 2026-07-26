@@ -29,20 +29,15 @@ The completion-evidence files depend on `workflow.mode` — per-mode descriptor 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
-  Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
-- **classic mode** — `docs/feature/{feature-id}/deliver/roadmap.json` (classic-mode original project plan) and `docs/feature/{feature-id}/deliver/execution-log.json` (classic-mode step execution history).
 - **atdd_pure mode** — the AT-completion ledger: it records each slice's `at_ids`, their pass transitions, and the phase-boundary timestamps. <!-- mode-ref-ok -->
 
 ## Pre-Dispatch Gate: All Work Complete
 
 Before dispatching, verify all work is done — prevents archiving incomplete features. The completeness signal is `workflow.mode`-specific. <!-- mode-ref-ok -->
 
-### classic mode
 
-1. **Parse execution log** — Read the classic-mode `docs/feature/{feature-id}/deliver/execution-log.json`. Gate: file readable.
 2. **Verify completeness** — Check every step has status `DONE`. Gate: all steps DONE.
 3. **Block or proceed** — If any step is not DONE, list incomplete steps with current status and halt. If all DONE, proceed to dispatch. Gate: zero incomplete steps before dispatch.
 
@@ -54,9 +49,7 @@ Completion is read from the **AT-completion ledger**: every slice in the slice p
 
 ### Phase A — Evolution Document
 
-1. **Gather source data** — In classic mode read `execution-log.json` + `roadmap.json` (the `classic` step log and plan); in atdd_pure mode read the AT-completion ledger instead. <!-- mode-ref-ok --> Either way also read all `*/wave-decisions.md` files. Gate: source files read.
 2. **Extract key decisions** — Pull decisions, issues, and lessons from wave-decisions files. Gate: decisions list assembled.
-3. **Write evolution doc** — Create `docs/evolution/YYYY-MM-DD-{feature-id}.md` with: feature summary, business context, key decisions, work completed (from the active mode's audit substrate: classic `execution-log.json`, or the ledger's per-slice `at_ids`), lessons learned, issues encountered, links to migrated permanent artifacts. Gate: file written.
 
 ### Phase B — Migrate Lasting Artifacts
 
@@ -87,8 +80,6 @@ These are process scaffolding — valuable during delivery, disposable after:
 
 | File pattern | Why discard |
 |---|---|
-| `deliver/execution-log.json` (classic mode only) | Classic-mode audit trail — captured in evolution doc |
-| `deliver/roadmap.json` (classic mode only) | Classic-mode step plan — superseded by evolution doc + git history |
 | `deliver/.develop-progress.json` | Resume state — temporary |
 | `design/review-*.md` | Review findings captured in evolution doc |
 | `discuss/dor-checklist.md` | Process gate, not lasting value |

@@ -213,9 +213,33 @@ class WaveDispatchGuardComposition:
         prompt = ""
         if self._marker_wave is not None:
             prompt = f"<!-- DES-WAVE: {self._marker_wave} -->\nwork the wave"
+            prompt += self._design_ownership_envelope()
         prompt_path = self._project_root / ".nwave" / "des" / "dispatch-prompt.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
         return prompt_path
+
+    def _design_ownership_envelope(self) -> str:
+        """The ownership prose a DESIGN architect dispatch must carry, or ''.
+
+        An on-spine architect dispatch is ALLOWED only when it also grants the
+        architect the canonical feature-delta sections -- a dispatch that sends
+        the architect to design while withholding the sections the readiness
+        gate reads is defective, so the guard blocks it.  This fixture renders
+        the same envelope a real `des dispatch` emits; the feature id is read
+        from the prompt's OWN marker, so ownership prose copied for another
+        feature stays malformed rather than silently accepted.
+        """
+        if self._marker_wave != "design" or "solution-architect" not in self._subagent:
+            return ""
+        feature_id = "f-nonbypassable-attestation"
+        return (
+            f"\n<!-- DES-PROJECT-ID: {feature_id} -->\n"
+            f"nw-solution-architect owns docs/feature/{feature_id}/feature-delta.md "
+            "canonical DESIGN sections `## Reuse Analysis` and "
+            "`## Prefactoring Assessment`.\n"
+            "Standalone design documents never substitute for feature-delta.md.\n"
+            "Before handoff, run `des verify-readiness-pre-dispatch`.\n"
+        )
 
     def _run_gate(self, argv: list[str]) -> None:
         """Drive the in-tree ``verify_wave_dispatch`` gate IN-PROCESS with the args.

@@ -716,28 +716,42 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             feature_id=feature_id,
         )
 
+    def append_wave_review_verdict(
+        self,
+        *,
+        event: str,
+        verdict_fields: dict[str, Any],
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one per-wave review-verdict record under the M7 write contract.
+
+        The one append for the DISCUSS / DESIGN / DEVOPS review-verdict record
+        families (O-4 both-outcomes) -- ``event`` selects the family, nothing
+        else differs between them.
+
+        ``verdict_fields`` carries the verdict's own keys -- the content-seal
+        fields (`schema_version`, `feature_id`, `verdict`, `reviewer_agent_id`,
+        `feature_delta_hash`, plus the producer-chosen `timestamp`) and
+        `findings_summary`. `event` is forced to the passed record family; the
+        record is feature-scoped (`slice_id == ""` -- a wave gate-OUT is a
+        whole-feature readiness verdict). The producer sets its own `timestamp`
+        (honoured by the M7 critical section, F-13 precedent).
+        """
+        return self._append_record(
+            {"event": event, "slice_id": "", **verdict_fields},
+            feature_id=feature_id,
+        )
+
     def append_discuss_review_verdict(
         self,
         verdict_fields: dict[str, Any],
         *,
         feature_id: str | None = None,
     ) -> dict[str, Any]:
-        """Append one DiscussReviewVerdict record under the M7 write contract.
-
-        nwave-flow-v2-enforcement slice-07b (O-4): the DISCUSS PO-review
-        producer routes its keyless verdict through this method -- the sibling
-        of :meth:`append_review_verdict` for the DISCUSS-scoped record family.
-
-        ``verdict_fields`` carries the verdict's own keys -- the content-seal
-        fields (`schema_version`, `feature_id`, `verdict`, `reviewer_agent_id`,
-        `feature_delta_hash`, plus the producer-chosen `timestamp`) and
-        `findings_summary`. `event` is forced to `DiscussReviewVerdict`; the
-        record is feature-scoped (`slice_id == ""` -- the DISCUSS gate-OUT is a
-        whole-feature readiness verdict). The producer sets its own `timestamp`
-        (honoured by the M7 critical section, F-13 precedent).
-        """
-        return self._append_record(
-            {"event": _DISCUSS_REVIEW_VERDICT, "slice_id": "", **verdict_fields},
+        """Append one DiscussReviewVerdict record (slice-07b, O-4)."""
+        return self.append_wave_review_verdict(
+            event=_DISCUSS_REVIEW_VERDICT,
+            verdict_fields=verdict_fields,
             feature_id=feature_id,
         )
 
@@ -747,22 +761,10 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         *,
         feature_id: str | None = None,
     ) -> dict[str, Any]:
-        """Append one DesignReviewVerdict record under the M7 write contract.
-
-        f-design-devops-review-gate slice-01: the DESIGN review producer routes
-        its keyless verdict through this method -- the sibling of
-        :meth:`append_discuss_review_verdict` for the DESIGN-scoped record family.
-
-        ``verdict_fields`` carries the verdict's own keys -- the content-seal
-        fields (`schema_version`, `feature_id`, `verdict`, `reviewer_agent_id`,
-        `feature_delta_hash`, plus the producer-chosen `timestamp`) and
-        `findings_summary`. `event` is forced to `DesignReviewVerdict`; the
-        record is feature-scoped (`slice_id == ""` -- the DESIGN gate-OUT is a
-        whole-feature readiness verdict). The producer sets its own `timestamp`
-        (honoured by the M7 critical section, F-13 precedent).
-        """
-        return self._append_record(
-            {"event": _DESIGN_REVIEW_VERDICT, "slice_id": "", **verdict_fields},
+        """Append one DesignReviewVerdict record (f-design-devops-review-gate)."""
+        return self.append_wave_review_verdict(
+            event=_DESIGN_REVIEW_VERDICT,
+            verdict_fields=verdict_fields,
             feature_id=feature_id,
         )
 
@@ -772,23 +774,10 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         *,
         feature_id: str | None = None,
     ) -> dict[str, Any]:
-        """Append one DevopsReviewVerdict record under the M7 write contract.
-
-        f-design-devops-review-gate slice-02: the DEVOPS review producer routes
-        its keyless verdict through this method -- the sibling of
-        :meth:`append_design_review_verdict` for the DEVOPS-scoped record family
-        (the SSOT-reuse proof: a SECOND wave with zero new verdict logic).
-
-        ``verdict_fields`` carries the verdict's own keys -- the content-seal
-        fields (`schema_version`, `feature_id`, `verdict`, `reviewer_agent_id`,
-        `feature_delta_hash`, plus the producer-chosen `timestamp`) and
-        `findings_summary`. `event` is forced to `DevopsReviewVerdict`; the
-        record is feature-scoped (`slice_id == ""` -- the DEVOPS gate-OUT is a
-        whole-feature readiness verdict). The producer sets its own `timestamp`
-        (honoured by the M7 critical section, F-13 precedent).
-        """
-        return self._append_record(
-            {"event": _DEVOPS_REVIEW_VERDICT, "slice_id": "", **verdict_fields},
+        """Append one DevopsReviewVerdict record (f-design-devops-review-gate)."""
+        return self.append_wave_review_verdict(
+            event=_DEVOPS_REVIEW_VERDICT,
+            verdict_fields=verdict_fields,
             feature_id=feature_id,
         )
 

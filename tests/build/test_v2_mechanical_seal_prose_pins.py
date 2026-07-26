@@ -93,6 +93,40 @@ def test_distill_authors_requirement_checklist_and_spec_coverage_advisory() -> N
     assert "security" in text.lower() and "validation" in text.lower()
 
 
+def test_distill_classifies_assembled_surfaces_at_authoring_time() -> None:
+    """DISTILL induces consumer-lineage proof before scenario authoring."""
+    text = _read("nWave/skills/nw-distill/SKILL.md")
+    normalized = " ".join(text.split())
+    assert "Assembly-boundary classification (AUTHORING-time)" in text
+    assert "DIRECT-SURFACE" in text and "ASSEMBLED-SURFACE" in text
+    assert "one immutable candidate" in normalized
+    assert "does not discharge the obligation" in normalized
+
+
+def test_composition_contract_closes_the_immutable_artifact_lineage() -> None:
+    """The canonical mandate proves the produced artifact, not its designation."""
+    text = _read("nWave/skills/nw-test-design-mandates-composition-contract/SKILL.md")
+    assert "Artifact Lineage Closure" in text
+    for link in (
+        "real production pipeline",
+        "one immutable candidate",
+        "clean consumer environment",
+        "public user journey",
+        "user-observable capability",
+    ):
+        assert link in text
+    assert "produced PROPERTY, never its DESIGNATION" in text
+
+
+def test_acceptance_designer_inventory_reaches_the_consumer_boundary() -> None:
+    """The operational agent applies the rule before authoring ATs."""
+    text = _read("nWave/agents/nw-acceptance-designer.md")
+    assert "Consumer Boundary Inventory" in text
+    assert "do not defer this classification to review" in text
+    assert "ASSEMBLED-SURFACE WS closes Artifact Lineage Closure" in text
+    assert "produced PROPERTY, never its DESIGNATION" in text
+
+
 def test_rigor_reflects_v2_flow_floor_examiner_uncapped_mutation_offaxis() -> None:
     """/nw-rigor: the v2 back-prop (P-CONFIG) — examiner axis + always-on floor.
 

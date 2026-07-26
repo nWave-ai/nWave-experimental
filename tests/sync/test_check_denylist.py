@@ -22,11 +22,12 @@ import json
 import random
 import string
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+from tests.common.in_process_cli import run_script_in_process
 
 
 SCRIPT_PATH = (
@@ -131,11 +132,30 @@ def _run(
     *args: str,
     cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
-    """Invoke the script via subprocess, capturing raw bytes."""
-    return subprocess.run(
-        [sys.executable, str(SCRIPT_PATH), *args],
-        cwd=cwd,
-        capture_output=True,
+    """Invoke the script IN-PROCESS, capturing raw bytes.
+
+    The driving port is unchanged — the script's own `main` runs against the same
+    argv the fork passed — but no interpreter is forked. The returned
+    `CompletedProcess` keeps every caller assertion (returncode, stdout/stderr as
+    bytes) byte-identical to the subprocess it replaces.
+
+    FAILURE MODE THE IN-PROCESS DRIVE STILL EXHIBITS: any violation of the §2 CLI
+    contract -- a wrong exit code, absent/malformed stdout JSON, a matched-file
+    set that misses or misattributes a rule, or a usage error whose stderr fails
+    to name the cause. The interpreter fork carried no observable of its own:
+    nothing here asserts on process identity, isolation, or a signal. ``git``
+    still runs as a real subprocess BELOW the edge, so the @git-mode content rule
+    is exercised exactly as before. Stating this is the guard against the
+    silent-hollowing class an in-process conversion can otherwise introduce.
+    """
+    exit_code, out, err = run_script_in_process(
+        SCRIPT_PATH, *args, cwd=cwd if cwd is not None else Path.cwd()
+    )
+    return subprocess.CompletedProcess(
+        args=[str(SCRIPT_PATH), *args],
+        returncode=exit_code,
+        stdout=out.encode("utf-8"),
+        stderr=err.encode("utf-8"),
     )
 
 

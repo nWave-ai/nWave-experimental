@@ -397,4 +397,13 @@ class FamiliesUpgradeJourney:
         prebuilt = framework / "lib" / "python" / "des"
         prebuilt.mkdir(parents=True)
         (prebuilt / "__init__.py").write_text("")
+        # Same prerequisite the sibling fabricator satisfies: the DES plugin
+        # fails LOUD on a framework that ships no `data/` tree, and verifies
+        # that every top-level entry reached the destination -- so the tree
+        # needs at least one entry to verify.
+        data = framework / "data"
+        (data / "orchestrator-affordance").mkdir(parents=True)
+        (data / "orchestrator-affordance" / "00-standing-loops.md").write_text(
+            "# standing loops (fixture)\n"
+        )
         return framework

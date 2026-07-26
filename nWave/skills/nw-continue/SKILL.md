@@ -60,12 +60,8 @@ Per-mode descriptor + DELIVER phase shape, projected from the mode registry:
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 - `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-- `classic` — Roadmap-driven 3-phase TDD canon (ADR-025); roadmap.json + execution-log.json are the audit. DEPRECATED per ADR-028 D6 — fallback under explicit per-instance authorization only.
-  Deliver phase shape: `RED -> GREEN -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
-**`classic` mode** — if DELIVER in progress, show step-level detail:
-- `classic` mode: read `docs/feature/{id}/deliver/execution-log.json` — count COMMIT/PASS steps, find first without COMMIT/PASS
 - Read `.develop-progress.json` if exists: check last failure point
 - Display: "DELIVER in progress: Steps 01-01 through 02-01 complete. Next: 02-02"
 
@@ -104,7 +100,6 @@ Recommend next wave: resume in-progress wave|successor of last complete wave. Sh
 | Empty project directory | Suggest `/nw-new` or re-run from DISCUSS |
 | Corrupted artifact (0 bytes) | Flag file, recommend re-running that wave |
 | Skipped waves | Warn, offer gap-fill or continue options |
-| `classic` mode: cannot parse execution-log.json | Show raw file status, suggest manual review |
 
 ## Success Criteria
 

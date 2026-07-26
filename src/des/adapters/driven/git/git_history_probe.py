@@ -33,6 +33,8 @@ import subprocess
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.git.git_constants import GIT_HEAD
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -92,7 +94,7 @@ class GitHistoryProbe:
 
     def _sha_reachable(self, sha: str) -> bool:
         """Whether `sha` is an ancestor of HEAD (i.e. not reverted away)."""
-        return self._git("merge-base", "--is-ancestor", sha, "HEAD").returncode == 0
+        return self._git("merge-base", "--is-ancestor", sha, GIT_HEAD).returncode == 0
 
     def _tests_green_at(self, sha: str) -> bool:
         """Whether the step's tests were green at `sha`.

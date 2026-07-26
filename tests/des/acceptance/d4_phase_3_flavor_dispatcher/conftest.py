@@ -75,7 +75,7 @@ from des.adapters.drivers.hooks.carpaccio_intercept import (
 )
 from des.application.flavor_dispatcher import (
     CompositionResult,
-    dispatch_lifecycle_event,
+    compose_lifecycle_event,
 )
 from tests.env_parity import seed_dev_checkout_marker
 
@@ -157,12 +157,27 @@ class FlavorDispatcherComposition:
         event: LifecycleEventName,
         flavor_id: FlavorId,
     ) -> CompositionResult:
-        """Invoke the dispatcher pure function. Stores result for assertions."""
-        self.last_result = dispatch_lifecycle_event(
+        """Compose a lifecycle event from a flavor DOCUMENT. Stores the result.
+
+        These scenarios exercise SYNTHETIC flavor documents (`demo_single`,
+        `demo_block`, `demo_warn`) that name no shipped mode, so they drive the
+        document entry rather than the identity entry -- which is precisely the
+        separation under test: composition reads a file and is blind to the mode
+        registry.
+
+        This driver therefore no longer witnesses the identity->document leg
+        (`resolve_executable_flavor_path`). That leg is NOT left unattested: it
+        has its own witness in
+        `tests/des/unit/test_flavor_identity_resolution.py`. Dropping a leg's
+        only witness while moving a test is how a refactor silently narrows what
+        the suite proves -- the replacement is named here so a reader can check
+        the claim instead of taking it.
+        """
+        self.last_result = compose_lifecycle_event(
+            self.flavors_dir / f"{flavor_id}.yaml",
             event_id=event,
             flavor_id=flavor_id,
             context={},
-            flavors_dir=self.flavors_dir,
             gate_invoker=self.invoker,
         )
         return self.last_result

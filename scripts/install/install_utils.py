@@ -51,14 +51,15 @@ class Logger:
         """
         self.log_file = log_file
         self.silent = silent
+        # One-shot latch for the file-sink degrade (see `_write_to_file`): a
+        # broken sink is broken for the whole run, so it is announced once
+        # rather than once per line.
+        self._log_sink_failure_reported = False
 
         # Disable colors on Windows if not in terminal
         self._use_colors = True
         if sys.platform == "win32" and not sys.stdout.isatty():
             self._use_colors = False
-
-        if log_file:
-            log_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Rich console for pretty-print (paths, numbers auto-highlighted)
         self._rich_console = None
@@ -83,16 +84,41 @@ class Logger:
         return self._rich_console is not None
 
     def _write_to_file(self, level: str, message: str) -> None:
-        """Write structured log entry to file."""
+        """Write a structured log entry to the file sink.
+
+        The parent directory is created HERE, at the write site, not in
+        `__init__`: the constructor accepts `log_file=None` so logging can be
+        deferred until after the ownership preflight, which means the directory
+        cannot be prepared at construction time for a sink chosen later. That
+        deferral is what commit d07aa112f introduced -- and it removed the
+        constructor's mkdir without moving it here.
+
+        A write failure degrades LOUDLY, exactly once. The bare `except: pass`
+        this replaces made a missing log indistinguishable from an install that
+        had nothing to say: the operator believed they had an install log and
+        did not. Once, not per line -- a broken sink is broken for the whole
+        run, and repeating the warning would bury the very output it accompanies.
+        """
         if not self.log_file:
             return
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"[{timestamp}] {level}: {message}"
         try:
+            self.log_file.parent.mkdir(parents=True, exist_ok=True)
             with open(self.log_file, "a", encoding="utf-8") as f:
                 f.write(log_msg + "\n")
-        except Exception:
-            pass
+        except Exception as exc:
+            if not self._log_sink_failure_reported:
+                self._log_sink_failure_reported = True
+                print(
+                    f"WARNING: the install log at {self.log_file} is NOT being "
+                    f"written ({type(exc).__name__}: {exc}). "
+                    "WHY: the sink could not be opened or created. "
+                    "HOW: check that the directory is writable, then re-run to "
+                    "capture a log. The installation continues either way, so "
+                    "this run will simply leave no log file behind.",
+                    file=sys.stderr,
+                )
 
     def _log(self, level: str, message: str, color: str = "") -> None:
         """Internal logging method for info/warn/error/step."""
@@ -423,6 +449,58 @@ class BackupManager:
         self.logger.info(f"  ✅ Backup complete → {self.backup_dir}")
         return self.backup_dir
 
+    def create_codex_backup(
+        self,
+        *,
+        skills_dir: Path,
+        agents_dir: Path,
+        codex_dir: Path,
+        dry_run: bool = False,
+    ) -> Path | None:
+        """Snapshot the complete Codex nWave control surface.
+
+        Codex intentionally has no Claude discovery surface, so its normal
+        installer backup lives in the nWave home rather than manufacturing a
+        ``~/.claude`` directory.  This is still the one ``BackupManager``
+        lifecycle: callers may put a migration quarantine *inside* the
+        returned backup, never in a second recovery store.
+        """
+        if dry_run:
+            self.logger.info(f"  🚨 [DRY RUN] Would backup Codex to {self.backup_dir}")
+            return None
+
+        tracked_files = (
+            "hooks.json",
+            ".nwave-des-manifest.json",
+            "nwave_claude_code_hook_adapter_launcher.py",
+            "nwave_orchestrator_affordance_launcher.py",
+        )
+        if (
+            not skills_dir.exists()
+            and not agents_dir.exists()
+            and not any((codex_dir / name).exists() for name in tracked_files)
+        ):
+            self.logger.info("  ℹ️  No existing Codex installation, skipping backup")
+            return None
+
+        self.logger.info("")
+        self.logger.info(f"  💾 Codex backup at {self.backup_dir}")
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_root = self.backup_dir / "codex"
+        if skills_dir.exists():
+            shutil.copytree(skills_dir, snapshot_root / "skills", dirs_exist_ok=True)
+        if agents_dir.exists():
+            shutil.copytree(agents_dir, snapshot_root / "agents", dirs_exist_ok=True)
+        config_dir = snapshot_root / "config"
+        for name in tracked_files:
+            source = codex_dir / name
+            if source.is_file() and not source.is_symlink():
+                config_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, config_dir / name)
+        self._create_manifest()
+        self.logger.info(f"  ✅ Codex backup complete → {self.backup_dir}")
+        return self.backup_dir
+
     def _create_manifest(self) -> None:
         """Create backup manifest file."""
         manifest_path = self.backup_dir / "backup-manifest.txt"
@@ -655,10 +733,14 @@ class ManifestWriter:
 
     @staticmethod
     def write_install_manifest(
-        claude_config_dir: Path, backup_dir: Path | None, script_dir: Path
+        claude_config_dir: Path,
+        backup_dir: Path | None,
+        script_dir: Path,
+        target_platforms: frozenset[str] | None = None,
     ) -> None:
-        """Write installation manifest."""
+        """Write an installation manifest for the resolved target set."""
         manifest_path = claude_config_dir / "nwave-manifest.txt"
+        targets = target_platforms or frozenset({"claude_code"})
 
         agents_count = PathUtils.count_files(claude_config_dir / "agents", "*.md")
         commands_count = PathUtils.count_files(claude_config_dir / "commands", "*.md")
@@ -668,7 +750,8 @@ class ManifestWriter:
             f"- Backup directory: {backup_dir}" if backup_dir else "- No backup created"
         )
 
-        content = f"""nWave Framework Installation Manifest
+        if targets == {"claude_code"}:
+            content = f"""nWave Framework Installation Manifest
 ========================================
 Installed: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 Source: {script_dir}
@@ -694,8 +777,56 @@ Usage:
 
 For help: https://github.com/nWave-ai/nWave
 """
+        else:
+            target_summary = ManifestWriter._target_manifest_summary(
+                targets, claude_config_dir
+            )
+            content = f"""nWave Framework Installation Manifest
+========================================
+Installed: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Source: {script_dir}
+Version: Production Ready
+
+Installation Summary:
+- Target platforms: {", ".join(sorted(targets))}
+{target_summary}
+{backup_info}
+
+Framework Components:
+- Host-specific nWave adapters were installed only for the listed target platforms
+- Shared nWave runtime components are available to those target adapters
+
+Usage:
+- Use the nWave interfaces provided by each listed target platform
+
+For help: https://github.com/nWave-ai/nWave
+"""
 
         manifest_path.write_text(content, encoding="utf-8")
+
+    @staticmethod
+    def _target_manifest_summary(targets: frozenset[str], claude_dir: Path) -> str:
+        """Render target-labelled facts without treating Claude state as universal."""
+        lines: list[str] = []
+        if "claude_code" in targets:
+            lines.extend(
+                (
+                    f"- Claude Code agents: {PathUtils.count_files(claude_dir / 'agents', '*.md')}",
+                    f"- Claude Code commands: {PathUtils.count_files(claude_dir / 'commands', '*.md')}",
+                    f"- Claude Code skills: {PathUtils.count_files(claude_dir / 'skills', '*.md')}",
+                )
+            )
+        if "codex" in targets:
+            agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME") or Path.home())
+            codex_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+            lines.extend(
+                (
+                    f"- Codex skills: {PathUtils.count_files(agents_home / '.agents' / 'skills', '*.md')}",
+                    f"- Codex agents: {PathUtils.count_files(codex_home / 'agents', '*.toml')}",
+                    f"- Codex DES hook: {'configured' if (codex_home / 'hooks.json').is_file() else 'missing'}",
+                )
+            )
+        return "\n".join(lines)
 
     @staticmethod
     def write_uninstall_report(

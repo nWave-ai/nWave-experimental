@@ -34,10 +34,12 @@ unskip anything and it does NOT change the L1 scenarios.
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
+
+from des.cli.__main__ import main as _des_dispatcher_main
+from des.cli.validate_feature_delta import main as _validate_feature_delta_main
+from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import (
     PRODUCTION_VERDICT_FOR_SHAPE,
@@ -47,7 +49,9 @@ from .domain_types import (
 
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
+
+    _EdgeMain = Callable[[list[str]], int]
 
 
 class GateVerdictObservation(Protocol):
@@ -189,30 +193,35 @@ class SlicePlanGateDriver:
         and return a read-only `_Observation`. Today it raises cleanly so the right
         reason is MISSING_FUNCTIONALITY at the gate, never an ImportError.
         """
-        argv = self._gate_argv(delta_path)
-        completed = subprocess.run(
-            argv,
-            capture_output=True,
-            text=True,
-            check=False,
+        main, argv = self._gate_edge(delta_path)
+        exit_code, stdout, _stderr = run_cli_in_process(
+            argv, cwd=delta_path.parent, main=main, catch_all=True
         )
-        verdict = json.loads(completed.stdout)["verdict"]
-        return _Observation(verdict=verdict, accepted=completed.returncode == 0)
+        verdict = json.loads(stdout)["verdict"]
+        return _Observation(verdict=verdict, accepted=exit_code == 0)
 
-    def _gate_argv(self, delta_path: Path) -> list[str]:
-        """The shipped slice-plan gate invocation (the subcutaneous driving surface).
+    def _gate_edge(self, delta_path: Path) -> tuple[_EdgeMain, list[str]]:
+        """The shipped slice-plan gate EDGE + argv (the subcutaneous driving surface).
 
         The primary surface drives the gate through the `des` subcommand dispatcher
-        (`python -m des validate-feature-delta ...`); the refactored surface (DDD-1C/10C)
-        drives the SAME shipped gate code through the validator module's OWN entry point
-        (`python -m des.cli.validate_feature_delta ...`), which takes no subcommand token.
-        Both run THIS checkout's gate; they differ only in the invocation seam — the L1
-        business outcome is identical, demonstrating refactor-resilience below the seam.
+        EDGE (`des.cli.__main__.main(["validate-feature-delta", ...])`); the refactored
+        surface (DDD-1C/10C) drives the SAME shipped gate code through the validator
+        module's OWN entry-point EDGE (`des.cli.validate_feature_delta.main`), which
+        takes no subcommand token. Both run THIS checkout's gate; they differ only in
+        the invocation seam — the L1 business outcome is identical, demonstrating
+        refactor-resilience below the seam.
+
+        FAILURE MODE THE IN-PROCESS DRIVE STILL EXHIBITS: the gate speaking the WRONG
+        verdict token (or a wrong accept/reject) for a given slice-plan shape, and the
+        two seams DISAGREEING — both read from the same production `main(argv) -> int`
+        the fork's `-m` invocation reached, over the same JSON stdout and exit code.
+        The interpreter fork carried no observable of its own: nothing here asserts on
+        process identity, isolation, or a signal.
         """
         common = ["--require-slice-plan", "--format=json", str(delta_path)]
         if self._refactored_surface:
-            return [sys.executable, "-m", "des.cli.validate_feature_delta", *common]
-        return [sys.executable, "-m", "des", "validate-feature-delta", *common]
+            return _validate_feature_delta_main, common
+        return _des_dispatcher_main, ["validate-feature-delta", *common]
 
 
 class _Observation:

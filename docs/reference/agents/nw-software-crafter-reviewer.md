@@ -1,6 +1,6 @@
 # nw-software-crafter-reviewer
 
-Use for review and critique tasks. Classic mode → code-quality + TDD-discipline review primary. ATDD-pure workflow mode → AT-density-completeness audit PRIMARY at Phase C_REVIEWER_AUDIT and Phase F_FINAL_REVIEW per ADR-027; code review secondary. Runs on Haiku for cost efficiency.
+Use for review and critique tasks. AT-density-completeness audit is PRIMARY at Phase C_REVIEWER_AUDIT and Phase F_FINAL_REVIEW per ADR-027; code-quality and TDD-discipline review are secondary. Runs on Haiku for cost efficiency.
 
 **Wave:** DELIVER
 **Model:** haiku

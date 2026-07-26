@@ -36,9 +36,20 @@ def _make_capturing_writer(events: list[AuditEvent]):
 
 
 def _build_des_task_stdin() -> str:
-    """Build a valid DES-validated Task input that passes all validation."""
+    """A DES-validated Task input the spine still ALLOWS.
+
+    The mode marker is load-bearing since the classic removal (aa46b6c03):
+    `PreToolUseService.validate` refuses a mode-less DES dispatch with
+    DISPATCH_MODE_UNRESOLVED, so the pre-removal markerless envelope can never
+    reach the allow branch that mints the signal. `DES-MODE: refactor` is a
+    currently-executable dispatch shape and keeps this fixture free of the
+    atdd_pure section schema -- which is not what this test is about: the
+    signal / correlation-id lifecycle keys on the DES-VALIDATION marker, not on
+    the workflow mode.
+    """
     prompt = (
         "<!-- DES-VALIDATION : required -->\n"
+        "<!-- DES-MODE : refactor -->\n"
         "<!-- DES-PROJECT-ID : test-project -->\n"
         "<!-- DES-STEP-ID : 01-01 -->\n"
         "\n"

@@ -385,6 +385,7 @@ def codex_container():
 # and failed on it).  Both consumer tests now share this local-built wheel.
 # ---------------------------------------------------------------------------
 
+import re
 import shutil
 import subprocess
 import sys
@@ -444,27 +445,9 @@ def _copy_repo_subset(src_root: Path, dst_root: Path) -> None:
 def _build_pypi_shape_wheel(sandbox: Path) -> Path:
     """Build a PyPI-shape wheel inside *sandbox* and return its path.
 
-    Mirrors the .github/workflows/release-prod.yml publish-to-pypi job:
-      1. python scripts/build_dist.py        (produces dist/lib/python/des)
-      2. cp -r dist/lib ./lib                (so force-include can resolve)
-      3. python scripts/release/patch_pyproject.py   (PyPI wheel shape)
-      4. python -m build --wheel             (opaque distributable)
+    Mirrors the .github/workflows/release-prod.yml publish-to-pypi job.
     """
-    # 1. Build the DES module into sandbox/dist/lib
-    code, out = _wheel_build_run(
-        [sys.executable, "scripts/build_dist.py"],
-        cwd=sandbox,
-    )
-    assert code == 0, f"build_dist.py failed (exit {code}):\n{out}"
-
-    # 2. Move dist/lib -> lib (force-include needs lib/python/des at root)
-    dist_lib = sandbox / "dist" / "lib"
-    assert dist_lib.is_dir(), f"build_dist.py did not produce dist/lib/. Output:\n{out}"
-    shutil.copytree(dist_lib, sandbox / "lib")
-    # Clean dist so python -m build does not see stale artefacts
-    shutil.rmtree(sandbox / "dist", ignore_errors=True)
-
-    # 3. Patch pyproject.toml in place (in the sandbox copy ONLY).
+    candidate_version = "0.0.0.dev0"
     patched_path = sandbox / "pyproject.toml"
     code, out = _wheel_build_run(
         [
@@ -477,13 +460,38 @@ def _build_pypi_shape_wheel(sandbox: Path) -> Path:
             "--target-name",
             "nwave-ai",
             "--target-version",
-            "0.0.0.dev0",
+            candidate_version,
         ],
         cwd=sandbox,
     )
     assert code == 0, f"patch_pyproject.py failed (exit {code}):\n{out}"
 
-    # 4. Build the wheel
+    module_init = sandbox / "nwave_ai" / "__init__.py"
+    original = module_init.read_text(encoding="utf-8")
+    stamped, replacements = re.subn(
+        r'(?m)^__version__ = ".*"$',
+        f'__version__ = "{candidate_version}"',
+        original,
+    )
+    assert replacements == 1, f"module version assignments: {replacements}"
+    module_init.write_text(stamped, encoding="utf-8")
+
+    code, out = _wheel_build_run(
+        [sys.executable, "scripts/build_dist.py"],
+        cwd=sandbox,
+    )
+    assert code == 0, f"build_dist.py failed (exit {code}):\n{out}"
+
+    code, out = _wheel_build_run(
+        [
+            sys.executable,
+            "scripts/release/stage_public_wheel_des.py",
+            "--cleanup-dist",
+        ],
+        cwd=sandbox,
+    )
+    assert code == 0, f"stage_public_wheel_des.py failed (exit {code}):\n{out}"
+
     out_dir = sandbox / "wheelhouse"
     code, out = _wheel_build_run(
         [sys.executable, "-m", "build", "--wheel", "--outdir", str(out_dir)],

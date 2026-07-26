@@ -139,6 +139,28 @@ def _marker_is_on_spine(prompt: str, owner_wave: str, subagent_type: str) -> boo
     return declared == owner_wave
 
 
+def _has_design_ownership_envelope(prompt: str) -> bool:
+    """Return whether a marked architect DESIGN prompt owns its gate inputs.
+
+    The feature id comes from the prompt's own DES marker, so copied ownership
+    prose for a different feature is malformed rather than silently accepted.
+    """
+    feature_id = DesMarkerParser().parse(prompt).project_id
+    if feature_id is None:
+        return False
+    ownership = (
+        f"nw-solution-architect owns docs/feature/{feature_id}/feature-delta.md "
+        "canonical DESIGN sections `## Reuse Analysis` and "
+        "`## Prefactoring Assessment`."
+    )
+    return (
+        ownership in prompt
+        and "Standalone design documents never substitute for feature-delta.md."
+        in prompt
+        and "Before handoff, run `des verify-readiness-pre-dispatch`." in prompt
+    )
+
+
 def _wave_skip_witness_present(content: str, wave: str) -> bool:
     """True iff a ``## Wave: <wave> / [REF] Wave Skipped`` heading carries a
     non-empty rationale body (DDD-9 wave-parametric FORM check).
@@ -297,6 +319,22 @@ def decide_dispatch(
         )
 
     if _marker_is_on_spine(prompt, owner_wave, subagent_type):
+        if (
+            subagent_type == "nw-solution-architect"
+            and owner_wave == "design"
+            and not _has_design_ownership_envelope(prompt)
+        ):
+            return GuardDecision(
+                verdict=GuardVerdict.BLOCK,
+                reason=(
+                    "block: WHAT: the nw-solution-architect DESIGN prompt lacks "
+                    "the canonical feature-delta ownership/readiness envelope; "
+                    "WHY: `## Reuse Analysis` and `## Prefactoring Assessment` "
+                    "must be owned in feature-delta.md before the readiness gate "
+                    "can be trusted; HOW: regenerate the prompt with `des dispatch` "
+                    "instead of hand-authoring it."
+                ),
+            )
         return GuardDecision(
             verdict=GuardVerdict.ALLOW,
             reason=f"allow: on-spine DES-WAVE marker recognized for {subagent_type}",

@@ -10,6 +10,7 @@ from __future__ import annotations
 import subprocess
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.git.git_constants import GIT_HEAD, GIT_REV_PARSE
 from des.ports.driven_ports.feature_scan_port import FeatureScanPort
 
 
@@ -50,7 +51,7 @@ class FeatureScanAdapter(FeatureScanPort):
         converter's ``_feature_dir_tree_ish`` already assumes.
         """
         toplevel = subprocess.run(
-            ["git", "-C", str(feature_dir), "rev-parse", "--show-toplevel"],
+            ["git", "-C", str(feature_dir), GIT_REV_PARSE, "--show-toplevel"],
             capture_output=True,
             text=True,
         )
@@ -58,7 +59,7 @@ class FeatureScanAdapter(FeatureScanPort):
             return ""
         relative = feature_dir.resolve().relative_to(toplevel.stdout.strip()).as_posix()
         completed = subprocess.run(
-            ["git", "-C", str(feature_dir), "rev-parse", f"HEAD:{relative}"],
+            ["git", "-C", str(feature_dir), GIT_REV_PARSE, f"{GIT_HEAD}:{relative}"],
             capture_output=True,
             text=True,
         )

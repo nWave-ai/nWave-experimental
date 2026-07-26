@@ -61,7 +61,11 @@ class TestInstallNwavePreflightIntegration:
                             # ACT
                             from scripts.install.install_nwave import main
 
-                            with patch.object(sys, "argv", ["install_nwave.py"]):
+                            with patch.object(
+                                sys,
+                                "argv",
+                                ["install_nwave.py", "--platform", "claude-code"],
+                            ):
                                 main()
 
         # ASSERT
@@ -260,7 +264,11 @@ class TestInstallNwavePreflightSuccess:
                             # ACT
                             from scripts.install.install_nwave import main
 
-                            with patch.object(sys, "argv", ["install_nwave.py"]):
+                            with patch.object(
+                                sys,
+                                "argv",
+                                ["install_nwave.py", "--platform", "claude-code"],
+                            ):
                                 exit_code = main()
 
         # ASSERT

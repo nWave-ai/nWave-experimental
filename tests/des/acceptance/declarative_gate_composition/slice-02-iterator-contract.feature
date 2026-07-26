@@ -4,7 +4,7 @@ Feature: The generic iterator honors declared order, fails closed on unknown gat
   A maintainer reordering the declared DISCUSS composition gets iteration-order =
   declared-order with zero code change; a typo'd gate-id fails closed named (never
   a silent skip); a composed gate's INDETERMINATE degrades LOUD; and the already-wired
-  event compositions plus the classic flavor are not regressed.
+  event compositions of every SHIPPED flavor are not regressed.
 
   Driving surface: the REAL flavor_dispatcher.dispatch_lifecycle_event +
   resolve_wave_gate_stack seams (Layer 3 composition), over a real flavor file with
@@ -42,7 +42,12 @@ Feature: The generic iterator honors declared order, fails closed on unknown gat
     When the indeterminate gate is iterated
     Then the indeterminate gate degrades loud
 
-  # AT-7: the already-wired event compositions + classic flavor are not regressed by the lift.
+  # AT-7: every SHIPPED flavor's already-wired event compositions survive the lift.
+  # The table below must list exactly the flavors this build ships. It is a hand-written
+  # copy of a fact declared elsewhere, so it drifts silently -- it once named `classic`
+  # long after that flavor's file and registry entry were gone, and the row failed as a
+  # regression when nothing had regressed. `test_shipped_flavor_parc_conservation.py`
+  # holds the three declarations in agreement so the drift fails LOUD and in one place.
   @AT-7 @slice-02
   Scenario Outline: The shipped <flavor> flavor event compositions are not regressed
     Given the shipped flavor <flavor>
@@ -52,4 +57,3 @@ Feature: The generic iterator honors declared order, fails closed on unknown gat
     Examples:
       | flavor    |
       | atdd_pure |
-      | classic   |

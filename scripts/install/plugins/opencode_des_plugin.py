@@ -19,6 +19,7 @@ from scripts.install.plugins.base import (
     PluginResult,
 )
 from scripts.shared.install_paths import (
+    host_neutral_runtime_dir,
     resolve_des_lib_path_for_spawn,
     resolve_python_command_for_spawn,
 )
@@ -89,7 +90,11 @@ class OpenCodeDESPlugin(InstallationPlugin):
             )
 
         # DES module must be installed
-        des_module = context.claude_dir / "lib" / "python" / "des"
+        des_module = (
+            host_neutral_runtime_dir() / "des"
+            if "claude_code" not in context.target_platforms
+            else context.claude_dir / "lib" / "python" / "des"
+        )
         if not des_module.exists():
             return PluginResult(
                 success=False,

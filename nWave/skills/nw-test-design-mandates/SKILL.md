@@ -20,6 +20,19 @@ no message — or a message that only restates the code — is itself a defect: 
 the crafter exactly what to make true, not force them to reverse-engineer the intent. Same
 what/why/how rule the product's own error surfaces obey.
 
+## Durable outcome naming (STANDING)
+
+Every acceptance-test identifier must name the durable observable value it
+protects. Delivery bookkeeping is not value: never put `slice_NN` or
+`slice-NN` in a test file/function name. Put that provenance in the ledger,
+feature-delta, execution plan, or commit trailer instead. Before RED, derive
+the identifier from the charter's value statement; a reader must understand
+what is protected without opening the delivery plan. For Python, run
+`des check-contract-shape --files <new-test-files>` before handoff: it blocks
+delivery tokens in test functions and test filenames. Scenario titles and
+parametrization IDs follow the same naming rule and are reviewer-checked
+until their native test-framework parsers are added to the portable gate.
+
 ## Closure obligations — COUNT / PARTITION / SILENCE (STANDING)
 
 Three generative obligations. They fire at AUTHORING time, on the shape of what an AT (or the
