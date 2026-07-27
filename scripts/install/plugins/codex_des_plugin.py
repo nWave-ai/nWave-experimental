@@ -310,6 +310,57 @@ def _powershell_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def _powershell_argv(command: str) -> list[str] | None:
+    """Decode the exact literal-only PowerShell command emitted by this plugin."""
+    tokens = command.split()
+    if tokens[:3] != ["powershell", "-NoProfile", "-EncodedCommand"] or len(tokens) != 4:
+        return None
+    try:
+        source = base64.b64decode(tokens[3], validate=True).decode("utf-16le")
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not source.startswith("&"):
+        return None
+
+    values: list[str] = []
+    index = 1
+    while index < len(source):
+        while index < len(source) and source[index].isspace():
+            index += 1
+        if index == len(source):
+            break
+        if source[index] != "'":
+            return None
+        index += 1
+        value = ""
+        while index < len(source):
+            if source[index] != "'":
+                value += source[index]
+                index += 1
+            elif index + 1 < len(source) and source[index + 1] == "'":
+                value += "'"
+                index += 2
+            else:
+                index += 1
+                break
+        else:
+            return None
+        if index < len(source) and not source[index].isspace():
+            return None
+        values.append(value)
+    return values
+
+
+def _command_argv(command: str) -> list[str] | None:
+    """Return argv only for the exact command encodings the installer emits."""
+    if os.name == "nt":
+        return _powershell_argv(command)
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return None
+
+
 def _command_targets_launcher(
     command: str, launcher_path: Path, subcommand: str = "pre-tool-use"
 ) -> bool:
@@ -320,35 +371,7 @@ def _command_targets_launcher(
     expected_argv = [python_path, str(launcher_path), subcommand]
     if subcommand == _SESSION_START_SUBCOMMAND:
         expected_argv.append(_CODEX_HOST_PROVENANCE_ARGUMENT)
-    if os.name != "nt":
-        try:
-            return shlex.split(command) == expected_argv
-        except ValueError:
-            return False
-
-    tokens = command.split()
-    if tokens[:3] != ["powershell", "-NoProfile", "-EncodedCommand"]:
-        return False
-    if len(tokens) != 4:
-        return False
-    try:
-        decoded = base64.b64decode(tokens[3], validate=True).decode("utf-16le")
-    except (ValueError, UnicodeDecodeError):
-        return False
-    expected_powershell = " ".join(
-        (
-            "&",
-            _powershell_literal(expected_argv[0]),
-            _powershell_literal(expected_argv[1]),
-            _powershell_literal(expected_argv[2]),
-            *(
-                (_powershell_literal(expected_argv[3]),)
-                if len(expected_argv) == 4
-                else ()
-            ),
-        )
-    )
-    return decoded == expected_powershell
+    return _command_argv(command) == expected_argv
 
 
 def _command_owns_launcher(
@@ -361,32 +384,23 @@ def _command_owns_launcher(
     previous hook command.  The launcher path and event are installer-owned
     and remain stable across that change.
     """
-    if os.name != "nt":
-        try:
-            argv = shlex.split(command)
-        except ValueError:
-            return False
-        expected_tail = [str(launcher_path), subcommand]
-        if subcommand == _SESSION_START_SUBCOMMAND:
-            expected_tail.append(_CODEX_HOST_PROVENANCE_ARGUMENT)
-        return argv[1:] == expected_tail and len(argv) == len(expected_tail) + 1
-
-    tokens = command.split()
-    if tokens[:3] != ["powershell", "-NoProfile", "-EncodedCommand"]:
+    argv = _command_argv(command)
+    if argv is None or len(argv) < 1:
         return False
-    if len(tokens) != 4:
-        return False
-    try:
-        decoded = base64.b64decode(tokens[3], validate=True).decode("utf-16le")
-    except (ValueError, UnicodeDecodeError):
-        return False
-    expected_tail = [
-        _powershell_literal(str(launcher_path)),
-        _powershell_literal(subcommand),
-    ]
+    expected_tail = [str(launcher_path), subcommand]
     if subcommand == _SESSION_START_SUBCOMMAND:
-        expected_tail.append(_powershell_literal(_CODEX_HOST_PROVENANCE_ARGUMENT))
-    return decoded.endswith(" ".join(expected_tail))
+        expected_tail.append(_CODEX_HOST_PROVENANCE_ARGUMENT)
+    return argv[1:] == expected_tail
+
+
+def _command_is_legacy_session_start(command: str, launcher_path: Path) -> bool:
+    """Recognize only the pre-provenance SessionStart invocation."""
+    argv = _command_argv(command)
+    return (
+        argv is not None
+        and len(argv) == 3
+        and argv[1:] == [str(launcher_path), _SESSION_START_SUBCOMMAND]
+    )
 
 
 def _build_hook_entry(python_path: str, pythonpath: str) -> dict:
@@ -637,42 +651,44 @@ def _remove_nwave_hooks(
             if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
                 cleaned_entries.append(entry)
                 continue
+            is_session_start_event = event_name == _SESSION_START_EVENT
+            is_pretool_event = event_name == _PRE_TOOL_USE_EVENT
+
+            def is_owned_handler(
+                handler: object,
+                *,
+                session_start_event: bool = is_session_start_event,
+                pretool_event: bool = is_pretool_event,
+            ) -> bool:
+                if not isinstance(handler, dict):
+                    return False
+                command = handler.get("command", "")
+                owns_canonical = (
+                    launcher_path is not None
+                    and _command_owns_launcher(command, launcher_path, subcommand)
+                )
+                owns_legacy_session_start = (
+                    session_start_event
+                    and subcommand == _SESSION_START_SUBCOMMAND
+                    and launcher_path is not None
+                    and _command_is_legacy_session_start(command, launcher_path)
+                )
+                owns_legacy_pretool = (
+                    pretool_event
+                    and legacy_direct_command is not None
+                    and command == legacy_direct_command
+                )
+                return owns_canonical or owns_legacy_session_start or owns_legacy_pretool
+
             owned_handler_present = any(
                 isinstance(handler, dict)
-                and (
-                    (
-                        launcher_path is not None
-                        and _command_owns_launcher(
-                            handler.get("command", ""), launcher_path, subcommand
-                        )
-                    )
-                    or (
-                        event_name == _PRE_TOOL_USE_EVENT
-                        and legacy_direct_command is not None
-                        and handler.get("command") == legacy_direct_command
-                    )
-                )
+                and is_owned_handler(handler)
                 for handler in entry["hooks"]
             )
             retained_handlers = [
                 handler
                 for handler in entry["hooks"]
-                if not (
-                    isinstance(handler, dict)
-                    and (
-                        (
-                            launcher_path is not None
-                            and _command_owns_launcher(
-                                handler.get("command", ""), launcher_path, subcommand
-                            )
-                        )
-                        or (
-                            event_name == _PRE_TOOL_USE_EVENT
-                            and legacy_direct_command is not None
-                            and handler.get("command") == legacy_direct_command
-                        )
-                    )
-                )
+                if not is_owned_handler(handler)
             ]
             if not owned_handler_present:
                 # An empty group, or a group with no nWave-owned command, is
@@ -1089,28 +1105,42 @@ class CodexDESPlugin(InstallationPlugin):
                 session_start = doc.get("hooks", {}).get(_SESSION_START_EVENT, [])
                 if not isinstance(session_start, list):
                     session_start = []
-                session_entries = [
-                    entry
+                session_commands = [
+                    handler.get("command", "")
                     for entry in session_start
-                    if _is_nwave_matcher_group(
-                        entry,
+                    if isinstance(entry, dict)
+                    and isinstance(entry.get("hooks"), list)
+                    for handler in entry["hooks"]
+                    if isinstance(handler, dict)
+                ]
+                current_session_commands = [
+                    command
+                    for command in session_commands
+                    if _command_owns_launcher(
+                        command,
                         session_start_launcher_path,
                         _SESSION_START_SUBCOMMAND,
                     )
                 ]
-                if len(session_entries) != 1:
+                legacy_session_commands = [
+                    command
+                    for command in session_commands
+                    if _command_is_legacy_session_start(
+                        command, session_start_launcher_path
+                    )
+                ]
+                if (
+                    len(current_session_commands) != 1
+                    or legacy_session_commands
+                    or len(current_session_commands) + len(legacy_session_commands) != 1
+                ):
                     errors.append(
                         "Expected exactly one nWave SessionStart affordance hook"
                     )
-                elif not all(
-                    _command_targets_launcher(
-                        hook.get("command", ""),
-                        session_start_launcher_path,
-                        _SESSION_START_SUBCOMMAND,
-                    )
-                    for entry in session_entries
-                    for hook in entry.get("hooks", [])
-                    if isinstance(hook, dict)
+                elif not _command_targets_launcher(
+                    current_session_commands[0],
+                    session_start_launcher_path,
+                    _SESSION_START_SUBCOMMAND,
                 ):
                     errors.append(
                         "SessionStart affordance hook does not target canonical launcher"

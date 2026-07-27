@@ -768,6 +768,210 @@ class TestVerify:
         ) == json.dumps({"launcher_file": str(external)})
 
 
+class TestSessionStartReinstallReconciliation:
+    """Reinstall reconciles only exact nWave SessionStart commands."""
+
+    @pytest.mark.parametrize("command_format", ["posix", "encoded-powershell"])
+    def test_reinstall_does_not_retain_legacy_nwave_session_start_hook(
+        self, tmp_path, monkeypatch, command_format
+    ):
+        """CONTRACT_SHAPE: unbounded-preservation
+
+        A reinstall leaves one current nWave hook and every foreign hook intact.
+
+        The legacy command is the public pre-provenance form: interpreter,
+        canonical launcher, then ``session-start``.  A lookalike with an extra
+        argument is user-owned and must survive just like the Lyra hook.
+        """
+        context = _make_context(tmp_path)
+        codex_dir = tmp_path / ".codex"
+        codex_dir.mkdir()
+        _patch_codex_config_dir(monkeypatch, codex_dir)
+        _patch_path_resolvers(monkeypatch)
+        if command_format == "encoded-powershell":
+            monkeypatch.setattr(
+                codex_des_plugin,
+                "os",
+                SimpleNamespace(name="nt", environ=os.environ),
+            )
+
+        launcher_path = codex_dir / codex_des_plugin._SESSION_START_LAUNCHER_FILENAME
+        current_command = codex_des_plugin._build_session_start_hook_entry(
+            launcher_path
+        )["hooks"][0]["command"]
+        if command_format == "posix":
+            legacy_command = shlex.join(
+                ["/legacy/bin/python", str(launcher_path), "session-start"]
+            )
+            near_miss_command = shlex.join(
+                [
+                    "/legacy/bin/python",
+                    str(launcher_path),
+                    "session-start",
+                    "--host-provenance=codex",
+                    "--user-extension",
+                ]
+            )
+        else:
+            def encoded_command(*argv: str) -> str:
+                powershell = " ".join(
+                    ["&", *[codex_des_plugin._powershell_literal(arg) for arg in argv]]
+                )
+                encoded = base64.b64encode(powershell.encode("utf-16le")).decode(
+                    "ascii"
+                )
+                return f"powershell -NoProfile -EncodedCommand {encoded}"
+
+            legacy_command = encoded_command(
+                "C:\\legacy\\python.exe", str(launcher_path), "session-start"
+            )
+            near_miss_command = encoded_command(
+                "C:\\legacy\\python.exe",
+                str(launcher_path),
+                "session-start",
+                "--host-provenance=codex",
+                "--user-extension",
+            )
+
+        lyra_command = "python3 /developer/lyra/session_start.py session-start"
+        hooks_path = codex_dir / "hooks.json"
+        hooks_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "SessionStart": [
+                            {
+                                "matcher": "startup|resume",
+                                "hooks": [
+                                    {"type": "command", "command": current_command}
+                                ],
+                            },
+                            {
+                                "matcher": "startup",
+                                "hooks": [
+                                    {"type": "command", "command": legacy_command}
+                                ],
+                            },
+                            {
+                                "matcher": "startup",
+                                "hooks": [
+                                    {"type": "command", "command": lyra_command}
+                                ],
+                            },
+                            {
+                                "matcher": "startup",
+                                "hooks": [
+                                    {"type": "command", "command": near_miss_command}
+                                ],
+                            },
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def session_start_state() -> dict[str, object]:
+            document = json.loads(hooks_path.read_text(encoding="utf-8"))
+            commands = [
+                hook["command"]
+                for group in document["hooks"]["SessionStart"]
+                for hook in group["hooks"]
+            ]
+            return {
+                "session_start.current_nwave_count": commands.count(current_command),
+                "session_start.legacy_nwave_present": legacy_command in commands,
+                "session_start.lyra_present": lyra_command in commands,
+                "session_start.near_miss_present": near_miss_command in commands,
+            }
+
+        before = session_start_state()
+        result = CodexDESPlugin().install(context)
+        after = session_start_state()
+
+        assert result.success, (
+            "WHAT: Codex reinstall did not complete. WHY: developers cannot restore a "
+            "single current SessionStart affordance. HOW: make the installer accept the "
+            "legacy SessionStart command while preserving user-owned hooks."
+        )
+        assert_state_delta(
+            before,
+            after,
+            universe=set(before),
+            expected={
+                "session_start.current_nwave_count": set_to(1),
+                "session_start.legacy_nwave_present": set_to(False),
+            },
+        )
+        assert after["session_start.lyra_present"] is True, (
+            "WHAT: the Lyra SessionStart hook disappeared. WHY: reinstall must preserve "
+            "independent developer customisation. HOW: remove only exact nWave commands."
+        )
+        assert after["session_start.near_miss_present"] is True, (
+            "WHAT: a SessionStart command with user-supplied extra arguments disappeared. "
+            "WHY: a near-miss is not nWave-owned. HOW: require an exact legacy or current "
+            "nWave command before removal."
+        )
+
+    @pytest.mark.parametrize("command_format", ["posix", "encoded-powershell"])
+    def test_verify_rejects_stale_nwave_session_start_hook(
+        self, tmp_path, monkeypatch, command_format
+    ):
+        """CONTRACT_SHAPE: bounded-change
+
+        Verification cannot report healthy while a recognized legacy hook remains.
+        """
+        context = _make_context(tmp_path)
+        codex_dir = tmp_path / ".codex"
+        codex_dir.mkdir()
+        _patch_codex_config_dir(monkeypatch, codex_dir)
+        _patch_path_resolvers(monkeypatch)
+        if command_format == "encoded-powershell":
+            monkeypatch.setattr(
+                codex_des_plugin,
+                "os",
+                SimpleNamespace(name="nt", environ=os.environ),
+            )
+
+        plugin = CodexDESPlugin()
+        assert plugin.install(context).success
+        launcher_path = codex_dir / codex_des_plugin._SESSION_START_LAUNCHER_FILENAME
+        if command_format == "posix":
+            legacy_command = shlex.join(
+                ["/legacy/bin/python", str(launcher_path), "session-start"]
+            )
+        else:
+            powershell = " ".join(
+                [
+                    "&",
+                    codex_des_plugin._powershell_literal("C:\\legacy\\python.exe"),
+                    codex_des_plugin._powershell_literal(str(launcher_path)),
+                    codex_des_plugin._powershell_literal("session-start"),
+                ]
+            )
+            encoded = base64.b64encode(powershell.encode("utf-16le")).decode("ascii")
+            legacy_command = f"powershell -NoProfile -EncodedCommand {encoded}"
+
+        hooks_path = codex_dir / "hooks.json"
+        document = json.loads(hooks_path.read_text(encoding="utf-8"))
+        document["hooks"]["SessionStart"].append(
+            {
+                "matcher": "startup",
+                "hooks": [{"type": "command", "command": legacy_command}],
+            }
+        )
+        hooks_path.write_text(json.dumps(document), encoding="utf-8")
+
+        result = plugin.verify(context)
+
+        assert result.success is False, (
+            "WHAT: verification accepted an additional stale nWave SessionStart hook. "
+            "WHY: a healthy Codex configuration contains exactly one current affordance. "
+            "HOW: count both exact legacy and current nWave SessionStart commands and fail "
+            "when the recognized population is not exactly one current command."
+        )
+
+
 class TestUninstallPreservesUserHooks:
     """uninstall: removes only nWave DES entries; user hooks survive."""
 
