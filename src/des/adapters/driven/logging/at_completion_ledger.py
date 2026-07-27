@@ -72,6 +72,8 @@ from des.ports.driven_ports.at_completion_ledger_port import (
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from des.domain.value_objects import SliceRef
+
 
 # The required integrity-bearing fields every record carries. `record_hash`
 # itself is excluded (it is the digest). `seq` IS hashed -- a reordered record
@@ -471,9 +473,10 @@ class AtCompletionLedger(AtCompletionLedgerPort):
     def append_gate_event(
         self,
         event: str,
-        slice_id: str,
+        slice_id: str | None = None,
         *,
         feature_id: str | None = None,
+        ref: SliceRef | None = None,
         gate: str | None = None,
         justification: str | None = None,
         attested_via: str | None = None,
@@ -526,8 +529,32 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         (every existing call site stays byte-identical); when present, threaded
         into ``fields`` and hashed into ``record_hash`` like every other field.
 
+        SliceRef additive form (techdebt row
+        ``at-completion-ledger-slice-ref-clump``): pass
+        ``ref=SliceRef(feature_id, slice_id)`` INSTEAD of the separate
+        ``slice_id`` positional + ``feature_id=`` kwarg -- bundles the pair
+        that must always travel together into one value object. Every
+        existing call site that passes ``slice_id`` positionally (with or
+        without ``feature_id=``) stays byte-identical; ``ref`` is a pure
+        alternative, never silently overriding an explicitly-passed
+        ``slice_id``/``feature_id`` (mixing the two forms raises
+        ``TypeError``).
+
         Returns the appended record.
         """
+        if ref is not None:
+            if slice_id is not None or feature_id is not None:
+                raise TypeError(
+                    "append_gate_event: pass either ref=SliceRef(...) or "
+                    "slice_id/feature_id=, not both."
+                )
+            slice_id = ref.slice_id
+            feature_id = ref.feature_id
+        if slice_id is None:
+            raise TypeError(
+                "append_gate_event requires slice_id (positional) or "
+                "ref=SliceRef(feature_id, slice_id)."
+            )
         fields: dict[str, Any] = {"event": event, "slice_id": slice_id}
         if gate is not None:
             fields["gate"] = gate

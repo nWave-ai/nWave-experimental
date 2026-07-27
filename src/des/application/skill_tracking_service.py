@@ -177,7 +177,12 @@ class SkillTrackingService:
             resolved = Path(file_path).expanduser()
             if resolved.exists():
                 return len(resolved.read_text(encoding="utf-8")) // 4
-        except Exception:
+        except (OSError, UnicodeDecodeError):
+            # WHAT: file vanished/unreadable or has undecodable bytes between
+            # the exists() check and read_text().
+            # WHY: token estimation is best-effort observability, not
+            # correctness-critical (see module docstring: "Fail-open").
+            # HOW: safe to continue -- caller falls back to the 0 default.
             pass
         return 0
 

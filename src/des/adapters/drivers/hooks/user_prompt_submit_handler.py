@@ -119,6 +119,10 @@ def _maybe_refresh_orchestrator_affordance(project_root: Path) -> None:
             print(json.dumps(_build_user_prompt_submit_affordance_output(affordance)))
         _touch_orchestrator_affordance_sentinel(sentinel)
     except Exception:
+        # WHAT: sentinel/asset read-write failed (unreadable assets,
+        # unwritable sentinel, etc. -- see docstring).
+        # WHY/HOW: documented "Fail-open" above -- a refresh failure must
+        # never block prompt submission; caller continues unaffected.
         pass
 
 

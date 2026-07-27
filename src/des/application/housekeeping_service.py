@@ -83,14 +83,23 @@ class HousekeepingService:
         try:
             HousekeepingService._clean_audit_logs(config, time_provider)
         except Exception:
+            # WHAT: audit-log retention sweep failed (e.g. permission error,
+            # unreadable directory).
+            # WHY: per-task fail-isolation (see class docstring) -- one
+            # task's failure must never block the others.
+            # HOW: safe to continue to the next housekeeping task.
             pass
         try:
             HousekeepingService._clean_signal_files(config, time_provider)
         except Exception:
+            # WHAT: stale signal-file cleanup failed.
+            # WHY/HOW: same per-task fail-isolation rationale as above.
             pass
         try:
             HousekeepingService._rotate_skill_log(config)
         except Exception:
+            # WHAT: skill-log rotation failed.
+            # WHY/HOW: same per-task fail-isolation rationale as above.
             pass
 
     @staticmethod
@@ -138,6 +147,11 @@ class HousekeepingService:
                 try:
                     log_file.unlink()
                 except OSError:
+                    # WHAT: file already removed by a concurrent housekeeping
+                    # run, or a permission/IO error on unlink.
+                    # WHY: retention cleanup is best-effort -- a single
+                    # unlink failure must not abort the retention sweep.
+                    # HOW: safe to continue to the next log file.
                     pass
 
     @staticmethod

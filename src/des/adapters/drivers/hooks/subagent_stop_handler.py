@@ -153,6 +153,13 @@ def _log_transcript_audit(
             )
         )
     except Exception:
+        # WHAT: audit-log write failed (e.g. unreadable/unwritable audit
+        # sink, serialization error).
+        # WHY: this helper is documented "silently swallowing failures"
+        # (see docstring) -- audit logging is observability, not
+        # correctness-critical to the SubagentStop hook it's called from.
+        # HOW: safe to continue -- the caller's hook flow proceeds
+        # unaffected, only this audit record is lost.
         pass
 
 

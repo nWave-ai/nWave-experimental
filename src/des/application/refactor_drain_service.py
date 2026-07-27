@@ -553,10 +553,20 @@ class RefactorDrainService:
         try:
             self._git_worktree.remove_worktree(repo, worktree_path)
         except Exception:
+            # WHAT: worktree removal failed (already removed by a prior
+            # cleanup branch on this same path, or a port-specific error).
+            # WHY: this guard is best-effort/idempotent-safe (see method
+            # docstring) -- it must never mask the original exception that
+            # triggered cleanup.
+            # HOW: safe to continue to the branch-delete attempt below.
             pass
         try:
             self._git_worktree.delete_branch(repo, branch)
         except Exception:
+            # WHAT: branch deletion failed (already deleted by a prior
+            # cleanup branch, or a port-specific error).
+            # WHY/HOW: same idempotent-safe rationale as the remove_worktree
+            # guard above -- never mask the exception this guard re-raises.
             pass
 
     # -- internal: in-flight tracking for the operator-abort path ------------

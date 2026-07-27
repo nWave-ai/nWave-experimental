@@ -100,6 +100,12 @@ def main() -> None:
                     print(json.dumps(asdict(selection)))
                     sys.exit(1)
         except (json.JSONDecodeError, OSError, ValueError):
+            # WHAT: stdin envelope is malformed JSON, unreadable, or "cwd"
+            # is not a usable value.
+            # WHY: this legacy-selector check is defensive/fail-open (see
+            # comment above -- a bad envelope must not block routing).
+            # HOW: safe to continue -- routing proceeds without resolving
+            # workflow selection for this deliver-progress call.
             pass
 
     # A valid atdd_pure return is an evidence boundary even in a clean

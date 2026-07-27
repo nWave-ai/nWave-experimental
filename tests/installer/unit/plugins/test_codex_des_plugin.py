@@ -813,6 +813,7 @@ class TestSessionStartReinstallReconciliation:
                 ]
             )
         else:
+
             def encoded_command(*argv: str) -> str:
                 powershell = " ".join(
                     ["&", *[codex_des_plugin._powershell_literal(arg) for arg in argv]]
@@ -854,9 +855,7 @@ class TestSessionStartReinstallReconciliation:
                             },
                             {
                                 "matcher": "startup",
-                                "hooks": [
-                                    {"type": "command", "command": lyra_command}
-                                ],
+                                "hooks": [{"type": "command", "command": lyra_command}],
                             },
                             {
                                 "matcher": "startup",

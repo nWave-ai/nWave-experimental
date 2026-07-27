@@ -61,6 +61,12 @@ def _check_version(version_path: Path) -> CheckResult:
             ver = pkg_version("nwave-ai")
             return CheckResult("version", True, ver)
         except Exception:
+            # WHAT: package "nwave-ai" is not installed via pip/pipx
+            # (PackageNotFoundError) or metadata lookup otherwise failed.
+            # WHY: this is strategy 2-of-4 in the resolution order above --
+            # a missing PyPI install just means we're in a source checkout.
+            # HOW: safe to continue -- falls through to strategy 3
+            # (pyproject.toml) below.
             pass
 
         # Strategy 3: Source — pyproject.toml in project root

@@ -92,6 +92,14 @@ class JsonlNWaveLogWriter(NWaveLogWriter):
                 f.write(json_line + "\n")
 
         except Exception:
+            # WHAT: log-directory creation or file append failed (e.g.
+            # permission error, disk full, unreadable path).
+            # WHY: this IS the logging adapter itself -- "Exception
+            # swallowing (logging must never break operations)" is a
+            # documented class invariant (see class docstring); there is
+            # no lower-level sink left to report the failure to.
+            # HOW: safe to continue -- caller's operation proceeds
+            # unaffected, only observability is lost for this entry.
             pass
 
     def set_level(self, level: LogLevel) -> None:

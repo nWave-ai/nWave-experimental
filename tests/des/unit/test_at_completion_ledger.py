@@ -23,6 +23,7 @@ from des.adapters.driven.logging.at_completion_ledger import (
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
+from des.domain.value_objects import SliceRef
 
 
 _CARPACCIO_CLEARED = "CarpaccioGateCleared"
@@ -62,6 +63,71 @@ def test_append_record_carries_event_and_slice(tmp_path: Path) -> None:
     assert record["slice_id"] == "slice-07"
     assert record["seq"] == 1
     assert record["feature_id"] == "demo-feature"
+
+
+# --- SliceRef additive form (techdebt: at-completion-ledger-slice-ref-clump) -
+
+
+def test_append_gate_event_accepts_slice_ref(tmp_path: Path) -> None:
+    """ref=SliceRef(...) is an alternative to slice_id positional + feature_id=."""
+    ledger = AtCompletionLedger(project_root=tmp_path)
+    record = ledger.append_gate_event(
+        event=_SLICE_VERIFIED,
+        ref=SliceRef(feature_id="demo-feature", slice_id="slice-09"),
+    )
+
+    assert record["event"] == _SLICE_VERIFIED
+    assert record["slice_id"] == "slice-09"
+    assert record["feature_id"] == "demo-feature"
+
+
+def test_append_gate_event_slice_ref_byte_identical_to_positional_form(
+    tmp_path: Path,
+) -> None:
+    """The ref= form produces the SAME record shape as the legacy positional form."""
+    via_positional = AtCompletionLedger(project_root=tmp_path / "a")
+    via_ref = AtCompletionLedger(project_root=tmp_path / "b")
+
+    positional_record = via_positional.append_gate_event(
+        event=_SLICE_VERIFIED, slice_id="slice-01", feature_id="demo-feature"
+    )
+    ref_record = via_ref.append_gate_event(
+        event=_SLICE_VERIFIED,
+        ref=SliceRef(feature_id="demo-feature", slice_id="slice-01"),
+    )
+
+    for key in ("event", "slice_id", "feature_id", "seq"):
+        assert positional_record[key] == ref_record[key]
+
+
+def test_append_gate_event_rejects_mixing_ref_and_slice_id(tmp_path: Path) -> None:
+    """Mixing ref= with slice_id/feature_id= is refused, never silently merged."""
+    ledger = _ledger(tmp_path)
+
+    with pytest.raises(TypeError):
+        ledger.append_gate_event(
+            event=_SLICE_VERIFIED,
+            slice_id="slice-01",
+            ref=SliceRef(feature_id="demo-feature", slice_id="slice-01"),
+        )
+
+
+def test_append_gate_event_requires_slice_id_or_ref(tmp_path: Path) -> None:
+    """Neither slice_id nor ref= supplied is refused, never a silent no-op."""
+    ledger = _ledger(tmp_path)
+
+    with pytest.raises(TypeError):
+        ledger.append_gate_event(event=_SLICE_VERIFIED)
+
+
+def test_slice_ref_rejects_empty_feature_id() -> None:
+    """SliceRef.feature_id must be non-empty (slice_id MAY be empty -- feature-scoped)."""
+    with pytest.raises(ValueError):
+        SliceRef(feature_id="", slice_id="slice-01")
+
+    # slice_id == "" is a legitimate feature-scoped record (e.g.
+    # FeatureEndReviewVerdict) -- must NOT raise.
+    SliceRef(feature_id="demo-feature", slice_id="")
 
 
 # --- M7(c): fail-closed integrity read --------------------------------------

@@ -313,7 +313,10 @@ def _powershell_literal(value: str) -> str:
 def _powershell_argv(command: str) -> list[str] | None:
     """Decode the exact literal-only PowerShell command emitted by this plugin."""
     tokens = command.split()
-    if tokens[:3] != ["powershell", "-NoProfile", "-EncodedCommand"] or len(tokens) != 4:
+    if (
+        tokens[:3] != ["powershell", "-NoProfile", "-EncodedCommand"]
+        or len(tokens) != 4
+    ):
         return None
     try:
         source = base64.b64decode(tokens[3], validate=True).decode("utf-16le")
@@ -663,9 +666,8 @@ def _remove_nwave_hooks(
                 if not isinstance(handler, dict):
                     return False
                 command = handler.get("command", "")
-                owns_canonical = (
-                    launcher_path is not None
-                    and _command_owns_launcher(command, launcher_path, subcommand)
+                owns_canonical = launcher_path is not None and _command_owns_launcher(
+                    command, launcher_path, subcommand
                 )
                 owns_legacy_session_start = (
                     session_start_event
@@ -678,17 +680,16 @@ def _remove_nwave_hooks(
                     and legacy_direct_command is not None
                     and command == legacy_direct_command
                 )
-                return owns_canonical or owns_legacy_session_start or owns_legacy_pretool
+                return (
+                    owns_canonical or owns_legacy_session_start or owns_legacy_pretool
+                )
 
             owned_handler_present = any(
-                isinstance(handler, dict)
-                and is_owned_handler(handler)
+                isinstance(handler, dict) and is_owned_handler(handler)
                 for handler in entry["hooks"]
             )
             retained_handlers = [
-                handler
-                for handler in entry["hooks"]
-                if not is_owned_handler(handler)
+                handler for handler in entry["hooks"] if not is_owned_handler(handler)
             ]
             if not owned_handler_present:
                 # An empty group, or a group with no nWave-owned command, is
@@ -1108,8 +1109,7 @@ class CodexDESPlugin(InstallationPlugin):
                 session_commands = [
                     handler.get("command", "")
                     for entry in session_start
-                    if isinstance(entry, dict)
-                    and isinstance(entry.get("hooks"), list)
+                    if isinstance(entry, dict) and isinstance(entry.get("hooks"), list)
                     for handler in entry["hooks"]
                     if isinstance(handler, dict)
                 ]

@@ -794,4 +794,10 @@ class DESConfig:
         try:
             path.unlink()
         except FileNotFoundError:
+            # WHAT: flag file already absent (never created, or removed by
+            # a concurrent caller).
+            # WHY: this method is documented idempotent -- "no error if
+            # absent" (see method docstring).
+            # HOW: safe to continue -- the post-condition (no flag file)
+            # already holds.
             pass

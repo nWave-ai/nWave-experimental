@@ -467,12 +467,20 @@ def _load_gitlint_title_rules(repo: Path) -> tuple[int, re.Pattern[str]]:
         try:
             max_length = config.getint("title-max-length", "line-length")
         except ValueError:
+            # WHAT: line-length value in .gitlint is not an int.
+            # WHY: this function degrades LOUD-but-usable, never crashes, on
+            # a malformed .gitlint (see function docstring).
+            # HOW: safe to continue with the _DEFAULT_TITLE_MAX_LENGTH set
+            # above.
             pass
 
     if config.has_option("title-match-regex", "regex"):
         try:
             pattern = re.compile(config.get("title-match-regex", "regex"))
         except re.error:
+            # WHAT: regex value in .gitlint fails to compile.
+            # WHY/HOW: same degrade-LOUD-but-usable rationale as above --
+            # keep the _DEFAULT_TITLE_REGEX already set.
             pass
 
     return max_length, pattern
@@ -565,6 +573,11 @@ def _remote_tracking_ref(repo: Path) -> str | None:
         if ref:
             return ref
     except subprocess.CalledProcessError:
+        # WHAT: no upstream (`@{u}`) is configured for the current branch.
+        # WHY: this is the documented fallback chain above -- "Tries the
+        # configured upstream first. Falls back to the first
+        # refs/remotes/* ref... when no upstream is configured".
+        # HOW: safe to continue to the refs/remotes/* scan below.
         pass
     try:
         refs = _git(repo, "for-each-ref", "--format=%(refname)", "refs/remotes/")

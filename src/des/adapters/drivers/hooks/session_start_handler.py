@@ -853,6 +853,12 @@ def handle_session_start(host_provenance: str | None = None) -> int:
         if guidance:
             additional_context_parts.append(guidance)
     except Exception:
+        # WHAT: workflow-mode guidance lookup failed (e.g. unreadable
+        # config, malformed mode file).
+        # WHY: SessionStart hooks are fail-open by design -- a guidance
+        # failure must never block the session itself.
+        # HOW: safe to continue -- no guidance is appended for this
+        # session, later contributors still run.
         pass
 
     from des.adapters.driven.config.des_config import DESConfig
@@ -867,6 +873,11 @@ def handle_session_start(host_provenance: str | None = None) -> int:
     try:
         _run_housekeeping(des_config)
     except Exception:
+        # WHAT: housekeeping run raised (should be rare -- HousekeepingService
+        # already fail-isolates its own sub-tasks).
+        # WHY/HOW: same SessionStart fail-open rationale as the guidance
+        # guard above -- never block the session; continue to the
+        # update-check below.
         pass
 
     try:
@@ -884,6 +895,10 @@ def handle_session_start(host_provenance: str | None = None) -> int:
             )
 
     except Exception:
+        # WHAT: update-check (network/version-metadata lookup) failed.
+        # WHY/HOW: same SessionStart fail-open rationale -- a network or
+        # metadata error must never block the session; continue to the
+        # substrate-probe advisory below.
         pass
 
     # The substrate-probe advisory is a plain one-line human-readable string,
@@ -894,6 +909,10 @@ def handle_session_start(host_provenance: str | None = None) -> int:
         if advisory:
             print(advisory, end="")
     except Exception:
+        # WHAT: substrate probe failed (environment inspection error).
+        # WHY/HOW: same SessionStart fail-open rationale -- an advisory
+        # probe failure must never block the session; continue to the
+        # gate-affordance nudge below.
         pass
 
     # WS-17-A / GDP-2: proactive gate-affordance nudge -- surfaces the
@@ -904,6 +923,11 @@ def handle_session_start(host_provenance: str | None = None) -> int:
         if nudge:
             additional_context_parts.append(nudge)
     except Exception:
+        # WHAT: gate-affordance nudge build failed (e.g. unreadable
+        # feature-delta under session_cwd).
+        # WHY: explicitly documented "Fail-open" (WS-17-A / GDP-2 comment
+        # above).
+        # HOW: safe to continue -- no nudge is appended for this session.
         pass
 
     _emit_codex_continued_work_opportunity(session_cwd, host_provenance)
@@ -931,6 +955,12 @@ def handle_session_start(host_provenance: str | None = None) -> int:
             if affordance:
                 additional_context_parts.append(affordance)
     except Exception:
+        # WHAT: orchestrator-affordance asset load failed (e.g. missing/
+        # unreadable text asset under _ORCHESTRATOR_AFFORDANCE_ASSETS_DIR).
+        # WHY: explicitly documented "fail-open" (comment above).
+        # HOW: safe to continue -- no affordance text is appended; the
+        # combined JSON payload below still emits whatever else was
+        # collected.
         pass
 
     # ONE combined JSON payload for the whole invocation -- every contributor

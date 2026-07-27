@@ -169,6 +169,13 @@ class LogIntegrityValidator:
             try:
                 start_dt = datetime.fromisoformat(task_start_time)
             except (ValueError, TypeError):
+                # WHAT: task_start_time is malformed or not a str
+                # (unparseable ISO-8601, wrong type).
+                # WHY: pre-task-window timestamp checks are optional
+                # (see docstring: "runs only when task_start_time is
+                # available") -- a bad value degrades to "unavailable"
+                # rather than failing the whole integrity check.
+                # HOW: safe to continue with start_dt left as None.
                 pass
 
         warnings: list[str] = []

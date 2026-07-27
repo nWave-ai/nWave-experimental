@@ -85,5 +85,12 @@ class AuditLogPathResolver:
                 if audit_dir:
                     return Path(audit_dir)
             except (json.JSONDecodeError, OSError):
+                # WHAT: des-config.json exists but is malformed JSON, or
+                # became unreadable between the exists() check and read.
+                # WHY: this is priority-4-of-5 in the resolver's fallback
+                # chain (see method docstring) -- a bad config file must
+                # degrade to the next priority, not raise.
+                # HOW: safe to continue -- caller falls through to
+                # priority 4/5 fallback below.
                 pass
         return None

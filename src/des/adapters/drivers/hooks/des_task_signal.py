@@ -103,6 +103,13 @@ def read_des_task_signal(
         if task_active_file.exists():
             return json.loads(task_active_file.read_text())
     except Exception:
+        # WHAT: signal file vanished between exists() and read (race with
+        # another process), or contains malformed JSON.
+        # WHY: this is a best-effort read of a transient signal file (see
+        # docstring: "Returns ... or None") -- a race/corruption must
+        # degrade to "no signal", never raise.
+        # HOW: safe to return None below -- caller already treats None as
+        # "no active signal".
         pass
     return None
 

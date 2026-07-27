@@ -213,6 +213,37 @@ class AgentName:
 
 
 @dataclass(frozen=True)
+class SliceRef:
+    """Strongly-typed ``(feature_id, slice_id)`` pair.
+
+    Bundles the two identifiers that travel together across the
+    AT-completion ledger's write/read API (techdebt row
+    ``at-completion-ledger-slice-ref-clump`` -- data_clump score 0.995
+    across ~11 method signatures in
+    ``des.adapters.driven.logging.at_completion_ledger``) into one
+    immutable value object, so a caller threads one argument instead of
+    two that must always agree.
+
+    ``slice_id`` MAY be empty: feature-scoped ledger records (e.g.
+    ``FeatureEndReviewVerdict``) use ``slice_id == ""`` by design (see
+    ``_FEATURE_END_EVENTS`` in ``at_completion_ledger.py``), so this is
+    NOT validated non-empty the way ``feature_id`` is.
+    """
+
+    feature_id: str
+    slice_id: str
+
+    def __post_init__(self) -> None:
+        """Validate feature_id is present; slice_id may be empty (feature-scoped)."""
+        if not self.feature_id:
+            raise ValueError("SliceRef.feature_id cannot be empty")
+
+    def __str__(self) -> str:
+        """Return ``feature_id/slice_id`` for display and correlation-id derivation."""
+        return f"{self.feature_id}/{self.slice_id}"
+
+
+@dataclass(frozen=True)
 class CommandName:
     """Strongly-typed command identifier.
 
