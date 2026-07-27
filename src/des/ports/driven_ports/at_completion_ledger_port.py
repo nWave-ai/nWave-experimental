@@ -117,6 +117,36 @@ class AtCompletionLedgerPort(ABC):
         """
         ...
 
+    @abstractmethod
+    def append_walking_skeleton_gate_ran(
+        self, *, feature_id: str | None = None, slice_id: str = ""
+    ) -> dict[str, Any]:
+        """Append the `WalkingSkeletonGateRan` heartbeat record (RM-1).
+
+        techdebt d1-app-imports-adapters: added so
+        `WalkingSkeletonFeatureEndGate` (application) can depend on this port
+        instead of the concrete `AtCompletionLedger` adapter for its ledger
+        collaborator's type. Mirrors the adapter method of the same name
+        verbatim (`des.adapters.driven.logging.at_completion_ledger`).
+        """
+        ...
+
+    @abstractmethod
+    def append_walking_skeleton_tier_verified(
+        self,
+        tier_of_record: str,
+        artifact_hash: str | None = None,
+        *,
+        feature_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append the `WalkingSkeletonTierVerified` positive-proof record (RM-3).
+
+        techdebt d1-app-imports-adapters: see
+        `append_walking_skeleton_gate_ran` docstring for why this was added.
+        Mirrors the adapter method of the same name verbatim.
+        """
+        ...
+
 
 class LedgerFactoryPort(ABC):
     """Driven port: builds an ``AtCompletionLedgerPort`` for a feature/root.

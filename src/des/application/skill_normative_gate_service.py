@@ -23,12 +23,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from des.adapters.driven.skill_corpus_reader import (
-    ManifestAssetAbsent,
-    ManifestAssetUndecodable,
-)
 from des.domain.skill_normative_clause import (
     FailingClause,
+    ManifestAssetAbsent,
+    ManifestAssetUndecodable,
     NonDiscriminatingClause,
     NormativeClause,
     NormativeVerdict,

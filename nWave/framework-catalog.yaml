@@ -525,6 +525,28 @@ commands:
     outputs:
     - optimization_plan
     - test_reduction_report
+  forge:
+    description: Creates new specialized agents using the 5-phase workflow (ANALYZE
+      > DESIGN > CREATE > VALIDATE > REFINE). Use when building a new AI agent or
+      validating an existing agent specification.
+    argument_hint: '[agent-name] - Optional: --type=[specialist|reviewer|orchestrator]
+      --pattern=[react|reflection|router]'
+    agents:
+    - agent-builder
+    wave: CROSS_WAVE
+    outputs:
+    - agent_specification
+  research:
+    description: Gathers knowledge from web and files, cross-references across multiple
+      sources, and produces cited research documents. Use when investigating technologies,
+      patterns, or decisions that need evidence backing.
+    argument_hint: '[topic] - Optional: --research_depth=[overview|detailed|comprehensive|deep-dive]
+      --skill-for=[agent-name]'
+    agents:
+    - researcher
+    wave: CROSS_WAVE
+    outputs:
+    - research_document
 quality_gates:
   component-manifest:
     gate: validate_component_manifest

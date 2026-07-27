@@ -29,9 +29,11 @@ from des.domain.gate_outcome import GateOutcome, GateVerdict
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
     from des.domain.tier_ladder import TierCapability
     from des.domain.walking_skeleton_gate import FeatureUnderGate, WalkingSkeletonGate
+    from des.ports.driven_ports.at_completion_ledger_port import (
+        AtCompletionLedgerPort,
+    )
 
 
 @dataclass(frozen=True)
@@ -49,7 +51,9 @@ class FeatureEndVerdict:
 class WalkingSkeletonFeatureEndGate:
     """Application service: the feature-end cycle's walking-skeleton gate step."""
 
-    def __init__(self, gate: WalkingSkeletonGate, ledger: AtCompletionLedger) -> None:
+    def __init__(
+        self, gate: WalkingSkeletonGate, ledger: AtCompletionLedgerPort
+    ) -> None:
         self._gate = gate
         self._ledger = ledger
 

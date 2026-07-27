@@ -21,6 +21,23 @@ from dataclasses import dataclass
 from des.domain.gate_outcome import GateVerdict
 
 
+class ManifestAssetAbsent(Exception):
+    """A manifest-referenced asset path does not resolve on disk (→ INDETERMINATE).
+
+    Pure domain vocabulary (techdebt d1-app-imports-adapters): raised by the
+    `SkillCorpusReader` driven adapter, moved here so the application service
+    depends on domain, not on the concrete adapter, for this error type. The
+    adapter re-exports this name for backward compatibility.
+    """
+
+
+class ManifestAssetUndecodable(Exception):
+    """A manifest-referenced asset exists but is not UTF-8 text (→ INDETERMINATE).
+
+    See `ManifestAssetAbsent` docstring for why this lives in domain.
+    """
+
+
 def normalize_whitespace(text: str) -> str:
     """Collapse every whitespace run to a single space, ends stripped (OQ-4)."""
     return " ".join(text.split())

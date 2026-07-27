@@ -22,17 +22,17 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from des.domain.skill_normative_clause import (
+    ManifestAssetAbsent,
+    ManifestAssetUndecodable,
+)
+
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-class ManifestAssetAbsent(Exception):
-    """A manifest-referenced asset path does not resolve on disk (→ INDETERMINATE)."""
-
-
-class ManifestAssetUndecodable(Exception):
-    """A manifest-referenced asset exists but is not UTF-8 text (→ INDETERMINATE)."""
+__all__ = ["ManifestAssetAbsent", "ManifestAssetUndecodable", "SkillCorpusReader"]
 
 
 class SkillCorpusReader:

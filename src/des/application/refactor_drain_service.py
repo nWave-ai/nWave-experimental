@@ -404,7 +404,21 @@ class RefactorDrainService:
                 self._env_provision.provision(handle.path)
 
                 before = self._run_tests(handle.path)
-                self._dispatch_agent(repo, item, handle.path, agent_cmd, None)
+                agent_stdout = self._dispatch_agent(
+                    repo, item, handle.path, agent_cmd, None
+                )
+
+                entry_gate_refusal = self._entry_gate_refusal(
+                    repo,
+                    handle.path,
+                    branch,
+                    item.item_id,
+                    agent_stdout,
+                    pile_path,
+                    handle.head_sha,
+                )
+                if entry_gate_refusal is not None:
+                    return entry_gate_refusal
 
                 lock.acquire(item.item_id)
             except BaseException:
