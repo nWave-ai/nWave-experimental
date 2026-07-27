@@ -115,6 +115,7 @@ class InstallationVerifier:
         *,
         use_host_neutral_runtime: bool = False,
         check_essential_commands: bool = True,
+        check_manifest: bool = True,
     ):
         """Initialize InstallationVerifier.
 
@@ -133,6 +134,16 @@ class InstallationVerifier:
                                       them, so judging it against this list
                                       fails validation unconditionally
                                       regardless of what actually succeeded.
+            check_manifest: Whether nwave-manifest.txt is expected at all.
+                             install_nwave.py's main() only writes it under
+                             claude_config_dir when "claude_code" is among the
+                             effective target platforms -- a native-only
+                             target (Codex/Copilot/OpenCode alone or combined)
+                             has no Claude discovery surface to hold it, so
+                             judging it against this file fails validation
+                             unconditionally regardless of what actually
+                             succeeded (same class of gap as
+                             check_essential_commands above).
         """
         self.claude_config_dir = claude_config_dir or PathUtils.get_claude_config_dir()
         self.agents_dir = self.claude_config_dir / "agents" / "nw"
@@ -144,6 +155,7 @@ class InstallationVerifier:
         )
         self.manifest_path = self.claude_config_dir / "nwave-manifest.txt"
         self._check_essential_commands = check_essential_commands
+        self._check_manifest = check_manifest
 
     def verify_agent_files(self) -> int:
         """Count agent markdown files in the agents directory.
@@ -184,8 +196,12 @@ class InstallationVerifier:
         """Check if the installation manifest file exists.
 
         Returns:
-            True if nwave-manifest.txt exists, False otherwise.
+            True if nwave-manifest.txt exists, or if this target platform
+            never receives a Claude discovery surface to write it into (see
+            check_manifest in __init__); False otherwise.
         """
+        if not self._check_manifest:
+            return True
         return self.manifest_path.exists()
 
     def verify_essential_commands(self) -> list[str]:

@@ -24,7 +24,9 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 
-WaveName = Literal["DISCOVER", "DISCUSS", "DESIGN", "DEVOPS", "DISTILL", "DELIVER"]
+WaveName = Literal[
+    "DISCOVER", "DIVERGE", "DISCUSS", "DESIGN", "DEVOPS", "DISTILL", "DELIVER"
+]
 ChoiceValue = Literal["expand", "skip"]
 
 

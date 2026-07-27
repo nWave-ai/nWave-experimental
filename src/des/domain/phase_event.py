@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from des.domain.value_objects import PhaseName, PhaseStatus
+
 
 @dataclass(frozen=True)
 class PhaseEvent:
@@ -74,6 +76,8 @@ class PhaseEventParser:
         parts = event_str.split(self.FIELD_SEPARATOR)
         if len(parts) < self.MINIMUM_FIELDS:
             return None
+        if not self._is_known_phase_and_status(parts[1], parts[2]):
+            return None
 
         turns_used = None
         tokens_used = None
@@ -105,6 +109,8 @@ class PhaseEventParser:
             PhaseEvent if all required keys are present, None otherwise.
         """
         if not self.STRUCTURED_REQUIRED_KEYS.issubset(event_dict.keys()):
+            return None
+        if not self._is_known_phase_and_status(event_dict["p"], event_dict["s"]):
             return None
 
         turns_used = event_dict.get("tu")
@@ -174,3 +180,24 @@ class PhaseEventParser:
             if event is not None:
                 events.append(event)
         return events
+
+    @staticmethod
+    def _is_known_phase_and_status(phase_name: str, status: str) -> bool:
+        """True iff both values are members of the domain enums.
+
+        ADR-PLAT-006 Fix 3: invalid phase names/statuses must be caught at the
+        parsing boundary rather than admitted into the domain unchecked. Both
+        ``PhaseName`` and ``PhaseStatus`` are ``(str, Enum)`` (StrEnum-style),
+        so a validated value stays plain-string-comparable for the many
+        existing consumers that compare ``PhaseEvent.phase_name``/``.status``
+        against string literals -- only values outside the enums are rejected
+        (routed to the parser's existing "malformed -> None" contract, not a
+        raised exception, so one corrupt line does not abort a whole-log
+        replay via parse_all/parse_many).
+        """
+        try:
+            PhaseName(phase_name)
+            PhaseStatus(status)
+        except ValueError:
+            return False
+        return True

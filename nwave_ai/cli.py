@@ -323,6 +323,23 @@ def _extract_target_flag(
     return (resolved, remaining, None)
 
 
+def _announce_density_upgrade(config_dir: Path, outcome: str) -> None:
+    """Print the one-line upgrade notice, for EVERY path that runs the prompt.
+
+    ``--density-only`` exists to drive exactly this behaviour, so a notice only
+    the full-install path emitted made the driving surface quieter than the one
+    it stands in for: the flag reported success having skipped the observable it
+    was added to exercise.
+    """
+    if outcome != "upgrade_silent":
+        return
+    config_path = config_dir / GLOBAL_CONFIG_FILENAME
+    print(
+        "Documentation density default 'lean' written to "
+        f"{config_path} (existing configuration upgraded)."
+    )
+
+
 def _handle_install(args: list[str]) -> int:
     """Run the install pipeline with first-run density prompt (D6).
 
@@ -396,9 +413,10 @@ def _handle_install(args: list[str]) -> int:
 
     if density_only:
         config_dir = _get_config_dir()
-        handle_install_density_prompt(
+        outcome = handle_install_density_prompt(
             config_dir=config_dir, non_interactive=non_interactive
         )
+        _announce_density_upgrade(config_dir, outcome)
         return 0
 
     result = _run_script("install_nwave.py", pass_through_args)
@@ -410,12 +428,7 @@ def _handle_install(args: list[str]) -> int:
         config_dir=config_dir, non_interactive=non_interactive
     )
 
-    if outcome == "upgrade_silent":
-        config_path = config_dir / GLOBAL_CONFIG_FILENAME
-        print(
-            "Documentation density default 'lean' written to "
-            f"{config_path} (existing configuration upgraded)."
-        )
+    _announce_density_upgrade(config_dir, outcome)
 
     _record_package_manager(config_dir)
     return 0
@@ -920,6 +933,12 @@ def _print_usage() -> int:
     )
     print("  attribution    Toggle commit attribution (on/off/status)")
     print("  outcomes       Register / check shipped outcomes (Tier-1 collision)")
+    print("  validate-feature-delta  Validate feature-delta.md for cross-wave drift")
+    print(
+        "  extract-gherkin         Extract embedded Gherkin blocks from "
+        "feature-delta.md"
+    )
+    print("  migrate-feature         Migrate .feature files to embedded gherkin blocks")
     print("  plugin         Manage tool plugins (install/uninstall/list)")
     print("  project        Enable or disable nWave activation for this project")
     print("  mode           Set the global activation mode (all/opt-in)")

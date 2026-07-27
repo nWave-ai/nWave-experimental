@@ -89,10 +89,16 @@ def then_authoritative_place_unchanged(
 
 
 @then(
-    'the reviewer sees the readiness item "Outcome KPIs defined with measurable targets"'
+    'the reviewer sees the readiness item "Outcome KPIs defined with measurable '
+    "targets and a stated baseline (current-state value the target is measured "
+    'against)"'
 )
 def then_sees_outcome_kpis_item(canonical_set: CanonicalReadinessSet) -> None:
-    assert "Outcome KPIs defined with measurable targets" in canonical_set.item_names
+    assert (
+        "Outcome KPIs defined with measurable targets and a stated baseline "
+        "(current-state value the target is measured against)"
+        in canonical_set.item_names
+    )
 
 
 @then("the reviewer sees job-traceability listed as a separate hard gate")

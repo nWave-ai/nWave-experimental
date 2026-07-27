@@ -154,14 +154,26 @@ _EXPECTED_LIVE_FEATURE_END_PHASES: tuple[str, ...] = tuple(
 assert _EXPECTED_LIVE_FEATURE_END_PHASES, "fixture vacuous -- nothing to parametrize"
 assert _RETIRED_FEATURE_END_PHASE not in _EXPECTED_LIVE_FEATURE_END_PHASES
 
-_CHOOSE_FROM_RE = re.compile(r"\(choose from ((?:'[^']*'(?:, )?)+)\)")
+_CHOOSE_FROM_RE = re.compile(r"\(choose from (.+?)\)")
 
 
 def _choose_from_set(stderr: str) -> set[str]:
-    """Extract the argparse '(choose from ...)' alternative set from stderr."""
+    """Extract the argparse '(choose from ...)' alternative set from stderr.
+
+    Python's argparse has rendered this clause both quoted
+    (``'A', 'B'``, seen on 3.12.3) and bare (``A, B``, seen on 3.12.13) across
+    patch versions -- neither rendering is a stable contract, so this strips
+    optional surrounding quotes per comma-separated token instead of assuming
+    one form.
+    """
     match = _CHOOSE_FROM_RE.search(stderr)
-    assert match, f"expected a '(choose from ...)' clause in stderr={stderr!r}"
-    return set(re.findall(r"'([^']*)'", match.group(1)))
+    assert match, (
+        f"searched for pattern {_CHOOSE_FROM_RE.pattern!r} "
+        "(an argparse '(choose from ...)' clause, quoted or bare -- "
+        "argparse renders this differently across versions/environments) "
+        f"in stderr={stderr!r}"
+    )
+    return {token.strip().strip("'") for token in match.group(1).split(",")}
 
 
 def _run_dispatch(argv: list[str]) -> tuple[int, str, str]:

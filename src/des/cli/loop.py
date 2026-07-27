@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -26,6 +27,7 @@ class _ContinuedWork:
     max_wall_seconds: int
     max_agent_concurrency: int
     max_box_concurrency: int
+    cooldown_seconds: int
     continuity_proof_id: str | None = None
 
 
@@ -52,16 +54,19 @@ def _parser() -> argparse.ArgumentParser:
         # flags are deliberately absent and argparse rejects them before dispatch.
         if name == "recover":
             command.add_argument("--apply", action="store_true")
-        if name in {"arm", "tick", "stop"}:
+        if name in {"tick", "stop"}:
             command.add_argument("--idempotency-key", required=True)
+        if name == "arm":
+            command.add_argument("--idempotency-key")
         if name == "recover":
             command.add_argument("--idempotency-key")
         if name in {"probe", "arm"}:
             command.add_argument("--context", choices=("reconstructed", "native_chat"))
         if name == "arm":
             command.add_argument("--continuity-proof")
-            command.add_argument("--max-tokens", type=int, default=1200)
-            command.add_argument("--max-wall-seconds", type=int, default=30)
+            command.add_argument("--outcome")
+            command.add_argument("--max-tokens", type=int)
+            command.add_argument("--max-wall-seconds", type=int)
             command.add_argument("--max-replays", type=int, default=1)
             command.add_argument("--cooldown-seconds", type=int, default=0)
             command.add_argument("--dry-run", action="store_true")
@@ -76,12 +81,14 @@ def _project(path: Path) -> tuple[Path, str]:
 def _work(args: argparse.Namespace) -> _ContinuedWork:
     return _ContinuedWork(
         project_root=args.project.resolve(),
-        outcome="produce one bounded, inspectable continued-work result",
+        outcome=args.outcome
+        or "produce one bounded, inspectable continued-work result",
         context_mode=args.context or "reconstructed",
         max_tokens_per_tick=args.max_tokens,
         max_wall_seconds=args.max_wall_seconds,
         max_agent_concurrency=1,
         max_box_concurrency=1,
+        cooldown_seconds=args.cooldown_seconds,
         continuity_proof_id=args.continuity_proof,
     )
 
@@ -160,6 +167,7 @@ def _refusal_exit_code(code: str) -> int:
         "IDEMPOTENCY_CONFLICT": 4,
         "HANDLE_STOPPED": 5,
         "CONTEXT_CONTINUITY_UNPROVED": 5,
+        "TOKEN_BUDGET_EXHAUSTED": 6,
     }.get(code, 5)
 
 
@@ -187,10 +195,37 @@ def _dispatch(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             ),
         }
         return 0, event
-    if args.command == "inspect":
-        event["context"]["continuity"] = "durable-state-reconstruction"
-        return 0, event
     if args.command == "arm":
+        if args.max_tokens is None or args.max_wall_seconds is None:
+            missing_limits = []
+            if args.max_tokens is None:
+                missing_limits.append("--max-tokens")
+            if args.max_wall_seconds is None:
+                missing_limits.append("--max-wall-seconds")
+            missing = " and ".join(missing_limits)
+            return 2, _handle_refusal(
+                args.command,
+                args.project,
+                code="INVALID_LIMIT",
+                what=f"A bounded continued-work request omitted {missing}.",
+                why=(
+                    "The public control cannot authorise bounded work without "
+                    "explicit token and wall-time limits."
+                ),
+                how=(
+                    "Supply positive --max-tokens and --max-wall-seconds values "
+                    "with the arm request."
+                ),
+            )
+        if args.idempotency_key is None:
+            return 2, _handle_refusal(
+                args.command,
+                args.project,
+                code="INVALID_LIMIT",
+                what="A bounded continued-work request omitted its authority key.",
+                why="The public control cannot safely start bounded work without an idempotent operator request.",
+                how="Supply --idempotency-key together with the requested positive limits.",
+            )
         if args.loop != "standing":
             raise ValueError("loop must be standing")
         work = _work(args)
@@ -231,6 +266,46 @@ def _dispatch(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             )
     records = facade.list(args.project)
     record = records[0] if records else None
+    if args.command in {"list", "inspect"}:
+        if (
+            args.handle is not None
+            and record is not None
+            and args.handle != record.loop_id
+        ):
+            return 3, _handle_refusal(
+                args.command,
+                args.project,
+                code="PROJECT_MISMATCH",
+                what="The supplied standing-loop handle belongs to another project.",
+                why="A project may not inspect another project's durable loop record.",
+                how="Use the opaque handle returned when this project was armed.",
+            )
+        if args.command == "list":
+            if record is not None:
+                event["selection"]["handle_id"] = record.loop_id
+                event["state"] = {
+                    "desired": record.desired_state,
+                    "observed": record.observed_state,
+                }
+                if record.terminal_reason is not None:
+                    event["state"]["terminal_reason"] = record.terminal_reason
+                event["state"]["future_due_count"] = sum(
+                    item.due_at > time.time() for item in records
+                )
+            return 0, event
+        event["context"]["continuity"] = "durable-state-reconstruction"
+        if record is not None:
+            event["selection"]["handle_id"] = record.loop_id
+            event["state"] = {
+                "desired": record.desired_state,
+                "observed": record.observed_state,
+            }
+            if record.terminal_reason is not None:
+                event["state"]["terminal_reason"] = record.terminal_reason
+        event["attestations"] = list(
+            LoopControlService().attestation_payloads(args.project)
+        )
+        return 0, event
     handle = LoopControlService().handle(args.project) if record is not None else None
     if args.handle is not None and handle is not None and args.handle != handle.loop_id:
         return 3, _handle_refusal(
@@ -241,20 +316,27 @@ def _dispatch(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             why="A project may not inspect, recover, stop, or tick another project's loop.",
             how="Use the opaque handle returned when this project was armed.",
         )
-    if args.command == "list":
-        if record is not None:
-            event["selection"]["handle_id"] = handle.loop_id
-            event["state"] = {
-                "desired": record.desired_state,
-                "observed": record.observed_state,
-            }
-        return 0, event
     if record is None:
         raise ValueError("no loop is armed for project")
     assert handle is not None
     loop_id = handle.loop_id
     if args.command == "tick":
         if record.desired_state == "STOPPED":
+            if record.terminal_reason == "TOKEN_BUDGET_EXHAUSTED":
+                return 6, _handle_refusal(
+                    args.command,
+                    args.project,
+                    code="TOKEN_BUDGET_EXHAUSTED",
+                    what="The standing-loop token allowance is exhausted.",
+                    why=(
+                        "The prior bounded occurrence consumed the remaining authorised "
+                        "token budget."
+                    ),
+                    how=(
+                        "Arm a new loop with an explicitly authorised positive token "
+                        "allowance before requesting more continued work."
+                    ),
+                )
             return 5, _handle_refusal(
                 args.command,
                 args.project,
@@ -287,6 +369,21 @@ def _dispatch(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 how=(
                     "Arm a new loop only after explicitly authorising a new continued-"
                     "work scope."
+                ),
+            )
+        if attestation.outcome == "REFUSED_BUDGET":
+            return 6, _handle_refusal(
+                args.command,
+                args.project,
+                code="TOKEN_BUDGET_EXHAUSTED",
+                what="The standing-loop token allowance is exhausted.",
+                why=(
+                    "The prior bounded occurrence consumed the remaining authorised "
+                    "token budget."
+                ),
+                how=(
+                    "Arm a new loop with an explicitly authorised positive token "
+                    "allowance before requesting more continued work."
                 ),
             )
         event["selection"]["occurrence_id"] = attestation.occurrence_key

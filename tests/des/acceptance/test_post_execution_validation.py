@@ -103,6 +103,7 @@ def _make_context(
         project_id=project_id,
         step_id=step_id,
         stop_hook_active=stop_hook_active,
+        mode="classic",
     )
 
 

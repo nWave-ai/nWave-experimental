@@ -135,6 +135,40 @@ class TestRichLoggerFileLogging:
         assert "[20" in log_content  # Year 20XX
 
 
+class TestLogFileWriteFailureSurfacesToStderr:
+    """Regression: techdebt.md D2-silent-log-errors-rich-console.
+
+    RichLogger/PlainLogger/SilentLogger swallowed log-file write failures
+    with a bare ``except Exception: pass``, so an operator whose log became
+    unwritable (permission denied, disk full, or -- as reproduced here -- the
+    configured path being a directory) never learned logging had stopped.
+    The fix keeps the write fail-OPEN (never raises) but surfaces a WARN to
+    stderr naming the path and the underlying error.
+    """
+
+    @pytest.mark.parametrize(
+        "logger_name",
+        ["RichLogger", "PlainLogger", "SilentLogger"],
+    )
+    def test_unwritable_log_path_warns_on_stderr_without_raising(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture, logger_name: str
+    ) -> None:
+        from scripts.install import rich_console
+
+        # A directory can never be `open(..., "a")`-ed as a file -> IsADirectoryError.
+        unwritable_log_path = tmp_path / "a-directory-not-a-file"
+        unwritable_log_path.mkdir()
+
+        logger_cls = getattr(rich_console, logger_name)
+        logger = logger_cls(log_file=unwritable_log_path)  # type: ignore[call-arg]
+
+        logger.info("this write must not raise")  # must not raise
+
+        captured = capsys.readouterr()
+        assert "WARN" in captured.err
+        assert str(unwritable_log_path) in captured.err
+
+
 class TestConsoleFactoryContextDetection:
     """Verify ConsoleFactory returns appropriate logger based on context."""
 

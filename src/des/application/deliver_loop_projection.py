@@ -47,6 +47,7 @@ from des.adapters.driven.logging.at_completion_ledger import (
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
+from des.application.feature_context_bootstrap import classify as classify_bootstrap
 from des.cli import carpaccio_slice_gate, feature_delta_doctor
 from des.cli import commit_slice as _commit_slice
 from des.cli.carpaccio_format import (
@@ -134,6 +135,27 @@ def project_next_step(repo_root: Path, feature_id: str) -> NextStep:
             why=f"expected {delta_path} to exist",
         )
     content = delta_path.read_text(encoding="utf-8")
+
+    bootstrap = classify_bootstrap(content, feature_id)
+    if bootstrap is not None:
+        if bootstrap.state == "OPEN":
+            return NextStep(
+                event=_EVENT,
+                feature_id=feature_id,
+                loop_state="SLICE_IN_PROGRESS",
+                slice_id=None,
+                phase="DISCUSS",
+                step_kind="wave-command",
+                what="the feature context is open for DISCUSS.",
+                why="the sole bootstrap document contains no delivery or completion evidence.",
+                how=f"/nw-discuss --feature-id {feature_id}",
+                schema_version=_SCHEMA_VERSION,
+            )
+        return _indeterminate(
+            feature_id,
+            what="adopted-wip-regression-evidence-unavailable",
+            why="UNKNOWN inventory is provenance only and cannot authorise delivery or commit.",
+        )
 
     gaps = feature_delta_doctor.diagnose(content)
     if gaps:

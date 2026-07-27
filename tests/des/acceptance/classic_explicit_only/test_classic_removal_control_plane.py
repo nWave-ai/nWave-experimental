@@ -507,11 +507,11 @@ def _quieten_session_start_side_services(
     ("kind", "config_text", "expected_tokens"),
     (
         ("fresh", None, ("atdd_pure",)),
-        ("legacy-unset", "workflow: {}\n", ("WHAT", "WHY", "HOW", "migration")),
+        ("legacy-unset", "workflow: {}\n", ("WHAT", "WHY", "HOW", "atdd_pure")),
         (
             "classic",
             "workflow:\n  mode: classic\n",
-            ("WHAT", "WHY", "HOW", "classic", "removed", "migration"),
+            ("WHAT", "WHY", "HOW", "classic", "removed", "conversion"),
         ),
     ),
 )
@@ -554,11 +554,25 @@ def test_real_session_start_emits_mode_guidance_without_prior_use_mutation(
     )
 
     assert exit_code == 0, stderr
-    guidance = "\n".join(
-        str(json.loads(line).get("additionalContext", ""))
-        for line in stdout.splitlines()
-        if line.lstrip().startswith("{")
-    ).lower()
+    # `handle_session_start` folds every contributor into ONE combined JSON
+    # object per invocation, always in the wrapped `hookSpecificOutput` form
+    # (see its module docstring) -- accept that form here. The bare
+    # top-level `{"additionalContext": ...}` form is dropped by current
+    # Claude Code and is no longer emitted; a fallback read is kept only so
+    # a regression back to the bare form still surfaces guidance instead of
+    # silently reading empty.
+    guidance_parts: list[str] = []
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        payload = json.loads(stripped)
+        hso = payload.get("hookSpecificOutput")
+        if isinstance(hso, dict) and isinstance(hso.get("additionalContext"), str):
+            guidance_parts.append(hso["additionalContext"])
+        elif isinstance(payload.get("additionalContext"), str):
+            guidance_parts.append(payload["additionalContext"])
+    guidance = "\n".join(guidance_parts).lower()
     assert all(token.lower() in guidance for token in expected_tokens), stdout
     assert {path: _bytes_or_absent(path) for path in watched} == before
 

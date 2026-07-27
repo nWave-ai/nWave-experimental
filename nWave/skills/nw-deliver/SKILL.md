@@ -59,7 +59,7 @@ Under `## Wave: DELIVER / [REF] <Section>` headings:
 - Scenarios green count — `<N> of <M>` from the `.feature` file with timestamp
 - DoD check — itemized pass/fail against the DISCUSS Definition of Done items
 - Demo evidence — captured stdout/exit-code per Elevator Pitch demo command (Phase 3.5 gate)
-- Quality gates — per-phase outcomes (refactor, review, mutation, integrity)
+- Quality gates — per-phase outcomes (refactor, review, integrity, plus mutation ONLY when `rigor.mutation_enabled = true` — deprecated/opt-in-only per FR-1, CLAUDE.md § Mutation Testing Strategy, off by default)
 - Pre-requisites — DISTILL scenarios + DESIGN component manifest the implementation depended on
 
 ### Tier-2 EXPANSION CATALOG — lazy, on-demand (per D10)
@@ -276,7 +276,7 @@ Before dispatching any agent, read the rigor profile from `.nwave/des-config.jso
 | `double_review` | If `true`, run Phase 4 twice with separate review scopes. |
 | `tdd_phases` | Pass to crafter in DES template. Replace `# TDD_PHASES` section with the configured phases. The 3-phase canon (ADR-025) is `[RED, GREEN, COMMIT]`; legacy 5-phase contract is `[PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]`. If lean profile (`[RED_UNIT, GREEN]` legacy or `[RED, GREEN]` canon), omit setup/commit instructions accordingly. |
 | `refactor_pass` | If `false`, skip Phase 3 (Complete Refactoring). |
-| `mutation_enabled` | If `false`, skip Phase 5 regardless of mutation strategy in CLAUDE.md. |
+| `mutation_enabled` | Deprecated (FR-1, CLAUDE.md § Mutation Testing Strategy): the config default is `false` and Phase 5 is SKIPPED unless this is explicitly set `true` for an opt-in run — the inverse of "runs unless disabled". |
 
 **Task invocation with rigor model:**
 ```python

@@ -189,6 +189,21 @@ class WaveClearComposition:
             f"provenance instead of clearing. {self._observed()}"
         )
 
+    def then_noop_message_names_project_root(self) -> None:
+        """The NOOP_SUCCESS message names the project_root inspected for the floor.
+
+        Regression oracle: an operator running wave-clear from the wrong root
+        (e.g. the repo root when the floor lives in a worktree under it) must not
+        be able to mistake NOOP_SUCCESS for "the floor is gone" -- the message
+        must name which root was inspected, not just assert absence.
+        """
+        assert self._project_root is not None
+        assert str(self._project_root) in self._stdout, (
+            "the NOOP_SUCCESS message must name the inspected project_root so an "
+            "operator cannot mistake 'no floor found here' for 'the floor is "
+            f"gone'; stdout did not carry the path. {self._observed()}"
+        )
+
     def then_indeterminate_diagnostic_on_stderr(self) -> None:
         """The INDETERMINATE degrade-LOUD diagnostic is routed to stderr.
 

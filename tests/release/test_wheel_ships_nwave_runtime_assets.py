@@ -89,6 +89,18 @@ def patched_force_include_map(sample_pyproject_path, tmp_path) -> dict[str, str]
             REPO_ROOT / "nWave" / asset_file_name,
             source_nwave / asset_file_name,
         )
+    # The host-neutral runtime-hook force-include entries (patch_pyproject.py)
+    # read their LHS from "scripts/hooks/<name>", a sibling of "nWave/" in the
+    # release topology, not under it -- so the synthetic source tree needs its
+    # own "scripts/hooks/" staged the same way, or `_materialize_wheel_tree`
+    # silently skips every hook entry (its LHS never exists under source_root).
+    source_hooks = source_root / "scripts" / "hooks"
+    source_hooks.mkdir(parents=True)
+    for hook_name in REQUIRED_RUNTIME_HOOKS:
+        shutil.copy2(
+            REPO_ROOT / "scripts" / "hooks" / hook_name,
+            source_hooks / hook_name,
+        )
 
     output_path = str(tmp_path / "patched_pyproject.toml")
     patch_pyproject(

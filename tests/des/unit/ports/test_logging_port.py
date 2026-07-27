@@ -178,3 +178,39 @@ def test_structured_logger_implements_logging_port():
 
     logger = StructuredLogger()
     assert isinstance(logger, LoggingPort)
+
+
+def test_structured_logger_timestamp_is_iso_utc_ssot_form_not_naive_utcnow():
+    """StructuredLogger must use the des.domain.iso_utc SSOT idiom, not the
+    deprecated `datetime.utcnow().isoformat()` (naive, non-round-trippable via
+    `parse_iso_utc`, deprecated by Python 3.12+).
+
+    Given: StructuredLogger instance
+    When: any log_* method is called
+    Then: the emitted "timestamp" field ends in "Z" (the SSOT round-trip form)
+    and parses back via `parse_iso_utc` into a timezone-AWARE datetime.
+    """
+    from des.adapters.driven.logging.structured_logger import StructuredLogger
+    from des.domain.iso_utc import parse_iso_utc
+
+    output = StringIO()
+    logger = StructuredLogger(output_stream=output)
+
+    class MockValidationResult:
+        is_valid = True
+        errors: list[str] = []
+
+    logger.log_validation_result(MockValidationResult(), {})
+
+    log_entry = json.loads(output.getvalue().strip())
+    timestamp = log_entry["timestamp"]
+    assert timestamp.endswith("Z"), (
+        f"StructuredLogger timestamp must be the des.domain.iso_utc SSOT "
+        f"round-trip form ending in 'Z', got {timestamp!r} -- "
+        "datetime.utcnow().isoformat() emits a naive '+00:00'-less string."
+    )
+    parsed = parse_iso_utc(timestamp)
+    assert parsed.tzinfo is not None, (
+        f"parsed timestamp {timestamp!r} must be timezone-aware; a naive "
+        "datetime.utcnow() timestamp does not carry tzinfo."
+    )

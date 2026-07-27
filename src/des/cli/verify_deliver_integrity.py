@@ -704,6 +704,15 @@ def _verify_atdd_pure(
     # heartbeat pattern. This set is held EQUAL to
     # `nWave/flavors/atdd_pure.yaml feature_end_required_records` (AT-A6): a
     # single-location edit would silently re-open the half-wired hole.
+    #
+    # techdebt drain (event-name-constants-split-port-adapter): unlike other
+    # call sites, "EnvironmentalE2eGateRan" here MUST stay a plain string
+    # literal, not the imported `ENVIRONMENTAL_E2E_GATE_RAN` constant --
+    # `tests/build/f_nonbypassable_attestation/test_arch_required_sets_equal.py`
+    # AST-parses this `required = {...}` assignment as pure DATA (no import
+    # execution) to diff it against the atdd_pure.yaml SSOT; a `Name` node in
+    # place of a `Constant` breaks that reader. Exempted (with reason) in
+    # tests/build/test_feature_end_event_name_constants_ssot.py.
     required = {
         "CoverageMapVerifiedAtDeliverExit",
         "CoverageMapVerifiedAtDistillExit",

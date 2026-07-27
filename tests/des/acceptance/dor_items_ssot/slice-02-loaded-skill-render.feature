@@ -17,7 +17,7 @@ Feature: The DoR-validation skill the reviewer loads presents the canonical nine
   @slice-02 @real-io @driving_port @contract-shape:unbounded-preservation
   Scenario: The loaded skill presents the Outcome-KPIs item it drops today
     Given the reviewer has read the loaded Definition-of-Ready validation skill
-    Then the loaded skill presents the readiness item "Outcome KPIs defined with measurable targets"
+    Then the loaded skill presents the readiness item "Outcome KPIs defined with measurable targets and a stated baseline (current-state value the target is measured against)"
     And the loaded skill points at the canonical authoritative place without naming a deprecated data location
 
   @slice-02 @real-io @driving_port @contract-shape:unbounded-preservation

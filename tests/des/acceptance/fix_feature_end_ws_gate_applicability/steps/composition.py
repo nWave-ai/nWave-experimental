@@ -116,6 +116,19 @@ class FeatureEndGateRefusalComposition:
         Mirrors the cycle CLI's own argument shape
         (`cli/feature_end.py:119-143`). The observable is the printed JSON's
         `error` field (the reported refusal reason) and the exit code.
+
+        `--reviewer-agent-id`/`--verdict APPROVED` are REQUIRED here (bugfix
+        feature-end-batch-refusal-reason-missing-feature-root, 2026-07-27):
+        `run_feature_end_cycle` now delegates to the D-5 batch-eligibility
+        precheck (`feature_end_batch_service._check_deep_review_approved`,
+        many-features-close-for-one-full-suite/ADR-FEATURE-END-BATCH-001,
+        landed AFTER this slice-01 scenario). Without a real APPROVED verdict
+        that precheck refuses FIRST (a genuine, different, real reason -- "its
+        manifest-declared deep-review verdict is None, not APPROVED"), and the
+        walking-skeleton floor this scenario means to exercise never runs, so
+        its "feature_root" reason can never appear. Supplying a real APPROVED
+        verdict clears D-5 (vacuously: no Slice-Plan, no critical charters) so
+        the cycle reaches the WS floor and its real refusal surfaces again.
         """
         argv = [
             "feature-end",
@@ -126,6 +139,10 @@ class FeatureEndGateRefusalComposition:
             str(self._feature_id),
             "--feature-dir",
             str(feature_dir),
+            "--reviewer-agent-id",
+            "test-probe-reviewer",
+            "--verdict",
+            "APPROVED",
         ]
         exit_code, stdout, _stderr = run_cli_in_process(
             argv, cwd=str(self._workspace_root)

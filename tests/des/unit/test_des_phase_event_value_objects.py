@@ -19,6 +19,7 @@ from des.domain.step_completion_validator import (
     StepCompletionValidator,
 )
 from des.domain.tdd_schema import TDDSchema
+from des.domain.value_objects import PhaseName, PhaseStatus
 
 
 # ---------------------------------------------------------------------------
@@ -164,13 +165,19 @@ class TestPhaseEventParser:
 
     @given(
         f1=_pbt_field,
-        f2=_pbt_field,
-        f3=_pbt_field,
+        f2=st.sampled_from([member.value for member in PhaseName]),
+        f3=st.sampled_from([member.value for member in PhaseStatus]),
         f4=_pbt_field,
         f5=_pbt_field,
     )
     @settings(max_examples=50)
-    def test_parse_any_five_field_string_produces_phase_event(self, f1, f2, f3, f4, f5):
+    def test_parse_any_five_field_string_with_known_phase_and_status_produces_phase_event(
+        self, f1, f2, f3, f4, f5
+    ):
+        """step_id/outcome/timestamp remain unconstrained, but phase_name/status
+        must be members of PhaseName/PhaseStatus (ADR-PLAT-006 Fix 3: invalid
+        phase names/statuses are rejected at the parsing boundary -- see the
+        rejection-path coverage in test_phase_event_enum_validation.py)."""
         event_str = "|".join([f1, f2, f3, f4, f5])
         result = PhaseEventParser().parse(event_str)
         assert result is not None
@@ -216,7 +223,7 @@ class TestDesMarkerParser:
             "<!-- DES-VALIDATION : required -->\n<!-- DES-MODE : orchestrator -->"
         )
         assert result.is_des_task is True
-        assert result.is_orchestrator_mode is True
+        assert result.is_orchestrator_mode is False
 
     def test_parse_extracts_project_id(self):
         parser = DesMarkerParser()
@@ -245,7 +252,7 @@ class TestDesMarkerParser:
         result = parser.parse(prompt)
 
         assert result.is_des_task is True
-        assert result.is_orchestrator_mode is True
+        assert result.is_orchestrator_mode is False
         assert result.project_id == "auth-upgrade"
         assert result.step_id == "02-01"
 
@@ -403,6 +410,31 @@ class TestStepCompletionValidator:
 
         assert result.is_valid is False
         assert any("Invalid status" in msg for msg in result.error_messages)
+
+    def test_validate_invalid_status_is_classified_as_a_single_error_not_multiple(self):
+        """A lone invalid-status phase is ONE error, not MULTIPLE_ERRORS.
+
+        Regression for techdebt row
+        step-completion-validator-mislabels-single-error-as-multiple-errors:
+        _classify_error_type used to inspect only missing_phases/
+        incomplete_phases/invalid_skips, so an invalid-status-only failure
+        (which populates none of those three) fell through to the
+        MULTIPLE_ERRORS default despite being a single, well-understood
+        error.
+        """
+        schema = _make_schema()
+        validator = StepCompletionValidator(schema)
+        events = _make_all_passing_events()
+        events[2] = _make_event("RED_UNIT", status="UNKNOWN_STATUS", outcome="")
+
+        result = validator.validate(events)
+
+        assert result.is_valid is False
+        assert result.error_type == "INVALID_STATUS"
+        assert result.invalid_statuses == ["RED_UNIT"]
+        assert result.missing_phases == []
+        assert result.incomplete_phases == []
+        assert result.invalid_skips == []
 
     def test_validate_recovery_suggestions_for_missing_phases(self):
         schema = _make_schema()

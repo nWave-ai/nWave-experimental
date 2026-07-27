@@ -205,7 +205,7 @@ def resolve_python_command() -> str:
     For contexts that need an absolute path (non-shell spawn), see
     resolve_python_command_for_spawn(). For $HOME-prefixed paths in
     shell-execution contexts (settings.json hook commands), see
-    DESPlugin._resolve_python_path().
+    resolve_python_path_for_shell().
     """
     return "python3"
 
@@ -228,8 +228,8 @@ def resolve_python_command_for_spawn() -> str:
     to avoid leaking development paths into user-installed artifacts.
 
     For shell-execution contexts (settings.json hook commands, bash
-    scripts where $HOME is expanded), use the existing $HOME-based
-    pattern in DESPlugin._resolve_python_path() instead.
+    scripts where $HOME is expanded), use resolve_python_path_for_shell()
+    instead.
     For markdown templates consumed by various runtimes, use
     resolve_python_command() (basename-only) instead.
     """
@@ -255,3 +255,43 @@ def resolve_des_lib_path_for_spawn() -> str:
     resolved at install time.
     """
     return host_neutral_runtime_dir().as_posix()
+
+
+def resolve_python_path_for_shell() -> str:
+    """Resolve the Python interpreter path for shell-execution contexts
+    (settings.json hook commands, git hook shims).
+
+    Captures sys.executable and makes it portable by replacing the home
+    directory prefix with $HOME (expanded by the shell at invocation time,
+    unlike resolve_python_command_for_spawn's non-shell forward-slash form).
+
+    Two independent guards fall back to 'python3':
+    - Durability: the interpreter is rooted under a known-ephemeral
+      location (tempfile.gettempdir()) and could be reaped before a
+      hook ever fires. See is_durable_interpreter_path().
+    - Portability: the current Python is a project-local .venv (e.g.
+      during development) -- that exact path would not exist on a
+      different machine, so it must not leak into a persisted artifact.
+
+    This is the single source of truth for what were two independently
+    hand-maintained, byte-identical copies of this logic:
+    scripts/install/plugins/des_plugin.py DESPlugin._resolve_python_path
+    (settings.json hook commands) and scripts/install/attribution_utils.py
+    _resolve_python_path (git prepare-commit-msg shim) -- both now delegate
+    here instead of reimplementing (D3-code-duplication-resolve-python-path,
+    techdebt.md).
+    """
+    python_path = sys.executable
+
+    # Durability: reject interpreters rooted in a known-ephemeral location
+    if not is_durable_interpreter_path(python_path):
+        return "python3"
+
+    # Portability: project-local .venv must not leak into a persisted artifact
+    if "/.venv/" in python_path or "\\.venv\\" in python_path:
+        return "python3"
+
+    home = str(Path.home())
+    if python_path.startswith(home):
+        python_path = "$HOME" + python_path[len(home) :]
+    return python_path

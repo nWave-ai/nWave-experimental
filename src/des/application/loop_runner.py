@@ -11,6 +11,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from des.domain.iso_utc import format_iso_utc
 from des.ports.standing_loop_ports import StandingLoopTickPort
 
 
@@ -23,9 +24,14 @@ class LoopHandle:
 @dataclass(frozen=True)
 class LoopRecord:
     project_root: Path
+    loop_id: str
     generation: int
     desired_state: str
     observed_state: str
+    outcome: str
+    limits: dict[str, int]
+    terminal_reason: str | None = None
+    due_at: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -72,6 +78,8 @@ class _StoredLoop:
     desired_state: str = "ARMED"
     observed_state: str = "SCHEDULED"
     fence_epoch: int = 1
+    terminal_reason: str | None = None
+    due_at: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -130,6 +138,10 @@ class _StandingLoopLedger:
             "(occurrence_key TEXT PRIMARY KEY, request_digest TEXT NOT NULL, "
             "fence_epoch INTEGER NOT NULL, status TEXT NOT NULL)"
         )
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS future_loops "
+            "(loop_id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+        )
         return connection
 
     @staticmethod
@@ -143,6 +155,8 @@ class _StandingLoopLedger:
             desired_state=payload["desired_state"],
             observed_state=payload["observed_state"],
             fence_epoch=int(payload.get("fence_epoch", 1)),
+            terminal_reason=payload.get("terminal_reason"),
+            due_at=float(payload.get("due_at", 0.0)),
         )
 
     def _load_from(
@@ -175,6 +189,8 @@ class _StandingLoopLedger:
                 "desired_state": stored.desired_state,
                 "observed_state": stored.observed_state,
                 "fence_epoch": stored.fence_epoch,
+                "terminal_reason": stored.terminal_reason,
+                "due_at": stored.due_at,
             },
             sort_keys=True,
         )
@@ -183,6 +199,14 @@ class _StandingLoopLedger:
         connection.execute(
             "INSERT OR REPLACE INTO loop_state(singleton, payload) VALUES (1, ?)",
             (self._state_payload(stored),),
+        )
+
+    def _save_future_to(
+        self, connection: sqlite3.Connection, stored: _StoredLoop
+    ) -> None:
+        connection.execute(
+            "INSERT OR REPLACE INTO future_loops(loop_id, payload) VALUES (?, ?)",
+            (stored.handle.loop_id, self._state_payload(stored)),
         )
 
     @staticmethod
@@ -232,9 +256,18 @@ class _StandingLoopLedger:
         with sqlite3.connect(self._database(project)) as connection:
             return self._last_attestation_from(connection, project)
 
+    def attestation_payloads(self, project: Path) -> tuple[dict[str, Any], ...]:
+        if not self._database(project).is_file():
+            return ()
+        with sqlite3.connect(self._database(project)) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM attestations ORDER BY rowid"
+            ).fetchall()
+        return tuple(json.loads(row[0]) for row in rows)
+
     @staticmethod
     def _now() -> str:
-        return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        return format_iso_utc(datetime.now(UTC))
 
     def _append_event(
         self,
@@ -338,7 +371,32 @@ class _StandingLoopLedger:
                 connection.commit()
                 return LoopHandle(payload["loop_id"], int(payload["generation"]))
             existing = self._load_from(connection, project)
-            if existing is not None and existing.desired_state == "ARMED":
+            cooldown_seconds = getattr(work, "cooldown_seconds", 0)
+            if cooldown_seconds > 0:
+                handle = LoopHandle(
+                    loop_id=(
+                        "standing-future-"
+                        f"{sha256(f'{project}|{idempotency_key}'.encode()).hexdigest()[:16]}"
+                    ),
+                    generation=1,
+                )
+                stored = _StoredLoop(
+                    handle=handle,
+                    project_root=project,
+                    outcome=work.outcome,
+                    context_mode=work.context_mode,
+                    budget=_budget_from(work),
+                    due_at=time.time() + cooldown_seconds,
+                )
+                self._save_future_to(connection, stored)
+                self._append_event(
+                    connection,
+                    stored,
+                    "LOOP_ARMED",
+                    idempotency_key=idempotency_key,
+                    request_digest=request_digest,
+                )
+            elif existing is not None and existing.desired_state == "ARMED":
                 handle = existing.handle
             else:
                 generation = 1 if existing is None else existing.handle.generation + 1
@@ -382,15 +440,28 @@ class _StandingLoopLedger:
     def list(self, project_root: Any) -> tuple[LoopRecord, ...]:
         project = self._project(project_root)
         stored = self._load(project)
-        if stored is None:
-            return ()
-        return (
+        records = []
+        if stored is not None:
+            records.append(stored)
+        if self._database(project).is_file():
+            with sqlite3.connect(self._database(project)) as connection:
+                rows = connection.execute("SELECT payload FROM future_loops").fetchall()
+            records.extend(
+                self._stored_from_payload(project, json.loads(row[0])) for row in rows
+            )
+        return tuple(
             LoopRecord(
                 project,
-                stored.handle.generation,
-                stored.desired_state,
-                stored.observed_state,
-            ),
+                item.handle.loop_id,
+                item.handle.generation,
+                item.desired_state,
+                item.observed_state,
+                item.outcome,
+                dict(item.budget),
+                item.terminal_reason,
+                item.due_at,
+            )
+            for item in records
         )
 
     def handle(self, project_root: Any) -> LoopHandle:
@@ -427,6 +498,7 @@ class _StandingLoopLedger:
                 desired_state="STOPPED",
                 observed_state="STOPPED",
                 fence_epoch=stored.fence_epoch + 1,
+                terminal_reason=None,
             )
             if changed:
                 self._save_to(connection, stopped)
@@ -523,28 +595,23 @@ class _StandingLoopLedger:
 
     def execution_inputs(self, project_root: Any, occurrence: Any) -> _ExecutionInputs:
         project = self._project(project_root)
-        stored = self._require(project)
-        if occurrence.loop_id != stored.handle.loop_id:
-            raise ValueError("occurrence does not belong to the selected project loop")
-        return _ExecutionInputs(
-            {"mode": stored.context_mode, "outcome": stored.outcome},
-            dict(stored.budget),
-            {"project_root": project},
-        )
+        connection = self._connect(project)
+        try:
+            stored = self._require_selected_from(connection, project, occurrence)
+            return _ExecutionInputs(
+                {"mode": stored.context_mode, "outcome": stored.outcome},
+                dict(stored.budget),
+                {"project_root": project},
+            )
+        finally:
+            connection.close()
 
     def claim(self, occurrence: Any, isolation: dict[str, Path]) -> _Claim:
         project = self._project(isolation["project_root"])
         connection = self._connect(project)
         try:
             connection.execute("BEGIN IMMEDIATE")
-            stored = self._require_from(connection, project)
-            if stored.desired_state == "STOPPED":
-                connection.commit()
-                return _Claim(
-                    False,
-                    stored.fence_epoch,
-                    _stopped_refusal(project, occurrence, stored),
-                )
+            stored = self._require_selected_from(connection, project, occurrence)
             request_digest = _requested_digest(project, occurrence, stored.handle)
             self._read_idempotency(
                 connection, "tick", occurrence.idempotency_key, request_digest
@@ -559,6 +626,13 @@ class _StandingLoopLedger:
                     False,
                     stored.fence_epoch,
                     replace(self._attestation_from(json.loads(row[0])), replayed=True),
+                )
+            if stored.desired_state == "STOPPED":
+                connection.commit()
+                return _Claim(
+                    False,
+                    stored.fence_epoch,
+                    _terminal_refusal(project, occurrence, stored),
                 )
             existing_claim = connection.execute(
                 "SELECT request_digest, fence_epoch FROM occurrence_claims "
@@ -615,7 +689,7 @@ class _StandingLoopLedger:
         connection = self._connect(project)
         try:
             connection.execute("BEGIN IMMEDIATE")
-            stored = self._require_from(connection, project)
+            stored = self._require_selected_from(connection, project, occurrence)
             requested_digest = _requested_digest(project, occurrence, stored.handle)
             claim = connection.execute(
                 "SELECT request_digest, fence_epoch, status FROM occurrence_claims "
@@ -642,6 +716,62 @@ class _StandingLoopLedger:
                 return replace(
                     self._attestation_from(json.loads(row[0])), replayed=True
                 )
+            if not _minimum_action_is_funded(stored.budget):
+                stored = replace(
+                    stored,
+                    desired_state="STOPPED",
+                    observed_state="STOPPED",
+                    fence_epoch=stored.fence_epoch + 1,
+                    terminal_reason="TOKEN_BUDGET_EXHAUSTED",
+                )
+                self._save_selected_to(connection, stored)
+                self._append_event(
+                    connection,
+                    stored,
+                    "TOKEN_BUDGET_EXHAUSTED",
+                    idempotency_key=occurrence.idempotency_key,
+                    request_digest=requested_digest,
+                    occurrence_key=occurrence.idempotency_key,
+                )
+                attestation = TickAttestation(
+                    _attestation_id(project, occurrence, None),
+                    occurrence.idempotency_key,
+                    project,
+                    _project_id(project),
+                    _ledger_digest(project),
+                    dict(stored.budget),
+                    "EXHAUSTED",
+                    "CHANGED",
+                    requested_digest,
+                    None,
+                    _isolation_receipt(project, occurrence),
+                    _resources(stored.budget),
+                )
+                self._save_attestation_to(connection, attestation)
+                connection.execute(
+                    "UPDATE occurrence_claims SET status = 'ATTESTED' "
+                    "WHERE occurrence_key = ?",
+                    (occurrence.idempotency_key,),
+                )
+                self._write_idempotency(
+                    connection,
+                    "tick",
+                    occurrence.idempotency_key,
+                    requested_digest,
+                    {"status": "ATTESTED", "attestation_id": attestation.id},
+                )
+                self._append_event(
+                    connection,
+                    stored,
+                    "TICK_ATTESTED",
+                    idempotency_key=occurrence.idempotency_key,
+                    request_digest=requested_digest,
+                    occurrence_key=occurrence.idempotency_key,
+                    attestation=attestation,
+                    fence_token=_fence_token(project, occurrence, stored.fence_epoch),
+                )
+                connection.commit()
+                return attestation
             if not _budget_available(stored.budget):
                 connection.commit()
                 return _budget_refusal(project, occurrence, stored)
@@ -650,7 +780,27 @@ class _StandingLoopLedger:
             )
             observed_digest = execution_receipt["effect_digest"]
             resources = _resources(stored.budget, execution_receipt)
-            fence_token = _fence_token(project, occurrence, fence_epoch)
+            exhausted = (
+                resources["consumed"]["tokens"] >= stored.budget["max_tokens_per_tick"]
+            )
+            if exhausted:
+                stored = replace(
+                    stored,
+                    desired_state="STOPPED",
+                    observed_state="STOPPED",
+                    fence_epoch=stored.fence_epoch + 1,
+                    terminal_reason="TOKEN_BUDGET_EXHAUSTED",
+                )
+                self._save_selected_to(connection, stored)
+                self._append_event(
+                    connection,
+                    stored,
+                    "TOKEN_BUDGET_EXHAUSTED",
+                    idempotency_key=occurrence.idempotency_key,
+                    request_digest=requested_digest,
+                    occurrence_key=occurrence.idempotency_key,
+                )
+            fence_token = _fence_token(project, occurrence, stored.fence_epoch)
             self._append_event(
                 connection,
                 stored,
@@ -668,7 +818,7 @@ class _StandingLoopLedger:
                 _project_id(project),
                 _ledger_digest(project),
                 dict(stored.budget),
-                "AVAILABLE",
+                "EXHAUSTED" if exhausted else "AVAILABLE",
                 "CHANGED",
                 requested_digest,
                 observed_digest,
@@ -715,22 +865,22 @@ class _StandingLoopLedger:
     ) -> TickAttestation:
         project = self._project(isolation["project_root"])
         for _ in range(3000):
-            stored = self._require(project)
-            if stored.desired_state == "STOPPED":
-                return _stopped_refusal(project, occurrence, stored)
-            row = self._connect(project)
+            connection = self._connect(project)
             try:
-                attestation_row = row.execute(
+                stored = self._require_selected_from(connection, project, occurrence)
+                attestation_row = connection.execute(
                     "SELECT payload FROM attestations WHERE occurrence_key = ?",
                     (occurrence.idempotency_key,),
                 ).fetchone()
             finally:
-                row.close()
+                connection.close()
             if attestation_row is not None:
                 return replace(
                     self._attestation_from(json.loads(attestation_row[0])),
                     replayed=True,
                 )
+            if stored.desired_state == "STOPPED":
+                return _terminal_refusal(project, occurrence, stored)
             time.sleep(0.01)
         raise TimeoutError("timed out waiting for the claimed occurrence")
 
@@ -741,6 +891,33 @@ class _StandingLoopLedger:
         if stored is None:
             raise ValueError("no loop is armed for project")
         return stored
+
+    def _require_selected_from(
+        self, connection: sqlite3.Connection, project: Path, occurrence: Any
+    ) -> _StoredLoop:
+        """Resolve the occurrence's exact loop across primary and future storage."""
+        loop_id = getattr(occurrence, "loop_id", occurrence)
+        primary = self._load_from(connection, project)
+        if primary is not None and primary.handle.loop_id == loop_id:
+            return primary
+        row = connection.execute(
+            "SELECT payload FROM future_loops WHERE loop_id = ?", (loop_id,)
+        ).fetchone()
+        if row is not None:
+            return self._stored_from_payload(project, json.loads(row[0]))
+        raise ValueError("occurrence does not belong to the selected project loop")
+
+    def _save_selected_to(
+        self, connection: sqlite3.Connection, stored: _StoredLoop
+    ) -> None:
+        """Persist a selected record back to the storage that owns its loop id."""
+        future_row = connection.execute(
+            "SELECT 1 FROM future_loops WHERE loop_id = ?", (stored.handle.loop_id,)
+        ).fetchone()
+        if future_row is not None:
+            self._save_future_to(connection, stored)
+            return
+        self._save_to(connection, stored)
 
     def _require(self, project: Path) -> _StoredLoop:
         stored = self._load(project)
@@ -795,6 +972,9 @@ class LoopControlService:
     def last_attestation(self, project_root: Any) -> TickAttestation | None:
         return self._ledger.last_attestation(self._ledger._project(project_root))
 
+    def attestation_payloads(self, project_root: Any) -> tuple[dict[str, Any], ...]:
+        return self._ledger.attestation_payloads(self._ledger._project(project_root))
+
 
 class LoopRunner(StandingLoopTickPort):
     _ledger = LoopControlService._ledger
@@ -829,12 +1009,19 @@ def _execute_bounded_action(
     action_root = project / ".nwave" / "standing-loops" / "occurrences"
     action_root.mkdir(parents=True, exist_ok=True)
     effect_path = action_root / f"{occurrence.idempotency_key}.json"
+    requested_output = json.dumps(
+        {"context": context_capsule, "occurrence_id": occurrence.idempotency_key},
+        sort_keys=True,
+    ).encode()
+    token_allowance = budget["max_tokens_per_tick"]
+    bounded_output = requested_output[: token_allowance * 4]
     effect = {
         "schema_version": "des.loop.effect.v1",
         "occurrence_id": occurrence.idempotency_key,
         "loop_id": occurrence.loop_id,
         "context": context_capsule,
         "budget": budget,
+        "work_output": bounded_output.decode("utf-8", errors="ignore"),
         "started_at": started_at,
         "completed_at": _StandingLoopLedger._now(),
     }
@@ -844,7 +1031,7 @@ def _execute_bounded_action(
     effect_digest = sha256(observed_bytes).hexdigest()
     elapsed = max(time.perf_counter() - started_clock, 1e-9)
     consumed = {
-        "tokens": max(1, (len(observed_bytes) + 3) // 4),
+        "tokens": max(1, (len(bounded_output) + 3) // 4),
         "wall_seconds": elapsed,
         "agent_concurrency": 1,
         "box_concurrency": 1,
@@ -989,6 +1176,10 @@ def _budget_available(authorised: dict[str, int]) -> bool:
     return all(value > 0 for value in authorised.values())
 
 
+def _minimum_action_is_funded(authorised: dict[str, int]) -> bool:
+    return authorised["max_tokens_per_tick"] >= 2
+
+
 def _resources(
     authorised: dict[str, int], receipt: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -1015,6 +1206,14 @@ def _stopped_refusal(
         _isolation_receipt(project, occurrence),
         _resources(stored.budget),
     )
+
+
+def _terminal_refusal(
+    project: Path, occurrence: Any, stored: _StoredLoop
+) -> TickAttestation:
+    if stored.terminal_reason == "TOKEN_BUDGET_EXHAUSTED":
+        return _budget_refusal(project, occurrence, stored)
+    return _stopped_refusal(project, occurrence, stored)
 
 
 def _budget_refusal(

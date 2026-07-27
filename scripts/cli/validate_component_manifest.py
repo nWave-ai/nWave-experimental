@@ -120,19 +120,21 @@ def _missing_manifest_diagnostic(manifest_path: Path) -> str:
     """WHAT/WHY/HOW diagnostic for a manifest path that does not exist.
 
     Names (1) the missing path as given, (2) WHY the manifest gate needs it,
-    (3) a concrete remediation, and (4) the resolved repo root the CLI
+    (3) a concrete remediation, and (4) the current directory the CLI
     actually used to interpret a relative path -- the real cause of this bug
     class is almost always resolution against the wrong worktree, and prior
-    to this fix no message said so.
+    to this fix no message said so. The directory is named as the "current
+    directory", not a "repo root" -- nothing here verifies it is actually a
+    repository root, only that it is the cwd the path was resolved against.
     """
     resolved_root = Path.cwd()
     return (
-        f"manifest not found: {manifest_path} -- resolved against repo root "
-        f"{resolved_root}. WHY: the design wave's manifest gate needs this "
-        "file to validate the unbounded-input-domain rows. HOW: generate it "
-        "with the design wave's producing tool, or check you are running "
-        "from the intended repo root (this path is resolved relative to the "
-        "current working directory)."
+        f"manifest not found: {manifest_path} -- resolved relative to the "
+        f"current directory {resolved_root}. WHY: the design wave's manifest "
+        "gate needs this file to validate the unbounded-input-domain rows. "
+        "HOW: generate it with the design wave's producing tool, or check "
+        "you are running from the intended repo root (this path is resolved "
+        "relative to the current working directory)."
     )
 
 

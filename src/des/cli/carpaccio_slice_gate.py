@@ -815,7 +815,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--at-kind",
-        choices=["gherkin", "pytest-regression", "native-regression"],
+        choices=[
+            "gherkin",
+            "pytest-regression",
+            "native-regression",
+            "rust-regression",
+        ],
         default="gherkin",
         help=(
             "AT-discovery mode (ADR-001, fix-pre-push-hook-dual-installer-"
@@ -825,7 +830,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "'pytest-regression' AST-counts module-level test_* functions in "
             "--regression-test-file. 'native-regression' resolves the "
             "AT-discovery facet from --regression-test-file's own suffix via "
-            "the unified runner port (pytest .py / cargo-test .rs)."
+            "the unified runner port (pytest .py / cargo-test .rs). "
+            "'rust-regression' (rust-regression-at-kind-semi-wired) is an "
+            "accepted ALIAS of 'native-regression' -- normalized to it "
+            "immediately after parsing, so it reuses the SAME unified "
+            "runner-port AT-discovery facet, never a second parser."
         ),
     )
     parser.add_argument(
@@ -876,7 +885,14 @@ def main(argv: list[str] | None = None) -> int:
     repo = _repo_root(args.repo_root)
     feature_id = args.feature_id
     entering_slice = args.entering_slice
-    at_kind = args.at_kind
+    # rust-regression-at-kind-semi-wired: 'rust-regression' is a CLI-facing
+    # ALIAS of 'native-regression', normalized here (before any handling) so
+    # downstream code (check_carpaccio/check_at_review, both typed against
+    # the 3-way Literal) reuses the SAME unified runner-port AT-discovery
+    # facet -- never a second, duplicated parser.
+    at_kind: Literal["gherkin", "pytest-regression", "native-regression"] = (
+        "native-regression" if args.at_kind == "rust-regression" else args.at_kind
+    )
     regression_test_file = (
         (repo / args.regression_test_file) if args.regression_test_file else None
     )

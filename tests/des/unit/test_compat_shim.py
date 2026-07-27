@@ -3,8 +3,12 @@
 Issue #43 — HARDENING layer per RCA. Two complementary defenses against
 typing-version regressions:
 
-1. ``src/des/_compat.py`` — designated location for typing-3.11+ symbols
-   backported via ``typing_extensions`` for Python 3.10 support.
+1. ``src/des/_compat.py`` — designated location for typing-3.11+ symbols,
+   backed on Python 3.10 by a vendored, stdlib-only shim (NOT
+   ``typing_extensions`` -- see ADR-PLAT-007 and techdebt.md id
+   ``typing-extensions-import-escapes-bundle-stdlib-only-enforcement-gate``:
+   the bundled DES runtime must depend on nothing but Python on the
+   target machine).
 2. ``[tool.ruff] target-version = "py310"`` — makes ruff statically flag
    3.11+-only typing imports as ``UP`` errors at lint time, before merge.
 
@@ -14,8 +18,12 @@ is removed or weakened.
 
 from __future__ import annotations
 
+import importlib
 import sys
+import typing
 from pathlib import Path
+
+import pytest
 
 
 try:
@@ -34,17 +42,53 @@ def test_compat_shim_exports_self() -> None:
     assert Self is not None, "Self must be importable from des._compat"
 
     if sys.version_info >= (3, 11):
-        import typing
-
         assert Self is typing.Self, (
             "On Python 3.11+, des._compat.Self must be the stdlib typing.Self"
         )
-    else:
-        import typing_extensions
+    else:  # pragma: no cover — only hit on Python 3.10
+        assert Self is not None
+        with pytest.raises(TypeError):
+            Self[int]  # the vendored fallback must reject subscripting
 
-        assert Self is typing_extensions.Self, (
-            "On Python 3.10, des._compat.Self must fall back to typing_extensions.Self"
+
+def test_compat_shim_self_fallback_does_not_require_typing_extensions() -> None:
+    """The Python-3.10 fallback branch must work with NO ``typing_extensions``
+    installed at all -- the exact defect this regression pins: ADR-PLAT-007
+    requires the bundled DES runtime to depend on nothing but Python, so the
+    fallback for ``Self`` must be vendored stdlib-only, never a second
+    package import.
+
+    Simulates a bare Python 3.10 target by monkeypatching ``sys.version_info``
+    to ``(3, 10, 0, "final", 0)`` (the runtime discriminant ``_compat.py``'s
+    ``elif sys.version_info >= (3, 11)`` branch actually checks) AND blocking
+    ``typing_extensions`` from importing at all (``sys.modules
+    ['typing_extensions'] = None`` makes any ``import typing_extensions``
+    raise ImportError) -- then reloads ``des._compat`` and asserts it still
+    succeeds.
+    """
+    import des._compat as compat
+
+    original_version_info = sys.version_info
+    original_typing_extensions = sys.modules.get("typing_extensions")
+
+    sys.version_info = (3, 10, 0, "final", 0)  # type: ignore[assignment]
+    sys.modules["typing_extensions"] = None  # type: ignore[assignment]
+
+    try:
+        reloaded = importlib.reload(compat)
+        assert hasattr(reloaded, "Self"), (
+            "des._compat must still export Self on a simulated Python 3.10 "
+            "target even when typing_extensions cannot be imported at all"
         )
+        with pytest.raises(TypeError):
+            reloaded.Self[int]  # the vendored fallback must reject subscripting
+    finally:
+        sys.version_info = original_version_info  # type: ignore[assignment]
+        if original_typing_extensions is not None:
+            sys.modules["typing_extensions"] = original_typing_extensions
+        else:
+            sys.modules.pop("typing_extensions", None)
+        importlib.reload(compat)
 
 
 def test_compat_shim_advertises_self_in_dunder_all() -> None:

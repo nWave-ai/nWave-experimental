@@ -104,6 +104,18 @@ _NO_TEST_NET_REASON = "EntryGateNoTestNet"
 _PROMPT_FILENAME = ".refactor-prompt.md"
 _ENVELOPE_FILENAME = "test-result.json"
 
+#: The pre-agent baseline leg's stand-in when nothing has changed yet to
+#: narrow a test scope against (BUGFIX 2026-07-26, [[impacted-test-selector-
+#: selects-everything-and-its-premise-is-false]]). ``runner`` self-documents
+#: in any ledger/DrainResult reader as NOT an observed run -- no pytest
+#: process was ever spawned for it, so its passed/failed/exit_code carry no
+#: information about this worktree. Safe because
+#: ``classify_green_to_green`` decides SAFE/UNSAFE from the AFTER run's
+#: failure count alone and never reads ``before``.
+_UNOBSERVED_PLACEHOLDER_RUN = TestRun(
+    runner="unobserved-placeholder", passed=0, failed=0, exit_code=0
+)
+
 
 @dataclass(frozen=True)
 class DrainResult:
@@ -274,7 +286,10 @@ class RefactorDrainService:
                 if entry_gate_refusal is not None:
                     return entry_gate_refusal
 
-                after = self._run_tests(handle.path)
+                changed_paths = self._git_worktree.changed_paths_since(
+                    handle.path, handle.head_sha
+                )
+                after = self._run_tests(handle.path, changed_paths)
 
                 outcome = classify_green_to_green(before, after)
                 if outcome.verdict != GreenToGreenVerdict.SAFE:
@@ -397,7 +412,10 @@ class RefactorDrainService:
                 raise
 
             try:
-                after = self._run_tests(handle.path)
+                changed_paths = self._git_worktree.changed_paths_since(
+                    handle.path, handle.head_sha
+                )
+                after = self._run_tests(handle.path, changed_paths)
                 outcome = classify_green_to_green(before, after)
                 if outcome.verdict != GreenToGreenVerdict.SAFE:
                     return self._refused_after_cleanup(
@@ -658,8 +676,50 @@ class RefactorDrainService:
 
     # -- internal: green-to-green test execution (D3) ------------------------
 
-    def _run_tests(self, worktree: Path) -> TestRun:
-        target = self._impacted_test_selector.select(worktree, ())[0]
+    def _run_tests(
+        self, worktree: Path, changed_paths: tuple[str, ...] = ()
+    ) -> TestRun:
+        """Run the fast+impacted test scope for ``worktree`` -- or, for the
+        pre-agent baseline call, DON'T run anything at all.
+
+        ``changed_paths`` is empty for the pre-agent baseline call (nothing
+        has changed yet) and the real diff for the post-agent call (see the
+        ``changed_paths_since`` call at each call site) -- BUGFIX
+        [[impacted-test-selector-selects-everything-and-its-premise-is-
+        false]]: the selector used to always receive ``()`` regardless, so
+        even a correct heuristic had nothing to narrow with.
+
+        BUGFIX (2026-07-26, same pile item, follow-on): an empty
+        ``changed_paths`` also means the selector HONESTLY falls back to the
+        whole repo (``narrowed=False`` -- there is nothing to narrow
+        against yet), and running the whole suite serially for that baseline
+        leg measured over the drain's own 2700s spawn timeout on this box --
+        a hard crash, not just slow, on literally the first item. The fix is
+        not a bigger timeout or a hardcoded "fast tier" directory (rejected:
+        no fixed path is generic across the arbitrary target repos this tool
+        ships to, and genericity is a standing mandate here) -- it is to
+        never spawn pytest for this leg at all. ``classify_green_to_green``
+        (``des.domain.refactor.green_to_green``) computes its SAFE/UNSAFE
+        verdict from the AFTER run's failure count ONLY -- its own docstring
+        says so explicitly -- so a baseline this cheap and this correct do
+        not conflict: the real baseline was never consulted by the verdict,
+        so there is nothing lost by not running it.
+
+        IMPORTANT for whoever reads ``DrainResult``/the ledger later: for
+        this pre-agent call, the returned ``TestRun`` (``runner=
+        "unobserved-placeholder"``) is a PLACEHOLDER, not an observed
+        baseline -- no test ever ran, nothing was verified, its
+        passed/failed/exit_code fields are not a measurement of this
+        worktree. Do not read it as "the suite was green before the fix".
+        """
+        if not changed_paths:
+            # Nothing has changed yet -- there is nothing a selector could
+            # narrow against, and classify_green_to_green never reads this
+            # leg's counts. Skip the selector call AND the real pytest spawn
+            # entirely: this is not a cheaper baseline, it is no baseline.
+            return _UNOBSERVED_PLACEHOLDER_RUN
+        selection = self._impacted_test_selector.select(worktree, changed_paths)
+        target = selection.targets[0]
         with tempfile.TemporaryDirectory() as tmp_dir:
             out_path = Path(tmp_dir) / _ENVELOPE_FILENAME
             des_spawn(

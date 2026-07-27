@@ -331,6 +331,61 @@ class TestGenerateMarketplaceCatalog:
         )
 
 
+class TestReleaseWorkflowsCallWriteMarketplaceJson:
+    """write_marketplace_json is called by the real release pipelines, not
+    reimplemented inline (techdebt.md: write-marketplace-json-never-wired).
+
+    The two workflows that generate a self-hosted marketplace.json
+    (release-prod.yml, release-rc.yml) used to reimplement the function's
+    body verbatim as an inline `python3 -c "..."` heredoc -- calling
+    `generate_marketplace_catalog` + hand-rolled `json.dumps`/`write_text`
+    -- instead of calling the already-tested `write_marketplace_json`. That
+    made `write_marketplace_json` itself dead (only its own test module
+    called it) despite the feature it implements being genuinely live.
+    """
+
+    def _marketplace_step_source(self, workflow_filename: str) -> str:
+        workflows_dir = Path(__file__).resolve().parents[5] / ".github" / "workflows"
+        pipeline_path = workflows_dir / workflow_filename
+        assert pipeline_path.exists(), (
+            f"Release pipeline not found: {workflow_filename}"
+        )
+
+        import yaml
+
+        with open(pipeline_path) as f:
+            workflow = yaml.safe_load(f)
+
+        for job in workflow.get("jobs", {}).values():
+            for step in job.get("steps", []):
+                run = step.get("run", "")
+                if "Generate marketplace.json" in run or "marketplace.json" in run:
+                    if (
+                        "write_marketplace_json" in run
+                        or "generate_marketplace_catalog" in run
+                    ):
+                        return run
+        raise AssertionError(
+            f"No marketplace-generation step found in {workflow_filename}"
+        )
+
+    def test_release_prod_calls_write_marketplace_json(self):
+        run = self._marketplace_step_source("release-prod.yml")
+        assert "write_marketplace_json" in run
+        assert "generate_marketplace_catalog" not in run, (
+            "release-prod.yml must call write_marketplace_json(), not "
+            "reimplement it via generate_marketplace_catalog + manual write"
+        )
+
+    def test_release_rc_calls_write_marketplace_json(self):
+        run = self._marketplace_step_source("release-rc.yml")
+        assert "write_marketplace_json" in run
+        assert "generate_marketplace_catalog" not in run, (
+            "release-rc.yml must call write_marketplace_json(), not "
+            "reimplement it via generate_marketplace_catalog + manual write"
+        )
+
+
 class TestWriteMarketplaceJson:
     """Tests for write_marketplace_json IO boundary function."""
 

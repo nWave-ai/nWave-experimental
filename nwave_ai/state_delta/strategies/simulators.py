@@ -12,10 +12,13 @@ Simulators
 ----------
 - update_path_in_settings_pre_fix   — mirrors bug #48 logic (step 01-08)
 - update_path_in_settings_faithful  — mirrors post-fix logic (step 02-03,
-                                       post-832b4060, des_plugin.py:881-958)
+                                       post-832b4060, des_plugin.py:1986-2062
+                                       as of 2026-07-27; was 881-958 at
+                                       authoring time, moved by later edits)
 
 PR-review note (02-03): update_path_in_settings_faithful is asserted
-byte-equivalent to scripts/install/plugins/des_plugin.py:881-958 at the
+byte-equivalent to scripts/install/plugins/des_plugin.py:1986-2062
+(_update_path_in_settings, current location as of 2026-07-27) at the
 time of this PR. Runtime equivalence check intentionally omitted per
 MEDIUM-1 closure (we validate the contract, not production bytes).
 """
@@ -67,11 +70,19 @@ def update_path_in_settings_faithful(
 ) -> str:
     """Faithful mirror of post-fix _update_path_in_settings (post-832b4060).
 
-    Hand-mirrored from scripts/install/plugins/des_plugin.py:881-958.
+    Hand-mirrored from scripts/install/plugins/des_plugin.py:1986-2062
+    (_update_path_in_settings, current location as of 2026-07-27; was
+    881-958 at authoring time, moved by later edits).
 
-    PR-review note: asserted byte-equivalent to des_plugin.py:881-958 at
+    PR-review note: asserted byte-equivalent to des_plugin.py:1986-2062 at
     the time of this PR. Runtime equivalence check intentionally omitted
     per MEDIUM-1 closure (we validate the contract, not production bytes).
+    A lightweight guard (test_cited_function_still_exists_in_des_plugin,
+    tests/state_delta/unit/test_simulators_faithful.py) pins that
+    _update_path_in_settings is still defined in des_plugin.py, so this
+    citation cannot silently go stale again without a test noticing --
+    though a line-number drift within the file would still require a
+    manual re-grep to catch.
 
     Parameters
     ----------

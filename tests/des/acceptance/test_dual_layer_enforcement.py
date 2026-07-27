@@ -189,6 +189,7 @@ class TestDualLayerEnforcement:
                 project_id="test-project",
                 step_id="01-01",
                 stop_hook_active=False,
+                mode="classic",
             )
         )
 
@@ -222,6 +223,7 @@ class TestDualLayerEnforcement:
                 project_id="test-project",
                 step_id="01-01",
                 stop_hook_active=True,
+                mode="classic",
             )
         )
 
@@ -264,6 +266,7 @@ class TestDualLayerEnforcement:
                 project_id="test-project",
                 step_id="01-01",
                 stop_hook_active=False,
+                mode="classic",
             )
         )
 
@@ -536,6 +539,7 @@ class TestDualLayerEnforcement:
                 project_id="test-project",
                 step_id="01-01",
                 stop_hook_active=True,
+                mode="classic",
             )
         )
         assert decision.action == "allow"

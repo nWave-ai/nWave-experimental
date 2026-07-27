@@ -346,8 +346,13 @@ class TestHookAdapterFunctionality:
     def test_pre_tool_use_blocks_incomplete_des_prompt(self):
         """PreToolUse must block DES tasks when mandatory sections are missing.
 
-        DES-marked prompts without all 9 mandatory sections are blocked
-        by template validation.
+        A DES-marked prompt without an explicit DES-MODE is "incomplete" under
+        the current architecture too: PreToolUseService Step 4b treats a
+        missing DES-MODE as DISPATCH_MODE_UNRESOLVED rather than falling back
+        to the now-retired classic TemplateValidator's 9-mandatory-section
+        check (T-C / F-DES-ATDD-PURE-DISPATCH-LIFECYCLE -- "missing mode is
+        never a legacy fallback"). The prompt-validator port is still wired
+        but unreachable for a mode-absent dispatch by design.
         """
         import sys
         from io import StringIO
@@ -383,7 +388,7 @@ class TestHookAdapterFunctionality:
                 f"got exit {exit_code}: {output}"
             )
             assert output["decision"] == "block"
-            assert "MISSING" in output["reason"]
+            assert "DISPATCH_MODE_UNRESOLVED" in output["reason"]
         finally:
             sys.stdin = original_stdin
             sys.stdout = original_stdout

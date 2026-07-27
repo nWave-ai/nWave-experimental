@@ -39,7 +39,12 @@ if TYPE_CHECKING:
     from des.domain.skill_normative_clause import NormativeVerdict
 
 
-_DEFAULT_MANIFEST = Path("nWave/data/skill-normative-clauses.json")
+_DEFAULT_MANIFEST = (
+    Path(__file__).resolve().parents[3]
+    / "nWave"
+    / "data"
+    / "skill-normative-clauses.json"
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:

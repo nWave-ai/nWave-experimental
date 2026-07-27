@@ -227,9 +227,14 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
     # A12: reviewer must not have write tools (Bash is allowed, read-only
     # per WS-12 -- the code-fact grep tier reachable from reviewers)
     if is_reviewer:
-        tools = fm.get("tools", "")
+        tools_raw = fm.get("tools", "")
+        tools_tokens = (
+            [t.strip() for t in tools_raw.split(",")]
+            if isinstance(tools_raw, str)
+            else list(tools_raw)
+        )
         for forbidden in ("Write", "Edit"):
-            if forbidden in tools:
+            if forbidden in tools_tokens:
                 result.add(
                     "A12", "error", name, f"Reviewer has forbidden tool: {forbidden}"
                 )

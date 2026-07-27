@@ -77,6 +77,42 @@ BLOCKED: slice-02/A_GREEN <- slice-01/preservation-contract
 Then fill every READY cloud slot. Fan out both **between slices** and **inside a
 slice** when sub-lanes have disjoint ownership and stable inputs.
 
+### Throughput Sentinel — make unused parallelism visible
+
+The **Throughput Sentinel** is a small, read-only control loop inspired by
+[Relay](https://github.com/andrealaforgia/relay-agentic-model). It is not another
+delivery orchestrator and it never writes code, changes a ledger, approves a gate,
+dispatches an agent, merges, deletes, or starts a box-bound command. Its deterministic
+pass reads the current delivery DAG, declared ownership facts, local worktree metadata,
+host-log freshness, and box occupancy, then emits the compact
+`RUNNING / READY / BOX / BLOCKED` snapshot above.
+
+Host capacity and live-agent state are evidence, not guesses. When a Claude or Codex
+adapter has a host receipt, the Sentinel may report that receipt's capacity state. When
+it has no such receipt, it reports `UNAVAILABLE`/`UNKNOWN`; it must never infer a free
+cloud slot from silence, a worktree, or an old transcript. `UNUSED_PARALLELISM` is
+therefore emitted only when the declared ready lane and the relevant capacity evidence
+are both present; otherwise the receipt asks the orchestrator to measure or declare the
+missing fact before scheduling.
+
+Every pass performs **worktree anti-rot triage**. It inventories each linked worktree
+and its branch/head, dirty state, lock/PID evidence, owner receipt and recent host-log
+activity. A worktree becomes `ABANDONED_CANDIDATE` only when convergent evidence shows
+no live ownership/activity together with unintegrated or dirty work. The receipt names
+the evidence and offers exactly `MERGE`, `RESUME`, `DEFER`, or `REMOVE`. It never
+removes a worktree automatically; deletion remains human-authorized and separately
+verified.
+
+Only **Luna** — Vera's economical model tier — may classify an ambiguous dependency or
+propose the next generated DES dispatch, and only when deterministic facts are
+insufficient. It may not invent work, liveness, capacity, or override the snapshot.
+Inspect immediately at SessionStart and at least every 30 minutes while the host session
+is alive. The periodic pass is observation only; it must not turn missing host scheduling
+into a hidden resident process. When an unknown could change a lane's safety, slicing,
+architecture, or feasibility, the Sentinel must name the unknown and route it to a
+bounded `nw-spike` before scheduling. The spike answers `SUPPORTED`, `REFUTED`, or
+`INDETERMINATE`; it is not generic research.
+
 ## The constraint (Theory of Constraints): the BOX, not the agents
 
 - **LLM-bound stages run in the CLOUD, parallel almost for free**: RCA, charter (PO),

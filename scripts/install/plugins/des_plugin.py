@@ -13,7 +13,7 @@ from typing import Any
 from scripts.shared import hook_definitions as shared_hooks
 from scripts.shared.install_paths import (
     host_neutral_runtime_dir,
-    is_durable_interpreter_path,
+    resolve_python_path_for_shell,
 )
 from scripts.shared.skill_distribution import (
     SCRIPTS_FAMILY_KEY,
@@ -651,14 +651,24 @@ class DESPlugin(InstallationPlugin):
                     secondary_lib_python_dir.mkdir(parents=True, exist_ok=True)
                     if secondary_target_dir.exists():
                         _robust_rmtree(secondary_target_dir)
-                    shutil.copytree(target_dir, secondary_target_dir)
+                    shutil.copytree(
+                        target_dir,
+                        secondary_target_dir,
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+                    )
                     if nwave_assets_root is not None:
                         secondary_assets_root = (
                             secondary_lib_python_dir.parent / "nWave"
                         )
                         if secondary_assets_root.exists():
                             _robust_rmtree(secondary_assets_root)
-                        shutil.copytree(nwave_assets_root, secondary_assets_root)
+                        shutil.copytree(
+                            nwave_assets_root,
+                            secondary_assets_root,
+                            ignore=shutil.ignore_patterns(
+                                "__pycache__", "*.pyc", "*.pyo"
+                            ),
+                        )
 
             return PluginResult(
                 success=True,
@@ -936,6 +946,26 @@ class DESPlugin(InstallationPlugin):
         neutral_dir = host_neutral_runtime_dir()
         secondary = neutral_dir if primary == claude_dir else claude_dir
         return None if secondary == primary else secondary
+
+    @classmethod
+    def resolve_des_module_locations(cls, context: InstallContext) -> list[Path]:
+        """Every on-disk `des/` directory a target described by `context` can have.
+
+        SSOT for "where does the installed DES module live" -- built directly
+        on `_runtime_python_dir` (the primary target) and
+        `_secondary_runtime_python_dir` (the mirror a mixed claude_code +
+        host-neutral target also needs), the same two methods `install()`
+        uses to decide where to WRITE the module. Uninstall must walk this
+        exact same list to REMOVE it, or a mixed/host-neutral target orphans
+        the module in whichever location a hardcoded single-path uninstall
+        never looked at (the uninstall-vs-install path divergence bug).
+        """
+        primary = cls._runtime_python_dir(context) / "des"
+        locations = [primary]
+        secondary = cls._secondary_runtime_python_dir(context, primary.parent)
+        if secondary is not None:
+            locations.append(secondary / "des")
+        return locations
 
     def _rewrite_import_paths(self, target_dir: Path, context: InstallContext) -> None:
         """Rewrite import paths in installed DES module.
@@ -1377,7 +1407,12 @@ class DESPlugin(InstallationPlugin):
             target_dir = context.claude_dir / "data"
             if not context.dry_run:
                 target_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
+                shutil.copytree(
+                    source_dir,
+                    target_dir,
+                    dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+                )
 
             # Verify the STRUCTURED FACT -- every top-level entry present at
             # the destination -- never the weak signal "copytree did not raise".
@@ -1458,36 +1493,16 @@ class DESPlugin(InstallationPlugin):
     def _resolve_python_path() -> str:
         """Resolve the Python interpreter path for hook commands.
 
-        Captures sys.executable (the installer's Python, which has all
-        dependencies like PyYAML and pydantic) and makes it portable by
-        replacing the home directory prefix with $HOME.
-
-        Two independent guards fall back to 'python3':
-        - Durability: the interpreter is rooted under a known-ephemeral
-          location (tempfile.gettempdir()) and could be reaped before a
-          hook ever fires. See is_durable_interpreter_path().
-        - Portability: the current Python is a project-local .venv (e.g.
-          during development) -- that exact path would not exist on a
-          different machine, so it must not leak into settings.json.
-
-        This ensures hooks run under the same Python that was used to
-        install nWave — whether that's a pipx venv, pip venv, or system
-        Python — so all dependencies are available at runtime.
+        Delegates to the shared SSOT `resolve_python_path_for_shell()`
+        (scripts/shared/install_paths.py) -- this used to be a standalone,
+        byte-identical copy of the same logic duplicated in
+        attribution_utils._resolve_python_path
+        (D3-code-duplication-resolve-python-path, techdebt.md). Kept as a
+        thin delegating wrapper (rather than inlined at the two call
+        sites) so existing callers/tests that patch
+        `DESPlugin._resolve_python_path` keep working unchanged.
         """
-        python_path = sys.executable
-
-        # Durability: reject interpreters rooted in a known-ephemeral location
-        if not is_durable_interpreter_path(python_path):
-            return "python3"
-
-        # Portability: project-local .venv must not leak into settings.json
-        if "/.venv/" in python_path or "\\.venv\\" in python_path:
-            return "python3"
-
-        home = str(Path.home())
-        if python_path.startswith(home):
-            python_path = "$HOME" + python_path[len(home) :]
-        return python_path
+        return resolve_python_path_for_shell()
 
     def _generate_hook_command(self, context: InstallContext, action: str) -> str:
         """Generate hook command with portable paths for cross-machine use.
@@ -2087,11 +2102,13 @@ class DESPlugin(InstallationPlugin):
             if not hooks_result.success:
                 errors.append(hooks_result.message)
 
-            # 2. Remove DES module
-            des_module = context.claude_dir / "lib" / "python" / "des"
-            if des_module.exists():
-                shutil.rmtree(des_module)
-                context.logger.info(f"  🗑️ Removed DES module: {des_module}")
+            # 2. Remove DES module (every location this target may use --
+            # primary + secondary mirror for mixed claude_code/host-neutral
+            # targets, see resolve_des_module_locations)
+            for des_module in self.resolve_des_module_locations(context):
+                if des_module.exists():
+                    shutil.rmtree(des_module)
+                    context.logger.info(f"  🗑️ Removed DES module: {des_module}")
 
             # 3. Remove DES scripts
             scripts_dir = context.claude_dir / "scripts"
@@ -2219,7 +2236,7 @@ class DESPlugin(InstallationPlugin):
                 [
                     sys.executable,
                     "-c",
-                    f"import sys; sys.path.insert(0, {lib_python!r}); import yaml; from des.application import DESOrchestrator",
+                    f"import sys; sys.path.insert(0, {lib_python!r}); import yaml; from des.cli.__main__ import main",
                 ],
                 capture_output=True,
                 text=True,

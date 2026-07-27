@@ -469,6 +469,13 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
+  # feature-context-bootstrap: 1:1 mirror of the new _REGISTRY row.
+  - gate_id: feature-open
+    responsibility: "Create one evidence-aware initial feature context -- renders a bootstrap record from a declared feature-id and intent, optionally adopting an existing WIP directory's inventory."
+    module: des.cli.feature_open
+    entry_function: main
+    language_neutral_contract: true
+
   # des-refactor-fixer-swarm slice-01 (ADR-SWARM-001): the fixer-harness CLI --
   # 1:1 mirror of the new _REGISTRY row.
   - gate_id: refactor
@@ -527,5 +534,23 @@ gates:
   - gate_id: parallel-safety-report
     responsibility: "Advisory POST-HOC measured cross-check of a Slice/Feature Plan's declared-parallel claims: reuses des blast-radius per declared-parallel pair and reports MEASURED-SAFE (disjoint touched files/boundary-crossings/consumers), DRIFT (overlap, naming it), or UNMEASURED (blast-radius timeout, naming the file) -- never coerced to a false verdict, never a refusal."
     module: des.cli.parallel_safety_report
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: loop
+    responsibility: "Public `des loop` command over the canonical standing-loop facade -- idempotent tick control for a background consolidation/drain loop."
+    module: des.cli.loop
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: resolve-workflow-mode
+    responsibility: "Resolve the one active workflow mode without mutating the project. Classic is removed: historic requests are reported as migration-required and never reach a workload or a fallback dispatcher."
+    module: des.cli.resolve_workflow_mode
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: plan
+    responsibility: "Advisory ready-set and unused-parallelism report. Reads a validated feature's Slice Plan and an explicit set of already-complete slices; never launches work, changes a ledger, or authorizes a gate -- makes safe, declared parallelism visible before an operator falls back to a serial delivery path."
+    module: des.cli.delivery_plan
     entry_function: main
     language_neutral_contract: true

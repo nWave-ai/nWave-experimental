@@ -208,7 +208,7 @@ def _des_config_state(config_file: Path) -> dict[str, object]:
 
 
 class TestSessionStartHookRegistration:
-    """SessionStart hook is registered in settings.json with matcher 'startup'."""
+    """One standalone, read-only SessionStart hook is installed."""
 
     def _install_hooks(self, context) -> dict:
         """Helper: run _install_des_hooks and return parsed settings.json."""
@@ -257,11 +257,12 @@ class TestSessionStartHookRegistration:
             "SessionStart key must have at least one entry after install"
         )
 
-    def test_session_start_hook_uses_startup_matcher(self, _install_context):
+    def test_session_start_hook_has_no_matcher(self, _install_context):
         """
         GIVEN: a fresh install context
         WHEN: _install_des_hooks() is called
-        THEN: hooks.SessionStart JSON contains a 'startup' matcher entry
+        THEN: hooks.SessionStart JSON has no matcher, so the one standalone
+              orientation covers every host SessionStart event
               AND no unexpected slots mutate (implicit-unchanged on permissions)
         """
         settings_file = _install_context.claude_dir / "settings.json"
@@ -275,7 +276,7 @@ class TestSessionStartHookRegistration:
             after=after,
             universe=set(HOOKS_SETTINGS_UNIVERSE),
             expected={
-                "hooks.SessionStart": containing('"startup"'),
+                "hooks.SessionStart": containing("orchestrator_affordance_refresh.py"),
                 "hooks.PreToolUse": set_to(after["hooks.PreToolUse"]),
                 "hooks.PostToolUse": set_to(after["hooks.PostToolUse"]),
                 "hooks.SubagentStop": set_to(after["hooks.SubagentStop"]),
@@ -286,14 +287,14 @@ class TestSessionStartHookRegistration:
             },
         )
 
-    def test_session_start_hook_command_uses_home_based_pythonpath(
+    def test_session_start_hook_command_uses_standalone_orientation(
         self, _install_context
     ):
         """
         GIVEN: a fresh install context
         WHEN: _install_des_hooks() is called
-        THEN: hooks.SessionStart JSON contains '$HOME/.claude/lib/python'
-              AND contains 'session-start' action
+        THEN: hooks.SessionStart JSON invokes the standalone orientation script
+              and does not route through the mutable DES `session-start` action
               AND no unexpected slot mutations (implicit-unchanged on permissions)
         """
         settings_file = _install_context.claude_dir / "settings.json"
@@ -309,7 +310,7 @@ class TestSessionStartHookRegistration:
             after=after,
             universe=set(HOOKS_SETTINGS_UNIVERSE),
             expected={
-                "hooks.SessionStart": containing("$HOME/.claude/lib/python"),
+                "hooks.SessionStart": containing("orchestrator_affordance_refresh.py"),
                 "hooks.PreToolUse": set_to(after["hooks.PreToolUse"]),
                 "hooks.PostToolUse": set_to(after["hooks.PostToolUse"]),
                 "hooks.SubagentStop": set_to(after["hooks.SubagentStop"]),
@@ -319,8 +320,9 @@ class TestSessionStartHookRegistration:
                 ),
             },
         )
-        assert "session-start" in session_start_json, (
-            "Command must pass 'session-start' action to hook adapter"
+        assert "session-start" not in session_start_json, (
+            "SessionStart orientation must not route to the mutable DES "
+            "session-start handler"
         )
 
     def test_session_start_install_is_idempotent(self, _install_context):
@@ -335,11 +337,13 @@ class TestSessionStartHookRegistration:
         config = json.loads(settings_file.read_text())
 
         session_hooks = config["hooks"]["SessionStart"]
-        startup_entries = [h for h in session_hooks if h.get("matcher") == "startup"]
-        assert len(startup_entries) == 1, (
-            f"Expected 1 SessionStart/startup entry after idempotent install, "
-            f"got {len(startup_entries)}"
+        assert len(session_hooks) == 1, (
+            "Expected exactly one standalone SessionStart entry after "
+            f"idempotent install, got {len(session_hooks)}"
         )
+        assert session_hooks[0].get("matcher") is None
+        command = session_hooks[0]["hooks"][0]["command"]
+        assert "orchestrator_affordance_refresh.py" in command
 
     def test_uninstall_removes_session_start_hook(self, _install_context):
         """

@@ -7,6 +7,8 @@ disable-model-invocation: true
 
 # Spike Methodology
 
+> **Deprecated wave slot**: SPIKE was a canonical wave phase prior to v3.16.0 and is now deprecated. Spike/analysis work is embedded in the DESIGN wave. The `/nw-spike` command remains for backward compatibility.
+
 ## What a Spike IS
 
 Throwaway code that validates exactly one assumption. Max 1 hour. Binary outcome: works or doesn't work. Code is deleted after validation; only findings persist.

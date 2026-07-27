@@ -20,7 +20,7 @@ from dataclasses import dataclass
 # The canonical nine Definition-of-Ready readiness items, in id order. This is
 # the specification the SSOT (`nWave/data/dor-items.yaml`) must carry and the
 # reader must surface -- transcribed from the canonical home
-# (`nw-product-owner.md:176-184`, the ratified 9-item hard gate). Item 9
+# (`nw-product-owner.md`, heading "## DoR Checklist (9-Item Hard Gate)"). Item 9
 # (Outcome-KPIs) is the live-hole closure: the loaded skill drops it today.
 CANONICAL_READINESS_ITEMS: tuple[str, ...] = (
     "Problem statement clear, domain language",
@@ -31,7 +31,7 @@ CANONICAL_READINESS_ITEMS: tuple[str, ...] = (
     "Right-sized (1-3 days, 3-7 scenarios)",
     "Technical notes: constraints/dependencies",
     "Dependencies resolved or tracked",
-    "Outcome KPIs defined with measurable targets",
+    "Outcome KPIs defined with measurable targets and a stated baseline (current-state value the target is measured against)",
 )
 
 CANONICAL_READINESS_ITEM_COUNT: int = 9

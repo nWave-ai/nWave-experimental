@@ -240,6 +240,24 @@ class GitWorktreeAdapter(GitWorktreePort):
             return ()
         return tuple(_porcelain_status_paths(status))
 
+    def changed_paths_since(self, repo: Path, base_sha: str) -> tuple[str, ...]:
+        """Repo-relative paths changed at ``repo`` since ``base_sha`` --
+        committed (``git diff --name-only``) UNION uncommitted
+        (``uncommitted_paths``), deduplicated, order preserved.
+
+        Degrades to whatever ``uncommitted_paths`` alone can answer when the
+        committed-diff read fails (``base_sha`` unreachable, no ``git`` on
+        this target machine) -- never to a wrong claim of "nothing changed".
+        """
+        try:
+            diff_output = git_text(repo, "diff", "--name-only", f"{base_sha}..HEAD")
+            committed = tuple(
+                line.strip() for line in diff_output.splitlines() if line.strip()
+            )
+        except (subprocess.CalledProcessError, OSError):
+            committed = ()
+        return tuple(dict.fromkeys((*committed, *self.uncommitted_paths(repo))))
+
     def list_worktrees(self, repo: Path) -> tuple[WorktreeHandle, ...]:
         """Enumerate every LINKED worktree registered against ``repo``.
 

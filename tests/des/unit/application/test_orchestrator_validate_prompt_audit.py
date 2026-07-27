@@ -9,6 +9,14 @@ directly instead of legacy get_audit_logger() singleton.
 
 Step 03-02: Updated to verify feature_name and step_id as direct PortAuditEvent
 fields rather than data dict entries.
+
+techdebt drain (application-layer-imports-adapters-directly): orchestrator.py
+no longer imports JsonlAuditLogWriter at module level -- it accepts an
+optional injected ``AuditLogWriter`` port (composition-root DI) and falls
+back to a LOCAL (function-scoped) import of the concrete adapter only when
+no writer was injected. The patch target below moves to the adapter's own
+defining module (``jsonl_audit_log_writer``) since that's where the local
+import resolves the name from at call time.
 """
 
 from unittest.mock import Mock, patch
@@ -27,7 +35,9 @@ def _patch_audit_writer_and_config():
             writer.log_event(PortAuditEvent(...))
 
     We patch:
-    - JsonlAuditLogWriter where it's imported (module-level in orchestrator.py)
+    - JsonlAuditLogWriter at its defining module (orchestrator.py imports it
+      LOCALLY, inside the function, only when no writer was injected -- so
+      patching its origin module is what the local import resolves)
     - DESConfig where it's imported (locally in validate_prompt)
     """
     mock_writer_cls = Mock()
@@ -40,7 +50,7 @@ def _patch_audit_writer_and_config():
     mock_config_cls.return_value = mock_config
 
     writer_patch = patch(
-        "des.application.orchestrator.JsonlAuditLogWriter",
+        "des.adapters.driven.logging.jsonl_audit_log_writer.JsonlAuditLogWriter",
         mock_writer_cls,
     )
     config_patch = patch(
@@ -317,7 +327,7 @@ class TestValidatePromptAuditLogging:
 
         with (
             patch(
-                "des.application.orchestrator.JsonlAuditLogWriter",
+                "des.adapters.driven.logging.jsonl_audit_log_writer.JsonlAuditLogWriter",
                 mock_writer_cls,
             ),
             patch(

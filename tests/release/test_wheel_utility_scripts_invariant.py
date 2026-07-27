@@ -49,7 +49,44 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 from build_dist import UTILITY_SCRIPTS
 
+from scripts.install.plugins.utilities_plugin import UtilitiesPlugin
 from scripts.release.patch_pyproject import patch_pyproject
+
+
+class TestBuildDistAndUtilitiesPluginAgree:
+    """The dev-tarball whitelist and the installer plugin whitelist agree.
+
+    Regression guard for techdebt row
+    utility-scripts-plugin-list-parity-still-untested-row-closed-on-a-different-pair:
+    the whitelist is declared in THREE places (build_dist.UTILITY_SCRIPTS,
+    UtilitiesPlugin.UTILITY_SCRIPTS, the wheel force-include block).
+    TestForceIncludeMapInvariant above already guards the build_dist <->
+    force-include pair; this class guards the build_dist <-> plugin pair,
+    which had NO test at all until this row was drained -- a script added
+    to build_dist but never to the plugin ships into dist/scripts/ (it
+    passes the force-include check) yet UtilitiesPlugin.install() never
+    copies it to the target, silently under-installing.
+
+    NOTE: this equality is checked at DEV-REPO test time, not via a
+    cross-import at install time -- ``scripts/build_dist.py`` is a
+    dev/release-only script, never force-included into the nwave-ai wheel
+    (only ``scripts/install`` and ``scripts/shared`` are, per
+    pyproject.toml's packages map), so UtilitiesPlugin importing
+    build_dist directly would raise ModuleNotFoundError on a real user
+    install. An equality test in the dev suite is the safe enforcement
+    point; a cross-import in the shipped plugin is not.
+    """
+
+    def test_utility_scripts_lists_are_identical(self):
+        assert list(UtilitiesPlugin.UTILITY_SCRIPTS) == list(UTILITY_SCRIPTS), (
+            "scripts.install.plugins.utilities_plugin.UtilitiesPlugin."
+            "UTILITY_SCRIPTS has drifted from scripts.build_dist."
+            "UTILITY_SCRIPTS -- a script present in one list and absent "
+            "from the other either ships to dist/ but is never installed "
+            "to the target (plugin missing it), or is installed today but "
+            "will silently stop shipping in a future dev tarball (build_dist "
+            "missing it). Keep both lists identical."
+        )
 
 
 def _patched_text(sample_pyproject_path: str, tmp_path) -> str:

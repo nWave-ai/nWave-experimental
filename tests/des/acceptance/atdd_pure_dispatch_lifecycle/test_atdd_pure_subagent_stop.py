@@ -209,8 +209,8 @@ def test_at1_atdd_pure_return_allowed_without_execution_log():
 def test_at2_classic_return_still_blocked_when_execution_log_missing():
     """Property: the classic SubagentStop contract is unregressed.
 
-    Given a SubagentStop context resolved as classic (default mode, carrying
-          an execution_log_path + step_id),
+    Given a SubagentStop context resolved as classic (explicit mode="classic",
+          carrying an execution_log_path + step_id),
     And the execution-log.json is missing,
     When the DES SubagentStop validator validates the return,
     Then the decision is BLOCK with a LOG_FILE_NOT_FOUND-shaped reason — the
@@ -224,6 +224,7 @@ def test_at2_classic_return_still_blocked_when_execution_log_missing():
         execution_log_path="/nonexistent/docs/feature/x/deliver/execution-log.json",
         project_id="some-classic-feature",
         step_id="01-01",
+        mode="classic",
     )
 
     decision = service.validate(context)

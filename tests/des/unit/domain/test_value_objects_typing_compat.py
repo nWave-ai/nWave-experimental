@@ -4,6 +4,14 @@ Issue #43 — `typing.Self` was added in Python 3.11 (PEP 673). Importing it
 unconditionally in `value_objects.py` breaks DES on Python 3.10, which is
 the documented `requires-python` floor.
 
+value_objects.py no longer duplicates the try/except fallback itself: it
+imports `Self` from the single designated locus `des._compat` (which
+vendors a stdlib-only fallback for 3.10 -- see ADR-PLAT-007 and
+techdebt.md id
+`typing-extensions-import-escapes-bundle-stdlib-only-enforcement-gate`),
+under an `if TYPE_CHECKING:` guard (ruff TC001 -- `Self` is only ever used
+in a `from __future__ import annotations`-deferred annotation, never at
+runtime, so it need not be bound at module scope).
 These tests are AST-based so they catch the regression statically on any
 interpreter (the CI matrix runs 3.11+ today; the static check still works).
 """
@@ -35,9 +43,25 @@ def _top_level_import_froms(tree: ast.Module) -> list[ast.ImportFrom]:
     return [node for node in tree.body if isinstance(node, ast.ImportFrom)]
 
 
-def _find_module_level_try_blocks(tree: ast.Module) -> list[ast.Try]:
-    """Collect Try blocks that live directly at module top level."""
-    return [node for node in tree.body if isinstance(node, ast.Try)]
+def _import_froms_in_top_level_type_checking_block(
+    tree: ast.Module,
+) -> list[ast.ImportFrom]:
+    """Collect ImportFrom nodes nested one level inside a top-level
+    ``if TYPE_CHECKING:`` guard (ruff TC001's required shape for a
+    first-party symbol used only in a deferred annotation).
+    """
+    found: list[ast.ImportFrom] = []
+    for node in tree.body:
+        if not isinstance(node, ast.If):
+            continue
+        test = node.test
+        is_type_checking = (
+            isinstance(test, ast.Name) and test.id == "TYPE_CHECKING"
+        ) or (isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING")
+        if not is_type_checking:
+            continue
+        found.extend(stmt for stmt in node.body if isinstance(stmt, ast.ImportFrom))
+    return found
 
 
 class TestValueObjectsTypingCompat:
@@ -47,8 +71,8 @@ class TestValueObjectsTypingCompat:
         """Top-level `from typing import ...` MUST NOT include Self.
 
         A bare top-level import of `Self` from `typing` breaks Python 3.10.
-        The fix wraps the import in a try/except ImportError block, which
-        is NOT a top-level ImportFrom (it lives inside a Try node).
+        The fix imports `Self` from `des._compat` instead, which is a
+        top-level ImportFrom of module `des._compat`, not `typing`.
         """
         tree = _module_ast()
         bare_imports = _top_level_import_froms(tree)
@@ -63,56 +87,60 @@ class TestValueObjectsTypingCompat:
         assert offending == [], (
             "value_objects.py contains a bare top-level "
             "`from typing import Self` — this fails on Python 3.10. "
-            "Wrap the import in a try/except ImportError block with a "
-            "typing_extensions fallback."
+            "Import Self from des._compat instead, which handles the "
+            "Python-3.10 fallback in one designated, stdlib-only locus."
         )
 
-    def test_conditional_typing_self_import_present(self) -> None:
-        """A top-level try/except block MUST import Self from both typing
-        (try branch) and typing_extensions (except ImportError handler).
+    def test_self_imported_from_compat_shim(self) -> None:
+        """`Self` MUST be imported from the single designated locus
+        `des._compat`, never re-implemented with a per-file
+        try/except-typing_extensions duplicate (the original defect this
+        pins: two independent copies of the same fallback pattern, one of
+        which imported a non-stdlib package the bundle-stdlib-only gate
+        did not catch).
         """
         tree = _module_ast()
-        try_blocks = _find_module_level_try_blocks(tree)
-
-        def _imports_self_from(block_body: list[ast.stmt], module: str) -> bool:
-            for stmt in block_body:
-                if (
-                    isinstance(stmt, ast.ImportFrom)
-                    and stmt.module == module
-                    and any(alias.name == "Self" for alias in stmt.names)
-                ):
-                    return True
-            return False
+        candidate_imports = _top_level_import_froms(
+            tree
+        ) + _import_froms_in_top_level_type_checking_block(tree)
 
         matching = [
-            try_node
-            for try_node in try_blocks
-            if _imports_self_from(try_node.body, "typing")
-            and any(
-                isinstance(handler.type, ast.Name)
-                and handler.type.id == "ImportError"
-                and _imports_self_from(handler.body, "typing_extensions")
-                for handler in try_node.handlers
-            )
+            node
+            for node in candidate_imports
+            if node.module == "des._compat"
+            and any(alias.name == "Self" for alias in node.names)
         ]
 
         assert matching, (
-            "value_objects.py must contain a top-level "
-            "`try: from typing import Self / except ImportError: "
-            "from typing_extensions import Self` block to remain "
-            "compatible with Python 3.10."
+            "value_objects.py must contain a `from des._compat import Self` "
+            "(top-level, or inside a top-level `if TYPE_CHECKING:` guard) "
+            "-- the designated single locus for the Python-3.10 "
+            "typing.Self fallback."
+        )
+
+        no_local_typing_extensions_fallback = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "typing_extensions"
+        ]
+        assert no_local_typing_extensions_fallback == [], (
+            "value_objects.py must not import typing_extensions directly "
+            "-- ADR-PLAT-007 requires the bundled DES runtime to depend "
+            "on nothing but Python; the Self fallback lives in "
+            "des._compat, vendored stdlib-only."
         )
 
     def test_module_imports_successfully(self) -> None:
         """Importing the module on the running interpreter must succeed
-        and `Self` must be a resolvable attribute on the module.
+        on every supported Python, regardless of whether `Self` came from
+        stdlib `typing` or the vendored `des._compat` fallback.
+
+        `Self` itself is NOT expected to be a runtime module attribute:
+        it lives under `if TYPE_CHECKING:` (ruff TC001) because
+        `from __future__ import annotations` defers every annotation to a
+        string, so the name is never looked up at runtime.
         """
         try:
-            module = importlib.import_module("des.domain.value_objects")
+            importlib.import_module("des.domain.value_objects")
         except ImportError as exc:  # pragma: no cover — diagnostic path
             pytest.fail(f"Failed to import des.domain.value_objects: {exc}")
-
-        assert hasattr(module, "Self"), (
-            "des.domain.value_objects does not expose `Self` — the "
-            "conditional import block must bind the name at module scope."
-        )

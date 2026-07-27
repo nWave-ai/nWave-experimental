@@ -292,26 +292,20 @@ def strip(target_dir: Path) -> dict[str, list[str]]:
     return removed
 
 
-def verify_strip(target_dir: Path) -> list[str]:
-    """Verify that only public agents remain after stripping.
+def verify_after_strip(target_dir: Path) -> list[str]:
+    """Defense-in-depth: re-verify ``target_dir`` with the SAME, stronger
+    check the real release pipeline runs (``verify_wheel_privacy.verify``,
+    wired into ``release-prod.yml`` via ``verify_public_tree_privacy.py``).
 
-    Returns an empty list if verification passes, or a list of error
-    messages describing unexpected agents found.
+    Checks agents AND skills (the old, dead ``verify_strip`` checked only
+    agents, was never called by ``main()``, and never ran in CI --
+    techdebt.md id
+    verify-strip-is-a-dead-weaker-unwired-duplicate-privacy-gate). Returns
+    an empty list when clean, or a list of violation strings.
     """
-    nwave_dir = target_dir / "nWave"
-    public_agents = load_public_agents(nwave_dir, strict=True)
+    from scripts.release.verify_wheel_privacy import verify
 
-    agents_dir = nwave_dir / "agents"
-    errors: list[str] = []
-
-    if not agents_dir.exists():
-        return errors
-
-    for agent_file in sorted(agents_dir.glob("nw-*.md")):
-        if not is_public_agent(agent_file.name, public_agents):
-            errors.append(f"Unexpected agent after strip: {agent_file.name}")
-
-    return errors
+    return verify(target_dir)
 
 
 def main() -> None:
@@ -325,6 +319,25 @@ def main() -> None:
         sys.exit(1)
 
     strip(target)
+
+    violations = verify_after_strip(target)
+    if violations:
+        print(
+            "ERROR: privacy violations remain after strip:",
+            file=sys.stderr,
+        )
+        for violation in violations:
+            print(f"  {violation}", file=sys.stderr)
+        print(
+            "WHY: strip() removed everything the catalog allow-list "
+            "flags as private, but a defense-in-depth re-check "
+            "(verify_wheel_privacy.verify, the same check release-prod.yml "
+            "runs) still found private artifacts. HOW: check "
+            "framework-catalog.yaml for missing/incorrect public: flags "
+            "on the named agents/skills, fix the catalog, then re-run.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

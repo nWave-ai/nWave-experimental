@@ -2,7 +2,10 @@
 
 Provides pure functions for parsing/rendering YAML frontmatter and
 manifest-based uninstall/verify lifecycle helpers, used by both
-opencode_agents_plugin and opencode_commands_plugin.
+opencode_agents_plugin and opencode_commands_plugin. Also provides
+``opencode_config_dir()``, the single OPENCODE_CONFIG_DIR-override-or-
+default resolution shared by all four OpenCode plugins (des, skills,
+agents, commands) -- previously copied verbatim into each one.
 
 These functions handle malformed input gracefully by returning empty
 dicts rather than raising exceptions -- the caller's install() method
@@ -17,6 +20,8 @@ preserving exact behavior of both pre-refactor implementations.
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
@@ -24,9 +29,22 @@ import yaml
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from scripts.install.plugins.base import InstallContext, PluginResult
+
+
+def opencode_config_dir() -> Path:
+    """Return the OpenCode configuration directory.
+
+    Single source for the OPENCODE_CONFIG_DIR-override-or-default
+    resolution every OpenCode plugin needs (des/skills/agents/commands
+    each add their own subpath on top of this).
+
+    Returns:
+        Path to ``$OPENCODE_CONFIG_DIR`` if set, else ``~/.config/opencode``.
+    """
+    override = os.environ.get("OPENCODE_CONFIG_DIR")
+    return Path(override) if override else Path.home() / ".config" / "opencode"
 
 
 def parse_frontmatter(content: str) -> tuple[dict, str]:

@@ -10,7 +10,6 @@ clean uninstallation and version tracking.
 
 import hashlib
 import json
-import os
 from pathlib import Path
 
 from scripts.install.plugins.base import (
@@ -18,6 +17,7 @@ from scripts.install.plugins.base import (
     InstallContext,
     PluginResult,
 )
+from scripts.install.plugins.opencode_common import opencode_config_dir
 from scripts.shared.install_paths import (
     host_neutral_runtime_dir,
     resolve_des_lib_path_for_spawn,
@@ -33,11 +33,41 @@ _TEMPLATE_FILENAME = "opencode-des-plugin.ts.template"
 def _opencode_config_dir() -> Path:
     """Return the OpenCode configuration directory.
 
+    Thin delegate to the shared ``opencode_config_dir()`` (kept as a
+    module-level name so existing test monkeypatches of
+    ``opencode_des_plugin._opencode_config_dir`` keep working).
+
     Returns:
         Path to ~/.config/opencode/
     """
-    override = os.environ.get("OPENCODE_CONFIG_DIR")
-    return Path(override) if override else Path.home() / ".config" / "opencode"
+    return opencode_config_dir()
+
+
+def _shim_sha256_drift(shim_path: Path, manifest_path: Path) -> str | None:
+    """Compare the shim's fresh sha256 against the manifest's recorded one.
+
+    Returns a human-readable description of the mismatch, or None when
+    both files exist and match (or when either is absent / the manifest
+    is unreadable -- existence is checked separately by the caller, and a
+    malformed manifest cannot itself be evidence of shim-content drift).
+    """
+    if not shim_path.exists() or not manifest_path.exists():
+        return None
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    recorded_hash = manifest.get("sha256") if isinstance(manifest, dict) else None
+    if not isinstance(recorded_hash, str):
+        return None
+
+    fresh_hash = hashlib.sha256(shim_path.read_bytes()).hexdigest()
+    if fresh_hash == recorded_hash:
+        return None
+
+    return f"shim sha256 {fresh_hash} does not match manifest-recorded {recorded_hash}"
 
 
 def _get_framework_version(context: InstallContext) -> str:
@@ -216,14 +246,23 @@ class OpenCodeDESPlugin(InstallationPlugin):
         try:
             opencode_dir = _opencode_config_dir()
 
-            # Remove shim
+            # Remove shim -- warn (non-blocking) first when its on-disk
+            # sha256 no longer matches the manifest's recorded one, so a
+            # user's manual edit is not deleted in silence.
             shim_path = opencode_dir / "plugins" / _SHIM_FILENAME
+            manifest_path = opencode_dir / _MANIFEST_FILENAME
+            drift = _shim_sha256_drift(shim_path, manifest_path)
+            if drift is not None:
+                context.logger.warn(
+                    f"  DES shim sha256 drift detected before uninstall: {drift} "
+                    f"-- removing anyway (uninstall is unconditional); if this "
+                    f"was a manual edit, save a copy first."
+                )
             if shim_path.exists():
                 shim_path.unlink()
                 context.logger.info(f"  Removed DES shim: {shim_path}")
 
             # Remove manifest
-            manifest_path = opencode_dir / _MANIFEST_FILENAME
             if manifest_path.exists():
                 manifest_path.unlink()
                 context.logger.info(f"  Removed DES manifest: {manifest_path}")
@@ -248,6 +287,10 @@ class OpenCodeDESPlugin(InstallationPlugin):
         Checks:
         1. Shim file exists at ~/.config/opencode/plugins/nwave-des.ts
         2. Manifest exists at ~/.config/opencode/.nwave-des-manifest.json
+        3. The manifest's recorded sha256 matches a fresh hash of the
+           shim on disk -- install() already computes and records this
+           hash, so a hand-edited or corrupted shim must not verify
+           green just because both files happen to exist.
 
         Args:
             context: InstallContext with shared installation utilities
@@ -278,11 +321,21 @@ class OpenCodeDESPlugin(InstallationPlugin):
             if not manifest_path.exists():
                 errors.append(f"DES manifest not found: {manifest_path}")
 
+            # Content check: only meaningful once both files are confirmed
+            # present (existence errors above are more specific than drift).
+            if not errors:
+                drift = _shim_sha256_drift(shim_path, manifest_path)
+                if drift is not None:
+                    errors.append(
+                        f"DES shim content drifted from manifest record ({drift}); "
+                        f"reinstall or restore user edits"
+                    )
+
             if errors:
                 return PluginResult(
                     success=False,
                     plugin_name=self.name,
-                    message="OpenCode DES shim verification failed: nwave-des.ts missing",
+                    message="OpenCode DES shim verification failed",
                     errors=errors,
                 )
 

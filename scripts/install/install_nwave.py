@@ -1376,6 +1376,7 @@ class NWaveInstaller:
                 claude_config_dir=self.claude_config_dir,
                 use_host_neutral_runtime="claude_code" not in target_platforms,
                 check_essential_commands="claude_code" in target_platforms,
+                check_manifest="claude_code" in target_platforms,
             )
             result = verifier.run_verification()
 
@@ -1670,6 +1671,32 @@ class NWaveInstaller:
         )
 
 
+def _force_utf8_console() -> None:
+    """Make stdout/stderr able to carry the installer's non-ASCII output.
+
+    The logo's block glyphs and the wave/siren emoji are unrepresentable in
+    cp1252, still the default console encoding on a non-UTF-8 Windows box. The
+    logo prints before any real work, so an encode error there is a hard install
+    failure at the first line of output -- for decoration.
+
+    ``errors="replace"`` is the second belt: if the encoding cannot be changed
+    the output degrades to replacement characters instead of raising. A stream
+    that cannot reconfigure at all is left alone rather than crashing the
+    installer over cosmetics.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            try:
+                reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def print_logo(logger: Logger | None = None) -> None:
     """Print the nWave ASCII art logo with version and taglines.
 
@@ -1845,6 +1872,7 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
 
 def main():
     """Main entry point."""
+    _force_utf8_console()
     parser = argparse.ArgumentParser(
         description="Install nWave framework", add_help=False
     )
@@ -1932,7 +1960,10 @@ def main():
 
     # Handle backup-only mode
     if args.backup_only:
-        if installer.effective_target_platforms == {"codex"}:
+        # A native-only target (Codex, Copilot, OpenCode, or any combination
+        # of them without Claude) has no Claude backup surface at all -- do
+        # not enable Claude install logging or touch claude_config_dir for it.
+        if "claude_code" not in installer.effective_target_platforms:
             return 0
         installer.enable_install_logging()
         installer.create_backup()
@@ -1955,7 +1986,14 @@ def main():
     if args.dry_run:
         return 0 if installer.install_framework() else 1
 
-    installer.enable_install_logging()
+    # A native-only target (Codex, Copilot, OpenCode, or any combination of
+    # them without Claude) has no Claude activation surface -- persistent
+    # install logging must never create or write under claude_config_dir for
+    # it. create_backup() is safe to call unconditionally: its Codex branch
+    # never touches claude_config_dir, and its default (Claude) branch is a
+    # no-op unless a prior Claude installation already exists on disk.
+    if "claude_code" in installer.effective_target_platforms:
+        installer.enable_install_logging()
     installer.create_backup()
 
     if not installer.adopt_legacy_codex_dev_assets():
@@ -1966,8 +2004,10 @@ def main():
 
     # Create manifest after installation but before validation
     # This prevents circular dependency where validation fails because
-    # manifest doesn't exist yet
-    if installer.effective_target_platforms != {"codex"}:
+    # manifest doesn't exist yet. Only "claude_code" targets get a Claude
+    # discovery surface (claude_config_dir) for the manifest to live in --
+    # a native-only target (single or combined) must not create one.
+    if "claude_code" in installer.effective_target_platforms:
         installer.create_manifest()
 
     # Dry-run preview: install_framework + create_manifest already returned

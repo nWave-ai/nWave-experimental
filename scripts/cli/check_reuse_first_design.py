@@ -47,6 +47,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from des.adapters.driven.git.git_subprocess import (
+    resolve_default_base_ref,
+    resolve_feature_genesis_base_ref,
+)
 from des.cli.human_surface import Verdict, print_human_summary
 from des.cli.validate_feature_delta import REUSE_ANALYSIS_HEADING
 
@@ -276,10 +280,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--base-branch",
-        default=_DEFAULT_BASE_BRANCH,
+        default=None,
         help=(
             "The trunk the feature diverged from (slice-02 real-diff path). "
-            f"Default: {_DEFAULT_BASE_BRANCH}."
+            "Default: None -- resolved via _resolve_base_branch "
+            "(reuse-first-gate-branch-topology-false-positive): the feature-"
+            "delta's OWN git-genesis parent commit (the commit before "
+            "docs/feature/<id>/feature-delta.md first entered history), so "
+            "an unscoped diff on a long-lived branch never counts files "
+            "added by OTHER, already-merged features against THIS one's "
+            "Reuse table. Falls back to resolve_default_base_ref (the "
+            f"repo's own trunk) then the literal {_DEFAULT_BASE_BRANCH!r} "
+            "when the genesis commit cannot be resolved (e.g. a brand-new, "
+            "not-yet-committed feature-delta). An EXPLICIT --base-branch "
+            "always overrides this resolution."
         ),
     )
     parser.add_argument(
@@ -309,11 +323,47 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_base_branch(repo_root: Path, feature_id: str, explicit: str | None) -> str:
+    """Resolve the effective ``base_branch`` for the real-diff detection path.
+
+    reuse-first-gate-branch-topology-false-positive: an EXPLICIT
+    ``--base-branch`` always wins (byte-identical to every existing caller
+    that passes one). Otherwise, tiered resolution -- reusing the SAME
+    ``des.adapters.driven.git.git_subprocess`` SSOT ``resolve_default_base_ref``
+    already consults elsewhere (``walking_skeleton_gate.py``,
+    ``dormant_seam_gate.py``), never a second algorithm:
+
+      1. The feature-delta's OWN git-genesis parent (the commit BEFORE
+         ``docs/feature/<feature_id>/feature-delta.md`` first entered
+         history) -- scopes the diff to exactly THIS feature's own commits,
+         immune to how many OTHER features have merged onto a long-lived
+         branch since it diverged.
+      2. ``resolve_default_base_ref`` (the repo's own resolved trunk) when
+         the feature-delta has no git history yet (e.g. a brand-new,
+         not-yet-committed feature-delta -- the walking-skeleton case).
+      3. The literal ``_DEFAULT_BASE_BRANCH`` ("master") when neither
+         resolves -- never a crash; the gate degrades to the pre-fix
+         behavior rather than refusing to run.
+    """
+    if explicit is not None:
+        return explicit
+    genesis = resolve_feature_genesis_base_ref(
+        repo_root, f"docs/feature/{feature_id}/feature-delta.md"
+    )
+    if genesis is not None:
+        return genesis
+    default_trunk = resolve_default_base_ref(repo_root)
+    if default_trunk is not None:
+        return default_trunk
+    return _DEFAULT_BASE_BRANCH
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the reuse-first design gate; return the verdict exit code."""
     args = _build_parser().parse_args(argv)
     feature_id = args.feature_id
     repo_root = Path(args.repo_root)
+    base_branch = _resolve_base_branch(repo_root, feature_id, args.base_branch)
 
     feature_delta_path = (
         repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
@@ -329,7 +379,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         # slice-02 real-diff path: NEW classes from git diff --name-status.
         class_components = _detect_new_components_via_git_diff(
-            repo_root, args.base_branch, args.scoped_path
+            repo_root, base_branch, args.scoped_path
         )
     justified_classes = [
         name
@@ -347,9 +397,7 @@ def main(argv: list[str] | None = None) -> int:
         else list(_DEFAULT_METHODOLOGY_PATHS)
     )
     file_components = (
-        _detect_methodology_file_components(
-            repo_root, args.base_branch, methodology_paths
-        )
+        _detect_methodology_file_components(repo_root, base_branch, methodology_paths)
         if methodology_paths and args.git_diff_source is None
         else []
     )

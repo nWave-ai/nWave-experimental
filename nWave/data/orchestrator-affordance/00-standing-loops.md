@@ -262,15 +262,22 @@ reason is a human authorisation token, not a field to fill in so the command wil
 Writing one yourself to unblock yourself is the asymmetry violation in miniature —
 controls veto, only humans authorise.
 
-**`/loop 59m` — reconcile abandoned worktrees.** Run `git worktree list`. For each
-worktree not actively owned by a live dispatch, decide: merge it back (if the work is
-done and green), remove it (if fully merged and clean, or abandoned with nothing worth
-keeping), finish its implementation now (if close and unblocked), or defer it — updating
-the backlog with why and what's left, so it is not silently lost. A worktree lingering
-with no decision recorded is the exact drift class `des verify-worktree-cleanup` exists
-to catch (⚠️ NEVER run that command without `--check-only` — see the catalog's data-loss
-warning above); deciding explicitly here is the cheap alternative to ever needing that
-tool's risky ACT mode.
+**`/loop 30m` — Sentinel worktree anti-rot triage.** The Throughput Sentinel must
+inventory `git worktree list` plus branch/head, dirty state, lock/PID evidence, owner
+receipt and recent host-log activity. A worktree is never called abandoned merely because
+it is quiet: it becomes `ABANDONED_CANDIDATE` only when those independent observations
+converge on missing live ownership/activity and unintegrated or dirty work. For every
+candidate, emit the evidence and an explicit decision request: `MERGE` (done and green),
+`RESUME` (close and owned), `DEFER` (record why/what remains), or `REMOVE` (fully merged
+and clean). The Sentinel NEVER removes anything; deletion remains human-authorized and
+must use a separate verified action. A worktree lingering with no decision recorded is
+the exact drift class `des verify-worktree-cleanup` exists to catch (⚠️ NEVER run that
+command without `--check-only` — see the catalog's data-loss warning above). The
+Sentinel also runs once at SessionStart, so a restart receives an immediate inventory;
+the host adapter schedules the next read-only pass no later than 30 minutes later while
+the session remains alive. If the Sentinel finds an unknown that could change
+parallel-safety, slicing, architecture, or feasibility, it emits a bounded `nw-spike`
+recommendation with the question and decision it can change.
 
 **`/loop 15m` — search for parallel work, never sit idle.** Do not wait passively on a
 single in-flight task. Optimize throughput with parallel swarms (cloud-bound stages fan
@@ -412,6 +419,15 @@ choose; it is not what the loop is for. If you find yourself concluding "no row 
 right now", you have answered the wrong question: the right one is "who owns this pile until
 it is empty, and have I handed it over?"
 
+**When a row closes, MOVE it — never leave it marked `[x]` inline.** A pile that only ever
+grows (pending rows plus an ever-longer tail of closed `[x]` ones) defeats the point of
+draining it: the file gets harder to read with every session instead of shrinking. The
+owner that closes a row must relocate its full line (verbatim, `resolution=` and all) out
+of `techdebt.md`/`defects.md` and into `done.md` at the repo root (create it if absent, with
+a `## From techdebt.md` / `## From defects.md` section per source file) — not leave it
+sitting inline. Only PENDING `- [ ] ...` rows belong in the working pile; `done.md` is the
+append-only record of what already closed.
+
 If `techdebt.md` has ≥1
 pending row and no drain is already running, invoke `des refactor --pile techdebt.md
 --agent-cmd '<path>/refactor_agent.py {prompt}' --max-parallel 1 < /dev/null` (ONE, not N -- see
@@ -475,7 +491,11 @@ out to be L-lane (emergent design, many consumers) gets the full per-slice DISPA
 discipline, not a forced-small hand-edit just because it started as "one bug". On success, merge the
 worktree's branch back into trunk and remove the worktree (the 59m worktree-hygiene loop
 is the backstop, not the primary mechanism — clean up as part of finishing the fix, don't
-leave it for the sweep). Note `des work-exhausted-tick` / `des bugfix-pipeline-tick` /
+leave it for the sweep). Same move-don't-mark rule as the tech-debt drain above: when the
+merge lands, relocate the closed row's full line (verbatim, `resolution=` and all) out of
+`defects.md` and into `done.md` at the repo root, under its own `## From defects.md`
+section — do not leave a `[x]`-marked row sitting inline in the working pile. Note `des
+work-exhausted-tick` / `des bugfix-pipeline-tick` /
 `des consolidation-signal-tick` already auto-fire once per SessionStart
 (`handle_session_start()`) — this loop feeds real work INTO that bookkeeping, it does not
 duplicate it. If `defects.md` has zero pending rows, this is a no-op.

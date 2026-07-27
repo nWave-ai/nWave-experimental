@@ -50,12 +50,12 @@ Reference: docs/feature/autonomous-consolidation-and-bugfix-loops/
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.driven.output.stdout_output import StdoutOutput
+from des.domain.iso_utc import parse_iso_utc
 
 
 if TYPE_CHECKING:
@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None, output: OutputPort | None = None) -> int
         output = StdoutOutput()
     args = _build_parser().parse_args(argv)
 
-    now = datetime.fromisoformat(args.now.replace("Z", "+00:00"))
+    now = parse_iso_utc(args.now)
     ledger = AtCompletionLedger(args.feature_id, Path(args.project_root))
 
     try:
@@ -135,6 +135,16 @@ def main(argv: list[str] | None = None, output: OutputPort | None = None) -> int
         output.emit_line(f"CONSOLIDATION_SIGNAL_INTAKE_REJECTED: {result.reason}")
         return 1
 
+    # Bugfix (defects.md: "consolidation-signal-tick succeeds in total
+    # silence while its refusal branch speaks"): a caller watching only this
+    # CLI's own output -- never opening the ledger -- had no way to tell
+    # ACCEPTED from ALREADY_QUEUED, or to learn the derived defect_id,
+    # unless the intake was REJECTED. Symmetric with the REJECTED line above.
+    output.emit_line(
+        f"CONSOLIDATION_SIGNAL_INTAKE_{result.decision.name}: "
+        f"signal_type={args.signal_type} signal_key={args.signal_key} "
+        f"-> defect_id={result.defect_id}"
+    )
     return 0
 
 

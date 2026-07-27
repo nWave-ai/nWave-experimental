@@ -51,6 +51,26 @@ def _silence_orchestrator_affordance(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _silence_workflow_mode_guidance(monkeypatch):
+    """Neutralize the workflow-mode SessionStart guidance line so the
+    gate-affordance-nudge stdout assertions here see ONLY the nudge output.
+
+    ``_is_an_nwave_project`` treats a ``docs/feature/<id>/feature-delta.md``
+    trace as sufficient "prior use" evidence on its own (no ``.nwave/``
+    required) -- exactly the fixture ``_write_active_feature_delta`` writes
+    for the gate-affordance scenarios here. That makes
+    ``_workflow_mode_session_guidance`` ALSO print its own
+    ``additionalContext`` JSON line, unrelated to the nudge under test,
+    turning a single-JSON-object stdout into two concatenated JSON objects.
+    """
+    monkeypatch.setattr(
+        "des.adapters.drivers.hooks.session_start_handler"
+        "._workflow_mode_session_guidance",
+        lambda cwd: None,
+    )
+
+
 def _get_build_gate_affordance_nudge():
     """Import ``build_gate_affordance_nudge``, RED-not-BROKEN (P1/P3).
 

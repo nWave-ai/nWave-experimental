@@ -209,6 +209,7 @@ class TestAT1ThroughAT4IntegrityAnomalies:
             project_id="test-project",
             step_id=target_step_id,
             task_start_time="2026-02-08T14:00:00+00:00",
+            mode="classic",
         )
         decision = service.validate(context)
 
@@ -239,6 +240,7 @@ class TestAT5EmptyStdinPassthrough:
             project_id="test-project",
             step_id="01-01",
             stop_hook_active=True,
+            mode="classic",
         )
         decision = service.validate(context)
         assert decision.action == "allow"
@@ -280,6 +282,7 @@ class TestAT7StopHookActiveEscapeHatch:
             project_id="test-project",
             step_id="01-01",
             stop_hook_active=True,
+            mode="classic",
         )
         decision = service.validate(context)
 

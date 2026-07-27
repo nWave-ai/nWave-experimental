@@ -20,6 +20,11 @@ from nwave_ai.feature_delta.domain.rules import e1_section_present, e2_columns_p
 
 WELLFORMED_TEXT = (
     "# my feature\n\n"
+    "## Wave: DIVERGE / [REF] Some Section\n\n"
+    "### [REF] Inherited commitments\n\n"
+    "| Origin | Commitment | DDD | Impact |\n"
+    "|--------|------------|-----|--------|\n"
+    "| n/a | POST /api/login | n/a | baseline |\n\n"
     "## Wave: DISCUSS / [REF] Some Section\n\n"
     "### [REF] Inherited commitments\n\n"
     "| Origin | Commitment | DDD | Impact |\n"

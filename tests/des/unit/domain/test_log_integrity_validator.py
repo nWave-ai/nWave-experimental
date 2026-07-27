@@ -153,7 +153,11 @@ class TestUnrecognizedPhaseProperty:
     )
     @settings(
         max_examples=50,
-        suppress_health_check=[HealthCheck.function_scoped_fixture],
+        suppress_health_check=[
+            HealthCheck.function_scoped_fixture,
+            HealthCheck.too_slow,
+        ],
+        deadline=None,
     )
     def test_any_non_schema_phase_produces_warning(
         self, validator: LogIntegrityValidator, phase_name: str

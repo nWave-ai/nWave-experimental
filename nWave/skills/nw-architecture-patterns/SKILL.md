@@ -196,7 +196,7 @@ The `component-manifest.yaml` is the DESIGN wave's structured component contract
 ```yaml
 unbounded-input-domains:
   - id: tree-vs-commit-file-divergence   # stable kebab-case key
-    sut: src/des/cli/reverify.py::_in_commit_at_presence  # path::symbol
+    sut: src/des/cli/_reverify_core.py::_in_commit_at_presence  # path::symbol
     domain: >
       Prose description of the unbounded input/state domain.
     why-unbounded: "one-line reason"

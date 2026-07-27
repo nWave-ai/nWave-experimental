@@ -13,7 +13,10 @@ Test Budget: 6 distinct behaviors x 2 = 12 max. Using 6 tests.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import os
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -21,8 +24,10 @@ from scripts.shared.agent_catalog import is_agent_on_disk_catalogued
 from scripts.validation.validate_catalog_completeness import main
 
 
-if TYPE_CHECKING:
-    from pathlib import Path
+#: Repo root -- three parents up from this test file
+#: (tests/build/acceptance/).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_SCRIPT = _REPO_ROOT / "scripts" / "validation" / "validate_catalog_completeness.py"
 
 
 # ---------------------------------------------------------------------------
@@ -199,3 +204,105 @@ class TestMultipleUncataloguedListed:
 
         result = main(nwave_dir)
         assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# Regression: the documented CLI invocation form must not crash
+# (validate-catalog-completeness-not-in-ci-and-documented-invocation-crashes,
+# techdebt.md)
+# ---------------------------------------------------------------------------
+
+
+def _bare_system_python() -> str | None:
+    """Locate a real bare system interpreter -- NOT this project's own venv.
+
+    This project's own `.venv` ships an editable install that copies the
+    `scripts` package straight into its `site-packages` (verified via `ls
+    .venv/lib/python3.12/site-packages/scripts`), so running the target
+    script through `sys.executable` (even with `sys.path` scrubbed) cannot
+    reproduce the defect -- `scripts` would still resolve. A genuine bare
+    system `python3` (as a `language: system` pre-commit/CI hook actually
+    uses, per the sibling `validate_yaml_files.py` module docstring) has
+    neither the venv's site-packages nor the repo root on its default
+    `sys.path`, which is the exact condition the module's own docstring
+    invocation crashes under.
+
+    `PATH` is filtered to drop any entry mentioning `.venv` before the
+    lookup, so an activated venv shell does not shadow the real system
+    interpreter.
+    """
+    filtered = os.pathsep.join(
+        part
+        for part in os.environ.get("PATH", "").split(os.pathsep)
+        if ".venv" not in part
+    )
+    return shutil.which("python3", path=filtered)
+
+
+_SYSTEM_PYTHON3 = _bare_system_python()
+
+
+def _system_python3_has_pyyaml() -> bool:
+    """Whether the resolved bare system python3 can `import yaml`.
+
+    Orthogonal to the sys.path/ModuleNotFoundError defect this test class
+    pins: PyYAML is a separate runtime dependency of
+    `scripts.shared.agent_catalog` (see its own `_ensure_yaml()`), not
+    something the bootstrap fix installs or is responsible for. A bare
+    system python3 that lacks PyYAML (e.g. a clean CI runner image, as
+    opposed to a dev machine's system Python with packages installed
+    globally) is a real, distinct environment condition -- asserting full
+    catalog-completeness output in that case would fail on the wrong axis.
+    """
+    if _SYSTEM_PYTHON3 is None:
+        return False
+    result = subprocess.run(
+        [_SYSTEM_PYTHON3, "-c", "import yaml"],
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
+_SYSTEM_PYTHON3_HAS_PYYAML = _system_python3_has_pyyaml()
+
+
+@pytest.mark.skipif(
+    _SYSTEM_PYTHON3 is None,
+    reason="no bare system python3 found outside this project's venv",
+)
+class TestDocumentedCliInvocationDoesNotCrash:
+    """The module's own docstring instructs `python .../validate_catalog_
+    completeness.py [nwave-dir]` -- invoked as a bare script, not `python -m
+    scripts.validation...`. That form used to crash with
+    `ModuleNotFoundError: No module named 'scripts'` because the absolute
+    `from scripts.shared...` import requires the repo root on `sys.path`,
+    which a bare script invocation never provides on its own.
+    """
+
+    def _run_as_bare_script(self) -> subprocess.CompletedProcess[str]:
+        assert _SYSTEM_PYTHON3 is not None
+        return subprocess.run(
+            [_SYSTEM_PYTHON3, str(_SCRIPT)],
+            capture_output=True,
+            text=True,
+            cwd=str(_REPO_ROOT),
+        )
+
+    def test_bare_script_invocation_does_not_raise_module_not_found(self) -> None:
+        result = self._run_as_bare_script()
+
+        assert "ModuleNotFoundError" not in result.stderr
+        assert result.returncode in (0, 1)
+
+    @pytest.mark.skipif(
+        not _SYSTEM_PYTHON3_HAS_PYYAML,
+        reason=(
+            "bare system python3 lacks PyYAML, a separate dependency of "
+            "scripts.shared.agent_catalog -- unrelated to the sys.path "
+            "bootstrap this test class pins"
+        ),
+    )
+    def test_bare_script_invocation_reports_catalog_completeness(self) -> None:
+        result = self._run_as_bare_script()
+
+        assert "Catalog completeness:" in result.stdout

@@ -194,7 +194,9 @@ BULK_HASHES = {
     "nw-agent-testing": "58093930e354b85b07be5fe0a08fc4ed",
     "nw-ai-workflow-tutorials": "93e15d83c8b2042102785dff4c677bb7",
     "nw-architectural-styles-tradeoffs": "f6dc4a1e0f1ac40d9d1dd0d25d9c90f4",
-    "nw-architecture-patterns": "96b7c923612a4b44b805a5743d244b55",
+    # Hash updated 2026-07-27: fixed a component-manifest example citing a
+    # nonexistent src/des/cli/reverify.py path (techdebt drain).
+    "nw-architecture-patterns": "bbd7e6b51907f4e64ca5884e5c2cac66",
     "nw-assessment-kirkpatrick": "abaecd7a3e1d040b4a4b53971e1716d8",
     "nw-authoritative-sources": "29aa67bf5e4dd89382504767654ed6a4",
     "nw-backward-design-ubd": "8e88399482057722474748531482667f",
@@ -274,9 +276,11 @@ BULK_HASHES = {
     "nw-diverger-review-criteria": "1049555d0db9de4d8b8a1e0405ca6595",
     "nw-divio-framework": "5910a36f15a07940f874474302065e0c",
     "nw-domain-driven-design": "d3afa990b8d65675d17015c41bed49e3",
-    # Updated 2026-06-04: nw-dor-validation dor-items-ssot slice-03 — separate
+    # Updated 2026-07-27: Item 9 wording synced with nw-product-owner.md's
+    # baseline clause (techdebt.md: dor-items-yaml-cites-a-stale-line-range).
+    # Previously updated 2026-06-04 for dor-items-ssot slice-03 — separate
     # hard-gate section (job-traceability above the nine, not item ten).
-    "nw-dor-validation": "47e471a9dcf99e82646427bb69b35a87",
+    "nw-dor-validation": "4ab5e42a159eee9b90a2e0cb5f29fdec",
     "nw-dossier-templates": "1a9c49a2f61fccff22c828260e3026b3",
     "nw-entity-resolution": "4e84222a5674af4765809ba03800696c",
     "nw-fisher-ury-preparation": "62edcbc7f0f7598821cbeca3b440e9a2",

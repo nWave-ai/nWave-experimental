@@ -80,14 +80,23 @@ class GitCommittedScopeAdapter(CommittedScopePort):
         before reaching here, so git is established. ``git ls-tree`` exiting
         non-zero -- the path is not a work-tree, or the commit was raced/GC'd
         between resolution and listing -- yields ``Indeterminate``: the gate
-        degrades LOUD rather than fingerprint a tree it cannot list.
+        degrades LOUD rather than fingerprint a tree it cannot list. The
+        upstream "git is established" assumption is a caller convention, not
+        a guarantee this adapter may rely on: if it is ever wrong (``git``
+        missing from PATH, or another OS-level spawn failure), this adapter
+        degrades to the same ``Indeterminate`` itself rather than let an
+        uncaught ``OSError``/``SubprocessError`` crash the gate with a
+        traceback.
         """
-        result = subprocess.run(
-            ["git", "ls-tree", "-r", "--name-only", commit],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                ["git", "ls-tree", "-r", "--name-only", commit],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return Indeterminate(f"git ls-tree could not be run: {exc}")
         if result.returncode != 0:
             return Indeterminate(
                 f"git ls-tree failed (exit {result.returncode}): "

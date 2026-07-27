@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import uuid
 from pathlib import Path
 
 from des._internal import subset_parser
@@ -830,9 +831,11 @@ def _section_body(
         "AGENT_IDENTITY": f"Agent: {agent}\n",
         "SKILL_LOADING": _skill_loading_body(agent),
         "TASK_CONTEXT": (
-            f"Slice {slice_id} of feature {feature_id}.\n"
-            if runs_tests
-            else f"Wave {wave} for feature {feature_id} (scope: {slice_id}).\n"
+            (
+                f"Slice {slice_id} of feature {feature_id}.\n"
+                if runs_tests
+                else f"Wave {wave} for feature {feature_id} (scope: {slice_id}).\n"
+            )
             + (f"{intent}\n" if intent else "")
         ),
         "DESIGN_CONTEXT": _design_context_body(
@@ -951,6 +954,7 @@ def _build_prompt(
         marker("DES-VALIDATION", "required"),
         marker("DES-PROJECT-ID", feature_id),
         marker("DES-MODE", "atdd_pure"),
+        marker("DES-CAUSAL-ID", uuid.uuid4().hex),
     ]
     if declared_project_root is not None:
         marker_lines.append(marker("DES-PROJECT-ROOT", str(declared_project_root)))
@@ -1026,7 +1030,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "The ATDDPurePhase this dispatch executes. Required UNLESS "
             f"--lane is one of the phaseless cross-wave-child lanes "
-            f"({', '.join(sorted(PHASELESS_LANES))})."
+            f"({', '.join(sorted(PHASELESS_LANES))}), or --wave names an "
+            "authoring wave "
+            f"({', '.join(sorted(w for w, p in WAVE_DISPATCH_PROFILES.items() if not p.runs_tests))}) "
+            "-- neither runs one of the 3 canonical DELIVER phases."
         ),
     )
     parser.add_argument(

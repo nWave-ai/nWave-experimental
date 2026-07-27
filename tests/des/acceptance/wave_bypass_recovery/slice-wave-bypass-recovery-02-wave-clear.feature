@@ -64,6 +64,7 @@ Feature: A maintainer clears a stale wave floor through one sanctioned command
     When the maintainer runs the sanctioned wave-clear command
     Then the wave-clear command exits with the NOOP_SUCCESS outcome
     And the clear writes a wave-floor audit record
+    And the no-op message names the inspected project root
 
   @slice-02 @driving_port @real-io @us-sanctioned-clear @error @contract-shape:bounded-change
   Scenario: Clearing a corrupt floor degrades loud instead of fabricating success

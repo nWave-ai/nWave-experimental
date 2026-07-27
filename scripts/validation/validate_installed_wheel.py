@@ -17,6 +17,7 @@ Usage:
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -175,12 +176,36 @@ def check_module_runnable(
     )
 
 
-def check_no_src_imports(site_packages: Path, package_name: str) -> CheckResult:
-    """Check that no files in the installed package contain 'src.des' imports.
+def _file_imports_banned_src_des(tree: ast.AST) -> list[str]:
+    """Real ``ast.Import``/``ast.ImportFrom`` nodes naming ``src.des``, as
+    rendered strings for the offending-files report -- never a text scan."""
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "src.des" or alias.name.startswith("src.des."):
+                    offenders.append(f"line {node.lineno}: import {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if node.level == 0 and (
+                module == "src.des" or module.startswith("src.des.")
+            ):
+                offenders.append(f"line {node.lineno}: from {module} import ...")
+    return offenders
 
-    Scans all .py files in site_packages/<package_name>/ for occurrences of
-    'from src.des' or 'import src.des'. Returns a CheckResult with any
-    offending files listed in the message.
+
+def check_no_src_imports(site_packages: Path, package_name: str) -> CheckResult:
+    """Check that no files in the installed package IMPORT ``src.des``.
+
+    Parses every ``.py`` file in ``site_packages/<package_name>/`` with
+    ``ast.parse`` and inspects the real ``ast.Import``/``ast.ImportFrom``
+    nodes -- never a raw substring scan over file text, which false-positives
+    on a docstring/comment merely QUOTING or discussing the banned import
+    path (e.g. a migration note reading "we used to import from src.des
+    directly"). A file that fails to parse is reported as a FAILURE citing
+    the file and the parse error -- never silently skipped -- since an
+    unparseable file is a fact this check cannot verify, not a fact that
+    passes.
     """
     package_dir = site_packages / package_name
     if not package_dir.exists():
@@ -194,24 +219,34 @@ def check_no_src_imports(site_packages: Path, package_name: str) -> CheckResult:
     for py_file in package_dir.rglob("*.py"):
         try:
             content = py_file.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        except OSError as exc:
+            relative_path = py_file.relative_to(site_packages)
+            offending_files.append(f"{relative_path}: COULD NOT READ ({exc})")
             continue
 
-        for line_number, line in enumerate(content.splitlines(), start=1):
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                continue
-            if "from src.des" in line or "import src.des" in line:
-                relative_path = py_file.relative_to(site_packages)
-                offending_files.append(f"{relative_path}:{line_number}: {stripped}")
+        try:
+            tree = ast.parse(content, filename=str(py_file))
+        except SyntaxError as exc:
+            relative_path = py_file.relative_to(site_packages)
+            offending_files.append(
+                f"{relative_path}: COULD NOT PARSE ({exc}) -- cannot verify, "
+                "treated as a failure rather than a silent pass"
+            )
+            continue
+
+        relative_path = py_file.relative_to(site_packages)
+        offending_files.extend(
+            f"{relative_path}:{offender}"
+            for offender in _file_imports_banned_src_des(tree)
+        )
 
     if offending_files:
         return CheckResult(
             check_name=f"no_src_imports:{package_name}",
             passed=False,
             message=(
-                f"Found {len(offending_files)} src.des import(s):\n"
-                + "\n".join(f"  {f}" for f in offending_files)
+                f"Found {len(offending_files)} src.des import(s) or "
+                "unverifiable file(s):\n" + "\n".join(f"  {f}" for f in offending_files)
             ),
         )
     return CheckResult(

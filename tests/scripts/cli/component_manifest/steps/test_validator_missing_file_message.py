@@ -157,10 +157,20 @@ def test_missing_manifest_path_emits_what_why_how(tmp_path: Path) -> None:
     # report: the real cause is almost always resolution against the wrong
     # tree, and no message names it today.
     assert str(wrong_root) in message, (
-        "the diagnostic must name the RESOLVED REPO ROOT the CLI actually "
+        "the diagnostic must name the RESOLVED DIRECTORY the CLI actually "
         "used to interpret the path -- this is the missing piece that "
         "would let an operator recognise a cross-worktree resolution "
         f"mistake: expected {wrong_root!s} to appear in stderr:\n{message}"
+    )
+
+    # The label attached to the resolved directory must not overclaim:
+    # nothing here verifies that directory is actually a repository root,
+    # so it must not be labelled "repo root" -- only that it is the
+    # current working directory the path was resolved against.
+    assert "resolved against repo root" not in message, (
+        "the diagnostic must not label the unverified resolved directory "
+        "as a 'repo root' -- it is only the current working directory: "
+        f"stderr:\n{message}"
     )
 
 

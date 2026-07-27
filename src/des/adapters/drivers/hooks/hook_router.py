@@ -9,6 +9,7 @@ Entry point: python3 -m des.adapters.drivers.hooks.claude_code_hook_adapter <com
 import io
 import json
 import sys
+from argparse import ArgumentParser
 from dataclasses import asdict
 from pathlib import Path
 
@@ -19,10 +20,36 @@ from des.adapters.drivers.hooks.pre_tool_use_handler import handle_pre_tool_use
 from des.adapters.drivers.hooks.pre_write_handler import handle_pre_write
 from des.adapters.drivers.hooks.session_start_handler import handle_session_start
 from des.adapters.drivers.hooks.subagent_start_handler import handle_subagent_start
-from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
+from des.adapters.drivers.hooks.subagent_stop_handler import (
+    extract_des_context_from_transcript,
+    handle_subagent_stop,
+)
 from des.adapters.drivers.hooks.user_prompt_submit_handler import (
     handle_user_prompt_submit,
 )
+
+
+def _session_start_host_provenance(arguments: list[str]) -> str | None:
+    """Accept only the installer-owned Codex provenance argument."""
+    parser = ArgumentParser(add_help=False)
+    parser.add_argument("--host-provenance")
+    parsed, unknown = parser.parse_known_args(arguments)
+    if unknown or parsed.host_provenance != "codex":
+        return None
+    return "codex"
+
+
+def _is_atdd_pure_subagent_stop(stdin_text: str) -> bool:
+    """Whether an inactive stop return still needs DES causal projection."""
+    try:
+        envelope = json.loads(stdin_text)
+        transcript_path = envelope.get("agent_transcript_path")
+    except (json.JSONDecodeError, AttributeError):
+        return False
+    if not isinstance(transcript_path, str):
+        return False
+    context = extract_des_context_from_transcript(transcript_path)
+    return context is not None and context.get("mode") == "atdd_pure"
 
 
 def main() -> None:
@@ -75,7 +102,14 @@ def main() -> None:
         except (json.JSONDecodeError, OSError, ValueError):
             pass
 
-    reinjected = apply_gate(command, buffered_stdin)
+    # A valid atdd_pure return is an evidence boundary even in a clean
+    # temporary project.  Classic returns retain the activation gate, so an
+    # inactive classic SubagentStop remains byte-for-byte gated as before.
+    reinjected = (
+        buffered_stdin
+        if command == "subagent-stop" and _is_atdd_pure_subagent_stop(buffered_stdin)
+        else apply_gate(command, buffered_stdin)
+    )
     sys.stdin = io.StringIO(reinjected if reinjected is not None else buffered_stdin)
 
     if command in ("pre-tool-use", "pre-task"):
@@ -90,7 +124,9 @@ def main() -> None:
     elif command in ("pre-write", "pre-edit"):
         exit_code = handle_pre_write()
     elif command == "session-start":
-        exit_code = handle_session_start()
+        exit_code = handle_session_start(
+            host_provenance=_session_start_host_provenance(sys.argv[2:])
+        )
     elif command == "subagent-start":
         exit_code = handle_subagent_start()
     elif command == "user-prompt-submit":

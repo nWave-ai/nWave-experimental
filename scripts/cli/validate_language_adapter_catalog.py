@@ -295,6 +295,7 @@ _PORT_REALIZATION_GAP_PREFIX = (
 _PORT_REALIZATION_LOUD_PREFIX = (
     "language-adapter port-realization gate is indeterminate"
 )
+_PORT_REALIZATION_USAGE_PREFIX = "language-adapter port-realization gate refuses"
 
 _CHECK_PORT_REALIZATION_FLAG = "--check-port-realization"
 
@@ -372,6 +373,36 @@ def _parse_plugin_flags(args: list[str]) -> tuple[EntryPoint, ...] | None:
         EntryPoint(name=target, value=target, group="nwave.lang.adapter")
         for target in targets
     )
+
+
+def _unrecognized_port_realization_args(args: list[str]) -> list[str]:
+    """Args left over after consuming every ``--plugin <target>`` pair.
+
+    Bugfix (defect: check-port-realization-silently-ignores-positional-
+    catalog-arg, GDP-6): ``--check-port-realization`` recognizes ONLY
+    repeatable ``--plugin <target>`` flags -- this mode reads the live
+    ``nwave.lang.adapter`` registry (or the named ``--plugin`` targets),
+    never a catalog file. Before this fix a stray positional argument (most
+    commonly an operator habitually appending ``catalog.yaml``, as every
+    other mode of this CLI expects) was silently accepted and thrown away --
+    the gate ran anyway, over the live registry, giving no signal that the
+    argument was ignored. Mirrors ``_parse_plugin_flags``'s own pairing logic
+    exactly so the two functions can never disagree on what counts as
+    "consumed".
+    """
+    unrecognized: list[str] = []
+    index = 0
+    while index < len(args):
+        if args[index] == "--plugin":
+            if index + 1 < len(args):
+                index += 2
+                continue
+            unrecognized.append(args[index])
+            index += 1
+            continue
+        unrecognized.append(args[index])
+        index += 1
+    return unrecognized
 
 
 def _display_path(file_path: str) -> str:
@@ -561,7 +592,23 @@ def main(argv: list[str] | None = None) -> int:
     if args[0] == "--check-conformance":
         return run_conformance_gate()
     if args[0] == _CHECK_PORT_REALIZATION_FLAG:
-        discovery_source = _parse_plugin_flags(args[1:])
+        remainder = args[1:]
+        unrecognized = _unrecognized_port_realization_args(remainder)
+        if unrecognized:
+            print(
+                f"{_PORT_REALIZATION_USAGE_PREFIX}: unrecognized argument(s) "
+                f"{unrecognized!r}. WHAT: "
+                f"{_CHECK_PORT_REALIZATION_FLAG} takes ONLY repeatable "
+                "--plugin <module>:<Class> flags -- it reads the live "
+                "nwave.lang.adapter registry (or the named --plugin targets), "
+                "never a catalog file path; WHY: a bare positional argument "
+                "here was previously silently ignored (GDP-6); HOW: drop the "
+                "stray argument, or target a specific plugin with "
+                "--plugin <module>:<Class>.",
+                file=sys.stderr,
+            )
+            return 2
+        discovery_source = _parse_plugin_flags(remainder)
         return run_port_realization_gate(discovery_source)
     return validate_catalog(Path(args[0]))
 

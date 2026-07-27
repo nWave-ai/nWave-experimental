@@ -610,26 +610,20 @@ def _run_feature_end_member_cycle(
     """
     ledger = AtCompletionLedger(feature_id, repo_root)
 
-    # ROOT FIX (adversarial swarm 2026-06-29): refuse to seal a TRUNCATED feature
-    # BEFORE running the gates (fail-fast). A Slice-Plan slice declared but never
-    # delivered (no `.feature` / no attested prose) means the feature-end cycle
-    # was DECOUPLED from verify-integrity's truncation oracle -- it could emit a
-    # FeatureEnd record that `des verify-integrity` then REJECTS (the swarm proved
-    # P1+P2 were sealed-but-truncated theater-seals). Run the SAME un-gameable
-    # oracle here, fail-closed (no record emitted), so the seal and its integrity
-    # check can no longer disagree.
-    from des.cli.verify_deliver_integrity import _undelivered_slice_plan_slices
-
-    undelivered = _undelivered_slice_plan_slices(repo_root, feature_id)
-    if undelivered:
-        return CycleRefusal(
-            f"cannot seal {feature_id!r}: its Slice-Plan declares "
-            f"{sorted(undelivered)} with no delivered acceptance-test (.feature) "
-            "file or attested prose -- the feature is TRUNCATED. Deliver or "
-            "reconcile the missing slice(s) before the feature-end seal "
-            "(verify-integrity parity: the seal must not emit a record its own "
-            "integrity check would reject)."
-        )
+    # ROOT FIX (adversarial swarm 2026-06-29): a TRUNCATED feature (a Slice-Plan
+    # slice declared but never delivered -- no `.feature` / no attested prose)
+    # must never be sealed, so `des verify-integrity` cannot later reject a
+    # record this cycle just emitted (the swarm proved P1+P2 were
+    # sealed-but-truncated theater-seals). The un-gameable oracle for this,
+    # `_undelivered_slice_plan_slices`, is run ONCE per batch member, in
+    # `feature_end_batch_service._check_slice_commit_verified` -- the D-5
+    # batch-eligibility precheck that runs BEFORE the (expensive) shared
+    # full-suite leg, for every member including this one (GDP-1: fail fast,
+    # before effort is spent). This function's sole production caller,
+    # `run_feature_end_batch`'s member loop, is only ever reached AFTER that
+    # precheck has already passed for `feature_id` -- re-running the identical
+    # oracle here was unreachable duplicate work (SSOT/DRY:
+    # duplicate-truncated-slice-plan-check), removed 2026-07-27.
 
     walking_skeleton = _run_walking_skeleton_gate(
         repo_root=repo_root, feature_dir=feature_dir
@@ -1527,7 +1521,7 @@ def _run_doc_coherence_gate(
             )
         )
     if completed.returncode == 1:
-        return DocCoherenceLegWarned(_gate_diagnostic(completed))
+        return DocCoherenceLegWarned(_advisory_diagnostic(_gate_diagnostic(completed)))
     if completed.returncode != 0:
         return _gate_failure_refusal("the feature-end doc-coherence gate", completed)
     return DocCoherenceLegRan()
@@ -1979,6 +1973,26 @@ def _gate_diagnostic(completed: subprocess.CompletedProcess[str]) -> str:
     stderr = _strip_runtime_event_lines(completed.stderr)
     return (stderr.strip() or completed.stdout.strip()) or (
         f"gate exited {completed.returncode} with no diagnostic"
+    )
+
+
+def _advisory_diagnostic(diagnostic: str) -> str:
+    """Re-frame a gate's own REFUSAL wording for a leg the cycle treats as ADVISORY.
+
+    The doc-coherence gate is a standalone command: at exit 1 it legitimately
+    announces ``DocCoherenceRefused`` and prints a ``REFUSED`` banner, because
+    run on its own that IS its verdict. The feature-end cycle reinterprets that
+    same exit as advisory and PROCEEDS -- so the caller that changes the meaning
+    owns the relabel, rather than the gate weakening its own standalone verdict.
+
+    The substantive finding (which claims are false, and how many) is preserved
+    verbatim: an advisory record that dropped the diagnostic would trade a
+    self-contradicting record for an empty one.
+    """
+    return "ADVISORY (doc-coherence warned; the cycle PROCEEDS) -- " + (
+        diagnostic.replace("DocCoherenceRefused", "DocCoherenceWarned").replace(
+            "REFUSED", "WARNED"
+        )
     )
 
 

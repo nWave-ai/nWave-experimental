@@ -153,3 +153,97 @@ def test_gate_run_suite_on_pytest_theater_target_still_flags(
     assert exit_code == 1
     event = _last_json_event(capsys.readouterr().out)
     assert event["event"] == "CoverageOnExecutedPathFlagged"
+
+
+# ---------------------------------------------------------------------------
+# Regression for techdebt row
+# suite-covers-production-lines-decides-on-an-import-substring-not-an-import:
+# the lever used a raw ``"import des" in text`` substring scan, wrong in both
+# directions, and silently `continue`d past unparseable files (read as "no
+# production coverage" instead of "could not verify"). Fixed to AST-parse and
+# check the real import nodes' dotted module head.
+# ---------------------------------------------------------------------------
+
+
+def test_module_merely_named_like_des_does_not_false_positive_coverage(
+    tmp_path: Path,
+) -> None:
+    """``import destroyer`` must NOT satisfy the `import des` production check.
+
+    Proven false positive of the old substring scan: ``'import des' in 'import
+    destroyer'`` is True. A workspace whose only test imports an unrelated
+    module merely starting with 'des' covers zero `des` production lines and
+    must still flag as theater.
+    """
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_unrelated_module.py").write_text(
+        "import destroyer\n\ndef test_x():\n    assert destroyer\n",
+        encoding="utf-8",
+    )
+
+    lever = check_coverage_on_executed_path(tmp_path, runner="pytest")
+
+    assert lever.flagged is True, (
+        "importing a module merely NAMED like 'des' (e.g. 'destroyer') must "
+        "not be mistaken for a real `des` production import"
+    )
+
+
+def test_docstring_quoting_the_banned_phrase_does_not_false_positive_coverage(
+    tmp_path: Path,
+) -> None:
+    """A comment/docstring merely QUOTING 'from des' must not count as coverage.
+
+    Proven false positive of the old substring scan: the phrase can appear
+    inside prose (e.g. a migration note) with no real import anywhere in the
+    file.
+    """
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_prose_only.py").write_text(
+        '"""We used to import from des directly; now we do not."""\n\n'
+        "def test_x():\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    lever = check_coverage_on_executed_path(tmp_path, runner="pytest")
+
+    assert lever.flagged is True, (
+        "a docstring merely quoting the phrase 'from des' is not a real "
+        "import and must not clear the theater flag"
+    )
+
+
+def test_unparseable_test_file_clears_indeterminate_not_theater(
+    tmp_path: Path,
+) -> None:
+    """A test file with a SyntaxError must degrade INDETERMINATE, never a
+    silent false-theater flag (GDP-6: no silent-wrong).
+    """
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_broken.py").write_text(
+        "def test_x(:\n    this is not valid python\n", encoding="utf-8"
+    )
+
+    lever = check_coverage_on_executed_path(tmp_path, runner="pytest")
+
+    assert lever.flagged is False, (
+        "an unparseable test file must not be mistaken for confirmed theater"
+    )
+    assert lever.structured_event == (
+        "health.gate.coverage-on-executed-path.parse-error.indeterminate"
+    )
+    assert "test_broken.py" in lever.remediation
+
+
+def test_import_with_alias_still_counts_as_real_coverage(tmp_path: Path) -> None:
+    """``import des.cli.foo as f`` (aliased) must count as real coverage."""
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_aliased_import.py").write_text(
+        "import des.cli.axis_b_levers as levers\n\n"
+        "def test_x():\n    assert levers is not None\n",
+        encoding="utf-8",
+    )
+
+    lever = check_coverage_on_executed_path(tmp_path, runner="pytest")
+
+    assert lever.flagged is False

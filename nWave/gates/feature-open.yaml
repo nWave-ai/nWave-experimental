@@ -1,0 +1,65 @@
+# Gate-contract: feature-open (feature-context-bootstrap feature)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=feature-open.
+
+gate_id: feature-open
+responsibility: |
+  Create one evidence-aware initial feature context. Renders a bootstrap
+  `feature-delta.md` from a declared feature-id and intent, refusing to
+  overwrite an existing feature-delta for the same feature-id
+  (feature-context-conflict). With `--adopt-wip`/`--adopt-root`, inventories
+  an existing repository-relative WIP directory (path + sha256 + UNKNOWN test
+  status per file) into the bootstrap record instead of starting empty.
+  Emits a `FeatureContextReceipt` naming the written feature-delta and the
+  canonical next step (`/nw-discuss`).
+module: des.cli.feature_open
+entry_function: main
+language_neutral_contract: true
+
+cli_args:
+  - name: --feature-id
+    required: true
+    type: string
+    help: "The feature id to open an initial feature context for."
+  - name: --intent
+    required: true
+    type: string
+    help: "Non-empty free-text statement of what the feature is for."
+  - name: --repo
+    required: false
+    type: path
+    help: "Path to the project root (default: current directory)."
+    default: "."
+  - name: --adopt-wip
+    required: false
+    type: bool
+    help: "Inventory an existing WIP directory (--adopt-root) into the bootstrap record instead of starting OPEN/empty."
+    default: false
+  - name: --adopt-root
+    required: false
+    type: path
+    help: "Repository-relative directory to inventory when --adopt-wip is set; required together with --adopt-wip."
+
+log_events:
+  - FeatureContextReceipt
+
+failure_modes:
+  - error_class: UsageError
+    exit_code: 2
+    remediation: "Provide both --feature-id and a non-empty --intent; see `des feature-open --help`."
+  - error_class: ValueError
+    exit_code: 1
+    remediation: "Supply --adopt-wip and --adopt-root together, and ensure --adopt-root names an existing repository-relative directory."
+  - error_class: FeatureContextConflict
+    exit_code: 1
+    remediation: "A feature-delta already exists for this --feature-id; choose a different feature-id or edit the existing feature-delta.md directly."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

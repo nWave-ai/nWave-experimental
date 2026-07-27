@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from des.application.loop_runner import (
@@ -125,6 +127,85 @@ class StandingLoopFacade:
 
     def list(self, project_root: Any) -> tuple[Any, ...]:
         return self._control.list(project_root)
+
+    def offer_for_session_start(
+        self, project_root: Any
+    ) -> StandingLoopInspection | None:
+        """Return the armed project's bounded opportunity without executing it."""
+        records = self._control.list(project_root)
+        armed = next(
+            (
+                record
+                for record in records
+                if record.desired_state == "ARMED" and record.due_at <= time.time()
+            ),
+            None,
+        )
+        if armed is None:
+            return None
+        return StandingLoopInspection(
+            outcome=armed.outcome,
+            context_mode="reconstructed",
+            limits=dict(armed.limits),
+        )
+
+    def execute_for_session_start(
+        self, project_root: Any
+    ) -> tuple[StandingLoopInspection, Any] | None:
+        """Execute one due record through the canonical tick boundary."""
+        records = self._control.list(project_root)
+        attested_occurrences = {
+            payload.get("occurrence_key")
+            for payload in self._control.attestation_payloads(project_root)
+        }
+
+        def has_attestation(record: Any) -> bool:
+            return f"codex-session-start:{record.loop_id}" in attested_occurrences
+
+        fresh_due = next(
+            (
+                record
+                for record in records
+                if record.due_at <= time.time()
+                and record.desired_state == "ARMED"
+                and not has_attestation(record)
+            ),
+            None,
+        )
+        terminal_replay = next(
+            (
+                record
+                for record in records
+                if record.due_at <= time.time()
+                and record.desired_state == "STOPPED"
+                and has_attestation(record)
+            ),
+            None,
+        )
+        armed = (
+            fresh_due
+            or terminal_replay
+            or next(
+                (
+                    record
+                    for record in records
+                    if record.due_at <= time.time() and has_attestation(record)
+                ),
+                None,
+            )
+        )
+        if armed is None:
+            return None
+        inspection = StandingLoopInspection(
+            outcome=armed.outcome,
+            context_mode="reconstructed",
+            limits=dict(armed.limits),
+        )
+        occurrence = SimpleNamespace(
+            loop_id=armed.loop_id,
+            idempotency_key=f"codex-session-start:{armed.loop_id}",
+        )
+        return inspection, self.manual_tick(project_root, occurrence)
 
     def manual_tick(self, project_root: Any, occurrence: Any) -> Any:
         inputs = self._control.execution_inputs(project_root, occurrence)

@@ -52,12 +52,21 @@ def _deliver_prompt(
     phases: tuple[str, ...], project_id: str = "issue-65", step_id: str = "01-01"
 ) -> str:
     """A complete, marked DES DELIVER prompt whose TDD_PHASES *and* embedded
-    execution log use *phases* — so the per-log canon dispatch is exercised."""
+    execution log use *phases* — so the per-log canon dispatch is exercised.
+
+    Carries an explicit atdd_pure mode marker triplet (DES-MODE + DES-PHASE +
+    DES-SLICE) alongside the classic DES-PROJECT-ID/DES-STEP-ID markers --
+    PreToolUseService Step 4b treats a missing DES-MODE as
+    DISPATCH_MODE_UNRESOLVED rather than a legacy classic fallback (T-C /
+    F-DES-ATDD-PURE-DISPATCH-LIFECYCLE)."""
     tdd_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(phases, 1))
     log_lines = "\n".join(f"Phase {p}: status=EXECUTED, outcome=PASS" for p in phases)
     return f"""<!-- DES-VALIDATION : required -->
 <!-- DES-PROJECT-ID : {project_id} -->
 <!-- DES-STEP-ID : {step_id} -->
+<!-- DES-MODE : atdd_pure -->
+<!-- DES-PHASE : A_GREEN_ATS -->
+<!-- DES-SLICE : slice-01 -->
 
 # DES_METADATA
 Project: {project_id}

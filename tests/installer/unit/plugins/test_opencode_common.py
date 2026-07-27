@@ -5,13 +5,19 @@ Tests validate that:
 - parse_frontmatter() handles malformed YAML without crashing
 - parse_frontmatter() still works correctly for valid frontmatter
 - render_frontmatter() produces valid YAML frontmatter strings
+- opencode_config_dir() resolves OPENCODE_CONFIG_DIR-override-or-default,
+  and all four OpenCode plugins (des/skills/agents/commands) delegate to
+  it instead of each re-implementing the resolution
 
 CRITICAL: These tests cover BLOCKER-level fixes -- parse_frontmatter must
 never raise on malformed input. Graceful degradation to ({}, content) is
 the correct behavior since the caller's install() wraps in try/except.
 """
 
+from pathlib import Path
+
 from scripts.install.plugins.opencode_common import (
+    opencode_config_dir,
     parse_frontmatter,
     render_frontmatter,
 )
@@ -152,3 +158,66 @@ class TestRenderFrontmatter:
         parsed, _body = parse_frontmatter(rendered)
 
         assert parsed == original
+
+
+class TestOpencodeConfigDir:
+    """opencode_config_dir() -- the single OPENCODE_CONFIG_DIR-override-or-
+    default resolution shared by all four OpenCode plugins (previously
+    copied verbatim into each: opencode_des_plugin, opencode_skills_plugin,
+    opencode_agents_plugin, opencode_commands_plugin -- techdebt row
+    opencode-config-dir-resolution-duplicated-across-four-plugins).
+    """
+
+    def test_uses_env_override_when_set(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path / "custom-opencode"))
+
+        result = opencode_config_dir()
+
+        assert result == tmp_path / "custom-opencode"
+
+    def test_defaults_to_home_config_opencode_when_unset(self, monkeypatch):
+        monkeypatch.delenv("OPENCODE_CONFIG_DIR", raising=False)
+
+        result = opencode_config_dir()
+
+        assert result == Path.home() / ".config" / "opencode"
+
+
+class TestFourPluginsDelegateToTheSharedResolver:
+    """Each plugin's own `_opencode_*_dir()` must be a THIN delegate to
+    `opencode_config_dir()`, not a re-implementation -- proven by
+    monkeypatching the shared function to a sentinel and observing every
+    plugin surface it, not merely agree by coincidence.
+    """
+
+    def test_des_plugin_delegates(self, monkeypatch):
+        import scripts.install.plugins.opencode_des_plugin as des_plugin
+
+        sentinel = Path("/sentinel/opencode-config-dir")
+        monkeypatch.setattr(des_plugin, "opencode_config_dir", lambda: sentinel)
+
+        assert des_plugin._opencode_config_dir() == sentinel
+
+    def test_skills_plugin_delegates(self, monkeypatch):
+        import scripts.install.plugins.opencode_skills_plugin as skills_plugin
+
+        sentinel = Path("/sentinel/opencode-config-dir")
+        monkeypatch.setattr(skills_plugin, "opencode_config_dir", lambda: sentinel)
+
+        assert skills_plugin._opencode_skills_dir() == sentinel / "skills"
+
+    def test_agents_plugin_delegates(self, monkeypatch):
+        import scripts.install.plugins.opencode_agents_plugin as agents_plugin
+
+        sentinel = Path("/sentinel/opencode-config-dir")
+        monkeypatch.setattr(agents_plugin, "opencode_config_dir", lambda: sentinel)
+
+        assert agents_plugin._opencode_agents_dir() == sentinel / "agents"
+
+    def test_commands_plugin_delegates(self, monkeypatch):
+        import scripts.install.plugins.opencode_commands_plugin as commands_plugin
+
+        sentinel = Path("/sentinel/opencode-config-dir")
+        monkeypatch.setattr(commands_plugin, "opencode_config_dir", lambda: sentinel)
+
+        assert commands_plugin._opencode_commands_dir() == sentinel / "commands"

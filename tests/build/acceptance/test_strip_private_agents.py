@@ -18,6 +18,7 @@ Test Budget: 11 distinct behaviors x 2 = 22 max. Using 11 tests.
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 import pytest
@@ -251,11 +252,19 @@ class TestMultiOwnerSkillKept:
 
 
 class TestVerifyStripPasses:
-    """P0b-05: Post-strip verification passes when only public agents remain."""
+    """P0b-05: Post-strip verification passes when only public agents remain.
+
+    Uses ``verify_after_strip`` -- the defense-in-depth wrapper around the
+    SAME stronger check (``verify_wheel_privacy.verify``) the real release
+    pipeline runs, replacing the old dead-code ``verify_strip`` (which
+    checked agents only, was never called by ``main()``, and was weaker
+    than the check that actually gates a release). techdebt.md id
+    verify-strip-is-a-dead-weaker-unwired-duplicate-privacy-gate.
+    """
 
     def test_post_strip_verification_passes(self, tmp_path: Path) -> None:
         """Given only public agents remain after strip, verification passes."""
-        from scripts.release.strip_private_agents import strip, verify_strip
+        from scripts.release.strip_private_agents import strip, verify_after_strip
 
         target = _create_target(
             tmp_path,
@@ -269,7 +278,7 @@ class TestVerifyStripPasses:
         )
 
         strip(target)
-        errors = verify_strip(target)
+        errors = verify_after_strip(target)
         assert errors == []
 
 
@@ -285,7 +294,7 @@ class TestVerifyStripFails:
         self, tmp_path: Path
     ) -> None:
         """Given unexpected agent remains after strip, verification fails."""
-        from scripts.release.strip_private_agents import verify_strip
+        from scripts.release.strip_private_agents import verify_after_strip
 
         target = _create_target(
             tmp_path,
@@ -296,9 +305,41 @@ class TestVerifyStripFails:
         agents_dir = target / "nWave" / "agents"
         (agents_dir / "nw-rogue.md").write_text("---\nname: rogue\n---\n")
 
-        errors = verify_strip(target)
+        errors = verify_after_strip(target)
         assert len(errors) > 0
         assert any("nw-rogue.md" in e for e in errors)
+
+
+class TestMainFailsLoudlyOnResidualPrivacyViolation:
+    """CLI-level defense-in-depth: ``main()`` must call ``verify_after_strip``
+    after ``strip()`` and exit non-zero when it reports violations, instead
+    of trusting ``strip()`` silently (the old behaviour: ``main()`` called
+    ``strip(target)`` and returned, never invoking any post-strip check).
+    """
+
+    def test_main_exits_nonzero_when_verify_after_strip_reports_violations(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Given verify_after_strip reports a violation post-strip,
+        main() must sys.exit(1) rather than silently returning success.
+        """
+        import scripts.release.strip_private_agents as sut
+
+        target = _create_target(
+            tmp_path,
+            CATALOG_ALPHA_ONLY,
+            agents={"alpha": None},
+        )
+
+        monkeypatch.setattr(sys, "argv", ["strip_private_agents.py", str(target)])
+        monkeypatch.setattr(
+            sut, "verify_after_strip", lambda _target: ["private agent: nw-rogue.md"]
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            sut.main()
+
+        assert exc_info.value.code != 0
 
 
 # ---------------------------------------------------------------------------

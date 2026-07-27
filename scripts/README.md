@@ -26,8 +26,7 @@ scripts/
 ├── framework/           # Framework operations
 │   ├── create_github_tarballs.py       # GitHub Release tarball creator
 │   ├── release_validation.py          # Release error detection
-│   ├── sync_agent_names.py            # Agent name synchronization
-│   └── validate_tdd_phases_ci.py      # CI TDD phase validation
+│   └── sync_agent_names.py            # Agent name synchronization
 │
 ├── install/             # Installation system (cross-platform)
 │   ├── install_nwave.py               # Main installer
@@ -72,7 +71,6 @@ See `scripts/install/README.md` for details.
 ### Framework Operations
 
 ```bash
-python scripts/framework/validate_tdd_phases_ci.py    # CI TDD validation
 python scripts/framework/create_github_tarballs.py     # Build GitHub tarballs
 ```
 

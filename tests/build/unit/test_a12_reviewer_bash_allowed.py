@@ -150,3 +150,50 @@ def test_non_reviewer_agent_never_produces_a12_finding(tmp_path):
     findings = _a12_findings(agent_file)
 
     assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# Regression for techdebt row
+# agent-tools-frontmatter-substring-membership-check-not-exact: A12 used a
+# raw substring search (``forbidden in tools``) over the bare comma-scalar
+# frontmatter string instead of a tokenized membership check. A tool name
+# that merely CONTAINS "Write"/"Edit" as a substring (not the literal
+# granted token) must not trip A12.
+# ---------------------------------------------------------------------------
+
+
+def test_reviewer_with_tool_name_containing_edit_substring_produces_no_a12_error(
+    tmp_path,
+):
+    """A12 must not false-positive on a tool whose NAME merely contains 'Edit'.
+
+    ``mcp__wiki__SuggestEdit`` is a distinct granted token, not the literal
+    ``Edit`` mutation tool -- ``"Edit" in tools_string`` (substring) matches
+    it wrongly; ``"Edit" in tools_tokens`` (tokenized membership) does not.
+    """
+    agent_file = _write_agent(
+        tmp_path, "nw-fixture-reviewer", "Read, Glob, Grep, mcp__wiki__SuggestEdit"
+    )
+
+    findings = _a12_findings(agent_file)
+
+    assert findings == [], (
+        f"expected zero A12 findings for a tool merely containing the "
+        f"substring 'Edit', got: {findings}"
+    )
+
+
+def test_reviewer_with_bracketed_tool_list_and_edit_substring_produces_no_a12_error(
+    tmp_path,
+):
+    """Same false-positive check, for the one agent using YAML flow-list
+    brackets (parsed as an actual list by yaml.safe_load) instead of a bare
+    comma-scalar string -- both frontmatter styles must behave identically.
+    """
+    agent_file = _write_agent(
+        tmp_path, "nw-fixture-reviewer", "[Read, Glob, mcp__wiki__SuggestEdit]"
+    )
+
+    findings = _a12_findings(agent_file)
+
+    assert findings == []

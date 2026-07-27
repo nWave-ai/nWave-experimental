@@ -38,6 +38,8 @@ class CompletionResult:
         missing_phases: Phases with no event at all (abandoned)
         incomplete_phases: EXECUTED phases with invalid outcome
         invalid_skips: SKIPPED phases with invalid or blocking reason
+        invalid_statuses: Phases whose status is not in the schema's
+            valid_statuses set at all (neither EXECUTED nor SKIPPED)
         error_messages: Human-readable error descriptions
         recovery_suggestions: Actionable steps to fix failures
         error_type: Classification of the primary error
@@ -47,6 +49,7 @@ class CompletionResult:
     missing_phases: list[str] = field(default_factory=list)
     incomplete_phases: list[str] = field(default_factory=list)
     invalid_skips: list[str] = field(default_factory=list)
+    invalid_statuses: list[str] = field(default_factory=list)
     error_messages: list[str] = field(default_factory=list)
     recovery_suggestions: list[str] = field(default_factory=list)
     error_type: str | None = None
@@ -129,6 +132,7 @@ class StepCompletionValidator:
         missing_phases: list[str] = []
         incomplete_phases: list[str] = []
         invalid_skips: list[str] = []
+        invalid_statuses: list[str] = []
         error_messages: list[str] = []
         recovery_suggestions: list[str] = []
 
@@ -146,6 +150,7 @@ class StepCompletionValidator:
                 missing_phases,
                 incomplete_phases,
                 invalid_skips,
+                invalid_statuses,
                 error_messages,
             )
 
@@ -173,7 +178,11 @@ class StepCompletionValidator:
 
         # Determine overall result
         validation_failed = bool(
-            missing_phases or incomplete_phases or invalid_skips or error_messages
+            missing_phases
+            or incomplete_phases
+            or invalid_skips
+            or invalid_statuses
+            or error_messages
         )
 
         if not validation_failed:
@@ -184,6 +193,7 @@ class StepCompletionValidator:
             missing_phases,
             incomplete_phases,
             invalid_skips,
+            invalid_statuses,
         )
 
         return CompletionResult(
@@ -191,6 +201,7 @@ class StepCompletionValidator:
             missing_phases=missing_phases,
             incomplete_phases=incomplete_phases,
             invalid_skips=invalid_skips,
+            invalid_statuses=invalid_statuses,
             error_messages=error_messages,
             recovery_suggestions=recovery_suggestions,
             error_type=error_type,
@@ -203,6 +214,7 @@ class StepCompletionValidator:
         missing_phases: list[str],
         incomplete_phases: list[str],
         invalid_skips: list[str],
+        invalid_statuses: list[str],
         error_messages: list[str],
     ) -> None:
         """Validate a single phase event against TDD schema rules.
@@ -230,8 +242,12 @@ class StepCompletionValidator:
                 error_messages,
             )
 
-        # Invalid status
+        # Invalid status: not EXECUTED/SKIPPED and not any other schema-valid
+        # status either. Tracked in its own list (not just error_messages) so
+        # _classify_error_type can see it instead of falling through to the
+        # MULTIPLE_ERRORS default for what is actually a single error.
         elif status not in self._schema.valid_statuses:
+            invalid_statuses.append(phase)
             error_messages.append(
                 f"{phase}: Invalid status '{status}' "
                 f"(must be: {', '.join(self._schema.valid_statuses)})"
@@ -292,16 +308,40 @@ class StepCompletionValidator:
         missing_phases: list[str],
         incomplete_phases: list[str],
         invalid_skips: list[str],
+        invalid_statuses: list[str],
     ) -> str:
         """Classify the primary error type for reporting."""
         phases_are_missing = bool(missing_phases)
         phases_are_incomplete = bool(incomplete_phases)
         skips_are_invalid = bool(invalid_skips)
+        statuses_are_invalid = bool(invalid_statuses)
 
-        if phases_are_missing and not phases_are_incomplete and not skips_are_invalid:
+        if (
+            phases_are_missing
+            and not phases_are_incomplete
+            and not skips_are_invalid
+            and not statuses_are_invalid
+        ):
             return "ABANDONED_PHASE"
-        if phases_are_incomplete and not phases_are_missing and not skips_are_invalid:
+        if (
+            phases_are_incomplete
+            and not phases_are_missing
+            and not skips_are_invalid
+            and not statuses_are_invalid
+        ):
             return "INCOMPLETE_PHASE"
-        if skips_are_invalid and not phases_are_missing and not phases_are_incomplete:
+        if (
+            skips_are_invalid
+            and not phases_are_missing
+            and not phases_are_incomplete
+            and not statuses_are_invalid
+        ):
             return "INVALID_SKIP"
+        if (
+            statuses_are_invalid
+            and not phases_are_missing
+            and not phases_are_incomplete
+            and not skips_are_invalid
+        ):
+            return "INVALID_STATUS"
         return "MULTIPLE_ERRORS"

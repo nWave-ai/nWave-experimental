@@ -203,6 +203,7 @@ def validate_step(test_context: dict[str, Any]) -> None:
         execution_log_path="/fake/path/execution-log.json",
         project_id=test_context["feature_name"],
         step_id=test_context["step_id"],
+        mode="classic",
     )
 
     # Execute validation

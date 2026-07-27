@@ -996,7 +996,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--at-kind",
         dest="at_kind",
         default="gherkin",
-        choices=("gherkin", "pytest-regression", "native-regression"),
+        choices=(
+            "gherkin",
+            "pytest-regression",
+            "native-regression",
+            "rust-regression",
+        ),
         help=(
             "The acceptance-test kind the slice's E2 leg attests (default: "
             "gherkin, byte-identical for every existing caller). Forwarded "
@@ -1006,7 +1011,10 @@ def _build_parser() -> argparse.ArgumentParser:
             "verify_slice_commit_completeness.py for the attestation itself. "
             "'native-regression' (fix-rust-regression-at-kind-wiring) routes "
             "the Step-3 digest through the runner seam keyed on --regression-"
-            "test-file's OWN suffix, agreeing with E2's execution routing."
+            "test-file's OWN suffix, agreeing with E2's execution routing. "
+            "'rust-regression' (rust-regression-at-kind-semi-wired) is an "
+            "accepted ALIAS of 'native-regression', normalized right after "
+            "parsing -- never a second code path."
         ),
     )
     parser.add_argument(
@@ -1854,6 +1862,13 @@ def _missing_feature_id_refusal(
 def main(argv: list[str] | None = None) -> int:
     """Produce a correct-by-construction slice commit (stage->commit->amend->verify)."""
     args = _build_parser().parse_args(argv)
+    # rust-regression-at-kind-semi-wired: 'rust-regression' is a CLI-facing
+    # ALIAS of 'native-regression', normalized here (before any downstream
+    # `args.at_kind` read) so every consumer of this Namespace -- including
+    # the preflight verify_slice_commit_completeness fold-in built from THIS
+    # args object -- sees the SAME unified 'native-regression' value.
+    if args.at_kind == "rust-regression":
+        args.at_kind = "native-regression"
 
     # `--repo ""` normalizes to None (meaningful_identity) rather than
     # `Path("")`, which Python silently resolves to `.` -- i.e. a blank --repo

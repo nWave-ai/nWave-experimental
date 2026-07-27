@@ -43,7 +43,10 @@ from .domain_types import (
 
 # The single readiness item the loaded skill drops today (Item 9). Naming it
 # explicitly makes the live-hole closure the slice-02 ATs verify unmistakable.
-OUTCOME_KPIS_ITEM: str = "Outcome KPIs defined with measurable targets"
+OUTCOME_KPIS_ITEM: str = (
+    "Outcome KPIs defined with measurable targets and a stated baseline "
+    "(current-state value the target is measured against)"
+)
 
 # The stale count claim the skill carries today and must stop carrying.
 STALE_ITEM_COUNT_CLAIM: str = "8 Items"

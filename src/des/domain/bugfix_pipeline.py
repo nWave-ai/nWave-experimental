@@ -48,6 +48,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from des.domain.iso_utc import format_iso_utc
+
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -89,9 +91,14 @@ _EVENT_BY_ACTION = {
     "stage-failed": STAGE_FAILED,
 }
 
-
-def _format_ts(value: datetime) -> str:
-    return value.isoformat().replace("+00:00", "Z")
+# The full closed set of actions evaluate_and_record accepts -- the two
+# plain pass-through actions above PLUS the `claim-drained` action handled
+# separately. This is the SSOT a caller-supplied `action` is validated
+# against; the CLI's own argparse `choices=` (bugfix_pipeline_tick.py) is
+# an additional, non-exclusive guard, not the only one -- domain callers
+# such as consolidation_queue_intake.py call evaluate_and_record directly,
+# bypassing argparse entirely.
+_KNOWN_ACTIONS = frozenset({*_EVENT_BY_ACTION, "claim-drained"})
 
 
 def _current_box_lane_occupant(
@@ -149,12 +156,24 @@ def evaluate_and_record(
     recorded content only, never from caller-side bookkeeping (D-8
     no-orphan discipline).
     """
+    if action not in _KNOWN_ACTIONS:
+        raise ValueError(
+            f"action {action!r} is not a recognised bugfix-pipeline action. "
+            f"WHY: evaluate_and_record only knows how to evaluate "
+            f"{sorted(_KNOWN_ACTIONS)!r} -- any other value would otherwise "
+            "reach an unguarded dict lookup and raise a bare KeyError "
+            "instead of a self-explaining refusal (GDP-3). HOW: pass one of "
+            "the known actions, or -- if this is a genuinely new action -- "
+            "add it to _EVENT_BY_ACTION (or the claim-drained branch) in "
+            "src/des/domain/bugfix_pipeline.py."
+        )
+
     records = [
         record
         for record in ledger.read_records(feature_id=feature_id)
         if record.get("event") in _PIPELINE_EVENTS
     ]
-    timestamp = _format_ts(now)
+    timestamp = format_iso_utc(now)
 
     if action == "claim-drained":
         if _has_commit_slice_attestation(records, defect_id):

@@ -437,30 +437,45 @@ def test_p4_refuses_slice_whose_at_was_deleted_after_the_commit(
     at_deleted_after_commit_repo: tuple[Path, str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Criterion 2: an AT deleted post-commit emits `SliceReverifyRefused`.
+    """Criterion 2: an AT deleted post-commit blocks reverify at E1.
 
     The slice's `@slice-01` `.feature` once lived in the slice commit but was
-    later removed from the tree. E1 (working-tree walk) would now pass
-    vacuously -- P4, reading the commit tree, refuses with exit 1 and appends
-    NO ledger record (preconditions run before any gate).
+    later removed from the tree. P4 reads the COMMIT TREE, so it passes (the
+    commit itself DID carry the AT) and the run proceeds to gate composition.
+
+    UPDATED 2026-07-27 (stale-assertion repair, not a behavior regression):
+    this assertion previously expected E1 to pass vacuously here (`exit_code
+    == 0`, `SliceReverified`) -- that was the exact
+    F-CARPACCIO-E1-VACUOUS-BLOCKS-PREDECESSOR-DISCRIMINATION / Bug #126 hole
+    (commit 1ff12f060, 2026-07-21): `missing_at_files` now distinguishes
+    "zero AT candidates found" (`verifiable=False`, INDETERMINATE) from a
+    genuine "everything checked, nothing missing" pass. Since the `.feature`
+    no longer exists ANYWHERE in the current working tree, E1
+    (`check_slice_at_completeness`) can no longer verify anything for this
+    slice and now correctly refuses (`SliceAtCompletenessIndeterminate`,
+    exit 3) rather than silently declaring the deleted AT "complete". The
+    gate-fail path -- unlike a P4/precondition refusal -- DOES append a
+    genuine `SliceCommitBlocked` ledger record (the gate ran for real; only
+    precondition refusals run before any gate and append nothing).
     """
     repo, slice_sha = at_deleted_after_commit_repo
 
-    # P4 reads the commit tree, so the working-tree-walk vacuous pass is moot;
-    # the commit itself DID carry the AT here -- so P4 should actually PASS
-    # for this fixture and the run proceeds. The genuine zero-in-commit refusal
-    # is covered by `commit_without_at_repo` below.
     ledger = AtCompletionLedger(_FEATURE_ID, repo)
     records_before = len(ledger.read_records())
 
     exit_code = main(_argv(repo, "slice-01", slice_sha))
 
-    # The commit carried the AT -> P4 passes; the run proceeds past P4.
-    # (It then runs the gates: E1 walks the working tree, finds no .feature,
-    # reports nothing missing -> E1 passes; E2's green suite passes.)
-    assert exit_code == 0
+    # The commit carried the AT -> P4 passes; the run proceeds past P4 to E1,
+    # which can no longer verify a `.feature` deleted from the entire working
+    # tree and blocks with `SliceReverifyBlocked` (exit 1 at the CLI surface;
+    # the underlying gate-subprocess exit is 3/indeterminate, but any
+    # non-zero gate exit is a block per `_compose_gates`).
+    assert exit_code == 1
     payload = json.loads(capsys.readouterr().out.strip())
-    assert payload["event"] == "SliceReverified"
+    assert payload["event"] == "SliceReverifyBlocked"
+    assert payload["failing_gate"] == "check_slice_at_completeness"
+    # The gate genuinely ran (and failed) -> a SliceCommitBlocked record IS
+    # appended, unlike a precondition refusal which appends nothing.
     assert len(ledger.read_records()) > records_before
 
 

@@ -18,6 +18,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from des._internal import subset_parser
 from des.adapters.driven.filesystem.wave_active_filesystem_store import (
@@ -62,7 +63,11 @@ from des.domain.repo_path_resolver import (
     feature_delta_path as _feature_delta_path,
 )
 from des.domain.wave_active import WAVE_VOCABULARY, WaveActiveRecord
+from des.ports.driven_ports.at_completion_ledger_port import (
+    ENVIRONMENTAL_E2E_GATE_RAN,
+)
 from des.ports.driven_ports.audit_log_writer import AuditEvent
+from des.ports.driver_ports.pre_tool_use_port import HookDecision
 from des.runtime.interpreter import des_spawn
 
 
@@ -113,6 +118,7 @@ def _normalize_message_content(content: object) -> str:
 # be removed before the marker parse, else it false-blocks the return (C8).
 _FENCED_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`[^`]*`")
+_CAUSAL_ID_PATTERN = re.compile(r"<!--\s*DES-CAUSAL-ID\s*:\s*([^\s<]+)\s*-->")
 
 
 def _strip_fenced_regions(text: str) -> str:
@@ -126,6 +132,12 @@ def _strip_fenced_regions(text: str) -> str:
     """
     without_fences = _FENCED_BLOCK_RE.sub("", text)
     return _INLINE_CODE_RE.sub("", without_fences)
+
+
+def _extract_causal_id(text: str) -> str | None:
+    """Return the exact opaque causal marker from one dispatch message."""
+    match = _CAUSAL_ID_PATTERN.search(text)
+    return match.group(1) if match is not None else None
 
 
 def _log_transcript_audit(
@@ -144,7 +156,7 @@ def _log_transcript_audit(
         pass
 
 
-def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
+def extract_des_context_from_transcript(transcript_path: str) -> dict[str, Any] | None:
     """Extract DES markers from an agent's transcript file.
 
     Reads the JSONL transcript and resolves the DES dispatch context.
@@ -175,10 +187,11 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
         to None. None when no DES markers are found.
     """
     if not Path(transcript_path).exists():
+        _log_transcript_audit("HOOK_TRANSCRIPT_ABSENT", transcript_path)
         return None
 
-    legacy_context: dict | None = None
-    atdd_pure_context: dict | None = None
+    legacy_context: dict[str, Any] | None = None
+    atdd_pure_context: dict[str, Any] | None = None
 
     try:
         with open(transcript_path) as f:
@@ -221,6 +234,7 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict | None:
                             "atdd_pure_phase": markers.atdd_pure_phase,
                             "project_root": markers.project_root,
                             "at_kind": markers.at_kind,
+                            "causal_id": _extract_causal_id(content),
                         }
                     continue
 
@@ -274,6 +288,24 @@ class _AtddPureResolvedContext:
     # (byte-identical to pre-fix behavior); an EXPLICIT non-"pytest-regression"
     # value blocks the route fail-closed (see `_mechanical_seal_cleared_slices`).
     at_kind: str | None = None
+    causal_id: str | None = None
+
+
+def _causal_envelope(resolved: _AtddPureResolvedContext) -> dict[str, str | None]:
+    """Project intent correlation without claiming lifecycle evidence."""
+    return {
+        "correlation_status": (
+            "correlated" if resolved.causal_id is not None else "unavailable"
+        ),
+        "correlation_id": resolved.causal_id,
+        "lifecycle_status": "unavailable",
+        "terminal_claim": None,
+    }
+
+
+def _emit_causal_envelope(resolved: _AtddPureResolvedContext) -> None:
+    """Emit the same non-terminal causal projection for every atdd_pure exit."""
+    print(json.dumps({"causal_envelope": _causal_envelope(resolved)}))
 
 
 @dataclass(frozen=True)
@@ -329,13 +361,13 @@ class _WaveOnlyUnresolved:
 
 
 def _resolve_des_context(
-    hook_input: dict,
+    hook_input: dict[str, Any],
 ) -> (
     tuple[str, str, str, str | None, str]
     | _AtddPureResolvedContext
     | _WaveOnlyResolvedContext
     | _WaveOnlyUnresolved
-    | tuple[None, dict, int]
+    | tuple[None, dict[str, Any], int]
 ):
     """Resolve DES context from hook input.
 
@@ -436,6 +468,7 @@ def _resolve_des_context(
             project_root_marker=raw_marker,
             effective_cwd=effective_cwd,
             at_kind=des_context.get("at_kind"),
+            causal_id=des_context.get("causal_id"),
         )
 
     project_id = des_context["project_id"]
@@ -581,8 +614,11 @@ def _resolve_wave_only_context(
 
 
 def _build_block_notification(
-    project_id: str, step_id: str, execution_log_path: str, decision
-) -> dict:
+    project_id: str,
+    step_id: str,
+    execution_log_path: str,
+    decision: HookDecision,
+) -> dict[str, Any]:
     """Build protocol response for a blocked subagent stop decision."""
     reason = decision.reason or "Validation failed"
 
@@ -613,16 +649,23 @@ Never write log entries for phases that were not actually executed."""
     }
 
 
-def _read_transcript_entries(transcript_path: str) -> list[dict]:
+def _read_transcript_entries(transcript_path: str) -> list[dict[str, Any]]:
     """Parse a transcript JSONL file into a list of dict entries.
 
     Fail-open: malformed lines are skipped silently. Missing file yields
     empty list. Never raises.
+
+    Both fail-open branches (absent file, unreadable file) emit a distinct
+    audit event before returning ``[]`` -- an incapacity to read must never
+    be indistinguishable from having read nothing (techdebt: transcript-read
+    returns the same empty for missing/unreadable/marker-less files). This is
+    an observability fix only: the return value/type is unchanged.
     """
     path = Path(transcript_path)
     if not path.exists():
+        _log_transcript_audit("HOOK_TRANSCRIPT_ENTRIES_ABSENT", transcript_path)
         return []
-    entries: list[dict] = []
+    entries: list[dict[str, Any]] = []
     try:
         with open(path) as f:
             for line in f:
@@ -635,7 +678,10 @@ def _read_transcript_entries(transcript_path: str) -> list[dict]:
                     continue
                 if isinstance(entry, dict):
                     entries.append(entry)
-    except (OSError, PermissionError):
+    except (OSError, PermissionError) as e:
+        _log_transcript_audit(
+            "HOOK_TRANSCRIPT_ENTRIES_UNREADABLE", transcript_path, error=str(e)
+        )
         return []
     return entries
 
@@ -738,7 +784,9 @@ def _to_audit_event(event: AgentUsageObservedEvent) -> AuditEvent:
     )
 
 
-def _extract_execution_stats(hook_input: dict) -> tuple[int | None, int | None]:
+def _extract_execution_stats(
+    hook_input: dict[str, Any],
+) -> tuple[int | None, int | None]:
     """Extract turns_used and tokens_used from hook input.
 
     Claude Code may include num_turns and total_tokens in SubagentStop hook_input.
@@ -1318,6 +1366,7 @@ def _maybe_emit_stale_agent_closed(
         from des.adapters.driven.logging.at_completion_ledger import (
             AtCompletionLedger,
         )
+        from des.domain.iso_utc import parse_iso_utc
 
         ledger = AtCompletionLedger(
             resolved.project_id, Path(resolved.effective_cwd or ".")
@@ -1338,7 +1387,7 @@ def _maybe_emit_stale_agent_closed(
         last_progress = records[-1].get("timestamp")
         if not isinstance(last_progress, str) or not last_progress:
             return False
-        moment = datetime.fromisoformat(last_progress.replace("Z", "+00:00"))
+        moment = parse_iso_utc(last_progress)
         now = datetime.now(timezone.utc)
         gap_minutes = (now - moment).total_seconds() / 60.0
         if gap_minutes <= _STALE_THRESHOLD_MINUTES:
@@ -1805,7 +1854,7 @@ _REQUIRED_FEATURE_END_RECORDS = frozenset(
         "CoverageMapVerifiedAtDeliverExit",
         "CoverageMapVerifiedAtDistillExit",
         "EBatchRefactorCompleted",
-        "EnvironmentalE2eGateRan",
+        ENVIRONMENTAL_E2E_GATE_RAN,
         "FeatureEndReviewVerdict",
         "FullSuiteLegRan",
         "WalkingSkeletonGateRan",
@@ -2381,7 +2430,7 @@ def _handle_distill_exit_gate(
 
 def _handle_atdd_pure_return(
     resolved: _AtddPureResolvedContext,
-    hook_input: dict,
+    hook_input: dict[str, Any],
     hook_id: str,
 ) -> int:
     """Dispatch an atdd_pure crafter return to the SubagentStop service (T-C).
@@ -2549,6 +2598,12 @@ def _handle_wave_only_return(
             # so the cross-wave auto-close fires on this LIVE path when the owner
             # terminally returns (WAVE_OWNERS[subagent_type] == active wave).
             subagent_type=resolved.subagent_type,
+            # mode defaults to "atdd_pure" (SubagentStopContext), which would
+            # route this wave-only return into _validate_atdd_pure at Step -0.5
+            # instead of the wave-only close-floor + allow path this dispatch
+            # exists to reach (the docstring above) -- this is a genuinely
+            # wave-only, not atdd_pure, return.
+            mode="classic",
         ),
         hook_id=hook_id,
     )
@@ -2727,6 +2782,7 @@ def handle_subagent_stop() -> int:
 
             # atdd_pure dispatch return (T-C): execution-log-free path.
             if isinstance(des_context_result, _AtddPureResolvedContext):
+                _emit_causal_envelope(des_context_result)
                 # U2 (slice-02): a crafter returning from the per-slice commit
                 # phase is intercepted by the exit-gate branch. After the 7→3
                 # reduction the canonical word is "D_REFACTOR_COMMIT"; the legacy
@@ -2856,6 +2912,14 @@ def handle_subagent_stop() -> int:
                     task_start_time=task_start_time,
                     turns_used=turns_used,
                     tokens_used=tokens_used,
+                    # This branch is reached only after the atdd_pure /
+                    # wave-only shapes have already been ruled out above --
+                    # it is the direct-DES classic pipeline. mode defaults to
+                    # "atdd_pure" (SubagentStopContext), which would make
+                    # SubagentStopService.validate() short-circuit into
+                    # _validate_atdd_pure and skip the entire classic Step-1
+                    # execution-log pipeline this call exists to reach.
+                    mode="classic",
                 ),
                 hook_id=hook_id,
             )

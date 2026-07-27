@@ -608,6 +608,103 @@ class TestVerifyFailsWhenShimMissing:
         )
 
 
+class TestVerifyFailsWhenShimShaDrifted:
+    """Regression: verify() must actually compare the manifest's recorded
+    sha256 against a fresh hash of the shim on disk, not just check that
+    both files exist.
+
+    techdebt.md id: opencode-shim-verify-never-reads-back-its-own-sha256.
+    install() already computes and records sha256(rendered) in the
+    manifest (TestManifestContainsVersionAndHash pins that write); before
+    this fix, verify() never read that field back, so a hand-edited or
+    corrupted shim would still verify green.
+    """
+
+    def test_verify_fails_when_shim_sha256_drifted(self, tmp_path, monkeypatch):
+        """
+        GIVEN: A successful installation, then the shim file is edited
+               on disk WITHOUT updating the manifest
+        WHEN: verify() is called
+        THEN: Returns failure naming the sha256 drift, not a bare
+              "missing" message (both files DO exist).
+        """
+        context, opencode_dir, plugins_dir = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin.resolve_python_command_for_spawn",
+            lambda: "/usr/bin/python3",
+        )
+
+        plugin = OpenCodeDESPlugin()
+        plugin.install(context)
+
+        shim_path = plugins_dir / "nwave-des.ts"
+        shim_path.write_text(
+            shim_path.read_text(encoding="utf-8") + "\n// tampered\n",
+            encoding="utf-8",
+        )
+
+        result = plugin.verify(context)
+
+        assert result.success is False
+        assert any(
+            "sha256" in err.lower() or "drift" in err.lower() for err in result.errors
+        )
+
+
+class TestUninstallWarnsWhenShimShaDrifted:
+    """Regression: uninstall() must warn (non-blocking) when the shim's
+    on-disk sha256 no longer matches the manifest's recorded one, instead
+    of silently deleting a user's manual edit.
+
+    techdebt.md id: opencode-shim-verify-never-reads-back-its-own-sha256.
+    """
+
+    def test_uninstall_warns_on_sha256_drift_but_still_removes(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        GIVEN: A successful installation, then the shim file is edited
+               on disk WITHOUT updating the manifest
+        WHEN: uninstall() is called
+        THEN: A warning naming the drift is logged, AND the shim/manifest
+              are still removed (uninstall stays non-blocking).
+        """
+        context, opencode_dir, plugins_dir = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin.resolve_python_command_for_spawn",
+            lambda: "/usr/bin/python3",
+        )
+
+        plugin = OpenCodeDESPlugin()
+        plugin.install(context)
+
+        shim_path = plugins_dir / "nwave-des.ts"
+        shim_path.write_text(
+            shim_path.read_text(encoding="utf-8") + "\n// user edit\n",
+            encoding="utf-8",
+        )
+
+        result = plugin.uninstall(context)
+
+        assert result.success is True
+        assert not shim_path.exists()
+        assert not (opencode_dir / ".nwave-des-manifest.json").exists()
+
+        warn_calls = [str(call.args[0]) for call in context.logger.warn.call_args_list]
+        assert any(
+            "sha256" in message.lower() or "drift" in message.lower()
+            for message in warn_calls
+        ), f"expected a sha256-drift warning, got: {warn_calls}"
+
+
 class TestNoHomeLiteralInRenderedShim:
     """Regression: the rendered OpenCode DES shim must not contain any
     literal '$HOME' string in substituted positions. Bun.spawn does not

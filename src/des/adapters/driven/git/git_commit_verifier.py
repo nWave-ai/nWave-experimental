@@ -54,6 +54,7 @@ class GitCommitVerifier(CommitVerifier):
                 "git",
                 "log",
                 "--format=%H|%ai|%s",
+                "-i",
                 f"--grep=Step-Id: {step_id}",
             ]
             if feature_id_filter is not None:

@@ -90,6 +90,11 @@ def then_an_audit_record_was_written(clear: WaveClearComposition) -> None:
     clear.then_an_audit_record_was_written()
 
 
+@then("the no-op message names the inspected project root")
+def then_noop_message_names_project_root(clear: WaveClearComposition) -> None:
+    clear.then_noop_message_names_project_root()
+
+
 @then("the clear writes no third provenance value")
 def then_clear_writes_no_third_provenance_value(clear: WaveClearComposition) -> None:
     clear.then_clear_writes_no_third_provenance_value()

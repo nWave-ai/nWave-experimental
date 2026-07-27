@@ -109,7 +109,7 @@ envelope. The orchestrator MUST NOT repair the missing sections after handoff.
 ```
 | Existing Component | File | Overlap | Decision | Justification |
 |-------------------|------|---------|----------|---------------|
-| WorkflowExecutor | src/des/application/zero_trust/workflow_executor.py | Phase iteration, gate eval | EXTEND | Adding dispatch branch is ~15 LOC vs 200 LOC new class |
+| DESOrchestrator | src/des/application/orchestrator.py | Phase iteration, gate eval | EXTEND | Adding dispatch branch is ~15 LOC vs 200 LOC new class |
 ```
 
 Rules:

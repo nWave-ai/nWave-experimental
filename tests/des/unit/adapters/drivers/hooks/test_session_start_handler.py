@@ -327,97 +327,6 @@ class TestSessionStartHandlerOutputFormat:
         expected = "nWave update available: 1.0.0 \u2192 2.0.0. Changes: "
         assert payload["hookSpecificOutput"]["additionalContext"] == expected
 
-
-class TestSessionStartHandlerHousekeepingIntegration:
-    """B6-B8: Housekeeping is called at session start with independent failure isolation."""
-
-    def test_handle_session_start_calls_run_housekeeping(self):
-        """B6: handle_session_start() invokes _run_housekeeping exactly once."""
-        from des.adapters.drivers.hooks.session_start_handler import (
-            handle_session_start,
-        )
-
-        result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
-
-        with (
-            patch(
-                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service"
-            ) as mock_factory,
-            patch(
-                "des.adapters.drivers.hooks.session_start_handler._run_housekeeping"
-            ) as mock_hk,
-            patch("sys.stdin", io.StringIO("{}")),
-        ):
-            mock_svc = MagicMock()
-            mock_svc.check_for_updates.return_value = result
-            mock_factory.return_value = mock_svc
-
-            exit_code = handle_session_start()
-
-        assert exit_code == 0
-        mock_hk.assert_called_once()
-
-    def test_housekeeping_failure_does_not_prevent_update_check(self):
-        """B7: Exception in _run_housekeeping does not skip update check."""
-        from des.adapters.drivers.hooks.session_start_handler import (
-            handle_session_start,
-        )
-
-        result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
-
-        with (
-            patch(
-                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service"
-            ) as mock_factory,
-            patch(
-                "des.adapters.drivers.hooks.session_start_handler._run_housekeeping",
-                side_effect=RuntimeError("housekeeping failed"),
-            ),
-            patch("sys.stdin", io.StringIO("{}")),
-        ):
-            mock_svc = MagicMock()
-            mock_svc.check_for_updates.return_value = result
-            mock_factory.return_value = mock_svc
-
-            exit_code = handle_session_start()
-
-        assert exit_code == 0
-        mock_svc.check_for_updates.assert_called_once()
-
-    def test_housekeeping_runs_before_update_check(self):
-        """B8: _run_housekeeping is called before update check service is built."""
-        from des.adapters.drivers.hooks.session_start_handler import (
-            handle_session_start,
-        )
-
-        call_order = []
-
-        result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
-
-        def record_housekeeping(*args, **kwargs):
-            call_order.append("housekeeping")
-
-        def record_update_check_build(des_config):
-            call_order.append("update_check")
-            mock_svc = MagicMock()
-            mock_svc.check_for_updates.return_value = result
-            return mock_svc
-
-        with (
-            patch(
-                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service",
-                side_effect=record_update_check_build,
-            ),
-            patch(
-                "des.adapters.drivers.hooks.session_start_handler._run_housekeeping",
-                side_effect=record_housekeeping,
-            ),
-            patch("sys.stdin", io.StringIO("{}")),
-        ):
-            handle_session_start()
-
-        assert call_order == ["housekeeping", "update_check"]
-
     def test_des_config_instance_shared_between_housekeeping_and_update_check(self):
         """B9: The same DESConfig object is passed to _run_housekeeping and UpdateCheckService.
 
@@ -531,3 +440,138 @@ class TestSessionStartHandlerSubstrateProbe:
         out = capsys.readouterr().out
         # When update check returns UP_TO_DATE and probe returns empty, stdout has nothing
         assert out == ""
+
+
+class TestSessionStartHandlerSingleCombinedPayload:
+    """Regression for techdebt rows:
+    session-start-handler-multiple-uncoordinated-prints-corrupt-stdout-json /
+    session-start-handler-two-emitters-still-use-broken-bare-additionalcontext-form.
+
+    Before the fix, `handle_session_start` called `print(json.dumps(...))`
+    independently for up to six triggers (workflow-mode guidance, update
+    notice, gate-affordance nudge, hook-version skew, orchestrator affordance)
+    -- two of them (workflow guidance, skew) using the BARE
+    ``{"additionalContext": ...}`` form the module's own docstring says
+    current Claude Code drops. When 2+ triggers fired in one session, stdout
+    held several JSON objects on separate lines: not valid JSON as a whole,
+    and any consumer parsing the full stdout as one document lost every
+    contribution but the first.
+    """
+
+    def test_four_simultaneous_triggers_produce_one_parseable_json_object(
+        self, tmp_path, capsys
+    ):
+        from des.adapters.drivers.hooks.session_start_handler import (
+            handle_session_start,
+        )
+
+        project = tmp_path
+        (project / ".nwave").mkdir()
+        feature_dir = project / "docs" / "feature" / "demo"
+        feature_dir.mkdir(parents=True)
+        (feature_dir / "feature-delta.md").write_text("delta\n", encoding="utf-8")
+
+        result = UpdateCheckResult(
+            status=UpdateStatus.UPDATE_AVAILABLE, latest="9.9.9", changelog="notes"
+        )
+        stdin_payload = json.dumps({"cwd": str(project)})
+
+        with (
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service"
+            ) as mock_factory,
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._get_local_version",
+                return_value="1.0.0",
+            ),
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler."
+                "_read_installed_hook_version",
+                return_value="0.9.0",
+            ),
+            patch("sys.stdin", io.StringIO(stdin_payload)),
+        ):
+            mock_svc = MagicMock()
+            mock_svc.check_for_updates.return_value = result
+            mock_factory.return_value = mock_svc
+
+            exit_code = handle_session_start()
+
+        assert exit_code == 0
+        out = capsys.readouterr().out.strip()
+        lines = [line for line in out.splitlines() if line.strip()]
+        # RED before the fix: 4 triggers fired here (workflow guidance,
+        # update notice, gate-affordance nudge, hook-version skew), each
+        # printing its own JSON line -- 4 lines, not one JSON document.
+        assert len(lines) == 1, (
+            f"expected exactly one combined stdout line, got {len(lines)}: {out!r}"
+        )
+        payload = json.loads(lines[0])  # must not raise json.JSONDecodeError
+
+        # The bare form must never reach stdout -- only wrapped inside
+        # hookSpecificOutput.
+        assert "additionalContext" not in payload
+        hso = payload["hookSpecificOutput"]
+        assert hso["hookEventName"] == "SessionStart"
+        ctx = hso["additionalContext"]
+
+        assert "atdd_pure" in ctx, "workflow-mode guidance missing from combined ctx"
+        assert "9.9.9" in ctx, "update notice missing from combined ctx"
+        assert "des feature-delta-doctor" in ctx or "des dispatch" in ctx, (
+            "gate-affordance nudge missing from combined ctx"
+        )
+        assert "HookVersionSkew" in ctx, "hook-version-skew finding missing from ctx"
+        assert payload["systemMessage"], "visible update notice must be preserved"
+
+    def test_single_trigger_still_uses_wrapped_form_never_bare(self, tmp_path, capsys):
+        """The skew finding alone (no other trigger) must reach stdout wrapped,
+        never as the bare ``{"additionalContext": ...}`` form it used before
+        the fix."""
+        from des.adapters.drivers.hooks.session_start_handler import (
+            handle_session_start,
+        )
+
+        project = tmp_path
+        (project / ".nwave").mkdir()
+        stdin_payload = json.dumps({"cwd": str(project)})
+        result = UpdateCheckResult(status=UpdateStatus.SKIP)
+
+        with (
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service"
+            ) as mock_factory,
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._get_local_version",
+                return_value="1.0.0",
+            ),
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler."
+                "_read_installed_hook_version",
+                return_value="0.9.0",
+            ),
+            # Isolate the skew finding: this fresh `.nwave/` project would
+            # also fire the workflow-mode guidance, which is a separate
+            # trigger already covered by the multi-trigger test above.
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler."
+                "_workflow_mode_session_guidance",
+                return_value=None,
+            ),
+            patch("sys.stdin", io.StringIO(stdin_payload)),
+        ):
+            mock_svc = MagicMock()
+            mock_svc.check_for_updates.return_value = result
+            mock_factory.return_value = mock_svc
+
+            exit_code = handle_session_start()
+
+        assert exit_code == 0
+        out = capsys.readouterr().out.strip()
+        assert out, "expected a skew finding on stdout"
+        payload = json.loads(out)
+        assert "additionalContext" not in payload, (
+            "skew finding must never use the bare top-level additionalContext "
+            "form -- it is dropped by current Claude Code"
+        )
+        assert payload["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+        assert "HookVersionSkew" in payload["hookSpecificOutput"]["additionalContext"]

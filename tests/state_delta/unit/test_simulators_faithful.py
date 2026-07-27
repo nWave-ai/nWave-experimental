@@ -1,10 +1,14 @@
 """Unit tests for update_path_in_settings_faithful (post-fix simulator).
 
 Canned-fixture tests verifying the 5 production branches of the post-fix
-_update_path_in_settings (post-832b4060, des_plugin.py:881-958).
+_update_path_in_settings (post-832b4060, des_plugin.py:1986-2062 as of
+2026-07-27; was 881-958 at authoring time, moved by later edits).
 
 Step-Id: 02-03 | Slice 2 | DoD #6 simulator unit tests
 """
+
+import ast
+from pathlib import Path
 
 from nwave_ai.state_delta.strategies import update_path_in_settings_faithful
 
@@ -12,6 +16,28 @@ from nwave_ai.state_delta.strategies import update_path_in_settings_faithful
 DES_BIN = "/home/u/.local/share/nwave/bin"
 HOME = "/home/u"
 SYSTEM_PATH_FALLBACK = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+_DES_PLUGIN_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "scripts"
+    / "install"
+    / "plugins"
+    / "des_plugin.py"
+)
+
+
+def test_cited_function_still_exists_in_des_plugin() -> None:
+    """The docstring citation depends on a manual line-by-line PR-review
+    comparison (no runtime equivalence check, per MEDIUM-1 closure) -- this
+    guard cannot verify byte-equivalence, but pins that the cited function
+    name has not been renamed or removed out from under a stale citation."""
+    tree = ast.parse(_DES_PLUGIN_PATH.read_text(encoding="utf-8"))
+    function_names = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert "_update_path_in_settings" in function_names
 
 
 def test_faithful_empty_seed() -> None:

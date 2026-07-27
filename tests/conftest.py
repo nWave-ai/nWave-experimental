@@ -36,8 +36,21 @@ os.environ.setdefault("NWAVE_COLLECT_MEMO", "1")
 # reuses the same artifact -- no test is hidden or excluded, only the redundant
 # from-scratch rebuild is removed. First worker to reach the FileLock builds;
 # the rest reuse the produced ``.whl``. No cross-run cache on purpose: a single
-# per-run build is correct by construction and cannot go stale.
+# per-run build is correct by construction and cannot go stale.  The shared
+# root must be the current pytest run, *not* ``getbasetemp().parent``: that
+# parent is retained across ordinary invocations and can otherwise hand a new
+# test run yesterday's wheel.
 # ---------------------------------------------------------------------------
+
+
+def _current_run_shared_root(factory: pytest.TempPathFactory) -> Path:
+    """Return one fresh run root, shared only between xdist workers.
+
+    Normal pytest uses ``.../pytest-N`` directly.  xdist workers use
+    ``.../pytest-N/popen-gwN``; their parent is the same current run root.
+    """
+    base = factory.getbasetemp()
+    return base.parent if base.name.startswith("popen-gw") else base
 
 
 @pytest.fixture(scope="session")
@@ -48,8 +61,7 @@ def shared_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
     read-only (it is shared). Swap any local ``python -m build --wheel`` fixture
     to depend on this instead of rebuilding.
     """
-    # ``getbasetemp().parent`` is the run-root shared by every xdist worker.
-    shared_root = tmp_path_factory.getbasetemp().parent
+    shared_root = _current_run_shared_root(tmp_path_factory)
     wheel_dir = shared_root / "shared_wheel"
     lock = shared_root / "shared_wheel.lock"
     with FileLock(str(lock)):
@@ -83,7 +95,7 @@ def shared_wheel_venv(
     install-and-smoke path stays genuine while the from-scratch install cost is
     paid once and shared. Read-only for consumers. Returns the venv dir.
     """
-    shared_root = tmp_path_factory.getbasetemp().parent
+    shared_root = _current_run_shared_root(tmp_path_factory)
     venv_dir = shared_root / "shared_wheel_venv"
     venv_python = venv_dir / "bin" / "python"
     lock = shared_root / "shared_wheel_venv.lock"

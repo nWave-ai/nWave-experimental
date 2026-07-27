@@ -130,19 +130,24 @@ class TestMissingPythonFailOpen:
     """
 
     def test_nonexistent_python_raises_file_not_found(self):
-        """A nonexistent Python path raises FileNotFoundError at subprocess level."""
+        """A nonexistent configured Python path raises FileNotFoundError.
+
+        Invokes the SAME `_run_adapter` harness (real ADAPTER_MODULE argv,
+        real PYTHONPATH env, real JSON stdin encoding) every other test in
+        this module uses to reach the Python DES adapter, only overriding
+        `python_path` to a path that does not exist -- exactly the
+        misconfiguration this test exists to characterize (a bad
+        {{PYTHON_PATH}} template substitution at install time). Previously
+        this asserted on a bare, unrelated `subprocess.run(["/nonexistent/...",
+        ...])` call that never referenced the production invocation shape at
+        all (tsunami detect_testing_theater, confirmed: no production code
+        path invoked).
+        """
         with pytest.raises(FileNotFoundError):
-            subprocess.run(
-                [
-                    "/nonexistent/path/to/python3",
-                    "-m",
-                    ADAPTER_MODULE,
-                    "pre-task",
-                ],
-                input="{}",
-                capture_output=True,
-                text=True,
-                timeout=5,
+            _run_adapter(
+                "pre-task",
+                {},
+                python_path="/nonexistent/path/to/python3",
             )
 
 
@@ -157,16 +162,21 @@ class TestSubprocessTimeoutContract:
     """
 
     def test_timeout_raises_timeout_expired(self):
-        """A hanging subprocess raises TimeoutExpired (shim catches and fails open)."""
-        # Use a Python command that sleeps longer than the timeout
+        """A DES adapter invocation that outruns the shim's cutoff raises
+        TimeoutExpired.
+
+        Invokes the REAL `_run_adapter` harness -- actual ADAPTER_MODULE
+        argv, actual PYTHONPATH env, actual JSON stdin -- with a timeout
+        (10ms) far below the adapter's own measured cold-start cost
+        (~110ms on this box: interpreter startup + module imports), so the
+        real production command line is genuinely started and cut short,
+        rather than an unrelated `time.sleep(60)` script that never
+        referenced the adapter at all (tsunami detect_testing_theater,
+        confirmed: ADAPTER_MODULE did not appear anywhere in this test
+        previously).
+        """
         with pytest.raises(subprocess.TimeoutExpired):
-            subprocess.run(
-                [sys.executable, "-c", "import time; time.sleep(60)"],
-                input="{}",
-                capture_output=True,
-                text=True,
-                timeout=1,  # Very short to test the mechanism
-            )
+            _run_adapter("pre-task", {}, timeout=0.01)
 
 
 class TestExitCodeContract:

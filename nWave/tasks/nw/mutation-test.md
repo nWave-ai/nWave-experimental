@@ -103,11 +103,11 @@ Mutation tools apply mutations directly to source files. An interrupted run can 
 
 Kill rate thresholds: >= 80% PASS (proceed)|70-80% WARN (review surviving mutants)|< 70% FAIL (add tests first).
 
-Skip conditions: no mutation tool for language|project opts out via `.mutation-config.yaml`|test suite broken. Python projects require mutation testing; all skips need documented justification.
+Skip conditions: no mutation tool for language|project opts out via `.mutation-config.yaml`|test suite broken. Per FR-1, mutation testing is SKIPPED BY DEFAULT for every project; it runs only on explicit opt-in (`rigor.mutation_enabled = true`), never as a required gate.
 
 ## Next Wave
 
-**Handoff To**: Phase 8 - Finalize (orchestrator continues develop.md workflow)
+This command is invoked standalone, on explicit opt-in — never as a numbered step in `nWave/tasks/nw/deliver.md`'s own DELIVER phase sequence (its Phase 5 is mutation testing, skip-if-disabled; Phase 7 is Finalize). There is no `develop.md` workflow in this repo to hand off to.
 **Deliverables**: `docs/feature/{feature-id}/deliver/mutation/mutation-report.md`
 
 ## Expected Outputs

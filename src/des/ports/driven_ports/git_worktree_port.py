@@ -153,6 +153,24 @@ class GitWorktreePort(ABC):
         absence)."""
         return ()
 
+    def changed_paths_since(self, repo: Path, base_sha: str) -> tuple[str, ...]:
+        """Repo-relative paths that differ between ``base_sha`` and the
+        CURRENT state of ``repo``'s working tree -- committed changes
+        (``git diff --name-only base_sha..HEAD``) UNION uncommitted ones
+        (``uncommitted_paths``), deduplicated.
+
+        EXTEND ([[impacted-test-selector-selects-everything-and-its-premise-
+        is-false]]): the drain's "after" test run needs to know what the
+        dispatched agent actually touched, whether it committed the fix,
+        left it uncommitted, or both -- this is that single combined view.
+
+        Concrete (NOT abstract), same safe-additive-extension pattern as
+        ``uncommitted_paths``: every existing implementer, including in-
+        memory test doubles that never touch a real git tree, inherits the
+        empty default unchanged. The empty tuple means only "no changed path
+        is known here" -- never "nothing changed" as a positive claim."""
+        return ()
+
     def is_linked_worktree(self, repo: Path) -> bool:
         """True iff ``repo`` is a LINKED worktree -- one whose worktree/branch/
         checkout mutations land in a ``.git`` SHARED with sibling worktrees

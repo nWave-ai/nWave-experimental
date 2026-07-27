@@ -35,6 +35,27 @@ _project_root = str(Path(__file__).resolve().parent.parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
+# UTILITY_SCRIPTS (scripts/build_dist.py) is the single source of truth for
+# which top-level scripts must ship to users; the wheel force-include map is
+# derived from it below so the two lists cannot drift apart again (see
+# tests/release/test_wheel_utility_scripts_invariant.py).
+from scripts.build_dist import UTILITY_SCRIPTS  # noqa: E402
+
+
+def _utility_scripts_force_include_block() -> str:
+    """Force-include line per ``UTILITY_SCRIPTS`` entry (single source of truth).
+
+    Several ``des`` subcommands SPAWN these scripts as their actuator, so a
+    wheel that ships the command without the script offers a drain that
+    cannot run on any installed machine -- the failure surfaces only at drain
+    time, far from here. Deriving these lines from ``UTILITY_SCRIPTS``
+    instead of hand-listing them keeps the dev-tarball and wheel whitelists
+    from drifting apart again;
+    ``tests/release/test_wheel_utility_scripts_invariant`` guards this as a
+    second, redundant check, not the only one.
+    """
+    return "".join(f'"scripts/{name}" = "scripts/{name}"\n' for name in UTILITY_SCRIPTS)
+
 
 class PatchError(Exception):
     """Raised when patching fails (file not found, parse error, missing field)."""
@@ -172,6 +193,7 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
     # therefore reads a physically distinct, build-private staged copy.
     # `framework-catalog.yaml` is likewise shipped to both destinations; one
     # mapping therefore uses its own physically distinct staged copy too.
+    utility_scripts_block = _utility_scripts_force_include_block()
     replacement = (
         "[tool.hatch.build.targets.wheel]\n"
         f'packages = ["{pkg_name}"]\n'
@@ -195,15 +217,7 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         '"nWave/README.md" = "nWave/README.md"\n'
         '"scripts/install" = "scripts/install"\n'
         '"scripts/shared" = "scripts/shared"\n'
-        '"scripts/install_nwave_target_hooks.py" = "scripts/install_nwave_target_hooks.py"\n'
-        '"scripts/validate_step_file.py" = "scripts/validate_step_file.py"\n'
-        # `des refactor` SPAWNS this script as its actuator, so a wheel that
-        # ships the command without the script offers a drain that cannot run
-        # on any installed machine -- the failure surfaces only at drain time,
-        # far from here.  UTILITY_SCRIPTS (scripts/build_dist.py) is the SSOT
-        # of what must ship; tests/release/test_wheel_utility_scripts_invariant
-        # holds this map to it, which is how the omission was caught.
-        '"scripts/refactor_agent.py" = "scripts/refactor_agent.py"\n'
+        f"{utility_scripts_block}"
         '"lib/python/des" = "des"\n'
         '"lib/nwave-runtime/des" = "nWave/lib/python/des"\n'
     )

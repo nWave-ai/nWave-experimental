@@ -239,6 +239,7 @@ class TestInstallWritesHooksJsonAndManifest:
             sys.executable,
             str(session_launcher),
             "session-start",
+            "--host-provenance=codex",
         ]
         assert manifest["resolver_script_file"].endswith(
             "nWave/hooks/orchestrator_affordance_refresh.py"

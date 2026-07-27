@@ -61,6 +61,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -96,7 +97,7 @@ from des.ports.test_runner_port import (
     RunnerResolutionContext,
 )
 from des.ports.test_runner_port import resolve as resolve_runner
-from des.runtime.interpreter import InterpreterUnavailable, des_spawn
+from des.runtime.interpreter import Capability, InterpreterUnavailable, des_spawn
 
 
 # The contract gate's dedicated INDETERMINATE exit code (DDD-2): the E2 gate
@@ -294,7 +295,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--at-kind",
         dest="at_kind",
         default="gherkin",
-        choices=("gherkin", "pytest-regression", "native-regression"),
+        choices=(
+            "gherkin",
+            "pytest-regression",
+            "native-regression",
+            "rust-regression",
+        ),
         help=(
             "The acceptance-test kind the slice's E2 leg attests (default: "
             "gherkin, byte-identical for every existing caller). "
@@ -307,7 +313,10 @@ def _build_parser() -> argparse.ArgumentParser:
             "attestation for a non-Python regression file (e.g. `.rs`) -- "
             "it routes through the SAME runner-port seam "
             "`_routes_through_runner_port` already resolves for a "
-            "pytest-regression file whose suffix is not `.py`."
+            "pytest-regression file whose suffix is not `.py`. "
+            "'rust-regression' (rust-regression-at-kind-semi-wired) is an "
+            "accepted ALIAS of 'native-regression', normalized right after "
+            "parsing -- never a second code path."
         ),
     )
     parser.add_argument(
@@ -526,9 +535,18 @@ def _run_contract_gate(
     ``SliceCommitIndeterminate`` instead of crashing. INDETERMINATE is never
     coerced to 0 (a pass) -- a runnable-but-failing gate returns its own
     non-zero code unchanged.
+
+    verify-slice-commit-e2-wrapper-divergence: this composed E2 subprocess
+    used ``des_spawn(..., capture_output=True, text=True)`` -- an IN-MEMORY
+    pipe pair -- and was observed to return a DIFFERENT exit code than an
+    identical hand-run of the same child under a large feature-scoped suite
+    (suspected in-memory-pipe hazard). The child's stdout/stderr now stream to
+    real on-disk tempfiles instead (``_spawn_streamed_to_tempfiles``): nothing
+    to fill/deadlock on, and the full text is read back only after the child
+    has genuinely exited, never partially.
     """
     try:
-        completed = des_spawn(
+        completed = _spawn_streamed_to_tempfiles(
             None,
             "des.cli.run_contract_gate",
             "--repo",
@@ -537,12 +555,71 @@ def _run_contract_gate(
             feature_id,
             "--entering-slice",
             slice_id,
-            capture_output=True,
-            text=True,
         )
     except InterpreterUnavailable:
         return _GATE_INDETERMINATE_EXIT_CODE, None
     return completed.returncode, _parse_single_line_json_payload(completed.stdout)
+
+
+def _spawn_streamed_to_tempfiles(
+    capability: Capability | None,
+    *module_args: str,
+    script: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run a ``des_spawn`` module subprocess with stdout/stderr streamed to disk.
+
+    verify-slice-commit-e2-wrapper-divergence: ``subprocess.run(capture_
+    output=True)`` (via ``Popen.communicate()``) drains the child through an
+    IN-MEMORY pipe pair -- under a genuinely large child (a full feature-
+    scoped suite's combined stdout/stderr) this is the suspected proximate
+    cause of the wrapper's composed subprocess call returning a DIFFERENT
+    exit code than an identical hand-run of the SAME child. Streaming both
+    streams to real, separate on-disk tempfiles removes the in-memory pipe
+    entirely -- the child writes directly to a file descriptor with no
+    capacity ceiling to fill, and this function only reads the files back
+    once ``des_spawn`` has returned (the child has genuinely exited).
+
+    Mirrors ``des_spawn``'s own ``capture_output=True`` contract from the
+    caller's side: returns a ``CompletedProcess`` whose ``.stdout``/``.stderr``
+    are the full text the child wrote, and whose ``.returncode`` is the
+    child's own exit code, untouched.
+
+    ``script`` (keyword-only, forwarded to ``des_spawn``'s own ``-c
+    <inline-script>`` form) is unused by the production call site
+    (``_run_contract_gate`` always passes ``module_args``) -- it exists so a
+    regression test can drive this helper with a synthetic large-output
+    child without needing a real ``des.cli`` module on disk.
+    """
+    with (
+        tempfile.NamedTemporaryFile(
+            mode="w+", encoding="utf-8", prefix="des-e2-stdout-", delete=False
+        ) as stdout_fh,
+        tempfile.NamedTemporaryFile(
+            mode="w+", encoding="utf-8", prefix="des-e2-stderr-", delete=False
+        ) as stderr_fh,
+    ):
+        stdout_path = Path(stdout_fh.name)
+        stderr_path = Path(stderr_fh.name)
+    try:
+        with (
+            stdout_path.open("w", encoding="utf-8") as stdout_w,
+            stderr_path.open("w", encoding="utf-8") as stderr_w,
+        ):
+            completed = des_spawn(
+                capability,
+                *module_args,
+                script=script,
+                stdout=stdout_w,
+                stderr=stderr_w,
+            )
+        stdout_text = stdout_path.read_text(encoding="utf-8")
+        stderr_text = stderr_path.read_text(encoding="utf-8")
+    finally:
+        stdout_path.unlink(missing_ok=True)
+        stderr_path.unlink(missing_ok=True)
+    return subprocess.CompletedProcess(
+        completed.args, completed.returncode, stdout_text, stderr_text
+    )
 
 
 def _run_regression_gate(
@@ -1823,6 +1900,13 @@ def main(argv: list[str] | None = None) -> int:
     the legacy E1-only completeness check (classic-mode callers).
     """
     args = _build_parser().parse_args(argv)
+    # rust-regression-at-kind-semi-wired: 'rust-regression' is a CLI-facing
+    # ALIAS of 'native-regression', normalized here (before any downstream
+    # `args.at_kind` read) so this entry point -- and `commit_slice.py`'s
+    # preflight fold-in, which reuses this SAME `_build_parser` -- reuse the
+    # SAME unified 'native-regression' AT-discovery path, never a second one.
+    if args.at_kind == "rust-regression":
+        args.at_kind = "native-regression"
     repo = Path(args.repo)
 
     # M9 / F3: a HEAD raced off the pinned SHA fails closed before any verdict.

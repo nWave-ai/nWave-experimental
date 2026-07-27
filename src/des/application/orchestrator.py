@@ -11,8 +11,6 @@ All public method signatures are preserved for backward compatibility.
 
 from pathlib import Path
 
-from des.adapters.driven.logging.audit_events import AuditEvent, EventType
-from des.adapters.driven.logging.jsonl_audit_log_writer import JsonlAuditLogWriter
 from des.application.execution_results import (
     ExecuteStepResult,
     ExecuteStepWithStaleCheckResult,
@@ -37,6 +35,7 @@ from des.application.step_execution_service import (
 from des.application.step_execution_service import (
     execute_step_with_stale_check as _execute_step_with_stale_check,
 )
+from des.domain.audit_events import AuditEvent, EventType
 from des.domain.des_marker_generator import DESMarkerGenerator
 from des.domain.prompt_metadata_extractor import PromptMetadataExtractor
 from des.domain.schema_version_detector import SchemaVersionDetector
@@ -44,6 +43,7 @@ from des.domain.step_file_repository import StepFileRepository
 from des.domain.timeout_warning_builder import TimeoutWarningBuilder
 from des.domain.value_objects import CommandName
 from des.ports.driven_ports.audit_log_writer import AuditEvent as PortAuditEvent
+from des.ports.driven_ports.audit_log_writer import AuditLogWriter
 from des.ports.driven_ports.filesystem_port import FileSystemPort
 from des.ports.driven_ports.hook_port import HookPort, HookResult
 from des.ports.driven_ports.time_provider_port import TimeProvider
@@ -64,11 +64,13 @@ class DESOrchestrator:
         validator: ValidatorPort,
         filesystem: FileSystemPort,
         time_provider: TimeProvider,
+        audit_writer: AuditLogWriter | None = None,
     ):
         self._hook = hook
         self._validator = validator
         self._filesystem = filesystem
         self._time_provider = time_provider
+        self._audit_writer = audit_writer
         self._subagent_lifecycle_completed = False
         self._step_file_path: Path | None = None
 
@@ -85,9 +87,18 @@ class DESOrchestrator:
 
     @classmethod
     def create_with_defaults(cls) -> "DESOrchestrator":
-        """Create an orchestrator with default real adapters."""
+        """Create an orchestrator with default real adapters.
+
+        The composition root: concrete adapter imports (including the audit
+        log writer) are wired here, at the driver/entry-point boundary, so
+        the application layer above never imports ``des.adapters`` directly
+        (techdebt drain: application-layer-imports-adapters-directly).
+        """
         from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
         from des.adapters.driven.hooks.noop_hook import NoOpHook
+        from des.adapters.driven.logging.jsonl_audit_log_writer import (
+            JsonlAuditLogWriter,
+        )
         from des.adapters.driven.time.system_time import SystemTimeProvider
         from des.application.validator import TemplateValidator
 
@@ -96,6 +107,7 @@ class DESOrchestrator:
             validator=TemplateValidator(),
             filesystem=RealFileSystem(),
             time_provider=SystemTimeProvider(),
+            audit_writer=JsonlAuditLogWriter(),
         )
 
     # ========================================================================
@@ -166,14 +178,30 @@ class DESOrchestrator:
         feature_name: str | None,
         step_id: str | None,
     ) -> None:
-        """Log audit event if audit logging is enabled."""
+        """Log audit event if audit logging is enabled.
+
+        Uses the injected ``AuditLogWriter`` port when the orchestrator was
+        constructed with one (composition-root wiring, e.g.
+        ``create_with_defaults``). Falls back to constructing the concrete
+        ``JsonlAuditLogWriter`` adapter here -- local import, not a
+        module-level one -- for callers that build ``DESOrchestrator``
+        without injecting a writer (backward compatible; the application
+        layer's *module* never carries a top-level adapter import).
+        """
         from des.adapters.driven.config.des_config import DESConfig
 
         config = DESConfig()
         if not config.audit_logging_enabled:
             return
 
-        writer = JsonlAuditLogWriter()
+        if self._audit_writer is not None:
+            writer: AuditLogWriter = self._audit_writer
+        else:
+            from des.adapters.driven.logging.jsonl_audit_log_writer import (
+                JsonlAuditLogWriter,
+            )
+
+            writer = JsonlAuditLogWriter()
         excluded_keys = ("event", "timestamp", "feature_name", "step_id")
         data = {
             k: v

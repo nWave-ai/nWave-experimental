@@ -4,8 +4,9 @@ This module provides functionality to monitor elapsed time from a phase start
 timestamp and detect when duration thresholds are crossed.
 """
 
-from datetime import datetime, timezone
+from datetime import timezone
 
+from des.domain.iso_utc import parse_iso_utc
 from des.ports.driven_ports.time_provider_port import TimeProvider
 
 
@@ -30,7 +31,7 @@ class TimeoutMonitor:
             raise ValueError("started_at cannot be None")
 
         try:
-            self.started_at = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+            self.started_at = parse_iso_utc(started_at)
         except (ValueError, TypeError) as e:
             raise ValueError(f"Invalid timestamp format: {started_at}") from e
 

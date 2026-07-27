@@ -150,3 +150,39 @@ def test_the_deliver_profile_datum_matches_the_exported_ssot() -> None:
         WAVE_DISPATCH_PROFILES["deliver"].required_sections
         == ATDD_PURE_MANDATORY_SECTIONS
     )
+
+
+def _phase_action_help(parser: object) -> str:
+    for action in parser._actions:  # type: ignore[attr-defined]
+        if "--phase" in getattr(action, "option_strings", ()):
+            return action.help or ""
+    raise AssertionError("--phase action not found in parser")
+
+
+def test_phase_help_names_the_authoring_wave_exemption_too() -> None:
+    """The `--phase` help STRING ITSELF must name BOTH exemptions.
+
+    The runtime error message (main(), on a missing --phase) already names
+    two exemptions -- a phaseless lane OR an authoring --wave. Regression:
+    the --help text for --phase named only the lane exemption, so a reader
+    of `des dispatch --help` (never hitting the runtime error) would wrongly
+    conclude --phase is mandatory for e.g. `--wave discuss`. Asserting
+    against the FULL parser help is too weak -- `--wave`'s own choices list
+    already prints every wave name, which would make this pass for the
+    wrong reason; the property under test is that the `--phase` HELP STRING
+    names the exemption, not that the wave name appears somewhere on the
+    page.
+    """
+    phase_help = _phase_action_help(dispatch_cli._build_parser())
+    authoring_waves = sorted(
+        w for w, p in WAVE_DISPATCH_PROFILES.items() if not p.runs_tests
+    )
+    assert authoring_waves, "fixture sanity: at least one authoring wave exists"
+    assert "authoring wave" in phase_help, (
+        "--phase help must name the authoring-wave exemption, not just the "
+        "phaseless-lane one"
+    )
+    for wave in authoring_waves:
+        assert wave in phase_help, (
+            f"--phase help must name the authoring-wave exemption ({wave})"
+        )

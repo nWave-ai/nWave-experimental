@@ -38,7 +38,7 @@ from des.adapters.drivers.hooks.carpaccio_intercept import (
     _slice_number,
 )
 from des.cli.verify_slice_commit_completeness import (
-    extract_slice_ids,
+    _SLICE_ID_TRAILER_RE,
     files_in_commit,
 )
 from des.runtime.interpreter import des_spawn
@@ -103,6 +103,33 @@ def _refused(error: str) -> dict[str, str]:
     return {"event": "SliceReverifyRefused", "error": error}
 
 
+def _trailer_slice_ids_case_insensitive(commit_message: str) -> list[str]:
+    """Case-insensitive companion to ``extract_slice_ids``, scoped to P2 only.
+
+    ``extract_slice_ids`` (the shared domain SSOT, consumed by 7+ other
+    gates -- see ``des.domain.slice_id_trailer``) requires the trailer VALUE
+    to already be lowercase ``slice-NN`` form; a commit carrying
+    ``Slice-Id: Slice-02`` (mixed-case value) fails that regex entirely and
+    ``extract_slice_ids`` reports an EMPTY set -- which P2 then prints
+    verbatim, making a present-but-differently-cased trailer look absent
+    (reverify-slice-commit-trailer-match-still-case-sensitive).
+
+    Recompiles the SAME shared pattern text (``_SLICE_ID_TRAILER_RE.pattern``
+    -- no duplicated regex literal, no drift risk) with ``re.IGNORECASE``,
+    local to this module only, so the wider-consuming shared regex/gates are
+    untouched. Matches follow are normalized to lowercase canonical form.
+    """
+    case_insensitive_re = re.compile(_SLICE_ID_TRAILER_RE.pattern, re.IGNORECASE)
+    ordered: list[str] = []
+    for line in commit_message.splitlines():
+        match = case_insensitive_re.match(line.strip())
+        if match:
+            found = match.group(1).lower()
+            if found not in ordered:
+                ordered.append(found)
+    return ordered
+
+
 def _preconditions(
     repo: Path, feature_id: str, slice_id: str, commit: str
 ) -> dict[str, str] | None:
@@ -154,8 +181,11 @@ def _preconditions(
         )
 
     # P2 -- the commit must bind to the slice via a Slice-Id:/Step-Id: trailer.
+    # Case-insensitive: a mixed-case trailer VALUE (e.g. `Slice-Id: Slice-02`)
+    # must be recognized, not silently dropped into an empty set (fix
+    # reverify-slice-commit-trailer-match-still-case-sensitive).
     commit_message = _git(repo, "log", "-1", "--format=%B", commit)
-    trailer_slices = extract_slice_ids(commit_message)
+    trailer_slices = _trailer_slice_ids_case_insensitive(commit_message)
     if slice_id not in trailer_slices:
         return _refused(
             f"--slice-id {slice_id!r} is not in the commit's trailer set "

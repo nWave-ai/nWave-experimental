@@ -8,12 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 
-try:
-    from typing import Self
-except ImportError:  # pragma: no cover — only hit on Python 3.10
-    from typing_extensions import Self
+if TYPE_CHECKING:
+    from des._compat import Self
 
 
 class PhaseStatus(str, Enum):

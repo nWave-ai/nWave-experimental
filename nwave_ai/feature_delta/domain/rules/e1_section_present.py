@@ -16,7 +16,15 @@ from nwave_ai.feature_delta.domain.violations import ValidationViolation
 
 
 # Canonical wave names for did-you-mean matching.
-_KNOWN_WAVES = ("DISCOVER", "DISCUSS", "DESIGN", "DEVOPS", "DISTILL", "DELIVER")
+_KNOWN_WAVES = (
+    "DISCOVER",
+    "DIVERGE",
+    "DISCUSS",
+    "DESIGN",
+    "DEVOPS",
+    "DISTILL",
+    "DELIVER",
+)
 _KNOWN_WAVES_UPPER = frozenset(_KNOWN_WAVES)
 
 # Correct format: ## Wave: <NAME> — captures the wave name.

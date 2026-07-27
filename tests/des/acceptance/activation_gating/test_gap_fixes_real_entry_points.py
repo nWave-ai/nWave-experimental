@@ -72,10 +72,20 @@ def _feed_session_start_stdin(
     monkeypatch.setattr("sys.stdin", io.StringIO(payload))
 
 
-def test_session_start_adopts_project_with_prior_use(
+def test_session_start_does_not_adopt_project_with_prior_use(
     sandbox, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A project with prior-use evidence gets the marker written by SessionStart."""
+    """Prior-use evidence must NOT silently adopt the project at SessionStart.
+
+    This asserted the opposite until aa46b6c03 ("classic stops being
+    selectable"), which deleted the silent adoption deliberately -- that commit
+    calls removing it "right", and the handler now states the rule outright:
+    prior-use evidence never authorises mutation or silent mode adoption.
+
+    Kept as a NEGATIVE oracle rather than deleted: a deliberate removal that no
+    test pins can be reintroduced by accident, and silently writing into a
+    project that never opted in is exactly the regression worth catching.
+    """
     _home, project_root = sandbox
     logs = project_root / ".nwave" / "des" / "logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -90,8 +100,10 @@ def test_session_start_adopts_project_with_prior_use(
 
     assert exit_code == 0  # SessionStart never blocks (fail-open)
     marker = project_root / ".nwave" / "local-config.json"
-    assert marker.exists(), "prior-use project must be silently adopted at SessionStart"
-    assert json.loads(marker.read_text())["enabled_for_repo"] is True
+    assert not marker.exists(), (
+        "SessionStart must not write the marker on prior-use evidence alone; "
+        "the silent adoption was removed deliberately in aa46b6c03"
+    )
 
 
 def test_session_start_does_not_adopt_bare_des_config(

@@ -16,6 +16,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+
+# Standalone-script bootstrap: this file is invoked as a bare
+# `python scripts/validation/validate_catalog_completeness.py` (per the
+# Usage docstring above, and as a `language: system` pre-commit/CI hook with
+# no venv on sys.path) -- the repo root is not on sys.path in that form, so
+# the absolute `from scripts.shared...` import below raises
+# `ModuleNotFoundError: No module named 'scripts'` unless the repo root is
+# prepended first. Mirrors the identical bootstrap in the sibling
+# `validate_skill_agent_mapping.py`.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from scripts.shared.agent_catalog import is_agent_on_disk_catalogued
 
 

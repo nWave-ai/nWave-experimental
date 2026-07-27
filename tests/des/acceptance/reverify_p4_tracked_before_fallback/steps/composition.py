@@ -40,9 +40,17 @@ markers =
     acceptance: Acceptance tests
 """
 
-# A .feature carrying the @slice-01 tag P4 walks for.
-_SLICE_FEATURE_TAGGED = """\
-@slice-01
+# A .feature carrying the @slice-01 tag P4 walks for. Also carries the
+# @feature-{id} file-level tag -- E1 (`check_slice_at_completeness`) is
+# feature-scoped since fix-reverify-e1-via-scoped-wrapper (2026-06-20,
+# W5 cross-feature-collision close): `feature_tag_files` only matches a
+# `.feature` file that self-identifies with `@feature-{feature_id}`
+# preceding its `Feature:` header, so a fixture missing that tag is
+# invisible to E1 regardless of its `@slice-NN` tag -- this fixture predates
+# that scoping change and needs the tag to stay a genuine P4-ACCEPT case
+# instead of an E1-vacuous refusal.
+_SLICE_FEATURE_TAGGED = f"""\
+@feature-{_FEATURE_ID} @slice-01
 Feature: orphaned slice recovery
 
   Scenario: the slice ships its acceptance criterion
@@ -51,8 +59,12 @@ Feature: orphaned slice recovery
     Then the slice is certified green
 """
 
-# The SAME .feature with the @slice-01 tag dropped (disownership).
-_SLICE_FEATURE_TAG_DROPPED = """\
+# The SAME .feature with the @slice-01 tag dropped (disownership) -- the
+# @feature-{id} tag is KEPT: this variant tests slice-tag disownership, not
+# feature-scoping, so it must still resolve as this feature's file up until
+# the slice tag match fails.
+_SLICE_FEATURE_TAG_DROPPED = f"""\
+@feature-{_FEATURE_ID}
 Feature: orphaned slice recovery
 
   Scenario: the slice ships its acceptance criterion

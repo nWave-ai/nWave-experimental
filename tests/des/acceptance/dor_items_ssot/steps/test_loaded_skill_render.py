@@ -119,7 +119,9 @@ def then_loaded_skill_unchanged(
 
 
 @then(
-    'the loaded skill presents the readiness item "Outcome KPIs defined with measurable targets"'
+    'the loaded skill presents the readiness item "Outcome KPIs defined with '
+    "measurable targets and a stated baseline (current-state value the target "
+    'is measured against)"'
 )
 def then_skill_presents_outcome_kpis(loaded_skill: LoadedSkillView) -> None:
     assert loaded_skill.presents_outcome_kpis_item is True

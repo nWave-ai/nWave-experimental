@@ -57,6 +57,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from des.domain.iso_utc import format_iso_utc, parse_iso_utc
+
 
 if TYPE_CHECKING:
     from des.ports.driven_ports.at_completion_ledger_port import AtCompletionLedgerPort
@@ -82,14 +84,6 @@ _LADDER_EVENTS = frozenset(
 # The OQ-2-resolved 4-way queue-state vocabulary's ONE fresh-triggering value
 # -- every other value (`empty` / `all-gated` / `malformed`) is exhausted.
 _FRESH_TRIGGER_STATE = "has-unblocked-item"
-
-
-def _parse_ts(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def _format_ts(value: datetime) -> str:
-    return value.isoformat().replace("+00:00", "Z")
 
 
 def _reason(queue_state: str, gated_reasons: str | None) -> str:
@@ -122,7 +116,7 @@ def _current_window(ladder_records: list[dict[str, Any]]) -> _OpenWindow | None:
         if event == WINDOW_OPENED:
             timestamp = record.get("timestamp")
             window = (
-                _OpenWindow(open_ts=_parse_ts(timestamp))
+                _OpenWindow(open_ts=parse_iso_utc(timestamp))
                 if isinstance(timestamp, str)
                 else None
             )
@@ -166,7 +160,7 @@ def evaluate_and_record(
             gap_minutes = (now - window.open_ts).total_seconds() / 60.0
             ledger.append_work_exhausted_event(
                 WINDOW_RESOLVED,
-                timestamp=_format_ts(now),
+                timestamp=format_iso_utc(now),
                 gap_minutes=gap_minutes,
                 reason=reason,
                 feature_id=feature_id,
@@ -176,7 +170,7 @@ def evaluate_and_record(
     if window is None:
         ledger.append_work_exhausted_event(
             WINDOW_OPENED,
-            timestamp=_format_ts(now),
+            timestamp=format_iso_utc(now),
             gap_minutes=0,
             reason=reason,
             feature_id=feature_id,
@@ -193,7 +187,7 @@ def evaluate_and_record(
     if elapsed_minutes >= FIRST_WARNING_MINUTES and not window.first_fired:
         ledger.append_work_exhausted_event(
             FIRST_WARNING,
-            timestamp=_format_ts(
+            timestamp=format_iso_utc(
                 window.open_ts + timedelta(minutes=FIRST_WARNING_MINUTES)
             ),
             gap_minutes=FIRST_WARNING_MINUTES,
@@ -203,7 +197,7 @@ def evaluate_and_record(
     if elapsed_minutes >= SECOND_WARNING_MINUTES and not window.second_fired:
         ledger.append_work_exhausted_event(
             SECOND_WARNING,
-            timestamp=_format_ts(
+            timestamp=format_iso_utc(
                 window.open_ts + timedelta(minutes=SECOND_WARNING_MINUTES)
             ),
             gap_minutes=SECOND_WARNING_MINUTES,
@@ -213,7 +207,7 @@ def evaluate_and_record(
     if elapsed_minutes >= STOP_ESCALATE_MINUTES and not window.stop_fired:
         ledger.append_work_exhausted_event(
             STOP_ESCALATE,
-            timestamp=_format_ts(
+            timestamp=format_iso_utc(
                 window.open_ts + timedelta(minutes=STOP_ESCALATE_MINUTES)
             ),
             gap_minutes=STOP_ESCALATE_MINUTES,

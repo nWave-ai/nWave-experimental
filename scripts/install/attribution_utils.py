@@ -10,12 +10,11 @@ import re
 import shutil
 import stat
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
 from scripts.shared.git_hooks_paths import resolve_hooks_dir
-from scripts.shared.install_paths import is_durable_interpreter_path
+from scripts.shared.install_paths import resolve_python_path_for_shell
 
 
 _SHELL_UNSAFE = re.compile(r"[;&|`(){}]")
@@ -76,26 +75,16 @@ def write_attribution_preference(
 def _resolve_python_path() -> str:
     """Resolve Python interpreter path for hook shim.
 
-    Same pattern as DESPlugin._resolve_python_path():
-    captures sys.executable, replaces $HOME for portability, and falls
-    back to 'python3' under two independent guards -- durability (rooted
-    under a known-ephemeral location, see is_durable_interpreter_path())
-    and portability (project-local .venv paths).
+    Delegates to the shared SSOT `resolve_python_path_for_shell()`
+    (scripts/shared/install_paths.py) -- this used to be a standalone,
+    byte-identical copy of the same logic duplicated in
+    DESPlugin._resolve_python_path (des_plugin.py)
+    (D3-code-duplication-resolve-python-path, techdebt.md). Kept as a
+    thin delegating wrapper (rather than inlined at the two call sites)
+    so existing callers/tests that import this module-level name keep
+    working unchanged.
     """
-    python_path = sys.executable
-
-    # Durability: reject interpreters rooted in a known-ephemeral location
-    if not is_durable_interpreter_path(python_path):
-        return "python3"
-
-    # Portability: project-local .venv must not leak into the git hook shim
-    if "/.venv/" in python_path or "\\.venv\\" in python_path:
-        return "python3"
-
-    home = str(Path.home())
-    if python_path.startswith(home):
-        python_path = "$HOME" + python_path[len(home) :]
-    return python_path
+    return resolve_python_path_for_shell()
 
 
 def _resolve_hooks_dir() -> Path:

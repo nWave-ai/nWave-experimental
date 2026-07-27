@@ -449,6 +449,12 @@ def _build_subagent_stop_context(
         "project_id": project_id,
         "step_id": "",
         "cwd": cwd,
+        # mode defaults to "atdd_pure" (SubagentStopContext), which would route
+        # this wave-only context into _validate_atdd_pure at Step -0.5 instead
+        # of the wave-only close-floor + allow path this AT drives -- this is
+        # a genuinely wave-only, not atdd_pure, return (mirrors the production
+        # fix in subagent_stop_handler.py's _handle_wave_only_return).
+        "mode": "classic",
     }
     if "subagent_type" in field_names:
         base["subagent_type"] = subagent_type

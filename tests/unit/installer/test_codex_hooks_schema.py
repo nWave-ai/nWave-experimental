@@ -173,7 +173,17 @@ def test_remove_nwave_hooks_strips_only_nwave_pretooluse_entries():
         }
     }
 
-    cleaned = _remove_nwave_hooks(doc)
+    # _remove_nwave_hooks identifies ownership by launcher_path (current
+    # shape) or legacy_direct_command (pre-launcher-indirection shape) --
+    # never by an adapter-module substring, which the function's own
+    # docstring rules out as ownership evidence. nwave_entry above is the
+    # legacy direct-command shape (a raw `-m` module invocation, not
+    # `[python, launcher_path, subcommand]`), so it must be identified via
+    # legacy_direct_command, matching how production callers (uninstall)
+    # actually invoke this function.
+    cleaned = _remove_nwave_hooks(
+        doc, legacy_direct_command=nwave_entry["hooks"][0]["command"]
+    )
 
     assert isinstance(cleaned, dict)
     assert cleaned["hooks"]["PreToolUse"] == [user_pretool_entry], (

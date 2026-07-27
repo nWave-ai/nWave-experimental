@@ -100,16 +100,17 @@ def main(argv: list[str] | None = None) -> int:
 
     outcome = service.clear_floor(project_root)
     _write_audit_record(project_root, outcome, args.reason)
-    _emit(outcome)
+    _emit(outcome, project_root)
     return _EXIT_BY_OUTCOME[outcome]
 
 
-def _emit(outcome: ClearFloorOutcome) -> None:
+def _emit(outcome: ClearFloorOutcome, project_root: Path) -> None:
     """Print a loud, human-readable line so the clear is never silent."""
     messages = {
         ClearFloorOutcome.CLEARED: "wave-clear: CLEARED -- stale wave floor removed.",
         ClearFloorOutcome.NOOP_SUCCESS: (
-            "wave-clear: NOOP_SUCCESS -- no wave floor present (idempotent no-op)."
+            f"wave-clear: NOOP_SUCCESS -- no wave floor present in {project_root} "
+            "(idempotent no-op)."
         ),
         ClearFloorOutcome.INDETERMINATE: (
             "wave-clear: INDETERMINATE -- the wave floor is corrupt/unreadable; "

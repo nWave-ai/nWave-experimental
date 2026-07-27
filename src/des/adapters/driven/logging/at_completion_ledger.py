@@ -57,6 +57,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from des.domain.iso_utc import format_iso_utc
 from des.ports.driven_ports.at_completion_ledger_port import (
     COVERAGE_MAP_NOT_APPLICABLE_AT_DELIVER_EXIT,
     COVERAGE_MAP_NOT_APPLICABLE_AT_DISTILL_EXIT,
@@ -1559,9 +1560,7 @@ class AtCompletionLedger(AtCompletionLedgerPort):
                 record: dict[str, Any] = {
                     "seq": next_seq,
                     "feature_id": resolved_feature_id,
-                    "timestamp": datetime.now(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z"),
+                    "timestamp": format_iso_utc(datetime.now(timezone.utc)),
                     **fields,
                 }
                 # Singleton-shape records carry a derived correlation_id so

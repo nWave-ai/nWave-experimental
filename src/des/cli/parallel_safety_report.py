@@ -35,7 +35,10 @@ stdout token, malformed invocation (exit 2, mirrors blast-radius's
 
 Exit codes: 0 = a verdict was produced (advisory, never a refusal, DF/D-2).
 2 = a malformed invocation (a --scope naming a declared-serial or absent row,
-or not exactly two scopes) -- rejected at validation, BEFORE any measurement.
+or not exactly two scopes), or a --feature-delta carrying NO Slice Plan section
+at all -- rejected at validation, BEFORE any measurement. A Slice Plan that IS
+present but declares zero parallel slices is NOT that case: it is a valid
+monolithic plan, and only the --scope bindings are rejected.
 """
 
 from __future__ import annotations
@@ -121,15 +124,17 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _reject(reasons: list[str]) -> int:
+def _reject(reasons: list[str], how: str | None = None) -> int:
     """Emit the input-rejection event + human face; exit 2 (mirrors
-    blast-radius)."""
+    blast-radius). `how` overrides the default invocation-shape remedy for a
+    rejection whose repair is a different action."""
     print(json.dumps({"event": "ParallelSafetyInputRejected", "reasons": reasons}))
     print_human_summary(
         Verdict.FAIL,
         "parallel-safety-report input rejected",
         why=reasons[0] if reasons else "",
-        how=(
+        how=how
+        or (
             "supply EXACTLY ONE of --feature-delta/--epic-delta and EXACTLY "
             "TWO --scope <id>=<paths> bindings, each naming a DECLARED-"
             "PARALLEL Slice/Feature Plan row (no `depends-on`)"
@@ -174,11 +179,41 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.epic_delta is not None:
         content = Path(args.epic_delta).read_text(encoding="utf-8")
-        declared_parallel = read_declared_parallel_feature_ids(content)
+        declared_feature_ids = read_declared_parallel_feature_ids(content)
+        if declared_feature_ids is None:
+            return _reject(
+                [
+                    f"{args.epic_delta} carries NO '## Wave: DISCUSS / [REF] "
+                    f"Feature Plan' section at all -- a structural omission, NOT "
+                    f"a plan that declares zero parallel features; there is no "
+                    f"declared claim to cross-check"
+                ],
+                how=(
+                    f"run `des feature-delta-doctor {args.epic_delta}` -- it "
+                    f"reports the missing locked section and the command that "
+                    f"emits its canonical heading -- then re-run this report"
+                ),
+            )
+        declared_parallel = declared_feature_ids
         plan_row_noun = "Feature Plan row"
     else:
         content = Path(args.feature_delta).read_text(encoding="utf-8")
-        declared_parallel = read_declared_parallel_slice_ids(content)
+        declared_slice_ids = read_declared_parallel_slice_ids(content)
+        if declared_slice_ids is None:
+            return _reject(
+                [
+                    f"{args.feature_delta} carries NO '## Wave: DISCUSS / [REF] "
+                    f"Slice Plan' section at all -- a structural omission, NOT a "
+                    f"plan that declares zero parallel slices; there is no "
+                    f"declared claim to cross-check"
+                ],
+                how=(
+                    f"run `des feature-delta-doctor {args.feature_delta}` -- it "
+                    f"reports the missing locked section and the command that "
+                    f"emits its canonical heading -- then re-run this report"
+                ),
+            )
+        declared_parallel = declared_slice_ids
         plan_row_noun = "Slice Plan row"
 
     raw_scopes = args.scope or []

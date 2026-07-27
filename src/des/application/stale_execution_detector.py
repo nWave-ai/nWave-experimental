@@ -29,6 +29,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from des.domain.iso_utc import parse_iso_utc
 from des.domain.stale_detection_result import StaleDetectionResult
 from des.domain.stale_execution import StaleExecution
 from des.domain.value_objects import PhaseStatus
@@ -173,7 +174,7 @@ class StaleExecutionDetector:
         Raises:
             ValueError: If timestamp cannot be parsed
         """
-        started_datetime = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        started_datetime = parse_iso_utc(started_at)
         if started_datetime.tzinfo is None:
             started_datetime = started_datetime.replace(tzinfo=timezone.utc)
         age_delta = datetime.now(timezone.utc) - started_datetime

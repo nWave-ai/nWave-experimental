@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timezone
+from typing import get_args
 
 import pytest
 
@@ -19,6 +20,7 @@ from des.domain.telemetry import (
     DOCUMENTATION_DENSITY_CHOICE,
     DocumentationDensityEvent,
 )
+from des.domain.telemetry.documentation_density_event import WaveName
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 
 
@@ -40,6 +42,13 @@ class TestDocumentationDensityEventConstruction:
         assert event.expansion_id == "jtbd-narrative"
         assert event.choice == "expand"
         assert event.timestamp == ts
+
+    def test_wave_name_literal_includes_diverge(self) -> None:
+        """DIVERGE is a real, canonical wave (CLAUDE.md's 7-wave table,
+        framework-catalog.yaml, the shipped /nw-diverge command) -- the
+        WaveName Literal must carry it so a caller emitting a DIVERGE
+        density-choice event has a type to construct against."""
+        assert "DIVERGE" in get_args(WaveName)
 
     def test_event_is_frozen(self) -> None:
         event = DocumentationDensityEvent(

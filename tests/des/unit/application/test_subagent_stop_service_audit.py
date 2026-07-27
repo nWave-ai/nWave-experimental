@@ -180,6 +180,7 @@ class TestAuditEventsUseDirectFields:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
+            mode="classic",
         )
 
         service.validate(context)
@@ -201,6 +202,7 @@ class TestAuditEventsUseDirectFields:
             execution_log_path="/fake/execution-log.json",
             project_id="audit-log-refactor",
             step_id="03-01",
+            mode="classic",
         )
 
         service.validate(context)
@@ -225,6 +227,7 @@ class TestAuditEventsUseDirectFields:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
+            mode="classic",
         )
 
         service.validate(context)
@@ -261,6 +264,7 @@ class TestFeatureNameFromProjectId:
             execution_log_path="/fake/execution-log.json",
             project_id=project_id,
             step_id="01-01",
+            mode="classic",
         )
 
         service.validate(context)
@@ -288,6 +292,7 @@ class TestExistingDataFieldsPreserved:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="01-01",
+            mode="classic",
         )
 
         service.validate(context)
@@ -310,6 +315,7 @@ class TestExistingDataFieldsPreserved:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="01-01",
+            mode="classic",
         )
 
         service.validate(context)
@@ -331,6 +337,7 @@ class TestExistingDataFieldsPreserved:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
+            mode="classic",
         )
 
         service.validate(context)
@@ -352,6 +359,7 @@ class TestExistingDataFieldsPreserved:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
+            mode="classic",
         )
 
         service.validate(context)
@@ -372,6 +380,7 @@ class TestExistingDataFieldsPreserved:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
+            mode="classic",
         )
 
         service.validate(context)
@@ -399,6 +408,7 @@ class TestAuditLoggingConditionsPreserved:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
+            mode="classic",
         )
 
         decision = service.validate(context)
@@ -419,6 +429,7 @@ class TestAuditLoggingConditionsPreserved:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="01-01",
+            mode="classic",
         )
 
         decision = service.validate(context)
@@ -440,6 +451,7 @@ class TestAuditLoggingConditionsPreserved:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
+            mode="classic",
         )
 
         decision = service.validate(context)
@@ -487,6 +499,7 @@ class TestIntegrityValidationIntegration:
             execution_log_path="/fake/execution-log.json",
             project_id="my-feature",
             step_id="02-01",
+            mode="classic",
         )
 
         decision = service.validate(context)
@@ -532,6 +545,7 @@ class TestIntegrityValidationIntegration:
             project_id="my-feature",
             step_id="02-01",
             task_start_time="2026-02-06T21:00:00+00:00",
+            mode="classic",
         )
 
         decision = service.validate(context)

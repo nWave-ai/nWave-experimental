@@ -129,7 +129,6 @@ PRE_EXISTING_2026_07_22: dict[str, int] = {
     "scripts/docs_site/build_site.py": 4,
     "scripts/flow_v2_closure_scorecard.py": 1,
     "scripts/framework/backlog_audit.py": 1,
-    "scripts/framework/release_validation.py": 1,
     "scripts/hooks/autofix_python.py": 4,
     "scripts/hooks/check_end_of_file.py": 2,
     "scripts/hooks/check_formatter_available.py": 2,

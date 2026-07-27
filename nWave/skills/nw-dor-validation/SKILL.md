@@ -56,10 +56,10 @@ Blocking deps identified, resolution status clear, escalation path.
 Pass: "Depends on US-041 (completed) and Auth service API (available)"
 Fail: "Needs some API - TBD"
 
-### Item 9: Outcome KPIs defined with measurable targets
-Measurable success metrics with explicit targets, tied to the user outcome.
-Pass: "Reduce repeat-login time from 30s to <5s for returning customers"
-Fail: no KPIs | "Improve UX" | unmeasurable goals
+### Item 9: Outcome KPIs defined with measurable targets and a stated baseline (current-state value the target is measured against)
+Measurable success metrics with explicit targets and a stated baseline, tied to the user outcome.
+Pass: "Reduce repeat-login time from 30s (baseline) to <5s for returning customers"
+Fail: no KPIs | "Improve UX" | unmeasurable goals | a target with no baseline
 
 **Canonical source**: the nine items above are transcribed from the one
 authoritative place, `dor-items.yaml`, read by the

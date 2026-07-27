@@ -19,6 +19,21 @@ Output format when UPDATE_AVAILABLE (see ``_build_update_output``):
 ``systemMessage`` is shown to the user; ``additionalContext`` is injected into
 the model context. The wrapped ``hookSpecificOutput`` form is required -- the
 bare ``{"additionalContext": ...}`` form is not honored by current Claude Code.
+
+``handle_session_start`` may have several independent contributors fire in
+the same session (the update notice, the gate-affordance nudge, the
+hook-version-skew finding, the workflow-mode guidance, the orchestrator
+affordance). Every one of them APPENDS its text to a single accumulator
+instead of printing its own JSON line -- ``handle_session_start`` prints AT
+MOST ONE combined JSON object per invocation, always in the wrapped
+``hookSpecificOutput`` form, with contributions joined by
+``_ORCHESTRATOR_AFFORDANCE_SEPARATOR``. This is deliberate: multiple
+independent ``print(json.dumps(...))`` calls in one invocation produce
+multiple JSON objects on separate stdout lines, which is not valid JSON as a
+whole and silently drops every contribution but the first for any consumer
+that reads/parses the full stdout as one object. The substrate-probe
+advisory (``run_probe``) is the one exception -- it is a plain one-line
+human-readable string, not JSON, and is printed on its own line by design.
 """
 
 from __future__ import annotations
@@ -30,6 +45,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from des.adapters.drivers.hooks.substrate_probe import run_probe
+from des.domain.iso_utc import format_iso_utc
 
 
 if TYPE_CHECKING:
@@ -191,6 +207,58 @@ def _build_update_message(local: str, latest: str, changelog: str | None) -> str
     return f"nWave update available: {local} \u2192 {latest}. Changes: {changes}"
 
 
+def _emit_codex_continued_work_opportunity(
+    cwd: str | None, host_provenance: str | None
+) -> None:
+    """Execute one due bounded work item through the host-agnostic loop runner."""
+    if cwd is None or host_provenance != "codex":
+        return
+    try:
+        from des.application.standing_loop_facade import StandingLoopFacade
+
+        execution = StandingLoopFacade().execute_for_session_start(Path(cwd))
+        if execution is None:
+            return
+        opportunity, attestation = execution
+        limits = opportunity.limits
+        if (
+            attestation.budget_verdict == "EXHAUSTED"
+            and attestation.execution_receipt is None
+        ):
+            message = (
+                f"Continued-work opportunity: {opportunity.outcome}. "
+                "TOKEN_BUDGET_EXHAUSTED: no bounded action was executed. "
+                "Authorised limits: "
+                f"max tokens {limits['max_tokens_per_tick']}; "
+                f"max wall seconds {limits['max_wall_seconds']}. "
+                f"{'Replayed' if attestation.replayed else 'Completed'} canonical terminal loop occurrence."
+            )
+        else:
+            message = (
+                f"Continued-work opportunity: {opportunity.outcome}. "
+                f"Continued-work execution receipt: {opportunity.outcome}. "
+                "Authorised limits: "
+                f"max tokens {limits['max_tokens_per_tick']}; "
+                f"max wall seconds {limits['max_wall_seconds']}. "
+                f"{'Replayed' if attestation.replayed else 'Completed'} canonical loop occurrence."
+            )
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "SessionStart",
+                        "additionalContext": message,
+                    }
+                }
+            )
+        )
+    except Exception as error:
+        sys.stderr.write(
+            "[nwave] Codex continued-work opportunity unavailable (fail-open): "
+            f"{error}. The session was not blocked and no work was started.\n"
+        )
+
+
 # ---------------------------------------------------------------------------
 # D6 / M5 \u2014 hook-version skew detection (the PRIMARY skew detector)
 # ---------------------------------------------------------------------------
@@ -315,31 +383,33 @@ def _session_cwd_is_atdd_pure(cwd: str | None) -> bool:
         return False
 
 
-def _emit_hook_version_skew_finding(cwd: str | None) -> None:
-    """Detect hook-version skew and write a `HookVersionSkew` finding to stdout.
+def _emit_hook_version_skew_finding(cwd: str | None) -> str | None:
+    """Classify hook-version skew and return the finding's additionalContext text.
 
     The D6/M5 primary skew detector: reads the installed `nwave_hook_version`
     stamp, compares it to the running checkout's nWave version, and on skew
-    emits a structured finding as `additionalContext`. Fail-open -- any
-    exception is swallowed so the session is never blocked (the `/nw-deliver`
-    phase-entry diagnostic remains the fail-CLOSED gate for atdd_pure).
+    returns a structured finding string for the caller to fold into the
+    SINGLE combined SessionStart payload -- this function never touches
+    stdout itself (see `handle_session_start`'s additional-context
+    accumulator). Fail-open -- any exception is swallowed and `None` is
+    returned (the `/nw-deliver` phase-entry diagnostic remains the
+    fail-CLOSED gate for atdd_pure).
 
-    ADR-030 D6: the skew gate is scoped to `atdd_pure`. The detector emits
+    ADR-030 D6: the skew gate is scoped to `atdd_pure`. Returns non-`None`
     only when the session cwd is an `atdd_pure`-mode project -- classic
     sessions are unaffected.
     """
     try:
         if not _session_cwd_is_atdd_pure(cwd):
-            return
+            return None
         checkout_version = _get_local_version()
         installed = _read_installed_hook_version()
         case = _classify_hook_version_skew(installed, checkout_version)
         if case is None:
-            return
-        message = _build_skew_message(case, installed, checkout_version)
-        print(json.dumps({"additionalContext": message}))
+            return None
+        return _build_skew_message(case, installed, checkout_version)
     except Exception:
-        pass
+        return None
 
 
 def _is_an_nwave_project(project_dir: Path) -> bool:
@@ -478,16 +548,6 @@ def build_gate_affordance_nudge(cwd: str | None) -> str | None:
         return None
 
 
-def _build_gate_affordance_output(nudge: str) -> dict[str, object]:
-    """Build the SessionStart hookSpecificOutput payload for the gate-affordance nudge."""
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "SessionStart",
-            "additionalContext": nudge,
-        }
-    }
-
-
 # ---------------------------------------------------------------------------
 # orchestrator-affordance-injection (slice-01): load the orchestrator's
 # spine-discipline + producing-tool affordance from shipped text assets,
@@ -525,16 +585,6 @@ def load_orchestrator_affordance(assets_dir: Path) -> str | None:
         return _ORCHESTRATOR_AFFORDANCE_SEPARATOR.join(contents)
     except Exception:
         return None
-
-
-def _build_orchestrator_affordance_output(affordance: str) -> dict[str, object]:
-    """Build the SessionStart hookSpecificOutput payload for the affordance text."""
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "SessionStart",
-            "additionalContext": affordance,
-        }
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -616,7 +666,7 @@ def _maybe_tick_work_exhausted(cwd: str | None) -> None:
         if "queue_state" not in payload:
             ledger.append_work_exhausted_event(
                 "WorkExhaustedTickAttemptFailed",
-                timestamp=now.isoformat().replace("+00:00", "Z"),
+                timestamp=format_iso_utc(now),
                 gap_minutes=0,
                 reason="missing field: queue_state",
                 feature_id=feature_id,
@@ -660,7 +710,7 @@ def _maybe_tick_bugfix_pipeline(cwd: str | None) -> None:
             ledger.append_bugfix_pipeline_event(
                 "BugfixPipelineTickAttemptFailed",
                 defect_id=payload.get("defect_id") or "<unknown>",
-                timestamp=now.isoformat().replace("+00:00", "Z"),
+                timestamp=format_iso_utc(now),
                 reason=f"missing field: {missing}",
                 feature_id=feature_id,
             )
@@ -727,7 +777,7 @@ def _maybe_tick_consolidation_intake(cwd: str | None) -> None:
             ledger.append_bugfix_pipeline_event(
                 "ConsolidationSignalTickAttemptFailed",
                 defect_id=f"consolidation-{signal_type}-{signal_key}",
-                timestamp=now.isoformat().replace("+00:00", "Z"),
+                timestamp=format_iso_utc(now),
                 reason=f"missing field: {missing}",
                 feature_id=feature_id,
             )
@@ -746,7 +796,7 @@ def _maybe_tick_consolidation_intake(cwd: str | None) -> None:
         sys.stderr.write(f"[nwave] {filename} loop-tick error (fail-open): {e}\n")
 
 
-def handle_session_start() -> int:
+def handle_session_start(host_provenance: str | None = None) -> int:
     """Handle session-start hook: run housekeeping then check for nWave updates.
 
     Reads JSON from stdin (Claude Code hook protocol), runs housekeeping,
@@ -788,12 +838,20 @@ def handle_session_start() -> int:
             f"this session; the session itself is never blocked.\n"
         )
 
+    # Every trigger below APPENDS its text to this accumulator instead of
+    # printing its own JSON line -- see the module docstring. At most one
+    # combined JSON object is printed for this whole invocation, always in
+    # the wrapped `hookSpecificOutput` form (never the bare
+    # `{"additionalContext": ...}` form current Claude Code drops).
+    additional_context_parts: list[str] = []
+    system_message: str | None = None
+
     # Workflow policy is the first project-specific authority at SessionStart.
     # Prior-use evidence never authorises mutation or silent mode adoption.
     try:
         guidance = _workflow_mode_session_guidance(session_cwd)
         if guidance:
-            print(json.dumps({"additionalContext": guidance}))
+            additional_context_parts.append(guidance)
     except Exception:
         pass
 
@@ -818,16 +876,19 @@ def handle_session_start() -> int:
         from des.application.update_check_service import UpdateStatus
 
         if result.status == UpdateStatus.UPDATE_AVAILABLE:
-            output = _build_update_output(
-                local=_get_local_version(),
-                latest=result.latest or "",
-                changelog=result.changelog,
+            local_version = _get_local_version()
+            latest_version = result.latest or ""
+            system_message = _build_visible_message(local_version, latest_version)
+            additional_context_parts.append(
+                _build_update_message(local_version, latest_version, result.changelog)
             )
-            print(json.dumps(output))
 
     except Exception:
         pass
 
+    # The substrate-probe advisory is a plain one-line human-readable string,
+    # not JSON -- printed on its own line by design (see module docstring),
+    # never folded into the additionalContext accumulator below.
     try:
         advisory = run_probe()
         if advisory:
@@ -841,15 +902,19 @@ def handle_session_start() -> int:
     try:
         nudge = build_gate_affordance_nudge(session_cwd)
         if nudge:
-            print(json.dumps(_build_gate_affordance_output(nudge)))
+            additional_context_parts.append(nudge)
     except Exception:
         pass
+
+    _emit_codex_continued_work_opportunity(session_cwd, host_provenance)
 
     # D6 / M5: the PRIMARY hook-version skew detector. Mechanically fired every
     # session start -- catches skew even when the orchestrator skips the
     # prose-invoked /nw-deliver phase-entry diagnostic. Scoped to atdd_pure
     # projects (ADR-030 D6); fail-open.
-    _emit_hook_version_skew_finding(session_cwd)
+    skew_finding = _emit_hook_version_skew_finding(session_cwd)
+    if skew_finding:
+        additional_context_parts.append(skew_finding)
 
     # orchestrator-affordance-injection (slice-01): load the shipped
     # spine-discipline + producing-tool affordance from text assets and
@@ -864,9 +929,26 @@ def handle_session_start() -> int:
                 _ORCHESTRATOR_AFFORDANCE_ASSETS_DIR
             )
             if affordance:
-                print(json.dumps(_build_orchestrator_affordance_output(affordance)))
+                additional_context_parts.append(affordance)
     except Exception:
         pass
+
+    # ONE combined JSON payload for the whole invocation -- every contributor
+    # above appended to `additional_context_parts` / set `system_message`
+    # instead of printing independently, so this is the ONLY
+    # `print(json.dumps(...))` call in this function.
+    if additional_context_parts or system_message:
+        output: dict[str, object] = {}
+        if system_message:
+            output["systemMessage"] = system_message
+        if additional_context_parts:
+            output["hookSpecificOutput"] = {
+                "hookEventName": "SessionStart",
+                "additionalContext": _ORCHESTRATOR_AFFORDANCE_SEPARATOR.join(
+                    additional_context_parts
+                ),
+            }
+        print(json.dumps(output))
 
     # slice-05 (autonomous-consolidation-and-bugfix-loops, OQ-3/DA-13): fire
     # every pending autonomous-loop tick left from a prior iteration. Each

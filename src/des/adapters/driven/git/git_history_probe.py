@@ -50,16 +50,29 @@ TEST_STATE_PATH = ".nwave/step-test-state"
 class ShaVerdict(str, Enum):
     """The outcome of one M2 commit-SHA re-verification.
 
-    GREEN     -- SHA exists, reachable from HEAD, tests green at that SHA now.
-    REVERTED  -- SHA exists but is not reachable from HEAD (commit reverted).
-    ABSENT    -- SHA does not exist in git history.
-    TESTS_RED -- SHA exists and is reachable, but its tests are red now.
+    GREEN        -- SHA exists, reachable from HEAD, tests green at that SHA now.
+    REVERTED     -- SHA exists but is not reachable from HEAD (commit reverted).
+    ABSENT       -- SHA does not exist in git history.
+    TESTS_RED    -- SHA exists and is reachable, but its tests are red now.
+    PROBE_ERROR  -- the test-state lookup failed for a reason OTHER than the
+        test-state file genuinely not being committed at that SHA (e.g. repo
+        corruption, permission denied, disk failure). Distinct from ABSENT:
+        a caller MUST treat this as "could not determine", never as GREEN.
     """
 
     GREEN = "green"
     REVERTED = "reverted"
     ABSENT = "absent"
     TESTS_RED = "tests_red"
+    PROBE_ERROR = "probe_error"
+
+
+# Substring git emits on stderr when `cat-file blob <sha>:<path>` fails
+# because the path is genuinely absent from that commit's tree -- the ONLY
+# case in which a non-zero cat-file exit is a "no test-state recorded" fact
+# rather than a probe failure. Any other non-zero exit (corrupt object,
+# permission denied, disk failure) must NOT be folded into the same verdict.
+_BLOB_ABSENT_MARKER = "does not exist in"
 
 
 class GitHistoryProbe:
@@ -77,16 +90,19 @@ class GitHistoryProbe:
 
         Returns `ABSENT` when the SHA is unknown to this repository,
         `REVERTED` when it exists but is unreachable from HEAD, `TESTS_RED`
-        when it is reachable but its recorded test-state is red, and `GREEN`
-        only when the SHA is reachable with green tests.
+        when it is reachable but its recorded test-state is red, `GREEN`
+        when the SHA is reachable with green tests, and `PROBE_ERROR` when
+        the test-state lookup itself failed for a reason other than genuine
+        absence (never silently folded into GREEN -- GDP-6).
         """
         if not self._sha_exists(sha):
             return ShaVerdict.ABSENT
         if not self._sha_reachable(sha):
             return ShaVerdict.REVERTED
-        if not self._tests_green_at(sha):
-            return ShaVerdict.TESTS_RED
-        return ShaVerdict.GREEN
+        tests_green = self._tests_green_at(sha)
+        if tests_green is None:
+            return ShaVerdict.PROBE_ERROR
+        return ShaVerdict.GREEN if tests_green else ShaVerdict.TESTS_RED
 
     def _sha_exists(self, sha: str) -> bool:
         """Whether `sha` resolves to a commit object in this repository."""
@@ -96,16 +112,23 @@ class GitHistoryProbe:
         """Whether `sha` is an ancestor of HEAD (i.e. not reverted away)."""
         return self._git("merge-base", "--is-ancestor", sha, GIT_HEAD).returncode == 0
 
-    def _tests_green_at(self, sha: str) -> bool:
+    def _tests_green_at(self, sha: str) -> bool | None:
         """Whether the step's tests were green at `sha`.
 
         Reads the `TEST_STATE_PATH` blob out of the committed tree. A commit
         with no recorded test-state is treated as green -- the test-state file
         is the explicit red marker, its absence is not a failure signal.
+
+        Returns `None` when the lookup fails for a reason OTHER than genuine
+        blob absence (git error, corruption, permission) -- a failed lookup
+        must never be recorded as the established fact "tests are green"
+        (GDP-6: no silent-wrong). The caller maps `None` to `PROBE_ERROR`.
         """
         completed = self._git("cat-file", "blob", f"{sha}:{TEST_STATE_PATH}")
         if completed.returncode != 0:
-            return True
+            if _BLOB_ABSENT_MARKER in completed.stderr:
+                return True
+            return None
         return completed.stdout.strip() != "red"
 
     def _git(self, *args: str) -> subprocess.CompletedProcess[str]:

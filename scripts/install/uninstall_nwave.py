@@ -29,6 +29,10 @@ try:
         PathUtils,
         confirm_action,
     )
+    from scripts.install.plugins.codex_des_plugin import _codex_config_dir
+    from scripts.install.plugins.copilot_des_plugin import _copilot_config_dir
+    from scripts.install.plugins.opencode_des_plugin import _opencode_config_dir
+    from scripts.shared.install_paths import host_neutral_runtime_dir
 except ImportError:
     from attribution_utils import (
         NWAVE_MANAGED_COMMIT,
@@ -43,6 +47,16 @@ except ImportError:
         PathUtils,
         confirm_action,
     )
+    from plugins.codex_des_plugin import _codex_config_dir
+    from plugins.copilot_des_plugin import _copilot_config_dir
+    from plugins.opencode_des_plugin import _opencode_config_dir
+    from shared.install_paths import host_neutral_runtime_dir
+
+# The DES manifest filename each native (non-Claude) plugin writes under its
+# own host config dir -- each plugin module repeats this same literal as a
+# private module-level constant, so it is repeated here rather than reaching
+# into another module's private name.
+_NATIVE_DES_MANIFEST_FILENAME = ".nwave-des-manifest.json"
 
 # ANSI color codes for --help output (only consumer)
 _ANSI_BLUE = "\033[0;34m"
@@ -73,12 +87,30 @@ class NWaveUninstaller:
         self.dry_run = dry_run
 
         self.claude_config_dir = PathUtils.get_claude_config_dir()
-        log_file = self.claude_config_dir / "nwave-uninstall.log"
-        self.logger = Logger(log_file if not dry_run else None)
+        # Persistent logging (and the uninstall report) start only after
+        # check_installation() confirms a genuine Claude discovery surface
+        # exists -- a native-only (Codex/Copilot/OpenCode, alone or combined)
+        # uninstall must never create ~/.claude merely to hold its own log or
+        # report (mirrors install_nwave.py's enable_install_logging).
+        self._uninstall_log_file = self.claude_config_dir / "nwave-uninstall.log"
+        self.logger = Logger(None)
         self.backup_manager = BackupManager(self.logger, "uninstall")
+        self.claude_installation_present = False
+
+    def enable_uninstall_logging(self) -> None:
+        """Enable persistent logging once a Claude installation is confirmed."""
+        if not self.dry_run:
+            self.logger.log_file = self._uninstall_log_file
 
     def check_installation(self) -> bool:
-        """Check for existing nWave installation."""
+        """Check for existing nWave installation.
+
+        Sets ``self.claude_installation_present`` so callers know whether a
+        Claude discovery surface actually exists (and therefore whether it is
+        safe to enable persistent logging / write the uninstall report under
+        ``claude_config_dir``). A native-only (Codex/Copilot/OpenCode)
+        installation makes this return True without setting that flag.
+        """
         self.logger.info("  🔍 Checking for nWave installation...")
 
         installation_found = False
@@ -132,6 +164,38 @@ class NWaveUninstaller:
                             self.logger.info("    🔗 Found DES hooks in settings.json")
             except (OSError, json.JSONDecodeError):
                 pass
+
+        # This point onward: every check above is Claude-owned (all live
+        # under claude_config_dir). Record that BEFORE looking at native
+        # surfaces, so a pure native installation never flips this flag.
+        self.claude_installation_present = installation_found
+
+        # Native (non-Claude) DES surfaces: a Codex/Copilot/OpenCode-only
+        # installation has no Claude discovery surface at all, so the checks
+        # above always miss it -- without this, check_installation() would
+        # wrongly report "nothing to uninstall" and silently no-op, leaving
+        # the native hook/manifest and the host-neutral DES runtime behind.
+        codex_manifest = _codex_config_dir() / _NATIVE_DES_MANIFEST_FILENAME
+        if codex_manifest.exists():
+            installation_found = True
+            self.logger.info(f"    📄 Found Codex DES manifest: {codex_manifest}")
+
+        copilot_manifest = _copilot_config_dir() / _NATIVE_DES_MANIFEST_FILENAME
+        if copilot_manifest.exists():
+            installation_found = True
+            self.logger.info(f"    📄 Found Copilot DES manifest: {copilot_manifest}")
+
+        opencode_manifest = _opencode_config_dir() / _NATIVE_DES_MANIFEST_FILENAME
+        if opencode_manifest.exists():
+            installation_found = True
+            self.logger.info(f"    📄 Found OpenCode DES manifest: {opencode_manifest}")
+
+        native_runtime_dir = host_neutral_runtime_dir() / "des"
+        if native_runtime_dir.exists():
+            installation_found = True
+            self.logger.info(
+                f"    📂 Found host-neutral DES runtime: {native_runtime_dir}"
+            )
 
         if not installation_found:
             self.logger.info("  ⚠️ No nWave framework installation detected")
@@ -290,35 +354,95 @@ class NWaveUninstaller:
                     self.logger.info("  📂 Kept skills directory (contains user files)")
 
     def remove_lib_python(self) -> None:
-        """Remove ~/.claude/lib/python/des/ (DES runtime library shipped with install).
+        """Remove the installed DES runtime library (`des/`), wherever it lives.
 
-        The installer writes the DES runtime to `lib/python/des/` for the
-        hook adapters to import. Uninstall must remove it; otherwise stale
-        runtime survives across installs of different nWave versions.
-        Sibling lib/python/ contents (non-des) are preserved; parent dirs
-        are removed only if empty.
+        The installer writes the DES runtime under `lib/python/des/` (Claude
+        targets) and/or `host_neutral_runtime_dir()/des/` (Codex/Copilot/
+        OpenCode targets, or the mirror half of a mixed target) for the hook
+        adapters to import. Uninstall must remove EVERY location the SAME
+        target-platform detection resolves to -- not just the Claude-scoped
+        path -- via `DESPlugin.resolve_des_module_locations`, the single
+        source of truth `install()` also uses to decide where to write the
+        module. A hardcoded Claude-only path here orphaned the module on
+        disk for any non-Claude-only target (the uninstall-vs-install path
+        divergence bug). Sibling lib/python/ contents (non-des) are
+        preserved; parent dirs are removed only if empty.
         """
-        lib_des = self.claude_config_dir / "lib" / "python" / "des"
+        try:
+            from scripts.install.context_detector import detect_target_platforms
+            from scripts.install.plugins.base import InstallContext
+            from scripts.install.plugins.des_plugin import DESPlugin
+        except ImportError:
+            from context_detector import detect_target_platforms
+            from plugins.base import InstallContext
+            from plugins.des_plugin import DESPlugin
+
+        target_platforms = {platform.value for platform in detect_target_platforms()}
+        context = InstallContext(
+            claude_dir=self.claude_config_dir,
+            scripts_dir=self.claude_config_dir / "scripts",
+            templates_dir=self.claude_config_dir / "templates",
+            logger=self.logger,
+            target_platforms=target_platforms,
+        )
+        des_module_locations = DESPlugin.resolve_des_module_locations(context)
 
         if self.dry_run:
-            if lib_des.exists():
-                self.logger.info("  🚨 [DRY RUN] Would remove lib/python/des directory")
+            for lib_des in des_module_locations:
+                if lib_des.exists():
+                    self.logger.info(f"  🚨 [DRY RUN] Would remove {lib_des}")
             return
 
         with self.logger.progress_spinner("  🚧 Removing nWave Python runtime..."):
-            if lib_des.exists():
-                shutil.rmtree(lib_des)
-                self.logger.info("  🗑️ Removed lib/python/des directory")
+            for lib_des in des_module_locations:
+                if lib_des.exists():
+                    shutil.rmtree(lib_des)
+                    self.logger.info(f"  🗑️ Removed {lib_des}")
 
-            # Cascade-clean empty parents (lib/python, then lib)
-            for parent in (lib_des.parent, lib_des.parent.parent):
-                if parent.exists():
-                    try:
-                        if not any(parent.iterdir()):
-                            parent.rmdir()
-                            self.logger.info(f"  🗑️ Removed empty {parent.name}")
-                    except OSError:
-                        pass
+                # Cascade-clean empty parents (e.g. lib/python then lib, or
+                # runtime then .nwave for the host-neutral location)
+                for parent in (lib_des.parent, lib_des.parent.parent):
+                    if parent.exists():
+                        try:
+                            if not any(parent.iterdir()):
+                                parent.rmdir()
+                                self.logger.info(f"  🗑️ Removed empty {parent.name}")
+                        except OSError:
+                            pass
+
+    def remove_host_neutral_des_runtime(self) -> None:
+        """Remove ~/.nwave/runtime/des/ (shared DES runtime for native hosts).
+
+        Codex/Copilot/OpenCode adapters import the DES runtime from the
+        host-neutral shared location (see host_neutral_runtime_dir()) rather
+        than claude_config_dir/lib/python/des -- a native-only uninstall must
+        remove it too, mirroring remove_lib_python for the Claude location.
+        Only the "des" subtree is removed; sibling ~/.nwave content
+        (global-config.json, nWave/ operator state, etc.) is untouched, and
+        the "runtime" parent is removed only if it becomes empty.
+        """
+        runtime_des = host_neutral_runtime_dir() / "des"
+
+        if self.dry_run:
+            if runtime_des.exists():
+                self.logger.info(
+                    "  🚨 [DRY RUN] Would remove host-neutral DES runtime directory"
+                )
+            return
+
+        with self.logger.progress_spinner("  🚧 Removing host-neutral DES runtime..."):
+            if runtime_des.exists():
+                shutil.rmtree(runtime_des)
+                self.logger.info("  🗑️ Removed host-neutral DES runtime directory")
+
+            runtime_parent = runtime_des.parent
+            if runtime_parent.exists():
+                try:
+                    if not any(runtime_parent.iterdir()):
+                        runtime_parent.rmdir()
+                        self.logger.info(f"  🗑️ Removed empty {runtime_parent.name}")
+                except OSError:
+                    pass
 
     def remove_commands(self) -> None:
         """Remove nWave commands (delegates to shared nw-namespace remover)."""
@@ -473,6 +597,38 @@ class NWaveUninstaller:
             self.logger.info("  🗑️ Removed Copilot DES hook config")
         else:
             self.logger.warn(f"  ⚠️ Copilot DES hook removal: {result.message}")
+
+    def remove_opencode_des_hooks(self) -> None:
+        """Remove the nWave DES shim from the OpenCode plugins dir.
+
+        The installer writes ``<OPENCODE_CONFIG_DIR>/plugins/nwave-des.ts``
+        and its manifest when OpenCode is detected. Clean uninstall MUST
+        remove both (mirrors remove_copilot_des_hooks) while leaving any
+        plugin the operator authored themselves untouched -- OpenCodeDESPlugin
+        owns only its own dedicated shim file.
+        """
+        if self.dry_run:
+            self.logger.info("  🚨 [DRY RUN] Would remove OpenCode DES shim")
+            return
+
+        try:
+            from scripts.install.plugins.base import InstallContext
+            from scripts.install.plugins.opencode_des_plugin import OpenCodeDESPlugin
+        except ImportError:
+            from plugins.base import InstallContext
+            from plugins.opencode_des_plugin import OpenCodeDESPlugin
+
+        context = InstallContext(
+            claude_dir=self.claude_config_dir,
+            scripts_dir=self.claude_config_dir / "scripts",
+            templates_dir=self.claude_config_dir / "templates",
+            logger=self.logger,
+        )
+        result = OpenCodeDESPlugin().uninstall(context)
+        if result.success:
+            self.logger.info("  🗑️ Removed OpenCode DES shim")
+        else:
+            self.logger.warn(f"  ⚠️ OpenCode DES shim removal: {result.message}")
 
     def remove_des_hook_scripts(self) -> None:
         """Remove DES spine-ledger hook scripts from ~/.claude/scripts/.
@@ -743,6 +899,12 @@ def main():
     if not uninstaller.check_installation():
         return 0
 
+    # A native-only (Codex/Copilot/OpenCode) uninstall has no Claude
+    # discovery surface -- do not enable persistent uninstall logging under
+    # claude_config_dir for it.
+    if uninstaller.claude_installation_present:
+        uninstaller.enable_uninstall_logging()
+
     # Confirm removal
     if not uninstaller.confirm_removal():
         uninstaller.logger.info("")
@@ -760,8 +922,10 @@ def main():
     uninstaller.remove_skills()
     uninstaller.remove_commands()
     uninstaller.remove_lib_python()
+    uninstaller.remove_host_neutral_des_runtime()
     uninstaller.remove_des_hooks()
     uninstaller.remove_copilot_des_hooks()
+    uninstaller.remove_opencode_des_hooks()
     uninstaller.remove_des_hook_scripts()
     uninstaller.remove_attribution()
     uninstaller.remove_config_files()
@@ -772,7 +936,10 @@ def main():
         uninstaller.logger.error("  ❌ Uninstallation failed validation")
         return 1
 
-    uninstaller.create_uninstall_report()
+    # A native-only uninstall has no Claude discovery surface for the report
+    # to live in -- skip writing it rather than creating claude_config_dir.
+    if uninstaller.claude_installation_present:
+        uninstaller.create_uninstall_report()
 
     # Show uninstall summary panel
     backup_dir = uninstaller.backup_manager.backup_dir if args.backup else None

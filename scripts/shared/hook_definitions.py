@@ -1,13 +1,26 @@
-"""Canonical DES hook definitions -- single source of truth.
+"""Canonical DES hook definitions -- the fixed, always-installed set.
 
 Both the plugin builder (build_plugin.py) and the custom installer
-(des_plugin.py) generate Claude Code hook configurations. This module
-provides the shared definitions so hook events, matchers, and actions
-are defined exactly once.
+(des_plugin.py) generate Claude Code hook configurations for the FIXED set of
+hooks below. This module provides the shared definitions so THAT set's hook
+events, matchers, and actions have a single definition site, not two
+independently-maintained copies.
 
 The two distribution paths differ only in HOW the Python command is
 constructed (plugin uses CLAUDE_PLUGIN_ROOT, installer uses $HOME),
 not in WHAT hooks are registered.
+
+SCOPE DISCLAIMER: this module is NOT the complete registry of every
+`hooks.PreToolUse` entry this repo can write into `~/.claude/settings.json`.
+`scripts/install/attribution_utils.py` (`register_attribution_hook`) builds
+and writes an INDEPENDENT `PreToolUse`/`Bash` entry (action
+`pre-commit-attribution`) with its own on/off lifecycle, gated by
+`attribution.enabled` in the DES config and toggled without touching the
+install manifest -- it is invisible to `HOOK_EVENTS` and to this module's own
+exhaustive test. An audit, count, or invariant that wants "every PreToolUse
+hook this repo can register" must ALSO consult `attribution_utils.py`; this
+module alone answers only "every hook the fixed install/plugin manifest
+writes."
 """
 
 from __future__ import annotations
@@ -334,11 +347,11 @@ GIT_PRE_PUSH_BACKSTOP_SCRIPT = "des_declare_done_pre_push.py"
 # survives the install-time settings.json rewrite that drops manual hook edits.
 # Total grows 14 -> 15.
 #
-# fix-orchestrator-affordance-refresh-independent: 2 new entries join -- a
-# standalone SessionStart (matcher=None, fires on startup|resume|clear|compact)
-# and a standalone UserPromptSubmit (matcher=None, self-gated internally on a
-# 900s sentinel), both invoking the stdlib-only, `des`-import-free
-# orchestrator_affordance_refresh.py script directly. Total grows 15 -> 17.
+# fix-orchestrator-affordance-refresh-independent: the standalone SessionStart
+# registration is the sole SessionStart surface.  It is stdlib-only and emits a
+# compact read-only orientation.  The UserPromptSubmit registration remains the
+# 900-second rich refresh surface.  Do not add a DES-runtime SessionStart entry:
+# it performs maintenance and would make a session open mutate maintainer state.
 HOOK_EVENTS: tuple[HookEvent, ...] = (
     HookEvent(event="PreToolUse", matcher="Agent", action="pre-task"),
     HookEvent(event="PreToolUse", matcher="Write", action="pre-write", is_guard=True),
@@ -382,7 +395,6 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
         action="subagent-stop-spine-detector",
         shell_command=_SUBAGENT_STOP_SPINE_LEDGER_DETECTOR_INSTALLED,
     ),
-    HookEvent(event="SessionStart", matcher="startup", action="session-start"),
     HookEvent(event="SubagentStart", matcher=None, action="subagent-start"),
     HookEvent(event="UserPromptSubmit", matcher=None, action="user-prompt-submit"),
     HookEvent(

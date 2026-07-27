@@ -258,7 +258,14 @@ _FEATURE_PLAN_HEADING_RE = re.compile(
 #: default-slice-plan slice-01) — the same shape EDC-6 establishes at feature
 #: granularity (`nw-discuss` SKILL.md line 191), brought down to slice
 #: granularity verbatim.
-_SLICE_DEPENDENCY_RE = re.compile(r"depends-on\s+\S+", re.IGNORECASE)
+#:
+#: The id is captured in a dedicated group ([\w-]+, not \S+) so a stray
+#: trailing punctuation mark (e.g. a typo'd `depends-on slice-01,`) is never
+#: swallowed into the extracted id — a bare \S+ would match the comma too,
+#: silently corrupting the token
+#: (des-plan-dependency-extractor-silently-corrupts-token-on-trailing-punctuation,
+#: techdebt.md).
+_SLICE_DEPENDENCY_RE = re.compile(r"depends-on\s+([\w-]+)", re.IGNORECASE)
 
 
 def _exact_heading_regex(heading_literal: str) -> re.Pattern[str]:
@@ -723,7 +730,7 @@ def validate_slice_plan_content(content: str) -> PlanValidationResult:
     return _validate_plan_content(content, _SLICE_PLAN_SPEC)
 
 
-def read_declared_parallel_slice_ids(content: str) -> tuple[str, ...]:
+def read_declared_parallel_slice_ids(content: str) -> tuple[str, ...] | None:
     """Return the slice-ids of the Slice Plan's DECLARED-PARALLEL rows. Pure.
 
     A declared-parallel row is a Slice Plan data row whose Annotation cell
@@ -734,14 +741,20 @@ def read_declared_parallel_slice_ids(content: str) -> tuple[str, ...]:
     `des parallel-safety-report` -- can classify declared-parallel rows without
     importing `_`-private symbols.
 
-    Reads the SAME grammar the validator parses (one SSOT). Returns the ids in
-    document order; an absent/empty Slice Plan yields an empty tuple (the
-    caller is responsible for the well-formedness verdict via
-    `validate_slice_plan_content`).
+    Reads the SAME grammar the validator parses (one SSOT).
+
+    Returns:
+        The declared-parallel ids in document order; an EMPTY tuple when the
+        Slice Plan section IS present but declares no parallel row (a valid,
+        monolithic feature); `None` when the document carries NO Slice Plan
+        heading at all -- a structural omission the caller must be able to
+        tell apart from the empty plan (GDP-8 arity corollary). The
+        well-formedness verdict for a present-but-malformed plan stays
+        `validate_slice_plan_content`'s job.
     """
     rows = _plan_table_rows(content, _SLICE_PLAN_HEADING_RE)
-    if not rows:
-        return ()
+    if rows is None:
+        return None
     data_rows = [row for row in rows if not _is_separator_row(row)][1:]
     declared_parallel: list[str] = []
     for row in data_rows:
@@ -758,7 +771,7 @@ def read_declared_parallel_slice_ids(content: str) -> tuple[str, ...]:
 
 def read_slice_plan_dependencies(
     content: str,
-) -> tuple[tuple[str, tuple[str, ...]], ...]:
+) -> tuple[tuple[str, tuple[str, ...]], ...] | None:
     """Return the declared Slice Plan dependency graph in document order.
 
     This is an advisory planning projection of the already-authoritative
@@ -769,10 +782,22 @@ def read_slice_plan_dependencies(
 
     Keeping this beside ``read_declared_parallel_slice_ids`` prevents a second
     Markdown parser from silently becoming an authority for delivery order.
+
+    Returns ``None`` when the document carries NO Slice Plan heading at all
+    (a structural omission), an empty tuple when the section is present but
+    declares no rows -- the same GDP-8 arity split as
+    ``read_declared_parallel_slice_ids``
+    (read-slice-plan-dependencies-collapses-absent-and-empty-plan,
+    techdebt.md). The sole production consumer (``des plan``,
+    delivery_plan.py) already rejects the absent-heading case via
+    ``validate_slice_plan_content`` before calling this, so ``None`` should
+    never actually reach a caller that validates first -- callers that do
+    not validate first must still handle it explicitly rather than
+    misreading it as "zero dependencies."
     """
     rows = _plan_table_rows(content, _SLICE_PLAN_HEADING_RE)
-    if not rows:
-        return ()
+    if rows is None:
+        return None
     data_rows = [row for row in rows if not _is_separator_row(row)][1:]
     graph: list[tuple[str, tuple[str, ...]]] = []
     for row in data_rows:
@@ -781,14 +806,12 @@ def read_slice_plan_dependencies(
             continue
         slice_id = cells[0].strip()
         dependency = _SLICE_DEPENDENCY_RE.search(cells[3])
-        prerequisites = (
-            (dependency.group().split(maxsplit=1)[1],) if dependency is not None else ()
-        )
+        prerequisites = (dependency.group(1),) if dependency is not None else ()
         graph.append((slice_id, prerequisites))
     return tuple(graph)
 
 
-def read_declared_parallel_feature_ids(content: str) -> tuple[str, ...]:
+def read_declared_parallel_feature_ids(content: str) -> tuple[str, ...] | None:
     """Return the feature-ids of the Feature Plan's DECLARED-PARALLEL rows.
 
     Pure. Sibling of `read_declared_parallel_slice_ids` (row 3), one
@@ -803,13 +826,22 @@ def read_declared_parallel_feature_ids(content: str) -> tuple[str, ...]:
     shipped CLI already imports (DC, lower merge-conflict risk).
 
     Reads the SAME grammar `validate_feature_plan_content` parses (one SSOT).
-    Returns the ids in document order; an absent/empty Feature Plan yields an
-    empty tuple (the caller is responsible for the well-formedness verdict
-    via `validate_feature_plan_content`).
+
+    Returns:
+        The declared-parallel ids in document order; an EMPTY tuple when the
+        Feature Plan section IS present but declares no parallel row (a
+        valid, monolithic epic); `None` when the document carries NO Feature
+        Plan heading at all -- a structural omission the caller must be able
+        to tell apart from the empty plan (GDP-8 arity corollary, mirroring
+        `read_declared_parallel_slice_ids`'s own fix --
+        read-declared-parallel-feature-ids-collapses-absent-and-empty-
+        feature-plan, techdebt.md). The well-formedness verdict for a
+        present-but-malformed plan stays `validate_feature_plan_content`'s
+        job.
     """
     rows = _plan_table_rows(content, _FEATURE_PLAN_HEADING_RE)
-    if not rows:
-        return ()
+    if rows is None:
+        return None
     data_rows = [row for row in rows if not _is_separator_row(row)][1:]
     declared_parallel: list[str] = []
     for row in data_rows:

@@ -116,7 +116,7 @@ class TestSchemaVersionDetection:
 class TestPhaseCountMapping:
     """Unit tests for phase count mapping based on schema version."""
 
-    def test_get_phase_count_for_schema_v1_0_returns_14(self, des_orchestrator):
+    def test_schema_v1_0_phase_count_is_14_legacy_tdd_cycle(self, des_orchestrator):
         """
         GIVEN schema_version "1.0"
         WHEN get_phase_count_for_schema() called
@@ -131,7 +131,7 @@ class TestPhaseCountMapping:
         # THEN: 14 phases returned
         assert phase_count == 14
 
-    def test_get_phase_count_for_schema_v2_0_returns_8(self, des_orchestrator):
+    def test_schema_v2_0_phase_count_is_8_optimized_tdd_cycle(self, des_orchestrator):
         """
         GIVEN schema_version "2.0"
         WHEN get_phase_count_for_schema() called

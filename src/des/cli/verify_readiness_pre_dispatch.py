@@ -188,7 +188,8 @@ _REMEDIATIONS: dict[str, str] = {
     ),
     _INV_AT_VERDICT: (
         "Run the recorder -- `des record-at-review-verdict --feature-id <id> "
-        "--slice <slice-NN> --verdict APPROVED` -- after an independent reviewer "
+        "--slice-id <slice-NN> --verdict APPROVED --reviewer-agent-id "
+        "<reviewer>` -- after an independent reviewer "
         "has reviewed the entering slice's ATs. On the pytest-regression "
         "(bugfix) path the mechanical pair `des verify-red-green --record-red "
         "--test-file <f>` + `des verify-negative-at --test-file <f> "
@@ -546,8 +547,9 @@ def _check_at_review_verdict(
                 "does not block on it. A DOWNSTREAM gate still can -- the "
                 "carpaccio slice gate hard-requires the attestation for any "
                 "slice that cannot take the mechanical-seal route. To attest it "
-                "now: `des record-at-review-verdict --feature-id <id> --slice "
-                "<slice-NN> --verdict APPROVED --reviewer-agent-id <reviewer>` "
+                "now: `des record-at-review-verdict --feature-id <id> "
+                "--slice-id <slice-NN> --verdict APPROVED "
+                "--reviewer-agent-id <reviewer>` "
                 "after an independent reviewer has reviewed the slice's ATs; on "
                 "the pytest-regression path `des verify-red-green --record-red "
                 "--test-file <f>` + `des verify-negative-at --test-file <f> "

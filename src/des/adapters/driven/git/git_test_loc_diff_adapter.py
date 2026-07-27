@@ -1,4 +1,4 @@
-"""GitTestLocDiffAdapter — git implementation of TestLocDiffPort (slice-04, DDD-4/10).
+"""GitTestLocDiffAdapter — git implementation of LocDiffPort (slice-04, DDD-4/10).
 
 The concrete git side of the test-LOC cross-check boundary, mirroring the established
 ``ChangedSymbolPort`` <-> ``GitChangedSymbolAdapter`` pattern: the gate logic depends on
@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from des.adapters.driven.git.git_constants import GIT_HEAD
 from des.adapters.driven.git.git_subprocess import git_text
 from des.domain.sustainability_metrics import GitDiffUnavailable, TestLocDelta
-from des.ports.driven_ports.test_loc_diff_port import TestLocDiffPort
+from des.ports.driven_ports.loc_diff_port import LocDiffPort
 
 
 if TYPE_CHECKING:
@@ -40,7 +40,7 @@ def _is_test_path(path: str) -> bool:
     return name.startswith("test_") or name.endswith(("_test.py", "_test.ts"))
 
 
-class GitTestLocDiffAdapter(TestLocDiffPort):
+class GitTestLocDiffAdapter(LocDiffPort):
     """Reads a working tree's net test-LOC delta against HEAD out of git.
 
     ``git diff --numstat HEAD`` yields ``<added>\t<deleted>\t<path>`` rows; the net

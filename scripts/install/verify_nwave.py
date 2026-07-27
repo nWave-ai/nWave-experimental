@@ -42,19 +42,21 @@ from pathlib import Path
 try:
     from scripts.install.context_detector import is_claude_code_context
     from scripts.install.install_nwave import print_logo
-    from scripts.install.install_utils import Logger, PathUtils
+    from scripts.install.install_utils import PathUtils
     from scripts.install.installation_verifier import (
         InstallationVerifier,
         VerificationResult,
     )
+    from scripts.install.rich_console import RichLogger
 except ImportError:
     from context_detector import is_claude_code_context
     from install_nwave import print_logo
-    from install_utils import Logger, PathUtils
+    from install_utils import PathUtils
     from installation_verifier import (
         InstallationVerifier,
         VerificationResult,
     )
+    from rich_console import RichLogger
 
 
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
@@ -229,7 +231,7 @@ def main(
     # In JSON mode, suppress console output to avoid polluting JSON output
     config_dir = claude_config_dir or PathUtils.get_claude_config_dir()
     log_file = config_dir / "nwave-install.log"
-    logger = Logger(log_file=log_file, silent=use_json)
+    logger = RichLogger(log_file=log_file, silent=use_json)
 
     if not use_json:
         print_logo(logger)

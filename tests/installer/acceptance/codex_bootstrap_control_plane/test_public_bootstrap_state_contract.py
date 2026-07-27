@@ -1132,8 +1132,26 @@ def test_actual_v1_omission_profile_is_adopted_only_as_the_complete_reviewed_set
     public_profile = set(_V1_CANDIDATE_UNLISTED_PUBLIC_SKILL_DIGESTS)
     assert public_profile <= installed
     if not dev:
-        assert len(installed) == 201, (
-            "WHAT: upgrade did not write the complete 201-skill public candidate "
+        # UPDATED 2026-07-27 (stale-literal repair, not a behavior regression):
+        # this pinned 201, set by d07aa112f (2026-07-25 20:19), the commit
+        # that authored this test. Commit aa46b6c03 (2026-07-25 21:51, ~90
+        # minutes later, "classic stops being selectable") deliberately
+        # removed nw-deliver-classic-orchestration and nw-deliver-orchestration
+        # from nWave/skills/ as part of the ADR-025 classic-mode retirement --
+        # dropping both the public and dev skill counts by exactly 2, which a
+        # `git log --diff-filter=D` on nWave/skills/nw-*/SKILL.md confirms
+        # (plus an unrelated third removal, nw-crafter-discipline-atdd-pure,
+        # dated after 201/279 were pinned but before the count observed here,
+        # netting to -2 overall -- verified empirically, not assumed: a
+        # temporary instrumented run measured 199/277 against the current
+        # tree). Nobody updated this literal after the removal landed. Re-pin
+        # to the current, correct count; if a future skill addition/removal
+        # changes it again, review and update deliberately -- this literal is
+        # a closed, reviewed pin by design (see the docstring on
+        # `_assert_actual_v1_candidate_profile_matches_pinned_source`), not a
+        # self-adjusting count.
+        assert len(installed) == 199, (
+            "WHAT: upgrade did not write the complete 199-skill public candidate "
             "manifest. WHY: the historical profile must refresh to the complete "
             "public installation, not merely retain its old 174-entry record."
         )
@@ -1150,7 +1168,9 @@ def test_actual_v1_omission_profile_is_adopted_only_as_the_complete_reviewed_set
             and (path / "SKILL.md").is_file()
         }
         assert installed == expected_dev
-        assert len(installed) == 279
+        # UPDATED 2026-07-27, same stale-literal repair as the public branch
+        # above (279 -> 277, same -2 delta, same root cause: aa46b6c03).
+        assert len(installed) == 277
         assert "nw-adoption-funnel-analysis" in installed, (
             "WHAT: dev install omitted a private-only source skill. WHY: --dev is "
             "the explicitly private-inclusive catalog, while public remains filtered."

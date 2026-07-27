@@ -59,10 +59,21 @@ def _make_template_validator():
 def _make_valid_des_prompt(
     project_id: str = "auth-upgrade", step_id: str = "01-01"
 ) -> str:
-    """Build a fully valid DES prompt with all mandatory sections."""
+    """Build a fully valid DES prompt with all mandatory sections.
+
+    Carries an explicit atdd_pure mode marker triplet (DES-MODE + DES-PHASE +
+    DES-SLICE) -- PreToolUseService Step 4b treats a missing DES-MODE as
+    DISPATCH_MODE_UNRESOLVED rather than a legacy classic fallback (T-C /
+    F-DES-ATDD-PURE-DISPATCH-LIFECYCLE), so a prompt exercising the ALLOW path
+    must declare a coherent atdd_pure marker set alongside the classic
+    DES-PROJECT-ID/DES-STEP-ID markers this fixture also carries.
+    """
     return f"""<!-- DES-VALIDATION : required -->
 <!-- DES-PROJECT-ID : {project_id} -->
 <!-- DES-STEP-ID : {step_id} -->
+<!-- DES-MODE : atdd_pure -->
+<!-- DES-PHASE : A_GREEN_ATS -->
+<!-- DES-SLICE : slice-01 -->
 
 # DES_METADATA
 Project: {project_id}

@@ -24,6 +24,19 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 
+# Make the `des` package importable when this hook runs as a standalone
+# subprocess (pre-commit does not put `src/` on `sys.path`). Same
+# self-bootstrap recipe as scripts/hooks/verify_slice_ledger_record.py.
+# `des.application.dispatch_lane_ssot` is stdlib-only (re + dataclasses via
+# des.domain.lane_profile) -- no PyYAML dependency, so importing it here
+# does NOT reintroduce the bare-python3-without-venv hazard `_load_docgen`
+# guards against below.
+_SRC_DIR = _ROOT / "src"
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+from des.application.dispatch_lane_ssot import check_lane_profile_drift  # noqa: E402
+
 
 def _load_docgen():
     """Load ``scripts/docgen.py`` by path, deferred until actually needed.
@@ -76,7 +89,17 @@ def main() -> int:
     # when an operator remembers to run `docgen.py --check` by hand.
     disagreements = docgen.check_registry_runtime_agreement(_ROOT)
 
-    if not stale and not disagreements:
+    # dispatch-lane SSOT drift leg (dispatch-lane-ssot-drift-check-never-
+    # invoked-outside-its-own-test): check_lane_profile_drift is the ONLY
+    # consulting locus that projects nWave/dispatch/atdd_pure.yaml's
+    # profiles.lane block against the live des.domain.lane_profile.
+    # LANE_PROFILES literal and names any disagreement -- before this, it was
+    # invoked ONLY by its own unit test, so a real YAML<->literal drift would
+    # ship silently. Wired here, the sibling agreement-leg it explicitly
+    # models itself on (registry<->runtime agreement, above).
+    lane_drift = check_lane_profile_drift(_ROOT)
+
+    if not stale and not disagreements and not lane_drift:
         print("✓ docs/reference/ is up to date")
         return 0
 
@@ -100,6 +123,19 @@ def main() -> int:
         print(
             "Fix the drifted registry field (nWave/flavors/*.yaml) or the "
             "runtime source it disagrees with, then retry.",
+            file=sys.stderr,
+        )
+
+    if lane_drift:
+        print(
+            f"ERROR: dispatch-lane SSOT drift detected ({len(lane_drift)}):",
+            file=sys.stderr,
+        )
+        for entry in lane_drift:
+            print(f"  {entry}", file=sys.stderr)
+        print(
+            "Reconcile nWave/dispatch/atdd_pure.yaml's profiles.lane block "
+            "against src/des/domain/lane_profile.py::LANE_PROFILES, then retry.",
             file=sys.stderr,
         )
 

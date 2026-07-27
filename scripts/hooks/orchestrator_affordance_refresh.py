@@ -48,6 +48,22 @@ _REFRESH_SECONDS = 900
 _SENTINEL_RELATIVE = Path(".nwave") / "orchestrator-affordance-last-injected"
 _ASSET_SEPARATOR = "\n\n"
 
+# SessionStart is paid on every new session, so it is deliberately a small
+# orientation rather than the rich, multi-document UserPromptSubmit refresh.
+# Keep the established operational markers: downstream affordance checks and
+# existing maintainer muscle memory rely on them.  This is immutable data; the
+# SessionStart path never creates a sentinel, project directory, or nWave state.
+_COMPACT_SESSION_START_ORIENTATION = """# Orchestrator discipline
+nWave is driven through the DES spine. Start with `des next`; follow its gate
+and evidence instructions; use `des examine-fixture` for observable checks.
+
+Keep work slices small, run the required acceptance checks, and use DES commands
+for state changes. SessionStart is orientation only: it does not tick loops,
+apply updates, run housekeeping, or modify project or ~/.nwave state.
+
+For multi-slice or multi-feature work, load `nw-throughput` before scheduling.
+"""
+
 
 def _candidate_assets_dirs() -> list[Path]:
     """Every plausible location of the shipped `orchestrator-affordance/` assets.
@@ -175,11 +191,11 @@ def main() -> int:
 
     candidates = _candidate_assets_dirs()
     assets_dir = _resolve_assets_dir()
-    if assets_dir is None:
-        _diagnose_missing_assets(candidates)
-        return 0
 
     if event == "UserPromptSubmit":
+        if assets_dir is None:
+            _diagnose_missing_assets(candidates)
+            return 0
         sentinel = _sentinel_path()
         if not _is_sentinel_elapsed(sentinel):
             return 0
@@ -190,15 +206,13 @@ def main() -> int:
         return 0
 
     # SessionStart (and any other event Claude Code may route here):
-    # unconditional injection -- no self-gating, no matcher restriction.
-    affordance = _load_affordance(assets_dir)
-    if affordance is None:
-        sys.stderr.write(
-            "[orchestrator-affordance-refresh] no *.md affordance assets "
-            f"found under {assets_dir} -- nothing injected\n"
-        )
-        return 0
-    print(json.dumps(_build_envelope(event, affordance)))
+    # unconditional compact orientation.  This payload is immutable code data,
+    # so a missing rich-refresh asset directory must not turn a valid session
+    # start into an empty stdout response.  Keep the diagnostic as shipping
+    # evidence; UserPromptSubmit still requires the full asset set.
+    if assets_dir is None:
+        _diagnose_missing_assets(candidates)
+    print(json.dumps(_build_envelope(event, _COMPACT_SESSION_START_ORIENTATION)))
     return 0
 
 

@@ -199,6 +199,30 @@ class TestTDDPhaseValidator:
 
         assert len(errors) >= 2  # Missing GREEN, COMMIT
 
+    def test_phase_substring_inside_unrelated_word_is_not_present(self):
+        """A phase name that only occurs as a substring of an unrelated
+        English word (CREDENTIALS contains RED) must NOT satisfy the phase
+        check -- the outer filter in _is_phase_present_in_prompt used a bare
+        `phase in line` substring test with no word boundary, so RED was
+        reported present on a line that never mentions the RED phase at all.
+        """
+        from des.application.validator import TDDPhaseValidator
+
+        prompt = """
+        # TDD_PHASES
+        1. PREPARE
+        Use your CREDENTIALS to access the API.
+        Then GREEN light the deploy and COMMIT the change.
+        """
+
+        validator = TDDPhaseValidator()
+        errors = validator.validate(prompt)
+
+        assert any("RED" in error for error in errors), (
+            "RED phase must be reported missing when the only occurrence "
+            "of the substring 'RED' is inside CREDENTIALS, not as a whole word"
+        )
+
 
 class TestTemplateValidator:
     """TemplateValidator: Main entry point."""

@@ -54,11 +54,35 @@ def main(argv: list[str] | None = None) -> int:
         return _reject(validation.detail)
 
     graph = read_slice_plan_dependencies(content)
+    if graph is None:
+        # Should be unreachable: validate_slice_plan_content above already
+        # rejects an absent Slice Plan heading before this line runs. Kept
+        # as an explicit, self-explaining guard rather than trusting that
+        # invariant silently (GDP-6, no silent-wrong) -- if the two ever
+        # disagree, this fails loud instead of crashing on `for _ in None`.
+        return _reject(
+            "no '## Wave: DISCUSS / [REF] Slice Plan' section at all -- "
+            "expected validate_slice_plan_content to have already rejected this"
+        )
     known_ids = {slice_id for slice_id, _ in graph}
     completed = frozenset(args.completed)
     unknown = sorted(completed - known_ids)
     if unknown:
         return _reject(f"completed ids are absent from the Slice Plan: {unknown}")
+
+    dangling = sorted(
+        {
+            prerequisite
+            for _, prerequisites in graph
+            for prerequisite in prerequisites
+            if prerequisite not in known_ids
+        }
+    )
+    if dangling:
+        return _reject(
+            "a declared 'depends-on' prerequisite names no slice in this "
+            f"Slice Plan (typo or corrupted token?): {dangling}"
+        )
 
     ready = tuple(
         slice_id

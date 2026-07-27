@@ -52,14 +52,16 @@ def classify(feature_dir: Path) -> str:
 def has_slice_plan(feature_dir: Path) -> bool:
     """Whether a feature dir carries a promoted DISCUSS Slice Plan heading.
 
-    Pure, crash-free probe: an unreadable markdown file yields `False` rather
-    than raising. Drives the manifest's `has_slice_plan` column -- a feature
+    Pure, crash-free probe: an unreadable OR non-UTF-8 markdown file yields
+    `False` rather than raising -- `UnicodeDecodeError` is a `ValueError`
+    subclass, not an `OSError` subclass, so it must be caught explicitly
+    alongside it. Drives the manifest's `has_slice_plan` column -- a feature
     with BOTH a roadmap and a slice plan (S21) is classified
     `classic-mid-implementation` AND stamped `has_slice_plan: true`.
     """
     try:
         return _has_slice_plan_heading(feature_dir)
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return False
 
 
@@ -203,10 +205,21 @@ def _has_atdd_pure_telemetry(feature_dir: Path) -> bool:
 
 
 def _has_slice_plan_heading(feature_dir: Path) -> bool:
-    """Whether any markdown file under the feature dir carries the heading."""
+    """Whether any markdown file under the feature dir carries the heading
+    as an actual heading LINE, not merely mentioned in prose.
+
+    A bare substring check over the whole file text would also match a note
+    that quotes the heading to describe it to a future author (e.g. "the
+    feature must carry the `## Wave: ... Slice Plan` heading -- we haven't
+    written it yet") -- a false positive that never wrote a real Slice Plan
+    (feature-classifier-slice-plan-heading-substring-match-false-positive,
+    techdebt.md). Matching per-line (with surrounding whitespace stripped)
+    requires the heading to actually stand alone as its own line.
+    """
     return any(
-        SLICE_PLAN_HEADING in markdown.read_text(encoding="utf-8")
+        line.strip() == SLICE_PLAN_HEADING
         for markdown in feature_dir.rglob("*.md")
+        for line in markdown.read_text(encoding="utf-8").splitlines()
     )
 
 

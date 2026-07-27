@@ -105,7 +105,7 @@ DELIVER uses the scaffold marker to track progress: `grep -r "__SCAFFOLD__" src/
 
 ### Why assertion errors (not NotImplementedError)
 
-Red Gate Snapshot (`src/des/application/red_gate_snapshot.py`) classifies failures by error type:
+The RED/GREEN gate (`src/des/cli/verify_red_green.py`) classifies failures by error type:
 - `AssertionError` / `panic!` / `throw Error` — **RED** (implementation missing, test correct)
 - `NotImplementedError` — **BROKEN** (infrastructure issue)
 - `ImportError` / `ModuleNotFoundError` — **BROKEN** (module missing)

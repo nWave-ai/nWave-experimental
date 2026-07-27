@@ -9,7 +9,9 @@ argument-hint: "[feature-description] - Example: \"wave-matrix -- derive feature
 
 # NW-SPIKE: Probe → Walking Skeleton
 
-**Wave**: SPIKE (between DISCUSS and DESIGN) | **Agent**: Attila (nw-software-crafter) | **Command**: `/nw-spike`
+> **Deprecated wave slot**: SPIKE was a canonical wave phase prior to v3.16.0 and is now deprecated. Spike/analysis work is embedded in the DESIGN wave. The `/nw-spike` command remains for backward compatibility.
+
+**Wave**: SPIKE (between DISCUSS and DESIGN, deprecated — retained for backward compatibility; new features fold this into DESIGN) | **Agent**: Attila (nw-software-crafter) | **Command**: `/nw-spike`
 
 ## Overview
 

@@ -312,6 +312,7 @@ class TestGitCommitVerification:
                 project_id="test-project",
                 step_id="01-01",
                 cwd=str(tmp_project_root),
+                mode="classic",
             )
         )
 
@@ -361,6 +362,7 @@ class TestGitCommitVerification:
                 project_id="test-project",
                 step_id="01-01",
                 cwd=str(tmp_project_root),
+                mode="classic",
             )
         )
 
@@ -412,6 +414,7 @@ class TestGitCommitVerification:
                 project_id="test-project",
                 step_id="01-01",
                 cwd=str(tmp_project_root),
+                mode="classic",
             )
         )
 
@@ -469,6 +472,7 @@ class TestGitCommitVerification:
                 project_id="test-project",
                 step_id="01-01",
                 cwd=str(tmp_project_root),
+                mode="classic",
             )
         )
 
@@ -534,6 +538,7 @@ class TestGitCommitVerification:
                 project_id="test-project",
                 step_id="01-01",
                 cwd=str(tmp_project_root),
+                mode="classic",
             )
         )
 
@@ -611,6 +616,7 @@ class TestGitCommitVerification:
                 project_id="test-project",
                 step_id="01-01",
                 cwd=str(tmp_project_root),
+                mode="classic",
             )
         )
 

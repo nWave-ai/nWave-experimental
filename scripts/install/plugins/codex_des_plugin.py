@@ -34,6 +34,7 @@ from scripts.install.plugins.base import (
 )
 from scripts.shared.install_paths import (
     host_neutral_runtime_dir,
+    is_durable_interpreter_path,
     resolve_des_lib_path_for_spawn,
     resolve_python_command_for_spawn,
 )
@@ -49,6 +50,7 @@ _PRE_TOOL_USE_EVENT = "PreToolUse"
 _SESSION_START_EVENT = "SessionStart"
 _SESSION_START_MATCHER = "startup|resume|clear|compact"
 _SESSION_START_SUBCOMMAND = "session-start"
+_CODEX_HOST_PROVENANCE_ARGUMENT = "--host-provenance=codex"
 _SESSION_START_LAUNCHER_FILENAME = "nwave_orchestrator_affordance_launcher.py"
 _RUNTIME_RESOLVER_RELATIVE_PATH = Path("nWave/hooks/orchestrator_affordance_refresh.py")
 
@@ -161,22 +163,43 @@ def _runtime_resolver_path() -> Path:
     return host_neutral_runtime_dir().parent / _RUNTIME_RESOLVER_RELATIVE_PATH
 
 
-def _session_start_launcher_source(python_path: str, resolver_path: str) -> str:
+def _session_start_launcher_source(
+    python_path: str, pythonpath: str, resolver_path: str
+) -> str:
     """Return the bounded transparent launcher for Codex SessionStart.
 
-    The resolver owns the protocol envelope and writes exactly one JSON object
-    to stdout.  This launcher must not add output around it.
+    A real Codex SessionStart envelope is routed to the DES handler, where the
+    canonical standing-loop facade can offer one due bounded opportunity.  An
+    invocation with no host envelope retains the standalone resolver used by
+    non-host probes and older host shapes.  This launcher never invents an
+    occurrence or completion claim.
     """
     return (
         '"""nWave Codex SessionStart launcher. Generated; reinstall to update."""\n'
+        "import os\n"
         "import subprocess\n"
         "import sys\n\n"
         f"PYTHON_PATH = {json.dumps(python_path)}\n"
+        f"PYTHONPATH = {json.dumps(pythonpath)}\n"
         f"RESOLVER_PATH = {json.dumps(resolver_path)}\n"
-        'argv = [PYTHON_PATH, RESOLVER_PATH, "SessionStart"]\n'
+        "stdin_text = sys.stdin.read()\n"
+        "if stdin_text:\n"
+        "    env = os.environ.copy()\n"
+        '    env["PYTHONPATH"] = PYTHONPATH\n'
+        "    argv = [\n"
+        "        PYTHON_PATH,\n"
+        '        "-m",\n'
+        '        "des.adapters.drivers.hooks.hook_router",\n'
+        '        "session-start",\n'
+        f"        {_CODEX_HOST_PROVENANCE_ARGUMENT!r},\n"
+        "    ]\n"
+        '    kwargs = {"input": stdin_text, "text": True, "env": env}\n'
+        "else:\n"
+        '    argv = [PYTHON_PATH, RESOLVER_PATH, "SessionStart"]\n'
+        '    kwargs = {"stdin": subprocess.DEVNULL}\n'
         "try:\n"
         "    completed = subprocess.run(\n"
-        "        argv, stdin=subprocess.DEVNULL, timeout=10, check=False\n"
+        "        argv, timeout=10, check=False, **kwargs\n"
         "    )\n"
         "except subprocess.TimeoutExpired:\n"
         "    sys.exit(0)\n"
@@ -185,21 +208,38 @@ def _session_start_launcher_source(python_path: str, resolver_path: str) -> str:
 
 
 def _write_session_start_launcher(
-    launcher_path: Path, python_path: str, resolver_path: Path
+    launcher_path: Path, python_path: str, pythonpath: str, resolver_path: Path
 ) -> None:
     launcher_path.write_text(
-        _session_start_launcher_source(python_path, str(resolver_path)),
+        _session_start_launcher_source(python_path, pythonpath, str(resolver_path)),
         encoding="utf-8",
     )
 
 
 def _build_launcher_hook_entry(launcher_path: Path) -> dict:
-    """Render a hook command containing only fixed installer-controlled values."""
+    """Render a hook command containing only fixed installer-controlled values.
+
+    Resolves the interpreter with the SAME durability guard the Claude-side
+    hook uses (DESPlugin._resolve_python_path): reject an interpreter rooted
+    under an ephemeral location (a dev worktree, a throwaway clone) that will
+    not exist when Codex later fires this persisted hook command, falling
+    back to the portable ``python3``. Deliberately NOT
+    ``resolve_python_command_for_spawn()`` -- that helper (and its
+    ``resolve_des_lib_path_for_spawn`` sibling) exists to produce values that
+    get embedded as Python string literals inside the LAUNCHER SCRIPT's own
+    source, tolerant of shell-hostile characters (spaces, quotes, backticks);
+    the hook COMMAND's own interpreter is a distinct, simpler concern and
+    must stay a value ``shlex``/the shell can invoke directly
+    (fix-codex-hook-command-embeds-ephemeral-interpreter-path).
+    """
+    python_path = (
+        sys.executable if is_durable_interpreter_path(sys.executable) else "python3"
+    )
     if os.name == "nt":
         powershell = " ".join(
             (
                 "&",
-                _powershell_literal(sys.executable),
+                _powershell_literal(python_path),
                 _powershell_literal(str(launcher_path)),
                 _powershell_literal("pre-tool-use"),
             )
@@ -207,7 +247,7 @@ def _build_launcher_hook_entry(launcher_path: Path) -> dict:
         encoded = base64.b64encode(powershell.encode("utf-16le")).decode("ascii")
         command = f"powershell -NoProfile -EncodedCommand {encoded}"
     else:
-        command = shlex.join([sys.executable, str(launcher_path), "pre-tool-use"])
+        command = shlex.join([python_path, str(launcher_path), "pre-tool-use"])
     return {
         "matcher": _pre_tool_use_matcher(),
         "hooks": [
@@ -222,21 +262,35 @@ def _build_launcher_hook_entry(launcher_path: Path) -> dict:
 
 
 def _build_session_start_hook_entry(launcher_path: Path) -> dict:
-    """Render the observed Codex SessionStart schema for the nWave launcher."""
+    """Render the observed Codex SessionStart schema for the nWave launcher.
+
+    See ``_build_launcher_hook_entry`` for why this resolves the interpreter
+    via a durability guard on ``sys.executable`` rather than either raw
+    ``sys.executable`` or ``resolve_python_command_for_spawn()``.
+    """
+    python_path = (
+        sys.executable if is_durable_interpreter_path(sys.executable) else "python3"
+    )
     if os.name == "nt":
         powershell = " ".join(
             (
                 "&",
-                _powershell_literal(sys.executable),
+                _powershell_literal(python_path),
                 _powershell_literal(str(launcher_path)),
                 _powershell_literal(_SESSION_START_SUBCOMMAND),
+                _powershell_literal(_CODEX_HOST_PROVENANCE_ARGUMENT),
             )
         )
         encoded = base64.b64encode(powershell.encode("utf-16le")).decode("ascii")
         command = f"powershell -NoProfile -EncodedCommand {encoded}"
     else:
         command = shlex.join(
-            [sys.executable, str(launcher_path), _SESSION_START_SUBCOMMAND]
+            [
+                python_path,
+                str(launcher_path),
+                _SESSION_START_SUBCOMMAND,
+                _CODEX_HOST_PROVENANCE_ARGUMENT,
+            ]
         )
     return {
         "matcher": _SESSION_START_MATCHER,
@@ -260,7 +314,12 @@ def _command_targets_launcher(
     command: str, launcher_path: Path, subcommand: str = "pre-tool-use"
 ) -> bool:
     """Verify the serialized command is exactly the canonical invocation."""
-    expected_argv = [sys.executable, str(launcher_path), subcommand]
+    python_path = (
+        sys.executable if is_durable_interpreter_path(sys.executable) else "python3"
+    )
+    expected_argv = [python_path, str(launcher_path), subcommand]
+    if subcommand == _SESSION_START_SUBCOMMAND:
+        expected_argv.append(_CODEX_HOST_PROVENANCE_ARGUMENT)
     if os.name != "nt":
         try:
             return shlex.split(command) == expected_argv
@@ -282,6 +341,11 @@ def _command_targets_launcher(
             _powershell_literal(expected_argv[0]),
             _powershell_literal(expected_argv[1]),
             _powershell_literal(expected_argv[2]),
+            *(
+                (_powershell_literal(expected_argv[3]),)
+                if len(expected_argv) == 4
+                else ()
+            ),
         )
     )
     return decoded == expected_powershell
@@ -302,7 +366,10 @@ def _command_owns_launcher(
             argv = shlex.split(command)
         except ValueError:
             return False
-        return len(argv) == 3 and argv[1:] == [str(launcher_path), subcommand]
+        expected_tail = [str(launcher_path), subcommand]
+        if subcommand == _SESSION_START_SUBCOMMAND:
+            expected_tail.append(_CODEX_HOST_PROVENANCE_ARGUMENT)
+        return argv[1:] == expected_tail and len(argv) == len(expected_tail) + 1
 
     tokens = command.split()
     if tokens[:3] != ["powershell", "-NoProfile", "-EncodedCommand"]:
@@ -313,14 +380,13 @@ def _command_owns_launcher(
         decoded = base64.b64decode(tokens[3], validate=True).decode("utf-16le")
     except (ValueError, UnicodeDecodeError):
         return False
-    return decoded.endswith(
-        " ".join(
-            (
-                _powershell_literal(str(launcher_path)),
-                _powershell_literal(subcommand),
-            )
-        )
-    )
+    expected_tail = [
+        _powershell_literal(str(launcher_path)),
+        _powershell_literal(subcommand),
+    ]
+    if subcommand == _SESSION_START_SUBCOMMAND:
+        expected_tail.append(_powershell_literal(_CODEX_HOST_PROVENANCE_ARGUMENT))
+    return decoded.endswith(" ".join(expected_tail))
 
 
 def _build_hook_entry(python_path: str, pythonpath: str) -> dict:
@@ -728,7 +794,7 @@ class CodexDESPlugin(InstallationPlugin):
             )
             _write_launcher(launcher_path, python_path, pythonpath)
             _write_session_start_launcher(
-                session_start_launcher_path, python_path, resolver_path
+                session_start_launcher_path, python_path, pythonpath, resolver_path
             )
 
             doc = _remove_nwave_hooks(
@@ -869,7 +935,9 @@ class CodexDESPlugin(InstallationPlugin):
                         and not session_start_launcher_path.is_symlink()
                         and session_start_launcher_path.read_text(encoding="utf-8")
                         == _session_start_launcher_source(
-                            manifest["python_path"], manifest["resolver_script_file"]
+                            manifest["python_path"],
+                            manifest["pythonpath"],
+                            manifest["resolver_script_file"],
                         )
                     )
                 except (OSError, UnicodeDecodeError):

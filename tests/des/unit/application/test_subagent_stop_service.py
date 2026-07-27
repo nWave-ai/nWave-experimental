@@ -174,6 +174,7 @@ class TestTimestampCorrection:
             project_id=project_id,
             step_id=step_id,
             task_start_time=task_start,
+            mode="classic",
         )
 
         service.validate(context)
@@ -234,6 +235,7 @@ class TestTimestampCorrection:
             project_id=project_id,
             step_id=step_id,
             task_start_time=task_start,
+            mode="classic",
         )
 
         service.validate(context)
@@ -293,6 +295,7 @@ class TestTimestampCorrection:
             project_id=project_id,
             step_id=step_id,
             task_start_time=task_start,
+            mode="classic",
         )
 
         service.validate(context)
@@ -340,6 +343,7 @@ class TestTimestampCorrection:
             step_id=step_id,
             stop_hook_active=True,  # Retry scenario
             task_start_time=task_start,
+            mode="classic",
         )
 
         # Validation will fail (incomplete phases) but allow (retry)

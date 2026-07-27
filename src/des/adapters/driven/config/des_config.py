@@ -107,7 +107,7 @@ class DESConfig:
 
         try:
             parsed = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             return {}
         # Valid JSON that is not an object (``null``, ``[]``, ``123``, ``"x"``)
         # would crash every ``.get(...)`` caller. Coerce to ``{}`` so callers

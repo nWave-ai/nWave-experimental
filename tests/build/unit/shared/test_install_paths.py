@@ -136,4 +136,64 @@ class TestResolveDesLibPathForSpawn:
         result = ip.resolve_des_lib_path_for_spawn()
         assert "$HOME" not in result
         assert "\\" not in result
-        assert result.endswith("/.claude/lib/python")
+        # Every non-Claude host's own generated hook (Codex, Copilot,
+        # OpenCode) always points PYTHONPATH at the shared, host-neutral
+        # runtime dir, independent of whether Claude Code is also targeted
+        # -- see DESPlugin._secondary_runtime_python_dir's docstring in
+        # scripts/install/plugins/des_plugin.py for the mixed-target
+        # rationale. This is not the Claude-specific .claude/lib/python.
+        assert result.endswith("/.nwave/runtime")
+
+
+class TestResolvePythonPathForShell:
+    """Tests for resolve_python_path_for_shell() -- the $HOME-substituting,
+    shell-execution-context sibling of resolve_python_command_for_spawn().
+
+    This is the SSOT the two former independent duplicates -- DESPlugin.
+    _resolve_python_path (scripts/install/plugins/des_plugin.py) and
+    attribution_utils._resolve_python_path (scripts/install/attribution_utils.py)
+    -- now delegate to (D3-code-duplication-resolve-python-path, techdebt.md).
+    """
+
+    def test_durable_home_rooted_path_gets_home_substituted(self, monkeypatch):
+        import scripts.shared.install_paths as ip
+
+        fake_home = "/home/fake-tester"
+        monkeypatch.setattr(ip.Path, "home", lambda: Path(fake_home))
+        monkeypatch.setattr(ip, "is_durable_interpreter_path", lambda _path: True)
+        monkeypatch.setattr(ip.sys, "executable", f"{fake_home}/bin/python3")
+
+        result = ip.resolve_python_path_for_shell()
+        assert result == "$HOME/bin/python3"
+
+    def test_venv_path_falls_back_to_python3(self, monkeypatch):
+        import scripts.shared.install_paths as ip
+
+        monkeypatch.setattr(ip.sys, "executable", "/home/dev/project/.venv/bin/python")
+        assert ip.resolve_python_path_for_shell() == "python3"
+
+    def test_ephemeral_temp_path_falls_back_to_python3(self, monkeypatch):
+        import scripts.shared.install_paths as ip
+
+        monkeypatch.setattr(ip.sys, "executable", "/tmp/some-ephemeral/bin/python3")
+        assert ip.resolve_python_path_for_shell() == "python3"
+
+    def test_des_plugin_and_attribution_utils_delegate_to_the_same_function(
+        self, monkeypatch
+    ):
+        """Both former duplicates must now call THROUGH the shared function,
+        not merely agree by coincidence -- proven by making the shared
+        function return a sentinel and observing both callers surface it."""
+        import scripts.install.plugins.des_plugin as des_plugin_module
+        from scripts.install import attribution_utils
+
+        sentinel = "SENTINEL-python-path-42"
+        monkeypatch.setattr(
+            des_plugin_module, "resolve_python_path_for_shell", lambda: sentinel
+        )
+        monkeypatch.setattr(
+            attribution_utils, "resolve_python_path_for_shell", lambda: sentinel
+        )
+
+        assert des_plugin_module.DESPlugin._resolve_python_path() == sentinel
+        assert attribution_utils._resolve_python_path() == sentinel

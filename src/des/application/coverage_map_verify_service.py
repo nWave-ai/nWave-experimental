@@ -40,7 +40,12 @@ from pathlib import Path
 # The four §5.1 mandatory section headings plus ``## Signoff``, in fixed L1
 # order. The structural check asserts every heading is present and in this
 # order; the digest is computed over the first four (excluding ``## Signoff``).
-_MANDATORY_SECTIONS_IN_ORDER: tuple[str, ...] = (
+#
+# PUBLIC (no leading underscore): the upstream CLI ``scripts/cli/
+# verify_coverage_map.py`` imports this tuple rather than repeating it --
+# techdebt.md's coverage-map-verify-cli-runtime-dup row. Both callers must
+# see the SAME object, or a change to one silently stops matching the other.
+MANDATORY_SECTIONS_IN_ORDER: tuple[str, ...] = (
     "## Feature surface declared",
     "## NOT covered -- and why",
     "## Known residues carried forward",
@@ -107,7 +112,7 @@ class CoverageMapRefused:
 def _check_structural_completeness(body: str) -> bool:
     """Return True iff every mandatory section is present and in fixed order."""
     last_index = -1
-    for heading in _MANDATORY_SECTIONS_IN_ORDER:
+    for heading in MANDATORY_SECTIONS_IN_ORDER:
         idx = body.find(heading)
         if idx < 0 or idx <= last_index:
             return False
@@ -142,7 +147,7 @@ def _select_signed_sections(body: str) -> str:
             buffer.append(line)
     if current_heading is not None:
         chunks[current_heading] = "\n".join(buffer)
-    signed = _MANDATORY_SECTIONS_IN_ORDER[:-1]  # exclude ## Signoff
+    signed = MANDATORY_SECTIONS_IN_ORDER[:-1]  # exclude ## Signoff
     return "\n".join(chunks.get(heading, "") for heading in signed)
 
 

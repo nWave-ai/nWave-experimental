@@ -500,6 +500,26 @@ def handle_pre_tool_use() -> int:
                 exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
                 return exit_code
             if distill_verdict == "allow":
+                # G-DISTILL-PRE short-circuits ONLY the classic template-
+                # validation service call below (its declared intent, see the
+                # comment above) -- it must NOT also short-circuit the
+                # wave-entering peek/clear-on-allow lifecycle that every other
+                # ALLOW path honours (slice-07c F3 NORMATIVO). Skipping it here
+                # left `entry_pending` stuck True, leaking into whatever
+                # dispatch ran next.
+                distill_activation = service_factory.create_wave_activation_service()
+                distill_wave_entering, distill_entry_block = _peek_wave_entering(
+                    hook_input, distill_activation
+                )
+                if distill_entry_block is not None:
+                    print(json.dumps(distill_entry_block))
+                    exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
+                    return exit_code
+                if distill_wave_entering:
+                    try:
+                        distill_activation.clear_entry(resolve_nwave_root())
+                    except Exception as clear_exc:
+                        _log_wave_entry_clear_failed(clear_exc, hook_id)
                 exit_code = 0
                 return exit_code
 

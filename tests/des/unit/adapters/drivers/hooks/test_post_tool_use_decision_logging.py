@@ -8,7 +8,7 @@ boundary clean.
 Tests exercise through the handle_post_tool_use driving port and assert at the
 AuditLogWriter driven port boundary.
 
-Test Budget: 5 distinct behaviors x 2 = 10 max. Using 5 tests.
+Test Budget: 6 distinct behaviors x 2 = 12 max. Using 6 tests.
 
 Behaviors:
 1. HOOK_POST_TOOL_USE_INJECTED emitted with context_type='continuation' and is_des_task=True
@@ -16,6 +16,11 @@ Behaviors:
 3. HOOK_POST_TOOL_USE_PASSTHROUGH emitted when additional_context is None (non-DES task)
 4. HOOK_POST_TOOL_USE_PASSTHROUGH emitted with reason for DES task that has no context
 5. Logging failure does not affect response to Claude Code (fail-open preserved)
+6. A prompt that only DISCUSSES the DES-VALIDATION marker in prose (no HTML-comment
+   marker present) is NOT misclassified as a DES task by a naive substring check
+   (techdebt row post-tool-use-handler-naive-des-task-substring-bypasses-canonical-
+   marker-parser) -- is_des_task must key on the canonical DesMarkerParser, matching
+   subagent_stop_handler.py's sibling behavior.
 """
 
 import io
@@ -253,3 +258,53 @@ def test_logging_failure_does_not_affect_response(monkeypatch):
     assert log_call_count > 0, (
         "Expected audit writer to be called even though it raised"
     )
+
+
+# --- Test 6: prose merely discussing the marker is not mistaken for one ---
+
+
+def test_prose_mentioning_des_validation_without_the_marker_is_not_a_des_task(
+    monkeypatch, audit_events
+):
+    """A prompt that only discusses 'DES-VALIDATION' in prose (no HTML-comment
+    marker) must NOT be classified as a DES task -- a bare substring check
+    would misfire here; the canonical DesMarkerParser (used by
+    subagent_stop_handler.py) correctly returns is_des_task=False."""
+    from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
+
+    prose_prompt = (
+        "Remember: sub-dispatches must carry the DES-VALIDATION marker "
+        "when required by the wave's dispatch profile. Please review that "
+        "policy before continuing."
+    )
+    stdin_json = json.dumps(
+        {"tool_name": "Task", "tool_input": {"prompt": prose_prompt}}
+    )
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(stdin_json))
+    monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
+
+    stub_service = _stub_service_returning(None)
+
+    with patch(
+        "des.application.post_tool_use_service.PostToolUseService",
+        stub_service,
+    ):
+        exit_code = adapter.handle_post_tool_use()
+
+    assert exit_code == 0
+
+    passthrough = [
+        e for e in audit_events if e.event_type == "HOOK_POST_TOOL_USE_PASSTHROUGH"
+    ]
+    assert len(passthrough) == 1, (
+        f"Expected one HOOK_POST_TOOL_USE_PASSTHROUGH event, "
+        f"got {len(passthrough)}. All events: {[e.event_type for e in audit_events]}"
+    )
+
+    event = passthrough[0]
+    assert event.data["is_des_task"] is False, (
+        "prose merely mentioning DES-VALIDATION must not be classified as a "
+        "DES task -- only the canonical HTML-comment marker form should"
+    )
+    assert event.data["reason"] == "non_des_task"

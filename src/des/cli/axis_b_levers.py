@@ -1051,8 +1051,25 @@ def check_coverage_on_executed_path(
                 f"lever; it does not false-flag a non-pytest target)"
             ),
         )
-    if _suite_covers_production_lines(repo):
+    coverage = _suite_covers_production_lines(repo)
+    if coverage.covers:
         return LeverResult(invariant_id="coverage_on_executed_path", flagged=False)
+    if coverage.unparseable:
+        return LeverResult(
+            invariant_id="coverage_on_executed_path",
+            flagged=False,
+            structured_event="health.gate.coverage-on-executed-path.parse-error.indeterminate",
+            target=str(repo),
+            remediation=(
+                "health.gate.coverage-on-executed-path.parse-error.indeterminate: "
+                f"{len(coverage.unparseable)} test file(s) under `{repo}` could not "
+                f"be parsed ({', '.join(coverage.unparseable[:5])}"
+                f"{', ...' if len(coverage.unparseable) > 5 else ''}) — the lever "
+                f"cannot determine whether the suite covers production `des` code, "
+                f"so it clears INDETERMINATE rather than falsely reporting theater; "
+                f"fix the unparseable file(s) and re-run to get a real verdict"
+            ),
+        )
     return LeverResult(
         invariant_id="coverage_on_executed_path",
         flagged=True,
@@ -1066,25 +1083,55 @@ def check_coverage_on_executed_path(
     )
 
 
-def _suite_covers_production_lines(repo: Path) -> bool:
-    """True iff the driven workspace has >=1 AT that reaches ``des`` production code.
+@dataclass(frozen=True)
+class _ProductionCoverageOutcome:
+    """The AST-verified verdict of :func:`_suite_covers_production_lines`.
 
-    A production-covering AT imports a ``des.`` production module (it drives the
-    real port). A workspace with NO such test — an empty/hermetic project, or a
-    fixture-only corpus — covers zero production lines (theater). Pure text read
-    over the driven workspace's ``tests/`` tree, no git, no subprocess.
+    ``covers`` — at least one test file has a real ``import des``/``from des
+    import ...`` AST node. ``unparseable`` — test files that raised
+    ``SyntaxError`` (relative paths, for the remediation message); a non-empty
+    list on a ``covers=False`` verdict means the true answer is INDETERMINATE,
+    not confirmed-theater — the caller must not collapse the two.
+    """
+
+    covers: bool
+    unparseable: list[str] = field(default_factory=list)
+
+
+def _suite_covers_production_lines(repo: Path) -> _ProductionCoverageOutcome:
+    """AST-verified: does the driven workspace have >=1 AT reaching ``des`` code?
+
+    A production-covering AT has a real ``ast.Import``/``ast.ImportFrom`` node
+    whose dotted module head is ``des`` (never a text substring — a module
+    merely named like ``destroyer`` or a docstring line quoting the phrase
+    must not count, GDP-8). A workspace with NO such import — an empty/hermetic
+    project, or a fixture-only corpus — covers zero production lines (theater).
+    A file that fails to parse is reported as unparseable (INDETERMINATE),
+    never silently skipped as if it had no production import.
     """
     tests_dir = repo / "tests"
     if not tests_dir.is_dir():
-        return False
+        return _ProductionCoverageOutcome(covers=False)
+    unparseable: list[str] = []
     for test_file in tests_dir.rglob("test_*.py"):
         try:
             text = test_file.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        if "import des" in text or "from des" in text:
-            return True
-    return False
+        try:
+            tree = ast.parse(text, filename=str(test_file))
+        except SyntaxError:
+            unparseable.append(str(test_file.relative_to(repo)))
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name.split(".")[0] == "des" for alias in node.names):
+                    return _ProductionCoverageOutcome(covers=True)
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if module.split(".")[0] == "des":
+                    return _ProductionCoverageOutcome(covers=True)
+    return _ProductionCoverageOutcome(covers=False, unparseable=unparseable)
 
 
 # --- lever-2 F821 / undefined-name (target-aware NOT_APPLICABLE) -------------

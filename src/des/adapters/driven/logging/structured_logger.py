@@ -7,9 +7,10 @@ and errors in the DES system.
 
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, TextIO
 
+from des.domain.iso_utc import format_iso_utc
 from des.ports.driven_ports.logging_port import LoggingPort
 
 
@@ -39,7 +40,7 @@ class StructuredLogger(LoggingPort):
             context: Additional context (step_file, turn, etc.)
         """
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": format_iso_utc(datetime.now(timezone.utc)),
             "event": "validation_result",
             "is_valid": getattr(result, "is_valid", None),
             "errors": getattr(result, "errors", []),
@@ -56,7 +57,7 @@ class StructuredLogger(LoggingPort):
             step_file: Path to the step file
         """
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": format_iso_utc(datetime.now(timezone.utc)),
             "event": "hook_execution",
             "success": getattr(result, "success", None),
             "message": getattr(result, "message", ""),
@@ -73,7 +74,7 @@ class StructuredLogger(LoggingPort):
             context: Additional context about the error
         """
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": format_iso_utc(datetime.now(timezone.utc)),
             "event": "error",
             "error_type": type(error).__name__,
             "error_message": str(error),

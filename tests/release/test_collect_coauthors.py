@@ -504,3 +504,25 @@ class TestCLIArgValidation:
             str(repo),
         )
         assert result.returncode != 0
+
+
+class TestFetchRawLogFailureSurfacesGitStderr:
+    """Regression for techdebt.md D5/D9 (subprocess-error-messaging-release):
+
+    _fetch_raw_log must raise with the git command's own stderr attached, not
+    silently return truncated/empty output, when `git log` itself fails.
+    """
+
+    def test_bad_revision_raises_runtime_error_with_git_stderr(self, tmp_path):
+        from scripts.release.collect_coauthors import _fetch_raw_log
+
+        repo = _init_repo(tmp_path)
+        _commit(repo, "c1")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            _fetch_raw_log(
+                str(repo),
+                since_sha="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+                source_sha="HEAD",
+            )
+        assert "git log failed" in str(exc_info.value)

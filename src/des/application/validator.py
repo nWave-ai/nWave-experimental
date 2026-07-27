@@ -220,14 +220,23 @@ class TDDPhaseValidator:
 
     def _is_phase_present_in_prompt(self, phase: str, prompt: str) -> bool:
         """Check if a phase is mentioned in a non-missing context within the prompt."""
+        # Word-boundary match, with an optional `_SUFFIX` extension so legacy
+        # 5-phase spellings (RED_ACCEPTANCE, RED_UNIT) still count as the
+        # canonical phase they were split from. Without the leading/trailing
+        # \b, a bare substring test let ANY English word containing the
+        # phase as a run of letters (CREDENTIALS/CREDIT/PREDICATE/SHREDDED
+        # all contain "RED") falsely satisfy the check.
+        phase_word_pattern = rf"\b{phase}(?:_\w+)?\b"
         lines_containing_phase = [
-            line.strip() for line in prompt.split("\n") if phase in line
+            line.strip()
+            for line in prompt.split("\n")
+            if re.search(phase_word_pattern, line)
         ]
 
         for line in lines_containing_phase:
             if self._is_missing_context(phase, line):
                 continue
-            if phase in line:
+            if re.search(phase_word_pattern, line):
                 return True
 
         return False

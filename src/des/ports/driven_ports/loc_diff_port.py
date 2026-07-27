@@ -1,4 +1,4 @@
-"""TestLocDiffPort — the driven port for the git-diff test-LOC cross-check (slice-04).
+"""LocDiffPort — the driven port for the git-diff test-LOC cross-check (slice-04).
 
 The unbounded-preservation boundary (DDD-10) the sustainability metrics gate composes:
 a READ-ONLY observation of the net test-LOC delta in a working tree against HEAD. git
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from des.domain.sustainability_metrics import GitDiffUnavailable, TestLocDelta
 
 
-class TestLocDiffPort(Protocol):
+class LocDiffPort(Protocol):
     """Read the net test-LOC delta of a working tree against HEAD — read-only.
 
     One method: :meth:`test_loc_delta`. NO write method (Principle 12 — an observation
@@ -36,4 +36,4 @@ class TestLocDiffPort(Protocol):
         ...
 
 
-__all__ = ["TestLocDiffPort"]
+__all__ = ["LocDiffPort"]

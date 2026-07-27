@@ -223,21 +223,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     if breaches:
-        return _emit(
-            {
-                "decision": "HALTED_UNHEALTHY",
-                "metrics": metrics,
-                "breaches": breaches,
-                "action": "halted_no_write",
-                "config_diff": None,
-                "diagnostic": (
-                    "WHAT: the falsifier detected an unhealthy run. "
-                    "WHY: a health signal cannot select a retired workflow. "
-                    "HOW: investigate and repair the atdd_pure run before retrying."
-                ),
-            },
-            42,
+        payload = {
+            "decision": "TRIPPED",
+            "metrics": metrics,
+            "breaches": breaches,
+            "action": "halted_unhealthy",
+            "config_diff": None,
+            "diagnostic": (
+                "WHAT: the falsifier detected an unhealthy run. "
+                "WHY: a health signal cannot select a retired workflow. "
+                "HOW: investigate and repair the atdd_pure run before retrying."
+            ),
+        }
+        _emit_event(
+            args.audit_log,
+            "FalsifierGateTripped",
+            {"metrics": metrics, "breaches": breaches},
         )
+        return _emit(payload, 42)
 
     _emit_event(args.audit_log, "FalsifierGateHealthy", {"metrics": metrics})
     return _emit(

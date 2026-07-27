@@ -56,6 +56,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from des.domain.bugfix_pipeline import STAGE_STARTED, evaluate_and_record
+from des.domain.iso_utc import format_iso_utc
 
 
 if TYPE_CHECKING:
@@ -119,10 +120,6 @@ def _derive_defect_id(signal_type: str, signal_key: str) -> str:
     return f"{_CONSOLIDATION_DEFECT_PREFIX}{signal_type}-{signal_key}"
 
 
-def _format_ts(value: datetime) -> str:
-    return value.isoformat().replace("+00:00", "Z")
-
-
 def _already_queued(records: list[dict[str, Any]], defect_id: str) -> bool:
     """True iff the ledger already carries a ``PipelineStageStarted(rca)``
     record for ``defect_id`` -- replayed from the ledger's own recorded
@@ -167,7 +164,7 @@ def intake_signal(
         ledger.append_bugfix_pipeline_event(
             CONSOLIDATION_SIGNAL_INTAKE_REJECTED,
             defect_id=defect_id,
-            timestamp=_format_ts(now),
+            timestamp=format_iso_utc(now),
             reason=reason,
             feature_id=feature_id,
         )

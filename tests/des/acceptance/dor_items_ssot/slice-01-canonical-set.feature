@@ -16,7 +16,7 @@ Feature: A reviewer reads the canonical Definition-of-Ready set from one place
   @slice-01 @real-io @driving_port @contract-shape:unbounded-preservation
   Scenario: The reviewer sees the Outcome-KPIs item among the readiness items
     Given the reviewer has read the canonical readiness item-set
-    Then the reviewer sees the readiness item "Outcome KPIs defined with measurable targets"
+    Then the reviewer sees the readiness item "Outcome KPIs defined with measurable targets and a stated baseline (current-state value the target is measured against)"
 
   @slice-01 @real-io @driving_port @contract-shape:unbounded-preservation
   Scenario: The reviewer is shown job-traceability as a separate hard gate, not a readiness item

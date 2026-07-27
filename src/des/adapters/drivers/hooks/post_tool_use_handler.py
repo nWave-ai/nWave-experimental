@@ -25,6 +25,7 @@ from des.adapters.drivers.hooks.hook_protocol import (
 from des.adapters.drivers.hooks.skill_tracking_hooks import (
     maybe_track_skill_load as _maybe_track_skill_load,
 )
+from des.domain.des_marker_parser import DesMarkerParser
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 
 
@@ -99,10 +100,14 @@ def handle_post_tool_use() -> int:
             # Skill loading tracking (non-blocking, fail-open)
             _maybe_track_skill_load(hook_input)
 
-            # Check if the just-completed Task was a DES task (had DES markers)
+            # Check if the just-completed Task was a DES task (had DES markers).
+            # Delegates to the canonical DesMarkerParser (domain layer) instead of
+            # a naive substring check -- a prompt that merely DISCUSSES the marker
+            # in prose (never carrying the real HTML-comment form) must not be
+            # misclassified as a DES task, mirroring subagent_stop_handler.py.
             tool_input = hook_input.get("tool_input", {})
             prompt = tool_input.get("prompt", "")
-            is_des_task = "DES-VALIDATION" in prompt
+            is_des_task = DesMarkerParser().parse(prompt).is_des_task
 
             # Delegate to PostToolUseService
             from des.adapters.driven.logging.jsonl_audit_log_reader import (

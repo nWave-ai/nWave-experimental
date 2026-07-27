@@ -232,13 +232,28 @@ def test_unannotated_zero_at_slice_still_refused_at_exit_gate(
     """KPI-2 guardrail (exit-gate twin of the entry-gate leak-guard,
     `test_slice_03_carpaccio_lane_exemption_leak_guard.py`): an ordinary 0-AT
     slice-commit carrying NO `@prefactoring` annotation must STILL be
-    refused at E2 -- the fix must not leak the exemption into the
+    refused at exit -- the fix must not leak the exemption into the
     slice-with-AT path at the exit gate either.
 
     This assertion holds BOTH before and after the fix -- it is the
     regression guard proving the fix is additive (reads the lane datum,
-    branches only on EXEMPT), never a blanket relaxation of E2's non-vacuity
+    branches only on EXEMPT), never a blanket relaxation of the non-vacuity
     floor.
+
+    UPDATED 2026-07-27 (stale-assertion repair, not a behavior regression):
+    at authorship (2026-07-06) the un-annotated zero-AT case was refused at
+    `refused_half == "E2"` (`run_contract_gate`'s empty-`@slice-NN`-
+    intersection check), which this guardrail pinned. Commit 26cbd849e
+    (2026-07-21, "E1 vacuous-taxonomy refusal honors an armed examine-verdict
+    PASS", the same E1-vacuous-taxonomy fix family as
+    F-CARPACCIO-E1-VACUOUS-BLOCKS-PREDECESSOR-DISCRIMINATION) made E1's own
+    `non_verifiable` check refuse a zero-recognized-AT-candidate slice
+    BEFORE E2 is ever reached (`verify_slice_commit_completeness.py`
+    ~L1353-1369, "a deficient slice refuses before E2 is reached"). The
+    un-annotated slice here has NO EXEMPT lane and authors no `.feature`, so
+    it now trips that earlier E1 refusal instead of falling through to E2 --
+    still refused, still `SliceCommitRefused`, just caught one gate sooner
+    (GDP-1, intercept earlier). Re-pinned to `refused_half == "E1"`.
 
     CONTRACT_SHAPE: unbounded-preservation
     Outcome anchor: feature-delta.md (`[REF] Outcome KPIs`, KPI 2: "0 leaked
@@ -256,9 +271,9 @@ def test_unannotated_zero_at_slice_still_refused_at_exit_gate(
     assert (
         exit_code != 0
         and event.get("event") == "SliceCommitRefused"
-        and event.get("refused_half") == "E2"
+        and event.get("refused_half") == "E1"
     ), (
-        "an UN-annotated 0-AT slice-commit must still be refused at E2 -- "
+        "an UN-annotated 0-AT slice-commit must still be refused at exit -- "
         "the @prefactoring lane exemption must not leak to a plain slice "
         f"carrying no lane annotation. observed exit_code={exit_code!r} "
         f"event={event!r}"

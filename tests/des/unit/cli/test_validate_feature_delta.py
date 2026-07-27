@@ -834,3 +834,173 @@ class TestReuseAnalysisContentGrounding:
             f"feature-delta with a non-zero exit; got "
             f"exit_code={result.returncode}"
         )
+
+
+# ---------------------------------------------------------------------------
+# GDP-8 arity corollary — an ABSENT Slice Plan section and a PRESENT one that
+# declares no parallel slice are two different facts and must not collapse
+# into the same empty answer at the accessor boundary.
+# ---------------------------------------------------------------------------
+from des.cli.validate_feature_delta import read_declared_parallel_slice_ids
+
+
+class TestDeclaredParallelSliceIdsArity:
+    """`read_declared_parallel_slice_ids` keeps the third state reachable.
+
+    `None` means "the document carries no Slice Plan heading at all" — a
+    structural omission the consumer blocks on. `()` means "the section is
+    there and declares zero parallel slices" — a valid monolithic feature.
+    """
+
+    def test_absent_slice_plan_heading_returns_none(self) -> None:
+        content = "# feature-delta\n\nProse only; no Slice Plan section.\n"
+
+        assert read_declared_parallel_slice_ids(content) is None
+
+    def test_present_slice_plan_with_zero_data_rows_returns_empty_tuple(self) -> None:
+        result = read_declared_parallel_slice_ids(_PREAMBLE + _HEADER)
+
+        assert result == ()
+        assert result is not None, (
+            "a present-but-empty Slice Plan is a valid monolithic plan, not the "
+            "absent-section omission — it must stay distinguishable from None"
+        )
+
+    def test_present_slice_plan_with_rows_returns_declared_parallel_ids(self) -> None:
+        content = _make_plan(
+            "| slice-01 | Ship the reader | pending |  | — |",
+            "| slice-02 | Ship the writer | pending | depends-on slice-01 | First |",
+            "| slice-03 | Ship the gate | pending | @coupled | — |",
+        )
+
+        assert read_declared_parallel_slice_ids(content) == ("slice-01", "slice-03")
+
+
+# ---------------------------------------------------------------------------
+# GDP-8 arity corollary, one granularity up — same collapse as
+# TestDeclaredParallelSliceIdsArity above, now fixed for the Feature Plan
+# sibling accessor (read-declared-parallel-feature-ids-collapses-absent-and-
+# empty-feature-plan, techdebt.md).
+# ---------------------------------------------------------------------------
+from des.cli.validate_feature_delta import read_declared_parallel_feature_ids
+
+
+_FEATURE_PREAMBLE = "## Wave: DISCUSS / [REF] Feature Plan\n\n"
+
+_FEATURE_HEADER = (
+    "| Feature | Value statement | Status | Annotation | Justification |\n"
+    "|---|---|---|---|---|\n"
+)
+
+
+def _make_feature_plan(*annotation_rows: str) -> str:
+    return _FEATURE_PREAMBLE + _FEATURE_HEADER + "\n".join(annotation_rows) + "\n"
+
+
+class TestDeclaredParallelFeatureIdsArity:
+    """`read_declared_parallel_feature_ids` keeps the third state reachable.
+
+    `None` means "the epic-delta carries no Feature Plan heading at all" — a
+    structural omission the consumer blocks on. `()` means "the section is
+    there and declares zero parallel features" — a valid monolithic epic.
+    """
+
+    def test_absent_feature_plan_heading_returns_none(self) -> None:
+        content = "# epic-delta\n\nProse only; no Feature Plan section.\n"
+
+        assert read_declared_parallel_feature_ids(content) is None
+
+    def test_present_feature_plan_with_zero_data_rows_returns_empty_tuple(
+        self,
+    ) -> None:
+        result = read_declared_parallel_feature_ids(_FEATURE_PREAMBLE + _FEATURE_HEADER)
+
+        assert result == ()
+        assert result is not None, (
+            "a present-but-empty Feature Plan is a valid monolithic epic, not "
+            "the absent-section omission — it must stay distinguishable from "
+            "None"
+        )
+
+    def test_present_feature_plan_with_rows_returns_declared_parallel_ids(
+        self,
+    ) -> None:
+        content = _make_feature_plan(
+            "| feature-01 | Ship the reader | pending |  | — |",
+            "| feature-02 | Ship the writer | pending | depends-on feature-01 | First |",
+            "| feature-03 | Ship the gate | pending | @coupled | — |",
+        )
+
+        assert read_declared_parallel_feature_ids(content) == (
+            "feature-01",
+            "feature-03",
+        )
+
+
+# ---------------------------------------------------------------------------
+# GDP-8 arity corollary, third sibling in the same module -- same collapse as
+# the two accessors above, now fixed for `read_slice_plan_dependencies`
+# (read-slice-plan-dependencies-collapses-absent-and-empty-plan, techdebt.md).
+# Its sole production consumer, `des plan` (delivery_plan.py), already blocks
+# on the absent-heading case via `validate_slice_plan_content` BEFORE ever
+# calling this accessor -- so today the collapse this fixes is latent, not
+# reachable through that caller. Fixed anyway for API-contract consistency
+# with its two siblings, and delivery_plan.py gets an explicit (currently
+# unreachable) guard rather than trusting the upstream validator silently.
+# ---------------------------------------------------------------------------
+from des.cli.validate_feature_delta import read_slice_plan_dependencies
+
+
+class TestSlicePlanDependenciesArity:
+    """`read_slice_plan_dependencies` keeps the third state reachable.
+
+    `None` means "the document carries no Slice Plan heading at all". `()`
+    means "the section is there and declares zero rows" -- a valid, empty
+    monolithic plan.
+    """
+
+    def test_absent_slice_plan_heading_returns_none(self) -> None:
+        content = "# feature-delta\n\nProse only; no Slice Plan section.\n"
+
+        assert read_slice_plan_dependencies(content) is None
+
+    def test_present_slice_plan_with_zero_data_rows_returns_empty_tuple(self) -> None:
+        result = read_slice_plan_dependencies(_PREAMBLE + _HEADER)
+
+        assert result == ()
+        assert result is not None, (
+            "a present-but-empty Slice Plan is a valid monolithic plan, not the "
+            "absent-section omission — it must stay distinguishable from None"
+        )
+
+    def test_present_slice_plan_with_rows_returns_the_dependency_graph(self) -> None:
+        content = _make_plan(
+            "| slice-01 | Ship the reader | pending |  | — |",
+            "| slice-02 | Ship the writer | pending | depends-on slice-01 | First |",
+        )
+
+        assert read_slice_plan_dependencies(content) == (
+            ("slice-01", ()),
+            ("slice-02", ("slice-01",)),
+        )
+
+    def test_trailing_punctuation_on_the_dependency_token_does_not_corrupt_it(
+        self,
+    ) -> None:
+        """A stray trailing comma/period on the ``depends-on`` token must not
+        become part of the extracted prerequisite id
+        (des-plan-dependency-extractor-silently-corrupts-token-on-trailing-punctuation,
+        techdebt.md). Before the fix, ``\\S+`` greedily swallowed the comma, so
+        the prerequisite read back as the literal string ``"slice-01,"`` --
+        which then never matches the clean id ``"slice-01"`` in ``completed``,
+        silently blocking the dependent slice forever with no error anywhere.
+        """
+        content = _make_plan(
+            "| slice-01 | Ship the reader | pending |  | — |",
+            "| slice-02 | Ship the writer | pending | depends-on slice-01, | First |",
+        )
+
+        assert read_slice_plan_dependencies(content) == (
+            ("slice-01", ()),
+            ("slice-02", ("slice-01",)),
+        )

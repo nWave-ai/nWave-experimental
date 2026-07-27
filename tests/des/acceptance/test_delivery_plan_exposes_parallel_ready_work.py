@@ -83,3 +83,35 @@ def test_delivery_plan_refuses_a_completion_claim_outside_the_declared_work(
     payload = _payload(capsys)
     assert payload["event"] == "DeliveryPlanRejected"
     assert "absent from the Slice Plan" in str(payload["reason"])
+
+
+def test_delivery_plan_refuses_a_dangling_dependency_token_instead_of_hiding_it(
+    tmp_path: Path, capsys
+) -> None:
+    """A typo'd `depends-on` token that names no real slice must fail loud,
+    not silently block the dependent slice forever
+    (des-plan-dependency-extractor-silently-corrupts-token-on-trailing-
+    punctuation, techdebt.md) — a corrupted/misspelled prerequisite id is
+    the same class of defect as a corrupted `--completed` id, and both must
+    be rejected the same way rather than only one of the two.
+    """
+    from des.cli.delivery_plan import main
+
+    feature_delta = tmp_path / "feature-delta.md"
+    feature_delta.write_text(
+        """# Feature Delta
+
+## Wave: DISCUSS / [REF] Slice Plan
+
+| Slice | Value statement | Status | Annotation | Justification |
+|-------|-----------------|--------|------------|----------------|
+| establish-contract | A user can establish the contract. | pending | @walking_skeleton | First value. |
+| prove-journey | A user can trust the assembled journey. | pending | depends-on establish-contarct | Typo'd prerequisite. |
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["--feature-delta", str(feature_delta)]) == 2
+    payload = _payload(capsys)
+    assert payload["event"] == "DeliveryPlanRejected"
+    assert "establish-contarct" in str(payload["reason"])

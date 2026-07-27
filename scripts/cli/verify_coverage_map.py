@@ -55,6 +55,9 @@ from des.adapters.driven.ledger.coverage_map_signoff_writer import (
     write_coverage_map_signed_off,
 )
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.application.coverage_map_verify_service import (
+    MANDATORY_SECTIONS_IN_ORDER as _MANDATORY_SECTIONS_IN_ORDER,
+)
 from des.cli.human_surface import Verdict, print_human_summary
 
 
@@ -79,17 +82,10 @@ def _emit_touchpoint_heartbeat(touchpoint: str, project_root: Path) -> None:
     getattr(ledger, method_name)()
 
 
-# The four §5.1 mandatory section headings, in fixed L1 order. The structural
-# check (AT2) asserts every heading is present and in this order; the digest
-# (AT3 rows a-d) is computed over the first four (§5.3 G3 widened set),
-# excluding only ``## Signoff``.
-_MANDATORY_SECTIONS_IN_ORDER: tuple[str, ...] = (
-    "## Feature surface declared",
-    "## NOT covered -- and why",
-    "## Known residues carried forward",
-    "## Negative-space completeness statement",
-    "## Signoff",
-)
+# _MANDATORY_SECTIONS_IN_ORDER is imported above from
+# des.application.coverage_map_verify_service -- techdebt.md's
+# coverage-map-verify-cli-runtime-dup row: this CLI used to redefine the same
+# tuple, which could silently drift from the ported service core.
 
 
 # Refusal tokens -- the structured cause-of-refusal SSOT the CLI emits on

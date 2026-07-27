@@ -49,12 +49,12 @@ Reference: docs/feature/autonomous-consolidation-and-bugfix-loops/feature-delta.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.driven.output.stdout_output import StdoutOutput
+from des.domain.iso_utc import parse_iso_utc
 from des.domain.work_exhausted_ladder import evaluate_and_record
 
 
@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None, output: OutputPort | None = None) -> int
         output = StdoutOutput()
     args = _build_parser().parse_args(argv)
 
-    now = datetime.fromisoformat(args.now.replace("Z", "+00:00"))
+    now = parse_iso_utc(args.now)
     ledger = AtCompletionLedger(args.feature_id, Path(args.project_root))
     evaluate_and_record(
         ledger=ledger,

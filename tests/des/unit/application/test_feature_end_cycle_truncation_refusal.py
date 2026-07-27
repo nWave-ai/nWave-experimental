@@ -7,10 +7,12 @@ theater-seal that `des verify-integrity` then rejects. The cycle now runs the
 same un-gameable oracle FIRST and fail-closes (no record emitted).
 """
 
+import inspect
 from pathlib import Path
 
 from des.application.feature_end_cycle_service import (
     CycleRefusal,
+    _run_feature_end_member_cycle,
     run_feature_end_cycle,
 )
 
@@ -57,3 +59,35 @@ def test_truncated_feature_is_refused_before_any_gate(tmp_path: Path) -> None:
         text = ledger.read_text(encoding="utf-8")
         assert "EBatchRefactorCompleted" not in text
         assert "FeatureEndReviewVerdict" not in text
+
+
+def test_member_cycle_no_longer_re_checks_the_slice_plan_oracle_itself() -> None:
+    """Regression for techdebt row duplicate-truncated-slice-plan-check:
+    ``_run_feature_end_member_cycle`` must NOT independently re-run the
+    undelivered-Slice-Plan oracle -- that check now lives ONLY in
+    ``feature_end_batch_service._check_slice_commit_verified``, the D-5
+    batch-eligibility precheck that ALWAYS runs first for every member
+    (``_run_feature_end_member_cycle``'s sole production caller,
+    ``run_feature_end_batch``'s member loop, is only ever reached after that
+    precheck has already passed for this exact ``feature_id`` -- the second
+    check was unreachable duplicate work).
+
+    A source-level assertion (rather than a call-counting mock) is used
+    because the redundant check was provably UNREACHABLE at runtime through
+    the public API: the D-5 precheck refuses the WHOLE batch before the
+    per-member loop -- containing this function -- ever runs for a feature
+    whose Slice-Plan is undelivered, so no live call sequence can exercise
+    "the duplicate fires" either before or after the fix.
+    """
+    source = inspect.getsource(_run_feature_end_member_cycle)
+    # Checks for the CALL form (name immediately followed by an opening
+    # paren) rather than the bare name -- this function's own docstring/
+    # comments legitimately NAME the oracle when explaining where the check
+    # now lives, without calling it.
+    assert "_undelivered_slice_plan_slices(" not in source, (
+        "_run_feature_end_member_cycle must not call the undelivered-slice-"
+        "plan oracle itself -- that check belongs solely to the D-5 batch-"
+        "eligibility precheck (feature_end_batch_service."
+        "_check_slice_commit_verified), which already runs before this "
+        "function's sole caller reaches it"
+    )

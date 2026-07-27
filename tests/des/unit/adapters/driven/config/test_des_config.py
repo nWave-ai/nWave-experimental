@@ -62,14 +62,22 @@ class TestDESConfigDefaultsToTrue:
         [
             "not valid json {{{",
             json.dumps({"some_other_setting": "value"}),
+            b"\xff\xfe not valid utf-8 at all",
         ],
-        ids=["invalid_json", "key_absent"],
+        ids=["invalid_json", "key_absent", "invalid_utf8"],
     )
     def test_defaults_to_true_when_config_unusable(self, tmp_path, file_content):
-        """DESConfig defaults to audit_logging_enabled=True when JSON invalid or key absent."""
+        """DESConfig defaults to audit_logging_enabled=True when JSON invalid,
+        key absent, or the file is not valid UTF-8 (regression: UnicodeDecodeError
+        used to propagate uncaught instead of falling back to the documented
+        empty-dict default -- techdebt.md
+        incomplete-exception-handler-des-config-py-108-115)."""
         config_file = tmp_path / ".nwave" / "des-config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
-        config_file.write_text(file_content, encoding="utf-8")
+        if isinstance(file_content, bytes):
+            config_file.write_bytes(file_content)
+        else:
+            config_file.write_text(file_content, encoding="utf-8")
 
         from des.adapters.driven.config.des_config import DESConfig
 
