@@ -179,7 +179,9 @@ def init_scaffold_command(
         print(f"ERROR: cannot create directory {target_dir}: {exc}", file=sys.stderr)
         return 1
 
-    delta_path = target_dir / "feature-delta.md"
+    from des.domain.repo_path_resolver import feature_delta_in_dir
+
+    delta_path = feature_delta_in_dir(target_dir)
 
     _EMPTY_TABLE = (
         "| Origin | Commitment | DDR | Impact |\n"
@@ -243,7 +245,9 @@ def _normalize_delta_columns(feature_dir: str) -> None:
     base = Path(feature_dir)
     if not base.is_absolute():
         base = Path.cwd() / base
-    delta_path = base / "feature-delta.md"
+    from des.domain.repo_path_resolver import feature_delta_in_dir
+
+    delta_path = feature_delta_in_dir(base)
     if not delta_path.is_file():
         return
 

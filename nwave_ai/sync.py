@@ -197,9 +197,9 @@ def compute_sync_plan(
             continue
         seen_feature_ids.add(feature_id)
 
-        source = (
-            record.worktree_path / "docs" / "feature" / feature_id / "feature-delta.md"
-        )
+        from des.domain.repo_path_resolver import feature_delta_path
+
+        source = feature_delta_path(record.worktree_path, feature_id)
         target = in_flight_dir / f"{feature_id}.md"
         copies.append(
             SyncOp(

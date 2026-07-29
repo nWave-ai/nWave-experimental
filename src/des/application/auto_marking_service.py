@@ -19,6 +19,8 @@ import os
 from enum import Enum
 from pathlib import Path
 
+from des.domain.repo_path_resolver import FEATURE_DELTA_FILENAME
+
 
 class AdoptionTrigger(Enum):
     """Which auto-marking trigger fired (DDD-7)."""
@@ -88,7 +90,7 @@ class AutoMarkingService:
         feature_dir = project_root / "docs" / "feature"
         return (
             any(feature_dir.glob("*/execution-log.json"))
-            or any(feature_dir.glob("*/feature-delta.md"))
+            or any(feature_dir.glob(f"*/{FEATURE_DELTA_FILENAME}"))
             or any(p.is_dir() for p in feature_dir.glob("*/deliver"))
         )
 

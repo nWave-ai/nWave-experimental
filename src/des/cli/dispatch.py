@@ -66,7 +66,7 @@ from des.domain.expectation_charter_mapping import (
     resolve_slice_charter,
 )
 from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
-from des.domain.repo_path_resolver import resolve_repo_root
+from des.domain.repo_path_resolver import feature_delta_path, resolve_repo_root
 from des.domain.wave_active import WAVE_VOCABULARY
 from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
 
@@ -628,7 +628,7 @@ def _feature_delta_missing_advisory(project_root: Path, feature_id: str) -> str 
     continues unconditionally; this function never raises and never causes
     ``main`` to change its exit code.
     """
-    delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path = feature_delta_path(project_root, feature_id)
     if delta_path.is_file():
         return None
     return (
@@ -656,7 +656,7 @@ def _feature_delta_content_advisory(project_root: Path, feature_id: str) -> str 
     content is likewise swallowed (``None`` -- skip the advisory) rather
     than crashing prompt generation.
     """
-    delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path = feature_delta_path(project_root, feature_id)
     try:
         content = delta_path.read_text(encoding="utf-8")
     except OSError:
@@ -703,7 +703,7 @@ def _feature_delta_prefactoring_advisory(
     validating content is likewise swallowed (``None`` -- skip the advisory)
     rather than crashing prompt generation.
     """
-    delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path = feature_delta_path(project_root, feature_id)
     try:
         content = delta_path.read_text(encoding="utf-8")
     except OSError:
@@ -1056,7 +1056,7 @@ def _design_context_body(
     if agent == "nw-solution-architect" and wave == "design":
         return _design_ownership_envelope(feature_id)
     if lane == "bugfix":
-        delta_path = project_root / "docs" / "feature" / feature_id / "feature-delta.md"
+        delta_path = feature_delta_path(project_root, feature_id)
         if not delta_path.is_file():
             return _BUGFIX_MISSING_FEATURE_DELTA_DESIGN_CONTEXT
     return f"Design reference: docs/feature/{feature_id}/feature-delta.md\n"

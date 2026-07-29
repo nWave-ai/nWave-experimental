@@ -86,7 +86,9 @@ class FeatureMigrator:
         if not feature_files:
             return MigrationResult(embedded_count=0)
 
-        delta_path = feature_dir / "feature-delta.md"
+        from des.domain.repo_path_resolver import feature_delta_in_dir
+
+        delta_path = feature_delta_in_dir(feature_dir)
         existing_delta = self._read_delta(delta_path)
 
         # Phase 1: Build the updated delta content (dry-run, in-memory).

@@ -51,6 +51,7 @@ from pathlib import Path
 
 from des.cli.human_surface import Verdict, print_human_summary
 from des.cli.validate_feature_delta import next_h2_boundary
+from des.domain.repo_path_resolver import feature_delta_path
 
 
 _EXIT_PASS = 0
@@ -271,10 +272,8 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root)
     at_corpus_root = Path(args.at_corpus_root)
 
-    feature_delta_path = (
-        repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
-    )
-    feature_delta_text = feature_delta_path.read_text(encoding="utf-8")
+    delta_path = feature_delta_path(repo_root, feature_id)
+    feature_delta_text = delta_path.read_text(encoding="utf-8")
     design_sections = _extract_design_dimensions_sections(feature_delta_text)
     declared = _declared_dimensions(design_sections)
     declared_ids = [dimension_id for dimension_id, _ in declared]

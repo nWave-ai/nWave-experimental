@@ -24,7 +24,21 @@ Architecture (functional split):
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import NamedTuple
+
+
+# Expose ``src/`` so ``des`` resolves under a bare ``python3`` (this script
+# runs outside the uv venv as a ``language: system`` hook / ad-hoc tool).
+# Guarded: ``src/`` exists only in the dev repo -- in an installed layout
+# ``des`` is already importable and this is a no-op.
+_SRC = Path(__file__).resolve().parents[2] / "src"
+if _SRC.is_dir() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from des.domain.repo_path_resolver import (  # noqa: E402
+    FEATURE_DELTA_FILENAME,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +48,7 @@ from typing import NamedTuple
 
 #: Marker prefix identifying a feature-delta.md file under docs/feature/.
 FEATURE_DELTA_PREFIX: str = "docs/feature/"
-FEATURE_DELTA_SUFFIX: str = "/feature-delta.md"
+FEATURE_DELTA_SUFFIX: str = f"/{FEATURE_DELTA_FILENAME}"
 
 #: Marker prefix identifying any SSOT path. A modification anywhere under
 #: `docs/product/` is treated as a back-propagation signal.

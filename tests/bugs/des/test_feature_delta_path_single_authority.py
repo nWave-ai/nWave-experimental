@@ -100,7 +100,7 @@ def test_feature_delta_path_has_exactly_one_definition_in_the_tree() -> None:
     """
     definitions = _feature_delta_path_function_definitions(_REPO_ROOT)
 
-    assert definitions == {_CANONICAL_FILE: [38]}, (
+    assert definitions == {_CANONICAL_FILE: [70]}, (
         "expected exactly ONE feature-delta-path definition in the tree, at "
         f"{_CANONICAL_FILE} -- found definitions in "
         f"{sorted(str(p) for p in definitions)!r} "

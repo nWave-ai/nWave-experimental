@@ -84,11 +84,11 @@ from des.application.feature_end_sign_service import (
 from des.cli.record_examine_verdict import examine_ledger_path
 from des.cli.verify_fresh_clone import RECIPE_RELPATH
 from des.domain.examine_verdict_signing import charter_seal as _charter_seal
+from des.domain.repo_path_resolver import feature_delta_in_dir
 from des.runtime.interpreter import des_spawn
 
 
 _MANIFEST_NAME = "walking-skeleton.json"
-_FEATURE_DELTA_NAME = "feature-delta.md"
 
 # The examine-verdict ledger's event name (mirrors ``commit_slice.py``'s
 # ``_EXAMINE_VERDICT_EVENT``) and the feature-end scope marker: a feature-end
@@ -965,7 +965,7 @@ def _run_environmental_e2e_gate(
             "--feature-id",
             feature_id,
             "--feature-delta",
-            str(feature_dir / _FEATURE_DELTA_NAME),
+            str(feature_delta_in_dir(feature_dir)),
             "--source-tree",
             str(walking_skeleton),
         ],

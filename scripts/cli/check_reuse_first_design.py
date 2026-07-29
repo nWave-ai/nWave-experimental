@@ -58,6 +58,7 @@ from des.adapters.driven.git.git_subprocess import (
 )
 from des.cli.human_surface import Verdict, print_human_summary
 from des.cli.validate_feature_delta import is_reuse_analysis_heading, next_h2_boundary
+from des.domain.repo_path_resolver import feature_delta_path
 
 
 _EXIT_PASS = 0
@@ -346,7 +347,7 @@ def _resolve_base_branch(repo_root: Path, feature_id: str, explicit: str | None)
     if explicit is not None:
         return explicit
     genesis = resolve_feature_genesis_base_ref(
-        repo_root, f"docs/feature/{feature_id}/feature-delta.md"
+        repo_root, feature_delta_path(Path(), feature_id).as_posix()
     )
     if genesis is not None:
         return genesis
@@ -363,10 +364,8 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root)
     base_branch = _resolve_base_branch(repo_root, feature_id, args.base_branch)
 
-    feature_delta_path = (
-        repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
-    )
-    feature_delta_text = feature_delta_path.read_text(encoding="utf-8")
+    delta_path = feature_delta_path(repo_root, feature_id)
+    feature_delta_text = delta_path.read_text(encoding="utf-8")
     reuse_analysis_sections = _extract_reuse_analysis_sections(feature_delta_text)
 
     if args.git_diff_source is not None:

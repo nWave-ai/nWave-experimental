@@ -28,6 +28,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.domain.repo_path_resolver import feature_delta_path
 from des.domain.repo_path_resolver import resolve_repo_root as _resolve_repo_root
 from des.domain.review_verdict_gate import (
     REVIEW_APPROVED,
@@ -54,7 +55,7 @@ def feature_delta_seal(repo_root: Path, feature_id: str) -> str:
     ``OSError`` when the artefact is unreadable -- a verdict cannot be sealed
     against an artefact that does not exist.
     """
-    delta = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta = feature_delta_path(repo_root, feature_id)
     return hashlib.sha256(delta.read_bytes()).hexdigest()
 
 

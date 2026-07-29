@@ -50,10 +50,14 @@ _ORDERED_ITEM = re.compile(r"^(\s*)\d+[.)]\s+(.*)$")
 _STATE_CLASS = {
     "PRONTO": "s-ready",
     "IN CORSO": "s-wip",
+    "AL LAVORO": "s-wip",  # the word the SSOT tables actually use for wip
     "FATTO": "s-done",
+    "CHIUSO": "s-done",  # closed-with-nothing-left is done-family, same as FATTO
+    "MISURATO": "s-done",
     "QUARANTENA": "s-quar",
     "CONTESO": "s-cont",
     "GUARDIA": "s-guard",
+    "BLOCCATO-SERVE-DESIGN": "s-dsn",
     "TIENI": "v-keep",
     "SEMPLIFICA": "v-simp",
     "RIMUOVI": "v-drop",
@@ -331,7 +335,7 @@ _CSS = """
   --paper:#fbfaf8; --ink:#14171c; --muted:#5f6672; --rule:#e3e0da;
   --panel:#ffffff; --accent:#a8590c; --accent-soft:#f5ead9;
   --ready:#0f766e; --wip:#1d4ed8; --done:#15803d;
-  --quar:#a16207; --cont:#7e22ce; --guard:#475569;
+  --quar:#a16207; --cont:#7e22ce; --guard:#475569; --dsn:#c2410c;
   --keep:#15803d; --simp:#1d4ed8; --drop:#b91c1c; --unk:#6b7280;
 }
 @media (prefers-color-scheme:dark){
@@ -339,7 +343,7 @@ _CSS = """
     --paper:#11141a; --ink:#e7e5e0; --muted:#98a0ad; --rule:#252a33;
     --panel:#171b22; --accent:#e0964a; --accent-soft:#2a2118;
     --ready:#5eead4; --wip:#93c5fd; --done:#86efac;
-    --quar:#fcd34d; --cont:#d8b4fe; --guard:#94a3b8;
+    --quar:#fcd34d; --cont:#d8b4fe; --guard:#94a3b8; --dsn:#fb923c;
     --keep:#86efac; --simp:#93c5fd; --drop:#fca5a5; --unk:#9ca3af;
   }
 }
@@ -347,14 +351,14 @@ _CSS = """
   --paper:#fbfaf8; --ink:#14171c; --muted:#5f6672; --rule:#e3e0da;
   --panel:#ffffff; --accent:#a8590c; --accent-soft:#f5ead9;
   --ready:#0f766e; --wip:#1d4ed8; --done:#15803d;
-  --quar:#a16207; --cont:#7e22ce; --guard:#475569;
+  --quar:#a16207; --cont:#7e22ce; --guard:#475569; --dsn:#c2410c;
   --keep:#15803d; --simp:#1d4ed8; --drop:#b91c1c; --unk:#6b7280;
 }
 :root[data-theme="dark"]{
   --paper:#11141a; --ink:#e7e5e0; --muted:#98a0ad; --rule:#252a33;
   --panel:#171b22; --accent:#e0964a; --accent-soft:#2a2118;
   --ready:#5eead4; --wip:#93c5fd; --done:#86efac;
-  --quar:#fcd34d; --cont:#d8b4fe; --guard:#94a3b8;
+  --quar:#fcd34d; --cont:#d8b4fe; --guard:#94a3b8; --dsn:#fb923c;
   --keep:#86efac; --simp:#93c5fd; --drop:#fca5a5; --unk:#9ca3af;
 }
 *{box-sizing:border-box}
@@ -405,6 +409,7 @@ tbody tr:last-child td{border-bottom:0}
   border:1px solid currentColor}
 .s-ready{color:var(--ready)} .s-wip{color:var(--wip)} .s-done{color:var(--done)}
 .s-quar{color:var(--quar)} .s-cont{color:var(--cont)} .s-guard{color:var(--guard)}
+.s-dsn{color:var(--dsn)}
 .v-keep{color:var(--keep)} .v-simp{color:var(--simp)}
 .v-drop{color:var(--drop)} .v-unk{color:var(--unk)}
 /* --- directory tree: connectors drawn with borders, not characters,
@@ -444,6 +449,8 @@ li.row-s-wip>details>summary{background:color-mix(in srgb,var(--wip) 9%,transpar
   border-left:2px solid var(--wip);margin-left:-1.15rem;padding-left:1.1rem}
 li.row-s-quar>.t-name,li.row-s-quar>details>summary .t-name{color:var(--muted);opacity:.72}
 li.row-s-cont>.t-name,li.row-s-cont>details>summary .t-name{color:var(--cont)}
+li.row-s-dsn>.t-name,li.row-s-dsn>details>summary .t-name{color:var(--dsn)}
+li.row-s-dsn>.t-id,li.row-s-dsn>details>summary .t-id{color:var(--dsn)}
 /* leaf with detail: closed by default, so the tree stays scannable
    and the full row is a click away instead of a table to search */
 li.t-has-detail>details>summary::before{content:"›";font-size:.85rem}

@@ -37,6 +37,7 @@ from des.application.feature_end_na_marker_reconciliation import (
     feature_end_na_marker_reconciles,
 )
 from des.cli._repo_root_arg import add_repo_root_argument
+from des.domain.repo_path_resolver import feature_delta_path
 from des.ports.driven_ports.commit_trailer_read_port import (
     CommitTrailerReadPort,
     Indeterminate,
@@ -244,7 +245,7 @@ def _declared_slice_plan_slice_ids(project_dir: Path, feature_id: str) -> list[s
         _plan_table_rows,
     )
 
-    delta_path = project_dir / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path = feature_delta_path(project_dir, feature_id)
     if not delta_path.is_file():
         return []
     rows = _plan_table_rows(
@@ -304,7 +305,7 @@ def _undelivered_slice_plan_slices(project_dir: Path, feature_id: str) -> list[s
         _plan_table_rows,
     )
 
-    delta_path = project_dir / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path = feature_delta_path(project_dir, feature_id)
     if not delta_path.is_file():
         return []
     rows = _plan_table_rows(

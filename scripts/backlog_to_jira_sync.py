@@ -35,7 +35,18 @@ from pathlib import Path
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from backlog_to_jira_csv import parse
+
+# Expose ``src/`` so ``des`` resolves under a bare ``python3`` (this script
+# runs outside the uv venv as a ``language: system`` hook / ad-hoc tool).
+# Guarded: ``src/`` exists only in the dev repo -- in an installed layout
+# ``des`` is already importable and this is a no-op.
+_SRC = Path(__file__).resolve().parents[1] / "src"
+if _SRC.is_dir() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from backlog_to_jira_csv import parse  # noqa: E402
+
+from des.domain.repo_path_resolver import feature_delta_path  # noqa: E402
 
 
 _REPO = Path(__file__).resolve().parents[1]
@@ -60,7 +71,7 @@ def _slice_plan(fid: str) -> list[tuple[str, str]]:
     section (slice-ids in DoD/Test-Reuse tables are NOT miscounted). Empty list
     when the feature has no ``docs/feature/{fid}/feature-delta.md`` -- degrade-safe.
     """
-    fd = _REPO / "docs" / "feature" / fid / "feature-delta.md"
+    fd = feature_delta_path(_REPO, fid)
     if not fd.is_file():
         return []
     rows: list[tuple[str, str]] = []

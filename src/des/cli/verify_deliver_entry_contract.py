@@ -72,6 +72,7 @@ from des.cli.validate_feature_delta import (
     validate_slice_plan_content,
 )
 from des.domain.gate_outcome import GateVerdict
+from des.domain.repo_path_resolver import feature_delta_path
 from des.domain.slice_id_trailer import SLICE_ROW_ID_RE, SLICE_TAG_RE
 from des.runtime.interpreter import InterpreterUnavailable, python_for
 
@@ -142,7 +143,7 @@ def evaluate_contract_freeze(feature_id: str, repo_root: Path) -> FreezeOutcome:
     verdict; then the locked-section + slice-plan + heading + AT-module-per-slice
     checks project onto PASS / FAIL.
     """
-    delta_path = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path = feature_delta_path(repo_root, feature_id)
     content = _read(delta_path)
     if content is None:
         return _indeterminate(feature_id, delta_path)
@@ -166,7 +167,7 @@ def evaluate_contract_reverify(
     mutation — a locked section body edited, a Slice-Plan row added — survives the
     normalisation as drift and HALTs (FAIL, the gate names the mutation).
     """
-    delta_path = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path = feature_delta_path(repo_root, feature_id)
     content = _read(delta_path)
     if content is None:
         return _indeterminate(feature_id, delta_path)
@@ -475,9 +476,7 @@ def _frozen_baseline(ledger: AtCompletionLedger) -> str | None:
 
 def _live_baseline(args: argparse.Namespace) -> str:
     """The current feature-delta text frozen as the baseline (empty if unreadable)."""
-    delta_path = (
-        args.repo_root / "docs" / "feature" / args.feature_id / "feature-delta.md"
-    )
+    delta_path = feature_delta_path(args.repo_root, args.feature_id)
     return _read(delta_path) or ""
 
 

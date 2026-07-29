@@ -30,6 +30,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from des.domain.feature_classifier import SLICE_PLAN_HEADING
+from des.domain.repo_path_resolver import (
+    FEATURE_DELTA_FILENAME,
+    feature_delta_in_dir,
+)
 
 
 if TYPE_CHECKING:
@@ -311,9 +315,9 @@ def execute(
     journal, backups = _resume_journal(fs, journal_dir, plan.feature_id)
 
     if "promote-slice-plan-heading" not in journal:
-        delta_path = feature_dir / "feature-delta.md"
+        delta_path = feature_delta_in_dir(feature_dir)
         backups["promote-slice-plan-heading"] = {
-            "feature-delta.md": fs.read_text(delta_path)
+            FEATURE_DELTA_FILENAME: fs.read_text(delta_path)
             if fs.exists(delta_path)
             else None
         }
@@ -437,10 +441,10 @@ def _undo_seed_ledger(context: _RollbackContext) -> None:
 def _undo_promote_heading(context: _RollbackContext) -> None:
     """Restore the pre-conversion ``feature-delta.md`` from the journal backup."""
     original = context.backups.get("promote-slice-plan-heading", {}).get(
-        "feature-delta.md"
+        FEATURE_DELTA_FILENAME
     )
     if original is not None:
-        context.fs.write_text(context.feature_dir / "feature-delta.md", original)
+        context.fs.write_text(feature_delta_in_dir(context.feature_dir), original)
 
 
 # Inverse-op dispatch table -- one undo per journalled side-effect step (M3).

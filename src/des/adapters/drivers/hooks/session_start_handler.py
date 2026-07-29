@@ -47,6 +47,10 @@ from typing import TYPE_CHECKING, Any
 
 from des.adapters.drivers.hooks.substrate_probe import run_probe
 from des.domain.iso_utc import format_iso_utc
+from des.domain.repo_path_resolver import (
+    FEATURE_DELTA_FILENAME,
+    feature_delta_in_dir,
+)
 
 
 if TYPE_CHECKING:
@@ -431,7 +435,7 @@ def _is_an_nwave_project(project_dir: Path) -> bool:
         return True
     feature_dir = project_dir / "docs" / "feature"
     return (
-        any(feature_dir.glob("*/feature-delta.md"))
+        any(feature_dir.glob(f"*/{FEATURE_DELTA_FILENAME}"))
         or any(feature_dir.glob("*/execution-log.json"))
         or any(p.is_dir() for p in feature_dir.glob("*/deliver"))
     )
@@ -538,7 +542,7 @@ def build_gate_affordance_nudge(cwd: str | None) -> str | None:
         if not feature_root.is_dir():
             return None
         for entry in sorted(feature_root.iterdir()):
-            delta_path = entry / "feature-delta.md"
+            delta_path = feature_delta_in_dir(entry)
             try:
                 delta_path.read_text(encoding="utf-8")
             except OSError:

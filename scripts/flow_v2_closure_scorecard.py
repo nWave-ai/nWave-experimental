@@ -54,6 +54,17 @@ import sys
 from pathlib import Path
 
 
+# Expose ``src/`` so ``des`` resolves under a bare ``python3`` (this script
+# runs outside the uv venv as a ``language: system`` hook / ad-hoc tool).
+# Guarded: ``src/`` exists only in the dev repo -- in an installed layout
+# ``des`` is already importable and this is a no-op.
+_SRC = Path(__file__).resolve().parents[1] / "src"
+if _SRC.is_dir() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from des.domain.repo_path_resolver import feature_delta_path  # noqa: E402
+
+
 REPO = Path(__file__).resolve().parents[1]
 # The AT-completion ledger SSOT — the SAME directory the real done-gate reads
 # (verify_deliver_integrity.py:182) and the writer emits to
@@ -425,10 +436,7 @@ def _module_wired(subs: set[str], module: str) -> bool:
 
 def assess(feat: dict, subs: set[str]) -> dict:
     fid = feat["id"]
-    designed = (
-        bool(feat["dir"])
-        and (REPO / "docs" / "feature" / feat["dir"] / "feature-delta.md").exists()
-    )
+    designed = bool(feat["dir"]) and feature_delta_path(REPO, feat["dir"]).exists()
     feature_end = _has_feature_end_record(fid)
     delivered = _slice_commits_verified(fid)
     modules_wired = all(_module_wired(subs, m) for m in feat["wired_modules"])

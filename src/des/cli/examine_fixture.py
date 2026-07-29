@@ -65,6 +65,7 @@ from des.cli._scaffold_core import (
     emit_scaffold_verdict,
 )
 from des.cli.verify_slice_commit_completeness import canonical_regression_test_path
+from des.domain.repo_path_resolver import feature_delta_in_dir, feature_dir_path
 
 
 _SHIPPED_SLICE = "slice-01"
@@ -195,9 +196,9 @@ def _write_regression_test(
 
 
 def _write_feature_delta(repo: Path, feature_id: str) -> None:
-    feature_dir = repo / "docs" / "feature" / feature_id
+    feature_dir = feature_dir_path(repo, feature_id)
     feature_dir.mkdir(parents=True, exist_ok=True)
-    (feature_dir / "feature-delta.md").write_text(
+    feature_delta_in_dir(feature_dir).write_text(
         f"# {feature_id}\n\n"
         "## Wave: DISCUSS / [REF] Slice Plan\n\n"
         "| Slice | Value statement | Status | Annotation | Justification |\n"

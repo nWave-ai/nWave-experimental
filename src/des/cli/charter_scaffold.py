@@ -55,6 +55,7 @@ from des.cli.validate_feature_delta import (
     _plan_table_rows,
     validate_slice_plan_content,
 )
+from des.domain.repo_path_resolver import feature_delta_path
 
 
 #: The one NEW verdict token this tool adds -- file-absence, upstream of
@@ -576,7 +577,7 @@ def _run_slice_plan(repo_root: Path, feature_id: str) -> int:
     """`--seed-mode slice-plan` (default): the slice-01 behaviour, unchanged
     byte-for-byte -- scaffold every observable Slice Plan row from the
     feature's feature-delta."""
-    delta_path = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path = feature_delta_path(repo_root, feature_id)
     if not delta_path.is_file():
         return _degrade(
             feature_id,

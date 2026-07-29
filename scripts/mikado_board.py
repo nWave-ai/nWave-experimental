@@ -54,9 +54,18 @@ CLOSED_GLYPHS = {"[x]", "[-]", "[m]", "[>]", "[G]"}
 _TITLE_MAX = 64
 
 _CSS_CLASS = {
-    "[x]": "done", "[-]": "done", "[m]": "done", "[>]": "done", "[G]": "guard",
-    "[ ]": "ready", "[~]": "wip", "[!]": "cont", "[D]": "dsn", "[Q]": "quar",
-    "[+]": "guard", "[?]": "guard",
+    "[x]": "done",
+    "[-]": "done",
+    "[m]": "done",
+    "[>]": "done",
+    "[G]": "guard",
+    "[ ]": "ready",
+    "[~]": "wip",
+    "[!]": "cont",
+    "[D]": "dsn",
+    "[Q]": "quar",
+    "[+]": "guard",
+    "[?]": "guard",
 }
 
 #: Defect-register states mapped onto the node-state vocabulary.
@@ -181,6 +190,39 @@ def read_edges(path: Path) -> dict[str, set[str]]:
     return edges
 
 
+_ONDA_RE = re.compile(r"^### ONDA (\d+)")
+_SHA_RE = re.compile(r"`([0-9a-f]{7,40})`")
+
+
+def _extract_sha(text: str) -> str:
+    """The first backtick-quoted hash in a closure-reference cell, if any."""
+    match = _SHA_RE.search(text)
+    return match.group(1) if match else ""
+
+
+def read_node_meta(path: Path) -> dict[str, tuple[str, str, str]]:
+    """node id -> (effort, wave, closure sha), read from the SAME per-node
+    state table `read_states` reads. Effort and the closure reference sit in
+    their own columns of that table; the wave is the nearest `### ONDA N`
+    heading above the row -- it is not a column, it is the section a row
+    lives in.
+    """
+    meta: dict[str, tuple[str, str, str]] = {}
+    wave = ""
+    for line in path.read_text(encoding="utf-8").split("\n"):
+        onda = _ONDA_RE.match(line)
+        if onda:
+            wave = f"onda {onda.group(1)}"
+            continue
+        match = _STATE_ROW_RE.match(line)
+        if not match:
+            continue
+        cells = [c.strip() for c in line.split("|")]
+        if len(cells) > 9:
+            meta[match.group(1)] = (cells[4], wave, _extract_sha(cells[9]))
+    return meta
+
+
 def build(
     states: dict[str, tuple[str, str]], edges: dict[str, set[str]]
 ) -> tuple[dict[str, set[str]], list[str]]:
@@ -266,7 +308,6 @@ def render(
     return "\n".join(lines)
 
 
-
 #: The stylesheet is IMPORTED from the document renderer, never copied. One
 #: stylesheet for two projections of the same file: a copy would drift, and the
 #: whole point is that a colour means the same thing in both views.
@@ -291,22 +332,28 @@ li.t-ref>a.t-id{text-decoration:underline;text-decoration-thickness:1px;text-und
 li.t-has-detail>details>summary::before{content:"\u203a";font-size:.85rem}
 li.t-has-detail>details[open]>summary::before{content:"\u2304";font-size:.7rem}
 .wrap{max-width:none}
-/* HIDE-DONE: hides the closed node's own ROW, never its subtree. A closed
-   parent can hold OPEN children; swallowing them would be worse than no
-   filter, so the <li> keeps rendering and only its row collapses -- the open
-   children re-parent upward visually. Keyed on the closed-state class, which
-   is derived from CLOSED_GLYPHS, never on a colour or a label. */
-.hidedone li.row-s-done>details,
-.hidedone li.row-s-done>.t-row{display:none}
-.hidedone li.row-s-done{list-style:none;margin:0;padding:0}
-.hidedone li.row-s-done>ul.tree{margin-left:0;border-left:none;padding-left:0}
-.hidedone li.t-ref.row-s-done{display:none}
-.filterbar{display:flex;align-items:center;gap:.5rem;margin:.6rem 0 1rem;
-  font-size:.9rem;user-select:none}
-.filterbar label{display:flex;align-items:center;gap:.45rem;cursor:pointer}
-.filterbar input{accent-color:currentColor;width:1rem;height:1rem;cursor:pointer}
+/* --- hide-done toggle -------------------------------------------------
+   A closed node's OWN row disappears; its children never do. `display:
+   contents` drops only the <li>'s box, leaving its DOM children (a sibling
+   <ul class="tree"> of open work, if any) rendered exactly where the parent
+   used to be -- a re-parent upward with zero JS and zero restructuring. A
+   `.t-ref` backlink has no children to preserve, so it just goes away. */
+.toolbar{position:sticky;top:0;z-index:20;background:var(--paper);
+  border-bottom:1px solid var(--rule);padding:.55rem 0;margin-bottom:.3rem}
+.toolbar label{display:inline-flex;align-items:center;gap:.45rem;
+  font-size:.85rem;color:var(--ink);cursor:pointer;user-select:none}
+.toolbar input{width:1rem;height:1rem;accent-color:var(--accent);cursor:pointer}
+body.hide-done li.t-closed{display:contents}
+body.hide-done li.t-closed>.t-row,
+body.hide-done li.t-closed>details{display:none}
+body.hide-done li.t-ref.t-closed{display:none}
 </style>
 <div class="wrap">
+<div class="toolbar">
+<label><input type="checkbox" id="hide-done-cb"
+  onchange="document.body.classList.toggle('hide-done', this.checked)">
+Nascondi i nodi chiusi</label>
+</div>
 <div class="provenance">
 <span><strong>Proiezione, non sorgente.</strong> La verita\u2019 vive nel markdown versionato \u2014
 <code>docs/mikado/EXECUTION-SSOT-des-optimization.md</code></span>
@@ -316,32 +363,12 @@ li.t-has-detail>details[open]>summary::before{content:"\u2304";font-size:.7rem}
 <p>__COUNTS__ &middot; le <strong>foglie</strong> non dipendono da nulla e si implementano per
 <strong>prime</strong>; un padre sta sopra i nodi che aspetta. Apri un nodo per leggerne la
 descrizione; un nodo ripetuto e\u2019 un collegamento all\u2019espansione che la porta.</p>
-<div class="filterbar">
-<label><input type="checkbox" id="hidedone"> Nascondi i nodi completati</label>
-<span id="hidedone-note"></span>
-</div>
 <div class="treewrap">
 <ul class="tree">
 __ROWS__
 </ul>
 </div>
 </div>
-<script>
-(function(){
-  var box=document.getElementById('hidedone'),
-      note=document.getElementById('hidedone-note'),
-      root=document.documentElement,
-      KEY='mikado-hidedone';
-  function apply(on){
-    root.classList.toggle('hidedone',on);
-    note.textContent=on?'\u2014 i figli aperti di un nodo chiuso restano visibili':'';
-    try{localStorage.setItem(KEY,on?'1':'0');}catch(e){}
-  }
-  try{if(localStorage.getItem(KEY)==='1'){box.checked=true;}}catch(e){}
-  apply(box.checked);
-  box.addEventListener('change',function(){apply(box.checked);});
-})();
-</script>
 """
 
 
@@ -369,11 +396,13 @@ def render_html(
     deps: dict[str, set[str]],
     roots: list[str],
     details: dict[str, list[tuple[str, str]]],
+    meta: dict[str, tuple[str, str, str]] | None = None,
 ) -> str:
     """The document renderer\u2019s own tree markup, carrying THESE nodes in
     dependency order."""
     import html as _h
 
+    meta = meta or {}
     out: list[str] = []
     expanded: set[str] = set()
 
@@ -407,23 +436,38 @@ def render_html(
         state, raw_title = states.get(node, ("?", ""))
         title, full_title = split_title(raw_title)
         glyph, _rank = _glyph(state)
-        row_cls = f"row-s-{_CSS_CLASS.get(glyph, 'ready')}"
+        cls = _CSS_CLASS.get(glyph, "ready")
+        row_cls = f"row-s-{cls}"
+        # `t-closed` drives the hide-done toggle. It keys on the SAME glyph
+        # membership test as the plain-text render() and the CLOSED_GLYPHS
+        # contract -- never on `cls`/colour, which is a display choice and
+        # would silently desync (e.g. GUARDIA is closed but coloured "guard",
+        # not "done").
+        closed_cls = " t-closed" if glyph in CLOSED_GLYPHS else ""
         idn = _h.escape(node)
 
         if node in expanded:
             out.append(
-                f'<li class="t-ref {row_cls}">'
+                f'<li class="t-ref {row_cls}{closed_cls}">'
                 f'<a class="t-id" href="#n-{idn}">{idn}</a>'
                 f'<span class="t-name">&#8593; gia&#39; mostrato sopra</span></li>'
             )
             return
         expanded.add(node)
 
-        badge = (
-            ""
-            if glyph in CLOSED_GLYPHS
-            else f'<span class="t-badge">{_h.escape(state)}</span>'
-        )
+        # State is ALWAYS a coloured pill -- the document view shows FATTO on
+        # a done row exactly as it shows CONTESO on a live one; suppressing it
+        # for closed nodes would hide the very state that earns the strike-
+        # through. Effort / wave / closure-SHA are the same per-node columns
+        # the document's own nwtree badges carry, just sourced from the state
+        # table instead of the hand-authored block.
+        badge = f'<span class="chip s-{cls}">{_h.escape(state)}</span>'
+        effort, wave, sha = meta.get(node, ("", "", ""))
+        for extra in (effort, wave):
+            if extra:
+                badge += f'<span class="t-badge">{_h.escape(extra)}</span>'
+        if sha:
+            badge += f'<span class="t-badge"><code>{_h.escape(sha)}</code></span>'
         head = (
             f'<span class="t-id">{idn}</span>'
             f'<span class="t-name">{_h.escape(title)}</span>{badge}'
@@ -456,7 +500,7 @@ def render_html(
 
         branch_cls = " t-branch" if children else ""
         out.append(
-            f'<li class="{row_cls}{branch_cls}{detail_cls}" id="n-{idn}">'
+            f'<li class="{row_cls}{branch_cls}{detail_cls}{closed_cls}" id="n-{idn}">'
             f"{node_html}{kids_html}</li>"
         )
 
@@ -475,6 +519,7 @@ def render_html(
         .replace("__ROWS__", "\n".join(out))
         .replace("__COUNTS__", counts)
     )
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="mikado_board")
@@ -509,14 +554,24 @@ def main() -> int:
 
     unparented = sorted(f for f, (_s, _t, p) in defects.items() if not p)
     if unparented:
-        states["DIFETTI"] = ("RAMO", "difetti trovati eseguendo — foglie, non bloccano l'albero")
+        states["DIFETTI"] = (
+            "RAMO",
+            "difetti trovati eseguendo — foglie, non bloccano l'albero",
+        )
         deps["DIFETTI"] = set(unparented)
         roots = [r for r in roots if r not in unparented] + ["DIFETTI"]
     board = render(states, deps, roots)
 
     if args.html is not None:
         args.html.write_text(
-            render_html(states, deps, roots, read_details(args.file)), encoding="utf-8"
+            render_html(
+                states,
+                deps,
+                roots,
+                read_details(args.file),
+                read_node_meta(args.file),
+            ),
+            encoding="utf-8",
         )
         print(f"html written to {args.html}")
         return 0

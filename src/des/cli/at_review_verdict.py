@@ -40,6 +40,9 @@ from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import GateError
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.repo_path_resolver import (
+    feature_delta_path,
+)
+from des.domain.repo_path_resolver import (
     resolve_repo_root as _resolve_repo_root,
 )
 
@@ -442,10 +445,8 @@ def _verify_feature_slice_exists(
     """
     from des.cli import carpaccio_format
 
-    feature_delta_path = (
-        repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
-    )
-    if not feature_delta_path.is_file():
+    delta_path = feature_delta_path(repo_root, feature_id)
+    if not delta_path.is_file():
         raise _refuse_unresolvable_feature_slice(
             feature_id,
             slice_id,
@@ -454,7 +455,7 @@ def _verify_feature_slice_exists(
             "exist",
         )
 
-    feature_delta_text = feature_delta_path.read_text(encoding="utf-8")
+    feature_delta_text = delta_path.read_text(encoding="utf-8")
     try:
         slice_plan = carpaccio_format.parse_slice_plan(feature_delta_text)
     except GateError as parse_error:

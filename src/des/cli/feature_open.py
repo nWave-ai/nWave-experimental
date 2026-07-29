@@ -9,6 +9,7 @@ from pathlib import Path
 
 from des.application.feature_context_bootstrap import BootstrapContext, render
 from des.cli._repo_root_arg import add_repo_root_argument
+from des.domain.repo_path_resolver import feature_delta_path
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -119,7 +120,7 @@ def _open(args: argparse.Namespace) -> int:
     state = "ADOPTED_WIP" if args.adopt_wip else "OPEN"
     context = BootstrapContext(args.feature_id, intent, state, inventory)
     body = render(context)
-    delta = repo / "docs" / "feature" / args.feature_id / "feature-delta.md"
+    delta = feature_delta_path(repo, args.feature_id)
     if delta.exists():
         raise _Refusal(
             "feature-context-conflict",

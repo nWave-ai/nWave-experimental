@@ -52,6 +52,7 @@ from des.cli.axis_b_levers import resolve_layout
 from des.cli.validate_feature_delta import VERDICT_ACCEPTED
 from des.cli.verify_fresh_clone import RECIPE_RELPATH
 from des.domain.environmental_e2e import has_environmental_e2e_block
+from des.domain.repo_path_resolver import feature_delta_path
 
 
 TARGET_ENVIRONMENTAL_E2E = "environmental-e2e"
@@ -115,7 +116,7 @@ def _run_environmental_e2e(
 ) -> int:
     """Append `## Environmental E2E` when absent; idempotent no-op otherwise.
     Not pure (filesystem read/write + stdout print)."""
-    delta_path = repo_root / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path = feature_delta_path(repo_root, feature_id)
     if not delta_path.is_file():
         return _emit(
             TARGET_ENVIRONMENTAL_E2E,

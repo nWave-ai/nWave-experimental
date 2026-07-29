@@ -24,11 +24,23 @@ gate maps the state to its own prefixed identifier.
 from __future__ import annotations
 
 import json
+import sys
 from enum import Enum
 from pathlib import Path
 
 import yaml
 from jsonschema import Draft202012Validator
+
+
+# Expose ``src/`` so ``des`` resolves under a bare ``python3`` (this script
+# runs outside the uv venv as a ``language: system`` hook / ad-hoc tool).
+# Guarded: ``src/`` exists only in the dev repo -- in an installed layout
+# ``des`` is already importable and this is a no-op.
+_SRC = Path(__file__).resolve().parents[2] / "src"
+if _SRC.is_dir() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from des.domain.repo_path_resolver import feature_delta_in_dir  # noqa: E402
 
 
 _SCHEMA_PATH = (
@@ -63,7 +75,7 @@ class NotApplicableReason(str, Enum):
 
 def _has_not_applicable_marker(feature_design_dir: Path) -> bool:
     """Return True iff the feature-delta.md carries the not-applicable marker."""
-    feature_delta = feature_design_dir.parent / "feature-delta.md"
+    feature_delta = feature_delta_in_dir(feature_design_dir.parent)
     if not feature_delta.is_file():
         return False
     return _NOT_APPLICABLE_MARKER in feature_delta.read_text(encoding="utf-8")

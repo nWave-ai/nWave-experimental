@@ -42,6 +42,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from des.domain.des_marker_parser import DesMarkerParser
+from des.domain.repo_path_resolver import FEATURE_DELTA_FILENAME
 
 
 if TYPE_CHECKING:
@@ -202,7 +203,7 @@ def _feature_delta_witness_present(repo_root: Path, owner_wave: str) -> bool:
     if not feature_dir.is_dir():
         return False
     witness_wave = owner_wave.upper()
-    for delta in feature_dir.rglob("feature-delta.md"):
+    for delta in feature_dir.rglob(FEATURE_DELTA_FILENAME):
         try:
             content = delta.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):

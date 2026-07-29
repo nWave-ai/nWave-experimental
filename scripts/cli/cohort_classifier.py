@@ -18,6 +18,20 @@ from pathlib import Path
 from typing import Literal
 
 
+# Expose ``src/`` so ``des`` resolves under a bare ``python3`` (this script
+# runs outside the uv venv as a ``language: system`` hook / ad-hoc tool).
+# Guarded: ``src/`` exists only in the dev repo -- in an installed layout
+# ``des`` is already importable and this is a no-op.
+_SRC = Path(__file__).resolve().parents[2] / "src"
+if _SRC.is_dir() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from des.domain.repo_path_resolver import (  # noqa: E402
+    feature_delta_in_dir,
+    feature_dir_path,
+)
+
+
 WorkflowMode = Literal["atdd_pure"]
 Cohort = Literal["S", "M", "L", "XL"]
 
@@ -50,11 +64,11 @@ def _repo_root() -> Path:
 
 def _locate_feature(repo: Path, feature_id: str) -> tuple[Path, str] | None:
     """Return (path, kind) where kind in {'distill', 'feature_delta'}."""
-    base = repo / "docs" / "feature" / feature_id
+    base = feature_dir_path(repo, feature_id)
     distill = base / "distill"
     if distill.is_dir():
         return distill, "distill"
-    delta = base / "feature-delta.md"
+    delta = feature_delta_in_dir(base)
     if delta.is_file():
         return delta, "feature_delta"
     return None

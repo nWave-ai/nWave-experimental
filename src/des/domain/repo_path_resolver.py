@@ -10,7 +10,15 @@ several CLI modules and the subagent-stop hook:
   installed instance. Both authoritative inputs name the root explicitly;
   ``Path.cwd()`` is the layout-independent fallback.
 - ``feature_delta_path`` -- the feature-delta markdown file for a feature id
-  under a given repo root (a pure path-join convention).
+  under a given repo root (a pure path-join convention), composed from
+  ``feature_dir_path`` (the ``docs/feature/<id>`` directory) and
+  ``feature_delta_in_dir`` (the delta file inside an already-resolved feature
+  directory). Call sites that hold only a feature directory -- a caller
+  parameter, a CLI argument, a directory iteration -- have no ``feature_id``
+  to pass and use ``feature_delta_in_dir``; that missing affordance is why 29
+  call sites hand-built the join instead of importing one. Glob patterns and
+  filename comparisons use ``FEATURE_DELTA_FILENAME`` rather than a fresh
+  literal.
 
 DRY consolidation (behavior-preserving): the bodies were byte-identical across
 ``des.cli.carpaccio_slice_gate``, ``des.cli.carpaccio_precheck``,
@@ -35,6 +43,30 @@ def resolve_repo_root(override: str | None) -> Path:
     return Path.cwd()
 
 
+#: The feature-delta markdown filename. The ONE spelling of this literal in
+#: the tree -- glob patterns and filename comparisons import it rather than
+#: writing their own copy (a local copy is an uncoordinated duplicate, and an
+#: aliased copy blinds the inline-construction guard).
+FEATURE_DELTA_FILENAME = "feature-delta.md"
+
+#: The repo-relative directory holding one feature's documents.
+FEATURE_DOCS_SEGMENTS = ("docs", "feature")
+
+
+def feature_dir_path(repo: Path, feature_id: str) -> Path:
+    """The ``docs/feature/<feature_id>`` directory under ``repo``."""
+    return repo.joinpath(*FEATURE_DOCS_SEGMENTS, feature_id)
+
+
+def feature_delta_in_dir(feature_dir: Path) -> Path:
+    """The feature-delta markdown file inside an already-resolved feature dir.
+
+    For call sites that received the feature directory from elsewhere and so
+    have no ``feature_id`` to pass to :func:`feature_delta_path`.
+    """
+    return feature_dir / FEATURE_DELTA_FILENAME
+
+
 def feature_delta_path(repo: Path, feature_id: str) -> Path:
     """The feature-delta markdown file for ``feature_id`` under ``repo``."""
-    return repo / "docs" / "feature" / feature_id / "feature-delta.md"
+    return feature_delta_in_dir(feature_dir_path(repo, feature_id))

@@ -32,6 +32,7 @@ from des.adapters.driven.filesystem.safe_file_system_adapter import (
 from des.adapters.driven.git.git_history_probe import GitHistoryProbe
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedgerFactory
 from des.domain import conversion_planner, feature_classifier
+from des.domain.repo_path_resolver import feature_delta_in_dir, feature_dir_path
 
 
 if TYPE_CHECKING:
@@ -322,8 +323,8 @@ def _build_plan(workspace: Path, feature_id: str) -> conversion_planner.Conversi
     M2: each committed step's SHA is re-verified against git history through
     `GitHistoryProbe` -- the planner never trusts a logged `sha_verdict`.
     """
-    feature_dir = workspace / "docs" / "feature" / feature_id
-    delta_path = feature_dir / "feature-delta.md"
+    feature_dir = feature_dir_path(workspace, feature_id)
+    delta_path = feature_delta_in_dir(feature_dir)
     feature_delta_text = (
         delta_path.read_text(encoding="utf-8") if delta_path.is_file() else ""
     )
